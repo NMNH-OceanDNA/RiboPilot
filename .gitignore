@@ -1,0 +1,10 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+*.sqlite
+*.sqlite-journal
+.DS_Store
+work/
+.nextflow/
+.nextflow.log*
