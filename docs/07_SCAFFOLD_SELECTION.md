@@ -149,6 +149,22 @@ For eyeball selection when automation is uncertain:
 - **GetOrganelle tuning**: `--reduce-reads-for-coverage`, depth caps, k-list and
   `--max-rounds` adjustments to get cleaner graphs; expose as assemble_opts.
 
+## Implementation status (built)
+
+- `R/taxonomy.R` - typo-tolerant NCBI resolution (per-project pinned taxdump,
+  local taxonkit, network fallback); `resolve/apply_project_taxonomy()` confirm +
+  freeze into `samples` (taxid/lineage).
+- `R/scaffold_scoring.R` - `parse_gfa_depth()`, `taxonomic_match()` (rank
+  fallback), `score_candidates()` composite scorer.
+- `R/select_paths.R` - `score_assembly()` extracts live depth/anchors/BLAST +
+  resolved lineage and scores/ranks/auto-selects.
+- `R/stitch_scaffolds.R` - Level-1 stitch: order/orient/dedup scaffolds along a
+  reference into one canonical cistron.
+- DB: `path_scores` table + `write_path_scores()`.
+
+Remaining: integrate stitch into `score_assembly` (needs the per-path top-hit
+reference), the driver step that runs it after assembly, and the Shiny review UI.
+
 ## Recommendation / phasing
 
 - **P1 (automation core):** per-scaffold BLAST + region label + depth from GFA;
