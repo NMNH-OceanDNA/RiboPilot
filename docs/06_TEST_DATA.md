@@ -45,7 +45,7 @@ An rDNA analogue of MitoPilot's `filter_reads.sh`:
 1. Download full raw reads for each sample (ENA FTP, as in MitoPilot `full_size`).
 2. `fastp` adapter/quality trim.
 3. **bowtie2 map to an rDNA reference** (an 18S-ITS1-5.8S-ITS2-28S reference; a
-   teleost cistron, since all samples are fish) instead of a mitogenome index.
+   teleost rDNA, since all samples are fish) instead of a mitogenome index.
 4. Keep mapped read names; `seqtk subseq` raw reads to those names.
 5. Result: small per-sample fastqs containing the rDNA-region reads, safe to ship
    in `inst/test_data/`.
@@ -66,7 +66,7 @@ keeps `filter_reads.sh`.
 ## Open questions
 
 - Which exact 10 samples (or keep all 13?).
-- Which reference cistron to filter against, and whether to filter loosely (keep
+- Which reference rDNA sequence to filter against, and whether to filter loosely (keep
   flanking IGS reads) so assembly has enough overhang to resolve boundaries.
 - Target shipped size budget per sample (MitoPilot's mito subsets are ~0.5-1 MB
   each; rDNA subsets will be similar or a bit larger given higher copy number).

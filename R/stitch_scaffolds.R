@@ -1,15 +1,15 @@
 # Level-1 scaffold stitching.
 #
-# GetOrganelle nr often fragments one cistron into several scaffolds (e.g. an 18S
+# GetOrganelle nr often fragments one rDNA repeat unit into several scaffolds (e.g. an 18S
 # piece + two 28S pieces). Before scoring/annotation we order and orient a path's
-# scaffolds along a reference cistron into one canonical 5'->3'
+# scaffolds along a reference rDNA sequence into one canonical 5'->3'
 # 18S-ITS1-5.8S-ITS2-28S sequence, inserting gap runs where scaffolds don't abut.
 # This mirrors MitoPilot's scaffold_join, driven here by BLAST to a reference.
 
 #' Order + orient a path's scaffolds along a reference and stitch them
 #'
 #' @param path_fasta Fasta of one path's scaffolds.
-#' @param reference_fasta Fasta with a single reference cistron (e.g. the top
+#' @param reference_fasta Fasta with a single reference rDNA sequence (e.g. the top
 #'   BLAST hit's full 18S-ITS-28S sequence).
 #' @param max_gap Cap (bp) on the N-gap inserted between non-abutting scaffolds
 #'   (default 2000); larger reference gaps are clamped to this.

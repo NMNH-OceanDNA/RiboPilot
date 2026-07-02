@@ -9,10 +9,10 @@ nuclear rRNA submissions are feature-less single- or multi-element sequences:
   "... 18S ribosomal RNA gene, partial sequence"                -> 18S
   "... 28S ribosomal RNA gene ..."                              -> 28S
   "... 5.8S ribosomal RNA gene ..."                             -> 5.8S
-  "... 18S ... internal transcribed spacer 1, 5.8S ... 28S ..." -> multi (cistron)
+  "... 18S ... internal transcribed spacer 1, 5.8S ... 28S ..." -> multi (rDNA repeat unit)
 
 Outputs:
-  seeds  : read-recruiting sequences (18S / 28S / multi-element cistron),
+  seeds  : read-recruiting sequences (18S / 28S / multi-element rDNA record),
            headers ">ACCESSION_Genus_species" (mirrors MitoPilot seed format)
   labels : per-gene sequences for contig classification, headers ">18S" etc.
 
@@ -95,7 +95,7 @@ def main():
         multi = has_its or len(elements) > 1
 
         if multi:
-            # whole cistron / multi-element -> seed only
+            # whole rDNA repeat / multi-element -> seed only
             if L >= SEED_MIN["multi"] and h not in seen_seed:
                 seen_seed.add(h)
                 seed_recs.append((L, f"{acc}_{sp}", seq))

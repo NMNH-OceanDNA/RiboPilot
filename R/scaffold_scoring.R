@@ -106,7 +106,7 @@ taxonomic_match <- function(candidate_lineage, sample_lineage) {
 #'   ("; " ranked lineage of the top hit), `anchors` (comma list of distinct
 #'   anchors found among 18S/5.8S/28S), `length` (total bp).
 #' @param sample_lineage The sample's resolved "; " ranked lineage.
-#' @param expected_length Numeric length-2 c(min, max) plausible cistron length
+#' @param expected_length Numeric length-2 c(min, max) plausible rDNA repeat unit length
 #'   for the clade (default c(4000, 12000)).
 #' @param weights Named weights (see [DEFAULT_SCORE_WEIGHTS]).
 #' @return `candidates` with added sub-score columns (`s_tax`, `s_identity`,

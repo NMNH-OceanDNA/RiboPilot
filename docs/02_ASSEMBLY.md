@@ -28,7 +28,7 @@ and as a validation cross-check**, not the default.
 ## Option B - Targeted assembly (preferred default)
 
 Seed the assembly from conserved rRNA anchors and walk out through the spacers,
-so only reads belonging to the cistron are used. This is exactly how MitoPilot
+so only reads belonging to the rDNA repeat unit are used. This is exactly how MitoPilot
 uses GetOrganelle for the mitogenome, so it slots into the existing pattern.
 
 ### B1. GetOrganelle nr mode (primary)
@@ -91,7 +91,7 @@ that:
    organellar rRNA (mito 12S/16S = `rrnS`/`rrnL`), so no organelle location
    filter is needed (the inverse of MitoPilot's `-location mitochondrion`).
 3. Split records like MitoPilot does:
-   - **seeds** = long/multi-element records (whole cistron or 18S+ITS+28S) used to
+   - **seeds** = long/multi-element records (whole rDNA repeat or 18S+ITS+28S) used to
      recruit reads,
    - **labels** = single-locus records with the product name in the header
      (`18S ribosomal RNA`, `28S ribosomal RNA`, `5.8S ribosomal RNA`, ITS), used
@@ -118,7 +118,7 @@ very divergent lineages.
 ### B2. Reference-guided / iterative baiting (robust for divergent taxa)
 
 When de-novo seeding struggles (very divergent taxon, low depth, contamination),
-map/bait reads to a reference cistron and iteratively extend:
+map/bait reads to a reference rDNA sequence and iteratively extend:
 
 - Bait reads by k-mer/BLAST match to a reference 18S+5.8S+28S (conserved anchors
   only, so it works across large phylogenetic distance).
@@ -163,7 +163,7 @@ available as a manual whole-assembly cross-check. This matches MitoPilot's
 - Exact GenBank product/feature filter that keeps nuclear 18S/5.8S/28S/ITS and
   reliably drops mito 12S/16S and any mislabeled records. Validate on a clade with
   known messy annotations.
-- Whether clade seeds should be whole-cistron records only, or also bare 18S/28S,
+- Whether clade seeds should be whole-repeat records only, or also bare 18S/28S,
   to recruit reads without over-recruiting divergent-spacer or contaminant reads.
 - Whether to circularize (repeat unit is tandem, so the graph is a cycle through
   the IGS) or emit a linear monomer cut at the 18S start. Leaning linear monomer,

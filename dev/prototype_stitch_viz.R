@@ -1,6 +1,6 @@
 #!/usr/bin/env Rscript
 # Prototype of the Assemble-tab scaffold-stitch visualization (basis for the
-# app's plotting function). Reference-anchored gggenes track: reference cistron
+# app's plotting function). Reference-anchored gggenes track: reference rDNA sequence
 # element blocks (18S/ITS/5.8S/28S) on the bottom lane, then one lane per
 # candidate path with each scaffold as an orientation arrow at its reference
 # position. Overlapping scaffolds are packed onto tight sub-rows; redundant
@@ -19,7 +19,7 @@ suppressMessages({
 # --- inputs (edit or pass on the command line) ---
 AO <- "assembly_out/SRR22396758/go_out"
 path_fastas <- Sys.glob(file.path(AO, "*path_sequence.fasta"))
-reference_fasta <- "/tmp/rp_ref.fasta" # a single top-hit reference cistron
+reference_fasta <- "/tmp/rp_ref.fasta" # a single top-hit reference rDNA sequence
 out_png <- "dev/stitch_viz.png"
 
 stopifnot(length(path_fastas) > 0, file.exists(reference_fasta))
@@ -89,7 +89,7 @@ p <- ggplot(df, aes(xmin = start, xmax = end, y = y, fill = cat, forward = orien
   geom_gene_label(align = "left", grow = FALSE, height = grid::unit(3.2, "mm")) +
   scale_fill_manual(values = pal, name = NULL) +
   scale_y_continuous(breaks = labpos, labels = lab) +
-  labs(title = "Scaffold stitch layout vs reference cistron",
+  labs(title = "Scaffold stitch layout vs reference rDNA sequence",
     subtitle = paste0("reference ", acc, "  (", sp, ")   |   arrow = orientation; * kept, ~ redundant"),
     x = "reference position (bp)", y = NULL) +
   theme_minimal(base_size = 13) +

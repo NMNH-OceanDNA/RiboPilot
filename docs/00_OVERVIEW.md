@@ -13,7 +13,7 @@ MitoPilot can point RiboPilot at the same reads and map file.
 
 Genome skims (low-coverage shotgun, ~1-10x nuclear) already recover the
 high-copy fraction of the genome for free: the plastid, the mitogenome, and the
-**nuclear ribosomal cistron**, which exists in hundreds to thousands of tandem
+**nuclear ribosomal repeat unit**, which exists in hundreds to thousands of tandem
 copies and so is sequenced to very high effective depth. MitoPilot harvests the
 mitogenome from these skims; the same libraries contain the full
 `18S-ITS1-5.8S-ITS2-28S` array, which yields the most widely used nuclear
@@ -22,7 +22,7 @@ dedicated tool lets us recover both marker sets from one sequencing run.
 
 ## Target locus
 
-The eukaryotic 45S ribosomal cistron, transcribed by RNA Pol I as a single
+The eukaryotic 45S ribosomal repeat unit, transcribed by RNA Pol I as a single
 pre-rRNA and processed into the mature rRNAs:
 
 | Element | Type | Notes |

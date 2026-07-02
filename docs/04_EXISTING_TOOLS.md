@@ -73,7 +73,7 @@ both repos closely before implementing.
 | DB | Content | Use in RiboPilot |
 |---|---|---|
 | **SILVA** (138+) | curated SSU (18S) + LSU (28S) rRNA | BLAST/seed DB for assembly + anchor references; skim2rrna uses this |
-| **EUKARYOME** | full-length 18S-ITS-28S for all eukaryotes | best single source for **whole-cistron** references across broad taxa |
+| **EUKARYOME** | full-length 18S-ITS-28S for all eukaryotes | best single source for **whole-repeat** references across broad taxa |
 | **PR2** | protist-focused SSU (+LSU) | fill protist gaps |
 | ITSoneDB | curated ITS1 | ITS1 boundary/QC reference |
 | UNITE | fungal ITS | fungal ITS reference (if fungi in scope) |
@@ -82,8 +82,8 @@ both repos closely before implementing.
 
 **EUKARYOME** is the standout: it provides long-read/full-length
 18S-ITS-28S references, which is exactly what reference-guided curation of the
-whole cistron needs. Plan to build the packaged reference sets primarily from
-EUKARYOME (whole cistron) + SILVA (anchor seeds).
+whole rDNA repeat needs. Plan to build the packaged reference sets primarily from
+EUKARYOME (whole rDNA repeat) + SILVA (anchor seeds).
 
 ## Reference cross-checks / recipes
 

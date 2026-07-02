@@ -4,7 +4,7 @@ Nuclear ribosomal repeat (nrDNA) assembly, annotation, and curation from genome
 skimming data. Sister package to
 [MitoPilot](https://github.com/Smithsonian/MitoPilot).
 
-RiboPilot targets the eukaryotic nuclear ribosomal cistron and its spacers:
+RiboPilot targets the eukaryotic nuclear ribosomal repeat unit and its spacers:
 
 ```
    ETS   18S    ITS1   5.8S   ITS2    28S     IGS

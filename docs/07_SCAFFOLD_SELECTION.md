@@ -8,7 +8,7 @@ emits **several paths, each with several scaffolds**. Three different things get
 tangled together and must be told apart:
 
 1. **Fragmentation** - scaffolds within one path are *different regions of the
-   same cistron* (e.g. our fish test: scaffold_3 = 18S + ITS + partial 28S,
+   same rDNA repeat unit* (e.g. our fish test: scaffold_3 = 18S + ITS + partial 28S,
    scaffolds 1-2 = 28S pieces). These should be *stitched*, not chosen between.
 2. **Alternative paths** - competing graph traversals of the same locus
    (near-duplicates, or genuine intragenomic variants). Pick a representative,
@@ -24,7 +24,7 @@ taxonomy-aware discriminator to separate target from contaminant.
 
 - **Coverage / depth** - GetOrganelle's GFA carries `RC` (read count) and `LN`
   per segment, so depth = RC/LN is available for free. The true high-copy nuclear
-  cistron should sit among the highest-depth contigs; contaminants and pseudogenes
+  rDNA repeat unit should sit among the highest-depth contigs; contaminants and pseudogenes
   are typically lower. Strong discriminator.
 - **BLAST identity + query coverage** vs an rDNA reference DB (reuse MitoPilot's
   candidate-BLAST machinery).
@@ -41,7 +41,7 @@ Before choosing between paths, make each path a single comparable object:
 
 1. Annotate each scaffold to the element(s) it covers (barrnap/Rfam + ITSx +
    BLAST region).
-2. Order + orient scaffolds along a reference cistron (a MitoPilot
+2. Order + orient scaffolds along a reference rDNA sequence (a MitoPilot
    `scaffold_join` analog, driven by minimap2/BLAST to a chosen reference) into a
    canonical `18S-ITS1-5.8S-ITS2-28S` layout.
 3. Emit one **stitched representative** per path (with gaps flagged where
@@ -116,7 +116,7 @@ required map-file columns. Implications:
 For eyeball selection when automation is uncertain:
 
 - For each candidate (or per region: 18S, 28S), fetch the top-N GenBank reference
-  cistrons via BLAST (reuse MitoPilot's ref-fetch), build an MSA
+  rDNA repeat units via BLAST (reuse MitoPilot's ref-fetch), build an MSA
   (MAFFT or DECIPHER), and render it in-app with `msaR` (already a MitoPilot dep,
   used for AA alignments - here nucleotide).
 - Columns/rows annotated with element blocks (18S/ITS/5.8S/ITS/28S) so the user
@@ -142,7 +142,7 @@ For eyeball selection when automation is uncertain:
 
 ## Reducing candidates at the source (cheap wins)
 
-- **Coverage floor**: drop contigs below a fraction of the median cistron depth
+- **Coverage floor**: drop contigs below a fraction of the median rDNA repeat depth
   before selection (kills many pseudogene/contaminant fragments).
 - **Dedupe near-identical paths**: collapse paths with >99% pairwise identity to
   one representative, so the UI shows genuine alternatives only.
@@ -159,7 +159,7 @@ For eyeball selection when automation is uncertain:
 - `R/select_paths.R` - `score_assembly()` extracts live depth/anchors/BLAST +
   resolved lineage and scores/ranks/auto-selects.
 - `R/stitch_scaffolds.R` - Level-1 stitch: order/orient/dedup scaffolds along a
-  reference into one canonical cistron.
+  reference into one canonical rDNA repeat unit.
 - DB: `path_scores` table + `write_path_scores()`.
 
 Remaining: integrate stitch into `score_assembly` (needs the per-path top-hit

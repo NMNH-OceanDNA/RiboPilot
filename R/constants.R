@@ -14,7 +14,7 @@ RRNA_SPACERS <- c("ITS1", "ITS2")
 #' @noRd
 RRNA_EXTRA <- c("ETS", "IGS")
 
-#' Canonical 5'->3' order of elements in the cistron. Used to order features
+#' Canonical 5'->3' order of elements in the rDNA repeat unit. Used to order features
 #' and derive spacers by subtraction between conserved anchors.
 #' @noRd
 RRNA_ELEMENT_ORDER <- c("ETS", "18S", "ITS1", "5.8S", "ITS2", "28S", "IGS")

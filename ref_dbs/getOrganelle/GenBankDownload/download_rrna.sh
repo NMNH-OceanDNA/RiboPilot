@@ -3,13 +3,13 @@
 #
 # Downloads nuclear ribosomal RNA records (18S / 5.8S / 28S / ITS) from GenBank
 # for a taxonomic query and builds two FASTA files for GetOrganelle:
-#   <prefix>_seeds.fasta   -- read-recruiting sequences (18S/28S/whole cistron),
+#   <prefix>_seeds.fasta   -- read-recruiting sequences (18S/28S/whole rDNA repeat),
 #                             headers ">ACCESSION_Genus_species"
 #   <prefix>_labels.fasta  -- per-gene sequences for contig classification,
 #                             headers ">18S" / ">5.8S" / ">28S"
 #
 # Adapted from GenBankMitoReview (github.com/dmacguigan/GenBankMitoReview),
-# retargeted from mitochondrial genomes to the nuclear ribosomal cistron.
+# retargeted from mitochondrial genomes to the nuclear ribosomal repeat unit.
 #
 # author: Dan MacGuigan
 #

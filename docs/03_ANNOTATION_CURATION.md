@@ -42,7 +42,7 @@ authority for the 18S/28S extents. We run both and reconcile.
 
 ### 3. Reference alignment - anchor + fill (DECIPHER)
 
-Align the assembled unit to a curated reference cistron for the sample's clade
+Align the assembled unit to a curated reference rDNA sequence for the sample's clade
 using DECIPHER (already a MitoPilot dependency). The reference provides:
 - exact anchor coordinates when barrnap/ITSx disagree,
 - 28S D1-D12 expansion-segment landmarks (optional sub-features),
