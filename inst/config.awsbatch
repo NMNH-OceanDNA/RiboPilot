@@ -1,0 +1,102 @@
+plugins {
+  id 'nf-amazon'
+	id 'nf-sqldb@0.5.0'
+}
+
+docker {
+  enabled = true
+}
+
+process {
+  executor = 'local'
+  container = '<<CONTAINER_ID>>'
+  queue = '<<BATCH_QUEUE>>'
+  cpus = { opts.cpus }
+  memory = { opts.memory.GB * task.attempt}
+}
+
+// AWS Batch parameters (modify as needed, see: https://www.nextflow.io/docs/latest/aws.html#aws-batch)
+aws {
+  region = '<<AWS_REGION>>'
+  batch {
+    cliPath = '<<AWS_CLI_PATH>>' // Path to the AWS CLI on your custom AMI
+    maxParallelTransfers = 8
+  }
+  client {
+    maxConnections = 16
+  }
+}
+
+// SQL database configuration (https://github.com/nextflow-io/nf-sqldb)
+sql {
+  db {
+    sqlite {
+      url = 'jdbc:sqlite:.sqlite?journal_mode=WAL&busy_timeout=5000'
+    }
+  }
+}
+
+// Pipeline parameters
+params {
+    rawDir = '<<RAW_DIR>>'                  // Directory (or s3 bucket) containing raw data
+    bucket-dir = '<<bucket-dir>>'           // Path to s3 bucket for stroing intermediate data
+    publishDir = 'out'                      // Directory (or s3 bucket) to publish pipeline outputs
+    minDepth = <<MIN_DEPTH>>                // Skip samples with less than this read depth
+    genetic_code = <<GENETIC_CODE>>
+    ncbi_api_key = '<<NCBI_API_KEY>>'       // Optional NCBI API key for BLAST + GenBank fetch (https://www.ncbi.nlm.nih.gov/datasets/docs/v2/api/api-keys/)
+    mitos_condaenv = 'mitos'
+    trnaScan_condaenv = 'trnascan-se'
+    aragorn_condaenv = 'aragorn'
+    orffinder_condaenv = 'orffinder'
+    preprocess {
+        container = process.container
+        executor = process.executor
+    }
+    assemble {
+        maxRetries = 1
+        container = process.container
+        executor = process.executor
+    }
+    coverage {
+        cpus = 4
+        memory = 8
+        container = process.container
+        executor = process.executor
+    }
+    scaffold_join {
+        cpus = 1
+        memory = 4
+        container = process.container
+        executor = process.executor
+    }
+    annotate {
+        container = process.container
+        executor = process.executor
+    }
+    curate {
+        container = process.container
+        executor = process.executor
+    }
+    orf {
+        container = process.container
+        executor = process.executor
+    }
+    validate {
+        container = process.container
+        executor = process.executor
+    }
+    blast_ref_align {
+        cpus = 1
+        memory = 8
+        container = process.container
+        executor = process.executor
+    }
+    blast_gb {
+        cpus = 1
+        maxForks = 10 // only allow 10 concurrent BLAST runs to avoid server timeout issues
+        maxRetries = 3
+        memory = 8
+        container = process.container
+        executor = process.executor
+    }
+}

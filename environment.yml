@@ -1,0 +1,32 @@
+# Conda environment for RiboPilot dev/testing (local executor).
+# Docker image comes later. Create with:
+#   conda env create -f environment.yml
+#   conda activate ribopilot
+name: ribopilot
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  # workflow
+  - nextflow>=23
+  # read QC / trimming
+  - fastp
+  - fastqc
+  # assembly + reference recruitment
+  - getorganelle
+  - spades
+  # homology / mapping / contamination
+  - blast
+  - bowtie2
+  - minimap2
+  - samtools
+  - seqtk
+  - seqkit
+  - blobtools
+  # annotation
+  - barrnap
+  - itsx
+  - hmmer
+  # reference DB building
+  - entrez-direct
+  - biopython

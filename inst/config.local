@@ -1,0 +1,68 @@
+plugins {
+	id 'nf-sqldb@0.5.0'
+}
+
+docker {
+  enabled = true
+}
+
+process {
+  executor = 'local'
+  container = '<<CONTAINER_ID>>'
+  cpus = { opts.cpus }
+  memory = { (opts?.memory?.GB ?: 1) * task.attempt }
+}
+
+// SQL database configuration (https://github.com/nextflow-io/nf-sqldb)
+sql {
+  db {
+    sqlite {
+      url = 'jdbc:sqlite:.sqlite?journal_mode=WAL&busy_timeout=5000'
+    }
+  }
+}
+
+// Pipeline parameters
+params {
+    rawDir = '<<RAW_DIR>>'                  // Directory containing raw read data
+    asmbDir = '<<ASMB_DIR>>'                // Directory containing user-supplied assemblies
+    publishDir = 'out'                      // Directory to publish pipeline outputs
+    minDepth = <<MIN_DEPTH>>                // Skip samples with less than this read depth
+    genetic_code = <<GENETIC_CODE>>         // Unused for nrDNA; kept for template parity
+    ncbi_api_key = '<<NCBI_API_KEY>>'       // Optional NCBI API key for BLAST + GenBank fetch
+    // conda envs for the nrDNA tool chain (local executor); refined in the
+    // assembly/annotation build increments
+    getorganelle_condaenv = 'getorganelle'
+    barrnap_condaenv = 'barrnap'
+    itsx_condaenv = 'itsx'
+    preprocess {
+        container = process.container
+        executor = process.executor
+    }
+    assemble {
+        maxRetries = 1
+        container = process.container
+        executor = process.executor
+    }
+    annotate {
+        container = process.container
+        executor = process.executor
+    }
+    curate {
+        container = process.container
+        executor = process.executor
+    }
+    validate {
+        container = process.container
+        executor = process.executor
+    }
+    export {
+        container = process.container
+        executor = process.executor
+    }
+}
+
+// pipeline will exit with a non-zero exit code if any failed tasks are ignored
+workflow {
+  failOnIgnore = true
+}

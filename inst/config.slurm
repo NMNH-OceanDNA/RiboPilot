@@ -1,0 +1,106 @@
+plugins {
+	id 'nf-sqldb@0.5.0'
+}
+
+// Throttle job submission to be a good cluster citizen (adjust as needed)
+executor {
+    queueSize = 50
+    pollInterval = '30 sec'
+    submitRateLimit = '10/1min'
+}
+
+<<CONTAINER_ENGINE>>
+
+process {
+  executor = 'slurm'
+  container = '<<CONTAINER_ID>>'
+  queue = '<<QUEUE>>'                 // SLURM partition (maps to -p)
+  clusterOptions = '<<CLUSTER_OPTIONS>>' // extra sbatch directives, e.g. --account=...
+  cpus = { opts.cpus }               // set number of CPUs based on value pulled from SQL database
+  memory = { opts.memory.GB * task.attempt } // set memory based on value pulled from SQL database
+}
+
+// SQL database configuration (https://github.com/nextflow-io/nf-sqldb)
+sql {
+  db {
+    sqlite {
+      url = 'jdbc:sqlite:.sqlite?journal_mode=WAL&busy_timeout=5000'
+    }
+  }
+}
+
+// Pipeline parameters
+params {
+    rawDir = '<<RAW_DIR>>'                  // Directory containing raw data
+    asmbDir = '<<ASMB_DIR>>'                // Directory containing user-supplied mitogenomes
+    publishDir = 'out'                      // Directory to publish pipeline outputs
+    minDepth = <<MIN_DEPTH>>                // Skip samples with less than this read depth
+    genetic_code = <<GENETIC_CODE>>
+    ncbi_api_key = '<<NCBI_API_KEY>>'       // Optional NCBI API key for BLAST + GenBank fetch (https://www.ncbi.nlm.nih.gov/datasets/docs/v2/api/api-keys/)
+    mitos_condaenv = 'mitos'
+    trnaScan_condaenv = 'trnascan-se'
+    aragorn_condaenv = 'aragorn'
+    orffinder_condaenv = 'orffinder'
+    preprocess {
+        container = process.container
+        executor = process.executor
+    }
+    assemble {
+        maxRetries = 1
+        container = process.container
+        executor = process.executor
+    }
+    coverage {
+        cpus = 4
+        memory = 8
+        clusterOptions = '<<CLUSTER_OPTIONS>>'
+        container = process.container
+        executor = process.executor
+    }
+    scaffold_join {
+        cpus = 1
+        memory = 4
+        clusterOptions = '<<CLUSTER_OPTIONS>>'
+        container = process.container
+        executor = process.executor
+    }
+    annotate {
+        clusterOptions = '<<CLUSTER_OPTIONS>>'
+        container = process.container
+        executor = process.executor
+    }
+    curate {
+        clusterOptions = '<<CLUSTER_OPTIONS>>'
+        container = process.container
+        executor = process.executor
+    }
+    orf {
+        clusterOptions = '<<CLUSTER_OPTIONS>>'
+        container = process.container
+        executor = process.executor
+    }
+    validate {
+        container = process.container
+        executor = process.executor
+    }
+    blast_ref_align {
+        cpus = 1
+        memory = 8
+        clusterOptions = '<<CLUSTER_OPTIONS>>'
+        container = process.container
+        executor = process.executor
+    }
+    blast_gb {
+        cpus = 1
+        memory = 8
+        maxForks = 10 // only allow 10 concurrent BLAST/ref-fetch runs to avoid NCBI timeout issues
+        clusterOptions = '<<CLUSTER_OPTIONS>>'
+        container = process.container
+        executor = process.executor
+    }
+}
+
+// pipeline will exit with a non-zero exit code if any failed tasks are ignored using the ignore error strategy
+workflow {
+  failOnIgnore = true
+}
