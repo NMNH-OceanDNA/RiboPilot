@@ -7,6 +7,7 @@ include { preprocess } from './modules/preprocess.nf'
 include { assemble } from './modules/assemble.nf'
 include { query_samples; score; stitch; annotate_tools; reconcile } from './modules/pipeline_r.nf'
 include { blast_genbank } from './modules/blast.nf'
+include { coverage } from './modules/coverage.nf'
 
 params.publishDir = 'out'
 params.minDepth = 0
@@ -37,6 +38,9 @@ workflow {
     stitch(score.out)
     // remote GenBank BLAST of the stitched sequence -> ranked reference candidates
     blast_genbank(stitch.out.map { id, fasta -> id })
+    // map trimmed reads back to the stitched sequence -> per-position coverage
+    cov_in = stitch.out.join(preprocess.out.reads.map { id, reads, after -> tuple(id, reads) })
+    coverage(cov_in)
     annotate_tools(stitch.out)
     reconcile(annotate_tools.out)
 }

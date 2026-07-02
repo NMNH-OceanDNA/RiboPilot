@@ -38,6 +38,8 @@ annotate_modal <- function(id) {
     ),
     h5("Feature / reference synteny map"),
     plotOutput("feature_map", height = "160px"),
+    h5("Read coverage"),
+    plotOutput("coverage_plot", height = "130px"),
     hr(),
     h5("Edit feature boundaries"),
     div(style = "display:flex; flex-flow:row wrap; gap:1.2em; align-items:flex-end;",
@@ -109,6 +111,35 @@ RRNA_ELEMENT_COLORS <- c(
   "18S" = "#0072B2", "ITS1" = "#E69F00", "5.8S" = "#F0E442",
   "ITS2" = "#D55E00", "28S" = "#009E73", "ETS" = "#BBBBBB", "IGS" = "#BBBBBB"
 )
+
+#' Read-coverage track for a sample, with feature regions shaded
+#' @noRd
+plot_coverage <- function(id) {
+  if (is.null(id)) {
+    return(NULL)
+  }
+  cov <- app_query("SELECT depths FROM coverage WHERE ID = ?", params = list(id))
+  if (nrow(cov) == 0 || is.na(cov$depths[1]) || !nzchar(cov$depths[1])) {
+    return(ggplot2::ggplot() +
+      ggplot2::annotate("text", 0, 0, label = "no coverage data (run WF1)") +
+      ggplot2::theme_void())
+  }
+  dep <- as.numeric(strsplit(cov$depths[1], ",")[[1]])
+  df <- data.frame(pos = seq_along(dep), depth = dep)
+  feats <- app_query("SELECT element, start, stop FROM annotations WHERE ID = ? ORDER BY start",
+    params = list(id))
+  g <- ggplot2::ggplot(df, ggplot2::aes(pos, depth))
+  if (nrow(feats) > 0) {
+    g <- g + ggplot2::geom_rect(data = feats, inherit.aes = FALSE,
+      ggplot2::aes(xmin = start, xmax = stop, ymin = 0, ymax = Inf, fill = element),
+      alpha = 0.15) +
+      ggplot2::scale_fill_manual(values = RRNA_ELEMENT_COLORS, guide = "none")
+  }
+  g + ggplot2::geom_area(fill = "#444444", alpha = 0.85) +
+    ggplot2::labs(x = "position (bp)", y = "depth") +
+    ggplot2::theme_minimal(base_size = 11) +
+    ggplot2::theme(panel.grid.minor = ggplot2::element_blank())
+}
 
 #' gggenes feature-map of a sample's annotations
 #' @noRd

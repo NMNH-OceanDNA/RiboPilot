@@ -331,6 +331,11 @@ app_server <- function(input, output, session) {
     plot_feature_map(sel_id())
   }, height = 155)
 
+  output$coverage_plot <- renderPlot({
+    edit_tick()
+    plot_coverage(sel_id())
+  }, height = 128)
+
   output$nudge_element_ui <- renderUI({
     id <- sel_id(); req(id)
     els <- app_query("SELECT element FROM annotations WHERE ID = ? ORDER BY start",
