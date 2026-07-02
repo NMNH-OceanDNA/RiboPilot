@@ -4,6 +4,31 @@
 #
 # DB I/O is driver-side (R), not in Nextflow, so no nf-sqldb plugin is needed.
 
+#' Resolve a conda env (name or path) to its `bin/` directory
+#' @noRd
+resolve_conda_bin <- function(env) {
+  # already a bin dir
+  if (dir.exists(env) && basename(env) == "bin") {
+    return(normalizePath(env))
+  }
+  # a path to an env prefix
+  if (dir.exists(file.path(env, "bin"))) {
+    return(normalizePath(file.path(env, "bin")))
+  }
+  # a bare env name: search common conda roots
+  roots <- c(
+    file.path(dirname(dirname(Sys.getenv("CONDA_PREFIX", ""))), "envs"),
+    file.path(path.expand("~"), c("miniconda3", "miniforge3", "mambaforge", "anaconda3"), "envs")
+  )
+  for (r in roots) {
+    cand <- file.path(r, env, "bin")
+    if (dir.exists(cand)) {
+      return(normalizePath(cand))
+    }
+  }
+  stop("Could not locate conda env '", env, "'. Pass a full path to the env or its bin/.", call. = FALSE)
+}
+
 #' Read a filled `params.X = '...'` value from the project .config
 #' @noRd
 config_param <- function(config_lines, key) {
@@ -27,10 +52,21 @@ config_param <- function(config_lines, key) {
 #' @param load (logical) Load published outputs into the database afterwards.
 #' @param score (logical) After loading, score candidate paths and write
 #'   `path_scores` (see [score_project()]).
+#' @param conda_env Optional conda environment providing the pipeline tools
+#'   (nextflow, fastp, GetOrganelle, ...). Give the env name (looked up under
+#'   `~/miniconda3|miniforge3|mambaforge/envs`, or `$CONDA_PREFIX`'s sibling) or a
+#'   full path to the env or its `bin/`. Its `bin/` is prepended to `PATH` for
+#'   the run, so you don't have to `conda activate` before starting RStudio.
 #' @return (invisibly) the samplesheet data.frame.
 #' @export
 run_assembly <- function(path = ".", nextflow = "nextflow", work = file.path(path, "work"),
-                         load = TRUE, score = TRUE) {
+                         load = TRUE, score = TRUE, conda_env = NULL) {
+  if (!is.null(conda_env)) {
+    bin <- resolve_conda_bin(conda_env)
+    old_path <- Sys.getenv("PATH")
+    Sys.setenv(PATH = paste(bin, old_path, sep = .Platform$path.sep))
+    on.exit(Sys.setenv(PATH = old_path), add = TRUE)
+  }
   path <- normalizePath(path)
   db <- file.path(path, ".sqlite")
   cfg <- file.path(path, ".config")
