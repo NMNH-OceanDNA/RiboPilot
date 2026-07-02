@@ -58,15 +58,16 @@ run_assembly <- function(path = ".", nextflow = "nextflow", work = file.path(pat
   min_depth <- config_param(cfg_lines, "minDepth")
 
   message("Running Nextflow assembly for ", nrow(ss), " sample(s)...")
-  status <- system2(
-    nextflow,
-    c("run", shQuote(main_nf), "-c", shQuote(cfg),
-      "-work-dir", shQuote(work), "-resume",
-      "--samplesheet", shQuote(ss_path),
-      "--rawDir", shQuote(raw_dir),
-      "--minDepth", min_depth),
-    wait = TRUE
-  )
+  # Launch Nextflow FROM the project dir so launchDir (hence publishDir out/) is
+  # the project, not the caller's cwd.
+  nf_cmd <- paste(c(
+    shQuote(nextflow), "run", shQuote(main_nf), "-c", shQuote(cfg),
+    "-work-dir", shQuote(work), "-resume",
+    "--samplesheet", shQuote(ss_path),
+    "--rawDir", shQuote(raw_dir),
+    "--minDepth", min_depth
+  ), collapse = " ")
+  status <- system2("bash", c("-c", shQuote(paste0("cd ", shQuote(path), " && ", nf_cmd))), wait = TRUE)
   if (status != 0) {
     warning("Nextflow exited with status ", status)
   }
