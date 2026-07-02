@@ -30,3 +30,4 @@ skims.
 - [`docs/04_EXISTING_TOOLS.md`](docs/04_EXISTING_TOOLS.md) - prior art, tools, reference databases
 - [`docs/05_ROADMAP.md`](docs/05_ROADMAP.md) - phased build plan and open questions
 - [`docs/06_TEST_DATA.md`](docs/06_TEST_DATA.md) - shipped test dataset (same fishes as MitoPilot, full reads -> rDNA-filtered)
+- [`docs/07_SCAFFOLD_SELECTION.md`](docs/07_SCAFFOLD_SELECTION.md) - path/scaffold selection + taxonomy-aware auto-select + MSA review
