@@ -20,6 +20,7 @@ nf_command <- function(path, workflow = c("assemble", "annotate"), resume = TRUE
   cfg_lines <- if (file.exists(cfg)) readLines(cfg) else character(0)
   raw_dir <- config_param(cfg_lines, "rawDir") %||% ""
   min_depth <- config_param(cfg_lines, "minDepth") %||% "0"
+  api_key <- config_param(cfg_lines, "ncbi_api_key") %||% ""
   src <- ribopilot_src %||% app_sys()
   taxdump <- file.path(path, ".taxonomy")
 
@@ -30,7 +31,8 @@ nf_command <- function(path, workflow = c("assemble", "annotate"), resume = TRUE
     "--rawDir", raw_dir,
     "--minDepth", min_depth,
     "--ribopilot_src", src,
-    "--taxdump_dir", taxdump)
+    "--taxdump_dir", taxdump,
+    if (nzchar(api_key)) c("--ncbi_api_key", api_key))
 }
 
 #' Count samples eligible for a workflow (for the Update modal header)

@@ -244,7 +244,14 @@ new_db <- function(
       data.frame(
         blast_opts = "default",
         run_blast = 1L,
-        entrez_query = "18S ribosomal RNA[Title] OR 28S ribosomal RNA[Title]",
+        # Remote GenBank (core_nt) search restricted to nuclear ribosomal + ITS
+        # records, excluding organellar rRNA (mito 12S/16S, plastid).
+        entrez_query = paste(
+          "(internal transcribed spacer[Title] OR 18S ribosomal RNA[Title]",
+          "OR 28S ribosomal RNA[Title] OR 5.8S ribosomal RNA[Title]",
+          "OR small subunit ribosomal RNA[Title]",
+          "OR large subunit ribosomal RNA[Title])",
+          "NOT (mitochondrion[Title] OR chloroplast[Title] OR plastid[Title])"),
         extra_opts = "",
         max_target_seqs = 5L
       ),
@@ -294,6 +301,84 @@ new_db <- function(
       blast_lineage TEXT,
       time_stamp INTEGER,
       PRIMARY KEY (ID, path)
+    );"
+  )
+
+  # blast_ref_candidates (ranked remote-GenBank hits per sample) ----
+  DBI::dbExecute(
+    con,
+    "CREATE TABLE blast_ref_candidates (
+      ID TEXT NOT NULL,
+      rank INTEGER NOT NULL,
+      accession TEXT,
+      species TEXT,
+      title TEXT,
+      pident REAL,
+      qcovs REAL,
+      evalue REAL,
+      time_stamp INTEGER,
+      PRIMARY KEY (ID, rank)
+    );"
+  )
+
+  # blast_ref_sequences (fetched NCBI reference records, deduped by accession) ----
+  DBI::dbExecute(
+    con,
+    "CREATE TABLE blast_ref_sequences (
+      accession TEXT NOT NULL,
+      species TEXT,
+      title TEXT,
+      taxid TEXT,
+      lineage TEXT,
+      sequence TEXT,
+      length INTEGER,
+      time_stamp INTEGER,
+      PRIMARY KEY (accession)
+    );"
+  )
+
+  # blast_ref_annotations (rRNA/ITS features parsed from a reference record) ----
+  DBI::dbExecute(
+    con,
+    "CREATE TABLE blast_ref_annotations (
+      accession TEXT NOT NULL,
+      element TEXT NOT NULL,
+      type TEXT,
+      start INTEGER,
+      stop INTEGER,
+      strand TEXT,
+      time_stamp INTEGER,
+      PRIMARY KEY (accession, element)
+    );"
+  )
+
+  # blast_ref_alignment (per-feature sample-vs-reference nucleotide alignment) ----
+  DBI::dbExecute(
+    con,
+    "CREATE TABLE blast_ref_alignment (
+      ID TEXT NOT NULL,
+      accession TEXT NOT NULL,
+      element TEXT NOT NULL,
+      pid REAL,
+      aln_len INTEGER,
+      sample_aln TEXT,
+      ref_aln TEXT,
+      time_stamp INTEGER,
+      PRIMARY KEY (ID, accession, element)
+    );"
+  )
+
+  # coverage (per-position read depth on the stitched sequence) ----
+  DBI::dbExecute(
+    con,
+    "CREATE TABLE coverage (
+      ID TEXT NOT NULL,
+      mean_depth REAL,
+      min_depth INTEGER,
+      max_depth INTEGER,
+      depths TEXT,
+      time_stamp INTEGER,
+      PRIMARY KEY (ID)
     );"
   )
 

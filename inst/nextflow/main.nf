@@ -6,6 +6,7 @@
 include { preprocess } from './modules/preprocess.nf'
 include { assemble } from './modules/assemble.nf'
 include { query_samples; score; stitch; annotate_tools; reconcile } from './modules/pipeline_r.nf'
+include { blast_genbank } from './modules/blast.nf'
 
 params.publishDir = 'out'
 params.minDepth = 0
@@ -14,6 +15,7 @@ params.projectDir = '.'
 params.rawDir = ''
 params.ribopilot_src = ''
 params.taxdump_dir = ''
+params.ncbi_api_key = ''
 
 workflow {
     // samples straight from the DB (tab-separated, with header)
@@ -33,6 +35,8 @@ workflow {
     // WF1 finalization (self-contained R/tool processes writing the DB)
     score(assemble.out.paths)
     stitch(score.out)
+    // remote GenBank BLAST of the stitched sequence -> ranked reference candidates
+    blast_genbank(stitch.out.map { id, fasta -> id })
     annotate_tools(stitch.out)
     reconcile(annotate_tools.out)
 }
