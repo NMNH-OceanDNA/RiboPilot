@@ -379,6 +379,26 @@ app_server <- function(input, output, session) {
     )
   })
 
+  output$alignment_view <- renderUI({
+    edit_tick()
+    id <- sel_id(); el <- input$nudge_element
+    if (is.null(id) || is.null(el)) {
+      return(em("Select a feature."))
+    }
+    a <- app_query(
+      "SELECT accession, pid, sample_aln, ref_aln FROM blast_ref_alignment WHERE ID = ? AND element = ?",
+      params = list(id, el))
+    if (nrow(a) == 0 || is.na(a$sample_aln[1])) {
+      return(em("No reference alignment for this feature yet (needs WF1 BLAST + reference fetch)."))
+    }
+    tagList(
+      span(sprintf("vs %s  -  %s: %.1f%% identity over %d bp",
+        a$accession[1], el, a$pid[1], nchar(a$sample_aln[1])),
+        style = "color:#555; display:block; margin-bottom:4px;"),
+      render_alignment_html(a$sample_aln[1], a$ref_aln[1])
+    )
+  })
+
   output$feature_tbl <- reactable::renderReactable({
     id <- sel_id(); req(id)
     edit_tick()

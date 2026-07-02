@@ -60,6 +60,10 @@ annotate_modal <- function(id) {
     div(class = "code-block", style = "margin-top:6px; white-space:normal; word-break:break-all;",
       uiOutput("nudge_seq")),
     hr(),
+    h5("Reference alignment (active feature)"),
+    div(class = "code-block", style = "max-height:240px; overflow:auto;",
+      uiOutput("alignment_view")),
+    hr(),
     h5("Feature model"),
     reactable::reactableOutput("feature_tbl")
   )
@@ -105,6 +109,29 @@ group_modal <- function() {
   )
 }
 
+#' Render a per-feature nucleotide alignment as highlighted monospace HTML
+#' (mismatches in red), wrapped at 80 columns.
+#' @noRd
+render_alignment_html <- function(sample_aln, ref_aln) {
+  sa <- strsplit(sample_aln, "")[[1]]
+  ra <- strsplit(ref_aln, "")[[1]]
+  n <- max(length(sa), length(ra))
+  length(sa) <- n; length(ra) <- n
+  sa[is.na(sa)] <- "-"; ra[is.na(ra)] <- "-"
+  hl <- function(ch, mm) ifelse(mm, sprintf("<span style='color:#d00;font-weight:bold'>%s</span>", ch), ch)
+  width <- 80
+  blocks <- vapply(seq(1, n, by = width), function(start) {
+    idx <- start:min(start + width - 1, n)
+    mm <- sa[idx] != ra[idx]
+    paste0(
+      "sample  ", paste(hl(sa[idx], mm), collapse = ""), "\n",
+      "        ", paste(ifelse(mm, " ", "|"), collapse = ""), "\n",
+      "ref     ", paste(hl(ra[idx], mm), collapse = ""), "\n")
+  }, character(1))
+  shiny::HTML(paste0("<pre style='margin:0; font-size:0.8em;'>",
+    paste(blocks, collapse = "\n"), "</pre>"))
+}
+
 #' Element colors shared by the app feature map
 #' @noRd
 RRNA_ELEMENT_COLORS <- c(
@@ -141,7 +168,8 @@ plot_coverage <- function(id) {
     ggplot2::theme(panel.grid.minor = ggplot2::element_blank())
 }
 
-#' gggenes feature-map of a sample's annotations
+#' gggenes synteny map: the sample's annotations over its BLAST reference's
+#' (when the reference has been fetched + annotated), aligned by element color.
 #' @noRd
 plot_feature_map <- function(id) {
   if (is.null(id)) {
@@ -155,7 +183,20 @@ plot_feature_map <- function(id) {
       ggplot2::annotate("text", 0, 0, label = "no annotations yet") +
       ggplot2::theme_void())
   }
-  d$molecule <- id
+  d$molecule <- paste0("sample (", id, ")")
+
+  # append the reference track if its features are available
+  acc <- app_query("SELECT reference_accession FROM stitched WHERE ID = ?", params = list(id))$reference_accession
+  if (length(acc) && !is.na(acc[1]) && nzchar(acc[1])) {
+    r <- app_query("SELECT element, start, stop FROM blast_ref_annotations WHERE accession = ? ORDER BY start",
+      params = list(acc[1]))
+    if (nrow(r) > 0) {
+      r$molecule <- paste0("ref (", acc[1], ")")
+      d <- rbind(d[, c("element", "start", "stop", "molecule")],
+                 r[, c("element", "start", "stop", "molecule")])
+    }
+  }
+
   ggplot2::ggplot(d, ggplot2::aes(xmin = start, xmax = stop, y = molecule,
     fill = element, label = element)) +
     gggenes::geom_gene_arrow(arrowhead_height = grid::unit(5, "mm"),

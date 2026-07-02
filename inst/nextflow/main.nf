@@ -7,6 +7,7 @@ include { preprocess } from './modules/preprocess.nf'
 include { assemble } from './modules/assemble.nf'
 include { query_samples; score; stitch; annotate_tools; reconcile } from './modules/pipeline_r.nf'
 include { blast_genbank } from './modules/blast.nf'
+include { blast_ref_fetch; blast_ref_align } from './modules/blast_ref.nf'
 include { coverage } from './modules/coverage.nf'
 
 params.publishDir = 'out'
@@ -38,9 +39,18 @@ workflow {
     stitch(score.out)
     // remote GenBank BLAST of the stitched sequence -> ranked reference candidates
     blast_genbank(stitch.out.map { id, fasta -> id })
+    // fetch each candidate reference (sequence + rRNA/ITS features) from NCBI
+    blast_ref_fetch(blast_genbank.out)
     // map trimmed reads back to the stitched sequence -> per-position coverage
     cov_in = stitch.out.join(preprocess.out.reads.map { id, reads, after -> tuple(id, reads) })
     coverage(cov_in)
     annotate_tools(stitch.out)
     reconcile(annotate_tools.out)
+
+    // per-feature sample-vs-reference alignment, once BOTH the reference is
+    // fetched and the sample is annotated (reconcile writes the annotations table)
+    ref_align_in = blast_ref_fetch.out.map { id -> tuple(id, true) }
+        .join(reconcile.out.map { id -> tuple(id, true) })
+        .map { id, a, b -> id }
+    blast_ref_align(ref_align_in)
 }
