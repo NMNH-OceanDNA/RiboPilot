@@ -13,3 +13,5 @@ work/
 testdata_full/
 assembly_out/
 *.fastq.gz
+
+dev/*.png
