@@ -71,6 +71,22 @@ rt_ncbi_link <- function() {
     }")
 }
 
+#' Clickable cell that fires a Shiny input with the row id (index+1)
+#' @param InputId shiny input id to set on click
+#' @noRd
+rt_link <- function(InputId) {
+  sprintf(
+    "function(cellInfo) {
+      var clickid = '%s';
+      var sampid = cellInfo.index + 1;
+      return `<a href='#' id=${sampid} class='grow' ` +
+        `onclick='event.stopPropagation(); Shiny.setInputValue(&#39;${clickid}&#39;, this.id, {priority: &#39;event&#39;})'>` +
+        (cellInfo.value ? cellInfo.value : '') +
+        `</a>`;
+    }", InputId
+  ) |> htmlwidgets::JS()
+}
+
 #' Format a unix timestamp as a date
 #' @noRd
 rt_ts_date <- function() {
