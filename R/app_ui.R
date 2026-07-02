@@ -36,7 +36,10 @@ app_ui <- function(request) {
         # ---- control bar (mode picker + refresh + per-mode buttons) ----
         shiny::div(
           style = "display:flex; flex-flow:row nowrap; align-items:center; gap:1em; padding:0.5em 0;",
-          shinyWidgets::pickerInput("mode", label = NULL, width = "150px",
+          # label = "" (not NULL) reserves label space above the select, which
+          # counterbalances the form-group bottom margin so the picker centers
+          # with the buttons (mirrors MitoPilot; no CSS override needed).
+          shinyWidgets::pickerInput("mode", label = "", width = 150,
             choices = c("Assemble", "Annotate", "Export")),
           bttn("refresh", NULL, "sync"),
           shiny::conditionalPanel("input.mode == 'Assemble'",

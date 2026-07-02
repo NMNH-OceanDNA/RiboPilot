@@ -7,11 +7,7 @@ add_external_resources <- function() {
   shiny::tags$head(
     golem::favicon(),
     golem::bundle_resources(path = app_sys("app", "www"), app_title = "RiboPilot"),
-    shinyjs::useShinyjs(),
-    # pickerInput ships inside a .form-group with a bottom margin, which throws
-    # it out of vertical center relative to the buttons in the control row.
-    shiny::tags$style(shiny::HTML(
-      ".form-group.shiny-input-container { margin-bottom: 0; }"))
+    shinyjs::useShinyjs()
   )
 }
 

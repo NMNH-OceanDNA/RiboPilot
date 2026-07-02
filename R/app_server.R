@@ -21,15 +21,20 @@ app_server <- function(input, output, session) {
            a.assemble_notes AS notes
          FROM samples s LEFT JOIN assemble a ON s.ID = a.ID")
     } else if (mode == "Export") {
+      # export only shows samples whose annotation is locked (validated)
       app_query(
         "SELECT s.ID, s.Taxon, s.export_group, an.annotate_lock, an.reviewed, an.n_features,
            an.missing, st.length, st.reference_accession AS reference
-         FROM samples s LEFT JOIN annotate an ON s.ID = an.ID LEFT JOIN stitched st ON s.ID = st.ID")
+         FROM samples s JOIN annotate an ON s.ID = an.ID LEFT JOIN stitched st ON s.ID = st.ID
+         WHERE an.annotate_lock = 1")
     } else {
+      # annotate only shows samples whose assembly is locked (validated)
       app_query(
         "SELECT s.ID, s.Taxon, an.annotate_lock, an.annotate_switch, an.reviewed, an.n_features,
            an.missing, st.reference_accession AS reference
-         FROM samples s LEFT JOIN annotate an ON s.ID = an.ID LEFT JOIN stitched st ON s.ID = st.ID")
+         FROM samples s JOIN assemble a ON s.ID = a.ID
+           LEFT JOIN annotate an ON s.ID = an.ID LEFT JOIN stitched st ON s.ID = st.ID
+         WHERE a.assemble_lock = 1")
     }
   })
 
