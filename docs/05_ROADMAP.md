@@ -23,6 +23,10 @@
 - BLAST candidate-ref module vs rDNA DB (port MitoPilot's multi-blast-ref branch);
   lineage/contaminant flags.
 - Assemble tab in Shiny: element map, coverage, path picker, BLAST modal.
+- Build the shipped test dataset (`06_TEST_DATA.md`): download full reads for the
+  ~10 MitoPilot test fishes, rDNA-filter with a `filter_reads_rrna.sh` (bowtie2 to
+  an rDNA reference), commit small subsets to `inst/test_data/`; `new_test_project()`
+  with `full_size = TRUE` for full runs.
 - Deliverable: reads -> curated repeat-unit candidate(s) in DB, reviewable.
 
 ### Phase 2 - Annotation

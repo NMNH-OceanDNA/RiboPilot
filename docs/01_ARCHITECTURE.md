@@ -119,6 +119,33 @@ Same three-tab curation flow. Differences:
 - Export tab: same as MitoPilot, feature-table generation tuned for rRNA +
   misc_RNA/spacer features and rDNA source modifiers.
 
+## Look-and-feel and naming parity (hard requirement)
+
+RiboPilot should feel like MitoPilot to an existing user. Mirror MitoPilot
+wherever the biology allows:
+
+- **Visual styling** - same theme/CSS, colors, fonts, `bslib`/shiny theme,
+  logo treatment, button styles, icon set (same `shiny::icon`/font-awesome
+  symbols), table styling (same DT/reactable look), pickers and inputs
+  (same `selectizeInput`/`pickerInput` choices), modal layout, spacing.
+  Copy MitoPilot's `inst/app/www` CSS/assets and golden theme as the starting
+  point and only diverge where a control has no rDNA analogue.
+- **Component choices** - same widget for the same job (e.g. the path picker,
+  the coverage plot, the "All BLAST Hits" modal, lock/switch/hide toggles,
+  the config editor) so muscle memory transfers.
+- **Function names** - keep MitoPilot's exported R function names where the role
+  matches: `new_project()`, `new_test_project()`, `add_samples()`,
+  `generate_config()`, `list_configs()`, `export()`/export helpers, the
+  `curate_*` / `params_*` family. Same argument names too (`mapping_fn`,
+  `data_path`, `executor`, `min_depth`, `container`, `full_size`, ...).
+- **GUI labels / button text / column headers** - reuse MitoPilot's wording
+  where it still applies (Assemble/Annotate/Export tabs; buttons like
+  "Run", "Lock", "Hide", "Ignore", "Edit"; DB/table column names shared with
+  MitoPilot such as `ID`, `Taxon`, `length`, `topology`, `paths`, `scaffolds`,
+  `blast_*`, `assemble_switch/lock`, `edited`, `notes`, `time_stamp`).
+- Only rename when the rDNA feature genuinely differs (e.g. rRNA/spacer feature
+  labels, ITS boundary controls), and even then follow MitoPilot's naming style.
+
 ## What we can copy nearly verbatim from MitoPilot
 
 - `generate_config.R`, all `inst/config.*` templates, executor resolution.
