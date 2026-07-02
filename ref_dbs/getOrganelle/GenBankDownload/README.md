@@ -36,7 +36,8 @@ defaults).
 ## Built databases
 
 - **Actinopterygii** (broad ray-finned fish): 11,753 GenBank records ->
-  3,000 seeds, 1,201 x 18S + 1,030 x 28S labels. Default for `new_project()`.
+  3,857 seeds (~1,700 species), 1,201 x 18S + 1,030 x 28S labels. Default for
+  `new_project()`. Built uncapped (no length-based subsampling).
   Note: standalone 5.8S records are rare (5.8S is embedded in feature-less ITS
   records, which become multi-element seeds), so the label set has no 5.8S; the
   5.8S region is still covered by the cistron seeds.

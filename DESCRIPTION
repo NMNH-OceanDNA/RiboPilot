@@ -2,7 +2,7 @@ Package: RiboPilot
 Title: Nuclear ribosomal repeat assembly, annotation, and curation
 Version: 0.0.0.9000
 Authors@R: c(
-    person("Dan", "MacGuigan", , "daniel.macguigan@noaa.gov", role = c("aut", "cre"))
+    person("Dan", "MacGuigan", , "macguigand@si.edu", role = c("aut", "cre"))
   )
 Description: An R package for nuclear ribosomal repeat (18S-ITS1-5.8S-ITS2-28S)
     assembly, annotation, and curation from genome skimming data. Sister package

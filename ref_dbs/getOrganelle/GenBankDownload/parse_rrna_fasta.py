@@ -63,10 +63,12 @@ def main():
     ap.add_argument("input", help="input FASTA (from download_rrna.sh)")
     ap.add_argument("--seeds", required=True, help="output seeds FASTA")
     ap.add_argument("--labels", required=True, help="output labels FASTA")
-    ap.add_argument("--max-seeds", type=int, default=3000,
-                    help="cap total seeds, keeping longest (default 3000)")
-    ap.add_argument("--max-labels-per-gene", type=int, default=3000,
-                    help="cap labels per gene, keeping longest (default 3000)")
+    ap.add_argument("--max-seeds", type=int, default=0,
+                    help="optional cap on total seeds (0 = no cap, default). "
+                         "When set, keeps the longest, which biases against short "
+                         "records / taxonomic breadth; prefer leaving unset.")
+    ap.add_argument("--max-labels-per-gene", type=int, default=0,
+                    help="optional cap on labels per gene (0 = no cap, default)")
     args = ap.parse_args()
 
     seed_recs = []            # list of (length, header, seq)
@@ -109,12 +111,14 @@ def main():
                 seen_seed.add(h)
                 seed_recs.append((L, f"{acc}_{sp}", seq))
 
-    # cap, preferring longer (more informative) sequences
+    # order longest-first (informative); only truncate if an explicit cap is set
     seed_recs.sort(key=lambda x: -x[0])
-    seed_recs = seed_recs[: args.max_seeds]
+    if args.max_seeds > 0:
+        seed_recs = seed_recs[: args.max_seeds]
     for g in label_recs:
         label_recs[g].sort(key=lambda x: -x[0])
-        label_recs[g] = label_recs[g][: args.max_labels_per_gene]
+        if args.max_labels_per_gene > 0:
+            label_recs[g] = label_recs[g][: args.max_labels_per_gene]
 
     with open(args.seeds, "w") as fh:
         for _, header, seq in seed_recs:
