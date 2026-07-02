@@ -323,50 +323,93 @@ app_server <- function(input, output, session) {
       " as selected and queued for re-annotation. Run WF2 (Annotate mode -> Run)."), type = "message")
   })
 
-  # ---- Annotate modal ----
-  output$feature_map <- renderPlot(plot_feature_map(sel_id()), height = 150)
-  output$annot_edit <- renderUI({
-    id <- sel_id()
-    req(id)
-    d <- app_query("SELECT element, type, start, stop FROM annotations WHERE ID = ? ORDER BY start",
-      params = list(id))
-    if (nrow(d) == 0) {
+  # ---- Annotate modal: feature map + nucleotide boundary editor ----
+  edit_tick <- reactiveVal(0)  # bumps after each nudge to re-render map/seq/table
+
+  output$feature_map <- renderPlot({
+    edit_tick()
+    plot_feature_map(sel_id())
+  }, height = 155)
+
+  output$nudge_element_ui <- renderUI({
+    id <- sel_id(); req(id)
+    els <- app_query("SELECT element FROM annotations WHERE ID = ? ORDER BY start",
+      params = list(id))$element
+    if (length(els) == 0) {
       return(em("No annotations for this sample."))
     }
-    do.call(tagList, lapply(seq_len(nrow(d)), function(i) {
-      el <- d$element[i]
-      div(style = "display:flex; gap:0.75em; align-items:center; margin-bottom:2px;",
-        strong(el, style = "width:55px;"),
-        div(style = "width:120px;", numericInput(paste0("start_", el), "start", d$start[i])),
-        div(style = "width:120px;", numericInput(paste0("stop_", el), "stop", d$stop[i])),
-        span(paste0("(", d$type[i], ")"), style = "color:#888;"))
-    }))
+    selectInput("nudge_element", "Feature", choices = els, selected = els[1])
   })
+
+  # active feature's stitched-sequence coords + context
+  nudge_ctx <- reactive({
+    edit_tick()
+    id <- sel_id(); el <- input$nudge_element
+    req(id, el)
+    a <- app_query("SELECT start, stop, length, type FROM annotations WHERE ID = ? AND element = ?",
+      params = list(id, el))
+    if (nrow(a) == 0) return(NULL)
+    seq <- app_query("SELECT sequence FROM stitched WHERE ID = ?", params = list(id))$sequence[1]
+    list(el = el, start = a$start[1], stop = a$stop[1], type = a$type[1], seq = seq %||% "")
+  })
+
+  output$nudge_seq <- renderUI({
+    cx <- nudge_ctx()
+    if (is.null(cx) || !nzchar(cx$seq)) {
+      return(em("No stitched sequence available for this sample."))
+    }
+    n <- nchar(cx$seq)
+    flank <- 15
+    lo <- max(1, cx$start - flank); hi <- min(n, cx$stop + flank)
+    pre  <- substr(cx$seq, lo, cx$start - 1)
+    feat <- substr(cx$seq, cx$start, cx$stop)
+    post <- substr(cx$seq, cx$stop + 1, hi)
+    tagList(
+      span(sprintf("%s (%s)  %d..%d  len %d bp",
+        cx$el, cx$type, cx$start, cx$stop, cx$stop - cx$start + 1),
+        style = "display:block; color:#555; margin-bottom:4px;"),
+      span(pre, style = "color:#aaa;"),
+      span(feat, style = "color:#0072B2; font-weight:bold;"),
+      span(post, style = "color:#aaa;")
+    )
+  })
+
   output$feature_tbl <- reactable::renderReactable({
-    id <- sel_id()
-    req(id)
+    id <- sel_id(); req(id)
+    edit_tick()
     reactable::reactable(
-      app_query("SELECT element, type, start, stop, length, strand, tool FROM annotations WHERE ID = ? ORDER BY start",
+      app_query("SELECT element, type, start, stop, length, strand, edited, tool FROM annotations WHERE ID = ? ORDER BY start",
         params = list(id)),
       compact = TRUE, resizable = TRUE, defaultPageSize = 10)
   })
-  observeEvent(input$save_annot, {
-    id <- sel_id()
-    req(id)
-    els <- app_query("SELECT element FROM annotations WHERE ID = ?", params = list(id))$element
+
+  # nudge one boundary by the chosen step, clamp to sequence, persist live
+  nudge_boundary <- function(end, dir) {
+    cx <- nudge_ctx(); req(cx)
+    step <- as.integer(input$nudge_step %||% 1)
+    n <- nchar(cx$seq)
+    start <- cx$start; stop <- cx$stop
+    if (end == "5") {
+      start <- start + if (dir == "out") -step else step   # out = extend upstream
+    } else {
+      stop <- stop + if (dir == "out") step else -step      # out = extend downstream
+    }
+    start <- max(1, start); stop <- min(if (n > 0) n else stop, stop)
+    if (start > stop) {
+      showNotification("Boundaries would cross; nudge ignored.", type = "warning")
+      return()
+    }
     con <- app_con()
     on.exit(DBI::dbDisconnect(con))
-    for (el in els) {
-      s <- input[[paste0("start_", el)]]
-      e <- input[[paste0("stop_", el)]]
-      if (is.null(s) || is.null(e) || is.na(s) || is.na(e)) next
-      DBI::dbExecute(con,
-        "UPDATE annotations SET start = ?, stop = ?, length = ?, edited = 1 WHERE ID = ? AND element = ?",
-        params = list(as.integer(s), as.integer(e), as.integer(e - s + 1), id, el))
-    }
-    refresh(refresh() + 1)
-    showNotification("Saved annotation edits.", type = "message")
-  })
+    DBI::dbExecute(con,
+      "UPDATE annotations SET start = ?, stop = ?, length = ?, edited = 1 WHERE ID = ? AND element = ?",
+      params = list(start, stop, stop - start + 1, sel_id(), cx$el))
+    edit_tick(edit_tick() + 1)
+  }
+  observeEvent(input$nt_5_out, nudge_boundary("5", "out"))
+  observeEvent(input$nt_5_in,  nudge_boundary("5", "in"))
+  observeEvent(input$nt_3_out, nudge_boundary("3", "out"))
+  observeEvent(input$nt_3_in,  nudge_boundary("3", "in"))
   observeEvent(input$mark_reviewed, {
     id <- sel_id()
     req(id)

@@ -19,21 +19,44 @@ assemble_modal <- function(id) {
   )
 }
 
-#' Annotate & curate modal: feature map + editable boundaries + review
+#' 5'/3' nucleotide-boundary nudge control (mirrors MitoPilot rRNA nudge)
+#' @noRd
+nt_nudge <- function(id, sym) {
+  actionButton(id, sym, class = "btn-sm",
+    style = "min-width:34px; padding:1px 8px; font-weight:bold;")
+}
+
+#' Annotate & curate modal: feature map, per-feature nucleotide editor + review
 #' @noRd
 annotate_modal <- function(id) {
   modalDialog(
-    title = paste0("Annotate — ", id),
+    title = paste0("Annotate - ", id),
     size = "l", easyClose = TRUE,
     footer = tagList(
-      actionButton("save_annot", "Save edits", class = "btn-primary btn-sm"),
       actionButton("mark_reviewed", "Mark reviewed", class = "btn-sm"),
       modalButton("Close")
     ),
-    plotOutput("feature_map", height = "150px"),
+    h5("Feature / reference synteny map"),
+    plotOutput("feature_map", height = "160px"),
     hr(),
     h5("Edit feature boundaries"),
-    uiOutput("annot_edit"),
+    div(style = "display:flex; flex-flow:row wrap; gap:1.2em; align-items:flex-end;",
+      div(style = "min-width:170px;", uiOutput("nudge_element_ui")),
+      shinyWidgets::radioGroupButtons("nudge_step", "Step (nt)",
+        choices = c(1, 3, 10, 50), selected = 1, size = "sm"),
+      div(
+        tags$label("5' end", class = "control-label"),
+        div(style = "display:flex; gap:4px;",
+          nt_nudge("nt_5_out", "+"), nt_nudge("nt_5_in", "–"))),
+      div(
+        tags$label("3' end", class = "control-label"),
+        div(style = "display:flex; gap:4px;",
+          nt_nudge("nt_3_in", "–"), nt_nudge("nt_3_out", "+")))
+    ),
+    div(style = "color:#888; font-size:0.85em; margin-top:4px;",
+      "+ extends the boundary outward, – trims it inward."),
+    div(class = "code-block", style = "margin-top:6px; white-space:normal; word-break:break-all;",
+      uiOutput("nudge_seq")),
     hr(),
     h5("Feature model"),
     reactable::reactableOutput("feature_tbl")
