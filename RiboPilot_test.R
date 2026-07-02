@@ -1,11 +1,6 @@
 #library(RiboPilot)   # or
 pkgload::load_all("~/Documents/GitHub/RiboPilot")
 
-# reset the failed sample(s) so assembly retries
-con <- DBI::dbConnect(RSQLite::SQLite(), "~/Documents/DJMCompBio/RiboPilot_test/.sqlite")
-DBI::dbExecute(con, "UPDATE assemble SET assemble_switch = 1 WHERE ID = 'SRR22396758'")
-DBI::dbDisconnect(con)
-
 Sys.setenv(PATH = paste("/home/dmacguig/miniconda3/envs/ribopilot/bin",
                         Sys.getenv("PATH"), sep = ":"))
 # verify:
@@ -20,10 +15,9 @@ new_project("/home/dmacguig/Documents/DJMCompBio/RiboPilot_test/run_02",
             executor = "conda", min_depth = 500,
             Rproj = FALSE)
 
-run_assembly("/home/dmacguig/Documents/DJMCompBio/RiboPilot_test/run_01")   # assemble -> load -> score
+run_assembly("~/Documents/DJMCompBio/RiboPilot_test/run_02", conda_env = "ribopilot")
+# review in RiboPilot::run_app(...), adjust selected paths
+run_annotate("~/Documents/DJMCompBio/RiboPilot_test", conda_env = "ribopilot")
+# then Export mode / export_bundle()
 
-RiboPilot::run_app("~/Documents/DJMCompBio/RiboPilot_test/run_01")   # after run_assembly populated it
-
-# inspect
-con <- DBI::dbConnect(RSQLite::SQLite(), "/home/dmacguig/Documents/DJMCompBio/RiboPilot_test/.sqlite")
-DBI::dbGetQuery(con, "SELECT path,depth,anchors,blast_pident,score,rank,auto_select FROM path_scores")
+RiboPilot::run_app("~/Documents/DJMCompBio/RiboPilot_test/run_02")

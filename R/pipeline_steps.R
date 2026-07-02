@@ -111,3 +111,63 @@ open_project_db <- function(db) {
   DBI::dbExecute(con, "PRAGMA busy_timeout=10000;")
   con
 }
+#' Load one sample's published assembly fastas into the database
+#'
+#' Parses `out/<ID>/assemble/<ID>_assembly_*.fasta` (headers
+#' `>ID.path.scaffold topology`), writes per-scaffold rows into `assemblies`,
+#' and updates the per-sample `assemble` summary.
+#'
+#' @param con Open DBI connection.
+#' @param out_dir The pipeline `out/` directory.
+#' @param ID Sample ID.
+#' @return (invisibly) the number of scaffolds loaded.
+#' @export
+load_assemblies <- function(con, out_dir, ID) {
+  fas <- Sys.glob(file.path(out_dir, ID, "assemble", paste0(ID, "_assembly_*.fasta")))
+  fas <- fas[!grepl("_assembly_0\\.fasta$", fas)] # skip the "no assembly" sentinel
+  ts <- as.integer(Sys.time())
+
+  if (length(fas) == 0) {
+    DBI::dbExecute(con,
+      "UPDATE assemble SET paths=NULL, scaffolds=NULL, length=NULL, topology=NULL,
+       assemble_switch=3, assemble_notes='failed assembly', time_stamp=? WHERE ID=?",
+      params = list(ts, ID))
+    return(invisible(0L))
+  }
+
+  rows <- list()
+  for (fa in fas) {
+    seqs <- Biostrings::readDNAStringSet(fa)
+    for (i in seq_along(seqs)) {
+      hdr <- names(seqs)[i]
+      parts <- strsplit(hdr, "\\s+")[[1]]
+      idpath <- strsplit(parts[1], "\\.")[[1]] # ID, path, scaffold
+      topo <- if (length(parts) > 1) parts[2] else NA_character_
+      s <- as.character(seqs[[i]])
+      rows[[length(rows) + 1]] <- data.frame(
+        ID = ID, path = as.integer(idpath[2]), scaffold = as.integer(idpath[3]),
+        topology = topo, length = nchar(s), length_raw = nchar(s),
+        sequence = s, ignore = 0L, edited = 0L, time_stamp = ts,
+        stringsAsFactors = FALSE
+      )
+    }
+  }
+  df <- do.call(rbind, rows)
+
+  # replace this sample's assemblies
+  DBI::dbExecute(con, "DELETE FROM assemblies WHERE ID = ?", params = list(ID))
+  DBI::dbAppendTable(con, "assemblies", df)
+
+  # per-sample summary
+  n_paths <- length(unique(df$path))
+  n_scaffolds <- max(table(df$path))
+  length_str <- paste(sort(unique(df$length), decreasing = TRUE), collapse = ";")
+  topo_str <- paste(sort(unique(stats::na.omit(df$topology))), collapse = ";")
+  notes <- if (n_paths > 1) "Unable to resolve single assembly from reads"
+  else if (n_scaffolds > 1) "Output contains disconnected contigs" else ""
+  DBI::dbExecute(con,
+    "UPDATE assemble SET paths=?, scaffolds=?, length=?, topology=?,
+     assemble_switch=2, assemble_notes=?, time_stamp=? WHERE ID=?",
+    params = list(n_paths, n_scaffolds, length_str, topo_str, notes, ts, ID))
+  invisible(nrow(df))
+}
