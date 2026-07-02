@@ -1,34 +1,23 @@
 process preprocess {
 
-    executor params.preprocess.executor
-    container params.preprocess.container
-
-    publishDir "${launchDir}/${params.publishDir}", overwrite: true, pattern: "${id}/*_preprocess.*", mode: 'copy'
-
+    tag "${id}"
+    cpus { nthreads as int }
+    publishDir { "${launchDir}/${params.publishDir}/${id}" }, overwrite: true, pattern: "*_preprocess.*", mode: 'copy'
     errorStrategy 'ignore'
 
-    tag "${id}"
-
     input:
-    tuple val(id), path(R1), path(R2), val(opts)
+    tuple val(id), path(R1), path(R2), val(nthreads), val(fastp_opts)
 
     output:
-    // output for processing (assembly): id, trimmed reads, trimmed count
-    tuple val("${id}"), path("${id}/${id}_preprocess_*"), env(after)
-    // output for DB update
-    tuple env(before), env(after), env(meanLen), val("${params.ts}"), val("${id}")
-    // published json
-    path "${id}/${id}_preprocess.json"
+    // id, trimmed reads, trimmed read count (for the assembly depth gate)
+    tuple val(id), path("${id}_preprocess_R{1,2}.fastq.gz"), env('after'), emit: reads
+    path "${id}_preprocess.json"
 
-    shell:
-    json_out = "${id}/${id}_preprocess.json"
-    out1 = "${id}/${id}_preprocess_R1.fastq.gz"
-    out2 = "${id}/${id}_preprocess_R2.fastq.gz"
-    '''
-    mkdir !{id}
-    fastp --in1 !{R1} --in2 !{R2} --out1 !{out1} --out2 !{out2} --json !{json_out} --thread !{task.cpus} !{opts.fastp}
-    before=$(jq '.summary.before_filtering.total_reads' !{json_out})
-    after=$(jq '.summary.after_filtering.total_reads' !{json_out})
-    meanLen=$(jq '.summary.after_filtering.read1_mean_length' !{json_out})
-    '''
+    script:
+    """
+    fastp --in1 ${R1} --in2 ${R2} \\
+        --out1 ${id}_preprocess_R1.fastq.gz --out2 ${id}_preprocess_R2.fastq.gz \\
+        --json ${id}_preprocess.json --thread ${task.cpus} ${fastp_opts}
+    after=\$(jq '.summary.after_filtering.total_reads' ${id}_preprocess.json)
+    """
 }

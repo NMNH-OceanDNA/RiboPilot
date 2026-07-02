@@ -1,62 +1,32 @@
 process assemble {
 
-    executor params.assemble.executor
-    container params.assemble.container
-    maxRetries params.assemble.maxRetries
-
-    publishDir "${launchDir}/${params.publishDir}", overwrite: true, pattern: "${id}/assemble/**", mode: 'copy'
-
+    tag "${id}"
+    cpus { nthreads as int }
+    publishDir { "${launchDir}/${params.publishDir}/${id}/assemble" }, overwrite: true, mode: 'copy'
     errorStrategy 'ignore'
 
-    tag "${id}"
-
     input:
-    tuple val(id), path(reads), val(opts), path(dbs)
+    tuple val(id), path(reads), val(nthreads), val(getOrganelle_opts), path(seeds), path(labels)
 
     output:
-    // formatted per-path assembly fastas for DB loading
-    tuple val("${id}"), path("${id}/assemble/${opts_id}/${id}_assembly_*.fasta"), val("${opts_id}")
-    // assembler summary + logs published
-    path "${id}/assemble/${opts_id}/*"
+    // per-path formatted fastas (headers ">id.path.scaffold topology") + graph + log
+    tuple val(id), path("${id}_assembly_*.fasta"), emit: paths
+    path "*.gfa", optional: true
+    path "get_org.log.txt", optional: true
 
-    shell:
-    opts_id = "default"
-    workingDir = "${id}/assemble"
-    outDir = "${workingDir}/${opts_id}"
-    '''
-    mkdir -p !{workingDir}
-    get_organelle_from_reads.py \
-        -1 !{reads[0]} \
-        -2 !{reads[1]} \
-        -o !{workingDir}/ --overwrite \
-        -s !{dbs[0]} \
-        --genes !{dbs[1]} \
-        -t !{opts.cpus} \
-        !{opts.getOrganelle}
+    script:
+    """
+    get_organelle_from_reads.py \\
+        -1 ${reads[0]} -2 ${reads[1]} \\
+        -o go_out --overwrite \\
+        -s ${seeds} --genes ${labels} \\
+        -t ${task.cpus} \\
+        ${getOrganelle_opts}
 
-    mkdir -p !{outDir}
-    ### LOGS ###
-    cp !{workingDir}/get_org.log.txt !{outDir}/assembler.log.txt 2>/dev/null || true
-    echo "!{opts.getOrganelle}" > !{outDir}/opts.txt
+    cp go_out/get_org.log.txt . 2>/dev/null || true
+    cp go_out/*.gfa . 2>/dev/null || true
 
-    ### FORMAT ASSEMBLIES ###
-    # rename each GetOrganelle path fasta to <id>_assembly_<n>.fasta and tag
-    # each header ">id.<path>.<scaffold> <topology>"
-    shopt -s nullglob
-    files=(!{workingDir}/*.fasta)
-    if [ ${#files[@]} -eq 0 ]; then
-        echo ">No assembly found" > !{outDir}/!{id}_assembly_0.fasta
-    else
-        n=0
-        for f in "${files[@]}"; do
-            n=$((n+1))
-            # infer topology from filename (GetOrganelle marks circular/complete)
-            topo="linear"
-            if echo "$f" | grep -qi "circular\|complete"; then topo="circular"; fi
-            awk -v topo="$topo" -v id="!{id}" -v p="$n" \
-                '/^>/ {print ">" id "." p "." ++c " " topo} !/^>/ {print}' \
-                "$f" > !{outDir}/!{id}_assembly_${n}.fasta
-        done
-    fi
-    '''
+    # order + tag each path fasta -> <id>_assembly_<n>.fasta (bin/ helper)
+    format_assembly.sh ${id} go_out
+    """
 }

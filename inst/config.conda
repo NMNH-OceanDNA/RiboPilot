@@ -1,0 +1,14 @@
+// RiboPilot local dev config: run processes on the local executor using tools
+// from the active `ribopilot` conda env (launch Nextflow with that env on PATH).
+// No container/plugin, so it works without nf-sqldb; the R driver handles the
+// project database. HPC/container configs come later.
+
+process {
+    executor = 'local'
+}
+
+params {
+    publishDir = 'out'
+    rawDir = '<<RAW_DIR>>'
+    minDepth = <<MIN_DEPTH>>
+}
