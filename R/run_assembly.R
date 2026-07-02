@@ -89,6 +89,11 @@ run_assembly <- function(path = ".", nextflow = "nextflow", work = file.path(pat
     return(invisible(ss))
   }
 
+  # expand any '~' in local DB paths (Nextflow/GetOrganelle treat '~' literally)
+  expand_local <- function(x) ifelse(grepl("^https?://", x), x, path.expand(x))
+  ss$seeds_db <- expand_local(ss$seeds_db)
+  ss$labels_db <- expand_local(ss$labels_db)
+
   ss_path <- file.path(path, "samplesheet.tsv")
   utils::write.table(ss, ss_path, sep = "\t", quote = FALSE, row.names = FALSE, na = "")
 

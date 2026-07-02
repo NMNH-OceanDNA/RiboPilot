@@ -72,6 +72,9 @@ new_db <- function(
   # Default GetOrganelle nr databases (broad Actinopterygii) when unset ----
   seeds_db <- seeds_db %||% "https://raw.githubusercontent.com/Smithsonian/RiboPilot/main/ref_dbs/getOrganelle/seeds/actinopterygii_rrna_seeds.fasta"
   labels_db <- labels_db %||% "https://raw.githubusercontent.com/Smithsonian/RiboPilot/main/ref_dbs/getOrganelle/labels/actinopterygii_rrna_labels.fasta"
+  # expand '~' in local paths so Nextflow/GetOrganelle can find them
+  if (!grepl("^https?://", seeds_db)) seeds_db <- path.expand(seeds_db)
+  if (!grepl("^https?://", labels_db)) labels_db <- path.expand(labels_db)
 
   # Connect ----
   con <- DBI::dbConnect(RSQLite::SQLite(), dbname = db_path)
