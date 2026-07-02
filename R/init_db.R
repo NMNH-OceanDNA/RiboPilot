@@ -82,6 +82,8 @@ new_db <- function(
     dplyr::mutate(
       ID = .data[[mapping_id]],
       Taxon = .data[[mapping_taxon]],
+      taxid = NA_integer_,
+      lineage = NA_character_,
       export_group = NA_character_
     )
   glue::glue_sql(
@@ -287,6 +289,33 @@ new_db <- function(
       blast_qcovs REAL,
       blast_evalue REAL,
       blast_lineage TEXT,
+      time_stamp INTEGER,
+      PRIMARY KEY (ID, path)
+    );"
+  )
+
+  # path_scores (taxonomy-aware candidate scoring + auto-select) ----
+  DBI::dbExecute(
+    con,
+    "CREATE TABLE path_scores (
+      ID TEXT NOT NULL,
+      path INTEGER NOT NULL,
+      length INTEGER,
+      depth REAL,
+      anchors TEXT,
+      blast_pident REAL,
+      hit_id TEXT,
+      hit_taxid TEXT,
+      hit_species TEXT,
+      blast_lineage TEXT,
+      s_tax REAL,
+      s_identity REAL,
+      s_anchors REAL,
+      s_depth REAL,
+      s_length REAL,
+      score REAL,
+      rank INTEGER,
+      auto_select INTEGER,
       time_stamp INTEGER,
       PRIMARY KEY (ID, path)
     );"
