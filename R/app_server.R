@@ -7,15 +7,60 @@ app_server <- function(input, output, session) {
   observeEvent(input$refresh, refresh(refresh() + 1))
   sel_id <- reactiveVal(NULL)
 
-  output$proj_label <- renderText(basename(app_project()))
+  # ---- Work Dirs browser (Nextflow task dirs per sample) ----
+  observeEvent(input$workdirs_btn, {
+    ids <- app_query("SELECT ID FROM samples ORDER BY ID")$ID
+    presel <- selected_ids()
+    presel <- if (length(presel)) presel[1] else if (length(ids)) ids[1] else NULL
+    showModal(modalDialog(
+      title = "Sample work directories", size = "l", easyClose = TRUE,
+      tags$p(class = "text-muted", style = "font-size:12px; margin-bottom:0.75em;",
+        "Nextflow task work directories for the chosen sample (failed attempts included). ",
+        "Use these to inspect intermediate files or troubleshoot a failed process."),
+      shinyWidgets::pickerInput("wd_sample", "Sample", choices = ids, selected = presel,
+        options = list(`live-search` = TRUE)),
+      div(style = "max-height:60vh; overflow:auto;", reactable::reactableOutput("wd_tbl")),
+      footer = modalButton("Close")))
+  })
+  wd_rows <- reactive({
+    req(input$wd_sample)
+    find_workdirs(app_project(), input$wd_sample)
+  })
+  output$wd_tbl <- reactable::renderReactable({
+    d <- wd_rows()
+    if (nrow(d) == 0) {
+      return(reactable::reactable(data.frame(` ` = "No work directories found (run the pipeline first).",
+        check.names = FALSE)))
+    }
+    d$open <- "open"
+    reactable::reactable(d[, c("process", "status", "modified", "open", "workdir")],
+      compact = TRUE, resizable = TRUE, defaultPageSize = 25, wrap = FALSE,
+      columns = list(
+        status = reactable::colDef(html = TRUE, width = 80, cell = rt_dynamicIcon(
+          c(success = "fa fa-circle-check", failed = "fa fa-triangle-exclamation"))),
+        open = reactable::colDef(name = "", width = 60, html = TRUE, cell = rt_link("wd_open")),
+        workdir = reactable::colDef(minWidth = 340, html = TRUE, cell = rt_longtext())))
+  })
+  observeEvent(input$wd_open, {
+    i <- suppressWarnings(as.integer(input$wd_open))
+    d <- wd_rows()
+    req(!is.na(i), i >= 1, i <= nrow(d))
+    if (!isTRUE(d$exists[i])) {
+      showNotification("Work directory not found on this host.", type = "warning")
+      return()
+    }
+    open_path(d$workdir[i])
+  })
 
   # ---- samples table data (per mode; includes state + lock) ----
   samples_data <- reactive({
     refresh()
     mode <- input$mode %||% "Assemble"
+    # Column order mirrors MitoPilot: lock, state, ID, Taxon lead the
+    # assemble/annotate tables; export leads with ID/Taxon and puts group last.
     if (mode == "Assemble") {
       app_query(
-        "SELECT s.ID, s.Taxon, a.assemble_lock, a.assemble_switch, a.paths, a.scaffolds, a.length,
+        "SELECT a.assemble_lock, a.assemble_switch, s.ID, s.Taxon, a.paths, a.scaffolds, a.length,
            (SELECT p.path FROM path_scores p WHERE p.ID = s.ID AND p.auto_select = 1) AS sel_path,
            (SELECT round(MAX(p.score),3) FROM path_scores p WHERE p.ID = s.ID) AS best_score,
            a.assemble_notes AS notes
@@ -23,15 +68,15 @@ app_server <- function(input, output, session) {
     } else if (mode == "Export") {
       # export only shows samples whose annotation is locked (validated)
       app_query(
-        "SELECT s.ID, s.Taxon, s.export_group, an.annotate_lock, an.reviewed, an.n_features,
-           an.missing, st.length, st.reference_accession AS reference
+        "SELECT s.ID, s.Taxon, st.reference_accession AS reference, st.length, an.n_features,
+           an.missing, an.reviewed, an.annotate_lock, s.export_group
          FROM samples s JOIN annotate an ON s.ID = an.ID LEFT JOIN stitched st ON s.ID = st.ID
          WHERE an.annotate_lock = 1")
     } else {
       # annotate only shows samples whose assembly is locked (validated)
       app_query(
-        "SELECT s.ID, s.Taxon, an.annotate_lock, an.annotate_switch, an.reviewed, an.n_features,
-           an.missing, st.reference_accession AS reference
+        "SELECT an.annotate_lock, an.annotate_switch, s.ID, s.Taxon,
+           st.reference_accession AS reference, an.n_features, an.missing, an.reviewed
          FROM samples s JOIN assemble a ON s.ID = a.ID
            LEFT JOIN annotate an ON s.ID = an.ID LEFT JOIN stitched st ON s.ID = st.ID
          WHERE a.assemble_lock = 1")

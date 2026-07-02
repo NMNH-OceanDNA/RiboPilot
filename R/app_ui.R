@@ -53,8 +53,9 @@ app_ui <- function(request) {
               shiny::downloadButton("export_dl", "Export Data", class = "btn-sm"),
               shiny::span(shiny::textOutput("export_sel_n", inline = TRUE),
                 style = "color:#888; font-size:0.85em;"))),
-          shiny::span(shiny::textOutput("proj_label"),
-            style = "margin-left:auto; color:#888; font-size:0.85em;")
+          shiny::div(style = "margin-left:auto;",
+            shinyWidgets::actionBttn("workdirs_btn", "Work Dirs",
+              icon = shiny::icon("folder-tree"), style = "material-flat", size = "sm"))
         ),
         # ---- filter row (status pickers, below the control bar like MitoPilot) ----
         shiny::conditionalPanel("input.mode == 'Assemble'",
