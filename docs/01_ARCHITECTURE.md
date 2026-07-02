@@ -45,10 +45,11 @@ etc). `genetic_code` is irrelevant for rDNA and can be dropped or ignored.
 Practical win: a user points RiboPilot and MitoPilot at the **same map file and
 same `data_path`**, producing mito + rDNA markers from one skim.
 
-Optional rDNA-specific columns (all auto-derivable, so the shared map file still
-works unchanged): `taxid` (NCBI taxid to drive `go_fetch` per-sample references;
-else looked up from `Taxon`), and `seed_ref` / `gene_ref` (per-sample GetOrganelle
-reference overrides, mirroring skim2rrna's `samples.csv`).
+References are built per-clade up front (see `02_ASSEMBLY`), not per-sample, so no
+extra map-file columns are required and the shared MitoPilot map file works
+unchanged. Optional per-sample `seed_ref` / `gene_ref` override columns can be
+supported for odd samples, matching MitoPilot's `custom_seeds_db` /
+`custom_labels_db` mechanism.
 
 ## Database schema
 

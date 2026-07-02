@@ -13,10 +13,11 @@
   through preprocess.
 
 ### Phase 1 - Assembly (Option B1)
-- Wrap **`go_fetch.py`** as a reference-prep step: per-sample seed + gene DBs from
-  NCBI taxid, with a packaged SILVA/EUKARYOME fallback for missing taxids/offline
-  runs and an Entrez-response cache. (Borrowed from skim2rrna; preferred over
-  maintaining one giant pan-eukaryote DB.)
+- Port MitoPilot's `GenBankDownloadUtil.sh` + `parseGB.py` to an **rDNA per-clade
+  reference builder**: taxonomic GenBank query -> filter to nuclear 18S/5.8S/28S/ITS
+  by product name -> seed + label FASTAs. Ship a few common clade DBs; users build
+  their own with one command. (Mirrors MitoPilot; preferred over per-sample
+  auto-fetch.)
 - GetOrganelle nr assembly module; orient + rotate to 18S 5' start; multi-path
   output + path scoring (port MitoPilot).
 - BLAST candidate-ref module vs rDNA DB (port MitoPilot's multi-blast-ref branch);
@@ -59,10 +60,10 @@
    base-level spacer curation. Confirm acceptable scientifically.
 4. **28S extent:** single feature vs D-domain sub-annotation by default?
    Proposal: single feature, D-domains optional.
-5. **Reference DB packaging:** *leaning resolved* - use `go_fetch` per-sample
-   fetch by taxid as primary (no giant DB to ship), plus a small packaged
-   EUKARYOME/SILVA fallback in the image for missing-taxid/offline runs. Confirm
-   this over shipping full trimmed subsets.
+5. **Reference DB packaging:** *resolved* - mirror MitoPilot: user builds a
+   per-clade seed/label DB once from a GenBank taxonomic query (cheap; nrDNA
+   records are small), ship a few common clade DBs in `ref_dbs/`. Not per-sample
+   auto-fetch, not one giant pan-eukaryote DB.
 6. **Intragenomic variants:** report top-N paths (like MitoPilot) or force a
    single consensus? Proposal: top-N with dominant flagged primary.
 7. **Shared repo vs sibling repo:** keep RiboPilot fully separate (this repo) or

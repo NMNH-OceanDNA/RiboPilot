@@ -36,10 +36,12 @@ closest prior art is exactly: **ITS/spacer boundary annotation (ITSx),
 human-in-the-loop reference-guided curation, and submission-ready export**, on
 MitoPilot's architecture (Nextflow + SQLite + Shiny), for broad taxa.
 
-RiboPilot should still borrow skim2rrna's proven pieces wholesale: `go_fetch`
-per-sample reference building, GetOrganelle assembly, and the
-minimap2+blobtools contamination screen. Study this repo closely before
-implementing.
+RiboPilot borrows skim2rrna's proven pieces: GetOrganelle assembly and the
+minimap2+blobtools contamination screen. For references, RiboPilot instead
+mirrors **MitoPilot's per-clade GenBank download** approach (build one seed/label
+DB for a whole clade from a taxonomic query) rather than skim2rrna's per-sample
+`go_fetch`; `go_fetch` stays available as an optional auto-fetch fallback. Study
+both repos closely before implementing.
 
 ## Assembly tools
 
@@ -49,7 +51,8 @@ implementing.
 | SPAdes / metaSPAdes / MEGAHIT | full de novo (Option A) | contig-search fallback + cross-check |
 | rnaSPAdes | region assembly | validate repeat unit / expansion segments |
 | aTRAM, MITObim | iterative baiting (Option B2) | reference-guided extension for divergent taxa |
-| **go_fetch.py** | per-sample reference builder | fetches seed+gene DBs from NCBI by taxid; rank-expand/subsample; `ribosomal` modes. Borrow from skim2rrna |
+| MitoPilot `GenBankDownloadUtil.sh` | **per-clade reference builder (preferred)** | taxonomic GenBank query -> seed + label FASTAs; port to rDNA product filter |
+| go_fetch.py | per-sample reference builder (alt) | fetches seed+gene DBs from NCBI by taxid; rank-expand/subsample; `ribosomal` modes. Optional fallback |
 | **minimap2 + blobtools** | contamination screen | map reads to contigs + BLAST taxonomy to flag foreign rDNA (skim2rrna approach) |
 | PhyloHerb | herbarium organelle+nr extraction | wraps GetOrganelle; reference for nr extraction UX |
 

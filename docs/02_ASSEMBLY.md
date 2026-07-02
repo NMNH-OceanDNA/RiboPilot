@@ -40,17 +40,45 @@ there is no built-in `nr` preset, so we supply **custom seed + label DBs** via t
 same `custom_seeds_db` / `custom_labels_db` arguments MitoPilot already exposes.
 
 Plan:
-- **Seed/label DBs via `go_fetch.py` (from skim2rrna), per sample by NCBI taxid.**
-  This is the cleanest answer to "where do broad-taxa nr references come from":
-  instead of maintaining one giant pan-eukaryote DB, `go_fetch` queries NCBI for
-  each sample's taxid, expands to parent ranks when too few references exist,
-  subsamples child lineages when too many, and emits GetOrganelle-ready seed +
-  gene FASTAs. It has `ribosomal` and `ribosomal_complete` modes (18S/5.8S/28S).
-  RiboPilot should wrap `go_fetch` as a reference-prep Nextflow step, with a
-  packaged SILVA/EUKARYOME fallback DB for samples lacking a usable taxid or
-  offline runs. Optionally accept **per-sample seed/gene reference columns in the
-  map file** (as skim2rrna's `samples.csv` does) to override auto-fetch.
+- **Seed/label DBs built per-clade from a GenBank query, mirroring MitoPilot.**
+  MitoPilot ships `ref_dbs/getOrganelle/GenBankDownload/GenBankDownloadUtil.sh`:
+  the user runs it once with a taxonomic advanced-search term (e.g.
+  `'"Percidae"[Organism]'`), and it `esearch`/`efetch`es all matching records,
+  filters, and emits GetOrganelle seed + label FASTAs. RiboPilot mirrors this
+  exactly with an rDNA-flavored downloader (see below). This is preferred over
+  per-sample auto-fetch (`go_fetch`): the user just grabs everything for a large
+  clade once, no reliance on a rank-expansion heuristic, and nrDNA records are
+  small so it is cheap in compute and storage. One clade DB serves every sample
+  in that clade.
 - Run GetOrganelle from reads with those DBs to assemble the repeat unit.
+
+#### Building the per-clade nr reference DB (mirror of MitoPilot's util)
+
+A `GenBankDownloadUtil` script (bash + a `parseGB.py`, same shape as MitoPilot's)
+that:
+1. Takes a taxonomic query term (`'"Gastropoda"[Organism]'`, a BioProject, etc).
+2. `esearch | efetch` all nucleotide records for that clade whose products are
+   nuclear rRNA / spacers. Filter by product/feature name to
+   `18S | 28S | 5.8S | internal transcribed spacer | ITS | small/large subunit
+   ribosomal RNA`. These names are **nuclear-specific**, which cleanly excludes
+   organellar rRNA (mito 12S/16S = `rrnS`/`rrnL`), so no organelle location
+   filter is needed (the inverse of MitoPilot's `-location mitochondrion`).
+3. Split records like MitoPilot does:
+   - **seeds** = long/multi-element records (whole cistron or 18S+ITS+28S) used to
+     recruit reads,
+   - **labels** = single-locus records with the product name in the header
+     (`18S ribosomal RNA`, `28S ribosomal RNA`, `5.8S ribosomal RNA`, ITS), used
+     to classify assembly-graph contigs,
+   - dedup exact sequences.
+4. Write `seeds/<clade>_nr_seeds.fasta` + `labels/<clade>_nr_labels.fasta`,
+   passed to GetOrganelle via the existing `custom_seeds_db` / `custom_labels_db`
+   arguments.
+
+Ship a few common built clade DBs in `ref_dbs/getOrganelle/` (as MitoPilot ships
+`fish_mito_*`), and let users build their own for any clade with one command.
+Optionally still accept per-sample seed/gene overrides in the map file, and keep
+`go_fetch` as an alternative auto-fetch path for one-off odd samples (not the
+default).
 - Resolve the assembly graph to the monomer repeat unit; report alternative paths
   (intragenomic variants) as separate paths, like MitoPilot's multi-path output.
 - Orient and rotate to a canonical start (5' end of 18S) so all samples align.
@@ -105,11 +133,11 @@ available as a manual whole-assembly cross-check. This matches MitoPilot's
 
 ## Open assembly questions
 
-- `go_fetch` per-sample references need a valid NCBI taxid per sample; decide how
-  to derive it (map-file column, lookup from `Taxon`, or fallback DB) and how to
-  cache fetched references across samples to avoid hammering Entrez.
-- Best conserved-anchor seed set for pan-eukaryote read recruitment without
-  over-recruiting contaminants. Likely 18S + 28S core only, not spacers.
+- Exact GenBank product/feature filter that keeps nuclear 18S/5.8S/28S/ITS and
+  reliably drops mito 12S/16S and any mislabeled records. Validate on a clade with
+  known messy annotations.
+- Whether clade seeds should be whole-cistron records only, or also bare 18S/28S,
+  to recruit reads without over-recruiting divergent-spacer or contaminant reads.
 - Whether to circularize (repeat unit is tandem, so the graph is a cycle through
   the IGS) or emit a linear monomer cut at the 18S start. Leaning linear monomer,
   IGS excluded by default.
