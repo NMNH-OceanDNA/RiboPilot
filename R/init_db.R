@@ -30,8 +30,8 @@ new_db <- function(
     mapping_taxon = "Taxon",
     assemble_cpus = 6,
     assemble_memory = 24,
-    seeds_db = NULL,
-    labels_db = NULL,
+    seeds_db = "https://raw.githubusercontent.com/Smithsonian/RiboPilot/main/ref_dbs/getOrganelle/seeds/actinopterygii_rrna_seeds.fasta",
+    labels_db = "https://raw.githubusercontent.com/Smithsonian/RiboPilot/main/ref_dbs/getOrganelle/labels/actinopterygii_rrna_labels.fasta",
     getOrganelle = paste(
       "-F anonym",
       "-R 10 -k 21,45,65,85,105,115",
@@ -68,6 +68,10 @@ new_db <- function(
     message("problematic IDs:\n", paste(bad, collapse = ", "))
     stop("IDs must contain only alphanumeric characters, dashes, underscores, and colons")
   }
+
+  # Default GetOrganelle nr databases (broad Actinopterygii) when unset ----
+  seeds_db <- seeds_db %||% "https://raw.githubusercontent.com/Smithsonian/RiboPilot/main/ref_dbs/getOrganelle/seeds/actinopterygii_rrna_seeds.fasta"
+  labels_db <- labels_db %||% "https://raw.githubusercontent.com/Smithsonian/RiboPilot/main/ref_dbs/getOrganelle/labels/actinopterygii_rrna_labels.fasta"
 
   # Connect ----
   con <- DBI::dbConnect(RSQLite::SQLite(), dbname = db_path)

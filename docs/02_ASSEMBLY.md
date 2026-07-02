@@ -52,7 +52,17 @@ Plan:
   in that clade.
 - Run GetOrganelle from reads with those DBs to assemble the repeat unit.
 
-#### Building the per-clade nr reference DB (mirror of MitoPilot's util)
+#### Implemented builder (Increment 1)
+
+`ref_dbs/getOrganelle/GenBankDownload/` contains the working builder, adapted
+from [GenBankMitoReview](https://github.com/dmacguigan/GenBankMitoReview):
+`download_rrna.sh` (Entrez Direct query + fasta download + the HTTP/1.1 curl
+shim) and `parse_rrna_fasta.py` (classify records by title into 18S/28S/5.8S/
+multi and emit GetOrganelle seed + label FASTAs). A broad **Actinopterygii**
+database is built and shipped (3,000 seeds; 1,201 x 18S + 1,030 x 28S labels)
+and is the `new_project()` default. See that folder's README.
+
+#### Design of the per-clade nr reference DB (mirror of MitoPilot's util)
 
 A `GenBankDownloadUtil` script (bash + a `parseGB.py`, same shape as MitoPilot's)
 that:

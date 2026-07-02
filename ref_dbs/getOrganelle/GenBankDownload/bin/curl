@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# curl shim for Entrez Direct.
+#
+# Entrez Direct's nquire defaults to HTTP/1.0 (passes `curl --http1.0`). With
+# OpenSSL 3.x this triggers "curl: (56) OpenSSL SSL_read: ... unexpected eof
+# while reading" because NCBI's servers close the connection without a clean
+# TLS shutdown. Forcing HTTP/1.1 fixes it.
+#
+# This shim forwards to the real curl with `--http1.1` appended. curl uses the
+# last --httpX flag given, so this overrides edirect's --http1.0.
+#
+# download_mitogenomes.sh prepends this directory to PATH so edirect picks it up.
+
+self_dir="$(cd "$(dirname "$0")" && pwd)"
+
+# locate the real curl, skipping this shim's directory
+real=""
+IFS=':' read -ra _dirs <<<"$PATH"
+for d in "${_dirs[@]}"; do
+  [ "$d" = "$self_dir" ] && continue
+  if [ -x "$d/curl" ]; then real="$d/curl"; break; fi
+done
+
+if [ -z "$real" ]; then
+  echo "curl shim: could not find real curl in PATH" >&2
+  exit 127
+fi
+
+exec "$real" "$@" --http1.1
