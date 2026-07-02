@@ -68,9 +68,11 @@ scaffold_depth <- function(header, gfa_depth) {
 #' Split a "; "-joined ranked lineage into the fixed rank fields
 #' @noRd
 split_ranked_lineage <- function(lineage) {
-  parts <- trimws(strsplit(lineage %||% "", ";")[[1]])
-  parts <- parts[nzchar(parts)]
-  parts
+  if (length(lineage) == 0 || is.na(lineage)) {
+    return(character(0))
+  }
+  parts <- trimws(strsplit(as.character(lineage), ";")[[1]])
+  parts[nzchar(parts)]
 }
 
 #' Taxonomic match between a candidate lineage and the sample lineage

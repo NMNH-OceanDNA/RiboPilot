@@ -1,0 +1,122 @@
+
+GetOrganelle v1.7.7.1
+
+get_organelle_from_reads.py assembles organelle genomes from genome skimming data.
+Find updates in https://github.com/Kinggerm/GetOrganelle and see README.md for more information.
+
+Python 3.13.14 | packaged by conda-forge | (main, Jun 12 2026, 09:50:25) [GCC 14.3.0]
+PLATFORM: Linux pop-os 6.16.3-76061603-generic #202508231538~1758561135~22.04~171c8de SMP PREEMPT_DYNAMIC Mon S x86_64 
+PYTHON LIBS: GetOrganelleLib 1.7.7.1; numpy 2.5.0; sympy 1.14.0; scipy 1.18.0
+DEPENDENCIES: Bowtie2 default; SPAdes 4.3.0; Blast 2.5.0
+GETORG_PATH=/home/dmacguig/.GetOrganelle
+WORKING_DIR=/home/dmacguig/Documents/GitHub/RiboPilot/test_run/work/16/43ca12b39e288152207615719bab8a
+/home/dmacguig/miniconda3/envs/ribopilot/bin/get_organelle_from_reads.py -1 SRR22396758_preprocess_R1.fastq.gz -2 SRR22396758_preprocess_R2.fastq.gz -o go_out --overwrite -s actinopterygii_rrna_seeds.fasta --genes actinopterygii_rrna_labels.fasta -t 8 -F anonym -R 10 -k 21,45,65,85,105,115 --larger-auto-ws
+
+2026-07-02 14:35:39,322 - INFO: Setting '--target-genome-size 6161754' for estimating the word size value for anonym type.
+2026-07-02 14:35:39,325 - INFO: Setting '--expected-max-size 30808770' for estimating the word size value for anonym type.
+2026-07-02 14:35:39,416 - INFO: Pre-reading fastq ...
+2026-07-02 14:35:39,416 - INFO: Estimating reads to use ... (to use all reads, set '--reduce-reads-for-coverage inf --max-reads inf')
+2026-07-02 14:35:39,448 - INFO: Estimating reads to use finished.
+2026-07-02 14:35:39,448 - INFO: Unzipping reads file: SRR22396758_preprocess_R1.fastq.gz (257414267 bytes)
+2026-07-02 14:35:41,266 - INFO: Unzipping reads file: SRR22396758_preprocess_R2.fastq.gz (278718671 bytes)
+2026-07-02 14:35:43,159 - INFO: Counting read qualities ...
+2026-07-02 14:35:43,202 - INFO: Identified quality encoding format = Sanger
+2026-07-02 14:35:43,202 - INFO: Phred offset = 33
+2026-07-02 14:35:43,202 - INFO: Trimming bases with qualities (0.00%): 33..33  !
+2026-07-02 14:35:43,213 - INFO: Mean error rate = 0.0038
+2026-07-02 14:35:43,213 - INFO: Counting read lengths ...
+2026-07-02 14:35:46,445 - INFO: Mean = 133.2 bp, maximum = 151 bp.
+2026-07-02 14:35:46,445 - INFO: Reads used = 4130693+4130693
+2026-07-02 14:35:46,445 - INFO: Pre-reading fastq finished.
+
+2026-07-02 14:35:46,445 - INFO: Making seed reads ...
+2026-07-02 14:35:46,455 - INFO: Making seed - bowtie2 index ...
+2026-07-02 14:36:02,273 - INFO: Making seed - bowtie2 index finished.
+2026-07-02 14:36:02,273 - INFO: Mapping reads to seed bowtie2 index ...
+2026-07-02 14:36:19,441 - INFO: Mapping finished.
+2026-07-02 14:36:19,441 - INFO: Seed reads made: go_out/seed/anonym.initial.fq (26238380 bytes)
+2026-07-02 14:36:19,441 - INFO: Making seed reads finished.
+
+2026-07-02 14:36:19,441 - INFO: Checking seed reads and parameters ...
+2026-07-02 14:36:19,441 - INFO: The automatically-estimated parameter(s) do not ensure the best choice(s).
+2026-07-02 14:36:19,441 - INFO: If the result graph is not a circular organelle genome, 
+2026-07-02 14:36:19,441 - INFO:   you could adjust the value(s) of '-w'/'-R' for another new run.
+2026-07-02 14:36:20,734 - INFO: Pre-assembling mapped reads ...
+2026-07-02 14:36:26,427 - INFO: Pre-assembling mapped reads finished.
+2026-07-02 14:36:26,427 - INFO: Estimated anonym-hitting base-coverage = 1113.71
+2026-07-02 14:36:26,480 - INFO: Reads reduced to = 1854476+1854476
+2026-07-02 14:36:26,480 - INFO: Adjusting expected anonym base coverage to 500.00
+2026-07-02 14:36:26,481 - INFO: Estimated word size(s): 106
+2026-07-02 14:36:26,481 - INFO: Setting '-w 106'
+2026-07-02 14:36:26,481 - INFO: Setting '--max-extending-len inf'
+2026-07-02 14:36:26,543 - INFO: Checking seed reads and parameters finished.
+
+2026-07-02 14:36:26,543 - INFO: Making read index ...
+2026-07-02 14:36:30,301 - INFO: For go_out/1-SRR22396758_preprocess_R1.fastq.gz.fastq, only top 1854476 reads are used in downstream analysis.
+2026-07-02 14:36:34,111 - INFO: For go_out/2-SRR22396758_preprocess_R2.fastq.gz.fastq, only top 1854476 reads are used in downstream analysis.
+2026-07-02 14:36:34,628 - INFO: 2464118 candidates in all 3708952 reads
+2026-07-02 14:36:34,628 - INFO: Pre-grouping reads ...
+2026-07-02 14:36:34,628 - INFO: Setting '--pre-w 106'
+2026-07-02 14:36:34,701 - INFO: 200000/430517 used/duplicated
+2026-07-02 14:36:41,562 - INFO: 2455 groups made.
+2026-07-02 14:36:41,682 - INFO: Making read index finished.
+
+2026-07-02 14:36:41,682 - INFO: Extending ...
+2026-07-02 14:36:41,682 - INFO: Adding initial words ...
+2026-07-02 14:36:42,113 - INFO: AW 588168
+2026-07-02 14:36:47,736 - INFO: Round 1: 2464118/2464118 AI 49195 AW 1057180
+2026-07-02 14:36:52,736 - INFO: Round 2: 2464118/2464118 AI 51706 AW 1116552
+2026-07-02 14:36:57,909 - INFO: Round 3: 2464118/2464118 AI 51935 AW 1123398
+2026-07-02 14:37:02,953 - INFO: Round 4: 2464118/2464118 AI 51976 AW 1124392
+2026-07-02 14:37:08,024 - INFO: Round 5: 2464118/2464118 AI 51996 AW 1124614
+2026-07-02 14:37:13,175 - INFO: Round 6: 2464118/2464118 AI 52000 AW 1124702
+2026-07-02 14:37:17,954 - INFO: Round 7: 2464118/2464118 AI 52003 AW 1124786
+2026-07-02 14:37:23,045 - INFO: Round 8: 2464118/2464118 AI 52008 AW 1124904
+2026-07-02 14:37:28,202 - INFO: Round 9: 2464118/2464118 AI 52016 AW 1125066
+2026-07-02 14:37:33,247 - INFO: Round 10: 2464118/2464118 AI 52017 AW 1125066
+2026-07-02 14:37:33,247 - INFO: No more reads found and terminated ...
+2026-07-02 14:37:34,908 - INFO: Extending finished.
+
+2026-07-02 14:37:35,223 - INFO: Separating extended fastq file ... 
+2026-07-02 14:37:35,327 - INFO: Setting '-k 21,45,65,85,105,115'
+2026-07-02 14:37:35,327 - INFO: Assembling using SPAdes ...
+2026-07-02 14:37:35,329 - INFO: spades.py -t 8  --phred-offset 33 -1 go_out/extended_1_paired.fq -2 go_out/extended_2_paired.fq --s1 go_out/extended_1_unpaired.fq --s2 go_out/extended_2_unpaired.fq -k 21,45,65,85,105,115 -o go_out/extended_spades
+2026-07-02 14:38:23,791 - INFO: Insert size = 241.661, deviation = 101.946, left quantile = 135, right quantile = 389
+2026-07-02 14:38:23,791 - INFO: Assembling finished.
+
+2026-07-02 14:38:24,552 - INFO: Slimming go_out/extended_spades/K115/assembly_graph.fastg finished!
+2026-07-02 14:38:24,552 - INFO: Slimming assembly graphs finished.
+
+2026-07-02 14:38:24,552 - INFO: Extracting anonym from the assemblies ...
+2026-07-02 14:38:24,552 - INFO: Disentangling go_out/extended_spades/K115/assembly_graph.fastg.extend-actinopterygii_rrna_labels.fastg as a circular genome ... 
+2026-07-02 14:38:24,675 - INFO: Disentangling unsuccessful: 'Incomplete/Complicated graph: please check around EDGE_31441!'
+2026-07-02 14:38:24,675 - INFO: Scaffolding disconnected contigs using SPAdes scaffolds ... 
+2026-07-02 14:38:24,675 - WARNING: Assembly based on scaffolding may not be as accurate as the ones directly exported from the assembly graph.
+2026-07-02 14:38:24,675 - INFO: Disentangling go_out/extended_spades/K115/assembly_graph.fastg.extend-actinopterygii_rrna_labels.fastg as a circular genome ... 
+2026-07-02 14:38:24,925 - INFO: Disentangling unsuccessful: 'Incomplete/Complicated graph: please check around EDGE_31441!'
+2026-07-02 14:38:24,925 - INFO: Disentangling go_out/extended_spades/K115/assembly_graph.fastg.extend-actinopterygii_rrna_labels.fastg as a/an actinopterygii_rrna_labels-insufficient graph ... 
+2026-07-02 14:38:25,034 - INFO: Vertex_24280 #copy = 1
+2026-07-02 14:38:25,034 - INFO: Vertex_28742 #copy = 1
+2026-07-02 14:38:25,034 - INFO: Vertex_31679 #copy = 1
+2026-07-02 14:38:25,034 - INFO: Vertex_32119 #copy = 1
+2026-07-02 14:38:25,034 - INFO: Vertex_32579 #copy = 2
+2026-07-02 14:38:25,034 - INFO: Average anonym kmer-coverage = 94.5
+2026-07-02 14:38:25,034 - INFO: Average anonym base-coverage = 654.1
+2026-07-02 14:38:25,034 - INFO: Writing output ...
+2026-07-02 14:38:25,036 - INFO: Writing PATH1 of anonym scaffold(s) to go_out/anonym.K115.scaffolds.graph1.1.path_sequence.fasta
+2026-07-02 14:38:25,036 - INFO: Writing PATH2 of anonym scaffold(s) to go_out/anonym.K115.scaffolds.graph1.2.path_sequence.fasta
+2026-07-02 14:38:25,036 - INFO: Writing GRAPH to go_out/anonym.K115.contigs.graph1.selected_graph.gfa
+2026-07-02 14:38:25,036 - INFO: Result status of anonym: 3 scaffold(s)
+2026-07-02 14:38:25,039 - INFO: Writing output finished.
+2026-07-02 14:38:25,040 - INFO: Please ...
+2026-07-02 14:38:25,040 - INFO: load the graph file 'assembly_graph.fastg.extend-actinopterygii_rrna_labels.fastg' in K115
+2026-07-02 14:38:25,040 - INFO: load the CSV file 'assembly_graph.fastg.extend-actinopterygii_rrna_labels.csv' in K115
+2026-07-02 14:38:25,040 - INFO: visualize and confirm the incomplete result in Bandage.
+2026-07-02 14:38:25,040 - INFO: If the result is nearly complete, 
+2026-07-02 14:38:25,040 - INFO: you can also adjust the arguments according to https://github.com/Kinggerm/GetOrganelle/wiki/FAQ#what-should-i-do-with-incomplete-resultbroken-assembly-graph
+2026-07-02 14:38:25,040 - INFO: If you have questions for us, please provide us with the get_org.log.txt file and the post-slimming graph in the format you like!
+2026-07-02 14:38:25,040 - INFO: Extracting anonym from the assemblies finished.
+
+
+Total cost 166.01 s
+Thank you!

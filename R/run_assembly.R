@@ -25,9 +25,12 @@ config_param <- function(config_lines, key) {
 #' @param nextflow Path to the `nextflow` binary (default: on PATH).
 #' @param work Nextflow work directory (default `<path>/work`).
 #' @param load (logical) Load published outputs into the database afterwards.
+#' @param score (logical) After loading, score candidate paths and write
+#'   `path_scores` (see [score_project()]).
 #' @return (invisibly) the samplesheet data.frame.
 #' @export
-run_assembly <- function(path = ".", nextflow = "nextflow", work = file.path(path, "work"), load = TRUE) {
+run_assembly <- function(path = ".", nextflow = "nextflow", work = file.path(path, "work"),
+                         load = TRUE, score = TRUE) {
   path <- normalizePath(path)
   db <- file.path(path, ".sqlite")
   cfg <- file.path(path, ".config")
@@ -76,6 +79,9 @@ run_assembly <- function(path = ".", nextflow = "nextflow", work = file.path(pat
     out_dir <- file.path(path, "out")
     for (id in ss$ID) load_assemblies(con, out_dir, id)
     message("Loaded assemblies into the database.")
+    if (isTRUE(score)) {
+      score_project(path = path, out_dir = out_dir, con = con)
+    }
   }
   invisible(ss)
 }

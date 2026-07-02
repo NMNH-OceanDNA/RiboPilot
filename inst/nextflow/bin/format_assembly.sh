@@ -1,6 +1,8 @@
 #!/bin/bash
 # Format GetOrganelle path fastas -> <id>_assembly_<n>.fasta with headers
-# ">id.<path>.<scaffold> <topology>" (topology inferred from the filename).
+# ">id.<path>.<scaffold> <topology> <original_header>". The original GetOrganelle
+# header (scaffold_N--<edge ids>) is kept so downstream scoring can look up
+# per-contig graph depth; loaders parse only the leading id.path.scaffold token.
 set -euo pipefail
 id=$1
 godir=$2
@@ -16,6 +18,6 @@ for f in "${files[@]}"; do
     topo="linear"
     if grep -qi "circular\|complete" <<< "$f"; then topo="circular"; fi
     awk -v topo="$topo" -v id="$id" -v p="$n" \
-        '/^>/ {print ">" id "." p "." ++c " " topo} !/^>/ {print}' \
+        '/^>/ {orig=substr($0,2); print ">" id "." p "." ++c " " topo " " orig} !/^>/ {print}' \
         "$f" > "${id}_assembly_${n}.fasta"
 done
