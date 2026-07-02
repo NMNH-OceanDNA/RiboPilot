@@ -5,6 +5,7 @@
 // Query the samples ready to assemble straight from the DB (replaces the R
 // samplesheet prep). Header + tab separated for splitCsv.
 process query_samples {
+    cache false
     executor 'local'
     output:
     path 'samplesheet.tsv'
@@ -21,10 +22,26 @@ process query_samples {
     """
 }
 
+// WF2: IDs of assembled samples queued for (re-)annotation.
+process query_annotate_samples {
+    cache false
+    executor 'local'
+    output:
+    path 'ids.txt'
+    script:
+    """
+    sqlite3 '${params.db}' "
+      SELECT an.ID FROM annotate an
+      WHERE an.annotate_switch IN (1,4) AND an.annotate_lock = 0
+        AND EXISTS (SELECT 1 FROM assemblies x WHERE x.ID = an.ID);" > ids.txt
+    """
+}
+
 // Load assemblies + score candidate paths (auto-select). Reads the published
 // assembly fastas from the project out/ dir; the staged inputs force ordering
 // after assemble.
 process score {
+    cache false
     tag "${id}"
     input:
     tuple val(id), path(fastas)
@@ -39,6 +56,7 @@ process score {
 
 // Stitch the selected path into one sequence -> stitched table + fasta.
 process stitch {
+    cache false
     tag "${id}"
     input:
     val id
@@ -52,6 +70,7 @@ process stitch {
 
 // barrnap (Rfam anchors) + ITSx (spacers) on the stitched sequence.
 process annotate_tools {
+    cache false
     tag "${id}"
     cpus 4
     input:
@@ -69,6 +88,7 @@ process annotate_tools {
 
 // Reconcile barrnap + ITSx into the feature model -> annotations table.
 process reconcile {
+    cache false
     tag "${id}"
     input:
     tuple val(id), path(gff), path(pos)

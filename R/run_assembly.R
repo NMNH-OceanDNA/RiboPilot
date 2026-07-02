@@ -62,28 +62,11 @@ run_assembly <- function(path = ".", nextflow = "nextflow", work = file.path(pat
     on.exit(Sys.setenv(PATH = old_path), add = TRUE)
   }
   path <- normalizePath(path)
-  db <- file.path(path, ".sqlite")
-  cfg <- file.path(path, ".config")
-  main_nf <- app_sys("nextflow", "main.nf")
-  stopifnot(file.exists(db), file.exists(cfg), file.exists(main_nf))
-
-  cfg_lines <- readLines(cfg)
-  raw_dir <- config_param(cfg_lines, "rawDir")
-  min_depth <- config_param(cfg_lines, "minDepth") %||% "0"
-  src <- ribopilot_src %||% app_sys() # package root (source under load_all)
-  taxdump <- file.path(path, ".taxonomy")
+  stopifnot(file.exists(file.path(path, ".sqlite")), file.exists(file.path(path, ".config")))
 
   message("Running Nextflow assembly (WF1) — self-contained DB I/O...")
-  nf_cmd <- paste(c(
-    shQuote(nextflow), "run", shQuote(main_nf), "-c", shQuote(cfg),
-    "-work-dir", shQuote(work), "-resume",
-    "--db", shQuote(db),
-    "--projectDir", shQuote(path),
-    "--rawDir", shQuote(raw_dir),
-    "--minDepth", min_depth,
-    "--ribopilot_src", shQuote(src),
-    "--taxdump_dir", shQuote(taxdump)
-  ), collapse = " ")
+  args <- nf_command(path, "assemble", resume = TRUE, work = work, ribopilot_src = ribopilot_src)
+  nf_cmd <- paste(c(shQuote(nextflow), shQuote(args)), collapse = " ")
   status <- system2("bash", c("-c", shQuote(paste0("cd ", shQuote(path), " && ", nf_cmd))), wait = TRUE)
   if (status != 0) {
     warning("Nextflow exited with status ", status)

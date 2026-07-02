@@ -1,15 +1,19 @@
-// RiboPilot annotation workflow (WF2): run barrnap (18S/28S anchors) + ITSx
-// (ITS1/5.8S/ITS2 boundaries) on each sample's stitched selected path. The R
-// driver prepares the stitched sequences (WF1 output + selected path) and loads
-// + reconciles the tool outputs into the feature model.
+// RiboPilot WF2 (self-contained): re-annotate samples whose selected path
+// changed. Reads queued sample IDs from the DB (sqlite3), then stitch the
+// selected path -> barrnap + ITSx -> reconcile, writing results back to the DB.
+// Same sqlite3 + R-script-process pattern as WF1.
 
-include { annotate } from './modules/annotate.nf'
+include { query_annotate_samples; stitch; annotate_tools; reconcile } from './modules/pipeline_r.nf'
 
 params.publishDir = 'out'
+params.db = ''
+params.projectDir = '.'
+params.ribopilot_src = ''
+params.taxdump_dir = ''
 
 workflow {
-    // samplesheet (TAB): ID, stitched (fasta path), cpus
-    rows = channel.fromPath(params.samplesheet).splitCsv(header: true, sep: '\t')
-    ann_in = rows.map { r -> tuple(r.ID, file(r.stitched), r.cpus) }
-    annotate(ann_in)
+    ids = query_annotate_samples().splitText().map { it.trim() }.filter { it }
+    stitch(ids)
+    annotate_tools(stitch.out)
+    reconcile(annotate_tools.out)
 }

@@ -171,3 +171,51 @@ load_assemblies <- function(con, out_dir, ID) {
     params = list(n_paths, n_scaffolds, length_str, topo_str, notes, ts, ID))
   invisible(nrow(df))
 }
+
+#' Stitch a sample's selected path against its top-hit reference
+#' @noRd
+stitch_selected <- function(con, id, seeds_cache) {
+  sel <- DBI::dbGetQuery(con,
+    "SELECT path, hit_id FROM path_scores WHERE ID = ? AND auto_select = 1", params = list(id))
+  if (nrow(sel) == 0) {
+    p <- DBI::dbGetQuery(con, "SELECT MIN(path) p FROM assemblies WHERE ID = ?", params = list(id))$p
+    hit_id <- NA_character_
+  } else {
+    p <- sel$path[1]
+    hit_id <- sel$hit_id[1]
+  }
+  if (is.na(p)) {
+    return(NULL)
+  }
+  scaf <- DBI::dbGetQuery(con,
+    "SELECT scaffold, sequence FROM assemblies WHERE ID = ? AND path = ? ORDER BY scaffold",
+    params = list(id, p))
+  if (nrow(scaf) == 0) {
+    return(NULL)
+  }
+  seeds_db <- DBI::dbGetQuery(con,
+    "SELECT ao.seeds_db FROM assemble a JOIN assemble_opts ao ON a.assemble_opts = ao.assemble_opts WHERE a.ID = ?",
+    params = list(id))$seeds_db[1]
+
+  seeds <- seeds_cache$get(seeds_db)
+  refseq <- NULL
+  if (!is.null(seeds)) {
+    refseq <- if (!is.na(hit_id) && hit_id %in% names(seeds)) seeds[hit_id] else seeds[which.max(Biostrings::width(seeds))]
+  }
+
+  scaf_fa <- tempfile(fileext = ".fasta")
+  writeLines(paste0(">", scaf$scaffold, "\n", scaf$sequence), scaf_fa)
+  if (is.null(refseq)) {
+    return(list(seq = paste(scaf$sequence, collapse = ""), ref_acc = NA_character_,
+      path = p, n_gaps = NA_integer_, n_redundant = NA_integer_))
+  }
+  ref_fa <- tempfile(fileext = ".fasta")
+  Biostrings::writeXStringSet(refseq, ref_fa)
+  st <- tryCatch(stitch_scaffolds(scaf_fa, ref_fa), error = function(e) NULL)
+  if (is.null(st)) {
+    return(list(seq = paste(scaf$sequence, collapse = ""), ref_acc = sub("_.*", "", names(refseq)[1]),
+      path = p, n_gaps = NA_integer_, n_redundant = NA_integer_))
+  }
+  list(seq = st$sequence, ref_acc = sub("_.*", "", names(refseq)[1]),
+    path = p, n_gaps = st$n_gaps, n_redundant = st$n_redundant)
+}

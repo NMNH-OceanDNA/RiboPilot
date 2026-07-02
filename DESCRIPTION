@@ -15,9 +15,11 @@ Depends:
     R (>= 4.4.0)
 Imports:
     Biostrings,
+    cli,
     config,
     crayon,
     DBI,
+    processx,
     dbplyr,
     dplyr,
     gggenes,

@@ -40,6 +40,34 @@ annotate_modal <- function(id) {
   )
 }
 
+#' Update / run modal: launch the Nextflow workflow with live progress
+#' @noRd
+run_modal <- function(mode, n) {
+  wf <- if (mode == "Annotate & Curate") "Annotation (WF2)" else "Assembly (WF1)"
+  modalDialog(
+    title = div(style = "display:flex; justify-content:space-between; align-items:center; height:38px;",
+      span(sprintf("%s — %d sample(s) to update", wf, n)),
+      span(id = "rp_gears", class = "gears paused")),
+    size = "l",
+    shinyWidgets::prettyCheckbox("nf_resume", "Resume previous run?", value = TRUE,
+      status = "primary", inline = TRUE),
+    h5("Nextflow command:"),
+    div(class = "code-block", textOutput("nf_cmd_text")),
+    shinyjs::hidden(div(id = "nf_progress",
+      hr(), h5("Progress:"),
+      div(class = "code-block", style = "max-height:320px; overflow:auto;",
+        textOutput("nf_prog_header"),
+        tags$pre(style = "margin:0; background:transparent; border:0; color:inherit;",
+          textOutput("nf_prog_processes", container = tags$code)),
+        textOutput("nf_prog_summary"),
+        textOutput("nf_prog_footer")))),
+    footer = tagList(
+      actionButton("nf_start", "Run from App", class = "btn-success btn-sm"),
+      shinyjs::hidden(actionButton("nf_stop", "Stop / Interrupt", class = "btn-sm")),
+      actionButton("nf_close", "Close", class = "btn-sm"))
+  )
+}
+
 #' Element colors shared by the app feature map
 #' @noRd
 RRNA_ELEMENT_COLORS <- c(

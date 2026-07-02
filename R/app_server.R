@@ -119,6 +119,105 @@ app_server <- function(input, output, session) {
   observeEvent(input$requeue_btn, set_flag("UPDATE assemble SET assemble_switch = 1 WHERE ID = ?"))
   observeEvent(input$reviewed_btn, set_flag("UPDATE annotate SET reviewed = 'yes' WHERE ID = ?"))
 
+  # ---- lock / state row filters (hide via CSS on rp-lock-/rp-state- classes) ----
+  output$filter_css <- renderUI({
+    all_lock <- c("0", "1")
+    all_state <- c("1", "2", "3", "4")
+    hide <- character(0)
+    if (!is.null(input$lock_filter)) hide <- c(hide, paste0(".rp-lock-", setdiff(all_lock, input$lock_filter)))
+    if (!is.null(input$state_filter)) hide <- c(hide, paste0(".rp-state-", setdiff(all_state, input$state_filter)))
+    if (length(hide) == 0) {
+      return(NULL)
+    }
+    tags$style(HTML(paste0(paste(hide, collapse = ", "), " { display:none !important; }")))
+  })
+
+  # ---- Update modal: run the workflow with live Nextflow progress ----
+  wf_for_mode <- function() if ((input$mode %||% "") == "Annotate & Curate") "annotate" else "assemble"
+  nf_process <- reactiveVal(NULL)
+  prog_header <- reactiveVal(character(0))
+  prog_proc <- reactiveVal(list())
+  prog_summary <- reactiveVal("")
+  prog_footer <- reactiveVal(character(0))
+
+  output$nf_cmd_text <- renderText({
+    args <- nf_command(app_project(), wf_for_mode(), resume = isTRUE(input$nf_resume %||% TRUE))
+    paste(c("nextflow", args), collapse = " ")
+  })
+
+  observeEvent(input$run_btn, {
+    prog_header(character(0)); prog_proc(list()); prog_summary(""); prog_footer(character(0))
+    showModal(run_modal(input$mode %||% "Assemble", nf_pending_count(app_project(), wf_for_mode())))
+  })
+
+  progress_update <- function(lines) {
+    lines <- cli::ansi_strip(lines)
+    for (ln in lines) {
+      if (grepl("^\\[(PIPELINE|WORKDIR)\\]", ln)) {
+        prog_header(unique(c(prog_header(), ln)))
+      } else if (grepl("^\\[PROCESS ", ln)) {
+        key <- sub("^\\[PROCESS \\S+\\]\\s*", "", ln)
+        pl <- prog_proc(); pl[[key]] <- ln; prog_proc(pl)
+      } else if (grepl("^\\[(SUCCESS|FAILED)\\]", ln)) {
+        prog_summary(ln)
+      } else if (nzchar(trimws(ln))) {
+        prog_footer(c(prog_footer(), ln))
+      }
+    }
+  }
+
+  observeEvent(input$nf_start, {
+    prog_header(character(0)); prog_proc(list()); prog_summary(""); prog_footer(character(0))
+    shinyjs::hide("nf_start"); shinyjs::show("nf_stop"); shinyjs::show("nf_progress")
+    shinyjs::removeClass(id = "rp_gears", class = "paused")
+    p <- processx::process$new("nextflow",
+      args = nf_command(app_project(), wf_for_mode(), resume = isTRUE(input$nf_resume %||% TRUE)),
+      stdout = "|", stderr = "|", wd = app_project())
+    nf_process(p)
+  })
+
+  observe({
+    req(nf_process())
+    invalidateLater(250)
+    p <- nf_process()
+    grab <- function() {
+      out <- tryCatch(p$read_output_lines(), error = function(e) character(0))
+      err <- tryCatch(p$read_error_lines(), error = function(e) character(0))
+      if (length(c(out, err))) progress_update(c(out, err))
+    }
+    if (p$is_alive()) {
+      grab()
+    } else {
+      grab()
+      nf_process(NULL)
+      shinyjs::hide("nf_stop"); shinyjs::show("nf_start")
+      shinyjs::addClass(id = "rp_gears", class = "paused")
+      refresh(refresh() + 1)
+      showNotification("Workflow run finished.", type = "message")
+    }
+  })
+
+  output$nf_prog_header <- renderText(paste(prog_header(), collapse = "\n"))
+  output$nf_prog_processes <- renderText(paste(unlist(prog_proc()), collapse = "\n"))
+  output$nf_prog_summary <- renderText(prog_summary())
+  output$nf_prog_footer <- renderText(paste(utils::tail(prog_footer(), 40), collapse = "\n"))
+
+  kill_nf <- function() {
+    p <- nf_process()
+    if (!is.null(p) && p$is_alive()) p$kill()
+    nf_process(NULL)
+  }
+  observeEvent(input$nf_stop, {
+    kill_nf()
+    shinyjs::hide("nf_stop"); shinyjs::show("nf_start")
+    shinyjs::addClass(id = "rp_gears", class = "paused")
+    refresh(refresh() + 1)
+  })
+  observeEvent(input$nf_close, {
+    kill_nf()
+    removeModal()
+  })
+
   # ---- Export ----
   output$export_sel_n <- renderText({
     n <- length(selected_ids())
@@ -171,9 +270,11 @@ app_server <- function(input, output, session) {
     DBI::dbExecute(con,
       "UPDATE path_scores SET auto_select = CASE WHEN path = ? THEN 1 ELSE 0 END WHERE ID = ?",
       params = list(as.integer(input$sel_path), id))
+    # queue for re-annotation (WF2 / Annotate mode "Run")
+    DBI::dbExecute(con, "UPDATE annotate SET annotate_switch = 1 WHERE ID = ?", params = list(id))
     refresh(refresh() + 1)
     showNotification(paste0("Set path ", input$sel_path,
-      " as selected. Re-run annotation (run_annotate) to update the feature model."), type = "message")
+      " as selected and queued for re-annotation. Run WF2 (Annotate mode -> Run)."), type = "message")
   })
 
   # ---- Annotate modal ----
