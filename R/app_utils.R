@@ -5,9 +5,9 @@
 add_external_resources <- function() {
   golem::add_resource_path("www", app_sys("app", "www"))
   shiny::tags$head(
-    shiny::tags$link(rel = "shortcut icon", href = "www/favicon.ico"),
-    shiny::tags$link(rel = "stylesheet", type = "text/css", href = "www/custom.css"),
-    shiny::tags$title("RiboPilot")
+    golem::favicon(),
+    golem::bundle_resources(path = app_sys("app", "www"), app_title = "RiboPilot"),
+    shinyjs::useShinyjs()
   )
 }
 

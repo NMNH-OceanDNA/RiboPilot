@@ -30,6 +30,7 @@ Imports:
     readr,
     RSQLite,
     shiny,
+    shinyjs,
     shinyWidgets,
     stringr,
     tools,
