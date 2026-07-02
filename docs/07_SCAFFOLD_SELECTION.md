@@ -98,6 +98,19 @@ Options, roughly in order of robustness:
 Recommended: (1) as the backbone (resolve at init, store lineage, flag failures),
 (2) as an optional override, (3) for scoring, (4) in the UI for hard cases.
 
+**DECISION (2026-07-02): go with (1) - auto-resolve `Taxon` at init.** No new
+required map-file columns. Implications:
+- `new_project()` / `new_db()` gains an init step that resolves each `Taxon`
+  string to an NCBI taxid + lineage (Entrez `esearch -db taxonomy`, or
+  `taxonkit name2taxid | taxid2lineage`; entrez-direct is already in the env).
+- `samples` table gains `taxid` and `lineage` columns (nullable).
+- Names that fail to resolve or are ambiguous are recorded with an
+  `ambiguous-taxon` flag and shown to the user to fix (edit `Taxon`, or supply a
+  taxid) rather than silently dropped.
+- Scoring uses rank-fallback (option 3): depth of shared lineage between a
+  scaffold's top-BLAST-hit lineage and the sample lineage.
+- Keep option (2) taxid override and (4) UI "Set as reference" as later add-ons.
+
 ## MSA-against-references review UI
 
 For eyeball selection when automation is uncertain:
