@@ -28,6 +28,8 @@ dependencies:
   - barrnap
   - itsx
   - hmmer
-  # reference DB building
+  # reference DB building + taxonomy resolution
   - entrez-direct
   - biopython
+  - taxonkit
+  - ncbi-datasets-cli
