@@ -12,12 +12,25 @@ between them. If we place the anchors well, the spacers fall out by subtraction.
 
 ## Annotation engines (combine, don't rely on one)
 
-### 1. barrnap / pyBarrnap - rRNA genes
+### 1. barrnap - rRNA genes
 
-barrnap predicts rRNA gene locations via nHMMER profile HMMs and supports the
-eukaryote set **18S, 5.8S, 28S** (and 5S) with a `--kingdom euk` model. Output is
-GFF3. `pyBarrnap --accurate` gives more precise 5.8S/ITS2/28S boundary
-delineation. This gives us e-anchored 18S, 5.8S, and 28S directly.
+barrnap predicts rRNA gene locations and outputs GFF3, giving anchored 18S,
+5.8S, and 28S.
+
+**Build note (found in Increment 2):** the bioconda `barrnap` that our
+`environment.yml` resolves is the **HRGV fork v1.10.5**, whose kingdoms are
+`bac arc fun` (no `euk`). Critically, this fork runs **Infernal `cmsearch`
+against Rfam eukaryotic covariance models** (SSU_rRNA_eukarya RF01960,
+LSU_rRNA_eukarya RF02543, 5_8S RF00002), not nhmmer. Invoke it with
+`--kingdom fun`; despite the name it uses the eukaryote Rfam models and
+correctly annotated 18S + 28S on the fish test assembly. This means the
+structure-aware Rfam anchor calling listed below as an "optional high-accuracy
+mode" is effectively built into our barrnap.
+
+Increment 3 decision: standardize on this fork's `--kingdom fun` (Rfam-based),
+or pin the classic tseemann `barrnap=0.9` (`--kingdom euk`, nhmmer). Leaning
+toward the Rfam fork since it is structure-aware. Either way, ITSx remains the
+authority for ITS1/ITS2 boundaries.
 
 ### 2. ITSx - spacer boundaries
 

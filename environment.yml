@@ -15,14 +15,15 @@ dependencies:
   # assembly + reference recruitment
   - getorganelle
   - spades
-  # homology / mapping / contamination
+  # homology / mapping
   - blast
   - bowtie2
   - minimap2
   - samtools
   - seqtk
   - seqkit
-  - blobtools
+  # contamination screen (optional, added at the contamination increment):
+  #   - blobtools
   # annotation
   - barrnap
   - itsx

@@ -8,3 +8,8 @@
 work/
 .nextflow/
 .nextflow.log*
+
+# local dev data / assembly outputs (never commit)
+testdata_full/
+assembly_out/
+*.fastq.gz

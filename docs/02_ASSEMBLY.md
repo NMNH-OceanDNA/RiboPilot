@@ -62,6 +62,23 @@ multi and emit GetOrganelle seed + label FASTAs). A broad **Actinopterygii**
 database is built and shipped (3,857 seeds; 1,201 x 18S + 1,030 x 28S labels)
 and is the `new_project()` default. See that folder's README.
 
+#### Validation (Increment 2)
+
+Validated end-to-end on a full test sample (`SRR22396758`, *Upeneus parvus*,
+4.3M read pairs) with the shipped Actinopterygii DBs:
+
+```
+fastp -> get_organelle_from_reads.py -1 R1 -2 R2 -s <seeds> --genes <labels> \
+        -F anonym -R 10 -k 21,45,65,85,105,115 --larger-auto-ws -t 8
+```
+
+Result: 2 candidate paths, 3 scaffolds each, ~9.77 kb total per path. BLAST vs
+the label DB confirms it is genuine rDNA: a full **18S** (98.6% identity to
+reference) plus **28S** scaffolds (92-96%). This validates both the assembly
+approach and the Increment 1 reference DBs. The two paths are alternative graph
+traversals (candidate intragenomic variants) -> emit as separate paths, as
+planned.
+
 #### Design of the per-clade nr reference DB (mirror of MitoPilot's util)
 
 A `GenBankDownloadUtil` script (bash + a `parseGB.py`, same shape as MitoPilot's)
