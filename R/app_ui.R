@@ -14,8 +14,6 @@ app_ui <- function(request) {
         # ---- control bar (mirrors MitoPilot) ----
         shiny::div(
           style = "display:flex; flex-flow:row nowrap; align-items:center; gap:0.8em; padding:0.5em 0;",
-          shiny::tags$img(src = "www/favicon.ico", height = "26px"),
-          shiny::strong("RiboPilot", style = "font-size:1.15em;"),
           shinyWidgets::pickerInput("mode", label = NULL, width = "185px",
             choices = c("Assemble", "Annotate & Curate", "Export")),
           bttn("refresh", NULL, "sync"),
