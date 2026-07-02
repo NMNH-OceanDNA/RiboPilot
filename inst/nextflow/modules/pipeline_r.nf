@@ -93,6 +93,8 @@ process reconcile {
     tag "${id}"
     input:
     tuple val(id), path(gff), path(pos)
+    output:
+    val id
     script:
     """
     RIBOPILOT_SRC='${params.ribopilot_src}' rp_reconcile.R '${params.db}' '${id}' ${gff} ${pos}

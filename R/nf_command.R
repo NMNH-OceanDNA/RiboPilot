@@ -21,6 +21,7 @@ nf_command <- function(path, workflow = c("assemble", "annotate"), resume = TRUE
   raw_dir <- config_param(cfg_lines, "rawDir") %||% ""
   min_depth <- config_param(cfg_lines, "minDepth") %||% "0"
   api_key <- config_param(cfg_lines, "ncbi_api_key") %||% ""
+  if (length(api_key) == 0 || is.na(api_key) || api_key %in% c("NA", "NULL")) api_key <- ""
   src <- ribopilot_src %||% app_sys()
   taxdump <- file.path(path, ".taxonomy")
 
