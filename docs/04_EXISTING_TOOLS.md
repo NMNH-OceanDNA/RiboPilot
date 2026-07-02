@@ -13,16 +13,33 @@ nuclear ribosomal genes from low-coverage genome skims** (museum specimens).
 Part of a toolkit with `skim2mito` and `gene2phylo`. Reported ~3 kb rRNA
 recovery from 27/27 test samples.
 
-- Assembly: **GetOrganelle**.
-- Homology filter: **BLAST vs a SILVA 138-derived DB**.
-- Annotation: **barrnap**.
+- QC/trim: **FastQC + fastp** (optional dedup), **MultiQC** summary.
+- Reference build: **`go_fetch.py`** auto-fetches per-sample seed + gene DBs from
+  NCBI by taxid (`ribosomal` / `ribosomal_complete` modes), or user-supplied
+  per-sample references in `samples.csv`.
+- Assembly: **GetOrganelle** (seed + gene DBs).
+- Homology / contamination: **BLASTN** + **minimap2** read mapping + **blobtools**
+  contamination detection, plus a manual filtering script.
+- Stats: **seqkit**.
+- Annotation: **barrnap** (`--kingdom euk`) for rRNA **genes only**.
+- Downstream (out of RiboPilot scope): MAFFT -> Gblocks/ClipKit -> IQ-TREE ->
+  ete3/ggtree, via the sibling `gene2phylo`.
+- `samples.csv` columns: ID, R1, R2, NCBI taxid, seed ref, gene ref.
 - Published: White et al. 2025, Mol Ecol Resour, doi:10.1111/1755-0998.14036;
   repo: github.com/o-william-white/skim2rrna.
 
-RiboPilot is essentially "skim2rrna's scientific approach, rebuilt on MitoPilot's
-architecture (Nextflow + SQLite + Shiny curation + GenBank export + per-clade
-reference curation), for broad taxa with a human-in-the-loop GUI." Study this
-repo closely before implementing.
+**Critical gap RiboPilot fills:** skim2rrna annotates only the rRNA **genes**
+(18S/5.8S/28S via barrnap). It does **not** annotate ITS1/ITS2 or the spacer
+boundaries at all, and has no curation GUI, no reference-guided per-clade
+curation, and no GenBank-submission export. RiboPilot's value-add over the
+closest prior art is exactly: **ITS/spacer boundary annotation (ITSx),
+human-in-the-loop reference-guided curation, and submission-ready export**, on
+MitoPilot's architecture (Nextflow + SQLite + Shiny), for broad taxa.
+
+RiboPilot should still borrow skim2rrna's proven pieces wholesale: `go_fetch`
+per-sample reference building, GetOrganelle assembly, and the
+minimap2+blobtools contamination screen. Study this repo closely before
+implementing.
 
 ## Assembly tools
 
@@ -32,6 +49,8 @@ repo closely before implementing.
 | SPAdes / metaSPAdes / MEGAHIT | full de novo (Option A) | contig-search fallback + cross-check |
 | rnaSPAdes | region assembly | validate repeat unit / expansion segments |
 | aTRAM, MITObim | iterative baiting (Option B2) | reference-guided extension for divergent taxa |
+| **go_fetch.py** | per-sample reference builder | fetches seed+gene DBs from NCBI by taxid; rank-expand/subsample; `ribosomal` modes. Borrow from skim2rrna |
+| **minimap2 + blobtools** | contamination screen | map reads to contigs + BLAST taxonomy to flag foreign rDNA (skim2rrna approach) |
 | PhyloHerb | herbarium organelle+nr extraction | wraps GetOrganelle; reference for nr extraction UX |
 
 ## Annotation tools
@@ -76,6 +95,8 @@ EUKARYOME (whole cistron) + SILVA (anchor seeds).
 ## Sources
 
 - skim2rrna: https://github.com/o-william-white/skim2rrna ; White et al. 2025 https://onlinelibrary.wiley.com/doi/10.1111/1755-0998.14036 ; https://pmc.ncbi.nlm.nih.gov/articles/PMC11646300/
+- go_fetch: https://github.com/o-william-white/go_fetch
+- blobtools: https://github.com/DRL/blobtools
 - GetOrganelle: https://github.com/Kinggerm/GetOrganelle
 - PhyloHerb: https://github.com/lmcai/PhyloHerb
 - barrnap: https://github.com/tseemann/barrnap ; pyBarrnap notes https://scienceparkstudygroup.github.io/ibed-bioinformatics-page/source/metagenomics/barrnap.html

@@ -40,7 +40,16 @@ there is no built-in `nr` preset, so we supply **custom seed + label DBs** via t
 same `custom_seeds_db` / `custom_labels_db` arguments MitoPilot already exposes.
 
 Plan:
-- Build broad-taxa nr seed/label DBs from SILVA/EUKARYOME 18S+28S (see 04).
+- **Seed/label DBs via `go_fetch.py` (from skim2rrna), per sample by NCBI taxid.**
+  This is the cleanest answer to "where do broad-taxa nr references come from":
+  instead of maintaining one giant pan-eukaryote DB, `go_fetch` queries NCBI for
+  each sample's taxid, expands to parent ranks when too few references exist,
+  subsamples child lineages when too many, and emits GetOrganelle-ready seed +
+  gene FASTAs. It has `ribosomal` and `ribosomal_complete` modes (18S/5.8S/28S).
+  RiboPilot should wrap `go_fetch` as a reference-prep Nextflow step, with a
+  packaged SILVA/EUKARYOME fallback DB for samples lacking a usable taxid or
+  offline runs. Optionally accept **per-sample seed/gene reference columns in the
+  map file** (as skim2rrna's `samples.csv` does) to override auto-fetch.
 - Run GetOrganelle from reads with those DBs to assemble the repeat unit.
 - Resolve the assembly graph to the monomer repeat unit; report alternative paths
   (intragenomic variants) as separate paths, like MitoPilot's multi-path output.
@@ -80,9 +89,11 @@ nrDNA is not perfectly homogenized (incomplete concerted evolution). Expect:
   path model + scoring); let the user pick the representative in the app.
 - Length-variant ITS/28S expansion segments -> keep the dominant-coverage path
   as primary, flag minor variants.
-- Contaminant rDNA -> BLAST-lineage check on each path (reuse MitoPilot's
-  candidate-BLAST + lineage columns) and flag paths whose top hit lineage
-  disagrees with `Taxon`.
+- Contaminant rDNA -> two layers: (a) BLAST-lineage check on each path (reuse
+  MitoPilot's candidate-BLAST + lineage columns), and (b) optional
+  **blobtools + minimap2** contamination screen as skim2rrna does (map reads back
+  to each contig, combine coverage + BLAST taxonomy to spot foreign rDNA). Flag
+  paths whose top-hit lineage or blob taxonomy disagrees with `Taxon`.
 
 ## Recommended default
 
@@ -94,6 +105,9 @@ available as a manual whole-assembly cross-check. This matches MitoPilot's
 
 ## Open assembly questions
 
+- `go_fetch` per-sample references need a valid NCBI taxid per sample; decide how
+  to derive it (map-file column, lookup from `Taxon`, or fallback DB) and how to
+  cache fetched references across samples to avoid hammering Entrez.
 - Best conserved-anchor seed set for pan-eukaryote read recruitment without
   over-recruiting contaminants. Likely 18S + 28S core only, not spacers.
 - Whether to circularize (repeat unit is tandem, so the graph is a cycle through

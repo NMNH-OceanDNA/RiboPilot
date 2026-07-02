@@ -13,7 +13,10 @@
   through preprocess.
 
 ### Phase 1 - Assembly (Option B1)
-- Build broad-taxa nr **seed + label DBs** from SILVA/EUKARYOME (18S+28S anchors).
+- Wrap **`go_fetch.py`** as a reference-prep step: per-sample seed + gene DBs from
+  NCBI taxid, with a packaged SILVA/EUKARYOME fallback for missing taxids/offline
+  runs and an Entrez-response cache. (Borrowed from skim2rrna; preferred over
+  maintaining one giant pan-eukaryote DB.)
 - GetOrganelle nr assembly module; orient + rotate to 18S 5' start; multi-path
   output + path scoring (port MitoPilot).
 - BLAST candidate-ref module vs rDNA DB (port MitoPilot's multi-blast-ref branch);
@@ -56,8 +59,10 @@
    base-level spacer curation. Confirm acceptable scientifically.
 4. **28S extent:** single feature vs D-domain sub-annotation by default?
    Proposal: single feature, D-domains optional.
-5. **Reference DB packaging:** ship trimmed EUKARYOME/SILVA subsets in the image,
-   or download on `new_project()` like MitoPilot ref DBs? Size vs convenience.
+5. **Reference DB packaging:** *leaning resolved* - use `go_fetch` per-sample
+   fetch by taxid as primary (no giant DB to ship), plus a small packaged
+   EUKARYOME/SILVA fallback in the image for missing-taxid/offline runs. Confirm
+   this over shipping full trimmed subsets.
 6. **Intragenomic variants:** report top-N paths (like MitoPilot) or force a
    single consensus? Proposal: top-N with dominant flagged primary.
 7. **Shared repo vs sibling repo:** keep RiboPilot fully separate (this repo) or
