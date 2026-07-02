@@ -22,8 +22,8 @@ app_server <- function(input, output, session) {
          FROM samples s LEFT JOIN assemble a ON s.ID = a.ID")
     } else if (mode == "Export") {
       app_query(
-        "SELECT s.ID, s.Taxon, an.reviewed, an.n_features, an.missing, st.length,
-           st.reference_accession AS reference
+        "SELECT s.ID, s.Taxon, s.export_group, an.annotate_lock, an.reviewed, an.n_features,
+           an.missing, st.length, st.reference_accession AS reference
          FROM samples s LEFT JOIN annotate an ON s.ID = an.ID LEFT JOIN stitched st ON s.ID = st.ID")
     } else {
       app_query(
@@ -37,14 +37,17 @@ app_server <- function(input, output, session) {
   output$tbl <- reactable::renderReactable({
     mode <- input$mode %||% "Assemble"
     d <- samples_data()
-    lock_col <- if (mode == "Annotate & Curate") "annotate_lock" else "assemble_lock"
-    state_col <- if (mode == "Annotate & Curate") "annotate_switch" else "assemble_switch"
+    lock_col <- if (mode == "Annotate") "annotate_lock" else "assemble_lock"
+    state_col <- if (mode == "Annotate") "annotate_switch" else "assemble_switch"
 
     cols <- list(
       ID = reactable::colDef(minWidth = 130, sticky = "left", html = TRUE, cell = rt_link("open_detail")),
       Taxon = reactable::colDef(minWidth = 140, sticky = "left", html = TRUE, cell = rt_longtext()),
       reviewed = reactable::colDef(name = "reviewed", html = TRUE, cell = rt_bool_badge(hide_no = TRUE)),
       reference = reactable::colDef(html = TRUE, cell = rt_ncbi_link()),
+      export_group = reactable::colDef(name = "group", minWidth = 110, html = TRUE, cell = rt_longtext()),
+      annotate_lock = reactable::colDef(name = "", width = 34, align = "center", filterable = FALSE,
+        html = TRUE, cell = rt_dynamicIcon(c(`0` = "fa fa-lock-open", `1` = "fa fa-lock"))),
       notes = reactable::colDef(minWidth = 160, html = TRUE, cell = rt_longtext())
     )
     if (lock_col %in% names(d)) {
@@ -85,7 +88,13 @@ app_server <- function(input, output, session) {
     mode <- input$mode %||% "Assemble"
     if (mode == "Assemble") {
       showModal(assemble_modal(id))
-    } else if (mode == "Annotate & Curate") {
+    } else if (mode == "Annotate") {
+      locked <- app_query("SELECT assemble_lock FROM assemble WHERE ID = ?", params = list(id))$assemble_lock
+      if (!isTRUE(locked[1] == 1)) {
+        showNotification("Lock the assembly (Assemble mode) before annotating this sample.",
+          type = "warning", duration = 6)
+        return()
+      }
       showModal(annotate_modal(id))
     }
   })
@@ -108,16 +117,42 @@ app_server <- function(input, output, session) {
     refresh(refresh() + 1)
     showNotification(paste("Updated", length(ids), "sample(s)."), type = "message")
   }
-  observeEvent(input$lock_btn, {
-    col <- if ((input$mode %||% "") == "Annotate & Curate") "annotate" else "assemble"
-    set_flag(sprintf("UPDATE %s SET %s_lock = 1 WHERE ID = ?", col, col))
+  observeEvent(input$lock_btn, {  # toggle lock on selected
+    col <- if ((input$mode %||% "") == "Annotate") "annotate" else "assemble"
+    set_flag(sprintf("UPDATE %s SET %s_lock = 1 - COALESCE(%s_lock, 0) WHERE ID = ?", col, col, col))
   })
-  observeEvent(input$unlock_btn, {
-    col <- if ((input$mode %||% "") == "Annotate & Curate") "annotate" else "assemble"
-    set_flag(sprintf("UPDATE %s SET %s_lock = 0 WHERE ID = ?", col, col))
+  observeEvent(input$state_btn, {  # set state Ready (re-queue)
+    col <- if ((input$mode %||% "") == "Annotate") "annotate" else "assemble"
+    set_flag(sprintf("UPDATE %s SET %s_switch = 1 WHERE ID = ?", col, col))
   })
-  observeEvent(input$requeue_btn, set_flag("UPDATE assemble SET assemble_switch = 1 WHERE ID = ?"))
   observeEvent(input$reviewed_btn, set_flag("UPDATE annotate SET reviewed = 'yes' WHERE ID = ?"))
+
+  # ---- Export group actions ----
+  observeEvent(input$assign_group_btn, {
+    if (length(selected_ids()) == 0) {
+      showNotification("No samples selected.", type = "warning"); return()
+    }
+    showModal(group_modal())
+  })
+  observeEvent(input$assign_group_go, {
+    grp <- trimws(input$group_name %||% "")
+    ids <- selected_ids()
+    if (!nzchar(grp) || length(ids) == 0) {
+      removeModal(); return()
+    }
+    assign_export_group(app_project(), ids, grp)
+    removeModal(); refresh(refresh() + 1)
+    showNotification(paste0("Assigned ", length(ids), " sample(s) to group '", grp, "'."), type = "message")
+  })
+  observeEvent(input$clear_group_btn, {
+    ids <- selected_ids()
+    if (length(ids) == 0) {
+      showNotification("No samples selected.", type = "warning"); return()
+    }
+    clear_export_group(app_project(), ids)
+    refresh(refresh() + 1)
+    showNotification(paste("Cleared group for", length(ids), "sample(s)."), type = "message")
+  })
 
   # ---- lock / state row filters (hide via CSS on rp-lock-/rp-state- classes) ----
   output$filter_css <- renderUI({
@@ -133,7 +168,7 @@ app_server <- function(input, output, session) {
   })
 
   # ---- Update modal: run the workflow with live Nextflow progress ----
-  wf_for_mode <- function() if ((input$mode %||% "") == "Annotate & Curate") "annotate" else "assemble"
+  wf_for_mode <- function() if ((input$mode %||% "") == "Annotate") "annotate" else "assemble"
   nf_process <- reactiveVal(NULL)
   prog_header <- reactiveVal(character(0))
   prog_proc <- reactiveVal(list())
@@ -220,15 +255,26 @@ app_server <- function(input, output, session) {
 
   # ---- Export ----
   output$export_sel_n <- renderText({
-    n <- length(selected_ids())
-    if (n == 0) "all samples (none checked)" else paste(n, "selected")
+    refresh()
+    paste(length(export_ids()), "locked & ready")
   })
+  # gate export to annotation-locked samples (validated)
+  export_ids <- function() {
+    ids <- selected_ids()
+    locked <- app_query("SELECT ID FROM annotate WHERE annotate_lock = 1")$ID
+    if (length(ids)) intersect(ids, locked) else locked
+  }
   output$export_dl <- downloadHandler(
     filename = function() paste0(basename(app_project()), "_export.zip"),
     content = function(file) {
-      ids <- selected_ids()
+      ids <- export_ids()
+      if (length(ids) == 0) {
+        showNotification("No annotation-locked samples to export. Lock annotations first.",
+          type = "warning", duration = 6)
+        stop("nothing to export")
+      }
       td <- file.path(tempdir(), paste0("rp_export_", as.integer(Sys.time())))
-      export_bundle(app_project(), ids = if (length(ids)) ids else NULL, out_dir = td, zip = TRUE)
+      export_bundle(app_project(), ids = ids, out_dir = td, zip = TRUE)
       file.copy(paste0(td, ".zip"), file, overwrite = TRUE)
     }
   )

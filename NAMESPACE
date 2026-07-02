@@ -3,6 +3,9 @@
 import(shiny)
 
 export(RiboPilot)
+export(assign_export_group)
+export(clear_export_group)
+export(export_project)
 export(export_bundle)
 export(run_app)
 export(new_project)

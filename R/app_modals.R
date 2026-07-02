@@ -1,4 +1,4 @@
-# Shiny modal dialogs (Assemble / Annotate & Curate) + their plot/table helpers.
+# Shiny modal dialogs (Assemble / Annotate) + their plot/table helpers.
 
 #' Assemble details modal: pick the selected path; view scores + scaffolds
 #' @noRd
@@ -23,7 +23,7 @@ assemble_modal <- function(id) {
 #' @noRd
 annotate_modal <- function(id) {
   modalDialog(
-    title = paste0("Annotate & Curate — ", id),
+    title = paste0("Annotate — ", id),
     size = "l", easyClose = TRUE,
     footer = tagList(
       actionButton("save_annot", "Save edits", class = "btn-primary btn-sm"),
@@ -43,7 +43,7 @@ annotate_modal <- function(id) {
 #' Update / run modal: launch the Nextflow workflow with live progress
 #' @noRd
 run_modal <- function(mode, n) {
-  wf <- if (mode == "Annotate & Curate") "Annotation (WF2)" else "Assembly (WF1)"
+  wf <- if (mode == "Annotate") "Annotation (WF2)" else "Assembly (WF1)"
   modalDialog(
     title = div(style = "display:flex; justify-content:space-between; align-items:center; height:38px;",
       span(sprintf("%s — %d sample(s) to update", wf, n)),
@@ -65,6 +65,18 @@ run_modal <- function(mode, n) {
       actionButton("nf_start", "Run from App", class = "btn-success btn-sm"),
       shinyjs::hidden(actionButton("nf_stop", "Stop / Interrupt", class = "btn-sm")),
       actionButton("nf_close", "Close", class = "btn-sm"))
+  )
+}
+
+#' Assign-export-group modal: name the group for the selected samples
+#' @noRd
+group_modal <- function() {
+  modalDialog(
+    title = "Assign export group", size = "s", easyClose = TRUE,
+    textInput("group_name", "Group name", placeholder = "e.g. batch_2026_01"),
+    footer = tagList(
+      actionButton("assign_group_go", "Assign", class = "btn-primary btn-sm"),
+      modalButton("Cancel"))
   )
 }
 

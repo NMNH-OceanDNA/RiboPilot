@@ -32,7 +32,8 @@ process query_annotate_samples {
     """
     sqlite3 '${params.db}' "
       SELECT an.ID FROM annotate an
-      WHERE an.annotate_switch IN (1,4) AND an.annotate_lock = 0
+      JOIN assemble a ON a.ID = an.ID
+      WHERE an.annotate_switch IN (1,4) AND an.annotate_lock = 0 AND a.assemble_lock = 1
         AND EXISTS (SELECT 1 FROM assemblies x WHERE x.ID = an.ID);" > ids.txt
     """
 }

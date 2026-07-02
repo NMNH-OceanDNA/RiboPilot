@@ -42,7 +42,8 @@ nf_pending_count <- function(path, workflow = c("assemble", "annotate")) {
   sql <- if (workflow == "assemble") {
     "SELECT COUNT(*) n FROM assemble WHERE assemble_switch IN (1,4) AND assemble_lock = 0"
   } else {
-    "SELECT COUNT(*) n FROM annotate an WHERE an.annotate_switch IN (1,4) AND an.annotate_lock = 0
+    "SELECT COUNT(*) n FROM annotate an JOIN assemble a ON a.ID = an.ID
+       WHERE an.annotate_switch IN (1,4) AND an.annotate_lock = 0 AND a.assemble_lock = 1
        AND EXISTS (SELECT 1 FROM assemblies x WHERE x.ID = an.ID)"
   }
   DBI::dbGetQuery(con, sql)$n
