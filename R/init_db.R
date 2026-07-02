@@ -297,6 +297,62 @@ new_db <- function(
     );"
   )
 
+  # stitched (one ordered/oriented sequence per selected path) ----
+  DBI::dbExecute(
+    con,
+    "CREATE TABLE stitched (
+      ID TEXT NOT NULL,
+      path INTEGER NOT NULL,
+      sequence TEXT,
+      length INTEGER,
+      reference_accession TEXT,
+      n_gaps INTEGER,
+      n_redundant INTEGER,
+      time_stamp INTEGER,
+      PRIMARY KEY (ID)
+    );"
+  )
+
+  # annotations (nrDNA feature model: 18S/ITS1/5.8S/ITS2/28S) ----
+  DBI::dbExecute(
+    con,
+    "CREATE TABLE annotations (
+      ID TEXT NOT NULL,
+      element TEXT NOT NULL,
+      type TEXT,
+      start INTEGER,
+      stop INTEGER,
+      length INTEGER,
+      strand TEXT,
+      tool TEXT,
+      edited INTEGER,
+      notes TEXT,
+      time_stamp INTEGER,
+      PRIMARY KEY (ID, element)
+    );"
+  )
+
+  # annotate (per-sample annotation summary) ----
+  DBI::dbExecute(
+    con,
+    "CREATE TABLE annotate (
+      ID TEXT NOT NULL,
+      annotate_switch INTEGER,
+      annotate_lock INTEGER,
+      n_features INTEGER,
+      missing TEXT,
+      annotate_notes TEXT,
+      reviewed TEXT,
+      time_stamp INTEGER,
+      PRIMARY KEY (ID)
+    );"
+  )
+  dplyr::tbl(con, "annotate") |>
+    dplyr::rows_upsert(
+      data.frame(ID = mapping$ID, annotate_switch = 1L, annotate_lock = 0L, reviewed = "no"),
+      in_place = TRUE, copy = TRUE, by = "ID"
+    )
+
   # path_scores (taxonomy-aware candidate scoring + auto-select) ----
   DBI::dbExecute(
     con,

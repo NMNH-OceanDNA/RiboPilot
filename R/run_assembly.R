@@ -52,6 +52,8 @@ config_param <- function(config_lines, key) {
 #' @param load (logical) Load published outputs into the database afterwards.
 #' @param score (logical) After loading, score candidate paths and write
 #'   `path_scores` (see [score_project()]).
+#' @param annotate (logical) After scoring, annotate the selected path's feature
+#'   model (see [annotate_project()]).
 #' @param conda_env Optional conda environment providing the pipeline tools
 #'   (nextflow, fastp, GetOrganelle, ...). Give the env name (looked up under
 #'   `~/miniconda3|miniforge3|mambaforge/envs`, or `$CONDA_PREFIX`'s sibling) or a
@@ -60,7 +62,7 @@ config_param <- function(config_lines, key) {
 #' @return (invisibly) the samplesheet data.frame.
 #' @export
 run_assembly <- function(path = ".", nextflow = "nextflow", work = file.path(path, "work"),
-                         load = TRUE, score = TRUE, conda_env = NULL) {
+                         load = TRUE, score = TRUE, annotate = TRUE, conda_env = NULL) {
   if (!is.null(conda_env)) {
     bin <- resolve_conda_bin(conda_env)
     old_path <- Sys.getenv("PATH")
@@ -122,6 +124,9 @@ run_assembly <- function(path = ".", nextflow = "nextflow", work = file.path(pat
     message("Loaded assemblies into the database.")
     if (isTRUE(score)) {
       score_project(path = path, out_dir = out_dir, con = con)
+    }
+    if (isTRUE(annotate)) {
+      annotate_project(path = path, out_dir = out_dir, con = con)
     }
   }
   invisible(ss)
