@@ -7,7 +7,7 @@ Sys.setenv(PATH = paste("/home/dmacguig/miniconda3/envs/ribopilot/bin",
 Sys.which(c("nextflow", "fastp", "get_organelle_from_reads.py"))
 
 # 1-sample project pointing at the reads you already have
-new_project("/home/dmacguig/Documents/DJMCompBio/RiboPilot_test/run_02",
+new_project("/home/dmacguig/Documents/DJMCompBio/RiboPilot_test/run_03",
             mapping_fn  = "/home/dmacguig/Documents/DJMCompBio/RiboPilot_test/mapping.csv",
             data_path   = "~/Documents/GitHub/RiboPilot/testdata_full",
             custom_seeds_db  = "~/Documents/GitHub/RiboPilot/ref_dbs/getOrganelle/seeds/actinopterygii_rrna_seeds.fasta",
@@ -20,4 +20,4 @@ run_assembly("~/Documents/DJMCompBio/RiboPilot_test/run_02", conda_env = "ribopi
 run_annotate("~/Documents/DJMCompBio/RiboPilot_test", conda_env = "ribopilot")
 # then Export mode / export_bundle()
 
-RiboPilot::run_app("~/Documents/DJMCompBio/RiboPilot_test/run_02")
+RiboPilot::RiboPilot("~/Documents/DJMCompBio/RiboPilot_test/run_03")

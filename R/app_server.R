@@ -3,6 +3,9 @@
 #' @noRd
 app_server <- function(input, output, session) {
 
+  # Stop the app when the last browser session closes (survives refresh).
+  register_app_lifecycle(session)
+
   refresh <- reactiveVal(0)
   observeEvent(input$refresh, refresh(refresh() + 1))
   sel_id <- reactiveVal(NULL)
@@ -292,6 +295,11 @@ app_server <- function(input, output, session) {
     if (!is.null(p) && p$is_alive()) p$kill()
     nf_process(NULL)
   }
+  # don't leave an orphaned Nextflow process if the browser closes mid-run
+  session$onSessionEnded(function() {
+    p <- isolate(nf_process())
+    if (!is.null(p) && p$is_alive()) try(p$kill(), silent = TRUE)
+  })
   observeEvent(input$nf_stop, {
     kill_nf()
     shinyjs::hide("nf_stop"); shinyjs::show("nf_start")
