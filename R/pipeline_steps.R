@@ -1,0 +1,113 @@
+# Per-sample pipeline steps, called by the WF1 Nextflow R-script processes
+# (bin/rp_score.R, bin/rp_stitch.R, bin/rp_reconcile.R). Each takes an open DBI
+# connection + a sample ID, does one stage, and writes to the database. Kept
+# separate from the project-wide drivers so a Nextflow process can run one stage
+# for one sample.
+
+#' Score one sample's candidate paths and write path_scores (+ auto_select)
+#'
+#' @param con Open DBI connection.
+#' @param id Sample ID.
+#' @param out_dir Pipeline output dir (assembly fastas + gfa live under
+#'   `<out_dir>/<id>/assemble`).
+#' @param taxdump_dir Optional pinned taxdump for hit-lineage resolution.
+#' @return (invisibly) the scored data.frame.
+#' @export
+score_one <- function(con, id, out_dir, taxdump_dir = NULL) {
+  td <- if (have_taxdump(taxdump_dir)) taxdump_dir else NULL
+  seeds_db <- DBI::dbGetQuery(con,
+    "SELECT ao.seeds_db FROM assemble a JOIN assemble_opts ao ON a.assemble_opts = ao.assemble_opts WHERE a.ID = ?",
+    params = list(id))$seeds_db[1]
+  blast_db <- make_blast_db(local_ref(seeds_db))
+
+  adir <- file.path(out_dir, id, "assemble")
+  fastas <- Sys.glob(file.path(adir, paste0(id, "_assembly_*.fasta")))
+  fastas <- fastas[!grepl("_assembly_0\\.fasta$", fastas)]
+  if (length(fastas) == 0) {
+    return(invisible(NULL))
+  }
+  gfa <- Sys.glob(file.path(adir, "*.gfa"))
+  lineage <- DBI::dbGetQuery(con, "SELECT lineage FROM samples WHERE ID = ?", params = list(id))$lineage[1]
+
+  scored <- score_assembly(
+    path_fastas = fastas,
+    gfa_path = if (length(gfa) > 0) gfa[1] else NA_character_,
+    sample_lineage = lineage %||% NA_character_,
+    blast_db = blast_db, taxdump_dir = td, with_staxids = FALSE)
+  write_path_scores(con, id, scored)
+  invisible(scored)
+}
+
+#' Stitch one sample's selected path; write the `stitched` table + return fasta
+#'
+#' @param con Open DBI connection.
+#' @param id Sample ID.
+#' @param fasta_out Optional path to also write the stitched sequence as fasta.
+#' @return (invisibly) the stitched sequence.
+#' @export
+stitch_one <- function(con, id, fasta_out = NULL) {
+  seeds_env <- new.env()
+  seeds_cache <- list(get = function(db) {
+    if (is.na(db) || !nzchar(db)) {
+      return(NULL)
+    }
+    ref <- local_ref(db)
+    if (is.na(ref)) {
+      return(NULL)
+    }
+    if (is.null(seeds_env[[ref]])) seeds_env[[ref]] <- Biostrings::readDNAStringSet(ref)
+    seeds_env[[ref]]
+  })
+  st <- stitch_selected(con, id, seeds_cache)
+  if (is.null(st)) {
+    return(invisible(NULL))
+  }
+  ts <- as.integer(Sys.time())
+  DBI::dbExecute(con, "DELETE FROM stitched WHERE ID = ?", params = list(id))
+  DBI::dbExecute(con,
+    "INSERT INTO stitched (ID, path, sequence, length, reference_accession, n_gaps, n_redundant, time_stamp)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    params = list(id, st$path, st$seq, nchar(st$seq), st$ref_acc, st$n_gaps, st$n_redundant, ts))
+  if (!is.null(fasta_out)) {
+    writeLines(c(paste0(">", id), st$seq), fasta_out)
+  }
+  invisible(st$seq)
+}
+
+#' Reconcile barrnap + ITSx outputs for one sample; write annotations
+#'
+#' @param con Open DBI connection.
+#' @param id Sample ID.
+#' @param gff barrnap GFF file (or NULL).
+#' @param positions ITSx positions file (or NULL).
+#' @return (invisibly) the feature data.frame.
+#' @export
+reconcile_one <- function(con, id, gff = NULL, positions = NULL) {
+  bar <- if (!is.null(gff) && file.exists(gff)) parse_barrnap(readLines(gff, warn = FALSE)) else data.frame()
+  its <- if (!is.null(positions) && file.exists(positions)) parse_itsx(readLines(positions, warn = FALSE)) else data.frame()
+  feat <- reconcile_features(bar, its)
+  ts <- as.integer(Sys.time())
+
+  DBI::dbExecute(con, "DELETE FROM annotations WHERE ID = ?", params = list(id))
+  if (nrow(feat) > 0) {
+    df <- data.frame(ID = id, element = feat$element, type = feat$type,
+      start = feat$start, stop = feat$stop, length = feat$length, strand = feat$strand,
+      tool = feat$tool, edited = 0L, notes = NA_character_, time_stamp = ts, stringsAsFactors = FALSE)
+    DBI::dbAppendTable(con, "annotations", df)
+  }
+  missing <- setdiff(c(RRNA_GENES, RRNA_SPACERS), feat$element)
+  DBI::dbExecute(con,
+    "UPDATE annotate SET n_features = ?, missing = ?, annotate_switch = 2, time_stamp = ? WHERE ID = ?",
+    params = list(nrow(feat), paste(missing, collapse = ","), ts, id))
+  invisible(feat)
+}
+
+#' Open a project DB connection with WAL + busy timeout (safe for concurrent
+#' writes from parallel Nextflow processes)
+#' @export
+open_project_db <- function(db) {
+  con <- DBI::dbConnect(RSQLite::SQLite(), db)
+  DBI::dbExecute(con, "PRAGMA journal_mode=WAL;")
+  DBI::dbExecute(con, "PRAGMA busy_timeout=10000;")
+  con
+}
