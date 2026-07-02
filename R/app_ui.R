@@ -7,13 +7,15 @@ filter_pickers <- function(mode) {
   } else {
     c("Ready" = "1", "Done" = "2", "Failed" = "3", "Needs BLAST" = "4")
   }
+  picker_opts <- list(`actions-box` = TRUE, `select-all-text` = "All",
+    `deselect-all-text` = "None", `selected-text-format` = "count > 0", width = "140px")
   shiny::tagList(
-    shinyWidgets::pickerInput("lock_filter", label = NULL, width = "115px",
-      choices = c("Unlocked" = "0", "Locked" = "1"), selected = c("0", "1"), multiple = TRUE,
-      options = list(`actions-box` = TRUE, `selected-text-format` = "count > 2", title = "lock")),
-    shinyWidgets::pickerInput("state_filter", label = NULL, width = "115px",
-      choices = state_choices, selected = unname(state_choices), multiple = TRUE,
-      options = list(`actions-box` = TRUE, `selected-text-format` = "count > 2", title = "state"))
+    shinyWidgets::pickerInput("lock_filter", label = "Lock:", width = "140px",
+      choices = c("Unlocked" = "0", "Locked" = "1"), selected = c("0", "1"),
+      multiple = TRUE, options = picker_opts),
+    shinyWidgets::pickerInput("state_filter", label = "State:", width = "140px",
+      choices = state_choices, selected = unname(state_choices),
+      multiple = TRUE, options = picker_opts)
   )
 }
 
@@ -59,9 +61,11 @@ app_ui <- function(request) {
         ),
         # ---- filter row (status pickers, below the control bar like MitoPilot) ----
         shiny::conditionalPanel("input.mode == 'Assemble'",
-          shiny::div(style = "display:flex; gap:0.6em; padding:0 0 0.4em;", filter_pickers("assemble"))),
+          shiny::div(style = "display:flex; flex-flow:row wrap; gap:1em; align-items:flex-end; margin:0.6em 0 0.7em;",
+            filter_pickers("assemble"))),
         shiny::conditionalPanel("input.mode == 'Annotate'",
-          shiny::div(style = "display:flex; gap:0.6em; padding:0 0 0.4em;", filter_pickers("annotate"))),
+          shiny::div(style = "display:flex; flex-flow:row wrap; gap:1em; align-items:flex-end; margin:0.6em 0 0.7em;",
+            filter_pickers("annotate"))),
         shiny::div(
           style = "flex:1 1 auto; min-height:0; overflow:hidden;",
           reactable::reactableOutput("tbl", height = "100%")
