@@ -59,6 +59,19 @@ rt_bool_badge <- function(invert = FALSE, hide_no = FALSE) {
   ) |> htmlwidgets::JS()
 }
 
+#' Render a curation flag count: blank/green when 0, orange badge when > 0
+#' @noRd
+rt_flag_badge <- function() {
+  htmlwidgets::JS(
+    "function(cellInfo) {
+      var n = cellInfo.value
+      if (n === null || n === undefined || n === '' ) return ''
+      n = Number(n)
+      if (n === 0) return '<span style=\"color:#2d6a4f;\">&#10003;</span>'
+      return '<span style=\"background:#fde8d0; color:#7d4a1e; border-radius:3px; padding:1px 6px; font-size:0.85em;\">' + n + '</span>'
+    }")
+}
+
 #' Render an NCBI accession as a clickable link
 #' @noRd
 rt_ncbi_link <- function() {

@@ -100,3 +100,19 @@ process reconcile {
     RIBOPILOT_SRC='${params.ribopilot_src}' rp_reconcile.R '${params.db}' '${id}' ${gff} ${pos}
     """
 }
+
+// Curate the reconciled feature model: structural + reference flags -> per-
+// feature status/flags + per-sample n_flags/notes. Reads any reference identity
+// already in the DB (blast_ref_alignment); never blocks on remote BLAST.
+process curate {
+    cache false
+    tag "${id}"
+    input:
+    val id
+    output:
+    val id
+    script:
+    """
+    RIBOPILOT_SRC='${params.ribopilot_src}' rp_curate.R '${params.db}' '${id}'
+    """
+}

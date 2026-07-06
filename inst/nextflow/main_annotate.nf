@@ -3,7 +3,7 @@
 // selected path -> barrnap + ITSx -> reconcile, writing results back to the DB.
 // Same sqlite3 + R-script-process pattern as WF1.
 
-include { query_annotate_samples; stitch; annotate_tools; reconcile } from './modules/pipeline_r.nf'
+include { query_annotate_samples; stitch; annotate_tools; reconcile; curate } from './modules/pipeline_r.nf'
 
 params.publishDir = 'out'
 params.db = ''
@@ -16,4 +16,5 @@ workflow {
     stitch(ids)
     annotate_tools(stitch.out)
     reconcile(annotate_tools.out)
+    curate(reconcile.out)
 }

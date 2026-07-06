@@ -79,7 +79,8 @@ app_server <- function(input, output, session) {
       # annotate only shows samples whose assembly is locked (validated)
       app_query(
         "SELECT an.annotate_lock, an.annotate_switch, s.ID, s.Taxon,
-           st.reference_accession AS reference, an.n_features, an.missing, an.reviewed
+           st.reference_accession AS reference, an.n_features, an.missing,
+           an.n_flags, an.reviewed
          FROM samples s JOIN assemble a ON s.ID = a.ID
            LEFT JOIN annotate an ON s.ID = an.ID LEFT JOIN stitched st ON s.ID = st.ID
          WHERE a.assemble_lock = 1")
@@ -97,6 +98,8 @@ app_server <- function(input, output, session) {
       ID = reactable::colDef(minWidth = 130, sticky = "left", html = TRUE, cell = rt_link("open_detail")),
       Taxon = reactable::colDef(minWidth = 140, sticky = "left", html = TRUE, cell = rt_longtext()),
       reviewed = reactable::colDef(name = "reviewed", html = TRUE, cell = rt_bool_badge(hide_no = TRUE)),
+      n_flags = reactable::colDef(name = "flags", width = 70, align = "center", html = TRUE,
+        filterable = FALSE, cell = rt_flag_badge()),
       reference = reactable::colDef(html = TRUE, cell = rt_ncbi_link()),
       export_group = reactable::colDef(name = "group", minWidth = 110, html = TRUE, cell = rt_longtext()),
       annotate_lock = reactable::colDef(name = "", width = 34, align = "center", filterable = FALSE,
@@ -460,10 +463,55 @@ app_server <- function(input, output, session) {
   output$feature_tbl <- reactable::renderReactable({
     id <- sel_id(); req(id)
     edit_tick()
-    reactable::reactable(
-      app_query("SELECT element, type, start, stop, length, strand, edited, tool FROM annotations WHERE ID = ? ORDER BY start",
-        params = list(id)),
-      compact = TRUE, resizable = TRUE, defaultPageSize = 10)
+    d <- app_query("SELECT element, type, start, stop, length, strand, status, flags, edited, tool FROM annotations WHERE ID = ? ORDER BY start",
+      params = list(id))
+    reactable::reactable(d, compact = TRUE, resizable = TRUE, defaultPageSize = 10,
+      columns = list(
+        flags = reactable::colDef(html = TRUE, cell = rt_longtext()),
+        status = reactable::colDef(width = 70)),
+      rowStyle = function(index) if (isTRUE(d$status[index] == "flag")) list(background = "#fdf1e3") else NULL)
+  })
+
+  # ---- Curation flags panel (sample notes + per-feature flag list w/ jump) ----
+  flag_rows <- reactive({
+    edit_tick()
+    id <- sel_id(); req(id)
+    app_query("SELECT element, flags FROM annotations WHERE ID = ? AND status = 'flag' ORDER BY start",
+      params = list(id))
+  })
+
+  output$curate_notes <- renderUI({
+    id <- sel_id(); req(id)
+    a <- app_query("SELECT n_flags, annotate_notes FROM annotate WHERE ID = ?", params = list(id))
+    if (nrow(a) == 0 || is.na(a$n_flags[1]) || a$n_flags[1] == 0) {
+      return(span(style = "color:#2d6a4f;", HTML("&#10003; No curation flags for this sample.")))
+    }
+    tagList(
+      span(sprintf("%d sample flag(s): ", a$n_flags[1]), style = "color:#7d4a1e; font-weight:bold;"),
+      span(a$annotate_notes[1] %||% "", style = "color:#7d4a1e;")
+    )
+  })
+
+  output$flag_tbl <- reactable::renderReactable({
+    d <- flag_rows()
+    if (nrow(d) == 0) {
+      return(reactable::reactable(data.frame(` ` = "No flagged features.", check.names = FALSE),
+        compact = TRUE))
+    }
+    d$jump <- "edit"
+    reactable::reactable(d[, c("element", "flags", "jump")],
+      compact = TRUE, resizable = TRUE, defaultPageSize = 10,
+      columns = list(
+        flags = reactable::colDef(html = TRUE, cell = rt_longtext()),
+        jump = reactable::colDef(name = "", width = 60, html = TRUE, cell = rt_link("flag_jump"))))
+  })
+
+  # click a flagged feature -> select it in the boundary editor below
+  observeEvent(input$flag_jump, {
+    i <- suppressWarnings(as.integer(input$flag_jump))
+    d <- flag_rows()
+    req(!is.na(i), i >= 1, i <= nrow(d))
+    updateSelectInput(session, "nudge_element", selected = d$element[i])
   })
 
   # nudge one boundary by the chosen step, clamp to sequence, persist live

@@ -5,7 +5,7 @@
 
 include { preprocess } from './modules/preprocess.nf'
 include { assemble } from './modules/assemble.nf'
-include { query_samples; score; stitch; annotate_tools; reconcile } from './modules/pipeline_r.nf'
+include { query_samples; score; stitch; annotate_tools; reconcile; curate } from './modules/pipeline_r.nf'
 include { blast_genbank } from './modules/blast.nf'
 include { blast_ref_fetch; blast_ref_align } from './modules/blast_ref.nf'
 include { coverage } from './modules/coverage.nf'
@@ -53,4 +53,8 @@ workflow {
         .join(reconcile.out.map { id -> tuple(id, true) })
         .map { id, a, b -> id }
     blast_ref_align(ref_align_in)
+
+    // curate the reconciled model (structural checks always; reference-identity
+    // flags whenever blast_ref_align has already written alignments)
+    curate(reconcile.out)
 }

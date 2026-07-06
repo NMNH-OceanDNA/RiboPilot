@@ -399,6 +399,7 @@ new_db <- function(
   )
 
   # annotations (nrDNA feature model: 18S/ITS1/5.8S/ITS2/28S) ----
+  # status/flags are filled by curation (curate_one); tool/edited by annotation.
   DBI::dbExecute(
     con,
     "CREATE TABLE annotations (
@@ -410,6 +411,8 @@ new_db <- function(
       length INTEGER,
       strand TEXT,
       tool TEXT,
+      status TEXT,
+      flags TEXT,
       edited INTEGER,
       notes TEXT,
       time_stamp INTEGER,
@@ -417,7 +420,9 @@ new_db <- function(
     );"
   )
 
-  # annotate (per-sample annotation summary) ----
+  # annotate (per-sample annotation + curation summary) ----
+  # n_flags / annotate_notes are filled by curation; curate_opts selects the
+  # per-clade ruleset (see curate_opts table).
   DBI::dbExecute(
     con,
     "CREATE TABLE annotate (
@@ -426,6 +431,8 @@ new_db <- function(
       annotate_lock INTEGER,
       n_features INTEGER,
       missing TEXT,
+      curate_opts TEXT,
+      n_flags INTEGER,
       annotate_notes TEXT,
       reviewed TEXT,
       time_stamp INTEGER,
@@ -434,8 +441,27 @@ new_db <- function(
   )
   dplyr::tbl(con, "annotate") |>
     dplyr::rows_upsert(
-      data.frame(ID = mapping$ID, annotate_switch = 1L, annotate_lock = 0L, reviewed = "no"),
+      data.frame(ID = mapping$ID, annotate_switch = 1L, annotate_lock = 0L,
+        curate_opts = "default", reviewed = "no"),
       in_place = TRUE, copy = TRUE, by = "ID"
+    )
+
+  # curate_opts (per-clade curation ruleset selection) ----
+  DBI::dbExecute(
+    con,
+    "CREATE TABLE curate_opts (
+      curate_opts TEXT NOT NULL,
+      ruleset TEXT,
+      min_anchor_pid REAL,
+      check_contaminant INTEGER,
+      PRIMARY KEY (curate_opts)
+    );"
+  )
+  dplyr::tbl(con, "curate_opts") |>
+    dplyr::rows_upsert(
+      data.frame(curate_opts = "default", ruleset = "metazoa_generic",
+        min_anchor_pid = 85, check_contaminant = 1L),
+      in_place = TRUE, copy = TRUE, by = "curate_opts"
     )
 
   # path_scores (taxonomy-aware candidate scoring + auto-select) ----
