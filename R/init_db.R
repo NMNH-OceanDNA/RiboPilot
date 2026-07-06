@@ -491,5 +491,8 @@ new_db <- function(
     );"
   )
 
+  # stamp the current schema version so migrate_db() is a no-op on fresh DBs
+  DBI::dbExecute(con, sprintf("PRAGMA user_version = %d", RIBOPILOT_SCHEMA_VERSION))
+
   invisible(return())
 }

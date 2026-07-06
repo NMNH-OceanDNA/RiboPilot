@@ -133,48 +133,14 @@ lineages_conflict <- function(a, b) {
   length(intersect(ta, tb)) == 0
 }
 
-#' Ensure the curation columns/tables exist (idempotent migration)
+#' Ensure the curation columns/tables exist (idempotent)
 #'
-#' Adds `curate_opts` (table + row), the `annotate.curate_opts`/`annotate.n_flags`
-#' columns, and the `annotations.status`/`annotations.flags` columns to a project
-#' DB created before curation existed. New projects get these in [new_db()].
+#' Thin wrapper over [migrate_db()], kept for call sites that only need the
+#' curation schema (e.g. [curate_one()]). New projects get these in [new_db()].
 #' @param con Open DBI connection.
 #' @export
 ensure_curate_schema <- function(con) {
-  has_col <- function(tbl, col) col %in% DBI::dbListFields(con, tbl)
-  has_tbl <- function(tbl) tbl %in% DBI::dbListTables(con)
-
-  if (!has_tbl("curate_opts")) {
-    DBI::dbExecute(con,
-      "CREATE TABLE curate_opts (
-        curate_opts TEXT NOT NULL,
-        ruleset TEXT,
-        min_anchor_pid REAL,
-        check_contaminant INTEGER,
-        PRIMARY KEY (curate_opts)
-      );")
-  }
-  if (DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM curate_opts")$n == 0) {
-    DBI::dbExecute(con,
-      "INSERT INTO curate_opts (curate_opts, ruleset, min_anchor_pid, check_contaminant)
-       VALUES ('default', 'metazoa_generic', 85, 1)")
-  }
-  if (has_tbl("annotate")) {
-    if (!has_col("annotate", "curate_opts")) {
-      DBI::dbExecute(con, "ALTER TABLE annotate ADD COLUMN curate_opts TEXT DEFAULT 'default'")
-    }
-    if (!has_col("annotate", "n_flags")) {
-      DBI::dbExecute(con, "ALTER TABLE annotate ADD COLUMN n_flags INTEGER")
-    }
-  }
-  if (has_tbl("annotations")) {
-    if (!has_col("annotations", "status")) {
-      DBI::dbExecute(con, "ALTER TABLE annotations ADD COLUMN status TEXT")
-    }
-    if (!has_col("annotations", "flags")) {
-      DBI::dbExecute(con, "ALTER TABLE annotations ADD COLUMN flags TEXT")
-    }
-  }
+  migrate_db(con)
   invisible()
 }
 

@@ -25,6 +25,31 @@ clear_export_group <- function(path, ids) {
   invisible()
 }
 
+# Sample columns never emitted as source modifiers (internal, or handled
+# separately as [organism=]). Any other map-file metadata column becomes a
+# GenBank source modifier keyed by its (lowercased) column name.
+SOURCE_MOD_SKIP <- c("ID", "Taxon", "R1", "R2", "taxid", "lineage", "export_group",
+  "seq", "sequence")
+
+#' Build GenBank source-modifier tags from a sample's metadata row
+#'
+#' Extra map-file columns (voucher, country, isolate, collection_date, ...) are
+#' emitted verbatim as `[column=value]` deflines modifiers; name the map-file
+#' columns after the source modifiers you want (e.g. `specimen_voucher`,
+#' `country`/`geo_loc_name`, `collection_date`).
+#' @noRd
+source_modifiers <- function(row) {
+  extra <- setdiff(names(row), SOURCE_MOD_SKIP)
+  mods <- character(0)
+  for (col in extra) {
+    v <- row[[col]][1]
+    if (is.null(v) || length(v) == 0 || is.na(v) || !nzchar(trimws(as.character(v)))) next
+    key <- tolower(gsub("\\s+", "_", trimws(col)))
+    mods <- c(mods, sprintf("[%s=%s]", key, trimws(as.character(v))))
+  }
+  mods
+}
+
 #' Feature table (.tbl) text for one sample from an open connection
 #' @noRd
 feature_table_text_con <- function(con, id) {
@@ -119,12 +144,15 @@ export_report_html <- function(con, ids, out_html, label) {
 #' @param out_dir Output directory (default `<path>/export`).
 #' @param label Bundle label (default: `group` or "export").
 #' @param markers,report Also write per-marker fastas / an HTML report.
+#' @param template Optional path to a GenBank submission template (`.sbt`);
+#'   copied into the bundle as `<label>.sbt` so table2asn picks it up.
 #' @param run_table2asn Run table2asn if on PATH.
 #' @param zip Also write `<out_dir>/<label>.zip`.
 #' @return (invisibly) the group output directory.
 #' @export
 export_bundle <- function(path = ".", ids = NULL, group = NULL, out_dir = file.path(path, "export"),
-                          label = NULL, markers = TRUE, report = TRUE, run_table2asn = FALSE, zip = TRUE) {
+                          label = NULL, markers = TRUE, report = TRUE, template = NULL,
+                          run_table2asn = FALSE, zip = TRUE) {
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(path, ".sqlite"))
   on.exit(DBI::dbDisconnect(con), add = TRUE)
 
@@ -150,11 +178,13 @@ export_bundle <- function(path = ".", ids = NULL, group = NULL, out_dir = file.p
 
   for (id in ids) {
     row <- DBI::dbGetQuery(con,
-      "SELECT st.sequence AS seq, s.Taxon FROM stitched st JOIN samples s ON st.ID = s.ID WHERE st.ID = ?",
+      "SELECT st.sequence AS seq, s.* FROM stitched st JOIN samples s ON st.ID = s.ID WHERE st.ID = ?",
       params = list(id))
     seq <- row$seq[1]
     taxon <- row$Taxon[1]
-    defline <- sprintf(">%s [organism=%s] [moltype=genomic DNA]", id, taxon)
+    defline <- paste(c(
+      sprintf(">%s [organism=%s] [moltype=genomic DNA]", id, taxon),
+      source_modifiers(row)), collapse = " ")
     writeLines(c(defline, seq), file.path(gdir, paste0(id, ".fsa")))
     tbl <- feature_table_text_con(con, id)
     writeLines(tbl, file.path(gdir, paste0(id, ".tbl")))
@@ -193,6 +223,15 @@ export_bundle <- function(path = ".", ids = NULL, group = NULL, out_dir = file.p
     tryCatch(export_report_html(con, ids, file.path(gdir, paste0(label, "_report.html")), label),
       error = function(e) message("Report generation skipped: ", conditionMessage(e)))
   }
+  # submission template (.sbt): copy in so table2asn (-t) picks it up
+  if (!is.null(template)) {
+    if (!file.exists(template)) {
+      warning("Submission template not found: ", template)
+    } else {
+      file.copy(template, file.path(gdir, paste0(label, ".sbt")), overwrite = TRUE)
+    }
+  }
+
   # optional table2asn
   if (isTRUE(run_table2asn) && nzchar(unname(Sys.which("table2asn")))) {
     sbt <- Sys.glob(file.path(gdir, "*.sbt"))
