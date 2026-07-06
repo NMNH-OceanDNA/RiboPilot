@@ -16,7 +16,29 @@ from mitochondrial genomes to the nuclear ribosomal repeat unit.
 
 ## Usage
 
-Run in a conda env with Entrez Direct + biopython (e.g. `mitoreview`):
+### From R (recommended)
+
+`build_reference_db()` wraps this script and writes the seed/label DBs to a
+reusable directory outside any project (default `ribopilot_ref_dir()`), so one
+clade DB serves every project for that clade:
+
+```r
+# count first (no download)
+build_reference_db('"Gastropoda"[Organism]', "gastropoda",
+                   count_only = TRUE, conda_env = "ribopilot")
+# build once, reuse everywhere
+db <- build_reference_db('"Gastropoda"[Organism]', "gastropoda",
+                         out_dir = "~/ribopilot_refs", conda_env = "ribopilot")
+new_project(..., custom_seeds_db = db$seeds, custom_labels_db = db$labels)
+```
+
+Re-running with the same `clade`/`out_dir` reuses the existing DB unless
+`overwrite = TRUE`.
+
+### Directly (bash)
+
+Run in a conda env with Entrez Direct + biopython (e.g. `mitoreview` or the
+RiboPilot env):
 
 ```bash
 # count first
