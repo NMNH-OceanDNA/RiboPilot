@@ -6,16 +6,18 @@
 #' Build the Nextflow argument vector for a project workflow
 #'
 #' @param path Project directory (contains `.sqlite`, `.config`).
-#' @param workflow "assemble" (WF1) or "annotate" (WF2).
+#' @param workflow "assemble" (WF1), "annotate" (WF2), or "fallback".
 #' @param resume Add `-resume`.
 #' @param work Nextflow work dir.
 #' @param ribopilot_src Package source for R-script processes (default: loaded pkg).
+#' @param method Fallback method ("bait" or "denovo"), passed as `--method`.
 #' @return character vector of args (starting with "run").
 #' @noRd
-nf_command <- function(path, workflow = c("assemble", "annotate"), resume = TRUE,
-                       work = file.path(path, "work"), ribopilot_src = NULL) {
+nf_command <- function(path, workflow = c("assemble", "annotate", "fallback"), resume = TRUE,
+                       work = file.path(path, "work"), ribopilot_src = NULL, method = "bait") {
   workflow <- match.arg(workflow)
-  main_nf <- app_sys("nextflow", if (workflow == "assemble") "main.nf" else "main_annotate.nf")
+  main_nf <- app_sys("nextflow", switch(workflow,
+    assemble = "main.nf", annotate = "main_annotate.nf", fallback = "main_fallback.nf"))
   cfg <- file.path(path, ".config")
   cfg_lines <- if (file.exists(cfg)) readLines(cfg) else character(0)
   raw_dir <- config_param(cfg_lines, "rawDir") %||% ""
@@ -33,6 +35,7 @@ nf_command <- function(path, workflow = c("assemble", "annotate"), resume = TRUE
     "--minDepth", min_depth,
     "--ribopilot_src", src,
     "--taxdump_dir", taxdump,
+    if (workflow == "fallback") c("--method", method),
     if (nzchar(api_key)) c("--ncbi_api_key", api_key))
 }
 

@@ -22,6 +22,24 @@ process query_samples {
     """
 }
 
+// Fallback: samples queued for an assembly fallback (assemble_switch = 5).
+process query_fallback_samples {
+    cache false
+    executor 'local'
+    output:
+    path 'samplesheet.tsv'
+    script:
+    """
+    sqlite3 -header -separator '\t' '${params.db}' "
+      SELECT p.ID, p.R1, p.R2, ao.cpus, po.fastp AS fastp
+      FROM assemble a
+      JOIN preprocess p     ON a.ID = p.ID
+      JOIN assemble_opts ao ON a.assemble_opts = ao.assemble_opts
+      JOIN pre_opts po      ON p.pre_opts = po.pre_opts
+      WHERE a.assemble_switch = 5 AND a.assemble_lock = 0;" > samplesheet.tsv
+    """
+}
+
 // WF2: IDs of assembled samples queued for (re-)annotation.
 process query_annotate_samples {
     cache false
