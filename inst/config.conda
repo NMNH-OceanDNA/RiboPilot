@@ -11,4 +11,5 @@ params {
     publishDir = 'out'
     rawDir = '<<RAW_DIR>>'
     minDepth = <<MIN_DEPTH>>
+    ncbi_api_key = '<<NCBI_API_KEY>>'       // Optional NCBI API key for BLAST + GenBank fetch
 }
