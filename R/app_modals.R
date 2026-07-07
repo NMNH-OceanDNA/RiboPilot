@@ -28,48 +28,65 @@ nt_nudge <- function(id, sym) {
 
 #' Annotate & curate modal: feature map, per-feature nucleotide editor + review
 #' @noRd
+#' A collapsible <details> section (open by default unless open = FALSE).
+#' @noRd
+rp_details <- function(summary, ..., open = TRUE) {
+  d <- tags$details(tags$summary(tags$b(summary)), div(style = "padding:6px 2px 2px;", ...))
+  if (isTRUE(open)) d$attribs$open <- NA
+  d
+}
+
 annotate_modal <- function(id) {
   modalDialog(
     title = paste0("Annotate - ", id),
-    size = "l", easyClose = TRUE,
+    size = "l", easyClose = FALSE,
     footer = tagList(
       actionButton("mark_reviewed", "Mark reviewed", class = "btn-sm"),
       modalButton("Close")
     ),
-    h5("Feature / reference synteny map"),
-    plotOutput("feature_map", height = "160px"),
-    h5("Read coverage"),
-    plotOutput("coverage_plot", height = "130px"),
-    hr(),
-    h5("Curation flags"),
-    uiOutput("curate_notes"),
-    reactable::reactableOutput("flag_tbl"),
-    hr(),
-    h5("Edit feature boundaries"),
-    div(style = "display:flex; flex-flow:row wrap; gap:1.2em; align-items:flex-end;",
-      div(style = "min-width:170px;", uiOutput("nudge_element_ui")),
-      shinyWidgets::radioGroupButtons("nudge_step", "Step (nt)",
-        choices = c(1, 3, 10, 50), selected = 1, size = "sm"),
-      div(
-        tags$label("5' end", class = "control-label"),
-        div(style = "display:flex; gap:4px;",
-          nt_nudge("nt_5_out", "+"), nt_nudge("nt_5_in", "–"))),
-      div(
-        tags$label("3' end", class = "control-label"),
-        div(style = "display:flex; gap:4px;",
-          nt_nudge("nt_3_in", "–"), nt_nudge("nt_3_out", "+")))
-    ),
-    div(style = "color:#888; font-size:0.85em; margin-top:4px;",
-      "+ extends the boundary outward, – trims it inward."),
-    div(class = "code-block", style = "margin-top:6px; white-space:normal; word-break:break-all;",
-      uiOutput("nudge_seq")),
-    hr(),
-    h5("Reference alignment (active feature)"),
-    div(class = "code-block", style = "max-height:240px; overflow:auto;",
-      uiOutput("alignment_view")),
-    hr(),
-    h5("Feature model"),
-    reactable::reactableOutput("feature_tbl")
+    # ---- gene list (drives the active feature for the editor + alignment) ----
+    h5("Feature model", style = "margin:2px 0 4px;"),
+    div(style = "color:#888; font-size:0.82em; margin-bottom:4px;",
+      "Click a feature to make it active for editing + reference alignment below."),
+    reactable::reactableOutput("feature_tbl"),
+    tags$hr(style = "margin:10px 0;"),
+
+    # ---- collapsible detail panels (coverage above synteny, per request) ----
+    rp_details("Read coverage", plotOutput("coverage_plot", height = "130px")),
+    rp_details("Feature / reference synteny map", plotOutput("feature_map", height = "170px")),
+
+    rp_details("Edit active feature boundaries",
+      div(style = "display:flex; flex-flow:row wrap; gap:1.2em; align-items:flex-end;",
+        div(style = "font-weight:bold; align-self:center;", textOutput("feat_edit_active", inline = TRUE)),
+        div(class = "rp-step-box", style = "width:70px;",
+          numericInput("feat_step", "Step (nt)", value = 1, min = 1, max = 50, step = 1, width = "70px")),
+        shinyjs::hidden(div(id = "feat_edit_ctrls",
+          style = "display:flex; flex-flow:row wrap; gap:1.2em; align-items:flex-end;",
+          div(tags$label("5' end", class = "control-label"),
+            div(style = "display:flex; gap:4px;", nt_nudge("nt_5_out", "+"), nt_nudge("nt_5_in", "-"))),
+          div(tags$label("3' end", class = "control-label"),
+            div(style = "display:flex; gap:4px;", nt_nudge("nt_3_in", "-"), nt_nudge("nt_3_out", "+"))))),
+        div(style = "align-self:center; display:flex; gap:6px;",
+          actionButton("feat_edit", "Edit", icon = icon("pen"), class = "btn-sm btn-primary"),
+          shinyjs::hidden(actionButton("feat_save", "Save", icon = icon("floppy-disk"), class = "btn-sm btn-success")),
+          shinyjs::hidden(actionButton("feat_reset", "Reset", icon = icon("rotate-left"), class = "btn-sm")))
+      ),
+      div(style = "color:#888; font-size:0.82em; margin-top:4px;",
+        "Click Edit to adjust boundaries; + extends outward, - trims inward. Save to keep, Reset to discard."),
+      div(class = "code-block", style = "margin-top:6px; white-space:normal; word-break:break-all;",
+        uiOutput("nudge_seq"))),
+
+    rp_details("Reference alignment (active feature)",
+      uiOutput("msa_header"),
+      uiOutput("feat_align_ui")),
+
+    rp_details("Curation flags", open = FALSE,
+      uiOutput("curate_notes"),
+      reactable::reactableOutput("flag_tbl")),
+
+    rp_details("Notes", open = FALSE,
+      textAreaInput("annotate_notes", label = NULL, width = "100%",
+        placeholder = "Notes for this sample's annotation"))
   )
 }
 
@@ -193,7 +210,7 @@ plot_coverage <- function(id) {
 #' gggenes synteny map: the sample's annotations over its BLAST reference's
 #' (when the reference has been fetched + annotated), aligned by element color.
 #' @noRd
-plot_feature_map <- function(id) {
+plot_feature_map <- function(id, active = NULL) {
   if (is.null(id)) {
     return(NULL)
   }
@@ -219,13 +236,27 @@ plot_feature_map <- function(id) {
     }
   }
 
-  ggplot2::ggplot(d, ggplot2::aes(xmin = start, xmax = stop, y = molecule,
+  # Draw both tracks in a shared 0-100% frame so homologous features line up
+  # across sample + reference (synteny/alignment view). Scale each molecule to
+  # the span it covers.
+  d$pos <- 50
+  for (mol in unique(d$molecule)) {
+    k <- d$molecule == mol
+    lo <- min(d$start[k]); hi <- max(d$stop[k]); rng <- max(1, hi - lo)
+    d$xmin[k] <- (d$start[k] - lo) / rng * 100
+    d$xmax[k] <- (d$stop[k]  - lo) / rng * 100
+  }
+  d$active <- !is.null(active) & d$element == (active %||% "")
+
+  ggplot2::ggplot(d, ggplot2::aes(xmin = xmin, xmax = xmax, y = molecule,
     fill = element, label = element)) +
-    gggenes::geom_gene_arrow(arrowhead_height = grid::unit(5, "mm"),
-      arrow_body_height = grid::unit(4.5, "mm")) +
+    gggenes::geom_gene_arrow(ggplot2::aes(linewidth = active, colour = active),
+      arrowhead_height = grid::unit(5, "mm"), arrow_body_height = grid::unit(4.5, "mm")) +
     gggenes::geom_gene_label(align = "centre", grow = FALSE) +
     ggplot2::scale_fill_manual(values = RRNA_ELEMENT_COLORS, guide = "none") +
-    ggplot2::labs(x = "position (bp)", y = NULL) +
+    ggplot2::scale_colour_manual(values = c(`TRUE` = "#111111", `FALSE` = "grey60"), guide = "none") +
+    ggplot2::scale_linewidth_manual(values = c(`TRUE` = 1.1, `FALSE` = 0.3), guide = "none") +
+    ggplot2::labs(x = "aligned position (% of each track)", y = NULL) +
     ggplot2::theme_minimal(base_size = 12) +
     ggplot2::theme(panel.grid.major.y = ggplot2::element_blank())
 }

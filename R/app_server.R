@@ -132,8 +132,10 @@ app_server <- function(input, output, session) {
       blast_accession = reactable::colDef(name = "Accession", minWidth = 110, html = TRUE, cell = rt_ncbi_link()),
       blast_pident = reactable::colDef(name = "BLAST %ID", width = 90),
       blast_qcovs = reactable::colDef(name = "BLAST Cov", width = 90),
-      details = reactable::colDef(name = "", width = 80, filterable = FALSE, html = TRUE, cell = rt_link("asm_details")),
-      output = reactable::colDef(name = "", width = 80, filterable = FALSE, html = TRUE, cell = rt_link("asm_output")),
+      details = reactable::colDef(name = "", width = 55, align = "center", filterable = FALSE, html = TRUE,
+        cell = rt_icon_link("asm_details", "fa fa-up-right-from-square", "View assembly details")),
+      output = reactable::colDef(name = "", width = 55, align = "center", filterable = FALSE, html = TRUE,
+        cell = rt_icon_disabled("fa fa-folder-open", "Output browser (disabled for now)")),
       n_features = reactable::colDef(name = "Features", width = 90, html = TRUE),
       missing = reactable::colDef(name = "Missing", minWidth = 120, html = TRUE, cell = rt_longtext()),
       length = reactable::colDef(name = "Length", width = 90),
@@ -556,33 +558,37 @@ app_server <- function(input, output, session) {
       " as selected and queued for re-annotation. Run WF2 (Annotate mode -> Run)."), type = "message")
   })
 
-  # ---- Annotate modal: feature map + nucleotide boundary editor ----
-  edit_tick <- reactiveVal(0)  # bumps after each nudge to re-render map/seq/table
+  # ---- Annotate modal: gene list + boundary editor (edit/save/reset) + msaR ----
+  edit_tick <- reactiveVal(0)         # bumps to re-render map/seq/table
+  active_feature <- reactiveVal(NULL) # feature the editor + alignment act on
+  edit_active <- reactiveVal(FALSE)   # in edit mode?
+  edit_backup <- reactiveVal(NULL)    # annotations snapshot for Reset
 
-  output$feature_map <- renderPlot({
-    edit_tick()
-    plot_feature_map(sel_id())
-  }, height = 155)
-
-  output$coverage_plot <- renderPlot({
-    edit_tick()
-    plot_coverage(sel_id())
-  }, height = 128)
-
-  output$nudge_element_ui <- renderUI({
-    id <- sel_id(); req(id)
-    els <- app_query("SELECT element FROM annotations WHERE ID = ? ORDER BY start",
-      params = list(id))$element
-    if (length(els) == 0) {
-      return(em("No annotations for this sample."))
+  # reset per-sample modal state; select the first feature + load notes
+  observeEvent(sel_id(), ignoreNULL = FALSE, {
+    edit_active(FALSE); edit_backup(NULL)
+    shinyjs::hide("feat_edit_ctrls"); shinyjs::hide("feat_save"); shinyjs::hide("feat_reset")
+    shinyjs::show("feat_edit")
+    id <- sel_id(); active_feature(NULL)
+    if (!is.null(id)) {
+      els <- app_query("SELECT element FROM annotations WHERE ID = ? ORDER BY start", params = list(id))$element
+      if (length(els)) active_feature(els[1])
+      a <- app_query("SELECT annotate_notes FROM annotate WHERE ID = ?", params = list(id))
+      updateTextAreaInput(session, "annotate_notes", value = a$annotate_notes[1] %||% "")
     }
-    selectInput("nudge_element", "Feature", choices = els, selected = els[1])
   })
+
+  output$feat_edit_active <- renderText({
+    el <- active_feature(); if (is.null(el)) "No active feature" else paste("Active feature:", el)
+  })
+
+  output$coverage_plot <- renderPlot({ edit_tick(); plot_coverage(sel_id()) }, height = 128)
+  output$feature_map <- renderPlot({ edit_tick(); plot_feature_map(sel_id(), active_feature()) }, height = 165)
 
   # active feature's stitched-sequence coords + context
   nudge_ctx <- reactive({
     edit_tick()
-    id <- sel_id(); el <- input$nudge_element
+    id <- sel_id(); el <- active_feature()
     req(id, el)
     a <- app_query("SELECT start, stop, length, type FROM annotations WHERE ID = ? AND element = ?",
       params = list(id, el))
@@ -594,64 +600,92 @@ app_server <- function(input, output, session) {
   output$nudge_seq <- renderUI({
     cx <- nudge_ctx()
     if (is.null(cx) || !nzchar(cx$seq)) {
-      return(em("No stitched sequence available for this sample."))
+      return(em("Select a feature (no stitched sequence available)."))
     }
-    n <- nchar(cx$seq)
-    flank <- 15
+    n <- nchar(cx$seq); flank <- 15
     lo <- max(1, cx$start - flank); hi <- min(n, cx$stop + flank)
-    pre  <- substr(cx$seq, lo, cx$start - 1)
-    feat <- substr(cx$seq, cx$start, cx$stop)
-    post <- substr(cx$seq, cx$stop + 1, hi)
     tagList(
       span(sprintf("%s (%s)  %d..%d  len %d bp",
         cx$el, cx$type, cx$start, cx$stop, cx$stop - cx$start + 1),
         style = "display:block; color:#555; margin-bottom:4px;"),
-      span(pre, style = "color:#aaa;"),
-      span(feat, style = "color:#0072B2; font-weight:bold;"),
-      span(post, style = "color:#aaa;")
+      span(substr(cx$seq, lo, cx$start - 1), style = "color:#aaa;"),
+      span(substr(cx$seq, cx$start, cx$stop), style = "color:#0072B2; font-weight:bold;"),
+      span(substr(cx$seq, cx$stop + 1, hi), style = "color:#aaa;")
     )
   })
 
-  output$alignment_view <- renderUI({
+  # ---- reference alignment of the active feature via msaR ----
+  active_aln <- reactive({
     edit_tick()
-    id <- sel_id(); el <- input$nudge_element
-    if (is.null(id) || is.null(el)) {
-      return(em("Select a feature."))
-    }
-    a <- app_query(
-      "SELECT accession, pid, sample_aln, ref_aln FROM blast_ref_alignment WHERE ID = ? AND element = ?",
+    id <- sel_id(); el <- active_feature()
+    req(id, el)
+    app_query("SELECT accession, pid, sample_aln, ref_aln FROM blast_ref_alignment WHERE ID = ? AND element = ?",
       params = list(id, el))
+  })
+  output$msa_header <- renderUI({
+    a <- active_aln()
+    if (nrow(a) == 0 || is.na(a$sample_aln[1])) return(NULL)
+    span(sprintf("%s vs %s  -  %.1f%% identity over %d bp",
+      active_feature(), a$accession[1], a$pid[1], nchar(a$sample_aln[1])),
+      style = "color:#555; display:block; margin-bottom:4px;")
+  })
+  output$feat_align_ui <- renderUI({
+    a <- active_aln()
     if (nrow(a) == 0 || is.na(a$sample_aln[1])) {
-      return(em("No reference alignment for this feature yet (needs WF1 BLAST + reference fetch)."))
+      return(em(paste("No reference alignment for this feature. Needs a GenBank BLAST hit +",
+        "reference fetch (WF1) and the per-feature alignment (WF2); if those ran, re-run WF2.")))
     }
-    tagList(
-      span(sprintf("vs %s  -  %s: %.1f%% identity over %d bp",
-        a$accession[1], el, a$pid[1], nchar(a$sample_aln[1])),
-        style = "color:#555; display:block; margin-bottom:4px;"),
-      render_alignment_html(a$sample_aln[1], a$ref_aln[1])
-    )
+    msaR::msaROutput("feat_msa", height = "auto")
+  })
+  output$feat_msa <- msaR::renderMsaR({
+    a <- active_aln()
+    req(nrow(a) > 0, !is.na(a$sample_aln[1]))
+    fa <- tempfile(fileext = ".fa")
+    writeLines(c(paste0(">sample|", active_feature()), a$sample_aln[1],
+      paste0(">", a$accession[1]), a$ref_aln[1]), fa)
+    on.exit(unlink(fa), add = TRUE)
+    msaR::msaR(fa, overviewbox = FALSE, seqlogo = FALSE, menu = FALSE, conservation = TRUE,
+      colorscheme = "nucleotide", labelNameLength = 160, rowheight = 22, alignmentHeight = 130)
   })
 
+  # ---- gene list (feature model); click a row -> active feature ----
+  feature_rows <- reactive({
+    edit_tick(); id <- sel_id(); req(id)
+    app_query("SELECT element, type, start, stop, length, strand, status, flags FROM annotations WHERE ID = ? ORDER BY start",
+      params = list(id))
+  })
   output$feature_tbl <- reactable::renderReactable({
-    id <- sel_id(); req(id)
-    edit_tick()
-    d <- app_query("SELECT element, type, start, stop, length, strand, status, flags, edited, tool FROM annotations WHERE ID = ? ORDER BY start",
-      params = list(id))
+    d <- feature_rows(); act <- active_feature()
+    if (nrow(d) == 0) {
+      return(reactable::reactable(data.frame(` ` = "No annotations for this sample yet.", check.names = FALSE), compact = TRUE))
+    }
     reactable::reactable(d, compact = TRUE, resizable = TRUE, defaultPageSize = 10,
+      defaultColDef = reactable::colDef(align = "left"),
       columns = list(
-        flags = reactable::colDef(html = TRUE, cell = rt_longtext()),
-        status = reactable::colDef(width = 70)),
-      rowStyle = function(index) if (isTRUE(d$status[index] == "flag")) list(background = "#fdf1e3") else NULL)
+        element = reactable::colDef(name = "Feature", html = TRUE, cell = rt_link("feat_select")),
+        type = reactable::colDef(name = "Type"),
+        start = reactable::colDef(name = "Start", width = 70),
+        stop = reactable::colDef(name = "Stop", width = 70),
+        length = reactable::colDef(name = "Length", width = 70),
+        strand = reactable::colDef(name = "Strand", width = 70),
+        status = reactable::colDef(name = "Status", width = 70),
+        flags = reactable::colDef(name = "Flags", html = TRUE, cell = rt_longtext())),
+      rowStyle = function(index) {
+        if (isTRUE(d$element[index] == (act %||% ""))) list(background = "#e7f0fb", fontWeight = "bold")
+        else if (isTRUE(d$status[index] == "flag")) list(background = "#fdf1e3") else NULL
+      })
+  })
+  observeEvent(input$feat_select, {
+    i <- suppressWarnings(as.integer(input$feat_select)); d <- feature_rows()
+    req(!is.na(i), i >= 1, i <= nrow(d))
+    active_feature(d$element[i])
   })
 
-  # ---- Curation flags panel (sample notes + per-feature flag list w/ jump) ----
+  # ---- curation flags panel ----
   flag_rows <- reactive({
-    edit_tick()
-    id <- sel_id(); req(id)
-    app_query("SELECT element, flags FROM annotations WHERE ID = ? AND status = 'flag' ORDER BY start",
-      params = list(id))
+    edit_tick(); id <- sel_id(); req(id)
+    app_query("SELECT element, flags FROM annotations WHERE ID = ? AND status = 'flag' ORDER BY start", params = list(id))
   })
-
   output$curate_notes <- renderUI({
     id <- sel_id(); req(id)
     a <- app_query("SELECT n_flags, annotate_notes FROM annotate WHERE ID = ?", params = list(id))
@@ -660,50 +694,78 @@ app_server <- function(input, output, session) {
     }
     tagList(
       span(sprintf("%d sample flag(s): ", a$n_flags[1]), style = "color:#7d4a1e; font-weight:bold;"),
-      span(a$annotate_notes[1] %||% "", style = "color:#7d4a1e;")
-    )
+      span(a$annotate_notes[1] %||% "", style = "color:#7d4a1e;"))
   })
-
   output$flag_tbl <- reactable::renderReactable({
     d <- flag_rows()
     if (nrow(d) == 0) {
-      return(reactable::reactable(data.frame(` ` = "No flagged features.", check.names = FALSE),
-        compact = TRUE))
+      return(reactable::reactable(data.frame(` ` = "No flagged features.", check.names = FALSE), compact = TRUE))
     }
-    d$jump <- "edit"
+    d$jump <- "select"
     reactable::reactable(d[, c("element", "flags", "jump")],
       compact = TRUE, resizable = TRUE, defaultPageSize = 10,
       columns = list(
-        flags = reactable::colDef(html = TRUE, cell = rt_longtext()),
-        jump = reactable::colDef(name = "", width = 60, html = TRUE, cell = rt_link("flag_jump"))))
+        element = reactable::colDef(name = "Feature"),
+        flags = reactable::colDef(name = "Flags", html = TRUE, cell = rt_longtext()),
+        jump = reactable::colDef(name = "", width = 70, html = TRUE, cell = rt_link("flag_jump"))))
   })
-
-  # click a flagged feature -> select it in the boundary editor below
   observeEvent(input$flag_jump, {
-    i <- suppressWarnings(as.integer(input$flag_jump))
-    d <- flag_rows()
+    i <- suppressWarnings(as.integer(input$flag_jump)); d <- flag_rows()
     req(!is.na(i), i >= 1, i <= nrow(d))
-    updateSelectInput(session, "nudge_element", selected = d$element[i])
+    active_feature(d$element[i])
   })
 
-  # nudge one boundary by the chosen step, clamp to sequence, persist live
+  # ---- edit / save / reset state machine ----
+  observeEvent(input$feat_edit, {
+    if (is.null(active_feature())) { showNotification("Select a feature first.", type = "warning"); return() }
+    edit_backup(app_query("SELECT element, start, stop FROM annotations WHERE ID = ?", params = list(sel_id())))
+    edit_active(TRUE)
+    shinyjs::show("feat_edit_ctrls"); shinyjs::show("feat_save"); shinyjs::show("feat_reset"); shinyjs::hide("feat_edit")
+  })
+  observeEvent(input$feat_save, {
+    edit_active(FALSE); edit_backup(NULL)
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    tryCatch(curate_one(con, sel_id()), error = function(e) NULL)  # refresh flags after edits
+    edit_tick(edit_tick() + 1); refresh(refresh() + 1)
+    shinyjs::hide("feat_edit_ctrls"); shinyjs::hide("feat_save"); shinyjs::hide("feat_reset"); shinyjs::show("feat_edit")
+    showNotification("Boundary edits saved.", type = "message")
+  })
+  observeEvent(input$feat_reset, {
+    b <- edit_backup()
+    if (!is.null(b) && nrow(b)) {
+      con <- app_con(); on.exit(DBI::dbDisconnect(con))
+      for (i in seq_len(nrow(b))) {
+        DBI::dbExecute(con,
+          "UPDATE annotations SET start = ?, stop = ?, length = ? WHERE ID = ? AND element = ?",
+          params = list(b$start[i], b$stop[i], b$stop[i] - b$start[i] + 1, sel_id(), b$element[i]))
+      }
+    }
+    edit_active(FALSE); edit_backup(NULL); edit_tick(edit_tick() + 1)
+    shinyjs::hide("feat_edit_ctrls"); shinyjs::hide("feat_save"); shinyjs::hide("feat_reset"); shinyjs::show("feat_edit")
+    showNotification("Boundary edits discarded.", type = "message")
+  })
+
+  # ---- notes ----
+  observeEvent(input$annotate_notes, ignoreInit = TRUE, {
+    id <- sel_id(); req(id)
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    DBI::dbExecute(con, "UPDATE annotate SET annotate_notes = ? WHERE ID = ?",
+      params = list(input$annotate_notes %||% "", id))
+  })
+
+  # nudge one boundary by the chosen step (1-50), clamp to sequence, persist
   nudge_boundary <- function(end, dir) {
+    if (!isTRUE(edit_active())) { showNotification("Click Edit before adjusting boundaries.", type = "warning"); return() }
     cx <- nudge_ctx(); req(cx)
-    step <- as.integer(input$nudge_step %||% 1)
-    n <- nchar(cx$seq)
-    start <- cx$start; stop <- cx$stop
-    if (end == "5") {
-      start <- start + if (dir == "out") -step else step   # out = extend upstream
-    } else {
-      stop <- stop + if (dir == "out") step else -step      # out = extend downstream
-    }
+    step <- suppressWarnings(as.integer(input$feat_step %||% 1))
+    if (is.na(step)) step <- 1
+    step <- max(1L, min(50L, step))
+    n <- nchar(cx$seq); start <- cx$start; stop <- cx$stop
+    if (end == "5") start <- start + if (dir == "out") -step else step
+    else stop <- stop + if (dir == "out") step else -step
     start <- max(1, start); stop <- min(if (n > 0) n else stop, stop)
-    if (start > stop) {
-      showNotification("Boundaries would cross; nudge ignored.", type = "warning")
-      return()
-    }
-    con <- app_con()
-    on.exit(DBI::dbDisconnect(con))
+    if (start > stop) { showNotification("Boundaries would cross; nudge ignored.", type = "warning"); return() }
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
     DBI::dbExecute(con,
       "UPDATE annotations SET start = ?, stop = ?, length = ?, edited = 1 WHERE ID = ? AND element = ?",
       params = list(start, stop, stop - start + 1, sel_id(), cx$el))

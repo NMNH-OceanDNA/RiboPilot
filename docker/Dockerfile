@@ -55,6 +55,7 @@ RUN mamba install -y \
         'r-base=4.4.*' \
         'r-remotes' \
         'bioconductor-biostrings' \
+        'bioconductor-pwalign' \
         'r-cli' \
         'r-config' \
         'r-crayon' \
@@ -67,6 +68,7 @@ RUN mamba install -y \
         'r-golem' \
         'r-jsonlite' \
         'r-later' \
+        'r-msar' \
         'r-processx' \
         'r-purrr' \
         'r-reactable' \
