@@ -66,7 +66,8 @@ run_fallback <- function(path = ".", ids = NULL, method = c("bait", "denovo"),
   if (status != 0) {
     warning("Nextflow (fallback) exited with status ", status)
   } else {
-    message("Fallback complete (assemble -> score -> stitch -> annotate -> curate) written to the database.")
+    message("Fallback complete (assemble -> score -> stitch -> BLAST + coverage) written to the database. ",
+      "Review and lock assemblies in the app, then run annotation (WF2).")
   }
   invisible(status)
 }

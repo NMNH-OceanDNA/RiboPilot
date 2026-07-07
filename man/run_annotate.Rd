@@ -27,5 +27,9 @@ run_annotate(
 (invisibly) the Nextflow exit status.
 }
 \description{
-Run the annotation workflow (WF2) for a project
+Annotates and curates the assemblies you have reviewed and locked in the app
+(`assemble_lock = 1`): stitch the selected path -> barrnap + ITSx -> reconcile
+into the feature model -> reference alignment -> curate. Also re-annotates
+samples whose selected path later changed. Samples are queued via
+`annotate_switch` (see the Annotate tab).
 }

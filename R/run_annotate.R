@@ -7,6 +7,12 @@
 
 #' Run the annotation workflow (WF2) for a project
 #'
+#' Annotates and curates the assemblies you have reviewed and locked in the app
+#' (`assemble_lock = 1`): stitch the selected path -> barrnap + ITSx -> reconcile
+#' into the feature model -> reference alignment -> curate. Also re-annotates
+#' samples whose selected path later changed. Samples are queued via
+#' `annotate_switch` (see the Annotate tab).
+#'
 #' @param path Project directory.
 #' @param nextflow Path to the nextflow binary.
 #' @param work Nextflow work dir (default `<path>/work`).
@@ -36,7 +42,7 @@ run_annotate <- function(path = ".", nextflow = "nextflow", work = file.path(pat
   if (status != 0) {
     warning("Nextflow (annotate) exited with status ", status)
   } else {
-    message("WF2 complete (stitch -> annotate -> reconcile) written to the database.")
+    message("WF2 complete (stitch -> annotate -> reconcile -> curate) written to the database.")
   }
   invisible(status)
 }

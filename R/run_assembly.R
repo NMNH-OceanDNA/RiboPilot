@@ -40,8 +40,11 @@ config_param <- function(config_lines, key) {
 #' Run the assembly workflow (WF1) for a project
 #'
 #' Launches the self-contained Nextflow pipeline: it reads samples from the
-#' project database, runs fastp + GetOrganelle, then scores, stitches, and
-#' annotates each sample, writing everything back to the database.
+#' project database, runs fastp + GetOrganelle, then scores and stitches each
+#' assembly and computes the assembly-review aids (reference BLAST + coverage),
+#' writing everything back to the database. Annotation and curation are handled
+#' by the annotation workflow ([run_annotate()], WF2) after you review and lock
+#' the assemblies in the app.
 #'
 #' @param path Project directory (contains `.sqlite` and `.config`).
 #' @param nextflow Path to the `nextflow` binary.
@@ -71,7 +74,8 @@ run_assembly <- function(path = ".", nextflow = "nextflow", work = file.path(pat
   if (status != 0) {
     warning("Nextflow exited with status ", status)
   } else {
-    message("WF1 complete (assemble -> score -> stitch -> annotate) written to the database.")
+    message("WF1 complete (assemble -> score -> stitch -> BLAST + coverage) written to the database. ",
+      "Review and lock assemblies in the app, then run annotation (WF2).")
   }
   invisible(status)
 }

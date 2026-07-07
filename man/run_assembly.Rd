@@ -31,6 +31,9 @@ loaded package location).}
 }
 \description{
 Launches the self-contained Nextflow pipeline: it reads samples from the
-project database, runs fastp + GetOrganelle, then scores, stitches, and
-annotates each sample, writing everything back to the database.
+project database, runs fastp + GetOrganelle, then scores and stitches each
+assembly and computes the assembly-review aids (reference BLAST + coverage),
+writing everything back to the database. Annotation and curation are handled
+by the annotation workflow ([run_annotate()], WF2) after you review and lock
+the assemblies in the app.
 }

@@ -181,19 +181,21 @@ there are other options; see the function help for
 computing support staff.
 </div>
 
-# Step 4: Assemble and annotate your samples
+# Step 4: Assemble your samples
 
-One command runs the main analysis: it cleans the reads, assembles the ribosomal
-repeat for each sample, picks the best reconstruction, marks the five features,
-and runs automatic quality checks.
+One command runs the assembly stage: it cleans the reads, assembles the
+ribosomal repeat for each sample, picks the best reconstruction, and prepares the
+review aids (a closest-match GenBank search and a sequencing-depth profile).
 
 ```{r}
 RiboPilot::run_assembly("~/my_project", conda_env = "ribopilot")
 ```
 
 This is the longest step, because it does real work for every sample. You can let
-it run and come back later. When it finishes, every sample has an assembly, an
-annotation, and a set of quality flags waiting for your review.
+it run and come back later. When it finishes, every sample has an assembly ready
+for your review. Annotation happens later, in a separate step, only after you
+have reviewed and approved the assemblies (this is deliberate: there is no point
+annotating a reconstruction you have not yet accepted).
 
 <div class="alert alert-note">
 Part of this step tries to look up the closest published match on NCBI to help
@@ -212,7 +214,7 @@ RiboPilot::run_fallback("~/my_project", conda_env = "ribopilot")
 
 You can skip this and come back to it later if you prefer.
 
-# Step 6: Review everything in the app
+# Step 6: Review and lock the assemblies
 
 This is where most of your time is spent, and it is entirely point-and-click.
 Open the app from R:
@@ -223,49 +225,45 @@ RiboPilot("~/my_project")
 
 The app opens in your web browser as a table with one row per sample, organized
 into three tabs that follow the workflow: **Assemble**, **Annotate**, and
-**Export**.
+**Export**. Each row shows an icon for the sample's status and whether it is
+**locked**. Locking a sample "signs off" on it and moves it to the next stage: a
+sample must be locked in the Assemble tab before it can be annotated, and locked
+in the Annotate tab before it can be exported. You can select several rows and
+lock them together.
 
-## Reading the sample status
+Work in the **Assemble tab**: look at each sample's reconstruction (RiboPilot has
+already chosen what it thinks is the best one), check it against the sequencing
+depth and the closest GenBank match, switch to an alternative reconstruction or
+adjust the exact endpoints if needed, and **lock** each sample you are happy with.
 
-Each row shows an icon for the sample's status (for example: waiting, running,
-finished, or finished-with-a-warning) and whether it is **locked**. Locking a
-sample marks it as finished and "signs off" on it: a sample must be locked in the
-Assemble tab before it appears in the Annotate tab, and locked in the Annotate tab
-before you can export it. You can select several rows and lock them together.
+Annotation deliberately does not happen until you have locked an assembly, so the
+Annotate tab is empty until the next step.
 
-## Assemble tab
+# Step 7: Annotate the locked assemblies
 
-Look at each sample's reconstruction. RiboPilot has already chosen what it thinks
-is the best one, but you can inspect the alternatives, switch to a different one,
-or adjust the exact endpoints if needed. When you are satisfied, lock the sample.
-
-## Annotate tab
-
-Open a sample to see its five features laid out, a plot of sequencing depth
-across the region, and a **Curation flags** panel. The flags are RiboPilot's
-automatic quality checks, for example a missing gene, an unusual length, a
-feature on the wrong strand, or a possible contaminant. Each flag links to the
-feature it concerns, so you can jump straight to it and adjust the boundaries. The
-[curation guide](Curation-Flags.html) explains every flag. Lock a sample once you
-are happy with it.
-
-## Running the analysis from the app
-
-You do not have to return to R to re-run anything. When samples are ready, an
-**Update** button opens a window that shows a live progress display and lets you
-launch the analysis with a single click.
-
-# Step 7: Re-check any samples you changed
-
-If, in the app, you switched a sample to a different reconstruction, its
-annotation needs to be refreshed. One command does that for just the affected
-samples (or use the app's Update button):
+Now run the annotation stage on the assemblies you locked. It marks the five
+features (18S, ITS1, 5.8S, ITS2, 28S) and runs the automatic quality checks.
 
 ```{r}
 RiboPilot::run_annotate("~/my_project", conda_env = "ribopilot")
 ```
 
-# Step 8: Export for GenBank
+You can also launch this from inside the app: switch to the Annotate tab and use
+the **Update** button, which shows a live progress display. If you later go back
+and switch a sample to a different reconstruction, just run this step again; it
+re-annotates only the samples that changed.
+
+# Step 8: Review the annotations and curation flags
+
+Back in the app's **Annotate tab**, open a sample to see its five features laid
+out, a plot of sequencing depth, and a **Curation flags** panel. The flags are
+RiboPilot's automatic quality checks, for example a missing gene, an unusual
+length, a feature on the wrong strand, or a possible contaminant. Each flag links
+to the feature it concerns, so you can jump straight to it and adjust the
+boundaries. The [curation guide](Curation-Flags.html) explains every flag. Lock
+each sample once you are happy with it.
+
+# Step 9: Export for GenBank
 
 Once your samples are locked in the Annotate tab, export a submission package.
 You can group samples in the app's Export tab, or export everything from R:
@@ -283,11 +281,12 @@ through onto the submission.
 
 ```{r}
 RiboPilot::new_project(...)          # Step 3: set up
-RiboPilot::run_assembly(project)     # Step 4: assemble + annotate
+RiboPilot::run_assembly(project)     # Step 4: assemble (+ BLAST, coverage)
 RiboPilot::run_fallback(project)     # Step 5: rescue difficult samples (optional)
-RiboPilot(project)                   # Step 6: review and clean up in the app
-RiboPilot::run_annotate(project)     # Step 7: re-check changed samples
-RiboPilot::export_project(project)   # Step 8: export
+RiboPilot(project)                   # Step 6: review + LOCK assemblies (Assemble tab)
+RiboPilot::run_annotate(project)     # Step 7: annotate + curate locked assemblies
+RiboPilot(project)                   # Step 8: review annotations + flags, lock (Annotate tab)
+RiboPilot::export_project(project)   # Step 9: export
 ```
 
 That is a complete project. To adapt RiboPilot to a new group of organisms, see
