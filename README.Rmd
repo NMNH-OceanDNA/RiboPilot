@@ -1,0 +1,94 @@
+---
+output: github_document
+---
+
+<!-- README.md is generated from README.Rmd. Please edit that file -->
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "man/figures/README-",
+  out.width = "100%"
+)
+```
+
+# RiboPilot <a href="https://smithsonian.github.io/RiboPilot/"><img src="man/figures/logo.png" align="right" height="138" /></a>
+
+<!-- badges: start -->
+[![Lifecycle: experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
+<!-- badges: end -->
+
+RiboPilot recovers the **nuclear ribosomal repeat (nrDNA)** from genome skimming data, then helps you check and clean up the result and package it for submission to GenBank. It is a companion to [MitoPilot](https://github.com/Smithsonian/MitoPilot), which does the same thing for the mitochondrial genome. You can run both on the same samples and get both marker sets from one sequencing run.
+
+You do not need to be a programmer to use RiboPilot. Most of your work happens in a **point-and-click app** that runs in your web browser. The step-by-step [Get started guide](https://smithsonian.github.io/RiboPilot/articles/RiboPilot.html) walks through a complete project from start to finish.
+
+# What RiboPilot recovers
+
+Every cell carries the ribosomal RNA genes in a repeated unit that is copied hundreds to thousands of times in a row. Because there are so many copies, even a shallow, inexpensive "genome skim" sequences this region very deeply, essentially for free. RiboPilot reconstructs that repeat unit:
+
+```
+   ETS   18S    ITS1   5.8S   ITS2    28S     IGS
+ --|===|=======|~~~~~|=====|~~~~~|===========|------ (repeated hundreds of times)
+       SSU              LSU
+```
+
+From it you get the most widely used nuclear markers for phylogenetics and DNA barcoding: **18S**, **28S**, **ITS1**, **ITS2**, and the full **ITS** region.
+
+The three ribosomal genes (18S, 5.8S, 28S) are highly conserved and act as anchors. The two spacers (ITS1, ITS2) sit between them, evolve quickly, and are the regions that distinguish closely related species.
+
+# What RiboPilot does for you
+
+Starting from raw sequencing reads, RiboPilot:
+
+1. **Assembles** the ribosomal repeat for each sample, cleaning up the reads and piecing the region back together, then picking the best reconstruction automatically.
+2. **Annotates** it by locating the boundaries of all five features (18S, ITS1, 5.8S, ITS2, 28S).
+3. **Checks (curates)** each result against a reference and flags anything that looks off, such as a missing gene, an unusual length, or a possible contaminant, so you can focus your attention where it is needed.
+4. **Exports** a tidy, GenBank-ready submission package.
+
+Behind the scenes RiboPilot uses established bioinformatics tools ([fastp](https://github.com/OpenGene/fastp), [GetOrganelle](https://github.com/Kinggerm/GetOrganelle), [barrnap](https://github.com/tseemann/barrnap), [ITSx](https://microbiology.se/software/itsx/), [BLAST](https://blast.ncbi.nlm.nih.gov/Blast.cgi), and others) and stitches them together for you. You do not need to learn or run any of them yourself.
+
+# Which organisms it works with
+
+RiboPilot was first built for ray-finned fishes and comes ready to use for them out of the box. For any other group of organisms, it can build the reference data it needs automatically by downloading published sequences from GenBank. This is a one-time setup step per group; see the [reference database guide](https://smithsonian.github.io/RiboPilot/articles/Reference-Databases.html).
+
+It also runs automatic quality checks tuned for a taxonomic group. Checks currently ship for a generic metazoan (animal) setting and a fish-specific setting; see the [curation guide](https://smithsonian.github.io/RiboPilot/articles/Curation-Flags.html).
+
+# Installation
+
+RiboPilot needs three things installed on your computer (or your lab's server):
+
+1. **[R](https://www.r-project.org/)** (version 4.4.0 or newer), the language RiboPilot is written in. You will type a few short commands into R, but you do not need to know R.
+2. **[Nextflow](https://www.nextflow.io/docs/latest/install.html)**, which runs the heavy analysis steps.
+3. **The bioinformatics tools** the pipeline uses. The easiest way to get all of them at once is [conda](https://docs.conda.io/projects/miniconda/en/latest/), a tool that installs a bundle of programs into a self-contained "environment" without interfering with anything else on your machine. Once conda is installed, one command sets up everything RiboPilot needs:
+
+```bash
+conda env create -f environment.yml
+conda activate ribopilot
+```
+
+Then, in R, install RiboPilot itself:
+
+```{r, eval = FALSE}
+if (!requireNamespace("remotes", quietly = TRUE)) {
+  install.packages("remotes")
+}
+remotes::install_github("Smithsonian/RiboPilot")
+```
+
+If any of this is unfamiliar, the [Get started guide](https://smithsonian.github.io/RiboPilot/articles/RiboPilot.html) explains each piece in more detail, and your local bioinformatics support staff can usually help with the one-time setup.
+
+# Getting started
+
+The best way to learn RiboPilot is to run the built-in practice project. RiboPilot ships a small set of fish samples and a single command that downloads them and sets everything up:
+
+```{r, eval = FALSE}
+RiboPilot::new_test_project(path = "~/ribopilot_test", executor = "conda")
+```
+
+From there, the [Get started guide](https://smithsonian.github.io/RiboPilot/articles/RiboPilot.html) walks you through assembling the samples, reviewing and cleaning them up in the app, and exporting the results.
+
+# Getting help
+
+- Full documentation: <https://smithsonian.github.io/RiboPilot/>
+- Questions or problems: please open an [issue](https://github.com/Smithsonian/RiboPilot/issues).

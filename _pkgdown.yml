@@ -1,0 +1,43 @@
+url: https://smithsonian.github.io/RiboPilot/
+
+template:
+  bootstrap: 5
+  bootswatch: lux
+  bslib:
+    pkgdown-nav-height: 100px
+
+authors:
+  sidebar:
+    roles: [aut, ctb]
+
+home:
+  title: RiboPilot
+  description: Nuclear ribosomal repeat assembly, annotation, and curation
+  sidebar:
+    structure:
+    - authors
+    - dev
+
+navbar:
+  title: RiboPilot
+  type: default
+  structure:
+    left:
+    - intro
+    - reference
+    - articles
+    right:
+    - search
+    - github
+
+articles:
+- title: "Get started"
+  navbar: ~
+  contents:
+  - 'RiboPilot'
+
+- title: "Usage"
+  navbar: ~
+  contents:
+  - 'Reference-Databases'
+  - 'Curation-Flags'

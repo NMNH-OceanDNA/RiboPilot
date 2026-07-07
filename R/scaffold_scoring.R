@@ -5,7 +5,7 @@
 # sample's nuclear rDNA, using: depth (from the assembly graph), BLAST identity,
 # anchor completeness (18S/5.8S/28S present), length plausibility, and how
 # closely the candidate's top-BLAST-hit lineage matches the sample's resolved
-# lineage. See docs/07_SCAFFOLD_SELECTION.md.
+# lineage. See dev/design/07_SCAFFOLD_SELECTION.md.
 
 RRNA_RANK_FIELDS <- c("kingdom", "phylum", "class", "order", "family", "genus", "species")
 
