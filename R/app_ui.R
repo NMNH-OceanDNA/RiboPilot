@@ -39,8 +39,12 @@ app_ui <- function(request) {
           # counterbalances the form-group bottom margin so the picker centers
           # with the buttons (mirrors MitoPilot; no CSS override needed).
           shinyWidgets::pickerInput("mode", label = "", width = 150,
-            choices = c("Assemble", "Annotate", "Export")),
+            choices = c("Taxonomy", "Assemble", "Annotate", "Export")),
           bttn("refresh", NULL, "sync"),
+          shiny::conditionalPanel("input.mode == 'Taxonomy'",
+            ctrls(bttn("state_btn", "State"), bttn("lock_btn", "Lock"),
+              bttn("edit_taxon_btn", "Edit Taxon"),
+              bttn("run_btn", "Update", "circle-play"))),
           shiny::conditionalPanel("input.mode == 'Assemble'",
             ctrls(bttn("state_btn", "State"), bttn("lock_btn", "Lock"),
               bttn("run_btn", "Update", "circle-play"))),

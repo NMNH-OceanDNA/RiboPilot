@@ -55,13 +55,25 @@ app_server <- function(input, output, session) {
     open_path(d$workdir[i])
   })
 
+  # mode -> (table, prefix) for lock/state columns and updates
+  mode_meta <- function(mode) {
+    switch(mode %||% "Assemble",
+      Taxonomy = list(tbl = "samples", pfx = "taxonomy"),
+      Annotate = list(tbl = "annotate", pfx = "annotate"),
+      list(tbl = "assemble", pfx = "assemble"))
+  }
+
   # ---- samples table data (per mode; includes state + lock) ----
   samples_data <- reactive({
     refresh()
     mode <- input$mode %||% "Assemble"
-    # Column order mirrors MitoPilot: lock, state, ID, Taxon lead the
-    # assemble/annotate tables; export leads with ID/Taxon and puts group last.
-    if (mode == "Assemble") {
+    # Column order mirrors MitoPilot: lock, state, ID, Taxon lead the tables.
+    if (mode == "Taxonomy") {
+      app_query(
+        "SELECT s.taxonomy_lock, s.taxonomy_switch, s.ID, s.Taxon,
+           s.sci_name, s.taxid, s.rank, s.match_type
+         FROM samples s")
+    } else if (mode == "Assemble") {
       app_query(
         "SELECT a.assemble_lock, a.assemble_switch, s.ID, s.Taxon,
            pp.pre_opts, a.assemble_opts, a.blast_opts,
@@ -70,7 +82,8 @@ app_server <- function(input, output, session) {
            (SELECT round(MAX(p.score),3) FROM path_scores p WHERE p.ID = s.ID) AS best_score,
            a.assemble_notes AS notes
          FROM samples s LEFT JOIN assemble a ON s.ID = a.ID
-           LEFT JOIN preprocess pp ON s.ID = pp.ID")
+           LEFT JOIN preprocess pp ON s.ID = pp.ID
+         WHERE s.taxonomy_lock = 1")
     } else if (mode == "Export") {
       # export only shows samples whose annotation is locked (validated)
       app_query(
@@ -94,12 +107,19 @@ app_server <- function(input, output, session) {
   output$tbl <- reactable::renderReactable({
     mode <- input$mode %||% "Assemble"
     d <- samples_data()
-    lock_col <- if (mode == "Annotate") "annotate_lock" else "assemble_lock"
-    state_col <- if (mode == "Annotate") "annotate_switch" else "assemble_switch"
+    mm <- mode_meta(mode)
+    lock_col <- paste0(mm$pfx, "_lock")
+    state_col <- paste0(mm$pfx, "_switch")
 
     cols <- list(
       ID = reactable::colDef(minWidth = 130, sticky = "left", html = TRUE, cell = rt_link("open_detail")),
       Taxon = reactable::colDef(minWidth = 140, sticky = "left", html = TRUE, cell = rt_longtext()),
+      sci_name = reactable::colDef(name = "assigned taxon", minWidth = 200, html = TRUE,
+        cell = rt_taxid_link()),
+      taxid = reactable::colDef(show = FALSE),
+      rank = reactable::colDef(name = "rank", minWidth = 90, html = TRUE, cell = rt_longtext()),
+      match_type = reactable::colDef(name = "confidence", minWidth = 110, html = TRUE,
+        cell = rt_confidence_badge()),
       reviewed = reactable::colDef(name = "reviewed", html = TRUE, cell = rt_bool_badge(hide_no = TRUE)),
       n_flags = reactable::colDef(name = "flags", width = 70, align = "center", html = TRUE,
         filterable = FALSE, cell = rt_flag_badge()),
@@ -156,7 +176,9 @@ app_server <- function(input, output, session) {
     id <- samples_data()$ID[i]
     sel_id(id)
     mode <- input$mode %||% "Assemble"
-    if (mode == "Assemble") {
+    if (mode == "Taxonomy") {
+      open_taxon_review(id)
+    } else if (mode == "Assemble") {
       showModal(assemble_modal(id))
     } else if (mode == "Annotate") {
       locked <- app_query("SELECT assemble_lock FROM assemble WHERE ID = ?", params = list(id))$assemble_lock
@@ -180,6 +202,19 @@ app_server <- function(input, output, session) {
     refresh = refresh, con = app_con, mode = function() input$mode %||% "Assemble"
   ))
 
+  # ---- taxonomy review (local search + manual assignment) ----
+  app_taxdump <- function() project_taxdump_dir(app_project())
+  open_taxon_review <- taxonomy_handlers(input, output, session, list(
+    con = app_con, refresh = refresh, taxdump = app_taxdump,
+    samples_for = function(ids) {
+      if (length(ids) == 0) return(data.frame())
+      ph <- paste(rep("?", length(ids)), collapse = ",")
+      app_query(sprintf("SELECT ID, Taxon, sci_name, taxid, rank FROM samples WHERE ID IN (%s)", ph),
+        params = as.list(ids))
+    }
+  ))
+  observeEvent(input$edit_taxon_btn, open_taxon_review(selected_ids()))
+
   # ---- bulk lock / state / reviewed actions ----
   set_flag <- function(sql) {
     ids <- selected_ids()
@@ -194,23 +229,24 @@ app_server <- function(input, output, session) {
     showNotification(paste("Updated", length(ids), "sample(s)."), type = "message")
   }
   observeEvent(input$lock_btn, {  # toggle lock on selected
-    col <- if ((input$mode %||% "") == "Annotate") "annotate" else "assemble"
-    set_flag(sprintf("UPDATE %s SET %s_lock = 1 - COALESCE(%s_lock, 0) WHERE ID = ?", col, col, col))
+    mm <- mode_meta(input$mode)
+    set_flag(sprintf("UPDATE %s SET %s_lock = 1 - COALESCE(%s_lock, 0) WHERE ID = ?",
+      mm$tbl, mm$pfx, mm$pfx))
   })
   observeEvent(input$state_btn, {  # open a picker to choose the target state
     ids <- selected_ids()
     if (length(ids) == 0) {
       showNotification("No samples selected.", type = "warning"); return()
     }
-    col <- if ((input$mode %||% "") == "Annotate") "annotate" else "assemble"
-    cur <- app_query(sprintf("SELECT %s_switch AS s FROM %s WHERE ID = ?", col, col),
+    mm <- mode_meta(input$mode)
+    cur <- app_query(sprintf("SELECT %s_switch AS s FROM %s WHERE ID = ?", mm$pfx, mm$tbl),
       params = list(ids[1]))$s
-    showModal(state_modal(col, cur))
+    showModal(state_modal(mm$pfx, cur))
   })
   observeEvent(input$update_state, {
-    col <- if ((input$mode %||% "") == "Annotate") "annotate" else "assemble"
+    mm <- mode_meta(input$mode)
     st <- as.integer(input$new_state %||% "1")
-    set_flag(sprintf("UPDATE %s SET %s_switch = %d WHERE ID = ?", col, col, st))
+    set_flag(sprintf("UPDATE %s SET %s_switch = %d WHERE ID = ?", mm$tbl, mm$pfx, st))
     removeModal()
   })
   observeEvent(input$reviewed_btn, set_flag("UPDATE annotate SET reviewed = 'yes' WHERE ID = ?"))
@@ -269,9 +305,51 @@ app_server <- function(input, output, session) {
   })
 
   observeEvent(input$run_btn, {
+    # Taxonomy runs locally in the app (lightweight taxdump lookup, no Nextflow).
+    if ((input$mode %||% "") == "Taxonomy") { run_taxonomy_update(); return() }
     prog_header(character(0)); prog_executor(""); prog_proc(list()); prog_footer(character(0))
     showModal(run_modal(input$mode %||% "Assemble", nf_pending_count(app_project(), wf_for_mode())))
   })
+
+  # Local (in-app) taxonomy auto-assignment for the ready, unlocked samples.
+  # Shows a "hold tight" popup, then defers the (blocking) taxdump resolution so
+  # the popup renders first, then swaps in a success/error popup (MitoPilot style).
+  run_taxonomy_update <- function() {
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    ids <- DBI::dbGetQuery(con,
+      "SELECT ID FROM samples WHERE taxonomy_lock = 0 AND taxonomy_switch IN (1,4)")$ID
+    if (length(ids) == 0) {
+      showNotification("No unlocked samples are queued for taxonomy assignment.",
+        type = "warning"); return()
+    }
+    shinyWidgets::sendSweetAlert(
+      title = "Assigning taxonomy...",
+      text = "Hold tight, resolving organism names against the local NCBI taxonomy. This can take a moment.",
+      type = "info", btn_labels = NA, closeOnClickOutside = FALSE
+    )
+    later::later(function() {
+      shiny::withReactiveDomain(session, {
+        td <- project_taxdump_dir(app_project())
+        res <- tryCatch({
+          ensure_taxdump(td)
+          c2 <- app_con()
+          n <- resolve_samples_taxonomy(c2, ids, td)
+          DBI::dbDisconnect(c2)
+          list(ok = TRUE, n = n)
+        }, error = function(e) list(ok = FALSE, msg = conditionMessage(e)))
+        if (isTRUE(res$ok)) {
+          refresh(shiny::isolate(refresh()) + 1)
+          shinyWidgets::sendSweetAlert(
+            title = "Taxonomy assigned",
+            text = sprintf("Auto-assigned taxonomy for %d sample(s). Review and lock.", res$n),
+            type = "success")
+        } else {
+          shinyWidgets::sendSweetAlert(title = "Taxonomy assignment failed",
+            text = res$msg, type = "error")
+        }
+      })
+    }, delay = 0.1)
+  }
 
   # Parse Nextflow's ANSI progress board (run with -ansi-log). Each redraw is a
   # full snapshot, so key each process row by its name and overwrite in place;

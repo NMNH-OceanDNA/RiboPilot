@@ -110,3 +110,32 @@ rt_ts_date <- function() {
       return date !== 'Invalid Date' ? date : null;
     }")
 }
+
+#' Cell: taxon name as a hyperlink to its NCBI Datasets taxonomy page.
+#' Reads the row's `taxid`; shows "unassigned" (red) when there is no name.
+#' @noRd
+rt_taxid_link <- function() {
+  htmlwidgets::JS(
+    "function(cellInfo) {
+      var name = cellInfo.value;
+      var taxid = cellInfo.row ? cellInfo.row['taxid'] : null;
+      if (!name) return '<span style=\"color:#c0392b;\">unassigned</span>';
+      if (!taxid) return name;
+      var url = 'https://www.ncbi.nlm.nih.gov/datasets/taxonomy/' + taxid + '/';
+      return `<a href='${url}' target='_blank' rel='noopener'>${name} <span style='color:#888;'>(${taxid})</span></a>`;
+    }")
+}
+
+#' Cell: taxonomy match confidence as a colored badge.
+#' @noRd
+rt_confidence_badge <- function() {
+  htmlwidgets::JS(
+    "function(cellInfo) {
+      var v = cellInfo.value;
+      if (!v) v = 'unresolved';
+      var colors = {exact:'#2d6a4f', manual:'#1f6feb', fuzzy_species:'#b8860b',
+                    fuzzy_genus:'#b8860b', unresolved:'#c0392b'};
+      var c = colors[v] || '#888';
+      return `<span style='background:${c}; color:#fff; padding:1px 7px; border-radius:10px; font-size:0.8em; white-space:nowrap;'>${v}</span>`;
+    }")
+}

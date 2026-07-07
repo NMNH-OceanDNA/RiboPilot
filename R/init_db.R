@@ -86,7 +86,12 @@ new_db <- function(
       ID = .data[[mapping_id]],
       Taxon = .data[[mapping_taxon]],
       taxid = NA_integer_,
+      sci_name = NA_character_,
+      rank = NA_character_,
+      match_type = NA_character_,
       lineage = NA_character_,
+      taxonomy_switch = 1L,
+      taxonomy_lock = 0L,
       export_group = NA_character_
     )
   glue::glue_sql(

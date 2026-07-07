@@ -5,7 +5,7 @@
 
 #' Current project-DB schema version. Bump when adding a migration step below.
 #' @noRd
-RIBOPILOT_SCHEMA_VERSION <- 2L
+RIBOPILOT_SCHEMA_VERSION <- 3L
 
 #' Bring a project database up to the current schema (idempotent, additive)
 #'
@@ -68,6 +68,19 @@ migrate_db <- function(con) {
        VALUES ('default', 4, 8, 'pybarrnap', 'euk', 'all', '')")
   }
   add_col("annotate", "annotate_opts", "TEXT DEFAULT 'default'")
+
+  # --- schema v3: in-app taxonomy stage (display + lock/state on samples) ---
+  had_tax <- has_col("samples", "taxonomy_lock")
+  add_col("samples", "sci_name", "TEXT")
+  add_col("samples", "rank", "TEXT")
+  add_col("samples", "match_type", "TEXT")
+  add_col("samples", "taxonomy_switch", "INTEGER DEFAULT 1")
+  add_col("samples", "taxonomy_lock", "INTEGER DEFAULT 0")
+  if (!had_tax && has_tbl("samples")) {
+    # Grandfather samples from projects that predate the taxonomy stage so they
+    # are not hidden from Assemble; mark them assigned + locked.
+    DBI::dbExecute(con, "UPDATE samples SET taxonomy_lock = 1, taxonomy_switch = 2")
+  }
 
   if (ver < RIBOPILOT_SCHEMA_VERSION) {
     DBI::dbExecute(con, sprintf("PRAGMA user_version = %d", RIBOPILOT_SCHEMA_VERSION))
