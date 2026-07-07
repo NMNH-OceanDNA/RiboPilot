@@ -11,20 +11,22 @@ app_server <- function(input, output, session) {
   sel_id <- reactiveVal(NULL)
 
   # ---- Work Dirs browser (Nextflow task dirs per sample) ----
-  observeEvent(input$workdirs_btn, {
+  show_workdirs <- function(preselect = NULL) {
     ids <- app_query("SELECT ID FROM samples ORDER BY ID")$ID
-    presel <- selected_ids()
-    presel <- if (length(presel)) presel[1] else if (length(ids)) ids[1] else NULL
+    presel <- preselect %||% {
+      s <- selected_ids(); if (length(s)) s[1] else if (length(ids)) ids[1] else NULL
+    }
     showModal(modalDialog(
-      title = "Sample work directories", size = "l", easyClose = TRUE,
+      title = "Sample output / work directories", size = "l", easyClose = TRUE,
       tags$p(class = "text-muted", style = "font-size:12px; margin-bottom:0.75em;",
         "Nextflow task work directories for the chosen sample (failed attempts included). ",
-        "Use these to inspect intermediate files or troubleshoot a failed process."),
+        "Use these to inspect intermediate + output files or troubleshoot a failed process."),
       shinyWidgets::pickerInput("wd_sample", "Sample", choices = ids, selected = presel,
         options = list(`live-search` = TRUE)),
       div(style = "max-height:60vh; overflow:auto;", reactable::reactableOutput("wd_tbl")),
       footer = modalButton("Close")))
-  })
+  }
+  observeEvent(input$workdirs_btn, show_workdirs())
   wd_rows <- reactive({
     req(input$wd_sample)
     find_workdirs(app_project(), input$wd_sample)
@@ -80,7 +82,9 @@ app_server <- function(input, output, session) {
            a.paths, a.scaffolds, a.length,
            (SELECT p.path FROM path_scores p WHERE p.ID = s.ID AND p.auto_select = 1) AS sel_path,
            (SELECT round(MAX(p.score),3) FROM path_scores p WHERE p.ID = s.ID) AS best_score,
-           a.assemble_notes AS notes
+           a.blast_species, a.blast_accession, a.blast_pident, a.blast_qcovs,
+           a.assemble_notes AS notes,
+           'Details' AS details, 'Output' AS output
          FROM samples s LEFT JOIN assemble a ON s.ID = a.ID
            LEFT JOIN preprocess pp ON s.ID = pp.ID
          WHERE s.taxonomy_lock = 1")
@@ -124,6 +128,12 @@ app_server <- function(input, output, session) {
       n_flags = reactable::colDef(name = "Flags", width = 70, html = TRUE,
         filterable = FALSE, cell = rt_flag_badge()),
       reference = reactable::colDef(name = "Reference", html = TRUE, cell = rt_ncbi_link()),
+      blast_species = reactable::colDef(name = "BLAST Hit", minWidth = 160, html = TRUE, cell = rt_longtext()),
+      blast_accession = reactable::colDef(name = "Accession", minWidth = 110, html = TRUE, cell = rt_ncbi_link()),
+      blast_pident = reactable::colDef(name = "BLAST %ID", width = 90),
+      blast_qcovs = reactable::colDef(name = "BLAST Cov", width = 90),
+      details = reactable::colDef(name = "", width = 80, filterable = FALSE, html = TRUE, cell = rt_link("asm_details")),
+      output = reactable::colDef(name = "", width = 80, filterable = FALSE, html = TRUE, cell = rt_link("asm_output")),
       n_features = reactable::colDef(name = "Features", width = 90, html = TRUE),
       missing = reactable::colDef(name = "Missing", minWidth = 120, html = TRUE, cell = rt_longtext()),
       length = reactable::colDef(name = "Length", width = 90),
@@ -198,6 +208,19 @@ app_server <- function(input, output, session) {
       }
       showModal(annotate_modal(id))
     }
+  })
+
+  # ---- Assemble table "Details" / "Output" buttons ----
+  observeEvent(input$asm_details, {
+    i <- suppressWarnings(as.integer(input$asm_details))
+    req(!is.na(i))
+    id <- samples_data()$ID[i]; sel_id(id)
+    showModal(assemble_modal(id))
+  })
+  observeEvent(input$asm_output, {
+    i <- suppressWarnings(as.integer(input$asm_output))
+    req(!is.na(i))
+    show_workdirs(samples_data()$ID[i])
   })
 
   selected_ids <- function() {
@@ -493,9 +516,21 @@ app_server <- function(input, output, session) {
     req(id)
     d <- app_query(
       "SELECT path, length, round(depth,0) AS depth, anchors, blast_pident AS pident,
-         hit_species, round(score,3) AS score, rank, auto_select
+         hit_species, hit_id AS accession, round(score,3) AS score, rank, auto_select
        FROM path_scores WHERE ID = ? ORDER BY rank", params = list(id))
     reactable::reactable(d, compact = TRUE, resizable = TRUE, defaultPageSize = 10,
+      defaultColDef = reactable::colDef(align = "left"),
+      columns = list(
+        path = reactable::colDef(name = "Path", width = 60),
+        length = reactable::colDef(name = "Length", width = 80),
+        depth = reactable::colDef(name = "Depth", width = 70),
+        anchors = reactable::colDef(name = "Anchors", minWidth = 120),
+        pident = reactable::colDef(name = "BLAST %ID", width = 90),
+        hit_species = reactable::colDef(name = "BLAST Hit", minWidth = 150, html = TRUE, cell = rt_longtext()),
+        accession = reactable::colDef(name = "Accession", minWidth = 110, html = TRUE, cell = rt_ncbi_link()),
+        score = reactable::colDef(name = "Score", width = 80),
+        rank = reactable::colDef(name = "Rank", width = 60),
+        auto_select = reactable::colDef(name = "Auto", width = 60)),
       rowStyle = function(index) if (isTRUE(d$auto_select[index] == 1)) list(background = "#eafaf0") else NULL)
   })
   output$assemble_scaffolds <- reactable::renderReactable({
