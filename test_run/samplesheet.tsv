@@ -1,2 +1,0 @@
-ID	R1	R2	cpus	memory	fastp	getOrganelle	seeds_db	labels_db
-SRR22396758	SRR22396758_R1.fastq.gz	SRR22396758_R2.fastq.gz	8	24	--trim_poly_g --correction --detect_adapter_for_pe --dont_eval_duplication	-F anonym -R 10 -k 21,45,65,85,105,115 --larger-auto-ws	/home/dmacguig/Documents/GitHub/RiboPilot/ref_dbs/getOrganelle/seeds/actinopterygii_rrna_seeds.fasta	/home/dmacguig/Documents/GitHub/RiboPilot/ref_dbs/getOrganelle/labels/actinopterygii_rrna_labels.fasta

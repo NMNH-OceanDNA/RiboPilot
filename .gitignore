@@ -24,3 +24,5 @@ docker/RiboPilot_*.tar.gz
 
 # serena MCP tool cache
 .serena/
+test_run/
+out/
