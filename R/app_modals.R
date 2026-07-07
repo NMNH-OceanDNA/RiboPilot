@@ -57,23 +57,33 @@ annotate_modal <- function(id) {
     rp_details("Read coverage", plotOutput("coverage_plot", height = "130px")),
 
     rp_details("Edit active feature boundaries",
-      div(style = "display:flex; flex-flow:row wrap; gap:1.2em; align-items:flex-end;",
-        div(style = "font-weight:bold; align-self:center;", textOutput("feat_edit_active", inline = TRUE)),
-        div(class = "rp-step-box", style = "width:70px;",
-          numericInput("feat_step", "Step (nt)", value = 1, min = 1, max = 50, step = 1, width = "70px")),
+      # normalize control heights so the step box, +/- buttons, and Save/Reset
+      # sit on one baseline
+      tags$style(HTML(paste0(
+        "#feat_edit_row .form-group{margin-bottom:0;} ",
+        "#feat_edit_row .control-label{margin-bottom:3px; font-size:0.85em;} ",
+        "#feat_edit_row .pretty{margin:0;}"))),
+      div(id = "feat_edit_row",
+        style = "display:flex; flex-flow:row wrap; gap:1.2em; align-items:flex-end;",
+        div(style = "align-self:flex-end; padding-bottom:6px; font-weight:bold;",
+          textOutput("feat_edit_active", inline = TRUE)),
+        div(style = "align-self:flex-end; padding-bottom:6px;",
+          shinyWidgets::prettyCheckbox("feat_edit", "Edit", value = FALSE,
+            status = "primary", inline = TRUE)),
         shinyjs::hidden(div(id = "feat_edit_ctrls",
           style = "display:flex; flex-flow:row wrap; gap:1.2em; align-items:flex-end;",
+          div(class = "rp-step-box", style = "width:70px;",
+            numericInput("feat_step", "Step (nt)", value = 1, min = 1, max = 50, step = 1, width = "70px")),
           div(tags$label("5' end", class = "control-label"),
             div(style = "display:flex; gap:4px;", nt_nudge("nt_5_out", "+"), nt_nudge("nt_5_in", "-"))),
           div(tags$label("3' end", class = "control-label"),
-            div(style = "display:flex; gap:4px;", nt_nudge("nt_3_in", "-"), nt_nudge("nt_3_out", "+"))))),
-        div(style = "align-self:center; display:flex; gap:6px;",
-          actionButton("feat_edit", "Edit", icon = icon("pen"), class = "btn-sm btn-primary"),
-          shinyjs::hidden(actionButton("feat_save", "Save", icon = icon("floppy-disk"), class = "btn-sm btn-success")),
-          shinyjs::hidden(actionButton("feat_reset", "Reset", icon = icon("rotate-left"), class = "btn-sm")))
+            div(style = "display:flex; gap:4px;", nt_nudge("nt_3_in", "-"), nt_nudge("nt_3_out", "+"))),
+          div(style = "display:flex; gap:6px; align-items:flex-end;",
+            actionButton("feat_save", "Save", icon = icon("floppy-disk"), class = "btn-sm btn-success"),
+            actionButton("feat_reset", "Reset", icon = icon("rotate-left"), class = "btn-sm"))))
       ),
       div(style = "color:#888; font-size:0.82em; margin-top:4px;",
-        "Click Edit to adjust boundaries; + extends outward, - trims inward. Save to keep, Reset to discard."),
+        "Check Edit to adjust boundaries; + extends outward, - trims inward. Save to keep, Reset to discard."),
       div(class = "code-block", style = "margin-top:6px; white-space:normal; word-break:break-all;",
         uiOutput("nudge_seq"))),
 

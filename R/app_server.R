@@ -563,12 +563,13 @@ app_server <- function(input, output, session) {
   active_feature <- reactiveVal(NULL) # feature the editor + alignment act on
   edit_active <- reactiveVal(FALSE)   # in edit mode?
   edit_backup <- reactiveVal(NULL)    # annotations snapshot for Reset
+  edit_dirty <- reactiveVal(FALSE)    # nudged since entering edit mode?
 
   # reset per-sample modal state; select the first feature + load notes
   observeEvent(sel_id(), ignoreNULL = FALSE, {
-    edit_active(FALSE); edit_backup(NULL)
-    shinyjs::hide("feat_edit_ctrls"); shinyjs::hide("feat_save"); shinyjs::hide("feat_reset")
-    shinyjs::show("feat_edit")
+    edit_active(FALSE); edit_backup(NULL); edit_dirty(FALSE)
+    shinyjs::hide("feat_edit_ctrls")
+    shinyWidgets::updatePrettyCheckbox(session, "feat_edit", value = FALSE)
     id <- sel_id(); active_feature(NULL)
     if (!is.null(id)) {
       els <- app_query("SELECT element FROM annotations WHERE ID = ? ORDER BY start", params = list(id))$element
@@ -721,22 +722,8 @@ app_server <- function(input, output, session) {
     active_feature(d$element[i])
   })
 
-  # ---- edit / save / reset state machine ----
-  observeEvent(input$feat_edit, {
-    if (is.null(active_feature())) { showNotification("Select a feature first.", type = "warning"); return() }
-    edit_backup(app_query("SELECT element, start, stop FROM annotations WHERE ID = ?", params = list(sel_id())))
-    edit_active(TRUE)
-    shinyjs::show("feat_edit_ctrls"); shinyjs::show("feat_save"); shinyjs::show("feat_reset"); shinyjs::hide("feat_edit")
-  })
-  observeEvent(input$feat_save, {
-    edit_active(FALSE); edit_backup(NULL)
-    con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    tryCatch(curate_one(con, sel_id()), error = function(e) NULL)  # refresh flags after edits
-    edit_tick(edit_tick() + 1); refresh(refresh() + 1)
-    shinyjs::hide("feat_edit_ctrls"); shinyjs::hide("feat_save"); shinyjs::hide("feat_reset"); shinyjs::show("feat_edit")
-    showNotification("Boundary edits saved.", type = "message")
-  })
-  observeEvent(input$feat_reset, {
+  # ---- edit / save / reset state machine (Edit is a checkbox) ----
+  restore_edit_backup <- function() {
     b <- edit_backup()
     if (!is.null(b) && nrow(b)) {
       con <- app_con(); on.exit(DBI::dbDisconnect(con))
@@ -746,8 +733,52 @@ app_server <- function(input, output, session) {
           params = list(b$start[i], b$stop[i], b$stop[i] - b$start[i] + 1, sel_id(), b$element[i]))
       }
     }
-    edit_active(FALSE); edit_backup(NULL); edit_tick(edit_tick() + 1)
-    shinyjs::hide("feat_edit_ctrls"); shinyjs::hide("feat_save"); shinyjs::hide("feat_reset"); shinyjs::show("feat_edit")
+  }
+  save_edits <- function() {
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    tryCatch(curate_one(con, sel_id()), error = function(e) NULL)  # refresh flags after edits
+    edit_backup(NULL); edit_dirty(FALSE)
+    edit_tick(edit_tick() + 1); refresh(refresh() + 1)
+    showNotification("Boundary edits saved.", type = "message")
+  }
+  observeEvent(input$feat_edit, ignoreInit = TRUE, {
+    if (isTRUE(input$feat_edit)) {
+      if (is.null(active_feature())) {
+        shinyWidgets::updatePrettyCheckbox(session, "feat_edit", value = FALSE)
+        showNotification("Select a feature first.", type = "warning"); return()
+      }
+      edit_backup(app_query("SELECT element, start, stop FROM annotations WHERE ID = ?", params = list(sel_id())))
+      edit_active(TRUE); edit_dirty(FALSE)
+      shinyjs::show("feat_edit_ctrls")
+    } else {
+      edit_active(FALSE); shinyjs::hide("feat_edit_ctrls")
+      if (isTRUE(edit_dirty())) {
+        # MitoPilot-style prompt: keep or discard unsaved boundary edits
+        shinyWidgets::ask_confirmation("unsaved_confirm",
+          title = "Unsaved boundary edits",
+          text = "You have unsaved changes to this feature's boundaries. Keep them?",
+          type = "warning", btn_labels = c("Discard", "Save"),
+          btn_colors = c("#d9534f", "#5cb85c"))
+      } else {
+        edit_backup(NULL)
+      }
+    }
+  })
+  observeEvent(input$unsaved_confirm, {
+    if (isTRUE(input$unsaved_confirm)) {
+      save_edits()
+    } else {
+      restore_edit_backup(); edit_backup(NULL); edit_dirty(FALSE); edit_tick(edit_tick() + 1)
+      showNotification("Boundary edits discarded.", type = "message")
+    }
+  }, ignoreNULL = TRUE)
+  observeEvent(input$feat_save, {
+    save_edits()
+    shinyWidgets::updatePrettyCheckbox(session, "feat_edit", value = FALSE)  # clean exit (not dirty)
+  })
+  observeEvent(input$feat_reset, {
+    restore_edit_backup(); edit_dirty(FALSE); edit_tick(edit_tick() + 1)
+    shinyWidgets::updatePrettyCheckbox(session, "feat_edit", value = FALSE)
     showNotification("Boundary edits discarded.", type = "message")
   })
 
@@ -796,7 +827,7 @@ app_server <- function(input, output, session) {
 
   # nudge one boundary by the chosen step (1-50), clamp to sequence, persist
   nudge_boundary <- function(end, dir) {
-    if (!isTRUE(edit_active())) { showNotification("Click Edit before adjusting boundaries.", type = "warning"); return() }
+    if (!isTRUE(edit_active())) { showNotification("Check Edit before adjusting boundaries.", type = "warning"); return() }
     cx <- nudge_ctx(); req(cx)
     step <- suppressWarnings(as.integer(input$feat_step %||% 1))
     if (is.na(step)) step <- 1
@@ -810,7 +841,7 @@ app_server <- function(input, output, session) {
     DBI::dbExecute(con,
       "UPDATE annotations SET start = ?, stop = ?, length = ?, edited = 1 WHERE ID = ? AND element = ?",
       params = list(start, stop, stop - start + 1, sel_id(), cx$el))
-    edit_tick(edit_tick() + 1)
+    edit_dirty(TRUE); edit_tick(edit_tick() + 1)
   }
   observeEvent(input$nt_5_out, nudge_boundary("5", "out"))
   observeEvent(input$nt_5_in,  nudge_boundary("5", "in"))
