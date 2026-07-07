@@ -1,0 +1,4 @@
+# The Dockerfile only COPYs the package tarball, so exclude everything else to
+# keep the build context tiny (the repo holds multi-GB test/work dirs).
+*
+!docker/RiboPilot_*.tar.gz

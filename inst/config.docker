@@ -1,0 +1,28 @@
+// RiboPilot local Docker config: run each pipeline process inside the RiboPilot
+// image (built from docker/Dockerfile, referenced by process.container). Use this
+// instead of config.conda when you want the tools to come from the container
+// rather than a local conda env.
+//
+// The shell / R-script processes open the project SQLite database directly by
+// path (RiboPilot does not use nf-sqldb), so the project directory and the raw
+// read directory are bind-mounted into the container via docker.runOptions.
+// Nextflow already mounts each task's work directory. new_project() also mounts
+// the directories holding any local seed/label reference databases (the
+// <<EXTRA_MOUNTS>> slot); add more -v mounts here if you need them.
+
+docker {
+    enabled = true
+    runOptions = "-v ${params.projectDir}:${params.projectDir} -v ${params.rawDir}:${params.rawDir}<<EXTRA_MOUNTS>>"
+}
+
+process {
+    executor = 'local'
+    container = '<<CONTAINER_ID>>'
+}
+
+params {
+    publishDir = 'out'
+    rawDir = '<<RAW_DIR>>'
+    minDepth = <<MIN_DEPTH>>
+    ncbi_api_key = '<<NCBI_API_KEY>>'       // Optional NCBI API key for BLAST + GenBank fetch
+}

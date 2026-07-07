@@ -16,7 +16,9 @@ dependencies:
   - getorganelle
   - spades
   # homology / mapping
-  - blast
+  # >=2.12 required: older builds (e.g. 2.5.0) lack TLS and cannot reach the
+  # HTTPS-only NCBI remote BLAST service ("Unavailable feature GNUTLS").
+  - blast>=2.12
   - bowtie2
   - minimap2
   - samtools

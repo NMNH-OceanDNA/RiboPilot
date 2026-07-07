@@ -12,7 +12,8 @@
 #' @param data_path Directory where the raw read data is located.
 #' @param min_depth Minimum trimmed paired reads to proceed with assembly.
 #' @param executor Executor for the Nextflow pipeline: a built-in template
-#'   ("local" (default), "awsbatch", "slurm", "sge", "pbs", "lsf", "NMNH_Hydra",
+#'   ("conda" (default) for a local conda env, "docker"/"local" for the RiboPilot
+#'   container, "awsbatch", "slurm", "sge", "pbs", "lsf", "NMNH_Hydra",
 #'   "NOAA_SEDNA") or a saved profile from [generate_config()].
 #' @param container Container to use for pipeline execution.
 #' @param custom_seeds_db Path/URL to a custom GetOrganelle nr seeds database.
@@ -31,7 +32,7 @@ new_project <- function(
     mapping_id = "ID",
     data_path = NULL,
     min_depth = 2000000,
-    executor = c("local", "awsbatch", "slurm", "sge", "pbs", "lsf", "NMNH_Hydra", "NOAA_SEDNA"),
+    executor = c("conda", "docker", "local", "awsbatch", "slurm", "pbs", "sge", "lsf", "NMNH_Hydra", "NOAA_SEDNA"),
     container = paste0("macguigand/ribopilot:", utils::packageVersion("RiboPilot")),
     custom_seeds_db = NULL,
     custom_labels_db = NULL,
@@ -102,14 +103,48 @@ new_project <- function(
   if (!file.exists(config)) {
     stop("Config file not found.")
   }
-  readLines(config) |>
+  cfg_lines <- readLines(config)
+  # For container executors, bind-mount the directories holding any LOCAL
+  # seed/label reference DBs so Nextflow's staged symlinks resolve inside the
+  # container (the project + raw dirs are already mounted).
+  extra_mounts <- ""
+  engine <- if (any(grepl("singularity\\s*\\{|apptainer\\s*\\{", cfg_lines))) {
+    "singularity"
+  } else if (any(grepl("docker\\s*\\{", cfg_lines))) {
+    "docker"
+  } else {
+    NA_character_
+  }
+  if (!is.na(engine)) {
+    local_ref_dir <- function(p) {
+      if (!is.null(p) && length(p) == 1 && nzchar(p) &&
+          !grepl("^https?://", p) && file.exists(p)) {
+        dirname(normalizePath(p))
+      } else {
+        NULL
+      }
+    }
+    ref_dirs <- unique(c(local_ref_dir(custom_seeds_db), local_ref_dir(custom_labels_db)))
+    mounted <- normalizePath(c(path, if (length(data_path)) data_path), mustWork = FALSE)
+    ref_dirs <- setdiff(ref_dirs, mounted)
+    if (length(ref_dirs)) {
+      mounts <- if (engine == "singularity") {
+        paste0("-B ", ref_dirs)
+      } else {
+        paste0("-v ", ref_dirs, ":", ref_dirs)
+      }
+      extra_mounts <- paste0(" ", paste(mounts, collapse = " "))
+    }
+  }
+  cfg_lines |>
     fill_config(list(
       CONTAINER_ID = container,
       RAW_DIR = data_path,
       ASMB_DIR = "NA",
       MIN_DEPTH = format(min_depth, scientific = FALSE),
       GENETIC_CODE = "1",
-      NCBI_API_KEY = ncbi_api_key %||% ""
+      NCBI_API_KEY = ncbi_api_key %||% "",
+      EXTRA_MOUNTS = extra_mounts
     )) |>
     writeLines(file.path(path, ".config"))
 

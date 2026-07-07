@@ -4,3 +4,16 @@
 ^environment\.yml$
 ^\.github$
 ^LICENSE\.md$
+^_pkgdown\.yml$
+^pkgdown$
+^README\.Rmd$
+^dev$
+^\.serena$
+^docker$
+^testdata_full$
+^test_run$
+^assembly_out$
+^out$
+^ref_dbs$
+^\.taxonomy$
+^RiboPilot_test\.R$

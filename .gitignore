@@ -15,3 +15,12 @@ assembly_out/
 *.fastq.gz
 
 dev/*.png
+
+# pkgdown output (deployed to gh-pages)
+/docs/
+
+# built package tarball for the Docker image
+docker/RiboPilot_*.tar.gz
+
+# serena MCP tool cache
+.serena/

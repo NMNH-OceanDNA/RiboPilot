@@ -1,6 +1,13 @@
-plugins {
-	id 'nf-sqldb@0.5.0'
-}
+// RiboPilot PBS/PBS Pro config template. Turn it into a reusable profile with
+//   generate_config(name = "my_cluster", scheduler = "pbs", queue = ..., ...)
+// which fills the container-engine, queue, and cluster-options settings and
+// saves it; then run new_project(executor = "my_cluster").
+//
+// RiboPilot does not use nf-sqldb: each process opens the project SQLite DB
+// directly by path and pulls its own CPU count from the DB. The container must
+// therefore see the project files, so the generated container-engine block
+// bind-mounts the project and raw-read directories. Requires a shared
+// filesystem visible to all compute nodes.
 
 // Throttle job submission to be a good cluster citizen (adjust as needed)
 executor {
@@ -12,95 +19,17 @@ executor {
 <<CONTAINER_ENGINE>>
 
 process {
-  executor = 'pbspro'                 // use 'pbs' for Torque / OpenPBS
-  container = '<<CONTAINER_ID>>'
-  queue = '<<QUEUE>>'                 // PBS queue (maps to -q)
-  clusterOptions = '<<CLUSTER_OPTIONS>>' // extra qsub directives, e.g. -A <account> -l ...
-  cpus = { opts.cpus }               // set number of CPUs based on value pulled from SQL database
-  memory = { opts.memory.GB * task.attempt } // set memory based on value pulled from SQL database
-}
-
-// SQL database configuration (https://github.com/nextflow-io/nf-sqldb)
-sql {
-  db {
-    sqlite {
-      url = 'jdbc:sqlite:.sqlite?journal_mode=WAL&busy_timeout=5000'
-    }
-  }
+    executor = 'pbspro'                          // use 'pbs' for Torque / OpenPBS
+    container = '<<CONTAINER_ID>>'
+    queue = '<<QUEUE>>'                          // PBS queue (maps to -q)
+    clusterOptions = '<<CLUSTER_OPTIONS>>'       // extra qsub directives, e.g. -A <account> -l ...
+    memory = { 16.GB * task.attempt }            // CPUs come from the pipeline; tune memory as needed
 }
 
 // Pipeline parameters
 params {
-    rawDir = '<<RAW_DIR>>'                  // Directory containing raw data
-    asmbDir = '<<ASMB_DIR>>'                // Directory containing user-supplied mitogenomes
-    publishDir = 'out'                      // Directory to publish pipeline outputs
-    minDepth = <<MIN_DEPTH>>                // Skip samples with less than this read depth
-    genetic_code = <<GENETIC_CODE>>
-    ncbi_api_key = '<<NCBI_API_KEY>>'       // Optional NCBI API key for BLAST + GenBank fetch (https://www.ncbi.nlm.nih.gov/datasets/docs/v2/api/api-keys/)
-    mitos_condaenv = 'mitos'
-    trnaScan_condaenv = 'trnascan-se'
-    aragorn_condaenv = 'aragorn'
-    orffinder_condaenv = 'orffinder'
-    preprocess {
-        container = process.container
-        executor = process.executor
-    }
-    assemble {
-        maxRetries = 1
-        container = process.container
-        executor = process.executor
-    }
-    coverage {
-        cpus = 4
-        memory = 8
-        clusterOptions = '<<CLUSTER_OPTIONS>>'
-        container = process.container
-        executor = process.executor
-    }
-    scaffold_join {
-        cpus = 1
-        memory = 4
-        clusterOptions = '<<CLUSTER_OPTIONS>>'
-        container = process.container
-        executor = process.executor
-    }
-    annotate {
-        clusterOptions = '<<CLUSTER_OPTIONS>>'
-        container = process.container
-        executor = process.executor
-    }
-    curate {
-        clusterOptions = '<<CLUSTER_OPTIONS>>'
-        container = process.container
-        executor = process.executor
-    }
-    orf {
-        clusterOptions = '<<CLUSTER_OPTIONS>>'
-        container = process.container
-        executor = process.executor
-    }
-    validate {
-        container = process.container
-        executor = process.executor
-    }
-    blast_ref_align {
-        cpus = 1
-        memory = 8
-        clusterOptions = '<<CLUSTER_OPTIONS>>'
-        container = process.container
-        executor = process.executor
-    }
-    blast_gb {
-        cpus = 1
-        memory = 8
-        maxForks = 10 // only allow 10 concurrent BLAST/ref-fetch runs to avoid NCBI timeout issues
-        clusterOptions = '<<CLUSTER_OPTIONS>>'
-        container = process.container
-        executor = process.executor
-    }
-}
-
-// pipeline will exit with a non-zero exit code if any failed tasks are ignored using the ignore error strategy
-workflow {
-  failOnIgnore = true
+    publishDir = 'out'                          // Directory to publish pipeline outputs
+    rawDir = '<<RAW_DIR>>'                       // Directory containing raw read data
+    minDepth = <<MIN_DEPTH>>                     // Skip samples with fewer than this many reads
+    ncbi_api_key = '<<NCBI_API_KEY>>'            // Optional NCBI API key for BLAST + GenBank fetch
 }

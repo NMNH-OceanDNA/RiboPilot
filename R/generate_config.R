@@ -13,21 +13,31 @@ ribopilot_config_dir <- function() {
 
 #' Build a Nextflow container-engine block
 #'
+#' The RiboPilot pipeline opens the project SQLite database directly by path, so
+#' the container must see the project and raw-read directories. Every engine
+#' block therefore bind-mounts `${params.projectDir}` and `${params.rawDir}`
+#' (resolved by Nextflow at run time from the `--projectDir`/`--rawDir` args).
+#'
 #' @param engine One of "docker", "singularity", "apptainer".
 #' @param cache Optional cacheDir (singularity/apptainer only).
-#' @param run_options Optional runOptions string (singularity/apptainer only).
+#' @param run_options Optional extra runOptions appended to the bind mounts.
 #' @noRd
 container_engine_block <- function(engine, cache = NULL, run_options = NULL) {
+  extra <- if (!is.null(run_options) && nzchar(run_options)) run_options else ""
+  # <<EXTRA_MOUNTS>> is filled by new_project() with mounts for any local
+  # reference-database directories (empty otherwise).
   if (engine == "docker") {
-    return("docker {\n  enabled = true\n}")
+    binds <- "-v ${params.projectDir}:${params.projectDir} -v ${params.rawDir}:${params.rawDir}<<EXTRA_MOUNTS>>"
+    ro <- trimws(paste(binds, extra))
+    return(paste0("docker {\n  enabled = true\n  runOptions = \"", ro, "\"\n}"))
   }
-  lines <- c(paste0(engine, " {"), "  enabled = true")
+  binds <- "-B ${params.projectDir} -B ${params.rawDir}<<EXTRA_MOUNTS>>"
+  ro <- trimws(paste(binds, extra))
+  lines <- c(paste0(engine, " {"), "  enabled = true", "  autoMounts = true")
   if (!is.null(cache) && nzchar(cache)) {
     lines <- c(lines, paste0("  cacheDir = '", cache, "'"))
   }
-  if (!is.null(run_options) && nzchar(run_options)) {
-    lines <- c(lines, paste0("  runOptions = '", run_options, "'"))
-  }
+  lines <- c(lines, paste0("  runOptions = \"", ro, "\""))
   lines <- c(lines, "}")
   paste(lines, collapse = "\n")
 }
