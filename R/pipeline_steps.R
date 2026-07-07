@@ -219,3 +219,51 @@ stitch_selected <- function(con, id, seeds_cache) {
   list(seq = st$sequence, ref_acc = sub("_.*", "", names(refseq)[1]),
     path = p, n_gaps = st$n_gaps, n_redundant = st$n_redundant)
 }
+
+#' Trim a sample's stitched assembly to [from, to] (stitched coordinates),
+#' shifting its annotations and coverage to match. Features that fall entirely
+#' outside the kept range are dropped; overlapping features are clamped. Used by
+#' the Annotate tab's "Trim assembly" control.
+#'
+#' @param con Open DBI connection.
+#' @param id Sample ID.
+#' @param from,to 1-based inclusive kept range in stitched coordinates.
+#' @return (invisibly) the new stitched length.
+#' @noRd
+trim_assembly <- function(con, id, from, to) {
+  s <- DBI::dbGetQuery(con, "SELECT sequence FROM stitched WHERE ID = ?", params = list(id))
+  if (nrow(s) == 0 || is.na(s$sequence[1]) || !nzchar(s$sequence[1])) {
+    stop("No stitched sequence for ", id, call. = FALSE)
+  }
+  n <- nchar(s$sequence[1])
+  from <- max(1L, as.integer(from)); to <- min(n, as.integer(to))
+  if (from > to) stop("Invalid trim range.", call. = FALSE)
+  new_seq <- substr(s$sequence[1], from, to); new_len <- nchar(new_seq)
+
+  DBI::dbExecute(con, "UPDATE stitched SET sequence = ?, length = ? WHERE ID = ?",
+    params = list(new_seq, new_len, id))
+
+  ann <- DBI::dbGetQuery(con, "SELECT element, start, stop FROM annotations WHERE ID = ?", params = list(id))
+  for (i in seq_len(nrow(ann))) {
+    ns <- ann$start[i] - from + 1; nt <- ann$stop[i] - from + 1
+    if (nt < 1 || ns > new_len) {
+      DBI::dbExecute(con, "DELETE FROM annotations WHERE ID = ? AND element = ?",
+        params = list(id, ann$element[i]))
+      next
+    }
+    ns <- max(1L, ns); nt <- min(new_len, nt)
+    DBI::dbExecute(con,
+      "UPDATE annotations SET start = ?, stop = ?, length = ?, edited = 1 WHERE ID = ? AND element = ?",
+      params = list(ns, nt, nt - ns + 1, id, ann$element[i]))
+  }
+
+  cov <- DBI::dbGetQuery(con, "SELECT depths FROM coverage WHERE ID = ?", params = list(id))
+  if (nrow(cov) > 0 && !is.na(cov$depths[1]) && nzchar(cov$depths[1])) {
+    dep <- as.numeric(strsplit(cov$depths[1], ",")[[1]])
+    dep <- dep[from:min(length(dep), to)]
+    DBI::dbExecute(con,
+      "UPDATE coverage SET depths = ?, mean_depth = ?, min_depth = ?, max_depth = ? WHERE ID = ?",
+      params = list(paste(dep, collapse = ","), mean(dep), min(dep), max(dep), id))
+  }
+  invisible(new_len)
+}

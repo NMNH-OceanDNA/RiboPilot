@@ -56,6 +56,7 @@ RUN mamba install -y \
         'r-remotes' \
         'bioconductor-biostrings' \
         'bioconductor-pwalign' \
+        'bioconductor-decipher' \
         'r-cli' \
         'r-config' \
         'r-crayon' \

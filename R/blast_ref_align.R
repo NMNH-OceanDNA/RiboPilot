@@ -2,6 +2,66 @@
 # rRNA/ITS elements against its top BLAST reference, for the app's alignment
 # view. Pure R (Biostrings/pwalign); no external aligner needed.
 
+#' Live per-feature alignment of a sample's element against its reference,
+#' computed from the element's CURRENT boundaries (so the app's alignment view
+#' redraws as edits move the boundaries). Aligns the two short, homologous
+#' subsequences (reliable global alignment). Returns
+#' list(accession, pid, sample_aln, ref_aln) or NULL.
+#' @noRd
+compute_feature_alignment <- function(con, id, element) {
+  acc <- app_query_con(con, "SELECT reference_accession FROM stitched WHERE ID = ?", id)$reference_accession
+  if (length(acc) == 0 || is.na(acc[1]) || !nzchar(acc[1])) return(NULL)
+  acc <- acc[1]
+  s_seq <- app_query_con(con, "SELECT sequence FROM stitched WHERE ID = ?", id)$sequence
+  r_seq <- app_query_con(con, "SELECT sequence FROM blast_ref_sequences WHERE accession = ?", acc)$sequence
+  sa <- app_query_con(con, "SELECT start, stop FROM annotations WHERE ID = ? AND element = ?", id, element)
+  ra <- app_query_con(con, "SELECT start, stop, strand FROM blast_ref_annotations WHERE accession = ? AND element = ?", acc, element)
+  if (length(s_seq) == 0 || length(r_seq) == 0 || nrow(sa) == 0 || nrow(ra) == 0) return(NULL)
+  s_sub <- substr(s_seq[1], sa$start[1], sa$stop[1])
+  r_sub <- substr(r_seq[1], ra$start[1], ra$stop[1])
+  if (identical(ra$strand[1], "-")) {
+    r_sub <- as.character(Biostrings::reverseComplement(Biostrings::DNAString(r_sub)))
+  }
+  if (!nzchar(s_sub) || !nzchar(r_sub)) return(NULL)
+  aln <- tryCatch(pairwise_nt(s_sub, r_sub), error = function(e) NULL)
+  if (is.null(aln)) return(NULL)
+  list(accession = acc, pid = pwalign_pid(aln),
+    sample_aln = as.character(pwalign_pattern(aln)),
+    ref_aln = as.character(pwalign_subject(aln)))
+}
+
+#' Multiple alignment of a sample's element against ALL of its BLAST-hit
+#' references (the ranked blast_ref_candidates that have a fetched sequence + a
+#' parsed feature for the element). Uses the sample's CURRENT boundaries, so the
+#' view redraws on edits. Returns an aligned DNAStringSet (sample first) or NULL.
+#' @noRd
+compute_feature_msa <- function(con, id, element, max_hits = Inf) {
+  s_seq <- app_query_con(con, "SELECT sequence FROM stitched WHERE ID = ?", id)$sequence
+  sa <- app_query_con(con, "SELECT start, stop FROM annotations WHERE ID = ? AND element = ?", id, element)
+  if (length(s_seq) == 0 || nrow(sa) == 0) return(NULL)
+  s_sub <- substr(s_seq[1], sa$start[1], sa$stop[1])
+  if (!nzchar(s_sub)) return(NULL)
+
+  cands <- app_query_con(con,
+    "SELECT accession, species FROM blast_ref_candidates WHERE ID = ? ORDER BY rank", id)
+  seqs <- c(s_sub); names(seqs) <- paste0("sample|", element)
+  for (i in seq_len(nrow(cands))) {
+    if (length(seqs) > max_hits) break
+    acc <- cands$accession[i]
+    rseq <- app_query_con(con, "SELECT sequence FROM blast_ref_sequences WHERE accession = ?", acc)$sequence
+    ra <- app_query_con(con, "SELECT start, stop, strand FROM blast_ref_annotations WHERE accession = ? AND element = ?", acc, element)
+    if (length(rseq) == 0 || nrow(ra) == 0) next
+    sub <- substr(rseq[1], ra$start[1], ra$stop[1])
+    if (identical(ra$strand[1], "-")) sub <- as.character(Biostrings::reverseComplement(Biostrings::DNAString(sub)))
+    if (!nzchar(sub)) next
+    nm <- if (!is.na(cands$species[i]) && nzchar(cands$species[i])) paste0(acc, " ", cands$species[i]) else acc
+    seqs[nm] <- sub
+  }
+  if (length(seqs) < 2) return(NULL)   # need the sample + at least one reference
+  dna <- Biostrings::DNAStringSet(seqs)
+  tryCatch(DECIPHER::AlignSeqs(dna, verbose = FALSE), error = function(e) NULL)
+}
+
 #' Global pairwise nucleotide alignment wrapper (pwalign, fallback Biostrings)
 #' @noRd
 pairwise_nt <- function(a, b) {

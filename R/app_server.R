@@ -583,7 +583,6 @@ app_server <- function(input, output, session) {
   })
 
   output$coverage_plot <- renderPlot({ edit_tick(); plot_coverage(sel_id()) }, height = 128)
-  output$feature_map <- renderPlot({ edit_tick(); plot_feature_map(sel_id(), active_feature()) }, height = 165)
 
   # active feature's stitched-sequence coords + context
   nudge_ctx <- reactive({
@@ -614,38 +613,39 @@ app_server <- function(input, output, session) {
     )
   })
 
-  # ---- reference alignment of the active feature via msaR ----
-  active_aln <- reactive({
+  # ---- reference alignment: active feature vs ALL BLAST-hit references (msaR) ----
+  # Rebuilt from the feature's CURRENT boundaries so it redraws as edits move
+  # the boundaries; a DECIPHER multiple alignment of the sample + every candidate
+  # reference that has the feature.
+  active_msa <- reactive({
     edit_tick()
-    id <- sel_id(); el <- active_feature()
-    req(id, el)
-    app_query("SELECT accession, pid, sample_aln, ref_aln FROM blast_ref_alignment WHERE ID = ? AND element = ?",
-      params = list(id, el))
+    id <- sel_id(); el <- active_feature(); req(id, el)
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    tryCatch(compute_feature_msa(con, id, el), error = function(e) NULL)
   })
   output$msa_header <- renderUI({
-    a <- active_aln()
-    if (nrow(a) == 0 || is.na(a$sample_aln[1])) return(NULL)
-    span(sprintf("%s vs %s  -  %.1f%% identity over %d bp",
-      active_feature(), a$accession[1], a$pid[1], nchar(a$sample_aln[1])),
+    m <- active_msa()
+    if (is.null(m)) return(NULL)
+    span(sprintf("%s aligned against %d reference hit(s), %d columns",
+      active_feature(), length(m) - 1L, Biostrings::width(m)[1]),
       style = "color:#555; display:block; margin-bottom:4px;")
   })
   output$feat_align_ui <- renderUI({
-    a <- active_aln()
-    if (nrow(a) == 0 || is.na(a$sample_aln[1])) {
-      return(em(paste("No reference alignment for this feature. Needs a GenBank BLAST hit +",
-        "reference fetch (WF1) and the per-feature alignment (WF2); if those ran, re-run WF2.")))
+    m <- active_msa()
+    if (is.null(m)) {
+      return(em(paste("No reference alignment for this feature. Needs GenBank BLAST hits +",
+        "reference fetch (WF1); if those ran, re-run WF1.")))
     }
     msaR::msaROutput("feat_msa", height = "auto")
   })
   output$feat_msa <- msaR::renderMsaR({
-    a <- active_aln()
-    req(nrow(a) > 0, !is.na(a$sample_aln[1]))
+    m <- active_msa(); req(!is.null(m))
     fa <- tempfile(fileext = ".fa")
-    writeLines(c(paste0(">sample|", active_feature()), a$sample_aln[1],
-      paste0(">", a$accession[1]), a$ref_aln[1]), fa)
+    Biostrings::writeXStringSet(m, fa)
     on.exit(unlink(fa), add = TRUE)
     msaR::msaR(fa, overviewbox = FALSE, seqlogo = FALSE, menu = FALSE, conservation = TRUE,
-      colorscheme = "nucleotide", labelNameLength = 160, rowheight = 22, alignmentHeight = 130)
+      colorscheme = "nucleotide", labelNameLength = 220, rowheight = 22,
+      alignmentHeight = min(260, 30 + 22 * length(m)))
   })
 
   # ---- gene list (feature model); click a row -> active feature ----
@@ -659,6 +659,7 @@ app_server <- function(input, output, session) {
     if (nrow(d) == 0) {
       return(reactable::reactable(data.frame(` ` = "No annotations for this sample yet.", check.names = FALSE), compact = TRUE))
     }
+    tints <- tint_colors(RRNA_ELEMENT_COLORS)
     reactable::reactable(d, compact = TRUE, resizable = TRUE, defaultPageSize = 10,
       defaultColDef = reactable::colDef(align = "left"),
       columns = list(
@@ -671,8 +672,13 @@ app_server <- function(input, output, session) {
         status = reactable::colDef(name = "Status", width = 70),
         flags = reactable::colDef(name = "Flags", html = TRUE, cell = rt_longtext())),
       rowStyle = function(index) {
-        if (isTRUE(d$element[index] == (act %||% ""))) list(background = "#e7f0fb", fontWeight = "bold")
-        else if (isTRUE(d$status[index] == "flag")) list(background = "#fdf1e3") else NULL
+        el <- d$element[index]
+        st <- list(background = tints[[el]] %||% "#ffffff")   # row tinted by gene color
+        if (isTRUE(el == (act %||% ""))) {                     # active: bold + colored left bar
+          st$fontWeight <- "bold"
+          st$boxShadow <- paste0("inset 4px 0 0 0 ", RRNA_ELEMENT_COLORS[[el]] %||% "#333")
+        }
+        st
       })
   })
   observeEvent(input$feat_select, {
@@ -743,6 +749,41 @@ app_server <- function(input, output, session) {
     edit_active(FALSE); edit_backup(NULL); edit_tick(edit_tick() + 1)
     shinyjs::hide("feat_edit_ctrls"); shinyjs::hide("feat_save"); shinyjs::hide("feat_reset"); shinyjs::show("feat_edit")
     showNotification("Boundary edits discarded.", type = "message")
+  })
+
+  # ---- trim assembly to annotated / custom boundaries ----
+  observeEvent(input$trim_btn, {
+    id <- sel_id(); req(id)
+    s <- app_query("SELECT length FROM stitched WHERE ID = ?", params = list(id))
+    if (nrow(s) == 0 || is.na(s$length[1])) {
+      showNotification("No stitched assembly to trim.", type = "warning"); return()
+    }
+    span <- app_query("SELECT MIN(start) AS a, MAX(stop) AS b FROM annotations WHERE ID = ?", params = list(id))
+    a_from <- if (nrow(span) && !is.na(span$a[1])) span$a[1] else 1L
+    a_to <- if (nrow(span) && !is.na(span$b[1])) span$b[1] else s$length[1]
+    showModal(trim_modal(s$length[1], a_from, a_to))
+  })
+  observeEvent(input$trim_apply, {
+    id <- sel_id(); req(id)
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    if ((input$trim_mode %||% "annotated") == "annotated") {
+      span <- DBI::dbGetQuery(con, "SELECT MIN(start) AS a, MAX(stop) AS b FROM annotations WHERE ID = ?", params = list(id))
+      from <- span$a[1]; to <- span$b[1]
+    } else {
+      from <- suppressWarnings(as.integer(input$trim_from)); to <- suppressWarnings(as.integer(input$trim_to))
+    }
+    if (is.na(from) || is.na(to) || from > to) {
+      showNotification("Invalid trim range.", type = "error"); return()
+    }
+    ok <- tryCatch({
+      trim_assembly(con, id, from, to)
+      tryCatch(curate_one(con, id), error = function(e) NULL)  # re-curate after the shift
+      TRUE
+    }, error = function(e) { showNotification(conditionMessage(e), type = "error"); FALSE })
+    if (isTRUE(ok)) {
+      edit_tick(edit_tick() + 1); refresh(refresh() + 1); removeModal()
+      showNotification("Assembly trimmed; feature coordinates + coverage shifted.", type = "message")
+    }
   })
 
   # ---- notes ----

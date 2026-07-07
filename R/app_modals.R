@@ -49,11 +49,12 @@ annotate_modal <- function(id) {
     div(style = "color:#888; font-size:0.82em; margin-bottom:4px;",
       "Click a feature to make it active for editing + reference alignment below."),
     reactable::reactableOutput("feature_tbl"),
+    div(style = "margin:6px 0;",
+      actionButton("trim_btn", "Trim assembly...", icon = icon("scissors"), class = "btn-sm")),
     tags$hr(style = "margin:10px 0;"),
 
     # ---- collapsible detail panels (coverage above synteny, per request) ----
     rp_details("Read coverage", plotOutput("coverage_plot", height = "130px")),
-    rp_details("Feature / reference synteny map", plotOutput("feature_map", height = "170px")),
 
     rp_details("Edit active feature boundaries",
       div(style = "display:flex; flex-flow:row wrap; gap:1.2em; align-items:flex-end;",
@@ -115,6 +116,30 @@ run_modal <- function(mode, n) {
   )
 }
 
+#' Trim-assembly modal: cut the stitched assembly to the annotated feature span
+#' or a custom range (shifts annotations + coverage).
+#' @noRd
+trim_modal <- function(n, a_from, a_to) {
+  modalDialog(
+    title = "Trim assembly", size = "m",
+    tags$p(class = "text-muted", style = "font-size:0.85em;",
+      sprintf("Current assembly length: %d bp. Annotated span: %d..%d bp.", n, a_from, a_to)),
+    shinyWidgets::prettyRadioButtons("trim_mode", "Trim to:",
+      choices = c("Annotated feature boundaries" = "annotated", "Custom range" = "custom"),
+      selected = "annotated", status = "primary"),
+    conditionalPanel("input.trim_mode == 'custom'",
+      div(style = "display:flex; gap:1em;",
+        numericInput("trim_from", "From (bp)", value = a_from, min = 1, max = n),
+        numericInput("trim_to", "To (bp)", value = a_to, min = 1, max = n))),
+    opts_help("Trimming cuts the flanks off the stitched assembly and shifts every ",
+      "feature coordinate + the coverage track to match. Features that fall entirely ",
+      "outside the kept range are removed."),
+    footer = tagList(
+      actionButton("trim_apply", "Trim", icon = icon("scissors"), class = "btn-danger btn-sm"),
+      modalButton("Cancel"))
+  )
+}
+
 #' Assign-export-group modal: name the group for the selected samples
 #' @noRd
 group_modal <- function() {
@@ -173,10 +198,28 @@ render_alignment_html <- function(sample_aln, ref_aln) {
 
 #' Element colors shared by the app feature map
 #' @noRd
+# Colorblind-friendly (Okabe-Ito) palette, chosen to keep the 5 features
+# maximally distinct: 18S blue and 28S vermillion are now clearly different
+# (the old sky-blue 28S read too close to the 18S blue).
 RRNA_ELEMENT_COLORS <- c(
-  "18S" = "#0072B2", "ITS1" = "#E69F00", "5.8S" = "#F0E442",
-  "ITS2" = "#D55E00", "28S" = "#009E73", "ETS" = "#BBBBBB", "IGS" = "#BBBBBB"
+  "18S" = "#0072B2", "ITS1" = "#E69F00", "5.8S" = "#009E73",
+  "ITS2" = "#CC79A7", "28S" = "#D55E00", "ETS" = "#BBBBBB", "IGS" = "#BBBBBB"
 )
+
+#' Darken a set of (named) hex colors by a factor (for the coverage bands).
+#' @noRd
+darken_colors <- function(cols, f = 0.72) {
+  m <- grDevices::col2rgb(cols) * f
+  stats::setNames(grDevices::rgb(m[1, ], m[2, ], m[3, ], maxColorValue = 255), names(cols))
+}
+
+#' Pale tint of (named) hex colors (mix f toward white) for table row shading.
+#' @noRd
+tint_colors <- function(cols, f = 0.80) {
+  m <- grDevices::col2rgb(cols)
+  m <- m + (255 - m) * f
+  stats::setNames(grDevices::rgb(m[1, ], m[2, ], m[3, ], maxColorValue = 255), names(cols))
+}
 
 #' Read-coverage track for a sample, with feature regions shaded
 #' @noRd
@@ -194,69 +237,33 @@ plot_coverage <- function(id) {
   df <- data.frame(pos = seq_along(dep), depth = dep)
   feats <- app_query("SELECT element, start, stop FROM annotations WHERE ID = ? ORDER BY start",
     params = list(id))
+  ymax <- max(df$depth, 1, na.rm = TRUE)
+  dark <- darken_colors(RRNA_ELEMENT_COLORS)
   g <- ggplot2::ggplot(df, ggplot2::aes(pos, depth))
   if (nrow(feats) > 0) {
-    g <- g + ggplot2::geom_rect(data = feats, inherit.aes = FALSE,
-      ggplot2::aes(xmin = start, xmax = stop, ymin = 0, ymax = Inf, fill = element),
-      alpha = 0.15) +
-      ggplot2::scale_fill_manual(values = RRNA_ELEMENT_COLORS, guide = "none")
+    feats$mid <- (feats$start + feats$stop) / 2
+    g <- g +
+      # darker feature bands for visibility
+      ggplot2::geom_rect(data = feats, inherit.aes = FALSE,
+        ggplot2::aes(xmin = start, xmax = stop, ymin = 0, ymax = Inf, fill = element),
+        alpha = 0.28) +
+      ggplot2::scale_fill_manual(values = dark, guide = "none")
   }
-  g + ggplot2::geom_area(fill = "#444444", alpha = 0.85) +
-    ggplot2::labs(x = "position (bp)", y = "depth") +
+  g <- g + ggplot2::geom_area(fill = "#444444", alpha = 0.85)
+  if (nrow(feats) > 0) {
+    # gene names above the corresponding boxes
+    g <- g + ggplot2::geom_text(data = feats, inherit.aes = FALSE,
+      ggplot2::aes(x = mid, y = ymax * 1.06, label = element, colour = element),
+      size = 3.2, fontface = "bold", vjust = 0) +
+      ggplot2::scale_colour_manual(values = dark, guide = "none") +
+      ggplot2::coord_cartesian(ylim = c(0, ymax * 1.16), clip = "off")
+  }
+  g + ggplot2::labs(x = "position (bp)", y = "depth") +
     ggplot2::theme_minimal(base_size = 11) +
-    ggplot2::theme(panel.grid.minor = ggplot2::element_blank())
+    ggplot2::theme(panel.grid.minor = ggplot2::element_blank(),
+      plot.margin = ggplot2::margin(14, 6, 6, 6))
 }
 
 #' gggenes synteny map: the sample's annotations over its BLAST reference's
 #' (when the reference has been fetched + annotated), aligned by element color.
 #' @noRd
-plot_feature_map <- function(id, active = NULL) {
-  if (is.null(id)) {
-    return(NULL)
-  }
-  d <- app_query(
-    "SELECT element, start, stop FROM annotations WHERE ID = ? ORDER BY start",
-    params = list(id))
-  if (nrow(d) == 0) {
-    return(ggplot2::ggplot() +
-      ggplot2::annotate("text", 0, 0, label = "no annotations yet") +
-      ggplot2::theme_void())
-  }
-  d$molecule <- paste0("sample (", id, ")")
-
-  # append the reference track if its features are available
-  acc <- app_query("SELECT reference_accession FROM stitched WHERE ID = ?", params = list(id))$reference_accession
-  if (length(acc) && !is.na(acc[1]) && nzchar(acc[1])) {
-    r <- app_query("SELECT element, start, stop FROM blast_ref_annotations WHERE accession = ? ORDER BY start",
-      params = list(acc[1]))
-    if (nrow(r) > 0) {
-      r$molecule <- paste0("ref (", acc[1], ")")
-      d <- rbind(d[, c("element", "start", "stop", "molecule")],
-                 r[, c("element", "start", "stop", "molecule")])
-    }
-  }
-
-  # Draw both tracks in a shared 0-100% frame so homologous features line up
-  # across sample + reference (synteny/alignment view). Scale each molecule to
-  # the span it covers.
-  d$pos <- 50
-  for (mol in unique(d$molecule)) {
-    k <- d$molecule == mol
-    lo <- min(d$start[k]); hi <- max(d$stop[k]); rng <- max(1, hi - lo)
-    d$xmin[k] <- (d$start[k] - lo) / rng * 100
-    d$xmax[k] <- (d$stop[k]  - lo) / rng * 100
-  }
-  d$active <- !is.null(active) & d$element == (active %||% "")
-
-  ggplot2::ggplot(d, ggplot2::aes(xmin = xmin, xmax = xmax, y = molecule,
-    fill = element, label = element)) +
-    gggenes::geom_gene_arrow(ggplot2::aes(linewidth = active, colour = active),
-      arrowhead_height = grid::unit(5, "mm"), arrow_body_height = grid::unit(4.5, "mm")) +
-    gggenes::geom_gene_label(align = "centre", grow = FALSE) +
-    ggplot2::scale_fill_manual(values = RRNA_ELEMENT_COLORS, guide = "none") +
-    ggplot2::scale_colour_manual(values = c(`TRUE` = "#111111", `FALSE` = "grey60"), guide = "none") +
-    ggplot2::scale_linewidth_manual(values = c(`TRUE` = 1.1, `FALSE` = 0.3), guide = "none") +
-    ggplot2::labs(x = "aligned position (% of each track)", y = NULL) +
-    ggplot2::theme_minimal(base_size = 12) +
-    ggplot2::theme(panel.grid.major.y = ggplot2::element_blank())
-}
