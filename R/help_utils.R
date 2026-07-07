@@ -36,8 +36,10 @@ read_tool_help <- function(tool) {
 }
 
 #' Small inline "?" icon that toggles an in-place popover with the tool's
-#' bundled `--help` text. Shown/hidden client-side so opening help never tears
-#' down the options modal (and never discards unsaved edits).
+#' bundled `--help` text. The popover is an absolutely-positioned overlay
+#' (styles inline, so it floats regardless of external CSS) shown/hidden
+#' client-side, so opening help never tears down the options modal and never
+#' discards unsaved edits. Same approach as MitoPilot.
 #' @noRd
 tool_help_icon <- function(tool,
                            label = paste(tool, "options"),
@@ -54,6 +56,14 @@ tool_help_icon <- function(tool,
     ),
     shiny::tags$div(
       id = ns(panel_id), class = "rp-tool-help-popover",
+      style = paste(
+        "display: none; position: absolute; z-index: 1080;",
+        "left: 0; top: 1.6em; width: 720px; max-width: 90vw;",
+        "max-height: 50vh; overflow-y: auto; text-align: left;",
+        "font-weight: normal; background: #fff; color: #333; border: 1px solid #ccc;",
+        "border-radius: 4px; box-shadow: 0 4px 16px rgba(0,0,0,0.2);",
+        "padding: 10px;"
+      ),
       shiny::tags$pre(
         style = "white-space: pre-wrap; font-size: 12px; margin: 0; background: transparent; border: none; padding: 0;",
         read_tool_help(tool)

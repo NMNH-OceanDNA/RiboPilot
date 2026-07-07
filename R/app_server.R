@@ -63,11 +63,14 @@ app_server <- function(input, output, session) {
     # assemble/annotate tables; export leads with ID/Taxon and puts group last.
     if (mode == "Assemble") {
       app_query(
-        "SELECT a.assemble_lock, a.assemble_switch, s.ID, s.Taxon, a.paths, a.scaffolds, a.length,
+        "SELECT a.assemble_lock, a.assemble_switch, s.ID, s.Taxon,
+           pp.pre_opts, a.assemble_opts, a.blast_opts,
+           a.paths, a.scaffolds, a.length,
            (SELECT p.path FROM path_scores p WHERE p.ID = s.ID AND p.auto_select = 1) AS sel_path,
            (SELECT round(MAX(p.score),3) FROM path_scores p WHERE p.ID = s.ID) AS best_score,
            a.assemble_notes AS notes
-         FROM samples s LEFT JOIN assemble a ON s.ID = a.ID")
+         FROM samples s LEFT JOIN assemble a ON s.ID = a.ID
+           LEFT JOIN preprocess pp ON s.ID = pp.ID")
     } else if (mode == "Export") {
       # export only shows samples whose annotation is locked (validated)
       app_query(
@@ -80,7 +83,7 @@ app_server <- function(input, output, session) {
       app_query(
         "SELECT an.annotate_lock, an.annotate_switch, s.ID, s.Taxon,
            st.reference_accession AS reference, an.n_features, an.missing,
-           an.n_flags, an.reviewed
+           an.n_flags, an.annotate_opts, an.curate_opts, an.reviewed
          FROM samples s JOIN assemble a ON s.ID = a.ID
            LEFT JOIN annotate an ON s.ID = an.ID LEFT JOIN stitched st ON s.ID = st.ID
          WHERE a.assemble_lock = 1")
@@ -102,6 +105,16 @@ app_server <- function(input, output, session) {
         filterable = FALSE, cell = rt_flag_badge()),
       reference = reactable::colDef(html = TRUE, cell = rt_ncbi_link()),
       export_group = reactable::colDef(name = "group", minWidth = 110, html = TRUE, cell = rt_longtext()),
+      pre_opts = reactable::colDef(name = "preprocess", minWidth = 100, html = TRUE,
+        filterable = FALSE, cell = rt_link("set_pre_opts")),
+      assemble_opts = reactable::colDef(name = "assemble opts", minWidth = 100, html = TRUE,
+        filterable = FALSE, cell = rt_link("set_assemble_opts")),
+      blast_opts = reactable::colDef(name = "blast", minWidth = 85, html = TRUE,
+        filterable = FALSE, cell = rt_link("set_blast_opts")),
+      annotate_opts = reactable::colDef(name = "annotate opts", minWidth = 100, html = TRUE,
+        filterable = FALSE, cell = rt_link("set_annotate_opts")),
+      curate_opts = reactable::colDef(name = "curate", minWidth = 90, html = TRUE,
+        filterable = FALSE, cell = rt_link("set_curate_opts")),
       annotate_lock = reactable::colDef(name = "", width = 34, align = "center", filterable = FALSE,
         html = TRUE, cell = rt_dynamicIcon(c(`0` = "fa fa-lock-open", `1` = "fa fa-lock"))),
       notes = reactable::colDef(minWidth = 160, html = TRUE, cell = rt_longtext())
@@ -160,6 +173,12 @@ app_server <- function(input, output, session) {
     sel <- reactable::getReactableState("tbl", "selected")
     if (is.null(sel)) character(0) else samples_data()$ID[sel]
   }
+
+  # ---- named parameter-set editing (preprocess/assemble/blast/annotate/curate) ----
+  opts_handlers(input, output, session, list(
+    samples_data = samples_data, selected_ids = selected_ids,
+    refresh = refresh, con = app_con, mode = function() input$mode %||% "Assemble"
+  ))
 
   # ---- bulk lock / state / reviewed actions ----
   set_flag <- function(sql) {

@@ -163,23 +163,3 @@ details[open] summary {
 .mp-table-resize > div > .reactable {
   height: 100% !important;
 }
-
-/* CLI-help popover toggled by tool_help_icon() in the opts modals */
-.rp-tool-help-popover {
-  display: none;
-  position: absolute;
-  z-index: 1080;
-  left: 0;
-  top: 1.6em;
-  width: 720px;
-  max-width: 90vw;
-  max-height: 50vh;
-  overflow-y: auto;
-  text-align: left;
-  font-weight: normal;
-  background: #fff;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.2);
-  padding: 10px;
-}
