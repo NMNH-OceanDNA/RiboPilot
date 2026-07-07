@@ -75,7 +75,7 @@ app_server <- function(input, output, session) {
          FROM samples s")
     } else if (mode == "Assemble") {
       app_query(
-        "SELECT a.assemble_lock, a.assemble_switch, s.ID, s.Taxon,
+        "SELECT a.assemble_lock, a.assemble_switch, s.ID, s.Taxon, s.sci_name, s.taxid,
            pp.pre_opts, a.assemble_opts, a.blast_opts,
            a.paths, a.scaffolds, a.length,
            (SELECT p.path FROM path_scores p WHERE p.ID = s.ID AND p.auto_select = 1) AS sel_path,
@@ -87,14 +87,14 @@ app_server <- function(input, output, session) {
     } else if (mode == "Export") {
       # export only shows samples whose annotation is locked (validated)
       app_query(
-        "SELECT s.ID, s.Taxon, st.reference_accession AS reference, st.length, an.n_features,
-           an.missing, an.reviewed, an.annotate_lock, s.export_group
+        "SELECT s.ID, s.Taxon, s.sci_name, s.taxid, st.reference_accession AS reference, st.length,
+           an.n_features, an.missing, an.reviewed, an.annotate_lock, s.export_group
          FROM samples s JOIN annotate an ON s.ID = an.ID LEFT JOIN stitched st ON s.ID = st.ID
          WHERE an.annotate_lock = 1")
     } else {
       # annotate only shows samples whose assembly is locked (validated)
       app_query(
-        "SELECT an.annotate_lock, an.annotate_switch, s.ID, s.Taxon,
+        "SELECT an.annotate_lock, an.annotate_switch, s.ID, s.Taxon, s.sci_name, s.taxid,
            st.reference_accession AS reference, an.n_features, an.missing,
            an.n_flags, an.annotate_opts, an.curate_opts, an.reviewed
          FROM samples s JOIN assemble a ON s.ID = a.ID
@@ -112,32 +112,39 @@ app_server <- function(input, output, session) {
     state_col <- paste0(mm$pfx, "_switch")
 
     cols <- list(
-      ID = reactable::colDef(minWidth = 130, sticky = "left", html = TRUE, cell = rt_link("open_detail")),
-      Taxon = reactable::colDef(minWidth = 140, sticky = "left", html = TRUE, cell = rt_longtext()),
-      sci_name = reactable::colDef(name = "assigned taxon", minWidth = 200, html = TRUE,
+      ID = reactable::colDef(name = "ID", minWidth = 130, sticky = "left", html = TRUE, cell = rt_link("open_detail")),
+      Taxon = reactable::colDef(name = "Taxon", minWidth = 140, sticky = "left", html = TRUE, cell = rt_longtext()),
+      sci_name = reactable::colDef(name = "Assigned Taxon", minWidth = 200, html = TRUE,
         cell = rt_taxid_link()),
       taxid = reactable::colDef(show = FALSE),
-      rank = reactable::colDef(name = "rank", minWidth = 90, html = TRUE, cell = rt_longtext()),
-      match_type = reactable::colDef(name = "confidence", minWidth = 110, html = TRUE,
+      rank = reactable::colDef(name = "Rank", minWidth = 90, html = TRUE, cell = rt_longtext()),
+      match_type = reactable::colDef(name = "Confidence", minWidth = 110, html = TRUE,
         cell = rt_confidence_badge()),
-      reviewed = reactable::colDef(name = "reviewed", html = TRUE, cell = rt_bool_badge(hide_no = TRUE)),
-      n_flags = reactable::colDef(name = "flags", width = 70, align = "center", html = TRUE,
+      reviewed = reactable::colDef(name = "Reviewed", html = TRUE, cell = rt_bool_badge(hide_no = TRUE)),
+      n_flags = reactable::colDef(name = "Flags", width = 70, html = TRUE,
         filterable = FALSE, cell = rt_flag_badge()),
-      reference = reactable::colDef(html = TRUE, cell = rt_ncbi_link()),
-      export_group = reactable::colDef(name = "group", minWidth = 110, html = TRUE, cell = rt_longtext()),
-      pre_opts = reactable::colDef(name = "preprocess", minWidth = 100, html = TRUE,
+      reference = reactable::colDef(name = "Reference", html = TRUE, cell = rt_ncbi_link()),
+      n_features = reactable::colDef(name = "Features", width = 90, html = TRUE),
+      missing = reactable::colDef(name = "Missing", minWidth = 120, html = TRUE, cell = rt_longtext()),
+      length = reactable::colDef(name = "Length", width = 90),
+      paths = reactable::colDef(name = "Paths", width = 80),
+      scaffolds = reactable::colDef(name = "Scaffolds", width = 90),
+      sel_path = reactable::colDef(name = "Selected Path", width = 110),
+      best_score = reactable::colDef(name = "Best Score", width = 100),
+      export_group = reactable::colDef(name = "Group", minWidth = 110, html = TRUE, cell = rt_longtext()),
+      pre_opts = reactable::colDef(name = "Preprocess", minWidth = 100, html = TRUE,
         filterable = FALSE, cell = rt_link("set_pre_opts")),
-      assemble_opts = reactable::colDef(name = "assemble opts", minWidth = 100, html = TRUE,
+      assemble_opts = reactable::colDef(name = "Assemble Opts", minWidth = 100, html = TRUE,
         filterable = FALSE, cell = rt_link("set_assemble_opts")),
-      blast_opts = reactable::colDef(name = "blast", minWidth = 85, html = TRUE,
+      blast_opts = reactable::colDef(name = "BLAST", minWidth = 85, html = TRUE,
         filterable = FALSE, cell = rt_link("set_blast_opts")),
-      annotate_opts = reactable::colDef(name = "annotate opts", minWidth = 100, html = TRUE,
+      annotate_opts = reactable::colDef(name = "Annotate Opts", minWidth = 100, html = TRUE,
         filterable = FALSE, cell = rt_link("set_annotate_opts")),
-      curate_opts = reactable::colDef(name = "curate", minWidth = 90, html = TRUE,
+      curate_opts = reactable::colDef(name = "Curate", minWidth = 90, html = TRUE,
         filterable = FALSE, cell = rt_link("set_curate_opts")),
       annotate_lock = reactable::colDef(name = "", width = 34, align = "center", filterable = FALSE,
         html = TRUE, cell = rt_dynamicIcon(c(`0` = "fa fa-lock-open", `1` = "fa fa-lock"))),
-      notes = reactable::colDef(minWidth = 160, html = TRUE, cell = rt_longtext())
+      notes = reactable::colDef(name = "Notes", minWidth = 160, html = TRUE, cell = rt_longtext())
     )
     if (lock_col %in% names(d)) {
       cols[[lock_col]] <- reactable::colDef(name = "", sticky = "left", html = TRUE, width = 34,
@@ -162,6 +169,8 @@ app_server <- function(input, output, session) {
       searchable = TRUE, showPageSizeOptions = TRUE, wrap = FALSE, height = "100%",
       selection = "multiple", onClick = "select",
       defaultPageSize = 50, pageSizeOptions = c(25, 50, 100, 200),
+      # consistent header capitalization (Title Case names above) + left alignment
+      defaultColDef = reactable::colDef(align = "left", headerVAlign = "center"),
       rowStyle = rt_highlight_row(), rowClass = rowclass,
       columns = cols[intersect(names(cols), names(d))]
     )
