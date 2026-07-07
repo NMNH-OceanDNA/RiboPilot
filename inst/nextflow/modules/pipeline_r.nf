@@ -12,7 +12,10 @@ process query_samples {
     script:
     """
     sqlite3 -header -separator '\t' '${params.db}' "
-      SELECT p.ID, p.R1, p.R2, ao.cpus, po.fastp AS fastp, ao.getOrganelle AS getOrganelle,
+      SELECT p.ID, p.R1, p.R2,
+             COALESCE(po.cpus,4) AS pre_cpus, COALESCE(po.memory,8) AS pre_mem,
+             COALESCE(ao.cpus,4) AS asm_cpus, COALESCE(ao.memory,16) AS asm_mem,
+             po.fastp AS fastp, ao.getOrganelle AS getOrganelle,
              ao.seeds_db, ao.labels_db
       FROM assemble a
       JOIN preprocess p     ON a.ID = p.ID
@@ -31,7 +34,10 @@ process query_fallback_samples {
     script:
     """
     sqlite3 -header -separator '\t' '${params.db}' "
-      SELECT p.ID, p.R1, p.R2, ao.cpus, po.fastp AS fastp
+      SELECT p.ID, p.R1, p.R2,
+             COALESCE(po.cpus,4) AS pre_cpus, COALESCE(po.memory,8) AS pre_mem,
+             COALESCE(ao.cpus,4) AS asm_cpus, COALESCE(ao.memory,16) AS asm_mem,
+             po.fastp AS fastp
       FROM assemble a
       JOIN preprocess p     ON a.ID = p.ID
       JOIN assemble_opts ao ON a.assemble_opts = ao.assemble_opts
@@ -40,19 +46,22 @@ process query_fallback_samples {
     """
 }
 
-// WF2: IDs of assembled samples queued for (re-)annotation.
+// WF2: assembled samples queued for (re-)annotation, with their annotate_opts
+// compute settings.
 process query_annotate_samples {
     cache false
     executor 'local'
     output:
-    path 'ids.txt'
+    path 'samplesheet.tsv'
     script:
     """
-    sqlite3 '${params.db}' "
-      SELECT an.ID FROM annotate an
+    sqlite3 -header -separator '\t' '${params.db}' "
+      SELECT an.ID, COALESCE(ao.cpus,4) AS cpus, COALESCE(ao.memory,8) AS mem
+      FROM annotate an
       JOIN assemble a ON a.ID = an.ID
+      JOIN annotate_opts ao ON an.annotate_opts = ao.annotate_opts
       WHERE an.annotate_switch IN (1,4) AND an.annotate_lock = 0 AND a.assemble_lock = 1
-        AND EXISTS (SELECT 1 FROM assemblies x WHERE x.ID = an.ID);" > ids.txt
+        AND EXISTS (SELECT 1 FROM assemblies x WHERE x.ID = an.ID);" > samplesheet.tsv
     """
 }
 
@@ -87,20 +96,34 @@ process stitch {
     """
 }
 
-// barrnap (Rfam anchors) + ITSx (spacers) on the stitched sequence.
+// rRNA anchors (pybarrnap or barrnap) + ITSx (spacers) on the stitched
+// sequence, with tool/kingdom/taxon pulled per-sample from annotate_opts.
 process annotate_tools {
     cache false
     tag "${id}"
-    cpus 4
+    cpus { nthreads as int }
+    memory { "${mem} GB" }
     input:
-    tuple val(id), path(stitched)
+    tuple val(id), path(stitched), val(nthreads), val(mem)
     output:
     tuple val(id), path("${id}.barrnap.gff"), path("${id}.itsx.positions.txt")
     script:
     """
-    barrnap --kingdom fun --quiet ${stitched} > ${id}.barrnap.gff
+    read TOOL KINGDOM ITSXT ITSXO <<< "\$(sqlite3 -separator ' ' '${params.db}' "
+      SELECT COALESCE(ao.rrna_tool,'pybarrnap'), COALESCE(ao.rrna_kingdom,'euk'),
+             COALESCE(ao.itsx_taxon,'all'), COALESCE(ao.itsx_opts,'')
+      FROM annotate an JOIN annotate_opts ao ON an.annotate_opts = ao.annotate_opts
+      WHERE an.ID = '${id}';")"
+    TOOL="\${TOOL:-pybarrnap}"; KINGDOM="\${KINGDOM:-euk}"; ITSXT="\${ITSXT:-all}"
+
+    if [ "\$TOOL" = "barrnap" ]; then
+        barrnap --kingdom "\$KINGDOM" --quiet ${stitched} > ${id}.barrnap.gff
+    else
+        pybarrnap -k "\$KINGDOM" -t ${task.cpus} -q ${stitched} > ${id}.barrnap.gff
+    fi
+
     ITSx -i ${stitched} -o ${id}.itsx --save_regions none --graphical F \
-        --cpu ${task.cpus} -t all --preserve T || true
+        --cpu ${task.cpus} -t "\$ITSXT" --preserve T \$ITSXO || true
     [ -f ${id}.itsx.positions.txt ] || : > ${id}.itsx.positions.txt
     """
 }

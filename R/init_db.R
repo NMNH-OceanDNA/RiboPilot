@@ -431,6 +431,7 @@ new_db <- function(
       annotate_lock INTEGER,
       n_features INTEGER,
       missing TEXT,
+      annotate_opts TEXT,
       curate_opts TEXT,
       n_flags INTEGER,
       annotate_notes TEXT,
@@ -442,8 +443,33 @@ new_db <- function(
   dplyr::tbl(con, "annotate") |>
     dplyr::rows_upsert(
       data.frame(ID = mapping$ID, annotate_switch = 1L, annotate_lock = 0L,
-        curate_opts = "default", reviewed = "no"),
+        annotate_opts = "default", curate_opts = "default", reviewed = "no"),
       in_place = TRUE, copy = TRUE, by = "ID"
+    )
+
+  # annotate_opts (barrnap + ITSx settings) ----
+  DBI::dbExecute(
+    con,
+    "CREATE TABLE annotate_opts (
+      annotate_opts TEXT NOT NULL,
+      cpus INTEGER,
+      memory INTEGER,
+      rrna_tool TEXT,
+      rrna_kingdom TEXT,
+      itsx_taxon TEXT,
+      itsx_opts TEXT,
+      PRIMARY KEY (annotate_opts)
+    );"
+  )
+  # rrna_tool: 'pybarrnap' (default; euk-capable Python reimplementation) or
+  # 'barrnap'. rrna_kingdom values differ by tool (pybarrnap: bac/arc/euk/all;
+  # barrnap: bac/arc/fun).
+  dplyr::tbl(con, "annotate_opts") |>
+    dplyr::rows_upsert(
+      data.frame(annotate_opts = "default", cpus = 4L, memory = 8L,
+        rrna_tool = "pybarrnap", rrna_kingdom = "euk",
+        itsx_taxon = "all", itsx_opts = ""),
+      in_place = TRUE, copy = TRUE, by = "annotate_opts"
     )
 
   # curate_opts (per-clade curation ruleset selection) ----

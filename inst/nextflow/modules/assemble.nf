@@ -2,11 +2,12 @@ process assemble {
 
     tag "${id}"
     cpus { nthreads as int }
+    memory { "${mem} GB" }
     publishDir { "${launchDir}/${params.publishDir}/${id}/assemble" }, overwrite: true, mode: 'copy'
     errorStrategy 'ignore'
 
     input:
-    tuple val(id), path(reads), val(nthreads), val(getOrganelle_opts), path(seeds), path(labels)
+    tuple val(id), path(reads), val(nthreads), val(mem), val(getOrganelle_opts), path(seeds), path(labels)
 
     output:
     // per-path formatted fastas (headers ">id.path.scaffold topology") + graph + log

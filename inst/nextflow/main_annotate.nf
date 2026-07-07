@@ -16,9 +16,13 @@ params.ribopilot_src = ''
 params.taxdump_dir = ''
 
 workflow {
-    ids = query_annotate_samples().splitText().map { it.trim() }.filter { it }
+    rows = query_annotate_samples().splitCsv(header: true, sep: '\t')
+    ids = rows.map { r -> r.ID }
     stitch(ids)
-    annotate_tools(stitch.out)
+    // carry each sample's annotate_opts cpus/memory into annotate_tools
+    ann_res = rows.map { r -> tuple(r.ID, r.cpus, r.mem) }
+    ann_in = stitch.out.join(ann_res).map { id, fasta, cpus, mem -> tuple(id, fasta, cpus, mem) }
+    annotate_tools(ann_in)
     reconcile(annotate_tools.out)
     // per-feature sample-vs-reference alignment before curation, so the
     // reference-identity flags are available (opportunistic: no-op if WF1's

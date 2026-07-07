@@ -5,7 +5,7 @@
 
 #' Current project-DB schema version. Bump when adding a migration step below.
 #' @noRd
-RIBOPILOT_SCHEMA_VERSION <- 1L
+RIBOPILOT_SCHEMA_VERSION <- 2L
 
 #' Bring a project database up to the current schema (idempotent, additive)
 #'
@@ -46,6 +46,28 @@ migrate_db <- function(con) {
   add_col("annotate", "n_flags", "INTEGER")
   add_col("annotations", "status", "TEXT")
   add_col("annotations", "flags", "TEXT")
+
+  # --- schema v2: editable annotation options (annotate_opts) ---
+  if (!has_tbl("annotate_opts")) {
+    DBI::dbExecute(con,
+      "CREATE TABLE annotate_opts (
+        annotate_opts TEXT NOT NULL,
+        cpus INTEGER,
+        memory INTEGER,
+        rrna_tool TEXT,
+        rrna_kingdom TEXT,
+        itsx_taxon TEXT,
+        itsx_opts TEXT,
+        PRIMARY KEY (annotate_opts)
+      );")
+  }
+  if (DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM annotate_opts")$n == 0) {
+    DBI::dbExecute(con,
+      "INSERT INTO annotate_opts (annotate_opts, cpus, memory, rrna_tool,
+         rrna_kingdom, itsx_taxon, itsx_opts)
+       VALUES ('default', 4, 8, 'pybarrnap', 'euk', 'all', '')")
+  }
+  add_col("annotate", "annotate_opts", "TEXT DEFAULT 'default'")
 
   if (ver < RIBOPILOT_SCHEMA_VERSION) {
     DBI::dbExecute(con, sprintf("PRAGMA user_version = %d", RIBOPILOT_SCHEMA_VERSION))

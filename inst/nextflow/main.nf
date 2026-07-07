@@ -24,15 +24,15 @@ workflow {
     // samples straight from the DB (tab-separated, with header)
     rows = query_samples().splitCsv(header: true, sep: '\t')
 
-    pre_in = rows.map { r -> tuple(r.ID, file(params.rawDir + '/' + r.R1), file(params.rawDir + '/' + r.R2), r.cpus, r.fastp) }
+    pre_in = rows.map { r -> tuple(r.ID, file(params.rawDir + '/' + r.R1), file(params.rawDir + '/' + r.R2), r.pre_cpus, r.pre_mem, r.fastp) }
     preprocess(pre_in)
 
-    asm_opts = rows.map { r -> tuple(r.ID, r.cpus, r.getOrganelle, file(r.seeds_db), file(r.labels_db)) }
+    asm_opts = rows.map { r -> tuple(r.ID, r.asm_cpus, r.asm_mem, r.getOrganelle, file(r.seeds_db), file(r.labels_db)) }
     asm_in = preprocess.out.reads
         .filter { id, reads, after -> (after as Integer) >= (params.minDepth as Integer) }
         .map { id, reads, after -> tuple(id, reads) }
         .join(asm_opts)
-        .map { id, reads, cpus, go, seeds, labels -> tuple(id, reads, cpus, go, seeds, labels) }
+        .map { id, reads, cpus, mem, go, seeds, labels -> tuple(id, reads, cpus, mem, go, seeds, labels) }
     assemble(asm_in)
 
     // WF1 finalization (self-contained R/tool processes writing the DB). Stops

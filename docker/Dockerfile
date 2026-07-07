@@ -38,6 +38,7 @@ RUN mamba install -y \
         'samtools=1.21' \
         'seqtk' \
         'seqkit' \
+        'pybarrnap' \
         'barrnap' \
         'itsx' \
         'hmmer' \

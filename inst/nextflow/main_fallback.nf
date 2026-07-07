@@ -24,15 +24,15 @@ params.method = 'bait'
 workflow {
     rows = query_fallback_samples().splitCsv(header: true, sep: '\t')
 
-    pre_in = rows.map { r -> tuple(r.ID, file(params.rawDir + '/' + r.R1), file(params.rawDir + '/' + r.R2), r.cpus, r.fastp) }
+    pre_in = rows.map { r -> tuple(r.ID, file(params.rawDir + '/' + r.R1), file(params.rawDir + '/' + r.R2), r.pre_cpus, r.pre_mem, r.fastp) }
     preprocess(pre_in)
 
     // reference-guided baiting / de-novo assembly on the trimmed reads
-    fb_opts = rows.map { r -> tuple(r.ID, r.cpus) }
+    fb_opts = rows.map { r -> tuple(r.ID, r.asm_cpus, r.asm_mem) }
     fb_in = preprocess.out.reads
         .map { id, reads, after -> tuple(id, reads) }
         .join(fb_opts)
-        .map { id, reads, cpus -> tuple(id, reads, cpus, params.method) }
+        .map { id, reads, cpus, mem -> tuple(id, reads, cpus, mem, params.method) }
     fallback_assemble(fb_in)
 
     // WF1 finalization (identical to main.nf): stop at the assembly-review stage

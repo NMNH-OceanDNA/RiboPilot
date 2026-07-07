@@ -7,6 +7,7 @@ process coverage {
     cache false
     tag "${id}"
     cpus 4
+    memory 8.GB
     errorStrategy 'ignore'
 
     input:

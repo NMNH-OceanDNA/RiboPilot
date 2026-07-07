@@ -2,11 +2,12 @@ process preprocess {
 
     tag "${id}"
     cpus { nthreads as int }
+    memory { "${mem} GB" }
     publishDir { "${launchDir}/${params.publishDir}/${id}" }, overwrite: true, pattern: "*_preprocess.*", mode: 'copy'
     errorStrategy 'ignore'
 
     input:
-    tuple val(id), path(R1), path(R2), val(nthreads), val(fastp_opts)
+    tuple val(id), path(R1), path(R2), val(nthreads), val(mem), val(fastp_opts)
 
     output:
     // id, trimmed reads, trimmed read count (for the assembly depth gate)

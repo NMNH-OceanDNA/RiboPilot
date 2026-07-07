@@ -1,0 +1,35 @@
+NAME
+  barrnap 1.10.5
+SYNOPSIS
+  Rapid microbial RNA annotationn
+USAGE
+  barrnap [opts] seq.{fa,gbk,fq}[.gz] ... > rna.gff
+GENERAL
+  --help          This help 
+  --version       Print version and exit 
+  --citation      Print citation for referencing barrnap 
+  --quiet         No screen output [OFF]
+  --debug         Debug mode [OFF]
+DATABASE
+  --listdb        Show installed database 
+  --updatedb      Update databases from internet 
+  --dbdir STR     Location of databases [/opt/conda/db]
+MODE
+  --kingdom STR   Kingdom: bac arc fun [bac]
+  --gcode STR     Genetic code table [auto]
+  --all           FInd ALL RNA features [OFF]
+  --rrna          Find rRNA, disable with --no-rrna [ON]
+  --trna          Find tRNA/tmRNA, disable with --no-trna [OFF]
+  --ncrna         Find ncRNA, disable with --no-ncrna [OFF]
+  --mrna          Idenitfy mRNA coding regions, disable with --no-mrna [OFF]
+SPEED
+  --threads INT   CPU cores to use [1]
+  --fast          Trade speed for accuracy [OFF]
+  --evalue NUM    Similarity e-value cut-off [0.001]
+GFF OUTPUT
+  --addids        Add unique ID tagsn [OFF]
+  --incseq        Include original input sequences [OFF]
+  --incseqreg     Include #sequence-region headers [OFF]
+  --outseq STR    Save RNA hits to a FASTA file 
+HOMEPAGE
+  https://github.com/tseemann/barrnap

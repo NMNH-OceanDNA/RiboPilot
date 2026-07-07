@@ -27,6 +27,7 @@ dependencies:
   # contamination screen (optional, added at the contamination increment):
   #   - blobtools
   # annotation
+  - pybarrnap   # default rRNA anchor caller (euk-capable barrnap reimplementation)
   - barrnap
   - itsx
   - hmmer

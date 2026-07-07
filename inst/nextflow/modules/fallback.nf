@@ -6,11 +6,12 @@ process fallback_assemble {
 
     tag "${id}"
     cpus { nthreads as int }
+    memory { "${mem} GB" }
     publishDir { "${launchDir}/${params.publishDir}/${id}/assemble" }, overwrite: true, mode: 'copy'
     errorStrategy 'ignore'
 
     input:
-    tuple val(id), path(reads), val(nthreads), val(method)
+    tuple val(id), path(reads), val(nthreads), val(mem), val(method)
 
     output:
     tuple val(id), path("${id}_assembly_*.fasta"), emit: paths
