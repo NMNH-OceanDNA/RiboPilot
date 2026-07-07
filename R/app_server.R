@@ -127,7 +127,7 @@ app_server <- function(input, output, session) {
     if (state_col %in% names(d)) {
       cols[[state_col]] <- reactable::colDef(name = "", sticky = "left", html = TRUE, width = 32,
         align = "center", filterable = FALSE,
-        cell = rt_dynamicIcon(c(`0` = "fa fa-hourglass", `1` = "fa fa-play",
+        cell = rt_dynamicIcon(c(`0` = "fa fa-hourglass", `1` = "fa fa-person-running",
           `2` = "fa fa-circle-check", `3` = "fa fa-triangle-exclamation",
           `4` = "fa fa-circle-half-stroke")))
     }
