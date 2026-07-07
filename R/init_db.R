@@ -30,8 +30,8 @@ new_db <- function(
     mapping_taxon = "Taxon",
     assemble_cpus = 6,
     assemble_memory = 24,
-    seeds_db = "https://raw.githubusercontent.com/Smithsonian/RiboPilot/main/ref_dbs/getOrganelle/seeds/actinopterygii_rrna_seeds.fasta",
-    labels_db = "https://raw.githubusercontent.com/Smithsonian/RiboPilot/main/ref_dbs/getOrganelle/labels/actinopterygii_rrna_labels.fasta",
+    seeds_db = "https://raw.githubusercontent.com/dmacguigan/RiboPilot/main/ref_dbs/getOrganelle/seeds/actinopterygii_rrna_seeds.fasta",
+    labels_db = "https://raw.githubusercontent.com/dmacguigan/RiboPilot/main/ref_dbs/getOrganelle/labels/actinopterygii_rrna_labels.fasta",
     getOrganelle = paste(
       "-F anonym",
       "-R 10 -k 21,45,65,85,105,115",
@@ -70,8 +70,8 @@ new_db <- function(
   }
 
   # Default GetOrganelle nr databases (broad Actinopterygii) when unset ----
-  seeds_db <- seeds_db %||% "https://raw.githubusercontent.com/Smithsonian/RiboPilot/main/ref_dbs/getOrganelle/seeds/actinopterygii_rrna_seeds.fasta"
-  labels_db <- labels_db %||% "https://raw.githubusercontent.com/Smithsonian/RiboPilot/main/ref_dbs/getOrganelle/labels/actinopterygii_rrna_labels.fasta"
+  seeds_db <- seeds_db %||% "https://raw.githubusercontent.com/dmacguigan/RiboPilot/main/ref_dbs/getOrganelle/seeds/actinopterygii_rrna_seeds.fasta"
+  labels_db <- labels_db %||% "https://raw.githubusercontent.com/dmacguigan/RiboPilot/main/ref_dbs/getOrganelle/labels/actinopterygii_rrna_labels.fasta"
   # expand '~' in local paths so Nextflow/GetOrganelle can find them
   if (!grepl("^https?://", seeds_db)) seeds_db <- path.expand(seeds_db)
   if (!grepl("^https?://", labels_db)) labels_db <- path.expand(labels_db)
