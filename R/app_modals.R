@@ -110,6 +110,27 @@ group_modal <- function() {
   )
 }
 
+#' State-picker modal: choose the state to set on the selected samples.
+#' Codes: 0 hold/wait (won't run), 1 ready to run, 2 complete, 3 failed,
+#' 4 in progress. Only 1 and 4 are picked up by the next pipeline run.
+#' @noRd
+state_modal <- function(mode, current = NULL) {
+  verb <- if (mode == "annotate") "annotate" else "assemble"
+  modalDialog(
+    title = "Set state for selected samples", size = "m",
+    shinyWidgets::prettyRadioButtons("new_state", label = NULL,
+      choices = c("Hold / wait (won't run)" = "0",
+        `Ready to run` = "1", "In progress" = "4",
+        "Complete" = "2", "Failed / problem" = "3"),
+      selected = as.character(current %||% 1L), shape = "square", status = "primary"),
+    opts_help("Only 'Ready to run' and 'In progress' samples are picked up the ",
+      paste0("next time you run ", verb, "; 'Hold / wait' keeps them out of the run.")),
+    footer = tagList(
+      actionButton("update_state", "Update", class = "btn-primary btn-sm"),
+      modalButton("Cancel"))
+  )
+}
+
 #' Render a per-feature nucleotide alignment as highlighted monospace HTML
 #' (mismatches in red), wrapped at 80 columns.
 #' @noRd

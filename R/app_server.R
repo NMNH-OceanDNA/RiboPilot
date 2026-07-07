@@ -114,8 +114,9 @@ app_server <- function(input, output, session) {
     if (state_col %in% names(d)) {
       cols[[state_col]] <- reactable::colDef(name = "", sticky = "left", html = TRUE, width = 32,
         align = "center", filterable = FALSE,
-        cell = rt_dynamicIcon(c(`1` = "fa fa-hourglass", `2` = "fa fa-circle-check",
-          `3` = "fa fa-triangle-exclamation", `4` = "fa fa-circle-half-stroke")))
+        cell = rt_dynamicIcon(c(`0` = "fa fa-hourglass", `1` = "fa fa-play",
+          `2` = "fa fa-circle-check", `3` = "fa fa-triangle-exclamation",
+          `4` = "fa fa-circle-half-stroke")))
     }
     rowclass <- reactable::JS(sprintf(
       "function(rowInfo){ if(!rowInfo||!rowInfo.values) return '';
@@ -177,9 +178,21 @@ app_server <- function(input, output, session) {
     col <- if ((input$mode %||% "") == "Annotate") "annotate" else "assemble"
     set_flag(sprintf("UPDATE %s SET %s_lock = 1 - COALESCE(%s_lock, 0) WHERE ID = ?", col, col, col))
   })
-  observeEvent(input$state_btn, {  # set state Ready (re-queue)
+  observeEvent(input$state_btn, {  # open a picker to choose the target state
+    ids <- selected_ids()
+    if (length(ids) == 0) {
+      showNotification("No samples selected.", type = "warning"); return()
+    }
     col <- if ((input$mode %||% "") == "Annotate") "annotate" else "assemble"
-    set_flag(sprintf("UPDATE %s SET %s_switch = 1 WHERE ID = ?", col, col))
+    cur <- app_query(sprintf("SELECT %s_switch AS s FROM %s WHERE ID = ?", col, col),
+      params = list(ids[1]))$s
+    showModal(state_modal(col, cur))
+  })
+  observeEvent(input$update_state, {
+    col <- if ((input$mode %||% "") == "Annotate") "annotate" else "assemble"
+    st <- as.integer(input$new_state %||% "1")
+    set_flag(sprintf("UPDATE %s SET %s_switch = %d WHERE ID = ?", col, col, st))
+    removeModal()
   })
   observeEvent(input$reviewed_btn, set_flag("UPDATE annotate SET reviewed = 'yes' WHERE ID = ?"))
 

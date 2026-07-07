@@ -2,11 +2,8 @@
 #' assemble/annotate lock (0/1) and switch (1/2/3/4) codes.
 #' @noRd
 filter_pickers <- function(mode) {
-  state_choices <- if (mode == "annotate") {
-    c("Ready" = "1", "Done" = "2")
-  } else {
-    c("Ready" = "1", "Done" = "2", "Failed" = "3", "Needs BLAST" = "4")
-  }
+  state_choices <- c("Hold" = "0", "Ready" = "1", "In progress" = "4",
+    "Done" = "2", "Failed" = "3")
   picker_opts <- list(`actions-box` = TRUE, `select-all-text` = "All",
     `deselect-all-text` = "None", `selected-text-format` = "count > 0", width = "140px")
   shiny::tagList(
