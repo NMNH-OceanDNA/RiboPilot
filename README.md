@@ -1,7 +1,7 @@
 
 <!-- README.md is generated from README.Rmd. Please edit that file -->
 
-# RiboPilot <a href="https://smithsonian.github.io/RiboPilot/"><img src="man/figures/logo.png" align="right" height="138" /></a>
+# RiboPilot <a href="https://dmacguigan.github.io/RiboPilot/"><img src="man/figures/logo.png" align="right" height="138" /></a>
 
 <!-- badges: start -->
 
@@ -19,7 +19,7 @@ samples and get both marker sets from one sequencing run.
 You do not need to be a programmer to use RiboPilot. Most of your work
 happens in a **point-and-click app** that runs in your web browser. The
 step-by-step [Get started
-guide](https://smithsonian.github.io/RiboPilot/articles/RiboPilot.html)
+guide](https://dmacguigan.github.io/RiboPilot/articles/RiboPilot.html)
 walks through a complete project from start to finish.
 
 # What RiboPilot recovers
@@ -48,21 +48,29 @@ quickly, and are the regions that distinguish closely related species.
 
 Starting from raw sequencing reads, RiboPilot:
 
-1.  **Assembles** the ribosomal repeat for each sample, cleaning up the
+1.  **Confirms each sample’s organism.** RiboPilot resolves the `Taxon`
+    label you provide to an NCBI taxon (taxid + full lineage) using a
+    local copy of the NCBI taxonomy, then lets you **verify or correct
+    it in the app** before anything else runs. This is a dedicated first
+    stage (the **Taxonomy** tab): samples must be reviewed and locked
+    here before they move on to assembly, so the taxonomy that guides
+    scoring and curation is one you have signed off on.
+2.  **Assembles** the ribosomal repeat for each sample, cleaning up the
     reads and piecing the region back together, then picking the best
     reconstruction automatically.
-2.  **Annotates** it by locating the boundaries of all five features
+3.  **Annotates** it by locating the boundaries of all five features
     (18S, ITS1, 5.8S, ITS2, 28S).
-3.  **Checks (curates)** each result against a reference and flags
+4.  **Checks (curates)** each result against a reference and flags
     anything that looks off, such as a missing gene, an unusual length,
     or a possible contaminant, so you can focus your attention where it
     is needed.
-4.  **Exports** a tidy, GenBank-ready submission package.
+5.  **Exports** a tidy, GenBank-ready submission package.
 
 Behind the scenes RiboPilot uses established bioinformatics tools
 ([fastp](https://github.com/OpenGene/fastp),
 [GetOrganelle](https://github.com/Kinggerm/GetOrganelle),
-[barrnap](https://github.com/tseemann/barrnap),
+[barrnap](https://github.com/tseemann/barrnap) /
+[pybarrnap](https://github.com/moshi4/pybarrnap),
 [ITSx](https://microbiology.se/software/itsx/),
 [BLAST](https://blast.ncbi.nlm.nih.gov/Blast.cgi), and others) and
 stitches them together for you. You do not need to learn or run any of
@@ -75,12 +83,12 @@ for them out of the box. For any other group of organisms, it can build
 the reference data it needs automatically by downloading published
 sequences from GenBank. This is a one-time setup step per group; see the
 [reference database
-guide](https://smithsonian.github.io/RiboPilot/articles/Reference-Databases.html).
+guide](https://dmacguigan.github.io/RiboPilot/articles/Reference-Databases.html).
 
 It also runs automatic quality checks tuned for a taxonomic group.
 Checks currently ship for a generic metazoan (animal) setting and a
 fish-specific setting; see the [curation
-guide](https://smithsonian.github.io/RiboPilot/articles/Curation-Flags.html).
+guide](https://dmacguigan.github.io/RiboPilot/articles/Curation-Flags.html).
 
 # Installation
 
@@ -113,11 +121,11 @@ Then, in R, install RiboPilot itself:
 if (!requireNamespace("remotes", quietly = TRUE)) {
   install.packages("remotes")
 }
-remotes::install_github("Smithsonian/RiboPilot")
+remotes::install_github("dmacguigan/RiboPilot")
 ```
 
 If any of this is unfamiliar, the [Get started
-guide](https://smithsonian.github.io/RiboPilot/articles/RiboPilot.html)
+guide](https://dmacguigan.github.io/RiboPilot/articles/RiboPilot.html)
 explains each piece in more detail, and your local bioinformatics
 support staff can usually help with the one-time setup.
 
@@ -132,12 +140,12 @@ RiboPilot::new_test_project(path = "~/ribopilot_test", executor = "conda")
 ```
 
 From there, the [Get started
-guide](https://smithsonian.github.io/RiboPilot/articles/RiboPilot.html)
+guide](https://dmacguigan.github.io/RiboPilot/articles/RiboPilot.html)
 walks you through assembling the samples, reviewing and cleaning them up
 in the app, and exporting the results.
 
 # Getting help
 
-  - Full documentation: <https://smithsonian.github.io/RiboPilot/>
+  - Full documentation: <https://dmacguigan.github.io/RiboPilot/>
   - Questions or problems: please open an
-    [issue](https://github.com/Smithsonian/RiboPilot/issues).
+    [issue](https://github.com/dmacguigan/RiboPilot/issues).

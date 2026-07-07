@@ -74,6 +74,6 @@ If you work on a group that would benefit from its own length ranges, that can b
 added. This is a small change to RiboPilot's settings rather than new analysis
 code. If you are comfortable with R you can add it yourself (see `rrna_params()`
 in the source), but you are also very welcome to
-[open an issue](https://github.com/Smithsonian/RiboPilot/issues) describing your
+[open an issue](https://github.com/dmacguigan/RiboPilot/issues) describing your
 group, and we can help set it up. In the meantime, the generic animal setting
 works for any group; it is just more lenient.

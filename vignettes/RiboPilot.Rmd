@@ -78,7 +78,7 @@ conda activate ribopilot
 Then install RiboPilot itself, from within R:
 
 ```{r}
-remotes::install_github("Smithsonian/RiboPilot")
+remotes::install_github("dmacguigan/RiboPilot")
 ```
 
 <div class="alert alert-note">
