@@ -139,3 +139,28 @@ rt_confidence_badge <- function() {
       return `<span style='background:${c}; color:#fff; padding:1px 7px; border-radius:10px; font-size:0.8em; white-space:nowrap;'>${v}</span>`;
     }")
 }
+
+#' Cell: a clickable Font Awesome icon that reports the row (like rt_link but an
+#' icon instead of the cell value). Used for the Assemble Details/Output buttons.
+#' @noRd
+rt_icon_link <- function(InputId, icon, title = "") {
+  sprintf(
+    "function(cellInfo) {
+      var clickid = '%s';
+      var sampid = cellInfo.index + 1;
+      return `<a href='#' id=${sampid} class='grow' title='%s' ` +
+        `onclick='event.stopPropagation(); Shiny.setInputValue(&#39;${clickid}&#39;, this.id, {priority: &#39;event&#39;})'>` +
+        `<i class='%s'></i></a>`;
+    }", InputId, title, icon
+  ) |> htmlwidgets::JS()
+}
+
+#' Cell: a greyed, non-clickable Font Awesome icon (a disabled button).
+#' @noRd
+rt_icon_disabled <- function(icon, title = "") {
+  sprintf(
+    "function(cellInfo) {
+      return `<span title='%s' style='color:#bbb; cursor:not-allowed;'><i class='%s'></i></span>`;
+    }", title, icon
+  ) |> htmlwidgets::JS()
+}

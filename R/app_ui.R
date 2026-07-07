@@ -57,8 +57,9 @@ app_ui <- function(request) {
               shiny::span(shiny::textOutput("export_sel_n", inline = TRUE),
                 style = "color:#888; font-size:0.85em;"))),
           shiny::div(style = "margin-left:auto;",
-            shinyWidgets::actionBttn("workdirs_btn", "Work Dirs",
-              icon = shiny::icon("folder-tree"), style = "material-flat", size = "sm"))
+            # disabled for now (work-dir browser not reliable yet)
+            shinyjs::disabled(shinyWidgets::actionBttn("workdirs_btn", "Work Dirs",
+              icon = shiny::icon("folder-tree"), style = "material-flat", size = "sm")))
         ),
         # ---- filter row (status pickers, below the control bar like MitoPilot) ----
         shiny::conditionalPanel("input.mode == 'Assemble'",
