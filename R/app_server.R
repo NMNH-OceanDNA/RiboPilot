@@ -227,8 +227,8 @@ app_server <- function(input, output, session) {
   wf_for_mode <- function() if ((input$mode %||% "") == "Annotate") "annotate" else "assemble"
   nf_process <- reactiveVal(NULL)
   prog_header <- reactiveVal(character(0))
+  prog_executor <- reactiveVal("")
   prog_proc <- reactiveVal(list())
-  prog_summary <- reactiveVal("")
   prog_footer <- reactiveVal(character(0))
 
   output$nf_cmd_text <- renderText({
@@ -237,33 +237,44 @@ app_server <- function(input, output, session) {
   })
 
   observeEvent(input$run_btn, {
-    prog_header(character(0)); prog_proc(list()); prog_summary(""); prog_footer(character(0))
+    prog_header(character(0)); prog_executor(""); prog_proc(list()); prog_footer(character(0))
     showModal(run_modal(input$mode %||% "Assemble", nf_pending_count(app_project(), wf_for_mode())))
   })
 
+  # Parse Nextflow's ANSI progress board (run with -ansi-log). Each redraw is a
+  # full snapshot, so key each process row by its name and overwrite in place;
+  # keep the latest executor line; banner lines before the first process are the
+  # header, and anything after (warnings, completion) is footer.
+  nf_proc_rx <- "^\\[(?:[0-9a-f]{2}/[0-9a-f]+|-\\s*)\\]\\s+(\\S+).*$"
   progress_update <- function(lines) {
     lines <- cli::ansi_strip(lines)
     for (ln in lines) {
-      if (grepl("^\\[(PIPELINE|WORKDIR)\\]", ln)) {
-        prog_header(unique(c(prog_header(), ln)))
-      } else if (grepl("^\\[PROCESS ", ln)) {
-        key <- sub("^\\[PROCESS \\S+\\]\\s*", "", ln)
+      if (grepl("^executor\\s*>", ln)) {
+        prog_executor(ln)
+      } else if (grepl(nf_proc_rx, ln, perl = TRUE)) {
+        key <- sub(nf_proc_rx, "\\1", ln, perl = TRUE)
         pl <- prog_proc(); pl[[key]] <- ln; prog_proc(pl)
-      } else if (grepl("^\\[(SUCCESS|FAILED)\\]", ln)) {
-        prog_summary(ln)
-      } else if (nzchar(trimws(ln))) {
+      } else if (!nzchar(trimws(ln))) {
+        next
+      } else if (length(prog_proc()) == 0 && !nzchar(prog_executor())) {
+        prog_header(unique(c(prog_header(), ln)))
+      } else {
         prog_footer(c(prog_footer(), ln))
       }
     }
   }
 
   observeEvent(input$nf_start, {
-    prog_header(character(0)); prog_proc(list()); prog_summary(""); prog_footer(character(0))
+    prog_header(character(0)); prog_executor(""); prog_proc(list()); prog_footer(character(0))
     shinyjs::hide("nf_start"); shinyjs::show("nf_stop"); shinyjs::show("nf_progress")
     shinyjs::removeClass(id = "rp_gears", class = "paused")
+    # -ansi-log forces the redrawing progress board; wide COLUMNS keeps Nextflow
+    # from truncating process names so the parser's per-process keys stay stable.
     p <- processx::process$new("nextflow",
-      args = nf_command(app_project(), wf_for_mode(), resume = isTRUE(input$nf_resume %||% TRUE)),
-      stdout = "|", stderr = "|", wd = app_project())
+      args = c(nf_command(app_project(), wf_for_mode(), resume = isTRUE(input$nf_resume %||% TRUE)),
+        "-ansi-log"),
+      stdout = "|", stderr = "|", wd = app_project(),
+      env = c("current", COLUMNS = "500", NXF_ANSI_SUMMARY = "true"))
     nf_process(p)
   })
 
@@ -288,10 +299,17 @@ app_server <- function(input, output, session) {
     }
   })
 
-  output$nf_prog_header <- renderText(paste(prog_header(), collapse = "\n"))
-  output$nf_prog_processes <- renderText(paste(unlist(prog_proc()), collapse = "\n"))
-  output$nf_prog_summary <- renderText(prog_summary())
-  output$nf_prog_footer <- renderText(paste(utils::tail(prog_footer(), 40), collapse = "\n"))
+  # One combined block: skip empty sections so there's no blank header/footer
+  # space and no inter-element whitespace inside the pre-wrapped code block.
+  output$nf_prog_all <- renderText({
+    parts <- c(
+      paste(prog_header(), collapse = "\n"),
+      prog_executor(),
+      paste(unlist(prog_proc()), collapse = "\n"),
+      paste(utils::tail(prog_footer(), 40), collapse = "\n")
+    )
+    paste(parts[nzchar(parts)], collapse = "\n")
+  })
 
   kill_nf <- function() {
     p <- nf_process()

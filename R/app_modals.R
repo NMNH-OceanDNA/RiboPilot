@@ -89,11 +89,8 @@ run_modal <- function(mode, n) {
     shinyjs::hidden(div(id = "nf_progress",
       hr(), h5("Progress:"),
       div(class = "code-block", style = "max-height:320px; overflow:auto;",
-        textOutput("nf_prog_header"),
-        tags$pre(style = "margin:0; background:transparent; border:0; color:inherit;",
-          textOutput("nf_prog_processes", container = tags$code)),
-        textOutput("nf_prog_summary"),
-        textOutput("nf_prog_footer")))),
+        tags$pre(style = "margin:0; background:transparent; border:0; color:inherit; white-space:pre-wrap;",
+          textOutput("nf_prog_all", container = tags$code))))),
     footer = tagList(
       actionButton("nf_start", "Run from App", class = "btn-success btn-sm"),
       shinyjs::hidden(actionButton("nf_stop", "Stop / Interrupt", class = "btn-sm")),
