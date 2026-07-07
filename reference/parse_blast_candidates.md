@@ -1,0 +1,30 @@
+# Parse remote blastn hits into ranked reference candidates
+
+Reads a blastn \`-outfmt "6 saccver stitle pident qcovs evalue"\` file
+for one sample, dedups by accession (best pident\*qcovs), ranks, writes
+\`blast_ref_candidates\`, and sets the rank-1 hit as the sample's
+reference (\`stitched.reference_accession\` + \`assemble.blast\_\*\`).
+
+## Usage
+
+``` r
+parse_blast_candidates(con, id, hits_file)
+```
+
+## Arguments
+
+- con:
+
+  Open project DB connection.
+
+- id:
+
+  Sample ID.
+
+- hits_file:
+
+  blastn outfmt-6 output (or a "NO_SIGNIFICANT_HITS" sentinel).
+
+## Value
+
+(invisibly) the ranked candidate data.frame.

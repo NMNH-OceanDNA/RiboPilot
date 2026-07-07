@@ -1,0 +1,308 @@
+# Get started: a full RiboPilot walkthrough
+
+This guide walks you through a complete RiboPilot project, from raw
+sequencing reads to a finished, GenBank-ready nuclear ribosomal repeat
+(nrDNA). It is written for biologists. You do **not** need programming
+experience: you will type a handful of short commands into R (mostly to
+start things), but the review and clean-up work happens in a
+point-and-click app in your web browser.
+
+If you already use
+[MitoPilot](https://github.com/Smithsonian/MitoPilot), this will feel
+familiar. The two tools work the same way, use the same input files, and
+can run on the same samples.
+
+## How RiboPilot works, in brief
+
+Every cell copies its ribosomal RNA genes in a repeated unit, hundreds
+to thousands of times in a row. Even shallow, inexpensive “genome skim”
+sequencing therefore captures this region very deeply. RiboPilot
+reconstructs the repeat:
+
+       ETS   18S    ITS1   5.8S   ITS2    28S     IGS
+     --|===|=======|~~~~~|=====|~~~~~|===========|------ (repeated hundreds of times)
+           SSU              LSU
+
+It reports five parts of that repeat for each sample: the three
+conserved ribosomal genes (**18S, 5.8S, 28S**) and the two fast-evolving
+spacers between them (**ITS1, ITS2**). The genes are easy to find and
+act as landmarks; the spacers are simply the stretches between those
+landmarks, and they are the regions most useful for telling closely
+related species apart.
+
+A project moves through four stages, and RiboPilot keeps track of where
+every sample is:
+
+1.  **Assemble** the repeat for each sample.
+2.  **Annotate** it (mark the five features).
+3.  **Review and curate** the results in the app.
+4.  **Export** a submission package.
+
+## Step 0: One-time setup
+
+Before your first project, three things need to be installed. This is
+usually done once, and lab or institutional computing staff can help if
+any of it is unfamiliar.
+
+- **R** (version 4.4.0 or newer): the environment you will type commands
+  into.
+- **Nextflow**: the engine that runs the analysis steps.
+- **The analysis tools** RiboPilot relies on. The simplest way to get
+  all of them is with **conda**, which installs a self-contained bundle
+  of programs (called an “environment”) that will not interfere with
+  anything else on your computer. After installing conda, run these two
+  lines in a terminal to create the RiboPilot environment named
+  `ribopilot`:
+
+``` bash
+conda env create -f environment.yml
+conda activate ribopilot
+```
+
+Then install RiboPilot itself, from within R:
+
+``` r
+
+remotes::install_github("dmacguigan/RiboPilot")
+```
+
+**Tip.** Start R from a terminal where you have already run
+`conda activate ribopilot`. That way RiboPilot can find all the tools it
+needs. Alternatively, tell each command which environment to use by
+adding `conda_env = “ribopilot”`, as shown throughout this guide.
+
+An [NCBI API
+key](https://www.ncbi.nlm.nih.gov/datasets/docs/v2/api/api-keys/) is
+optional but recommended. It is a free code from NCBI that lets
+RiboPilot look up reference sequences faster and more reliably. You
+paste it in when you create a project (below).
+
+## Step 1: Try the practice project first
+
+RiboPilot ships a small set of fish samples so you can confirm
+everything works before using your own data. One command downloads the
+samples and sets up a ready -to-run project:
+
+``` r
+
+RiboPilot::new_test_project(path = "~/ribopilot_test", executor = "conda")
+```
+
+This downloads a few gigabytes of data, so it can take a while. When it
+finishes, you have a working project you can practice on using the steps
+below. We strongly recommend doing this once before starting with your
+own samples.
+
+## Step 2: Reference data for your group of organisms
+
+To assemble a sample, RiboPilot compares the reads to known ribosomal
+sequences from related organisms. It comes ready to use for **ray-finned
+fishes**. If your samples are fish, you can skip to Step 3.
+
+For any other group, RiboPilot can build the reference data it needs by
+downloading published sequences from GenBank. You do this once per
+group, and the result is reused for every future project on that group.
+For example, for gastropods (snails and slugs):
+
+``` r
+
+# First, just see how many sequences are available (nothing is downloaded yet):
+RiboPilot::build_reference_db(
+  '"Gastropoda"[Organism]', "gastropoda",
+  count_only = TRUE, conda_env = "ribopilot"
+)
+
+# Then build the reference data and save it somewhere you can reuse it:
+db <- RiboPilot::build_reference_db(
+  '"Gastropoda"[Organism]', "gastropoda",
+  out_dir = "~/ribopilot_refs", conda_env = "ribopilot"
+)
+```
+
+The first value in quotes is a standard NCBI search. Replace
+`Gastropoda` with your group’s name. The [reference database
+guide](https://dmacguigan.github.io/RiboPilot/articles/Reference-Databases.md)
+has more detail and tips for groups with few available sequences.
+
+## Step 3: Set up your project
+
+A project starts with a **mapping file** and one command. The mapping
+file is a spreadsheet saved as CSV that lists your samples. It needs at
+least these columns:
+
+- `ID`: a short, unique name for each sample
+- `Taxon`: the species or genus name
+- `R1` and `R2`: the two file names holding that sample’s paired
+  sequencing reads
+
+You can add any other columns you like (for example a museum voucher or
+BioSample number). RiboPilot keeps them and can add them to your GenBank
+submission later.
+
+Create the project with
+[`new_project()`](https://dmacguigan.github.io/RiboPilot/reference/new_project.md):
+
+``` r
+
+RiboPilot::new_project(
+  path       = "~/my_project",       # where to create the project folder
+  mapping_fn = "~/my_samples.csv",   # your mapping file
+  data_path  = "~/my_reads",         # folder containing the read files
+  executor   = "conda",
+  ncbi_api_key = "PASTE_YOUR_KEY_HERE"
+)
+```
+
+If you built reference data in Step 2 for a non-fish group, point the
+project at it by adding these two lines inside the parentheses:
+
+``` r
+  custom_seeds_db  = db$seeds,
+  custom_labels_db = db$labels
+```
+
+This creates a project folder containing your sample list and
+RiboPilot’s tracking file. From here on, everything refers to that
+folder.
+
+`executor = “conda”` tells RiboPilot to run on your own computer using
+the tools you installed with conda. If your lab uses a shared computing
+cluster, there are other options; see the function help for
+[`new_project()`](https://dmacguigan.github.io/RiboPilot/reference/new_project.md)
+and
+[`generate_config()`](https://dmacguigan.github.io/RiboPilot/reference/generate_config.md),
+or ask your computing support staff.
+
+## Step 4: Assemble your samples
+
+One command runs the assembly stage: it cleans the reads, assembles the
+ribosomal repeat for each sample, picks the best reconstruction, and
+prepares the review aids (a closest-match GenBank search and a
+sequencing-depth profile).
+
+``` r
+
+RiboPilot::run_assembly("~/my_project", conda_env = "ribopilot")
+```
+
+This is the longest step, because it does real work for every sample.
+You can let it run and come back later. When it finishes, every sample
+has an assembly ready for your review. Annotation happens later, in a
+separate step, only after you have reviewed and approved the assemblies
+(this is deliberate: there is no point annotating a reconstruction you
+have not yet accepted).
+
+Part of this step tries to look up the closest published match on NCBI
+to help with quality checking. If NCBI is unreachable or slow, RiboPilot
+simply skips that lookup and carries on; your assemblies and annotations
+are not affected.
+
+## Step 5: Rescue difficult samples (optional)
+
+A few samples, especially shallow or unusual ones, may not assemble on
+the first pass. RiboPilot can make a second, more targeted attempt at
+just those samples:
+
+``` r
+
+RiboPilot::run_fallback("~/my_project", conda_env = "ribopilot")
+```
+
+You can skip this and come back to it later if you prefer.
+
+## Step 6: Review and lock the assemblies
+
+This is where most of your time is spent, and it is entirely
+point-and-click. Open the app from R:
+
+``` r
+
+RiboPilot("~/my_project")
+```
+
+The app opens in your web browser as a table with one row per sample,
+organized into three tabs that follow the workflow: **Assemble**,
+**Annotate**, and **Export**. Each row shows an icon for the sample’s
+status and whether it is **locked**. Locking a sample “signs off” on it
+and moves it to the next stage: a sample must be locked in the Assemble
+tab before it can be annotated, and locked in the Annotate tab before it
+can be exported. You can select several rows and lock them together.
+
+Work in the **Assemble tab**: look at each sample’s reconstruction
+(RiboPilot has already chosen what it thinks is the best one), check it
+against the sequencing depth and the closest GenBank match, switch to an
+alternative reconstruction or adjust the exact endpoints if needed, and
+**lock** each sample you are happy with.
+
+Annotation deliberately does not happen until you have locked an
+assembly, so the Annotate tab is empty until the next step.
+
+## Step 7: Annotate the locked assemblies
+
+Now run the annotation stage on the assemblies you locked. It marks the
+five features (18S, ITS1, 5.8S, ITS2, 28S) and runs the automatic
+quality checks.
+
+``` r
+
+RiboPilot::run_annotate("~/my_project", conda_env = "ribopilot")
+```
+
+You can also launch this from inside the app: switch to the Annotate tab
+and use the **Update** button, which shows a live progress display. If
+you later go back and switch a sample to a different reconstruction,
+just run this step again; it re-annotates only the samples that changed.
+
+## Step 8: Review the annotations and curation flags
+
+Back in the app’s **Annotate tab**, open a sample to see its five
+features laid out, a plot of sequencing depth, and a **Curation flags**
+panel. The flags are RiboPilot’s automatic quality checks, for example a
+missing gene, an unusual length, a feature on the wrong strand, or a
+possible contaminant. Each flag links to the feature it concerns, so you
+can jump straight to it and adjust the boundaries. The [curation
+guide](https://dmacguigan.github.io/RiboPilot/articles/Curation-Flags.md)
+explains every flag. Lock each sample once you are happy with it.
+
+## Step 9: Export for GenBank
+
+Once your samples are locked in the Annotate tab, export a submission
+package. You can group samples in the app’s Export tab, or export
+everything from R:
+
+``` r
+
+RiboPilot::export_project("~/my_project")
+```
+
+The package contains the files GenBank expects, plus a convenient FASTA
+file for each marker (18S, ITS1, 5.8S, ITS2, 28S, and the full repeat),
+a summary table, and a readable report. Any extra columns from your
+mapping file are carried through onto the submission.
+
+## The whole workflow at a glance
+
+``` r
+
+RiboPilot::new_project(...)          # Step 3: set up
+RiboPilot::run_assembly(project)     # Step 4: assemble (+ BLAST, coverage)
+RiboPilot::run_fallback(project)     # Step 5: rescue difficult samples (optional)
+RiboPilot(project)                   # Step 6: review + LOCK assemblies (Assemble tab)
+RiboPilot::run_annotate(project)     # Step 7: annotate + curate locked assemblies
+RiboPilot(project)                   # Step 8: review annotations + flags, lock (Annotate tab)
+RiboPilot::export_project(project)   # Step 9: export
+```
+
+That is a complete project. To adapt RiboPilot to a new group of
+organisms, see the [reference database
+guide](https://dmacguigan.github.io/RiboPilot/articles/Reference-Databases.md).
+To understand the automatic quality checks in more depth, see the
+[curation
+guide](https://dmacguigan.github.io/RiboPilot/articles/Curation-Flags.md).
+
+**If assembly reports a BLAST error** mentioning “GNUTLS” or “secure
+session”, the version of the BLAST tool in your environment is too old
+to connect to NCBI. Update it by running
+`conda install -n ribopilot ‘blast>=2.12’` in a terminal, then run the
+assembly step again. Environments created from the current
+`environment.yml` already include a new enough version.
