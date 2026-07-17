@@ -113,6 +113,8 @@ migrate_db <- function(con) {
         PRIMARY KEY (ID)
       );")
   }
+  # ITSx chimera flag surfaced through curation.
+  add_col("annotate", "chimeric", "INTEGER")
   # Retire the restrictive entrez_query, but only where it is still verbatim the
   # old default -- a query the user chose is theirs to keep.
   if (has_tbl("blast_opts")) {

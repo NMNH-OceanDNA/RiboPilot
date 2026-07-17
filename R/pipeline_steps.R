@@ -62,6 +62,12 @@ stitch_one <- function(con, id, fasta_out = NULL) {
   if (is.null(st)) {
     return(invisible(NULL))
   }
+  # Normalize orientation to sense here, at the single point where the stitched
+  # sequence is written, so WF1 coverage (computed after stitch) and WF2
+  # annotation both see the same sense sequence. Deterministic, so re-stitching
+  # in WF2 reproduces it -- coverage never needs reversing.
+  or <- orient_rrna_sense(st$seq)
+  st$seq <- or$seq
   ts <- as.integer(Sys.time())
   DBI::dbExecute(con, "DELETE FROM stitched WHERE ID = ?", params = list(id))
   DBI::dbExecute(con,
@@ -84,8 +90,10 @@ stitch_one <- function(con, id, fasta_out = NULL) {
 #' @export
 reconcile_one <- function(con, id, gff = NULL, positions = NULL) {
   bar <- if (!is.null(gff) && file.exists(gff)) parse_barrnap(readLines(gff, warn = FALSE)) else data.frame()
-  its <- if (!is.null(positions) && file.exists(positions)) parse_itsx(readLines(positions, warn = FALSE)) else data.frame()
+  pos_lines <- if (!is.null(positions) && file.exists(positions)) readLines(positions, warn = FALSE) else character(0)
+  its <- parse_itsx(pos_lines)
   feat <- reconcile_features(bar, its)
+  chimeric <- as.integer(itsx_is_chimeric(pos_lines))
   ts <- as.integer(Sys.time())
 
   DBI::dbExecute(con, "DELETE FROM annotations WHERE ID = ?", params = list(id))
@@ -97,8 +105,8 @@ reconcile_one <- function(con, id, gff = NULL, positions = NULL) {
   }
   missing <- setdiff(c(RRNA_GENES, RRNA_SPACERS), feat$element)
   DBI::dbExecute(con,
-    "UPDATE annotate SET n_features = ?, missing = ?, annotate_switch = 2, time_stamp = ? WHERE ID = ?",
-    params = list(nrow(feat), paste(missing, collapse = ","), ts, id))
+    "UPDATE annotate SET n_features = ?, missing = ?, chimeric = ?, annotate_switch = 2, time_stamp = ? WHERE ID = ?",
+    params = list(nrow(feat), paste(missing, collapse = ","), chimeric, ts, id))
   invisible(feat)
 }
 

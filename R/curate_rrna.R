@@ -25,13 +25,15 @@
 #' @param hit_is_nuclear_rrna Optional 0/1 (`blast_screen.is_nuclear_rrna`):
 #'   whether that top hit is a nuclear rDNA record at all. 0 raises
 #'   `not_nuclear_rdna`.
+#' @param chimeric Optional 0/1/logical (`annotate.chimeric`): whether ITSx
+#'   flagged the sequence as chimeric. TRUE raises `chimeric`.
 #' @return list(features, flags, n_flags, notes) where `features` gains `status`
 #'   ("ok"/"flag") and `flags` (comma-separated per-feature codes), and the
 #'   sample-level `flags`/`notes` summarize missing anchors, ordering, etc.
 #' @export
 curate_rrna_core <- function(features, params = rrna_params(),
                              ref_pid = NULL, sample_lineage = NA, hit_lineage = NA,
-                             hit_is_nuclear_rrna = NA) {
+                             hit_is_nuclear_rrna = NA, chimeric = NA) {
   sample_flags <- character(0)
   feat_flags <- list()
   add_feat_flag <- function(el, code) feat_flags[[el]] <<- c(feat_flags[[el]], code)
@@ -112,6 +114,12 @@ curate_rrna_core <- function(features, params = rrna_params(),
     }
   }
 
+  # 8. ITSx chimera call (detected at annotation; a chimeric sequence must not
+  # enter a reference database) ----
+  if (isTRUE(chimeric) || identical(chimeric, 1L)) {
+    sample_flags <- c(sample_flags, "chimeric")
+  }
+
   # Assemble per-feature status ----
   if (has_feats) {
     features$flags <- vapply(features$element, function(el) {
@@ -135,10 +143,10 @@ curate_rrna_core <- function(features, params = rrna_params(),
 #' @export
 curate_actinopterygii_rrna <- function(features, ref_pid = NULL,
                                        sample_lineage = NA, hit_lineage = NA,
-                                       hit_is_nuclear_rrna = NA) {
+                                       hit_is_nuclear_rrna = NA, chimeric = NA) {
   curate_rrna_core(features, rrna_params("actinopterygii"),
     ref_pid = ref_pid, sample_lineage = sample_lineage, hit_lineage = hit_lineage,
-    hit_is_nuclear_rrna = hit_is_nuclear_rrna)
+    hit_is_nuclear_rrna = hit_is_nuclear_rrna, chimeric = chimeric)
 }
 
 #' Is a lineage string usable for the contaminant comparison?
@@ -222,9 +230,13 @@ curate_one <- function(con, id, ruleset = NULL) {
   hit_lineage <- if (nrow(scr) > 0) scr$lineage[1] else NA_character_
   hit_is_nuc <- if (nrow(scr) > 0) as.integer(scr$is_nuclear_rrna[1]) else NA_integer_
 
+  chimeric <- tryCatch(DBI::dbGetQuery(con,
+    "SELECT chimeric FROM annotate WHERE ID = ?", params = list(id))$chimeric[1],
+    error = function(e) NA_integer_)
+
   res <- curate_rrna_core(feats, params, ref_pid = ref_pid,
     sample_lineage = sample_lineage, hit_lineage = hit_lineage,
-    hit_is_nuclear_rrna = hit_is_nuc)
+    hit_is_nuclear_rrna = hit_is_nuc, chimeric = chimeric)
 
   ts <- as.integer(Sys.time())
   DBI::dbWithTransaction(con, {

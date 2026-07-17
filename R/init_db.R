@@ -464,6 +464,7 @@ new_db <- function(
       annotate_lock INTEGER,
       n_features INTEGER,
       missing TEXT,
+      chimeric INTEGER,
       annotate_opts TEXT,
       curate_opts TEXT,
       n_flags INTEGER,
