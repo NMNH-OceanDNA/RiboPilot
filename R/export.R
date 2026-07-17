@@ -25,32 +25,67 @@ clear_export_group <- function(path, ids) {
   invisible()
 }
 
-# Sample columns never emitted as source modifiers (internal, or handled
-# separately as [organism=]). Any other map-file metadata column becomes a
-# GenBank source modifier keyed by its (lowercased) column name.
-SOURCE_MOD_SKIP <- c("ID", "Taxon", "R1", "R2", "taxid", "lineage", "export_group",
-  "seq", "sequence")
+# Valid INSDC source modifiers that may be emitted as `[key=value]` deflines.
+# This is an ALLOWLIST, not a blocklist: only map-file columns whose (lowercased)
+# name is a real GenBank source modifier are emitted. A blocklist would leak the
+# internal bookkeeping columns on the `samples` table (taxonomy_switch,
+# taxonomy_lock, rank, ...) into every defline as bogus qualifiers, which
+# table2asn rejects. `organism`/`moltype` are emitted separately.
+SOURCE_MOD_ALLOW <- c(
+  # specimen / material
+  "specimen_voucher", "culture_collection", "bio_material", "isolate", "strain",
+  "clone", "cultivar", "ecotype", "haplotype", "breed", "variety", "serotype",
+  "serovar", "sub_species", "subspecies", "sub_strain", "isolation_source",
+  # geography / date
+  "country", "geo_loc_name", "lat_lon", "altitude", "collection_date",
+  "collected_by", "identified_by",
+  # organism biology
+  "host", "sex", "tissue_type", "dev_stage", "cell_type", "cell_line",
+  "organelle", "environmental_sample", "pop_variant", "biotype",
+  # free text
+  "note")
 
 #' Build GenBank source-modifier tags from a sample's metadata row
 #'
-#' Extra map-file columns (voucher, country, isolate, collection_date, ...) are
-#' emitted verbatim as `[column=value]` deflines modifiers; name the map-file
-#' columns after the source modifiers you want (e.g. `specimen_voucher`,
-#' `country`/`geo_loc_name`, `collection_date`).
+#' Extra map-file columns are emitted as `[column=value]` defline modifiers, but
+#' only when the column name is a recognized INSDC source modifier
+#' ([SOURCE_MOD_ALLOW]); name the map-file columns after the source modifiers you
+#' want (e.g. `specimen_voucher`, `country`/`geo_loc_name`, `collection_date`).
+#' Unrecognized columns are ignored so internal columns cannot become qualifiers.
 #' @noRd
 source_modifiers <- function(row) {
-  extra <- setdiff(names(row), SOURCE_MOD_SKIP)
   mods <- character(0)
-  for (col in extra) {
+  for (col in names(row)) {
+    key <- tolower(gsub("\\s+", "_", trimws(col)))
+    if (!(key %in% SOURCE_MOD_ALLOW)) next
     v <- row[[col]][1]
     if (is.null(v) || length(v) == 0 || is.na(v) || !nzchar(trimws(as.character(v)))) next
-    key <- tolower(gsub("\\s+", "_", trimws(col)))
     mods <- c(mods, sprintf("[%s=%s]", key, trimws(as.character(v))))
   }
   mods
 }
 
+# Minimum run of Ns annotated as an assembly_gap; shorter runs are treated as
+# ordinary ambiguous bases, not gaps (per INSDC convention).
+MIN_ASSEMBLY_GAP <- 10L
+
+#' 1-based start/stop of every N-run of at least `min_len` in a sequence
+#' @noRd
+find_n_runs <- function(seq, min_len = MIN_ASSEMBLY_GAP) {
+  empty <- data.frame(start = integer(0), stop = integer(0))
+  if (is.null(seq) || is.na(seq) || !nzchar(seq)) return(empty)
+  m <- gregexpr(sprintf("[Nn]{%d,}", min_len), seq, perl = TRUE)[[1]]
+  if (length(m) == 1 && m[1] == -1) return(empty)
+  len <- attr(m, "match.length")
+  data.frame(start = as.integer(m), stop = as.integer(m + len - 1))
+}
+
 #' Feature table (.tbl) text for one sample from an open connection
+#'
+#' Emits the rRNA/spacer features plus an `assembly_gap` feature for each N-run
+#' (>= [MIN_ASSEMBLY_GAP]) so table2asn does not reject fabricated gap runs, and
+#' marks the first/last real feature partial (`<`/`>`) when it reaches a
+#' sequence end.
 #' @noRd
 feature_table_text_con <- function(con, id) {
   d <- DBI::dbGetQuery(con,
@@ -59,15 +94,36 @@ feature_table_text_con <- function(con, id) {
   if (nrow(d) == 0) {
     return(paste0(hdr, "\n"))
   }
-  seqlen <- DBI::dbGetQuery(con, "SELECT length FROM stitched WHERE ID = ?", params = list(id))$length
-  seqlen <- if (length(seqlen) == 0 || is.na(seqlen)) max(d$stop) else seqlen
+  st <- DBI::dbGetQuery(con, "SELECT sequence, length FROM stitched WHERE ID = ?", params = list(id))
+  seq <- if (nrow(st)) st$sequence[1] else NA_character_
+  seqlen <- if (nrow(st) && !is.na(st$length[1])) st$length[1] else max(d$stop)
+
+  gaps <- find_n_runs(seq)
+  feats <- rbind(
+    data.frame(start = d$start, stop = d$stop, type = d$type, element = d$element,
+      kind = "rna", stringsAsFactors = FALSE),
+    if (nrow(gaps) > 0) data.frame(start = gaps$start, stop = gaps$stop,
+      type = "assembly_gap", element = NA_character_, kind = "gap", stringsAsFactors = FALSE))
+  feats <- feats[order(feats$start), , drop = FALSE]
+  rna <- which(feats$kind == "rna")
+  first_rna <- if (length(rna)) min(rna) else NA_integer_
+  last_rna <- if (length(rna)) max(rna) else NA_integer_
+
   lines <- hdr
-  for (i in seq_len(nrow(d))) {
-    s <- if (i == 1 && d$start[i] <= 1) paste0("<", d$start[i]) else as.character(d$start[i])
-    e <- if (i == nrow(d) && d$stop[i] >= seqlen) paste0(">", d$stop[i]) else as.character(d$stop[i])
-    lines <- c(lines, paste0(s, "\t", e, "\t", d$type[i]))
-    lines <- c(lines, paste0("\t\t\tproduct\t", rrna_element_product(d$element[i])))
-    if (d$type[i] == "misc_RNA") lines <- c(lines, paste0("\t\t\tnote\t", d$element[i]))
+  for (i in seq_len(nrow(feats))) {
+    if (identical(feats$kind[i], "gap")) {
+      lines <- c(lines,
+        paste0(feats$start[i], "\t", feats$stop[i], "\tassembly_gap"),
+        paste0("\t\t\testimated_length\t", feats$stop[i] - feats$start[i] + 1),
+        "\t\t\tgap_type\twithin scaffold",
+        "\t\t\tlinkage_evidence\talign_genus")
+      next
+    }
+    s <- if (i == first_rna && feats$start[i] <= 1) paste0("<", feats$start[i]) else as.character(feats$start[i])
+    e <- if (i == last_rna && feats$stop[i] >= seqlen) paste0(">", feats$stop[i]) else as.character(feats$stop[i])
+    lines <- c(lines, paste0(s, "\t", e, "\t", feats$type[i]),
+      paste0("\t\t\tproduct\t", rrna_element_product(feats$element[i])))
+    if (identical(feats$type[i], "misc_RNA")) lines <- c(lines, paste0("\t\t\tnote\t", feats$element[i]))
   }
   paste(lines, collapse = "\n")
 }

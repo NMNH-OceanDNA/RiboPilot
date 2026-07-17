@@ -497,8 +497,11 @@ app_server <- function(input, output, session) {
         stop("nothing to export")
       }
       td <- file.path(tempdir(), paste0("rp_export_", as.integer(Sys.time())))
-      export_bundle(app_project(), ids = ids, out_dir = td, zip = TRUE)
-      file.copy(paste0(td, ".zip"), file, overwrite = TRUE)
+      gdir <- export_bundle(app_project(), ids = ids, out_dir = td, zip = TRUE)
+      zipf <- paste0(gdir, ".zip")
+      if (!file.exists(zipf) || !file.copy(zipf, file, overwrite = TRUE)) {
+        stop("Export bundle zip was not produced at ", zipf)
+      }
     }
   )
 
