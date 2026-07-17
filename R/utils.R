@@ -13,3 +13,91 @@
 #' Inverted %in%
 #' @noRd
 `%nin%` <- Negate(`%in%`)
+
+#' Classify a URL as "ok", "missing" (definitively absent), or "unknown"
+#'
+#' "unknown" covers the offline / transient-failure case, which must not be
+#' treated as absence.
+#' @noRd
+url_status <- function(u) {
+  msg <- NULL
+  ok <- tryCatch({
+    con <- url(u, open = "rb")
+    on.exit(close(con), add = TRUE)
+    length(readBin(con, "raw", 1L)) > 0
+  },
+  error = function(e) {
+    msg <<- conditionMessage(e)
+    FALSE
+  },
+  warning = function(w) {
+    msg <<- conditionMessage(w)
+    FALSE
+  })
+  if (isTRUE(ok)) return("ok")
+  if (!is.null(msg) && grepl("404|not found|403|forbidden", msg, ignore.case = TRUE)) {
+    return("missing")
+  }
+  "unknown"
+}
+
+#' Warn when a container executor is pointed at a Docker Hub image that is not
+#' published
+#'
+#' Only Docker Hub images are checkable; anything with an explicit registry
+#' host, or a locally built image, is left alone. Warns rather than errors
+#' because a locally built image is legitimate and invisible to this check.
+#' @param container e.g. "macguigand/ribopilot:0.0.0.9000". @noRd
+check_container_image <- function(container) {
+  if (is.null(container) || is.na(container) || !nzchar(container)) return(invisible(container))
+  # Skip explicit registries (host contains a dot or a port) and local images.
+  parts <- strsplit(container, "/", fixed = TRUE)[[1]]
+  if (length(parts) > 2 || (length(parts) == 2 && grepl("[.:]", parts[1]))) {
+    return(invisible(container))
+  }
+  ref <- strsplit(utils::tail(parts, 1), ":", fixed = TRUE)[[1]]
+  if (length(ref) != 2) return(invisible(container))
+  ns <- if (length(parts) == 2) parts[1] else "library"
+  u <- sprintf("https://hub.docker.com/v2/repositories/%s/%s/tags/%s", ns, ref[1], ref[2])
+  if (identical(url_status(u), "missing")) {
+    warning(sprintf(paste0(
+      "Container image '%s' is not published on Docker Hub, so container ",
+      "executors will fail at image pull.\nBuild and push it with ",
+      "docker/deploy-dockerhub.sh, or pass an image you can pull via ",
+      "new_project(container = ...)."), container), call. = FALSE)
+  }
+  invisible(container)
+}
+
+#' Check a GetOrganelle reference DB is resolvable, erroring early when it is not
+#'
+#' A missing seeds/labels DB otherwise surfaces hours into a run as an opaque
+#' GetOrganelle failure. A local path is definitive; a URL that cannot be
+#' reached for any reason other than 404/403 only warns, so an offline project
+#' setup still works.
+#' @param x Path or URL. @param what "seeds" or "labels".
+#' @noRd
+check_reference_db <- function(x, what) {
+  if (is.null(x) || is.na(x) || !nzchar(x)) return(invisible(x))
+  hint <- paste0(
+    "Build a reference database for your clade and pass it to new_project():\n",
+    "  db <- build_reference_db('\"Asteroidea\"[Organism]', \"asteroidea\")\n",
+    "  new_project(..., custom_seeds_db = db$seeds, custom_labels_db = db$labels)")
+  if (!grepl("^https?://", x)) {
+    if (!file.exists(x)) {
+      stop(sprintf("%s reference database not found:\n  %s\n\n%s", what, x, hint),
+        call. = FALSE)
+    }
+    return(invisible(x))
+  }
+  st <- url_status(x)
+  if (identical(st, "missing")) {
+    stop(sprintf("%s reference database is not reachable (HTTP 404/403):\n  %s\n\n%s",
+      what, x, hint), call. = FALSE)
+  }
+  if (identical(st, "unknown")) {
+    warning(sprintf("Could not verify %s reference database (offline?):\n  %s", what, x),
+      call. = FALSE)
+  }
+  invisible(x)
+}

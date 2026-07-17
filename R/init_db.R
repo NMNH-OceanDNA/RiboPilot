@@ -70,11 +70,14 @@ new_db <- function(
   }
 
   # Default GetOrganelle nr databases (broad Actinopterygii) when unset ----
-  seeds_db <- seeds_db %||% "https://raw.githubusercontent.com/dmacguigan/RiboPilot/main/ref_dbs/getOrganelle/seeds/actinopterygii_rrna_seeds.fasta"
-  labels_db <- labels_db %||% "https://raw.githubusercontent.com/dmacguigan/RiboPilot/main/ref_dbs/getOrganelle/labels/actinopterygii_rrna_labels.fasta"
+  seeds_db <- seeds_db %||% DEFAULT_SEEDS_DB
+  labels_db <- labels_db %||% DEFAULT_LABELS_DB
   # expand '~' in local paths so Nextflow/GetOrganelle can find them
   if (!grepl("^https?://", seeds_db)) seeds_db <- path.expand(seeds_db)
   if (!grepl("^https?://", labels_db)) labels_db <- path.expand(labels_db)
+  # Fail here, not four hours into a run as an opaque GetOrganelle error.
+  check_reference_db(seeds_db, "seeds")
+  check_reference_db(labels_db, "labels")
 
   # Connect ----
   con <- DBI::dbConnect(RSQLite::SQLite(), dbname = db_path)
@@ -249,16 +252,18 @@ new_db <- function(
       data.frame(
         blast_opts = "default",
         run_blast = 1L,
-        # Remote GenBank (core_nt) search restricted to nuclear ribosomal + ITS
-        # records, excluding organellar rRNA (mito 12S/16S, plastid).
-        entrez_query = paste(
-          "(internal transcribed spacer[Title] OR 18S ribosomal RNA[Title]",
-          "OR 28S ribosomal RNA[Title] OR 5.8S ribosomal RNA[Title]",
-          "OR small subunit ribosomal RNA[Title]",
-          "OR large subunit ribosomal RNA[Title])",
-          "NOT (mitochondrion[Title] OR chloroplast[Title] OR plastid[Title])"),
+        # Unrestricted by default. Restricting the search to nuclear rRNA titles
+        # also restricts what a contaminant is allowed to look like, so a
+        # symbiont / bacterial 16S / mitochondrial assembly could only ever
+        # match a distant nuclear rDNA record and appeared plausible. The
+        # nuclear-rDNA filter is applied client-side in
+        # parse_blast_candidates() instead. Setting this blinds the
+        # contamination screen to anything outside the query.
+        entrez_query = "",
         extra_opts = "",
-        max_target_seqs = 5L
+        # Needs enough depth that real nuclear rDNA references still make the
+        # panel after the client-side filter drops non-rDNA hits.
+        max_target_seqs = 50L
       ),
       in_place = TRUE, copy = TRUE, by = "blast_opts"
     )
@@ -323,6 +328,29 @@ new_db <- function(
       evalue REAL,
       time_stamp INTEGER,
       PRIMARY KEY (ID, rank)
+    );"
+  )
+
+  # blast_screen (contamination screen: top remote hit over ALL of core_nt) ----
+  # Distinct from blast_ref_candidates, which is filtered to nuclear rDNA. This
+  # row is the unfiltered best hit and is what the contaminant check reads: it
+  # is the only place that can say "this is not the host, and not even nuclear
+  # rDNA".
+  DBI::dbExecute(
+    con,
+    "CREATE TABLE blast_screen (
+      ID TEXT NOT NULL,
+      accession TEXT,
+      title TEXT,
+      species TEXT,
+      staxid INTEGER,
+      lineage TEXT,
+      pident REAL,
+      qcovs REAL,
+      evalue REAL,
+      is_nuclear_rrna INTEGER,
+      time_stamp INTEGER,
+      PRIMARY KEY (ID)
     );"
   )
 

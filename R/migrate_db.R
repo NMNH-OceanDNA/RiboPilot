@@ -5,7 +5,20 @@
 
 #' Current project-DB schema version. Bump when adding a migration step below.
 #' @noRd
-RIBOPILOT_SCHEMA_VERSION <- 3L
+RIBOPILOT_SCHEMA_VERSION <- 4L
+
+#' The pre-v4 restrictive remote-BLAST entrez_query.
+#'
+#' Retired because it restricted the search space, not just the ranking, so the
+#' contamination screen could only ever see nuclear rDNA. Matched literally so
+#' the v4 migration only clears it where the user never customized it.
+#' @noRd
+LEGACY_ENTREZ_QUERY <- paste(
+  "(internal transcribed spacer[Title] OR 18S ribosomal RNA[Title]",
+  "OR 28S ribosomal RNA[Title] OR 5.8S ribosomal RNA[Title]",
+  "OR small subunit ribosomal RNA[Title]",
+  "OR large subunit ribosomal RNA[Title])",
+  "NOT (mitochondrion[Title] OR chloroplast[Title] OR plastid[Title])")
 
 #' Bring a project database up to the current schema (idempotent, additive)
 #'
@@ -80,6 +93,35 @@ migrate_db <- function(con) {
     # Grandfather samples from projects that predate the taxonomy stage so they
     # are not hidden from Assemble; mark them assigned + locked.
     DBI::dbExecute(con, "UPDATE samples SET taxonomy_lock = 1, taxonomy_switch = 2")
+  }
+
+  # --- schema v4: contamination screen over the unrestricted remote BLAST ---
+  if (!has_tbl("blast_screen")) {
+    DBI::dbExecute(con,
+      "CREATE TABLE blast_screen (
+        ID TEXT NOT NULL,
+        accession TEXT,
+        title TEXT,
+        species TEXT,
+        staxid INTEGER,
+        lineage TEXT,
+        pident REAL,
+        qcovs REAL,
+        evalue REAL,
+        is_nuclear_rrna INTEGER,
+        time_stamp INTEGER,
+        PRIMARY KEY (ID)
+      );")
+  }
+  # Retire the restrictive entrez_query, but only where it is still verbatim the
+  # old default -- a query the user chose is theirs to keep.
+  if (has_tbl("blast_opts")) {
+    DBI::dbExecute(con,
+      "UPDATE blast_opts SET entrez_query = '' WHERE TRIM(COALESCE(entrez_query,'')) = TRIM(?)",
+      params = list(LEGACY_ENTREZ_QUERY))
+    # 5 was tuned for a pre-filtered search; the client-side filter needs depth.
+    DBI::dbExecute(con,
+      "UPDATE blast_opts SET max_target_seqs = 50 WHERE COALESCE(max_target_seqs,5) = 5")
   }
 
   if (ver < RIBOPILOT_SCHEMA_VERSION) {

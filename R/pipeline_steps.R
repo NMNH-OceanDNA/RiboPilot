@@ -102,13 +102,49 @@ reconcile_one <- function(con, id, gff = NULL, positions = NULL) {
   invisible(feat)
 }
 
-#' Open a project DB connection with WAL + busy timeout (safe for concurrent
-#' writes from parallel Nextflow processes)
+#' Filesystems whose locking cannot support SQLite WAL
+#' @noRd
+NETWORK_FS <- c("nfs", "nfs4", "lustre", "gpfs", "beegfs", "panfs",
+                "cifs", "smb2", "afs", "fuseblk")
+
+#' Classify the filesystem holding `path` as "local", "network", or "unknown"
+#'
+#' Linux only (`stat -f`); everything else is "unknown" and treated as local.
+#' @noRd
+filesystem_type <- function(path) {
+  if (!identical(unname(Sys.info()[["sysname"]]), "Linux")) return("unknown")
+  fs <- tryCatch(
+    suppressWarnings(system2("stat", c("-f", "-c", "%T", shQuote(path)),
+      stdout = TRUE, stderr = FALSE)),
+    error = function(e) character(0))
+  if (length(fs) == 0 || is.na(fs[1]) || !nzchar(fs[1])) return("unknown")
+  if (tolower(fs[1]) %in% NETWORK_FS) "network" else "local"
+}
+
+#' Journal mode for a project DB
+#'
+#' WAL coordinates readers/writers through an mmap'd `-shm` file and requires
+#' every process to be on one host, so it is unsupported on the network
+#' filesystems HPC projects live on. Use the rollback journal there.
+#' Override with `RIBOPILOT_SQLITE_JOURNAL` ("wal" or "delete").
+#' @noRd
+sqlite_journal_mode <- function(db) {
+  ov <- tolower(trimws(Sys.getenv("RIBOPILOT_SQLITE_JOURNAL", "")))
+  if (nzchar(ov)) return(ov)
+  if (identical(filesystem_type(dirname(db)), "network")) "delete" else "wal"
+}
+
+#' Open a project DB connection with a busy timeout and a filesystem-appropriate
+#' journal mode
+#'
+#' The busy timeout is set first: `journal_mode` takes an exclusive lock, so
+#' setting it before the timeout would run that one statement with no timeout.
+#' @param db Path to the project SQLite file.
 #' @export
 open_project_db <- function(db) {
   con <- DBI::dbConnect(RSQLite::SQLite(), db)
-  DBI::dbExecute(con, "PRAGMA journal_mode=WAL;")
   DBI::dbExecute(con, "PRAGMA busy_timeout=10000;")
+  DBI::dbExecute(con, sprintf("PRAGMA journal_mode=%s;", sqlite_journal_mode(db)))
   con
 }
 #' Load one sample's published assembly fastas into the database

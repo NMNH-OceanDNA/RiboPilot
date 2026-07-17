@@ -18,13 +18,20 @@
 #'   the top reference), from the `blast_ref_alignment` table. Missing elements
 #'   are skipped (identity check is opportunistic).
 #' @param sample_lineage,hit_lineage Optional lineage strings for the contaminant
-#'   check (sample's assigned lineage vs. top BLAST-hit lineage).
+#'   check: the sample's assigned lineage vs. the lineage of the top hit over
+#'   *all* of core_nt (`blast_screen.lineage`), not the nuclear-rDNA reference
+#'   panel. An unknown lineage on either side raises `contaminant_unchecked`
+#'   rather than passing silently.
+#' @param hit_is_nuclear_rrna Optional 0/1 (`blast_screen.is_nuclear_rrna`):
+#'   whether that top hit is a nuclear rDNA record at all. 0 raises
+#'   `not_nuclear_rdna`.
 #' @return list(features, flags, n_flags, notes) where `features` gains `status`
 #'   ("ok"/"flag") and `flags` (comma-separated per-feature codes), and the
 #'   sample-level `flags`/`notes` summarize missing anchors, ordering, etc.
 #' @export
 curate_rrna_core <- function(features, params = rrna_params(),
-                             ref_pid = NULL, sample_lineage = NA, hit_lineage = NA) {
+                             ref_pid = NULL, sample_lineage = NA, hit_lineage = NA,
+                             hit_is_nuclear_rrna = NA) {
   sample_flags <- character(0)
   feat_flags <- list()
   add_feat_flag <- function(el, code) feat_flags[[el]] <<- c(feat_flags[[el]], code)
@@ -85,9 +92,24 @@ curate_rrna_core <- function(features, params = rrna_params(),
     }
   }
 
-  # 7. Contaminant lineage check ----
-  if (isTRUE(params$check_contaminant) && lineages_conflict(sample_lineage, hit_lineage)) {
-    sample_flags <- c(sample_flags, "contaminant")
+  # 7. Contaminant checks (from the unrestricted GenBank screen) ----
+  # `hit_lineage`/`hit_is_nuclear_rrna` describe the top hit over ALL of core_nt,
+  # not the nuclear-rDNA reference panel. That is the point: only an unfiltered
+  # hit can say "this is a symbiont" or "this is not rDNA at all".
+  if (isTRUE(params$check_contaminant)) {
+    if (lineages_conflict(sample_lineage, hit_lineage)) {
+      sample_flags <- c(sample_flags, "contaminant")
+    } else if (!lineage_known(sample_lineage) || !lineage_known(hit_lineage)) {
+      # Not "clean" -- unknown. Absence of evidence must not read as evidence of
+      # absence, or an offline/unresolved sample looks verified.
+      sample_flags <- c(sample_flags, "contaminant_unchecked")
+    }
+    if (identical(hit_is_nuclear_rrna, 0L) || identical(hit_is_nuclear_rrna, FALSE)) {
+      # Best match in all of GenBank is not a nuclear rDNA record, so the
+      # assembly is probably not the target locus (organellar rRNA, bacterial
+      # 16S, a genomic repeat, ...).
+      sample_flags <- c(sample_flags, "not_nuclear_rdna")
+    }
   }
 
   # Assemble per-feature status ----
@@ -107,13 +129,22 @@ curate_rrna_core <- function(features, params = rrna_params(),
 }
 
 #' Thin actinopterygii curation wrapper.
-#' @param features,ref_pid,sample_lineage,hit_lineage see [curate_rrna_core()].
+#' @param features,ref_pid,sample_lineage,hit_lineage,hit_is_nuclear_rrna see
+#'   [curate_rrna_core()].
 #' @return see [curate_rrna_core()].
 #' @export
 curate_actinopterygii_rrna <- function(features, ref_pid = NULL,
-                                       sample_lineage = NA, hit_lineage = NA) {
+                                       sample_lineage = NA, hit_lineage = NA,
+                                       hit_is_nuclear_rrna = NA) {
   curate_rrna_core(features, rrna_params("actinopterygii"),
-    ref_pid = ref_pid, sample_lineage = sample_lineage, hit_lineage = hit_lineage)
+    ref_pid = ref_pid, sample_lineage = sample_lineage, hit_lineage = hit_lineage,
+    hit_is_nuclear_rrna = hit_is_nuclear_rrna)
+}
+
+#' Is a lineage string usable for the contaminant comparison?
+#' @noRd
+lineage_known <- function(x) {
+  length(x) > 0 && !is.na(x[1]) && nzchar(trimws(x[1]))
 }
 
 #' Do two lineage strings share no taxon in common (gross contaminant)?
@@ -181,12 +212,19 @@ curate_one <- function(con, id, ruleset = NULL) {
 
   sample_lineage <- DBI::dbGetQuery(con, "SELECT lineage FROM samples WHERE ID = ?",
     params = list(id))$lineage[1]
-  hit_lineage <- tryCatch(DBI::dbGetQuery(con,
-    "SELECT blast_lineage FROM path_scores WHERE ID = ? AND auto_select = 1",
-    params = list(id))$blast_lineage[1], error = function(e) NA_character_)
+  # The contaminant check reads the unrestricted GenBank screen, NOT
+  # path_scores.blast_lineage. The latter comes from BLAST against the clade
+  # seed DB, so its lineage is host-clade by construction and can never conflict
+  # with the sample's -- the check could not fire.
+  scr <- tryCatch(DBI::dbGetQuery(con,
+    "SELECT lineage, is_nuclear_rrna FROM blast_screen WHERE ID = ?",
+    params = list(id)), error = function(e) data.frame())
+  hit_lineage <- if (nrow(scr) > 0) scr$lineage[1] else NA_character_
+  hit_is_nuc <- if (nrow(scr) > 0) as.integer(scr$is_nuclear_rrna[1]) else NA_integer_
 
   res <- curate_rrna_core(feats, params, ref_pid = ref_pid,
-    sample_lineage = sample_lineage, hit_lineage = hit_lineage)
+    sample_lineage = sample_lineage, hit_lineage = hit_lineage,
+    hit_is_nuclear_rrna = hit_is_nuc)
 
   ts <- as.integer(Sys.time())
   DBI::dbWithTransaction(con, {
