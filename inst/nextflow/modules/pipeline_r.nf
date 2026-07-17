@@ -15,7 +15,12 @@ process query_samples {
       SELECT p.ID, p.R1, p.R2,
              COALESCE(po.cpus,4) AS pre_cpus, COALESCE(po.memory,8) AS pre_mem,
              COALESCE(ao.cpus,4) AS asm_cpus, COALESCE(ao.memory,16) AS asm_mem,
-             po.fastp AS fastp, ao.getOrganelle AS getOrganelle,
+             po.fastp AS fastp,
+             -- Cap GetOrganelle's isomer paths at the sample's max_paths. The rDNA
+             -- tandem repeat is a graph cycle, so GetOrganelle (which disentangles
+             -- graphs as circular genomes) can otherwise emit up to its default
+             -- 1000 paths, all of which would then be scored.
+             ao.getOrganelle || ' --max-paths-num ' || COALESCE(ao.max_paths, 10) AS getOrganelle,
              ao.seeds_db, ao.labels_db
       FROM assemble a
       JOIN preprocess p     ON a.ID = p.ID

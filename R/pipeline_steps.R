@@ -198,6 +198,23 @@ load_assemblies <- function(con, out_dir, ID) {
   }
   df <- do.call(rbind, rows)
 
+  # Enforce max_paths BEFORE scoring. A tandem repeat like the rDNA cistron makes
+  # GetOrganelle disentangle the graph into many isomer paths (up to its
+  # --max-paths-num cap); scoring every one runs barrnap per path and dominates
+  # the runtime. Keep only the max_paths paths with the greatest total assembled
+  # length (the most complete repeat units). max_paths NA/<=0 means no cap.
+  n_paths_raw <- length(unique(df$path))
+  n_dropped <- 0L
+  mp <- tryCatch(DBI::dbGetQuery(con,
+    "SELECT ao.max_paths FROM assemble a JOIN assemble_opts ao ON a.assemble_opts = ao.assemble_opts WHERE a.ID = ?",
+    params = list(ID))$max_paths[1], error = function(e) NA_integer_)
+  if (!is.na(mp) && mp > 0 && n_paths_raw > mp) {
+    tot <- stats::aggregate(length ~ path, data = df, FUN = sum)
+    keep <- tot$path[order(-tot$length, tot$path)][seq_len(mp)]
+    df <- df[df$path %in% keep, , drop = FALSE]
+    n_dropped <- n_paths_raw - mp
+  }
+
   # replace this sample's assemblies
   DBI::dbExecute(con, "DELETE FROM assemblies WHERE ID = ?", params = list(ID))
   DBI::dbAppendTable(con, "assemblies", df)
@@ -207,8 +224,12 @@ load_assemblies <- function(con, out_dir, ID) {
   n_scaffolds <- max(table(df$path))
   length_str <- paste(sort(unique(df$length), decreasing = TRUE), collapse = ";")
   topo_str <- paste(sort(unique(stats::na.omit(df$topology))), collapse = ";")
-  notes <- if (n_paths > 1) "Unable to resolve single assembly from reads"
-  else if (n_scaffolds > 1) "Output contains disconnected contigs" else ""
+  cap_note <- if (n_dropped > 0)
+    sprintf("kept top %d of %d paths (max_paths)", mp, n_paths_raw) else ""
+  notes <- paste(c(
+    if (n_paths > 1) "Unable to resolve single assembly from reads"
+    else if (n_scaffolds > 1) "Output contains disconnected contigs" else NULL,
+    if (nzchar(cap_note)) cap_note else NULL), collapse = "; ")
   DBI::dbExecute(con,
     "UPDATE assemble SET paths=?, scaffolds=?, length=?, topology=?,
      assemble_switch=2, assemble_notes=?, time_stamp=? WHERE ID=?",
