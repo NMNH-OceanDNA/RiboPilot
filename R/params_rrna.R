@@ -3,8 +3,9 @@
 # A ruleset supplies expected length ranges per element (min, max) and the
 # minimum reference identity for a conserved anchor before it is flagged.
 #
-# Adding a clade = add a branch here + (optionally) a curate_<clade>_rrna()
-# wrapper in curate_rrna.R.
+# Adding a clade = add a switch() branch in rrna_params(), its key to
+# RRNA_RULESETS, a lineage token in ruleset_for_lineage(), and (optionally) a
+# curate_<clade>_rrna() wrapper in curate_rrna.R.
 
 #' Generic broad-metazoan length tolerances (bp), deliberately wide.
 #' @noRd
@@ -16,35 +17,105 @@ RRNA_LENGTHS_METAZOA <- list(
   "ITS2" = c(120L, 1600L)
 )
 
+#' Invertebrate (echinoderm + cnidarian) anchor tolerances.
+#'
+#' 18S is tightened from measured complete records in the target clades
+#' (Asteroidea / Scyphozoa / Octocorallia label DBs): complete 18S tops out
+#' around 1810-1850 bp, so the generic upper bound of 2100 is loose. 5.8S is
+#' near-universal. 28S is left wide on purpose: complete 28S is long and
+#' variable and GenBank records for these clades are dominated by partial
+#' D1-D3 barcode fragments, so a tight range would false-flag correct data
+#' (distinguishing "correctly partial" from "wrong" needs the partial concept
+#' that is deferred to a later pass, see below). ITS bounds are provisional -
+#' the spacers are hypervariable and clean per-region length measurements for
+#' these clades are scarce.
+#' @noRd
+RRNA_LENGTHS_METAZOA_INVERT <- utils::modifyList(RRNA_LENGTHS_METAZOA, list(
+  "18S"  = c(1700L, 1900L),
+  "5.8S" = c(150L, 170L),
+  "ITS1" = c(120L, 1200L),
+  "ITS2" = c(120L, 1200L)
+))
+
 #' Curation ruleset for a clade
 #'
-#' @param ruleset Clade key: "metazoa_generic" (default) or "actinopterygii".
+#' Length ranges are for a COMPLETE, correctly assembled element; the flag/ok
+#' model has no partial concept yet, so a genuinely partial anchor is flagged
+#' short. `min_anchor_pid` is a single scalar across 18S/5.8S/28S here; a
+#' per-element threshold (the anchors evolve at very different rates) and a fix
+#' to the partial-reference identity computation are tracked separately.
+#'
+#' @param ruleset Clade key; one of [RRNA_RULESETS]. Unknown keys error rather
+#'   than silently falling back, so a typo cannot mis-curate a sample.
 #' @return list(name, lengths = named list el -> c(min,max), min_anchor_pid,
 #'   check_contaminant).
 #' @noRd
 rrna_params <- function(ruleset = "metazoa_generic") {
   ruleset <- ruleset %||% "metazoa_generic"
+  if (!nzchar(ruleset)) ruleset <- "metazoa_generic"
   base <- list(
     name = "metazoa_generic",
     lengths = RRNA_LENGTHS_METAZOA,
     min_anchor_pid = 85,      # ref identity (%) below which a conserved anchor is flagged
     check_contaminant = TRUE
   )
-  if (identical(ruleset, "actinopterygii")) {
-    base$name <- "actinopterygii"
-    # Ray-finned fishes: tighter cores; ITS stays wide (varies within genera).
-    base$lengths <- utils::modifyList(base$lengths, list(
-      "18S"  = c(1750L, 1950L),
-      "5.8S" = c(140L, 175L),
-      "28S"  = c(2500L, 5000L),
-      "ITS1" = c(150L, 1200L),
-      "ITS2" = c(150L, 1200L)
-    ))
-    base$min_anchor_pid <- 88
+  invert <- function(name, min_pid) {
+    utils::modifyList(base, list(name = name, lengths = RRNA_LENGTHS_METAZOA_INVERT,
+      min_anchor_pid = min_pid))
   }
-  base
+  switch(ruleset,
+    "metazoa_generic" = base,
+    "actinopterygii" = utils::modifyList(base, list(
+      name = "actinopterygii",
+      # Ray-finned fishes: tighter cores; ITS stays wide (varies within genera).
+      lengths = utils::modifyList(base$lengths, list(
+        "18S"  = c(1750L, 1950L),
+        "5.8S" = c(140L, 175L),
+        "28S"  = c(2500L, 5000L),
+        "ITS1" = c(150L, 1200L),
+        "ITS2" = c(150L, 1200L)
+      )),
+      min_anchor_pid = 88
+    )),
+    # Sparse-GenBank invertebrate clades: the nearest reference is often in a
+    # different family, and 28S diverges fast, so a lower anchor-identity floor
+    # avoids drowning the user in false low_identity calls. Contamination is
+    # caught by the GenBank screen (blast_screen), not this threshold.
+    "asteroidea"   = invert("asteroidea", 80),
+    "scyphozoa"    = invert("scyphozoa", 80),
+    "octocorallia" = invert("octocorallia", 80),
+    stop("Unknown ruleset: ", ruleset, ". Known: ",
+      paste(RRNA_RULESETS, collapse = ", "), call. = FALSE)
+  )
 }
 
 #' Available curation rulesets (for app selectors / validation).
 #' @noRd
-RRNA_RULESETS <- c("metazoa_generic", "actinopterygii")
+RRNA_RULESETS <- c("metazoa_generic", "actinopterygii",
+                   "asteroidea", "scyphozoa", "octocorallia")
+
+#' Map a resolved lineage string to a clade ruleset
+#'
+#' Greps the sample's frozen lineage for known clade tokens so a clade sample is
+#' curated against its own ruleset instead of silently falling back to
+#' `metazoa_generic`. Returns `metazoa_generic` when no clade token matches (the
+#' caller records a `no_clade_ruleset` note so the fallback is visible). Octocoral
+#' order names from the 2022 reclassification (Scleralcyonacea / Malacalcyonacea)
+#' and the older Alcyonacea/Pennatulacea are all matched so the result is robust
+#' to which classification NCBI's lineage uses.
+#' @param lineage A "; "- or ","-joined lineage string.
+#' @return a key in [RRNA_RULESETS].
+#' @noRd
+ruleset_for_lineage <- function(lineage) {
+  if (length(lineage) == 0 || is.na(lineage[1]) || !nzchar(trimws(lineage[1]))) {
+    return("metazoa_generic")
+  }
+  l <- tolower(lineage[1])
+  if (grepl("octocorallia|alcyonacea|scleralcyonacea|malacalcyonacea|pennatul|helioporacea", l)) {
+    return("octocorallia")
+  }
+  if (grepl("scyphozoa", l)) return("scyphozoa")
+  if (grepl("asteroidea", l)) return("asteroidea")
+  if (grepl("actinopteri|actinopterygii", l)) return("actinopterygii")
+  "metazoa_generic"
+}

@@ -203,13 +203,29 @@ curate_one <- function(con, id, ruleset = NULL) {
     "SELECT element, type, start, stop, length, strand FROM annotations WHERE ID = ?",
     params = list(id))
 
-  # Ruleset: explicit arg > sample's curate_opts row > default.
+  sample_lineage <- DBI::dbGetQuery(con, "SELECT lineage FROM samples WHERE ID = ?",
+    params = list(id))$lineage[1]
+
+  # Ruleset: explicit arg > sample's curate_opts row. When that is unset or the
+  # generic default, auto-select a clade ruleset from the sample's lineage so a
+  # clade sample is not silently curated against the generic ranges. If a lineage
+  # is present but matches no clade ruleset, record no_clade_ruleset so the
+  # fallback is visible rather than silent.
   if (is.null(ruleset)) {
     ruleset <- tryCatch(DBI::dbGetQuery(con,
       "SELECT co.ruleset FROM annotate an JOIN curate_opts co ON an.curate_opts = co.curate_opts
        WHERE an.ID = ?", params = list(id))$ruleset[1], error = function(e) NA_character_)
   }
-  params <- rrna_params(if (length(ruleset) && !is.na(ruleset)) ruleset else "metazoa_generic")
+  ruleset_note <- NA_character_
+  if (length(ruleset) == 0 || is.na(ruleset) || !nzchar(ruleset) ||
+      identical(ruleset, "metazoa_generic")) {
+    ruleset <- ruleset_for_lineage(sample_lineage)
+    if (identical(ruleset, "metazoa_generic") && length(sample_lineage) &&
+        !is.na(sample_lineage) && nzchar(trimws(sample_lineage))) {
+      ruleset_note <- "no_clade_ruleset"
+    }
+  }
+  params <- rrna_params(ruleset)
 
   # Per-feature reference identity (opportunistic; empty when BLAST/ref absent).
   ref_pid <- NULL
@@ -217,9 +233,6 @@ curate_one <- function(con, id, ruleset = NULL) {
     "SELECT element, pid FROM blast_ref_alignment WHERE ID = ?", params = list(id)),
     error = function(e) data.frame())
   if (nrow(rp) > 0) ref_pid <- stats::setNames(rp$pid, rp$element)
-
-  sample_lineage <- DBI::dbGetQuery(con, "SELECT lineage FROM samples WHERE ID = ?",
-    params = list(id))$lineage[1]
   # The contaminant check reads the unrestricted GenBank screen, NOT
   # path_scores.blast_lineage. The latter comes from BLAST against the clade
   # seed DB, so its lineage is host-clade by construction and can never conflict
@@ -237,6 +250,12 @@ curate_one <- function(con, id, ruleset = NULL) {
   res <- curate_rrna_core(feats, params, ref_pid = ref_pid,
     sample_lineage = sample_lineage, hit_lineage = hit_lineage,
     hit_is_nuclear_rrna = hit_is_nuc, chimeric = chimeric)
+
+  if (!is.na(ruleset_note)) {
+    res$flags <- unique(c(res$flags, ruleset_note))
+    res$n_flags <- length(res$flags)
+    res$notes <- if (length(res$flags)) paste(res$flags, collapse = "; ") else NA_character_
+  }
 
   ts <- as.integer(Sys.time())
   DBI::dbWithTransaction(con, {
