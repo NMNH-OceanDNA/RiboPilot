@@ -92,6 +92,17 @@ curate_rrna_core <- function(features, params = rrna_params(),
         }
       }
     }
+
+    # 6b. Anchor truncation (fraction of the rRNA model recovered). A short 18S
+    # may be missing its 3' V9 region, which most metazoan eDNA assays target, so
+    # a truncated anchor is flagged rather than exported as a complete gene.
+    if ("model_coverage" %in% names(features)) {
+      min_cov <- params$min_anchor_coverage %||% 90
+      for (i in seq_len(nrow(features))) {
+        cov <- features$model_coverage[i]
+        if (!is.na(cov) && cov < min_cov) add_feat_flag(features$element[i], "truncated")
+      }
+    }
   }
 
   # 7. Contaminant checks (from the unrestricted GenBank screen) ----
@@ -200,7 +211,7 @@ curate_one <- function(con, id, ruleset = NULL) {
   ensure_curate_schema(con)
 
   feats <- DBI::dbGetQuery(con,
-    "SELECT element, type, start, stop, length, strand FROM annotations WHERE ID = ?",
+    "SELECT element, type, start, stop, length, strand, model_coverage FROM annotations WHERE ID = ?",
     params = list(id))
 
   sample_lineage <- DBI::dbGetQuery(con, "SELECT lineage FROM samples WHERE ID = ?",

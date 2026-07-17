@@ -89,6 +89,10 @@ stitch_one <- function(con, id, fasta_out = NULL) {
 #' @return (invisibly) the feature data.frame.
 #' @export
 reconcile_one <- function(con, id, gff = NULL, positions = NULL) {
+  # Ensure any columns added after this project was created exist before writing
+  # (e.g. annotations.model_coverage); reconcile runs before curate, which also
+  # migrates, so an older project would otherwise fail here on the first WF2 run.
+  ensure_curate_schema(con)
   bar <- if (!is.null(gff) && file.exists(gff)) parse_barrnap(readLines(gff, warn = FALSE)) else data.frame()
   pos_lines <- if (!is.null(positions) && file.exists(positions)) readLines(positions, warn = FALSE) else character(0)
   its <- parse_itsx(pos_lines)
@@ -100,6 +104,7 @@ reconcile_one <- function(con, id, gff = NULL, positions = NULL) {
   if (nrow(feat) > 0) {
     df <- data.frame(ID = id, element = feat$element, type = feat$type,
       start = feat$start, stop = feat$stop, length = feat$length, strand = feat$strand,
+      model_coverage = feat$model_cov %||% NA_real_,
       tool = feat$tool, edited = 0L, notes = NA_character_, time_stamp = ts, stringsAsFactors = FALSE)
     DBI::dbAppendTable(con, "annotations", df)
   }

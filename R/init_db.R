@@ -443,6 +443,7 @@ new_db <- function(
       stop INTEGER,
       length INTEGER,
       strand TEXT,
+      model_coverage REAL,
       tool TEXT,
       status TEXT,
       flags TEXT,

@@ -57,6 +57,7 @@ rrna_params <- function(ruleset = "metazoa_generic") {
     name = "metazoa_generic",
     lengths = RRNA_LENGTHS_METAZOA,
     min_anchor_pid = 85,      # ref identity (%) below which a conserved anchor is flagged
+    min_anchor_coverage = 90, # % of the rRNA model an anchor must cover (else "truncated")
     check_contaminant = TRUE
   )
   invert <- function(name, min_pid) {

@@ -8,7 +8,15 @@
 # annotate_seq() are the all-in-R convenience path.
 
 #' Parse barrnap GFF3 text into rRNA gene features
-#' @return data.frame(element, start, stop, strand) for 18S/5.8S/28S
+#'
+#' Also captures the fraction of the rRNA model that aligned: (py)barrnap marks a
+#' short hit `product=... (partial)` and adds `Note=aligned only NN percent of
+#' the ...`. That coverage is what tells a complete 18S from one missing its 3'
+#' V9 region (the terminus most metazoan eDNA assays target), so it is kept
+#' rather than discarded.
+#' @return data.frame(element, start, stop, strand, model_cov) for 18S/5.8S/28S,
+#'   where `model_cov` is the percent of the model aligned (100 for a full hit,
+#'   NA when the tool reported partial without a percentage).
 #' @noRd
 parse_barrnap <- function(gff_lines) {
   gff <- gff_lines[!startsWith(gff_lines, "#")]
@@ -19,18 +27,27 @@ parse_barrnap <- function(gff_lines) {
   if (length(f) == 0) {
     return(data.frame())
   }
-  nm <- vapply(f, function(x) sub(".*Name=([^;]+).*", "\\1", x[9]), character(1))
+  attrs <- vapply(f, `[`, character(1), 9)
+  nm <- sub(".*Name=([^;]+).*", "\\1", attrs)
   map <- c("18S_rRNA" = "18S", "5_8S_rRNA" = "5.8S", "5.8S_rRNA" = "5.8S", "28S_rRNA" = "28S")
   el <- unname(map[nm])
   keep <- !is.na(el)
   if (!any(keep)) {
     return(data.frame())
   }
+  attrs <- attrs[keep]
+  partial <- grepl("partial", attrs, ignore.case = TRUE)
+  has_pct <- grepl("aligned only [0-9.]+ percent", attrs)
+  model_cov <- rep(NA_real_, length(attrs))
+  model_cov[has_pct] <- suppressWarnings(as.numeric(
+    sub(".*aligned only ([0-9.]+) percent.*", "\\1", attrs[has_pct])))
+  model_cov[!has_pct & !partial] <- 100 # full-length hit, no partial marker
   data.frame(
     element = el[keep],
     start = as.integer(vapply(f, `[`, character(1), 4))[keep],
     stop = as.integer(vapply(f, `[`, character(1), 5))[keep],
     strand = vapply(f, `[`, character(1), 7)[keep],
+    model_cov = model_cov,
     stringsAsFactors = FALSE
   )
 }
@@ -80,14 +97,14 @@ itsx_is_chimeric <- function(pos_lines) {
 reconcile_features <- function(bar, its) {
   pick <- function(df, el) if (!is.null(df) && nrow(df) > 0 && any(df$element == el)) df[df$element == el, ][1, ] else NULL
   feats <- list()
-  add <- function(element, start, stop, tool, strand = NA_character_) {
+  add <- function(element, start, stop, tool, strand = NA_character_, model_cov = NA_real_) {
     if (is.null(start) || is.null(stop) || is.na(start) || is.na(stop) || stop < start) {
       return(invisible())
     }
     feats[[length(feats) + 1]] <<- data.frame(
       element = element, type = rrna_element_type(element),
       start = as.integer(start), stop = as.integer(stop), strand = strand,
-      tool = tool, stringsAsFactors = FALSE)
+      model_cov = as.numeric(model_cov), tool = tool, stringsAsFactors = FALSE)
   }
 
   b18 <- pick(bar, "18S"); i18 <- pick(its, "18S")
@@ -104,23 +121,30 @@ reconcile_features <- function(bar, its) {
   # a reverse-oriented assembly is recorded as '-' (and caught by curation's
   # wrong_strand check) instead of being silently asserted '+'.
   bstrand <- function(x) if (!is.null(x) && "strand" %in% names(x)) x$strand else NA_character_
+  bcov <- function(x) if (!is.null(x) && "model_cov" %in% names(x)) x$model_cov else NA_real_
 
   if (!is.null(s18)) add("18S", s18$start, s18$stop,
-    if (!is.null(b18)) "barrnap" else "ITSx", if (!is.null(b18)) bstrand(b18) else NA_character_)
+    if (!is.null(b18)) "barrnap" else "ITSx",
+    if (!is.null(b18)) bstrand(b18) else NA_character_,
+    if (!is.null(b18)) bcov(b18) else NA_real_)
   if (!is.null(its1)) {
     add("ITS1", its1$start, its1$stop, "ITSx")
   } else if (!is.null(s18) && !is.null(s58)) {
     add("ITS1", s18$stop + 1, s58$start - 1, "derived")
   }
   if (!is.null(s58)) add("5.8S", s58$start, s58$stop,
-    if (!is.null(i58)) "ITSx" else "barrnap", if (!is.null(i58)) NA_character_ else bstrand(b58))
+    if (!is.null(i58)) "ITSx" else "barrnap",
+    if (!is.null(i58)) NA_character_ else bstrand(b58),
+    if (!is.null(i58)) NA_real_ else bcov(b58))
   if (!is.null(its2)) {
     add("ITS2", its2$start, its2$stop, "ITSx")
   } else if (!is.null(s58) && !is.null(s28)) {
     add("ITS2", s58$stop + 1, s28$start - 1, "derived")
   }
   if (!is.null(s28)) add("28S", s28$start, s28$stop,
-    if (!is.null(b28)) "barrnap" else "ITSx", if (!is.null(b28)) bstrand(b28) else NA_character_)
+    if (!is.null(b28)) "barrnap" else "ITSx",
+    if (!is.null(b28)) bstrand(b28) else NA_character_,
+    if (!is.null(b28)) bcov(b28) else NA_real_)
 
   if (length(feats) == 0) {
     return(data.frame())
@@ -132,7 +156,8 @@ reconcile_features <- function(bar, its) {
   consensus <- if (length(anch) == 0) "+" else names(sort(table(anch), decreasing = TRUE))[1]
   out$strand[!(out$strand %in% c("+", "-"))] <- consensus
   out$length <- out$stop - out$start + 1
-  out <- out[order(out$start), c("element", "type", "start", "stop", "length", "strand", "tool")]
+  out <- out[order(out$start),
+    c("element", "type", "start", "stop", "length", "strand", "model_cov", "tool")]
   rownames(out) <- NULL
   out
 }
