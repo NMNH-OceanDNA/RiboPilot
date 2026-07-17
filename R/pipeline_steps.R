@@ -263,9 +263,27 @@ stitch_selected <- function(con, id, seeds_cache) {
     params = list(id))$seeds_db[1]
 
   seeds <- seeds_cache$get(seeds_db)
-  refseq <- NULL
-  if (!is.null(seeds)) {
-    refseq <- if (!is.na(hit_id) && hit_id %in% names(seeds)) seeds[hit_id] else seeds[which.max(Biostrings::width(seeds))]
+  # Only use the top BLAST hit as a reference; do NOT fall back to the single
+  # longest seed of an arbitrary species, which orders scaffolds by an unrelated
+  # sequence.
+  refseq <- if (!is.null(seeds) && !is.na(hit_id) && hit_id %in% names(seeds)) {
+    seeds[hit_id]
+  } else {
+    NULL
+  }
+  ref_acc <- if (!is.null(refseq)) sub("_.*", "", names(refseq)[1]) else NA_character_
+
+  # Multi-scaffold: order by each scaffold's own anchors (reference-free). This
+  # is where reference placement scrambles order for sparse clades whose only
+  # GenBank hit is a single-element (e.g. 28S-only) record: an 18S scaffold
+  # cannot align to a 28S reference, so it is appended out of order.
+  if (nrow(scaf) > 1) {
+    seqs <- stats::setNames(scaf$sequence, as.character(scaf$scaffold))
+    oc <- tryCatch(order_scaffolds_by_content(seqs), error = function(e) NULL)
+    if (!is.null(oc) && oc$n_anchored > 0) {
+      return(list(seq = oc$sequence, ref_acc = ref_acc, path = p,
+        n_gaps = 0L, n_redundant = NA_integer_))
+    }
   }
 
   scaf_fa <- tempfile(fileext = ".fasta")
@@ -278,10 +296,10 @@ stitch_selected <- function(con, id, seeds_cache) {
   Biostrings::writeXStringSet(refseq, ref_fa)
   st <- tryCatch(stitch_scaffolds(scaf_fa, ref_fa), error = function(e) NULL)
   if (is.null(st)) {
-    return(list(seq = paste(scaf$sequence, collapse = ""), ref_acc = sub("_.*", "", names(refseq)[1]),
+    return(list(seq = paste(scaf$sequence, collapse = ""), ref_acc = ref_acc,
       path = p, n_gaps = NA_integer_, n_redundant = NA_integer_))
   }
-  list(seq = st$sequence, ref_acc = sub("_.*", "", names(refseq)[1]),
+  list(seq = st$sequence, ref_acc = ref_acc,
     path = p, n_gaps = st$n_gaps, n_redundant = st$n_redundant)
 }
 
