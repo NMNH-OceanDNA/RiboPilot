@@ -17,6 +17,10 @@
 #' @param ref_pid Optional named numeric vector (element -> percent identity to
 #'   the top reference), from the `blast_ref_alignment` table. Missing elements
 #'   are skipped (identity check is opportunistic).
+#' @param ref_cov Optional named numeric vector (element -> fraction of the
+#'   element covered by the reference alignment, `blast_ref_alignment.aln_cov`).
+#'   The identity check is skipped when coverage is below `min_ref_coverage`, so
+#'   a partial reference cannot raise a false low_identity flag.
 #' @param sample_lineage,hit_lineage Optional lineage strings for the contaminant
 #'   check: the sample's assigned lineage vs. the lineage of the top hit over
 #'   *all* of core_nt (`blast_screen.lineage`), not the nuclear-rDNA reference
@@ -32,7 +36,8 @@
 #'   sample-level `flags`/`notes` summarize missing anchors, ordering, etc.
 #' @export
 curate_rrna_core <- function(features, params = rrna_params(),
-                             ref_pid = NULL, sample_lineage = NA, hit_lineage = NA,
+                             ref_pid = NULL, ref_cov = NULL,
+                             sample_lineage = NA, hit_lineage = NA,
                              hit_is_nuclear_rrna = NA, chimeric = NA) {
   sample_flags <- character(0)
   feat_flags <- list()
@@ -84,10 +89,17 @@ curate_rrna_core <- function(features, params = rrna_params(),
     }
 
     # 6. Reference identity of conserved anchors (opportunistic) ----
+    # Per-element identity floor, gated on the reference covering enough of the
+    # element: a partial reference (the norm in sparse clades) covers little, so
+    # its identity is not judged rather than flagged as low.
     if (!is.null(ref_pid) && length(ref_pid) > 0) {
+      min_cov <- params$min_ref_coverage %||% 0.5
       for (g in RRNA_GENES) {
         pid <- if (g %in% names(ref_pid)) ref_pid[[g]] else NA_real_
-        if (!is.na(pid) && pid < params$min_anchor_pid) {
+        cov <- if (!is.null(ref_cov) && g %in% names(ref_cov)) ref_cov[[g]] else NA_real_
+        floor_g <- anchor_pid_floor(params$min_anchor_pid, g)
+        cov_ok <- is.na(cov) || cov >= min_cov
+        if (!is.na(pid) && !is.na(floor_g) && cov_ok && pid < floor_g) {
           add_feat_flag(g, "low_identity")
         }
       }
@@ -152,12 +164,13 @@ curate_rrna_core <- function(features, params = rrna_params(),
 #'   [curate_rrna_core()].
 #' @return see [curate_rrna_core()].
 #' @export
-curate_actinopterygii_rrna <- function(features, ref_pid = NULL,
+curate_actinopterygii_rrna <- function(features, ref_pid = NULL, ref_cov = NULL,
                                        sample_lineage = NA, hit_lineage = NA,
                                        hit_is_nuclear_rrna = NA, chimeric = NA) {
   curate_rrna_core(features, rrna_params("actinopterygii"),
-    ref_pid = ref_pid, sample_lineage = sample_lineage, hit_lineage = hit_lineage,
-    hit_is_nuclear_rrna = hit_is_nuclear_rrna, chimeric = chimeric)
+    ref_pid = ref_pid, ref_cov = ref_cov, sample_lineage = sample_lineage,
+    hit_lineage = hit_lineage, hit_is_nuclear_rrna = hit_is_nuclear_rrna,
+    chimeric = chimeric)
 }
 
 #' Is a lineage string usable for the contaminant comparison?
@@ -238,12 +251,17 @@ curate_one <- function(con, id, ruleset = NULL) {
   }
   params <- rrna_params(ruleset)
 
-  # Per-feature reference identity (opportunistic; empty when BLAST/ref absent).
+  # Per-feature reference identity + coverage (opportunistic; empty when
+  # BLAST/ref absent).
   ref_pid <- NULL
+  ref_cov <- NULL
   rp <- tryCatch(DBI::dbGetQuery(con,
-    "SELECT element, pid FROM blast_ref_alignment WHERE ID = ?", params = list(id)),
+    "SELECT element, pid, aln_cov FROM blast_ref_alignment WHERE ID = ?", params = list(id)),
     error = function(e) data.frame())
-  if (nrow(rp) > 0) ref_pid <- stats::setNames(rp$pid, rp$element)
+  if (nrow(rp) > 0) {
+    ref_pid <- stats::setNames(rp$pid, rp$element)
+    if ("aln_cov" %in% names(rp)) ref_cov <- stats::setNames(rp$aln_cov, rp$element)
+  }
   # The contaminant check reads the unrestricted GenBank screen, NOT
   # path_scores.blast_lineage. The latter comes from BLAST against the clade
   # seed DB, so its lineage is host-clade by construction and can never conflict
@@ -258,7 +276,7 @@ curate_one <- function(con, id, ruleset = NULL) {
     "SELECT chimeric FROM annotate WHERE ID = ?", params = list(id))$chimeric[1],
     error = function(e) NA_integer_)
 
-  res <- curate_rrna_core(feats, params, ref_pid = ref_pid,
+  res <- curate_rrna_core(feats, params, ref_pid = ref_pid, ref_cov = ref_cov,
     sample_lineage = sample_lineage, hit_lineage = hit_lineage,
     hit_is_nuclear_rrna = hit_is_nuc, chimeric = chimeric)
 

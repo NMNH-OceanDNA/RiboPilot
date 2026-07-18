@@ -117,6 +117,8 @@ migrate_db <- function(con) {
   add_col("annotate", "chimeric", "INTEGER")
   # Fraction of the rRNA model an anchor covers (truncation signal).
   add_col("annotations", "model_coverage", "REAL")
+  # Fraction of a sample element covered by its reference alignment.
+  add_col("blast_ref_alignment", "aln_cov", "REAL")
   # Retire the restrictive entrez_query, but only where it is still verbatim the
   # old default -- a query the user chose is theirs to keep.
   if (has_tbl("blast_opts")) {

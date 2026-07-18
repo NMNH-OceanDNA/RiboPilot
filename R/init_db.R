@@ -393,6 +393,7 @@ new_db <- function(
       accession TEXT NOT NULL,
       element TEXT NOT NULL,
       pid REAL,
+      aln_cov REAL,
       aln_len INTEGER,
       sample_aln TEXT,
       ref_aln TEXT,

@@ -62,15 +62,30 @@ compute_feature_msa <- function(con, id, element, max_hits = Inf) {
   tryCatch(DECIPHER::AlignSeqs(dna, verbose = FALSE), error = function(e) NULL)
 }
 
-#' Global pairwise nucleotide alignment wrapper (pwalign, fallback Biostrings)
+#' Pairwise nucleotide alignment wrapper (pwalign, fallback Biostrings)
+#'
+#' Uses `type = "overlap"` (ends-free): terminal gaps are not penalized, so a
+#' full-length sample element aligned against a partial reference fragment scores
+#' the homologous overlap instead of drowning in ~1700 terminal gaps (which under
+#' a global alignment collapsed percent identity to a few percent for the partial
+#' reference records typical of sparse clades).
 #' @noRd
-pairwise_nt <- function(a, b) {
+pairwise_nt <- function(a, b, type = "overlap") {
   fn <- if (requireNamespace("pwalign", quietly = TRUE)) {
     pwalign::pairwiseAlignment
   } else {
     getExportedValue("Biostrings", "pairwiseAlignment")
   }
-  fn(Biostrings::DNAString(a), Biostrings::DNAString(b), type = "global")
+  fn(Biostrings::DNAString(a), Biostrings::DNAString(b), type = type)
+}
+
+#' Fraction of the sample element covered by an alignment (non-gap sample bases
+#' aligned / sample element length)
+#' @noRd
+alignment_coverage <- function(sample_aln, sample_len) {
+  if (is.null(sample_len) || is.na(sample_len) || sample_len <= 0) return(NA_real_)
+  covered <- nchar(gsub("-", "", sample_aln))
+  min(covered / sample_len, 1)
 }
 
 #' Compute per-feature sample-vs-reference alignments for one sample
@@ -117,8 +132,9 @@ compute_ref_alignment <- function(con, id) {
     s_aln <- as.character(pwalign_pattern(aln))
     r_aln <- as.character(pwalign_subject(aln))
     pid <- pwalign_pid(aln)
+    aln_cov <- alignment_coverage(s_aln, nchar(s_sub))
     DBI::dbAppendTable(con, "blast_ref_alignment", data.frame(ID = id, accession = acc,
-      element = el, pid = round(pid, 1), aln_len = nchar(s_aln),
+      element = el, pid = round(pid, 1), aln_cov = round(aln_cov, 3), aln_len = nchar(s_aln),
       sample_aln = s_aln, ref_aln = r_aln, time_stamp = ts, stringsAsFactors = FALSE))
     n <- n + 1L
   }

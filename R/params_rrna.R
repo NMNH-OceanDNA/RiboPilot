@@ -50,19 +50,35 @@ RRNA_LENGTHS_METAZOA_INVERT <- utils::modifyList(RRNA_LENGTHS_METAZOA, list(
 #' @return list(name, lengths = named list el -> c(min,max), min_anchor_pid,
 #'   check_contaminant).
 #' @noRd
+#' Per-element reference-identity floors (%). The anchors evolve at very
+#' different rates: 18S and 5.8S are near-invariant within a phylum, while 28S is
+#' a mosaic of conserved core and hypervariable expansion segments whose overall
+#' identity between families in one class routinely drops below 85%. A single
+#' scalar therefore both false-flags a correct 28S and lets a divergent 18S (a
+#' contamination signature) pass. Values are a defensible starting point, not a
+#' published standard, and are meant to be tuned per clade.
+#' @noRd
+RRNA_ANCHOR_PID_METAZOA <- c("18S" = 95, "5.8S" = 93, "28S" = 80)
+RRNA_ANCHOR_PID_FISH    <- c("18S" = 97, "5.8S" = 95, "28S" = 85)
+RRNA_ANCHOR_PID_INVERT  <- c("18S" = 93, "5.8S" = 90, "28S" = 78)
+
 rrna_params <- function(ruleset = "metazoa_generic") {
   ruleset <- ruleset %||% "metazoa_generic"
   if (!nzchar(ruleset)) ruleset <- "metazoa_generic"
   base <- list(
     name = "metazoa_generic",
     lengths = RRNA_LENGTHS_METAZOA,
-    min_anchor_pid = 85,      # ref identity (%) below which a conserved anchor is flagged
+    # Named per-element identity floors; an anchor is flagged low_identity only
+    # when the reference alignment also covers enough of it (min_ref_coverage),
+    # so a partial reference cannot trigger a false flag.
+    min_anchor_pid = RRNA_ANCHOR_PID_METAZOA,
+    min_ref_coverage = 0.5,   # fraction of the sample element the ref must cover
     min_anchor_coverage = 90, # % of the rRNA model an anchor must cover (else "truncated")
     check_contaminant = TRUE
   )
-  invert <- function(name, min_pid) {
+  invert <- function(name) {
     utils::modifyList(base, list(name = name, lengths = RRNA_LENGTHS_METAZOA_INVERT,
-      min_anchor_pid = min_pid))
+      min_anchor_pid = RRNA_ANCHOR_PID_INVERT))
   }
   switch(ruleset,
     "metazoa_generic" = base,
@@ -76,18 +92,32 @@ rrna_params <- function(ruleset = "metazoa_generic") {
         "ITS1" = c(150L, 1200L),
         "ITS2" = c(150L, 1200L)
       )),
-      min_anchor_pid = 88
+      min_anchor_pid = RRNA_ANCHOR_PID_FISH
     )),
     # Sparse-GenBank invertebrate clades: the nearest reference is often in a
-    # different family, and 28S diverges fast, so a lower anchor-identity floor
-    # avoids drowning the user in false low_identity calls. Contamination is
-    # caught by the GenBank screen (blast_screen), not this threshold.
-    "asteroidea"   = invert("asteroidea", 80),
-    "scyphozoa"    = invert("scyphozoa", 80),
-    "octocorallia" = invert("octocorallia", 80),
+    # different family, and 28S diverges fast, so lower per-element floors avoid
+    # drowning the user in false low_identity calls. Contamination is caught by
+    # the GenBank screen (blast_screen), not this threshold.
+    "asteroidea"   = invert("asteroidea"),
+    "scyphozoa"    = invert("scyphozoa"),
+    "octocorallia" = invert("octocorallia"),
     stop("Unknown ruleset: ", ruleset, ". Known: ",
       paste(RRNA_RULESETS, collapse = ", "), call. = FALSE)
   )
+}
+
+#' The reference-identity floor for an element (handles a per-element named
+#' vector or a single scalar for back-compatibility)
+#' @noRd
+anchor_pid_floor <- function(min_anchor_pid, element) {
+  if (is.null(min_anchor_pid)) return(NA_real_)
+  if (!is.null(names(min_anchor_pid)) && element %in% names(min_anchor_pid)) {
+    return(unname(min_anchor_pid[[element]]))
+  }
+  if (length(min_anchor_pid) == 1 && is.null(names(min_anchor_pid))) {
+    return(unname(min_anchor_pid[1]))
+  }
+  NA_real_
 }
 
 #' Available curation rulesets (for app selectors / validation).
