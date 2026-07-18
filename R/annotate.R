@@ -155,6 +155,24 @@ reconcile_features <- function(bar, its) {
   anch <- out$strand[out$strand %in% c("+", "-")]
   consensus <- if (length(anch) == 0) "+" else names(sort(table(anch), decreasing = TRUE))[1]
   out$strand[!(out$strand %in% c("+", "-"))] <- consensus
+
+  # Clip each spacer to sit strictly between its flanking anchors. barrnap (anchor
+  # extent) and ITSx (spacer extent) can disagree at a boundary, leaving e.g. an
+  # ITS2 that overlaps the 5.8S; the anchor extent is authoritative, so the spacer
+  # is trimmed to the gap. A spacer clipped out of existence is dropped.
+  clip_spacer <- function(out, spacer, left, right) {
+    si <- which(out$element == spacer)
+    if (length(si) != 1) return(out)
+    li <- which(out$element == left)
+    ri <- which(out$element == right)
+    if (length(li) == 1) out$start[si] <- max(out$start[si], out$stop[li] + 1L)
+    if (length(ri) == 1) out$stop[si] <- min(out$stop[si], out$start[ri] - 1L)
+    out
+  }
+  out <- clip_spacer(out, "ITS1", "18S", "5.8S")
+  out <- clip_spacer(out, "ITS2", "5.8S", "28S")
+  out <- out[out$stop >= out$start, , drop = FALSE]
+
   out$length <- out$stop - out$start + 1
   out <- out[order(out$start),
     c("element", "type", "start", "stop", "length", "strand", "model_cov", "tool")]
