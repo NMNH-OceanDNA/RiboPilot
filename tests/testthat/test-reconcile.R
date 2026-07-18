@@ -1,0 +1,56 @@
+# barrnap/ITSx parsing and reconciliation into a canonical feature model.
+
+test_that("parse_barrnap maps elements and captures model coverage", {
+  gff <- c(
+    "s\tpybarrnap\trRNA\t8\t1820\t0\t+\t.\tName=18S_rRNA;product=18S ribosomal RNA",
+    "s\tpybarrnap\trRNA\t8\t1424\t0\t-\t.\tName=18S_rRNA;product=18S ribosomal RNA (partial);Note=aligned only 75.82 percent of the 18S ribosomal RNA",
+    "s\tpybarrnap\trRNA\t1\t120\t0\t+\t.\tName=5_8S_rRNA;product=5.8S ribosomal RNA")
+  d <- RiboPilot:::parse_barrnap(gff)
+  expect_equal(nrow(d), 3)
+  expect_equal(d$element, c("18S", "18S", "5.8S"))
+  expect_equal(d$model_cov[1], 100)      # full hit
+  expect_equal(d$model_cov[2], 75.82)    # partial
+  expect_equal(d$strand[2], "-")
+  expect_true(is.data.frame(RiboPilot:::parse_barrnap(character(0))))
+})
+
+test_that("parse_itsx reads regions and detects chimeras", {
+  line <- "s\t3000 bp.\tSSU: 1-1800\tITS1: 1801-2000\t5.8S: 2001-2160\tITS2: 2161-2400\tLSU: 2401-2900\tChimeric! "
+  d <- RiboPilot:::parse_itsx(line)
+  expect_equal(nrow(d), 5)
+  expect_true(all(c("18S", "ITS1", "5.8S", "ITS2", "28S") %in% d$element))
+  expect_true(RiboPilot:::itsx_is_chimeric(line))
+  expect_false(RiboPilot:::itsx_is_chimeric(sub("\tChimeric! ", "", line)))
+})
+
+test_that("reconcile preserves strand and fills consensus", {
+  bar <- data.frame(element = c("18S", "5.8S", "28S"), start = c(1, 2201, 2401),
+    stop = c(1800, 2360, 6000), strand = "-", model_cov = 100, stringsAsFactors = FALSE)
+  its <- data.frame(element = c("ITS1", "ITS2"), start = c(1801, 2361),
+    stop = c(2200, 2400), stringsAsFactors = FALSE)
+  rec <- RiboPilot:::reconcile_features(bar, its)
+  expect_true(all(rec$strand == "-"))                       # real strand kept, not forced +
+  expect_equal(rec$element, c("18S", "ITS1", "5.8S", "ITS2", "28S"))
+})
+
+test_that("reconcile clips a spacer that overlaps an anchor", {
+  bar <- data.frame(element = c("18S", "5.8S", "28S"), start = c(935, 3153, 3953),
+    stop = c(2749, 3308, 8027), strand = "+", model_cov = 100, stringsAsFactors = FALSE)
+  its <- data.frame(element = c("ITS1", "ITS2"), start = c(2751, 3197),
+    stop = c(3151, 3948), stringsAsFactors = FALSE)              # ITS2 overlaps 5.8S
+  rec <- RiboPilot:::reconcile_features(bar, its)
+  o <- rec[order(rec$start), ]
+  expect_false(any(o$start[-1] <= o$stop[-nrow(o)]))            # no overlaps
+  expect_equal(o$start[o$element == "ITS2"], 3309)             # clipped to 5.8S.stop+1
+})
+
+test_that("reconcile derives a missing spacer by subtraction", {
+  bar <- data.frame(element = c("18S", "5.8S"), start = c(1, 2201),
+    stop = c(1800, 2360), strand = "+", model_cov = 100, stringsAsFactors = FALSE)
+  its <- data.frame()   # no ITSx: ITS1 derived between 18S and 5.8S
+  rec <- RiboPilot:::reconcile_features(bar, its)
+  its1 <- rec[rec$element == "ITS1", ]
+  expect_equal(its1$start, 1801)
+  expect_equal(its1$stop, 2200)
+  expect_equal(its1$tool, "derived")
+})
