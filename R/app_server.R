@@ -37,14 +37,20 @@ app_server <- function(input, output, session) {
       return(reactable::reactable(data.frame(` ` = "No work directories found (run the pipeline first).",
         check.names = FALSE)))
     }
-    d$open <- "open"
-    reactable::reactable(d[, c("process", "status", "modified", "open", "workdir")],
+    # Never drop unreachable dirs (a failed run's dir may be cleaned up); mark
+    # them and show the path so it is still copyable, and only offer Open when the
+    # dir exists on this host.
+    d$open <- ifelse(d$exists, "open", "")
+    d$on_disk <- ifelse(d$exists, "yes", "missing")
+    reactable::reactable(d[, c("process", "status", "on_disk", "modified", "open", "workdir")],
       compact = TRUE, resizable = TRUE, defaultPageSize = 25, wrap = FALSE,
       columns = list(
         status = reactable::colDef(html = TRUE, width = 80, cell = rt_dynamicIcon(
           c(success = "fa fa-circle-check", failed = "fa fa-triangle-exclamation"))),
+        on_disk = reactable::colDef(name = "On disk", width = 80),
         open = reactable::colDef(name = "", width = 60, html = TRUE, cell = rt_link("wd_open")),
-        workdir = reactable::colDef(minWidth = 340, html = TRUE, cell = rt_longtext())))
+        workdir = reactable::colDef(name = "Work directory (select to copy)",
+          minWidth = 340, html = TRUE, cell = rt_longtext())))
   })
   observeEvent(input$wd_open, {
     i <- suppressWarnings(as.integer(input$wd_open))
@@ -56,6 +62,21 @@ app_server <- function(input, output, session) {
     }
     open_path(d$workdir[i])
   })
+
+  # selection count (feedback before a bulk action) + CSV export of the table
+  output$n_selected <- renderText({
+    n <- length(selected_ids())
+    if (n == 0) "" else paste(n, "selected")
+  })
+  output$table_csv <- downloadHandler(
+    filename = function() paste0(basename(app_project()), "_",
+      tolower(input$mode %||% "table"), ".csv"),
+    content = function(file) {
+      d <- samples_data()
+      d <- d[, setdiff(names(d), c("details", "output")), drop = FALSE]
+      utils::write.csv(d, file, row.names = FALSE)
+    }
+  )
 
   # mode -> (table, prefix) for lock/state columns and updates
   mode_meta <- function(mode) {
@@ -73,7 +94,7 @@ app_server <- function(input, output, session) {
     if (mode == "Taxonomy") {
       app_query(
         "SELECT s.taxonomy_lock, s.taxonomy_switch, s.ID, s.Taxon,
-           s.sci_name, s.taxid, s.rank, s.match_type
+           s.sci_name, s.taxid, s.rank, s.match_type, s.time_stamp
          FROM samples s")
     } else if (mode == "Assemble") {
       app_query(
@@ -83,7 +104,7 @@ app_server <- function(input, output, session) {
            (SELECT p.path FROM path_scores p WHERE p.ID = s.ID AND p.auto_select = 1) AS sel_path,
            (SELECT round(MAX(p.score),3) FROM path_scores p WHERE p.ID = s.ID) AS best_score,
            a.blast_species, a.blast_accession, a.blast_pident, a.blast_qcovs,
-           a.assemble_notes AS notes,
+           a.assemble_notes AS notes, a.time_stamp,
            'Details' AS details, 'Output' AS output
          FROM samples s LEFT JOIN assemble a ON s.ID = a.ID
            LEFT JOIN preprocess pp ON s.ID = pp.ID
@@ -92,7 +113,8 @@ app_server <- function(input, output, session) {
       # export only shows samples whose annotation is locked (validated)
       app_query(
         "SELECT s.ID, s.Taxon, s.sci_name, s.taxid, st.reference_accession AS reference, st.length,
-           an.n_features, an.missing, an.reviewed, an.annotate_lock, s.export_group
+           an.n_features, an.missing, an.reviewed, an.annotate_lock, s.export_group,
+           an.time_stamp
          FROM samples s JOIN annotate an ON s.ID = an.ID LEFT JOIN stitched st ON s.ID = st.ID
          WHERE an.annotate_lock = 1")
     } else {
@@ -100,7 +122,8 @@ app_server <- function(input, output, session) {
       app_query(
         "SELECT an.annotate_lock, an.annotate_switch, s.ID, s.Taxon, s.sci_name, s.taxid,
            st.reference_accession AS reference, an.n_features, an.missing,
-           an.n_flags, an.annotate_opts, an.curate_opts, an.reviewed
+           an.n_flags, an.annotate_opts, an.curate_opts, an.reviewed,
+           an.problematic, an.partial, an.time_stamp
          FROM samples s JOIN assemble a ON s.ID = a.ID
            LEFT JOIN annotate an ON s.ID = an.ID LEFT JOIN stitched st ON s.ID = st.ID
          WHERE a.assemble_lock = 1")
@@ -125,6 +148,8 @@ app_server <- function(input, output, session) {
       match_type = reactable::colDef(name = "Confidence", minWidth = 110, html = TRUE,
         cell = rt_confidence_badge()),
       reviewed = reactable::colDef(name = "Reviewed", html = TRUE, cell = rt_bool_badge(hide_no = TRUE)),
+      problematic = reactable::colDef(name = "Problem", width = 90, html = TRUE, cell = rt_bool_badge(hide_no = TRUE)),
+      partial = reactable::colDef(name = "Partial", width = 80, html = TRUE, cell = rt_bool_badge(hide_no = TRUE)),
       n_flags = reactable::colDef(name = "Flags", width = 70, html = TRUE,
         filterable = FALSE, cell = rt_flag_badge()),
       reference = reactable::colDef(name = "Reference", html = TRUE, cell = rt_ncbi_link()),
@@ -135,7 +160,7 @@ app_server <- function(input, output, session) {
       details = reactable::colDef(name = "", width = 55, align = "center", filterable = FALSE, html = TRUE,
         cell = rt_icon_link("asm_details", "fa fa-up-right-from-square", "View assembly details")),
       output = reactable::colDef(name = "", width = 55, align = "center", filterable = FALSE, html = TRUE,
-        cell = rt_icon_disabled("fa fa-folder-open", "Output browser (disabled for now)")),
+        cell = rt_icon_link("asm_output", "fa fa-folder-open", "Work / output directories")),
       n_features = reactable::colDef(name = "Features", width = 90, html = TRUE),
       missing = reactable::colDef(name = "Missing", minWidth = 120, html = TRUE, cell = rt_longtext()),
       length = reactable::colDef(name = "Length", width = 90),
@@ -156,7 +181,9 @@ app_server <- function(input, output, session) {
         filterable = FALSE, cell = rt_link("set_curate_opts")),
       annotate_lock = reactable::colDef(name = "", width = 34, align = "center", filterable = FALSE,
         html = TRUE, cell = rt_dynamicIcon(c(`0` = "fa fa-lock-open", `1` = "fa fa-lock"))),
-      notes = reactable::colDef(name = "Notes", minWidth = 160, html = TRUE, cell = rt_longtext())
+      notes = reactable::colDef(name = "Notes", minWidth = 160, html = TRUE, cell = rt_longtext()),
+      time_stamp = reactable::colDef(name = "Last Updated", width = 150, filterable = FALSE,
+        cell = rt_ts_date())
     )
     if (lock_col %in% names(d)) {
       cols[[lock_col]] <- reactable::colDef(name = "", sticky = "left", html = TRUE, width = 34,
@@ -175,16 +202,43 @@ app_server <- function(input, output, session) {
          return 'rp-lock-'+rowInfo.values['%s']+' rp-state-'+rowInfo.values['%s']; }",
       lock_col, state_col))
 
+    # Explain an empty table: every mode after Taxonomy is gated on the previous
+    # stage's lock, and a fresh project has nothing locked, so the default
+    # "No rows found" reads like a failed import.
+    nodata <- switch(mode,
+      Taxonomy = "No samples yet. Create the project with a mapping file (new_project()).",
+      Assemble = "No taxonomy-locked samples. Assign and lock taxonomy in Taxonomy mode first.",
+      Annotate = "No assembly-locked samples. Review and lock assemblies in Assemble mode first.",
+      Export   = "No annotation-locked samples. Review and lock annotations in Annotate mode first.",
+      "No rows.")
+
+    sorted <- if ("time_stamp" %in% names(d)) list(time_stamp = "desc") else NULL
+
+    # Column groups (Assemble table): collapse wide sections via the "Columns"
+    # picker. Columns not in a named group are Core and always shown.
+    col_groups <- list(
+      Stats = c("paths", "scaffolds", "sel_path", "best_score"),
+      BLAST = c("blast_species", "blast_accession", "blast_pident", "blast_qcovs"),
+      Options = c("pre_opts", "assemble_opts", "blast_opts", "annotate_opts", "curate_opts"))
+    keep_cols <- cols[intersect(names(cols), names(d))]
+    if (mode == "Assemble") {
+      sel_g <- input$col_groups %||% names(col_groups)
+      hidden <- unlist(col_groups[setdiff(names(col_groups), sel_g)], use.names = FALSE)
+      for (cn in intersect(hidden, names(d))) keep_cols[[cn]] <- reactable::colDef(show = FALSE)
+    }
+
     reactable::reactable(
       d,
       resizable = TRUE, filterable = TRUE, striped = TRUE, compact = TRUE,
       searchable = TRUE, showPageSizeOptions = TRUE, wrap = FALSE, height = "100%",
       selection = "multiple", onClick = "select",
       defaultPageSize = 50, pageSizeOptions = c(25, 50, 100, 200),
+      defaultSorted = sorted,
+      language = reactable::reactableLang(noData = nodata),
       # consistent header capitalization (Title Case names above) + left alignment
       defaultColDef = reactable::colDef(align = "left", headerVAlign = "center"),
       rowStyle = rt_highlight_row(), rowClass = rowclass,
-      columns = cols[intersect(names(cols), names(d))]
+      columns = keep_cols
     )
   })
 
@@ -225,10 +279,62 @@ app_server <- function(input, output, session) {
     show_workdirs(samples_data()$ID[i])
   })
 
+  # active mode's lock/state filter values (NULL for modes without pickers, i.e.
+  # Taxonomy and Export)
+  active_filters <- function() {
+    mode <- input$mode %||% "Assemble"
+    if (!mode %in% c("Assemble", "Annotate")) {
+      return(NULL)
+    }
+    list(lock = input[[paste0(mode, "_lock_filter")]],
+      state = input[[paste0(mode, "_state_filter")]])
+  }
+
+  # logical mask of samples_data() rows that pass the active mode's filters
+  visible_mask <- reactive({
+    d <- samples_data()
+    keep <- rep(TRUE, nrow(d))
+    f <- active_filters()
+    if (is.null(f) || nrow(d) == 0) {
+      return(keep)
+    }
+    mm <- mode_meta(input$mode %||% "Assemble")
+    lc <- paste0(mm$pfx, "_lock")
+    sc <- paste0(mm$pfx, "_switch")
+    if (!is.null(f$lock) && lc %in% names(d)) keep <- keep & as.character(d[[lc]]) %in% f$lock
+    if (!is.null(f$state) && sc %in% names(d)) keep <- keep & as.character(d[[sc]]) %in% f$state
+    keep
+  })
+
+  # Bulk actions must only ever touch VISIBLE samples. Rows filtered out are
+  # hidden with CSS but stay in reactable's row model, so intersect the selection
+  # with the visible mask here (and prune it in the observer below).
   selected_ids <- function() {
     sel <- reactable::getReactableState("tbl", "selected")
-    if (is.null(sel)) character(0) else samples_data()$ID[sel]
+    if (is.null(sel) || length(sel) == 0) {
+      return(character(0))
+    }
+    vis <- visible_mask()
+    sel <- sel[sel >= 1 & sel <= length(vis) & vis[sel]]
+    samples_data()$ID[sel]
   }
+
+  # Prune hidden rows out of the reactable selection whenever the selection or a
+  # filter changes, so a select-all under an active filter cannot silently carry
+  # invisible samples into a bulk Lock / State / Reviewed / Group action.
+  observeEvent(
+    list(reactable::getReactableState("tbl", "selected"),
+      input$Assemble_lock_filter, input$Assemble_state_filter,
+      input$Annotate_lock_filter, input$Annotate_state_filter, input$mode),
+    {
+      sel <- reactable::getReactableState("tbl", "selected")
+      if (is.null(sel) || length(sel) == 0) {
+        return()
+      }
+      vis <- visible_mask()
+      keep <- sel[sel >= 1 & sel <= length(vis) & vis[sel]]
+      if (length(keep) != length(sel)) reactable::updateReactable("tbl", selected = keep)
+    }, ignoreInit = TRUE)
 
   # ---- named parameter-set editing (preprocess/assemble/blast/annotate/curate) ----
   opts_handlers(input, output, session, list(
@@ -284,6 +390,10 @@ app_server <- function(input, output, session) {
     removeModal()
   })
   observeEvent(input$reviewed_btn, set_flag("UPDATE annotate SET reviewed = 'yes' WHERE ID = ?"))
+  observeEvent(input$problematic_btn, set_flag(
+    "UPDATE annotate SET problematic = CASE WHEN problematic = 'yes' THEN 'no' ELSE 'yes' END WHERE ID = ?"))
+  observeEvent(input$partial_btn, set_flag(
+    "UPDATE annotate SET partial = CASE WHEN partial = 'yes' THEN 'no' ELSE 'yes' END WHERE ID = ?"))
 
   # ---- Export group actions ----
   observeEvent(input$assign_group_btn, {
@@ -313,16 +423,23 @@ app_server <- function(input, output, session) {
   })
 
   # ---- lock / state row filters (hide via CSS on rp-lock-/rp-state- classes) ----
+  # Only the active mode's filters apply, and the rules are scoped to the main
+  # table, so a filter set in Assemble does not blank the Taxonomy/Export tables
+  # (which share the #tbl output but have no filter controls). all_state includes
+  # "0" so deselecting "Hold" actually hides held rows.
   output$filter_css <- renderUI({
-    all_lock <- c("0", "1")
-    all_state <- c("1", "2", "3", "4")
+    f <- active_filters()
+    if (is.null(f)) {
+      return(NULL)
+    }
     hide <- character(0)
-    if (!is.null(input$lock_filter)) hide <- c(hide, paste0(".rp-lock-", setdiff(all_lock, input$lock_filter)))
-    if (!is.null(input$state_filter)) hide <- c(hide, paste0(".rp-state-", setdiff(all_state, input$state_filter)))
+    if (!is.null(f$lock)) hide <- c(hide, paste0(".rp-lock-", setdiff(unname(LOCK_CHOICES), f$lock)))
+    if (!is.null(f$state)) hide <- c(hide, paste0(".rp-state-", setdiff(unname(STATE_CHOICES), f$state)))
     if (length(hide) == 0) {
       return(NULL)
     }
-    tags$style(HTML(paste0(paste(hide, collapse = ", "), " { display:none !important; }")))
+    sel <- paste0("#tbl ", hide)
+    tags$style(HTML(paste0(paste(sel, collapse = ", "), " { display:none !important; }")))
   })
 
   # ---- Update modal: run the workflow with live Nextflow progress ----
@@ -342,7 +459,38 @@ app_server <- function(input, output, session) {
     # Taxonomy runs locally in the app (lightweight taxdump lookup, no Nextflow).
     if ((input$mode %||% "") == "Taxonomy") { run_taxonomy_update(); return() }
     prog_header(character(0)); prog_executor(""); prog_proc(list()); prog_footer(character(0))
-    showModal(run_modal(input$mode %||% "Assemble", nf_pending_count(app_project(), wf_for_mode())))
+    hl <- app_headless()
+    sched <- if (hl) detect_scheduler() else NULL
+    script <- if (hl) build_submit_script(app_project(), wf_for_mode(), resume = TRUE, sched = sched) else ""
+    showModal(run_modal(input$mode %||% "Assemble", nf_pending_count(app_project(), wf_for_mode()),
+      headless = hl, sched = sched, script = script))
+  })
+
+  # Headless run modal: save / submit the cluster job script (instead of running
+  # Nextflow on the login node).
+  write_submit_script <- function() {
+    script <- input$submit_script_text %||%
+      build_submit_script(app_project(), wf_for_mode(), resume = isTRUE(input$nf_resume %||% TRUE))
+    f <- file.path(app_project(), paste0("submit_", wf_for_mode(), ".sh"))
+    writeLines(script, f)
+    try(Sys.chmod(f, "0755"), silent = TRUE)
+    f
+  }
+  observeEvent(input$save_script, {
+    f <- write_submit_script()
+    showNotification(paste0("Saved job script to ", f), type = "message", duration = 10)
+  })
+  observeEvent(input$submit_job, {
+    sched <- detect_scheduler()
+    if (is.null(sched)) {
+      showNotification("No scheduler (sbatch/qsub/bsub) found on PATH.", type = "warning"); return()
+    }
+    f <- write_submit_script()
+    out <- tryCatch(system2(sched$cmd, shQuote(f), stdout = TRUE, stderr = TRUE),
+      error = function(e) conditionMessage(e))
+    showNotification(paste0("Submitted via ", sched$cmd, ": ", paste(out, collapse = " ")),
+      type = "message", duration = 12)
+    removeModal()
   })
 
   # Local (in-app) taxonomy auto-assignment for the ready, unlocked samples.
@@ -481,23 +629,45 @@ app_server <- function(input, output, session) {
     refresh()
     paste(length(export_ids()), "locked & ready")
   })
-  # gate export to annotation-locked samples (validated)
-  export_ids <- function() {
+  # gate export to annotation-locked samples (validated), excluding any flagged
+  # problematic; optionally to one group
+  export_ids <- function(group = NULL) {
+    locked <- app_query(
+      "SELECT ID FROM annotate WHERE annotate_lock = 1
+       AND COALESCE(problematic, '') != 'yes'")$ID
+    if (!is.null(group) && nzchar(group)) {
+      g <- app_query("SELECT ID FROM samples WHERE export_group = ?", params = list(group))$ID
+      return(intersect(locked, g))
+    }
     ids <- selected_ids()
-    locked <- app_query("SELECT ID FROM annotate WHERE annotate_lock = 1")$ID
     if (length(ids)) intersect(ids, locked) else locked
   }
+  # "Export Data" opens a modal to pick a group (or all locked) before download.
+  observeEvent(input$export_btn, {
+    groups <- app_query(
+      "SELECT DISTINCT export_group FROM samples
+       WHERE export_group IS NOT NULL AND export_group != '' ORDER BY export_group")$export_group
+    showModal(export_modal(groups, length(export_ids())))
+  })
+  export_group_choice <- function() {
+    g <- input$export_group_sel %||% "__all__"
+    if (identical(g, "__all__") || !nzchar(g)) NULL else g
+  }
   output$export_dl <- downloadHandler(
-    filename = function() paste0(basename(app_project()), "_export.zip"),
+    filename = function() {
+      grp <- export_group_choice()
+      paste0(basename(app_project()), "_", grp %||% "export", ".zip")
+    },
     content = function(file) {
-      ids <- export_ids()
+      grp <- export_group_choice()
+      ids <- export_ids(grp)
       if (length(ids) == 0) {
         showNotification("No annotation-locked samples to export. Lock annotations first.",
           type = "warning", duration = 6)
         stop("nothing to export")
       }
       td <- file.path(tempdir(), paste0("rp_export_", as.integer(Sys.time())))
-      gdir <- export_bundle(app_project(), ids = ids, out_dir = td, zip = TRUE)
+      gdir <- export_bundle(app_project(), ids = ids, group = grp, out_dir = td, zip = TRUE)
       zipf <- paste0(gdir, ".zip")
       if (!file.exists(zipf) || !file.copy(zipf, file, overwrite = TRUE)) {
         stop("Export bundle zip was not produced at ", zipf)
@@ -850,6 +1020,18 @@ app_server <- function(input, output, session) {
   observeEvent(input$nt_5_in,  nudge_boundary("5", "in"))
   observeEvent(input$nt_3_out, nudge_boundary("3", "out"))
   observeEvent(input$nt_3_in,  nudge_boundary("3", "in"))
+  # per-sample curator flag toggles + Lock & Close in the annotate modal
+  modal_flag_toggle <- function(col, label) {
+    id <- sel_id()
+    req(id)
+    con <- app_con()
+    on.exit(DBI::dbDisconnect(con))
+    DBI::dbExecute(con, sprintf(
+      "UPDATE annotate SET %s = CASE WHEN %s = 'yes' THEN 'no' ELSE 'yes' END WHERE ID = ?",
+      col, col), params = list(id))
+    refresh(refresh() + 1)
+    showNotification(paste0("Toggled ", label, "."), type = "message")
+  }
   observeEvent(input$mark_reviewed, {
     id <- sel_id()
     req(id)
@@ -858,5 +1040,18 @@ app_server <- function(input, output, session) {
     DBI::dbExecute(con, "UPDATE annotate SET reviewed = 'yes' WHERE ID = ?", params = list(id))
     refresh(refresh() + 1)
     showNotification("Marked reviewed.", type = "message")
+  })
+  observeEvent(input$mark_problematic, modal_flag_toggle("problematic", "problematic"))
+  observeEvent(input$mark_partial, modal_flag_toggle("partial", "partial"))
+  observeEvent(input$lock_and_close, {
+    id <- sel_id()
+    req(id)
+    con <- app_con()
+    on.exit(DBI::dbDisconnect(con))
+    DBI::dbExecute(con,
+      "UPDATE annotate SET annotate_lock = 1, reviewed = 'yes' WHERE ID = ?", params = list(id))
+    refresh(refresh() + 1)
+    removeModal()
+    showNotification("Locked annotation.", type = "message")
   })
 }

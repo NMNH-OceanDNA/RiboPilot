@@ -42,6 +42,9 @@ annotate_modal <- function(id) {
     size = "l", easyClose = FALSE,
     footer = tagList(
       actionButton("mark_reviewed", "Mark reviewed", class = "btn-sm"),
+      actionButton("mark_problematic", "Problem", class = "btn-sm"),
+      actionButton("mark_partial", "Partial", class = "btn-sm"),
+      actionButton("lock_and_close", "Lock & Close", class = "btn-primary btn-sm"),
       modalButton("Close")
     ),
     # ---- gene list (drives the active feature for the editor + alignment) ----
@@ -102,9 +105,45 @@ annotate_modal <- function(id) {
 }
 
 #' Update / run modal: launch the Nextflow workflow with live progress
+#'
+#' Interactive (local browser): "Run from App" spawns Nextflow on this host.
+#' Headless (served to a remote browser, e.g. an SSH-tunneled cluster login
+#' node): running on the host would burn the login node, so offer an editable
+#' cluster job script to Submit as job / Save instead.
 #' @noRd
-run_modal <- function(mode, n) {
+run_modal <- function(mode, n, headless = FALSE, sched = NULL, script = "") {
   wf <- if (mode == "Annotate") "Annotation (WF2)" else "Assembly (WF1)"
+  cluster_section <- if (headless) {
+    tagList(
+      hr(style = "margin:10px 0;"),
+      h5("Submit to cluster", style = "margin:6px 0 4px;"),
+      div(class = "text-muted", style = "font-size:0.82em; margin-bottom:4px;",
+        if (is.null(sched)) {
+          "No scheduler (sbatch/qsub/bsub) found on PATH. Save the script and submit it yourself; running from the login node is discouraged."
+        } else {
+          sprintf("%s detected. Edit the job script if needed, then Submit as job (or Save script).", sched$name)
+        }),
+      tags$textarea(id = "submit_script_text", rows = 11,
+        style = "width:100%; font-family:monospace; font-size:0.78em;", script))
+  }
+  run_progress <- if (!headless) {
+    shinyjs::hidden(div(id = "nf_progress",
+      hr(style = "margin:12px 0;"), h5("Progress:", style = "margin:0 0 4px;"),
+      div(class = "code-block", style = "max-height:320px; overflow:auto;",
+        tags$pre(style = "margin:0; background:transparent; border:0; color:inherit; white-space:pre-wrap;",
+          textOutput("nf_prog_all", container = tags$code)))))
+  }
+  footer <- if (headless) {
+    tagList(
+      if (!is.null(sched)) actionButton("submit_job", "Submit as job", class = "btn-success btn-sm"),
+      actionButton("save_script", "Save script", class = "btn-sm"),
+      actionButton("nf_close", "Close", class = "btn-sm"))
+  } else {
+    tagList(
+      actionButton("nf_start", "Run from App", class = "btn-success btn-sm"),
+      shinyjs::hidden(actionButton("nf_stop", "Stop / Interrupt", class = "btn-sm")),
+      actionButton("nf_close", "Close", class = "btn-sm"))
+  }
   modalDialog(
     title = div(style = "display:flex; justify-content:space-between; align-items:center; height:38px;",
       span(sprintf("%s — %d sample(s) to update", wf, n)),
@@ -114,15 +153,9 @@ run_modal <- function(mode, n) {
       status = "primary", inline = TRUE),
     h5("Nextflow command:", style = "margin:6px 0 4px;"),
     div(class = "code-block", textOutput("nf_cmd_text")),
-    shinyjs::hidden(div(id = "nf_progress",
-      hr(style = "margin:12px 0;"), h5("Progress:", style = "margin:0 0 4px;"),
-      div(class = "code-block", style = "max-height:320px; overflow:auto;",
-        tags$pre(style = "margin:0; background:transparent; border:0; color:inherit; white-space:pre-wrap;",
-          textOutput("nf_prog_all", container = tags$code))))),
-    footer = tagList(
-      actionButton("nf_start", "Run from App", class = "btn-success btn-sm"),
-      shinyjs::hidden(actionButton("nf_stop", "Stop / Interrupt", class = "btn-sm")),
-      actionButton("nf_close", "Close", class = "btn-sm"))
+    run_progress,
+    cluster_section,
+    footer = footer
   )
 }
 
@@ -158,6 +191,30 @@ group_modal <- function() {
     textInput("group_name", "Group name", placeholder = "e.g. batch_2026_01"),
     footer = tagList(
       actionButton("assign_group_go", "Assign", class = "btn-primary btn-sm"),
+      modalButton("Cancel"))
+  )
+}
+
+#' Export modal: pick which export group to bundle (or all locked samples), then
+#' download. Without this, assigned groups were ignored and every bundle collapsed
+#' into one undifferentiated "export" zip.
+#' @noRd
+export_modal <- function(groups, n_locked) {
+  choices <- c("All locked samples (single bundle)" = "__all__",
+    stats::setNames(groups, groups))
+  modalDialog(
+    title = "Export GenBank bundle", size = "m", easyClose = TRUE,
+    if (length(groups) == 0) {
+      tags$p(class = "text-muted", style = "font-size:0.9em;",
+        sprintf("No export groups assigned. Exporting all %d annotation-locked sample(s) as one bundle. Use \"Assign Group\" to batch submissions.", n_locked))
+    } else {
+      shinyWidgets::pickerInput("export_group_sel", "Export group:",
+        choices = choices, selected = "__all__", width = "100%")
+    },
+    tags$p(class = "text-muted", style = "font-size:0.82em; margin-top:0.6em;",
+      "Bundle: per-sample .fsa/.tbl, combined FASTA + feature table, per-marker fastas, summary CSV, and an HTML report."),
+    footer = tagList(
+      shiny::downloadButton("export_dl", "Download", class = "btn-primary btn-sm"),
       modalButton("Cancel"))
   )
 }

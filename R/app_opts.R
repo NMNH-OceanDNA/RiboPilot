@@ -246,7 +246,25 @@ opts_handlers <- function(input, output, session, deps) {
       }
     })
     shiny::observeEvent(input[[paste0("update_", p)]], {
+      nm <- trimws(input[[paste0(p, "_name")]] %||% "")
+      chk <- opts_edit_check(sp, nm, targets(), isTRUE(input[[paste0(p, "_edit")]]), deps)
+      if (identical(chk$action, "refuse")) {
+        shiny::showNotification(chk$msg, type = "error", duration = 10)
+        return()
+      }
+      if (identical(chk$action, "confirm")) {
+        shinyWidgets::confirmSweetAlert(session, inputId = paste0(p, "_confirm_edit"),
+          title = "Edit beyond selection?", text = chk$msg, type = "warning",
+          btn_labels = c("Cancel", "Apply to all"), danger_mode = TRUE)
+        return()
+      }
       opts_apply(p, sp, input, deps, targets(), cur_row())
+    })
+    # proceed with a confirmed "edit beyond selection"
+    shiny::observeEvent(input[[paste0(p, "_confirm_edit")]], ignoreInit = TRUE, {
+      if (isTRUE(input[[paste0(p, "_confirm_edit")]])) {
+        opts_apply(p, sp, input, deps, targets(), cur_row())
+      }
     })
   })
 
@@ -256,6 +274,38 @@ opts_handlers <- function(input, output, session, deps) {
     sel <- if (input$no_kingdom %in% ks) input$no_kingdom else ks[[if ("euk" %in% ks) which(ks == "euk") else 1]]
     shiny::updateSelectInput(session, "no_kingdom", choices = ks, selected = sel)
   })
+}
+
+# Guard editing a shared, named opts set. Editing an EXISTING set rewrites the
+# recorded parameters of every sample on that name, not only the selection, so:
+#   refuse  - some of those other samples are locked (their stored results were
+#             produced under the old parameters; rewriting corrupts provenance);
+#   confirm - other unlocked samples share the set (still a surprise);
+#   ok      - a new name (new set), or the set is used only by the selection.
+opts_edit_check <- function(sp, nm, ids, editing, deps) {
+  if (!isTRUE(editing) || !nzchar(nm) || length(ids) == 0) return(list(action = "ok"))
+  con <- deps$con(); on.exit(DBI::dbDisconnect(con))
+  exists_set <- nrow(DBI::dbGetQuery(con,
+    sprintf("SELECT 1 FROM %s WHERE %s = ? LIMIT 1", sp$table, sp$key),
+    params = list(nm))) > 0
+  if (!exists_set) return(list(action = "ok"))  # new name -> new set, no shared rewrite
+  others <- DBI::dbGetQuery(con,
+    sprintf("SELECT ID FROM %s WHERE %s = ?", sp$link_tbl, sp$key),
+    params = list(nm))$ID
+  others <- setdiff(others, ids)
+  if (length(others) == 0) return(list(action = "ok"))
+  ph <- paste(rep("?", length(others)), collapse = ",")
+  locked <- DBI::dbGetQuery(con,
+    sprintf("SELECT ID FROM %s WHERE %s = 1 AND ID IN (%s)", sp$queue_tbl, sp$lock, ph),
+    params = as.list(others))$ID
+  if (length(locked) > 0) {
+    return(list(action = "refuse", msg = sprintf(
+      "Parameter set '%s' is used by %d locked sample(s), so it cannot be edited (that would rewrite their recorded parameters). Type a new set name to change parameters for the selected samples only.",
+      nm, length(locked))))
+  }
+  list(action = "confirm", msg = sprintf(
+    "Parameter set '%s' is also used by %d sample(s) outside your selection. Editing it changes their parameters too and re-queues only the selected ones. Apply to all?",
+    nm, length(others)))
 }
 
 # build the full opts row (edited fields overriding the base) and upsert it,

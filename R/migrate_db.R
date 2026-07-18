@@ -119,6 +119,9 @@ migrate_db <- function(con) {
   add_col("annotations", "model_coverage", "REAL")
   # Fraction of a sample element covered by its reference alignment.
   add_col("blast_ref_alignment", "aln_cov", "REAL")
+  # Curator flags beyond `reviewed`: problematic (exclude from export) + partial.
+  add_col("annotate", "problematic", "TEXT")
+  add_col("annotate", "partial", "TEXT")
   # Retire the restrictive entrez_query, but only where it is still verbatim the
   # old default -- a query the user chose is theirs to keep.
   if (has_tbl("blast_opts")) {
@@ -136,6 +139,22 @@ migrate_db <- function(con) {
   invisible(RIBOPILOT_SCHEMA_VERSION)
 }
 
+#' Copy a project's `.sqlite` into `<path>/.old_sqlite_dbs/` before an upgrade
+#'
+#' Migrations `ALTER` tables in place, which makes the DB unopenable by an older
+#' RiboPilot the user may still have on a cluster; keep a copy to fall back to.
+#' @noRd
+backup_project_db <- function(path) {
+  db <- file.path(path, ".sqlite")
+  if (!file.exists(db)) return(invisible(NULL))
+  bdir <- file.path(path, ".old_sqlite_dbs")
+  dir.create(bdir, showWarnings = FALSE)
+  dest <- file.path(bdir, sprintf("sqlite.%d", as.integer(Sys.time())))
+  tryCatch(file.copy(db, dest, overwrite = FALSE),
+    error = function(e) warning("Could not back up project DB: ", conditionMessage(e)))
+  invisible(dest)
+}
+
 #' Migrate the project database at a path to the current schema
 #'
 #' @param path Project directory containing `.sqlite`.
@@ -146,6 +165,14 @@ migrate_project <- function(path = ".") {
   if (!file.exists(db)) {
     stop("No project database found at ", db, call. = FALSE)
   }
+  # Back up first when an actual upgrade is pending (older schema version).
+  ver <- tryCatch({
+    c0 <- DBI::dbConnect(RSQLite::SQLite(), db)
+    on.exit(DBI::dbDisconnect(c0), add = TRUE)
+    DBI::dbGetQuery(c0, "PRAGMA user_version")[[1]]
+  }, error = function(e) 0L)
+  if (isTRUE(ver < RIBOPILOT_SCHEMA_VERSION)) backup_project_db(path)
+
   con <- DBI::dbConnect(RSQLite::SQLite(), db)
   on.exit(DBI::dbDisconnect(con))
   migrate_db(con)

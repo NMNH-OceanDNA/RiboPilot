@@ -472,6 +472,8 @@ new_db <- function(
       n_flags INTEGER,
       annotate_notes TEXT,
       reviewed TEXT,
+      problematic TEXT,
+      partial TEXT,
       time_stamp INTEGER,
       PRIMARY KEY (ID)
     );"

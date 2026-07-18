@@ -39,6 +39,23 @@ test_that("feature_table_text_con emits partials, gaps, and ITS notes", {
   expect_match(tbl, "internal transcribed spacer 1")
 })
 
+test_that("force_partial marks a curator-flagged partial record at both ends", {
+  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, element TEXT, type TEXT, start INT, stop INT)")
+  DBI::dbExecute(con, "CREATE TABLE stitched(ID TEXT, sequence TEXT, length INT)")
+  seq <- strrep("A", 500)
+  DBI::dbExecute(con, "INSERT INTO stitched VALUES('S1', ?, 500)", params = list(seq))
+  # 18S well inside the sequence (100-260), so no positional partial
+  DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1','18S','rRNA',100,260)")
+  DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1','28S','rRNA',300,460)")
+  complete <- RiboPilot:::feature_table_text_con(con, "S1", force_partial = FALSE)
+  expect_match(complete, "100\t260\trRNA")     # not marked partial
+  partial <- RiboPilot:::feature_table_text_con(con, "S1", force_partial = TRUE)
+  expect_match(partial, "<100\t260\trRNA")     # 5' partial on first feature
+  expect_match(partial, "300\t>460\trRNA")     # 3' partial on last feature
+})
+
 test_that("is_nuclear_rrna_title splits nuclear rDNA from organellar/other", {
   f <- RiboPilot:::is_nuclear_rrna_title
   expect_true(f("Symbiodinium sp. 18S ribosomal RNA gene, partial"))

@@ -85,9 +85,10 @@ find_n_runs <- function(seq, min_len = MIN_ASSEMBLY_GAP) {
 #' Emits the rRNA/spacer features plus an `assembly_gap` feature for each N-run
 #' (>= [MIN_ASSEMBLY_GAP]) so table2asn does not reject fabricated gap runs, and
 #' marks the first/last real feature partial (`<`/`>`) when it reaches a
-#' sequence end.
+#' sequence end or when `force_partial` is set (a curator-flagged partial repeat,
+#' so it is not submitted as a complete cistron).
 #' @noRd
-feature_table_text_con <- function(con, id) {
+feature_table_text_con <- function(con, id, force_partial = FALSE) {
   d <- DBI::dbGetQuery(con,
     "SELECT element, type, start, stop FROM annotations WHERE ID = ? ORDER BY start", params = list(id))
   hdr <- paste0(">Feature ", id)
@@ -119,8 +120,16 @@ feature_table_text_con <- function(con, id) {
         "\t\t\tlinkage_evidence\talign_genus")
       next
     }
-    s <- if (i == first_rna && feats$start[i] <= 1) paste0("<", feats$start[i]) else as.character(feats$start[i])
-    e <- if (i == last_rna && feats$stop[i] >= seqlen) paste0(">", feats$stop[i]) else as.character(feats$stop[i])
+    s <- if (i == first_rna && (feats$start[i] <= 1 || isTRUE(force_partial))) {
+      paste0("<", feats$start[i])
+    } else {
+      as.character(feats$start[i])
+    }
+    e <- if (i == last_rna && (feats$stop[i] >= seqlen || isTRUE(force_partial))) {
+      paste0(">", feats$stop[i])
+    } else {
+      as.character(feats$stop[i])
+    }
     lines <- c(lines, paste0(s, "\t", e, "\t", feats$type[i]),
       paste0("\t\t\tproduct\t", rrna_element_product(feats$element[i])))
     if (identical(feats$type[i], "misc_RNA")) lines <- c(lines, paste0("\t\t\tnote\t", feats$element[i]))
@@ -133,7 +142,7 @@ feature_table_text_con <- function(con, id) {
 export_summary_df <- function(con, ids) {
   DBI::dbGetQuery(con, sprintf(
     "SELECT s.ID, s.Taxon AS organism, s.export_group, st.reference_accession AS reference,
-       st.length, an.n_features, an.missing, an.reviewed
+       st.length, an.n_features, an.missing, an.reviewed, an.partial, an.problematic
      FROM samples s LEFT JOIN stitched st ON s.ID = st.ID LEFT JOIN annotate an ON s.ID = an.ID
      WHERE s.ID IN (%s)", paste(sprintf("'%s'", ids), collapse = ",")))
 }
@@ -212,7 +221,10 @@ export_bundle <- function(path = ".", ids = NULL, group = NULL, out_dir = file.p
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(path, ".sqlite"))
   on.exit(DBI::dbDisconnect(con), add = TRUE)
 
-  have <- DBI::dbGetQuery(con, "SELECT ID FROM stitched")$ID
+  # exclude any sample a curator flagged problematic ("do not submit")
+  have <- DBI::dbGetQuery(con,
+    "SELECT st.ID FROM stitched st LEFT JOIN annotate an ON st.ID = an.ID
+     WHERE COALESCE(an.problematic, '') != 'yes'")$ID
   if (!is.null(group)) {
     gids <- DBI::dbGetQuery(con, "SELECT ID FROM samples WHERE export_group = ?", params = list(group))$ID
     ids <- if (is.null(ids)) gids else intersect(ids, gids)
@@ -242,7 +254,9 @@ export_bundle <- function(path = ".", ids = NULL, group = NULL, out_dir = file.p
       sprintf(">%s [organism=%s] [moltype=genomic DNA]", id, taxon),
       source_modifiers(row)), collapse = " ")
     writeLines(c(defline, seq), file.path(gdir, paste0(id, ".fsa")))
-    tbl <- feature_table_text_con(con, id)
+    is_partial <- identical(DBI::dbGetQuery(con,
+      "SELECT partial FROM annotate WHERE ID = ?", params = list(id))$partial[1], "yes")
+    tbl <- feature_table_text_con(con, id, force_partial = is_partial)
     writeLines(tbl, file.path(gdir, paste0(id, ".tbl")))
     group_fsa <- c(group_fsa, defline, seq)
     group_tbl <- c(group_tbl, tbl)
