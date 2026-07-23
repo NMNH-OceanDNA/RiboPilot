@@ -6,23 +6,42 @@
 # per-marker fastas (18S/28S/ITS...), a per-sample summary CSV, and a
 # self-contained HTML report. table2asn is run if available.
 
-#' Assign selected samples to an export group
-#' @param path Project dir. @param ids Sample IDs. @param group Group name.
+#' Assign selected units to an export group (export_group is per unit now)
+#'
+#' @param path Project dir. @param units data.frame(ID, path, scaffold) OR a
+#'   character vector of sample IDs (assigns all of each sample's units).
+#'   @param group Group name.
 #' @export
-assign_export_group <- function(path, ids, group) {
+assign_export_group <- function(path, units, group) {
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(path, ".sqlite"))
   on.exit(DBI::dbDisconnect(con))
-  for (id in ids) DBI::dbExecute(con, "UPDATE samples SET export_group = ? WHERE ID = ?", params = list(group, id))
+  set_export_group(con, units, group)
   invisible()
 }
 
-#' Clear the export group of selected samples
+#' Clear the export group of selected units
+#' @param path Project dir. @param units data.frame(ID, path, scaffold) or IDs.
 #' @export
-clear_export_group <- function(path, ids) {
+clear_export_group <- function(path, units) {
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(path, ".sqlite"))
   on.exit(DBI::dbDisconnect(con))
-  for (id in ids) DBI::dbExecute(con, "UPDATE samples SET export_group = NULL WHERE ID = ?", params = list(id))
+  set_export_group(con, units, NA)
   invisible()
+}
+
+#' Write annotate.export_group for the given units (NA clears). Accepts a
+#' data.frame(ID,path,scaffold) or a character vector of sample IDs.
+#' @noRd
+set_export_group <- function(con, units, group) {
+  g <- if (length(group) == 0 || is.na(group)) NA_character_ else group
+  if (is.data.frame(units)) {
+    for (i in seq_len(nrow(units))) {
+      DBI::dbExecute(con, "UPDATE annotate SET export_group = ? WHERE ID = ? AND path = ? AND scaffold = ?",
+        params = list(g, units$ID[i], as.integer(units$path[i]), as.integer(units$scaffold[i])))
+    }
+  } else {
+    for (id in units) DBI::dbExecute(con, "UPDATE annotate SET export_group = ? WHERE ID = ?", params = list(g, id))
+  }
 }
 
 # Valid INSDC source modifiers that may be emitted as `[key=value]` deflines.
@@ -80,22 +99,24 @@ find_n_runs <- function(seq, min_len = MIN_ASSEMBLY_GAP) {
   data.frame(start = as.integer(m), stop = as.integer(m + len - 1))
 }
 
-#' Feature table (.tbl) text for one sample from an open connection
+#' Feature table (.tbl) text for one assembly unit from an open connection
 #'
 #' Emits the rRNA/spacer features plus an `assembly_gap` feature for each N-run
 #' (>= [MIN_ASSEMBLY_GAP]) so table2asn does not reject fabricated gap runs, and
 #' marks the first/last real feature partial (`<`/`>`) when it reaches a
 #' sequence end or when `force_partial` is set (a curator-flagged partial repeat,
-#' so it is not submitted as a complete cistron).
+#' so it is not submitted as a complete cistron). `seqid` is the FASTA/feature id.
 #' @noRd
-feature_table_text_con <- function(con, id, force_partial = FALSE) {
+feature_table_text_con <- function(con, id, path = 1L, scaffold = 1L, seqid = id, force_partial = FALSE) {
   d <- DBI::dbGetQuery(con,
-    "SELECT element, type, start, stop FROM annotations WHERE ID = ? ORDER BY start", params = list(id))
-  hdr <- paste0(">Feature ", id)
+    "SELECT element, type, start, stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
+    params = list(id, path, scaffold))
+  hdr <- paste0(">Feature ", seqid)
   if (nrow(d) == 0) {
     return(paste0(hdr, "\n"))
   }
-  st <- DBI::dbGetQuery(con, "SELECT sequence, length FROM stitched WHERE ID = ?", params = list(id))
+  st <- DBI::dbGetQuery(con, "SELECT sequence, length FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(id, path, scaffold))
   seq <- if (nrow(st)) st$sequence[1] else NA_character_
   seqlen <- if (nrow(st) && !is.na(st$length[1])) st$length[1] else max(d$stop)
 
@@ -148,15 +169,18 @@ feature_table_text_con <- function(con, id, force_partial = FALSE) {
 #' @return list(chimeric, gap_in_rdna, misassembly, note); `note` is a
 #'   `;`-joined string of the flags that fired ("" when clean).
 #' @noRd
-submission_risks <- function(con, id) {
+submission_risks <- function(con, id, path = 1L, scaffold = 1L) {
   chim <- isTRUE(DBI::dbGetQuery(con,
-    "SELECT chimeric FROM annotate WHERE ID = ?", params = list(id))$chimeric[1] == 1L)
+    "SELECT chimeric FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(id, path, scaffold))$chimeric[1] == 1L)
   ann <- DBI::dbGetQuery(con,
-    "SELECT element, start, stop FROM annotations WHERE ID = ? ORDER BY start", params = list(id))
+    "SELECT element, start, stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
+    params = list(id, path, scaffold))
   gap_in_rdna <- FALSE
   misassembly <- FALSE
   if (nrow(ann) > 0) {
-    st <- DBI::dbGetQuery(con, "SELECT sequence FROM stitched WHERE ID = ?", params = list(id))
+    st <- DBI::dbGetQuery(con, "SELECT sequence FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = list(id, path, scaffold))
     seq <- if (nrow(st)) st$sequence[1] else NA_character_
     gaps <- find_n_runs(seq)
     if (nrow(gaps) > 0) {
@@ -212,29 +236,44 @@ submission_readme <- function(label) {
     ""), collapse = "\n")
 }
 
-#' Per-sample export summary data.frame
+#' Per-unit export summary data.frame
 #'
-#' Includes a `submission_risk` column ([submission_risks]) so the CSV and HTML
-#' report both surface portal-parity risk flags.
+#' `units` is a data.frame(ID, path, scaffold, seqid). Includes a
+#' `submission_risk` column ([submission_risks]) so the CSV and HTML report both
+#' surface portal-parity risk flags.
 #' @noRd
-export_summary_df <- function(con, ids) {
-  d <- DBI::dbGetQuery(con, sprintf(
-    "SELECT s.ID, s.Taxon AS organism, s.export_group, st.reference_accession AS reference,
-       st.length, an.n_features, an.missing, an.reviewed, an.partial, an.problematic
-     FROM samples s LEFT JOIN stitched st ON s.ID = st.ID LEFT JOIN annotate an ON s.ID = an.ID
-     WHERE s.ID IN (%s)", paste(sprintf("'%s'", ids), collapse = ",")))
-  d$submission_risk <- vapply(d$ID, function(id) submission_risks(con, id)$note, character(1))
-  d
+export_summary_df <- function(con, units) {
+  do.call(rbind, lapply(seq_len(nrow(units)), function(i) {
+    u <- units[i, ]
+    m <- DBI::dbGetQuery(con,
+      "SELECT s.Taxon AS organism, asm.length, an.n_features, an.missing, an.reviewed,
+         an.partial, an.problematic
+       FROM samples s
+       JOIN annotate an ON an.ID = s.ID AND an.path = ? AND an.scaffold = ?
+       JOIN assemblies asm ON asm.ID = s.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
+       WHERE s.ID = ?", params = list(u$path, u$scaffold, u$ID))
+    data.frame(seqid = u$seqid, ID = u$ID, path = u$path, scaffold = u$scaffold,
+      organism = if (nrow(m)) m$organism[1] else NA_character_,
+      length = if (nrow(m)) m$length[1] else NA_integer_,
+      n_features = if (nrow(m)) m$n_features[1] else NA_integer_,
+      missing = if (nrow(m)) m$missing[1] else NA_character_,
+      reviewed = if (nrow(m)) m$reviewed[1] else NA_character_,
+      partial = if (nrow(m)) m$partial[1] else NA_character_,
+      problematic = if (nrow(m)) m$problematic[1] else NA_character_,
+      submission_risk = submission_risks(con, u$ID, u$path, u$scaffold)$note,
+      stringsAsFactors = FALSE)
+  }))
 }
 
-#' Inline SVG feature-map for one sample (for the HTML report)
+#' Inline SVG feature-map for one unit (for the HTML report)
 #' @noRd
-feature_map_svg <- function(con, id) {
-  d <- DBI::dbGetQuery(con, "SELECT element, start, stop FROM annotations WHERE ID = ? ORDER BY start", params = list(id))
+feature_map_svg <- function(con, id, path = 1L, scaffold = 1L, seqid = id) {
+  d <- DBI::dbGetQuery(con, "SELECT element, start, stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
+    params = list(id, path, scaffold))
   if (nrow(d) == 0) {
     return("<em>no annotations</em>")
   }
-  d$molecule <- id
+  d$molecule <- seqid
   p <- ggplot2::ggplot(d, ggplot2::aes(xmin = start, xmax = stop, y = molecule, fill = element, label = element)) +
     gggenes::geom_gene_arrow(arrowhead_height = grid::unit(5, "mm"), arrow_body_height = grid::unit(4.5, "mm")) +
     gggenes::geom_gene_label(align = "centre", grow = FALSE) +
@@ -251,17 +290,20 @@ feature_map_svg <- function(con, id) {
 }
 
 #' Write a self-contained HTML report for an export group / selection
+#'
+#' `units` is a data.frame(ID, path, scaffold, seqid) - one row per exported unit.
 #' @noRd
-export_report_html <- function(con, ids, out_html, label) {
-  smry <- export_summary_df(con, ids)
-  hdr <- c("ID", "organism", "reference", "length", "n_features", "missing", "reviewed", "submission_risk")
+export_report_html <- function(con, units, out_html, label) {
+  smry <- export_summary_df(con, units)
+  hdr <- c("seqid", "ID", "organism", "length", "n_features", "missing", "reviewed", "submission_risk")
   rows <- apply(smry[, intersect(hdr, names(smry)), drop = FALSE], 1, function(r) {
     paste0("<tr>", paste0("<td>", ifelse(is.na(r), "", r), "</td>", collapse = ""), "</tr>")
   })
-  maps <- vapply(ids, function(id) {
-    paste0("<div class='sample'><h3>", id, " <small>",
-      smry$organism[smry$ID == id][1] %||% "", "</small></h3>",
-      feature_map_svg(con, id), "</div>")
+  maps <- vapply(seq_len(nrow(units)), function(i) {
+    u <- units[i, ]
+    paste0("<div class='sample'><h3>", u$seqid, " <small>",
+      smry$organism[i] %||% "", "</small></h3>",
+      feature_map_svg(con, u$ID, u$path, u$scaffold, u$seqid), "</div>")
   }, character(1))
   html <- paste0(
     "<!doctype html><html><head><meta charset='utf-8'><title>RiboPilot export: ", label,
@@ -270,7 +312,7 @@ export_report_html <- function(con, ids, out_html, label) {
     "th{background:#f4f6f8;text-align:left;}.sample{margin:1.2em 0;border-top:1px solid #eee;padding-top:0.5em;}",
     "small{color:#888;font-weight:normal;}svg{max-width:100%;height:auto;}</style></head><body>",
     "<h1>RiboPilot export report</h1><p><strong>Group:</strong> ", label,
-    " &middot; <strong>Samples:</strong> ", length(ids),
+    " &middot; <strong>Units:</strong> ", nrow(units),
     " &middot; ", format(Sys.time(), "%Y-%m-%d %H:%M"), "</p>",
     "<h2>Summary</h2><table><thead><tr>",
     paste0("<th>", intersect(hdr, names(smry)), "</th>", collapse = ""), "</tr></thead><tbody>",
@@ -301,18 +343,24 @@ export_bundle <- function(path = ".", ids = NULL, group = NULL, out_dir = file.p
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(path, ".sqlite"))
   on.exit(DBI::dbDisconnect(con), add = TRUE)
 
-  # exclude any sample a curator flagged problematic ("do not submit")
-  have <- DBI::dbGetQuery(con,
-    "SELECT st.ID FROM stitched st LEFT JOIN annotate an ON st.ID = an.ID
-     WHERE COALESCE(an.problematic, '') != 'yes'")$ID
-  if (!is.null(group)) {
-    gids <- DBI::dbGetQuery(con, "SELECT ID FROM samples WHERE export_group = ?", params = list(group))$ID
-    ids <- if (is.null(ids)) gids else intersect(ids, gids)
+  # Export annotation-locked, non-ignored, non-problematic UNITS (one GenBank
+  # record per (ID, path, scaffold)). Filtered by group / ids when given.
+  units <- DBI::dbGetQuery(con,
+    "SELECT an.ID, an.path, an.scaffold, an.export_group
+     FROM annotate an
+     JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
+     WHERE an.annotate_lock = 1 AND COALESCE(asm.ignore,0) = 0
+       AND COALESCE(an.problematic,'') != 'yes'
+     ORDER BY an.ID, an.path, an.scaffold")
+  if (!is.null(group)) units <- units[!is.na(units$export_group) & units$export_group == group, , drop = FALSE]
+  if (!is.null(ids)) units <- units[units$ID %in% ids, , drop = FALSE]
+  if (nrow(units) == 0) {
+    stop("No annotation-locked units to export.", call. = FALSE)
   }
-  ids <- if (is.null(ids)) have else intersect(ids, have)
-  if (length(ids) == 0) {
-    stop("No samples with an assembled/annotated sequence to export.", call. = FALSE)
-  }
+  # SeqID: the sample's ID when it exports a single unit, else ID_p<path>_s<scaffold>
+  n_per_id <- table(units$ID)
+  units$seqid <- ifelse(n_per_id[units$ID] > 1,
+    sprintf("%s_p%s_s%s", units$ID, units$path, units$scaffold), units$ID)
   label <- label %||% group %||% "export"
 
   gdir <- file.path(out_dir, label)
@@ -324,31 +372,34 @@ export_bundle <- function(path = ".", ids = NULL, group = NULL, out_dir = file.p
   group_tbl <- character(0)
   marker_pool <- list()
 
-  for (id in ids) {
+  for (ui in seq_len(nrow(units))) {
+    id <- units$ID[ui]; upath <- units$path[ui]; uscaf <- units$scaffold[ui]; seqid <- units$seqid[ui]
     row <- DBI::dbGetQuery(con,
-      "SELECT st.sequence AS seq, s.* FROM stitched st JOIN samples s ON st.ID = s.ID WHERE st.ID = ?",
-      params = list(id))
+      "SELECT asm.sequence AS seq, s.* FROM assemblies asm JOIN samples s ON asm.ID = s.ID
+       WHERE asm.ID = ? AND asm.path = ? AND asm.scaffold = ?", params = list(id, upath, uscaf))
     seq <- row$seq[1]
     taxon <- row$Taxon[1]
     defline <- paste(c(
-      sprintf(">%s [organism=%s] [moltype=genomic DNA]", id, taxon),
+      sprintf(">%s [organism=%s] [moltype=genomic DNA]", seqid, taxon),
       source_modifiers(row)), collapse = " ")
-    writeLines(c(defline, seq), file.path(gdir, paste0(id, ".fsa")))
+    writeLines(c(defline, seq), file.path(gdir, paste0(seqid, ".fsa")))
     is_partial <- identical(DBI::dbGetQuery(con,
-      "SELECT partial FROM annotate WHERE ID = ?", params = list(id))$partial[1], "yes")
-    tbl <- feature_table_text_con(con, id, force_partial = is_partial)
-    writeLines(tbl, file.path(gdir, paste0(id, ".tbl")))
+      "SELECT partial FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = list(id, upath, uscaf))$partial[1], "yes")
+    tbl <- feature_table_text_con(con, id, upath, uscaf, seqid = seqid, force_partial = is_partial)
+    writeLines(tbl, file.path(gdir, paste0(seqid, ".tbl")))
     group_fsa <- c(group_fsa, defline, seq)
     group_tbl <- c(group_tbl, tbl)
 
     if (markers) {
-      ann <- DBI::dbGetQuery(con, "SELECT element, start, stop FROM annotations WHERE ID = ? ORDER BY start", params = list(id))
+      ann <- DBI::dbGetQuery(con, "SELECT element, start, stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
+        params = list(id, upath, uscaf))
       wm <- function(el, s, e) {
         if (is.na(s) || is.na(e) || e < s) {
           return(invisible())
         }
-        rec <- c(sprintf(">%s_%s [organism=%s]", id, el, taxon), substr(seq, s, e))
-        writeLines(rec, file.path(gdir, "markers", paste0(id, "_", gsub("[^A-Za-z0-9]", "", el), ".fasta")))
+        rec <- c(sprintf(">%s_%s [organism=%s]", seqid, el, taxon), substr(seq, s, e))
+        writeLines(rec, file.path(gdir, "markers", paste0(seqid, "_", gsub("[^A-Za-z0-9]", "", el), ".fasta")))
         marker_pool[[el]] <<- c(marker_pool[[el]], rec)
       }
       for (i in seq_len(nrow(ann))) wm(ann$element[i], ann$start[i], ann$stop[i])
@@ -366,20 +417,20 @@ export_bundle <- function(path = ".", ids = NULL, group = NULL, out_dir = file.p
       writeLines(marker_pool[[el]], file.path(gdir, "markers", paste0("all_", gsub("[^A-Za-z0-9]", "", el), ".fasta")))
     }
   }
-  # per-sample summary CSV (+ warn-only portal-parity submission-risk gate)
-  smry <- export_summary_df(con, ids)
+  # per-unit summary CSV (+ warn-only portal-parity submission-risk gate)
+  smry <- export_summary_df(con, units)
   risky <- which(nzchar(smry$submission_risk))
   if (length(risky) > 0) {
     warning("Submission-risk flags on ", length(risky), " of ", nrow(smry),
-      " sample(s) (still exported; see submission_risk column): ",
-      paste(sprintf("%s[%s]", smry$ID[risky], smry$submission_risk[risky]), collapse = ", "),
+      " unit(s) (still exported; see submission_risk column): ",
+      paste(sprintf("%s[%s]", smry$seqid[risky], smry$submission_risk[risky]), collapse = ", "),
       call. = FALSE)
   }
   utils::write.csv(smry, file.path(gdir, paste0(label, "_summary.csv")), row.names = FALSE)
   writeLines(submission_readme(label), file.path(gdir, "README_SUBMISSION.txt"))
   # HTML report
   if (isTRUE(report)) {
-    tryCatch(export_report_html(con, ids, file.path(gdir, paste0(label, "_report.html")), label),
+    tryCatch(export_report_html(con, units, file.path(gdir, paste0(label, "_report.html")), label),
       error = function(e) message("Report generation skipped: ", conditionMessage(e)))
   }
   # submission template (.sbt): copy in so table2asn (-t) picks it up
@@ -399,7 +450,7 @@ export_bundle <- function(path = ".", ids = NULL, group = NULL, out_dir = file.p
     system2("table2asn", args, stdout = TRUE, stderr = TRUE)
   }
 
-  message("Exported ", length(ids), " sample(s) to ", gdir,
+  message("Exported ", nrow(units), " unit(s) to ", gdir,
     "\n  GenBank Portal takes FASTA only: upload ", label,
     ".fasta; NCBI auto-annotates the rRNA-ITS region (see README_SUBMISSION.txt).")
   if (isTRUE(zip)) {
@@ -417,7 +468,7 @@ export_bundle <- function(path = ".", ids = NULL, group = NULL, out_dir = file.p
 #' @export
 export_project <- function(path = ".", out_dir = file.path(path, "export")) {
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(path, ".sqlite"))
-  groups <- DBI::dbGetQuery(con, "SELECT DISTINCT export_group FROM samples WHERE export_group IS NOT NULL")$export_group
+  groups <- DBI::dbGetQuery(con, "SELECT DISTINCT export_group FROM annotate WHERE export_group IS NOT NULL")$export_group
   DBI::dbDisconnect(con)
   if (length(groups) == 0) {
     stop("No export groups assigned. Assign samples to a group first.", call. = FALSE)
