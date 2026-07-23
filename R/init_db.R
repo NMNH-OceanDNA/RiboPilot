@@ -403,17 +403,19 @@ new_db <- function(
     );"
   )
 
-  # coverage (per-position read depth on the stitched sequence) ----
+  # coverage (per-position read depth per assembly unit) ----
   DBI::dbExecute(
     con,
     "CREATE TABLE coverage (
       ID TEXT NOT NULL,
+      path INTEGER NOT NULL DEFAULT 1,
+      scaffold INTEGER NOT NULL DEFAULT 1,
       mean_depth REAL,
       min_depth INTEGER,
       max_depth INTEGER,
       depths TEXT,
       time_stamp INTEGER,
-      PRIMARY KEY (ID)
+      PRIMARY KEY (ID, path, scaffold)
     );"
   )
 
@@ -436,12 +438,14 @@ new_db <- function(
   # assembly_backup (original pre-trim state so a trim can be undone) ----
   DBI::dbExecute(con, ASSEMBLY_BACKUP_DDL)
 
-  # annotations (nrDNA feature model: 18S/ITS1/5.8S/ITS2/28S) ----
+  # annotations (nrDNA feature model per assembly unit) ----
   # status/flags are filled by curation (curate_one); tool/edited by annotation.
   DBI::dbExecute(
     con,
     "CREATE TABLE annotations (
       ID TEXT NOT NULL,
+      path INTEGER NOT NULL DEFAULT 1,
+      scaffold INTEGER NOT NULL DEFAULT 1,
       element TEXT NOT NULL,
       type TEXT,
       start INTEGER,
@@ -455,17 +459,20 @@ new_db <- function(
       edited INTEGER,
       notes TEXT,
       time_stamp INTEGER,
-      PRIMARY KEY (ID, element)
+      PRIMARY KEY (ID, path, scaffold, element)
     );"
   )
 
-  # annotate (per-sample annotation + curation summary) ----
-  # n_flags / annotate_notes are filled by curation; curate_opts selects the
-  # per-clade ruleset (see curate_opts table).
+  # annotate (per-unit annotation + curation summary) ----
+  # One row per assembly unit (ID, path, scaffold); seeded per unit by
+  # load_assemblies() after assembly. n_flags / annotate_notes filled by curation;
+  # curate_opts selects the per-clade ruleset (see curate_opts table).
   DBI::dbExecute(
     con,
     "CREATE TABLE annotate (
       ID TEXT NOT NULL,
+      path INTEGER NOT NULL DEFAULT 1,
+      scaffold INTEGER NOT NULL DEFAULT 1,
       annotate_switch INTEGER,
       annotate_lock INTEGER,
       n_features INTEGER,
@@ -478,15 +485,19 @@ new_db <- function(
       reviewed TEXT,
       problematic TEXT,
       partial TEXT,
+      export_group TEXT,
       time_stamp INTEGER,
-      PRIMARY KEY (ID)
+      PRIMARY KEY (ID, path, scaffold)
     );"
   )
+  # Seed a placeholder unit (1,1) per sample; load_assemblies() fills the real
+  # per-scaffold units once assembly has produced them.
   dplyr::tbl(con, "annotate") |>
     dplyr::rows_upsert(
-      data.frame(ID = mapping$ID, annotate_switch = 1L, annotate_lock = 0L,
+      data.frame(ID = mapping$ID, path = 1L, scaffold = 1L,
+        annotate_switch = 1L, annotate_lock = 0L,
         annotate_opts = "default", curate_opts = "default", reviewed = "no"),
-      in_place = TRUE, copy = TRUE, by = "ID"
+      in_place = TRUE, copy = TRUE, by = c("ID", "path", "scaffold")
     )
 
   # annotate_opts (barrnap + ITSx settings) ----

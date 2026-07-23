@@ -5,19 +5,21 @@
 
 #' Current project-DB schema version. Bump when adding a migration step below.
 #' @noRd
-RIBOPILOT_SCHEMA_VERSION <- 6L
+RIBOPILOT_SCHEMA_VERSION <- 7L
 
 #' DDL for the assembly_backup table (original pre-trim state, for undo/restore).
 #' Shared by new_db() and the v6 migration so both agree on the schema.
 #' @noRd
 ASSEMBLY_BACKUP_DDL <- "CREATE TABLE IF NOT EXISTS assembly_backup (
   ID TEXT NOT NULL,
+  path INTEGER NOT NULL DEFAULT 1,
+  scaffold INTEGER NOT NULL DEFAULT 1,
   sequence TEXT,
   length INTEGER,
   annotations TEXT,
   coverage TEXT,
   time_stamp INTEGER,
-  PRIMARY KEY (ID)
+  PRIMARY KEY (ID, path, scaffold)
 );"
 
 #' The pre-v4 restrictive remote-BLAST entrez_query.
@@ -151,6 +153,74 @@ migrate_db <- function(con) {
 
   # --- schema v6: assembly_backup (original pre-trim state, for restore) ---
   if (!has_tbl("assembly_backup")) DBI::dbExecute(con, ASSEMBLY_BACKUP_DDL)
+
+  # --- schema v7: per-(ID,path,scaffold) assembly units (drop the stitch model) ---
+  # annotate/annotations/coverage move from per-sample to per-unit. Existing
+  # stitch-based annotations + coverage are invalid under the per-scaffold model
+  # (their coords are on the stitched sequence, not a single scaffold), so they
+  # are cleared and annotation is re-queued (annotate_switch = 1).
+  if (has_tbl("annotate") && !has_col("annotate", "path")) {
+    DBI::dbExecute(con, "CREATE TABLE annotate_new (
+        ID TEXT NOT NULL, path INTEGER NOT NULL DEFAULT 1, scaffold INTEGER NOT NULL DEFAULT 1,
+        annotate_switch INTEGER, annotate_lock INTEGER, n_features INTEGER, missing TEXT,
+        chimeric INTEGER, annotate_opts TEXT, curate_opts TEXT, n_flags INTEGER,
+        annotate_notes TEXT, reviewed TEXT, problematic TEXT, partial TEXT,
+        export_group TEXT, time_stamp INTEGER, PRIMARY KEY (ID, path, scaffold));")
+    if (has_tbl("assemblies")) {
+      DBI::dbExecute(con,
+        "INSERT OR IGNORE INTO annotate_new
+           (ID, path, scaffold, annotate_switch, annotate_lock, annotate_opts, curate_opts, reviewed)
+         SELECT a.ID, a.path, a.scaffold, 1, 0,
+                COALESCE(o.annotate_opts,'default'), COALESCE(o.curate_opts,'default'), 'no'
+         FROM assemblies a LEFT JOIN annotate o ON o.ID = a.ID
+         WHERE COALESCE(a.ignore, 0) = 0;")
+    }
+    # samples with no (non-ignored) assemblies keep a placeholder (1,1) unit
+    DBI::dbExecute(con,
+      "INSERT OR IGNORE INTO annotate_new
+         (ID, path, scaffold, annotate_switch, annotate_lock, annotate_opts, curate_opts, reviewed)
+       SELECT o.ID, 1, 1, 1, 0,
+              COALESCE(o.annotate_opts,'default'), COALESCE(o.curate_opts,'default'), 'no'
+       FROM annotate o;")
+    if (has_col("samples", "export_group")) {
+      DBI::dbExecute(con,
+        "UPDATE annotate_new SET export_group =
+           (SELECT s.export_group FROM samples s WHERE s.ID = annotate_new.ID)
+         WHERE EXISTS (SELECT 1 FROM samples s WHERE s.ID = annotate_new.ID
+                       AND TRIM(COALESCE(s.export_group,'')) != '');")
+    }
+    DBI::dbExecute(con, "DROP TABLE annotate;")
+    DBI::dbExecute(con, "ALTER TABLE annotate_new RENAME TO annotate;")
+  }
+  if (has_tbl("annotations") && !has_col("annotations", "path")) {
+    DBI::dbExecute(con, "DROP TABLE annotations;")
+    DBI::dbExecute(con, "CREATE TABLE annotations (
+        ID TEXT NOT NULL, path INTEGER NOT NULL DEFAULT 1, scaffold INTEGER NOT NULL DEFAULT 1,
+        element TEXT NOT NULL, type TEXT, start INTEGER, stop INTEGER, length INTEGER, strand TEXT,
+        model_coverage REAL, tool TEXT, status TEXT, flags TEXT, edited INTEGER, notes TEXT,
+        time_stamp INTEGER, PRIMARY KEY (ID, path, scaffold, element));")
+    if (has_tbl("annotate")) DBI::dbExecute(con, "UPDATE annotate SET annotate_switch = 1;")
+    # The GenBank screen + reference alignment were computed on the (now invalid)
+    # stitched sequence and keyed per sample; clear them so curation does not
+    # mis-attribute one sample-level hit to every scaffold unit. They are
+    # repopulated per unit by the (re-added) per-scaffold BLAST step.
+    for (t in c("blast_screen", "blast_ref_alignment", "blast_ref_candidates")) {
+      if (has_tbl(t)) DBI::dbExecute(con, sprintf("DELETE FROM %s;", t))
+    }
+  }
+  if (has_tbl("coverage") && !has_col("coverage", "path")) {
+    DBI::dbExecute(con, "DROP TABLE coverage;")
+    DBI::dbExecute(con, "CREATE TABLE coverage (
+        ID TEXT NOT NULL, path INTEGER NOT NULL DEFAULT 1, scaffold INTEGER NOT NULL DEFAULT 1,
+        mean_depth REAL, min_depth INTEGER, max_depth INTEGER, depths TEXT, time_stamp INTEGER,
+        PRIMARY KEY (ID, path, scaffold));")
+  }
+  # assembly_backup (trim undo state) becomes per-unit; it is transient, so just
+  # rebuild it empty when it predates the unit key.
+  if (has_tbl("assembly_backup") && !has_col("assembly_backup", "path")) {
+    DBI::dbExecute(con, "DROP TABLE assembly_backup;")
+    DBI::dbExecute(con, ASSEMBLY_BACKUP_DDL)
+  }
 
   if (ver < RIBOPILOT_SCHEMA_VERSION) {
     DBI::dbExecute(con, sprintf("PRAGMA user_version = %d", RIBOPILOT_SCHEMA_VERSION))
