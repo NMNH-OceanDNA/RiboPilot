@@ -137,14 +137,94 @@ feature_table_text_con <- function(con, id, force_partial = FALSE) {
   paste(lines, collapse = "\n")
 }
 
+#' Portal-parity submission-risk flags for one export sequence
+#'
+#' NCBI's Submission Portal accepts FASTA only for rRNA-ITS and runs ITSx (stock
+#' parameters) on it, silently removing sequences it judges chimeric, gapped
+#' between ITS regions, or misassembled
+#' (https://submit.ncbi.nlm.nih.gov/help/genbank/#annotation_rRNAITS_faq). This
+#' re-checks each sequence the same way so a curator sees the risk at export
+#' rather than as a rejection. Warn-only: nothing is dropped from the bundle.
+#' @return list(chimeric, gap_in_rdna, misassembly, note); `note` is a
+#'   `;`-joined string of the flags that fired ("" when clean).
+#' @noRd
+submission_risks <- function(con, id) {
+  chim <- isTRUE(DBI::dbGetQuery(con,
+    "SELECT chimeric FROM annotate WHERE ID = ?", params = list(id))$chimeric[1] == 1L)
+  ann <- DBI::dbGetQuery(con,
+    "SELECT element, start, stop FROM annotations WHERE ID = ? ORDER BY start", params = list(id))
+  gap_in_rdna <- FALSE
+  misassembly <- FALSE
+  if (nrow(ann) > 0) {
+    st <- DBI::dbGetQuery(con, "SELECT sequence FROM stitched WHERE ID = ?", params = list(id))
+    seq <- if (nrow(st)) st$sequence[1] else NA_character_
+    gaps <- find_n_runs(seq)
+    if (nrow(gaps) > 0) {
+      # an assembly gap inside the transcribed span is NCBI's "gap between ITS regions"
+      gap_in_rdna <- any(gaps$stop >= min(ann$start) & gaps$start <= max(ann$stop))
+    }
+    # features must run strictly 5'->3' in canonical order and not overlap
+    idx <- match(ann$element, RRNA_ELEMENT_ORDER)
+    misassembly <- any(diff(idx) <= 0, na.rm = TRUE) ||
+      (nrow(ann) > 1 && any(ann$start[-1] <= ann$stop[-nrow(ann)]))
+  }
+  flags <- c(if (chim) "chimeric", if (gap_in_rdna) "gap_in_rDNA", if (misassembly) "misassembly")
+  list(chimeric = chim, gap_in_rdna = gap_in_rdna, misassembly = misassembly,
+    note = paste(flags, collapse = ";"))
+}
+
+#' README text mapping the bundle to NCBI's two submission routes
+#' @noRd
+submission_readme <- function(label) {
+  paste(c(
+    paste0("RiboPilot GenBank submission bundle: ", label),
+    paste0("Generated ", format(Sys.time(), "%Y-%m-%d %H:%M")),
+    "",
+    "HOW NCBI HANDLES rRNA-ITS SUBMISSIONS",
+    "-------------------------------------",
+    "The NCBI Submission Portal (https://submit.ncbi.nlm.nih.gov) accepts FASTA",
+    "ONLY for rRNA-ITS sequences. It runs ITSx (stock parameters, no organism",
+    "tuning) and writes the annotation itself as a SINGLE misc_RNA feature over",
+    "the whole region, e.g. (accession PZ692210):",
+    "",
+    "  misc_RNA  <1..>N",
+    "     /note=\"contains small subunit ribosomal RNA, internal transcribed",
+    "            spacer 1, 5.8S ribosomal RNA, internal transcribed spacer 2,",
+    "            and large subunit ribosomal RNA\"",
+    "",
+    "Per-element annotation is NOT submitted through the Portal, and the .tbl",
+    "feature tables in this bundle are NOT used there.",
+    "",
+    paste0("  -> Portal route: upload ", label, ".fasta only; NCBI annotates for you."),
+    "",
+    "The .tbl / .sbt / table2asn output are for the alternate table2asn / BankIt",
+    "route only, where a feature table IS accepted.",
+    "",
+    "SUBMISSION-RISK CHECKS",
+    "----------------------",
+    "NCBI's ITSx evaluation may silently remove sequences it judges chimeric,",
+    "gapped between ITS regions, or misassembled. RiboPilot re-checks each",
+    paste0("sequence the same way; see the submission_risk column in ", label, "_summary.csv."),
+    "Flagged sequences are still exported (warn-only); review before submitting:",
+    "  chimeric     ITSx flagged mixed origins",
+    "  gap_in_rDNA  an assembly-gap (N-run) falls inside the 18S..28S span",
+    "  misassembly  features overlap or are out of 5'->3' order",
+    ""), collapse = "\n")
+}
+
 #' Per-sample export summary data.frame
+#'
+#' Includes a `submission_risk` column ([submission_risks]) so the CSV and HTML
+#' report both surface portal-parity risk flags.
 #' @noRd
 export_summary_df <- function(con, ids) {
-  DBI::dbGetQuery(con, sprintf(
+  d <- DBI::dbGetQuery(con, sprintf(
     "SELECT s.ID, s.Taxon AS organism, s.export_group, st.reference_accession AS reference,
        st.length, an.n_features, an.missing, an.reviewed, an.partial, an.problematic
      FROM samples s LEFT JOIN stitched st ON s.ID = st.ID LEFT JOIN annotate an ON s.ID = an.ID
      WHERE s.ID IN (%s)", paste(sprintf("'%s'", ids), collapse = ",")))
+  d$submission_risk <- vapply(d$ID, function(id) submission_risks(con, id)$note, character(1))
+  d
 }
 
 #' Inline SVG feature-map for one sample (for the HTML report)
@@ -174,7 +254,7 @@ feature_map_svg <- function(con, id) {
 #' @noRd
 export_report_html <- function(con, ids, out_html, label) {
   smry <- export_summary_df(con, ids)
-  hdr <- c("ID", "organism", "reference", "length", "n_features", "missing", "reviewed")
+  hdr <- c("ID", "organism", "reference", "length", "n_features", "missing", "reviewed", "submission_risk")
   rows <- apply(smry[, intersect(hdr, names(smry)), drop = FALSE], 1, function(r) {
     paste0("<tr>", paste0("<td>", ifelse(is.na(r), "", r), "</td>", collapse = ""), "</tr>")
   })
@@ -286,8 +366,17 @@ export_bundle <- function(path = ".", ids = NULL, group = NULL, out_dir = file.p
       writeLines(marker_pool[[el]], file.path(gdir, "markers", paste0("all_", gsub("[^A-Za-z0-9]", "", el), ".fasta")))
     }
   }
-  # per-sample summary CSV
-  utils::write.csv(export_summary_df(con, ids), file.path(gdir, paste0(label, "_summary.csv")), row.names = FALSE)
+  # per-sample summary CSV (+ warn-only portal-parity submission-risk gate)
+  smry <- export_summary_df(con, ids)
+  risky <- which(nzchar(smry$submission_risk))
+  if (length(risky) > 0) {
+    warning("Submission-risk flags on ", length(risky), " of ", nrow(smry),
+      " sample(s) (still exported; see submission_risk column): ",
+      paste(sprintf("%s[%s]", smry$ID[risky], smry$submission_risk[risky]), collapse = ", "),
+      call. = FALSE)
+  }
+  utils::write.csv(smry, file.path(gdir, paste0(label, "_summary.csv")), row.names = FALSE)
+  writeLines(submission_readme(label), file.path(gdir, "README_SUBMISSION.txt"))
   # HTML report
   if (isTRUE(report)) {
     tryCatch(export_report_html(con, ids, file.path(gdir, paste0(label, "_report.html")), label),
@@ -310,7 +399,9 @@ export_bundle <- function(path = ".", ids = NULL, group = NULL, out_dir = file.p
     system2("table2asn", args, stdout = TRUE, stderr = TRUE)
   }
 
-  message("Exported ", length(ids), " sample(s) to ", gdir)
+  message("Exported ", length(ids), " sample(s) to ", gdir,
+    "\n  GenBank Portal takes FASTA only: upload ", label,
+    ".fasta; NCBI auto-annotates the rRNA-ITS region (see README_SUBMISSION.txt).")
   if (isTRUE(zip)) {
     zf <- paste0(gdir, ".zip")
     old <- setwd(out_dir)
