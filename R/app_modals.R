@@ -75,9 +75,12 @@ rp_details <- function(summary, ..., open = TRUE) {
   d
 }
 
-annotate_modal <- function(id) {
+annotate_modal <- function(id, path = 1L, scaffold = 1L) {
+  n_units <- tryCatch(app_query("SELECT COUNT(*) n FROM annotate WHERE ID = ?", params = list(id))$n[1],
+    error = function(e) 1L)
+  unit_lbl <- if (isTRUE(n_units > 1)) sprintf(" [path %s / scaffold %s]", path, scaffold) else ""
   modalDialog(
-    title = paste0("Annotate - ", id),
+    title = paste0("Annotate - ", id, unit_lbl),
     size = "l", easyClose = FALSE,
     footer = tagList(
       actionButton("mark_reviewed", "Mark reviewed", class = "btn-sm"),
@@ -339,13 +342,14 @@ tint_colors <- function(cols, f = 0.80) {
   stats::setNames(grDevices::rgb(m[1, ], m[2, ], m[3, ], maxColorValue = 255), names(cols))
 }
 
-#' Read-coverage track for a sample, with feature regions shaded
+#' Read-coverage track for one assembly unit, with feature regions shaded
 #' @noRd
-plot_coverage <- function(id) {
+plot_coverage <- function(id, path = 1L, scaffold = 1L) {
   if (is.null(id)) {
     return(NULL)
   }
-  cov <- app_query("SELECT depths FROM coverage WHERE ID = ?", params = list(id))
+  cov <- app_query("SELECT depths FROM coverage WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(id, path, scaffold))
   if (nrow(cov) == 0 || is.na(cov$depths[1]) || !nzchar(cov$depths[1])) {
     return(ggplot2::ggplot() +
       ggplot2::annotate("text", 0, 0, label = "no coverage data (run WF1)") +
@@ -353,8 +357,8 @@ plot_coverage <- function(id) {
   }
   dep <- as.numeric(strsplit(cov$depths[1], ",")[[1]])
   df <- data.frame(pos = seq_along(dep), depth = dep)
-  feats <- app_query("SELECT element, start, stop FROM annotations WHERE ID = ? ORDER BY start",
-    params = list(id))
+  feats <- app_query("SELECT element, start, stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
+    params = list(id, path, scaffold))
   ymax <- max(df$depth, 1, na.rm = TRUE)
   dark <- darken_colors(RRNA_ELEMENT_COLORS)
   g <- ggplot2::ggplot(df, ggplot2::aes(pos, depth))
@@ -387,8 +391,8 @@ plot_coverage <- function(id) {
 #' Reuses [plot_coverage()] and overlays the trim window: the flanks that would
 #' be cut are greyed out and the two boundaries drawn as dashed lines.
 #' @noRd
-plot_trim <- function(id, from = NA, to = NA) {
-  g <- plot_coverage(id)
+plot_trim <- function(id, path = 1L, scaffold = 1L, from = NA, to = NA) {
+  g <- plot_coverage(id, path, scaffold)
   if (is.null(g)) {
     return(NULL)
   }
