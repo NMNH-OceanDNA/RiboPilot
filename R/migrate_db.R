@@ -5,7 +5,7 @@
 
 #' Current project-DB schema version. Bump when adding a migration step below.
 #' @noRd
-RIBOPILOT_SCHEMA_VERSION <- 7L
+RIBOPILOT_SCHEMA_VERSION <- 8L
 
 #' DDL for the assembly_backup table (original pre-trim state, for undo/restore).
 #' Shared by new_db() and the v6 migration so both agree on the schema.
@@ -220,6 +220,32 @@ migrate_db <- function(con) {
   if (has_tbl("assembly_backup") && !has_col("assembly_backup", "path")) {
     DBI::dbExecute(con, "DROP TABLE assembly_backup;")
     DBI::dbExecute(con, ASSEMBLY_BACKUP_DDL)
+  }
+
+  # --- schema v8: per-unit GenBank BLAST reference tables (rebuild empty) ---
+  # blast_ref_candidates / blast_screen / blast_ref_alignment move to
+  # per-(ID,path,scaffold). v7 already cleared them, so recreate with the new keys.
+  if (has_tbl("blast_ref_candidates") && !has_col("blast_ref_candidates", "path")) {
+    DBI::dbExecute(con, "DROP TABLE blast_ref_candidates;")
+    DBI::dbExecute(con, "CREATE TABLE blast_ref_candidates (
+        ID TEXT NOT NULL, path INTEGER NOT NULL DEFAULT 1, scaffold INTEGER NOT NULL DEFAULT 1,
+        rank INTEGER NOT NULL, accession TEXT, species TEXT, title TEXT, pident REAL, qcovs REAL,
+        evalue REAL, time_stamp INTEGER, PRIMARY KEY (ID, path, scaffold, rank));")
+  }
+  if (has_tbl("blast_screen") && !has_col("blast_screen", "path")) {
+    DBI::dbExecute(con, "DROP TABLE blast_screen;")
+    DBI::dbExecute(con, "CREATE TABLE blast_screen (
+        ID TEXT NOT NULL, path INTEGER NOT NULL DEFAULT 1, scaffold INTEGER NOT NULL DEFAULT 1,
+        accession TEXT, title TEXT, species TEXT, staxid INTEGER, lineage TEXT, pident REAL, qcovs REAL,
+        evalue REAL, is_nuclear_rrna INTEGER, time_stamp INTEGER, PRIMARY KEY (ID, path, scaffold));")
+  }
+  if (has_tbl("blast_ref_alignment") && !has_col("blast_ref_alignment", "path")) {
+    DBI::dbExecute(con, "DROP TABLE blast_ref_alignment;")
+    DBI::dbExecute(con, "CREATE TABLE blast_ref_alignment (
+        ID TEXT NOT NULL, path INTEGER NOT NULL DEFAULT 1, scaffold INTEGER NOT NULL DEFAULT 1,
+        accession TEXT NOT NULL, element TEXT NOT NULL, pid REAL, aln_cov REAL, aln_len INTEGER,
+        sample_aln TEXT, ref_aln TEXT, time_stamp INTEGER,
+        PRIMARY KEY (ID, path, scaffold, accession, element));")
   }
 
   if (ver < RIBOPILOT_SCHEMA_VERSION) {

@@ -315,11 +315,13 @@ new_db <- function(
     );"
   )
 
-  # blast_ref_candidates (ranked remote-GenBank hits per sample) ----
+  # blast_ref_candidates (ranked remote-GenBank hits per assembly unit) ----
   DBI::dbExecute(
     con,
     "CREATE TABLE blast_ref_candidates (
       ID TEXT NOT NULL,
+      path INTEGER NOT NULL DEFAULT 1,
+      scaffold INTEGER NOT NULL DEFAULT 1,
       rank INTEGER NOT NULL,
       accession TEXT,
       species TEXT,
@@ -328,7 +330,7 @@ new_db <- function(
       qcovs REAL,
       evalue REAL,
       time_stamp INTEGER,
-      PRIMARY KEY (ID, rank)
+      PRIMARY KEY (ID, path, scaffold, rank)
     );"
   )
 
@@ -341,6 +343,8 @@ new_db <- function(
     con,
     "CREATE TABLE blast_screen (
       ID TEXT NOT NULL,
+      path INTEGER NOT NULL DEFAULT 1,
+      scaffold INTEGER NOT NULL DEFAULT 1,
       accession TEXT,
       title TEXT,
       species TEXT,
@@ -351,7 +355,7 @@ new_db <- function(
       evalue REAL,
       is_nuclear_rrna INTEGER,
       time_stamp INTEGER,
-      PRIMARY KEY (ID)
+      PRIMARY KEY (ID, path, scaffold)
     );"
   )
 
@@ -391,6 +395,8 @@ new_db <- function(
     con,
     "CREATE TABLE blast_ref_alignment (
       ID TEXT NOT NULL,
+      path INTEGER NOT NULL DEFAULT 1,
+      scaffold INTEGER NOT NULL DEFAULT 1,
       accession TEXT NOT NULL,
       element TEXT NOT NULL,
       pid REAL,
@@ -399,7 +405,7 @@ new_db <- function(
       sample_aln TEXT,
       ref_aln TEXT,
       time_stamp INTEGER,
-      PRIMARY KEY (ID, accession, element)
+      PRIMARY KEY (ID, path, scaffold, accession, element)
     );"
   )
 
