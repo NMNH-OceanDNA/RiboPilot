@@ -98,8 +98,12 @@ server):
 1.  **[R](https://www.r-project.org/)** (version 4.4.0 or newer), the
     language RiboPilot is written in. You will type a few short commands
     into R, but you do not need to know R.
-2.  **[Nextflow](https://www.nextflow.io/docs/latest/install.html)**,
-    which runs the heavy analysis steps.
+2.  **[Nextflow](https://www.nextflow.io/docs/latest/install.html)**
+    (version 24.10.x through 25.10.x), which runs the heavy analysis
+    steps. RiboPilot refuses to load on an older Nextflow and prompts you
+    to update; on a newer, unverified Nextflow it automatically pins runs
+    to a supported version via `NXF_VER` (the `conda` environment below
+    already installs a compatible one).
 3.  **The bioinformatics tools** the pipeline uses. The easiest way to
     get all of them at once is
     [conda](https://docs.conda.io/projects/miniconda/en/latest/), a tool

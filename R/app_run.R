@@ -36,7 +36,9 @@ build_submit_script <- function(project, wf, resume = TRUE, sched = detect_sched
         "#BSUB -M 8000", "#BSUB -o ribopilot.%J.log"),
       character(0))
   }
-  paste(c("#!/bin/bash", hdr, "", sprintf("cd %s", shQuote(project)), cmd, ""),
+  pin <- nf_pin_version()
+  pin_line <- if (is.na(pin)) character(0) else paste0("export NXF_VER=", pin)
+  paste(c("#!/bin/bash", hdr, "", pin_line, sprintf("cd %s", shQuote(project)), cmd, ""),
     collapse = "\n")
 }
 
@@ -70,6 +72,7 @@ run_app <- function(project = getwd(), onStart = NULL, options = list(),
   }
   # upgrade older project DBs to the current schema before the app opens
   migrate_project(project)
+  check_nextflow_version("RiboPilot app")
   if (is.null(launch.browser)) launch.browser <- interactive()
   # Headless = launched without a local browser, i.e. served on a remote host
   # (typically an SSH-tunneled cluster login node). In that case the run modal

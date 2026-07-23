@@ -30,6 +30,7 @@ run_annotate <- function(path = ".", nextflow = "nextflow", work = file.path(pat
   }
   path <- normalizePath(path)
   stopifnot(file.exists(file.path(path, ".sqlite")), file.exists(file.path(path, ".config")))
+  check_nextflow_version("run_annotate", nextflow = nextflow)
 
   if (nf_pending_count(path, "annotate") == 0) {
     message("No samples queued for annotation (set annotate_switch = 1 to (re-)annotate).")
@@ -37,7 +38,7 @@ run_annotate <- function(path = ".", nextflow = "nextflow", work = file.path(pat
   }
   message("Running Nextflow annotation (WF2) — self-contained DB I/O...")
   args <- nf_command(path, "annotate", resume = TRUE, work = work, ribopilot_src = ribopilot_src)
-  nf_cmd <- paste(c(shQuote(nextflow), shQuote(args)), collapse = " ")
+  nf_cmd <- paste0(nxf_ver_prefix(nextflow), paste(c(shQuote(nextflow), shQuote(args)), collapse = " "))
   status <- system2("bash", c("-c", shQuote(paste0("cd ", shQuote(path), " && ", nf_cmd))), wait = TRUE)
   if (status != 0) {
     warning("Nextflow (annotate) exited with status ", status)

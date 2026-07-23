@@ -66,10 +66,11 @@ run_assembly <- function(path = ".", nextflow = "nextflow", work = file.path(pat
   }
   path <- normalizePath(path)
   stopifnot(file.exists(file.path(path, ".sqlite")), file.exists(file.path(path, ".config")))
+  check_nextflow_version("run_assembly", nextflow = nextflow)
 
   message("Running Nextflow assembly (WF1) — self-contained DB I/O...")
   args <- nf_command(path, "assemble", resume = TRUE, work = work, ribopilot_src = ribopilot_src)
-  nf_cmd <- paste(c(shQuote(nextflow), shQuote(args)), collapse = " ")
+  nf_cmd <- paste0(nxf_ver_prefix(nextflow), paste(c(shQuote(nextflow), shQuote(args)), collapse = " "))
   status <- system2("bash", c("-c", shQuote(paste0("cd ", shQuote(path), " && ", nf_cmd))), wait = TRUE)
   if (status != 0) {
     warning("Nextflow exited with status ", status)

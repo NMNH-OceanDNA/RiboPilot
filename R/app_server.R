@@ -562,11 +562,14 @@ app_server <- function(input, output, session) {
     shinyjs::removeClass(id = "rp_gears", class = "paused")
     # -ansi-log forces the redrawing progress board; wide COLUMNS keeps Nextflow
     # from truncating process names so the parser's per-process keys stay stable.
+    nf_env <- c("current", COLUMNS = "500", NXF_ANSI_SUMMARY = "true")
+    nxf_pin <- nf_pin_version()
+    if (!is.na(nxf_pin)) nf_env <- c(nf_env, NXF_VER = nxf_pin)
     p <- processx::process$new("nextflow",
       args = c(nf_command(app_project(), wf_for_mode(), resume = isTRUE(input$nf_resume %||% TRUE)),
         "-ansi-log"),
       stdout = "|", stderr = "|", wd = app_project(),
-      env = c("current", COLUMNS = "500", NXF_ANSI_SUMMARY = "true"))
+      env = nf_env)
     nf_process(p)
   })
 

@@ -7,8 +7,9 @@ channels:
   - conda-forge
   - bioconda
 dependencies:
-  # workflow
-  - nextflow>=23
+  # workflow. Range matches RiboPilot's check_nextflow_version(): >=24.10 is the
+  # tested floor; <26 avoids the unverified Nextflow 26 line.
+  - nextflow>=24.10,<26
   # read QC / trimming
   - fastp
   - fastqc
