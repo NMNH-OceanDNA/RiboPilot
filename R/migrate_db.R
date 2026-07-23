@@ -5,7 +5,7 @@
 
 #' Current project-DB schema version. Bump when adding a migration step below.
 #' @noRd
-RIBOPILOT_SCHEMA_VERSION <- 4L
+RIBOPILOT_SCHEMA_VERSION <- 5L
 
 #' The pre-v4 restrictive remote-BLAST entrez_query.
 #'
@@ -132,6 +132,9 @@ migrate_db <- function(con) {
     DBI::dbExecute(con,
       "UPDATE blast_opts SET max_target_seqs = 50 WHERE COALESCE(max_target_seqs,5) = 5")
   }
+
+  # --- schema v5: taxonomy-stage timestamp on samples ("Last Updated" column) ---
+  add_col("samples", "time_stamp", "INTEGER")
 
   if (ver < RIBOPILOT_SCHEMA_VERSION) {
     DBI::dbExecute(con, sprintf("PRAGMA user_version = %d", RIBOPILOT_SCHEMA_VERSION))

@@ -95,7 +95,8 @@ new_db <- function(
       lineage = NA_character_,
       taxonomy_switch = 1L,
       taxonomy_lock = 0L,
-      export_group = NA_character_
+      export_group = NA_character_,
+      time_stamp = NA_integer_
     )
   glue::glue_sql(
     "CREATE TABLE samples ({cols*}, PRIMARY KEY (ID))",
