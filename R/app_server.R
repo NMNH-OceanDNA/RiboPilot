@@ -121,11 +121,13 @@ app_server <- function(input, output, session) {
       # annotate only shows samples whose assembly is locked (validated)
       app_query(
         "SELECT an.annotate_lock, an.annotate_switch, s.ID, s.Taxon, s.sci_name, s.taxid,
-           st.reference_accession AS reference, an.n_features, an.missing,
+           a.length, an.n_features, an.missing,
+           a.blast_species, a.blast_accession, a.blast_pident, a.blast_qcovs,
            an.n_flags, an.annotate_opts, an.curate_opts, an.reviewed,
-           an.problematic, an.partial, an.time_stamp
+           an.problematic, an.partial, an.time_stamp,
+           'Details' AS details, 'Output' AS output
          FROM samples s JOIN assemble a ON s.ID = a.ID
-           LEFT JOIN annotate an ON s.ID = an.ID LEFT JOIN stitched st ON s.ID = st.ID
+           LEFT JOIN annotate an ON s.ID = an.ID
          WHERE a.assemble_lock = 1")
     }
   })
@@ -137,6 +139,11 @@ app_server <- function(input, output, session) {
     mm <- mode_meta(mode)
     lock_col <- paste0(mm$pfx, "_lock")
     state_col <- paste0(mm$pfx, "_switch")
+
+    # Details/Output icon buttons open the mode's detail modal + the work dirs.
+    det_input <- if (mode == "Annotate") "ann_details" else "asm_details"
+    det_tip <- if (mode == "Annotate") "View annotation details" else "View assembly details"
+    out_input <- if (mode == "Annotate") "ann_output" else "asm_output"
 
     cols <- list(
       ID = reactable::colDef(name = "ID", minWidth = 130, sticky = "left", html = TRUE, cell = rt_link("open_detail")),
@@ -158,9 +165,9 @@ app_server <- function(input, output, session) {
       blast_pident = reactable::colDef(name = "BLAST %ID", width = 90),
       blast_qcovs = reactable::colDef(name = "BLAST Cov", width = 90),
       details = reactable::colDef(name = "", width = 55, align = "center", filterable = FALSE, html = TRUE,
-        cell = rt_icon_link("asm_details", "fa fa-up-right-from-square", "View assembly details")),
+        cell = rt_icon_link(det_input, "fa fa-up-right-from-square", det_tip)),
       output = reactable::colDef(name = "", width = 55, align = "center", filterable = FALSE, html = TRUE,
-        cell = rt_icon_link("asm_output", "fa fa-folder-open", "Work / output directories")),
+        cell = rt_icon_link(out_input, "fa fa-folder-open", "Work / output directories")),
       n_features = reactable::colDef(name = "Features", width = 90, html = TRUE),
       missing = reactable::colDef(name = "Missing", minWidth = 120, html = TRUE, cell = rt_longtext()),
       length = reactable::colDef(name = "Length", width = 90),
@@ -275,6 +282,21 @@ app_server <- function(input, output, session) {
   })
   observeEvent(input$asm_output, {
     i <- suppressWarnings(as.integer(input$asm_output))
+    req(!is.na(i))
+    show_workdirs(samples_data()$ID[i])
+  })
+
+  # ---- Annotate table "Details" / "Output" buttons ----
+  # Rows here are already assembly-locked (table WHERE assemble_lock = 1), so the
+  # detail button can open the annotate modal without re-checking the lock.
+  observeEvent(input$ann_details, {
+    i <- suppressWarnings(as.integer(input$ann_details))
+    req(!is.na(i))
+    id <- samples_data()$ID[i]; sel_id(id)
+    showModal(annotate_modal(id))
+  })
+  observeEvent(input$ann_output, {
+    i <- suppressWarnings(as.integer(input$ann_output))
     req(!is.na(i))
     show_workdirs(samples_data()$ID[i])
   })
