@@ -259,8 +259,8 @@ curate_one <- function(con, id, path = 1L, scaffold = 1L, ruleset = NULL) {
   ref_pid <- NULL
   ref_cov <- NULL
   rp <- tryCatch(DBI::dbGetQuery(con,
-    "SELECT element, pid, aln_cov FROM blast_ref_alignment WHERE ID = ?", params = list(id)),
-    error = function(e) data.frame())
+    "SELECT element, pid, aln_cov FROM blast_ref_alignment WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(id, path, scaffold)), error = function(e) data.frame())
   if (nrow(rp) > 0) {
     ref_pid <- stats::setNames(rp$pid, rp$element)
     if ("aln_cov" %in% names(rp)) ref_cov <- stats::setNames(rp$aln_cov, rp$element)
@@ -270,8 +270,8 @@ curate_one <- function(con, id, path = 1L, scaffold = 1L, ruleset = NULL) {
   # seed DB, so its lineage is host-clade by construction and can never conflict
   # with the sample's -- the check could not fire.
   scr <- tryCatch(DBI::dbGetQuery(con,
-    "SELECT lineage, is_nuclear_rrna FROM blast_screen WHERE ID = ?",
-    params = list(id)), error = function(e) data.frame())
+    "SELECT lineage, is_nuclear_rrna FROM blast_screen WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(id, path, scaffold)), error = function(e) data.frame())
   hit_lineage <- if (nrow(scr) > 0) scr$lineage[1] else NA_character_
   hit_is_nuc <- if (nrow(scr) > 0) as.integer(scr$is_nuclear_rrna[1]) else NA_integer_
 

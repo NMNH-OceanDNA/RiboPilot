@@ -955,9 +955,9 @@ app_server <- function(input, output, session) {
   # reference that has the feature.
   active_msa <- reactive({
     edit_tick()
-    id <- sel_id(); el <- active_feature(); req(id, el)
+    u <- sel_unit(); el <- active_feature(); req(u, el)
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    tryCatch(compute_feature_msa(con, id, el), error = function(e) NULL)
+    tryCatch(compute_feature_msa(con, u$ID, u$path, u$scaffold, el), error = function(e) NULL)
   })
   output$msa_header <- renderUI({
     m <- active_msa()

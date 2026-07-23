@@ -35,15 +35,18 @@ compute_feature_alignment <- function(con, id, element) {
 #' parsed feature for the element). Uses the sample's CURRENT boundaries, so the
 #' view redraws on edits. Returns an aligned DNAStringSet (sample first) or NULL.
 #' @noRd
-compute_feature_msa <- function(con, id, element, max_hits = Inf) {
-  s_seq <- app_query_con(con, "SELECT sequence FROM stitched WHERE ID = ?", id)$sequence
-  sa <- app_query_con(con, "SELECT start, stop FROM annotations WHERE ID = ? AND element = ?", id, element)
+compute_feature_msa <- function(con, id, path = 1L, scaffold = 1L, element, max_hits = Inf) {
+  s_seq <- app_query_con(con, "SELECT sequence FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
+    id, path, scaffold)$sequence
+  sa <- app_query_con(con, "SELECT start, stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?",
+    id, path, scaffold, element)
   if (length(s_seq) == 0 || nrow(sa) == 0) return(NULL)
   s_sub <- substr(s_seq[1], sa$start[1], sa$stop[1])
   if (!nzchar(s_sub)) return(NULL)
 
   cands <- app_query_con(con,
-    "SELECT accession, species FROM blast_ref_candidates WHERE ID = ? ORDER BY rank", id)
+    "SELECT accession, species FROM blast_ref_candidates WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY rank",
+    id, path, scaffold)
   seqs <- c(s_sub); names(seqs) <- paste0("sample|", element)
   for (i in seq_len(nrow(cands))) {
     if (length(seqs) > max_hits) break
@@ -97,22 +100,29 @@ alignment_coverage <- function(sample_aln, sample_len) {
 #' @param id Sample ID.
 #' @return (invisibly) number of element alignments written.
 #' @export
-compute_ref_alignment <- function(con, id) {
+compute_ref_alignment <- function(con, id, path = 1L, scaffold = 1L) {
   ts <- as.integer(Sys.time())
-  DBI::dbExecute(con, "DELETE FROM blast_ref_alignment WHERE ID = ?", params = list(id))
+  path <- as.integer(path); scaffold <- as.integer(scaffold)
+  DBI::dbExecute(con, "DELETE FROM blast_ref_alignment WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(id, path, scaffold))
 
-  acc <- app_query_con(con, "SELECT reference_accession FROM stitched WHERE ID = ?", id)$reference_accession
+  # Reference = the unit's top nuclear-rDNA BLAST candidate.
+  acc <- app_query_con(con,
+    "SELECT accession FROM blast_ref_candidates WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY rank LIMIT 1",
+    id, path, scaffold)$accession
   if (length(acc) == 0 || is.na(acc[1]) || !nzchar(acc[1])) return(invisible(0L))
   acc <- acc[1]
 
-  s_seq <- app_query_con(con, "SELECT sequence FROM stitched WHERE ID = ?", id)$sequence
+  s_seq <- app_query_con(con, "SELECT sequence FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
+    id, path, scaffold)$sequence
   r_seq <- app_query_con(con, "SELECT sequence FROM blast_ref_sequences WHERE accession = ?", acc)$sequence
   if (length(s_seq) == 0 || length(r_seq) == 0 || !nzchar(s_seq[1]) || !nzchar(r_seq[1])) {
     return(invisible(0L))
   }
   s_seq <- s_seq[1]; r_seq <- r_seq[1]
 
-  s_ann <- app_query_con(con, "SELECT element, start, stop FROM annotations WHERE ID = ?", id)
+  s_ann <- app_query_con(con, "SELECT element, start, stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?",
+    id, path, scaffold)
   r_ann <- app_query_con(con, "SELECT element, start, stop, strand FROM blast_ref_annotations WHERE accession = ?", acc)
   if (nrow(s_ann) == 0 || nrow(r_ann) == 0) return(invisible(0L))
 
@@ -133,8 +143,8 @@ compute_ref_alignment <- function(con, id) {
     r_aln <- as.character(pwalign_subject(aln))
     pid <- pwalign_pid(aln)
     aln_cov <- alignment_coverage(s_aln, nchar(s_sub))
-    DBI::dbAppendTable(con, "blast_ref_alignment", data.frame(ID = id, accession = acc,
-      element = el, pid = round(pid, 1), aln_cov = round(aln_cov, 3), aln_len = nchar(s_aln),
+    DBI::dbAppendTable(con, "blast_ref_alignment", data.frame(ID = id, path = path, scaffold = scaffold,
+      accession = acc, element = el, pid = round(pid, 1), aln_cov = round(aln_cov, 3), aln_len = nchar(s_aln),
       sample_aln = s_aln, ref_aln = r_aln, time_stamp = ts, stringsAsFactors = FALSE))
     n <- n + 1L
   }

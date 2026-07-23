@@ -39,17 +39,17 @@ is_nuclear_rrna_title <- function(title) {
 #'   than treats as clean.
 #' @return (invisibly) the ranked candidate data.frame.
 #' @export
-parse_blast_candidates <- function(con, id, hits_file, taxdump_dir = NULL) {
+parse_blast_candidates <- function(con, id, path = 1L, scaffold = 1L, hits_file, taxdump_dir = NULL) {
   ts <- as.integer(Sys.time())
-  DBI::dbExecute(con, "DELETE FROM blast_ref_candidates WHERE ID = ?", params = list(id))
-  DBI::dbExecute(con, "DELETE FROM blast_screen WHERE ID = ?", params = list(id))
+  path <- as.integer(path); scaffold <- as.integer(scaffold)
+  DBI::dbExecute(con, "DELETE FROM blast_ref_candidates WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(id, path, scaffold))
+  DBI::dbExecute(con, "DELETE FROM blast_screen WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(id, path, scaffold))
 
   lines <- if (file.exists(hits_file)) readLines(hits_file, warn = FALSE) else character(0)
   lines <- lines[nzchar(trimws(lines))]
   if (length(lines) == 0 || any(grepl("NO_SIGNIFICANT_HITS", lines))) {
-    DBI::dbExecute(con,
-      "UPDATE assemble SET assemble_notes = TRIM(COALESCE(assemble_notes,'') || ' [blast] no significant GenBank hits') WHERE ID = ?",
-      params = list(id))
     return(invisible(data.frame()))
   }
 
@@ -77,19 +77,16 @@ parse_blast_candidates <- function(con, id, hits_file, taxdump_dir = NULL) {
   p <- p[order(-p$score), ]
 
   # --- contamination screen: top hit over everything, before any filtering ---
-  write_blast_screen(con, id, p[1, ], taxdump_dir = taxdump_dir, ts = ts)
+  write_blast_screen(con, id, path, scaffold, p[1, ], taxdump_dir = taxdump_dir, ts = ts)
 
   # --- reference panel: nuclear rDNA only ---
   ref <- p[is_nuclear_rrna_title(p$title), , drop = FALSE]
   if (nrow(ref) == 0) {
-    DBI::dbExecute(con,
-      "UPDATE assemble SET assemble_notes = TRIM(COALESCE(assemble_notes,'') || ' [blast] no nuclear rDNA hits among GenBank matches') WHERE ID = ?",
-      params = list(id))
     return(invisible(data.frame()))
   }
   ref$rank <- seq_len(nrow(ref))
 
-  df <- data.frame(ID = id, rank = ref$rank, accession = ref$accession,
+  df <- data.frame(ID = id, path = path, scaffold = scaffold, rank = ref$rank, accession = ref$accession,
     species = ref$species, title = ref$title, pident = ref$pident,
     qcovs = ref$qcovs, evalue = ref$evalue, time_stamp = ts,
     stringsAsFactors = FALSE)
@@ -97,11 +94,9 @@ parse_blast_candidates <- function(con, id, hits_file, taxdump_dir = NULL) {
 
   top <- ref[1, ]
   DBI::dbExecute(con,
-    "UPDATE assemble SET blast_accession = ?, blast_species = ?, blast_pident = ?, blast_qcovs = ?, blast_evalue = ? WHERE ID = ?",
-    params = list(top$accession, top$species, top$pident, top$qcovs, top$evalue, id))
-  DBI::dbExecute(con,
-    "UPDATE stitched SET reference_accession = ? WHERE ID = ?",
-    params = list(top$accession, id))
+    "UPDATE assemblies SET blast_accession = ?, blast_species = ?, blast_pident = ?, blast_qcovs = ?, blast_evalue = ?
+     WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(top$accession, top$species, top$pident, top$qcovs, top$evalue, id, path, scaffold))
   invisible(df)
 }
 
@@ -111,7 +106,7 @@ parse_blast_candidates <- function(con, id, hits_file, taxdump_dir = NULL) {
 #' falling back to the parsed species name. Leaves `lineage` NA when neither
 #' works; curation treats an unknown lineage as a flag, not as clean.
 #' @noRd
-write_blast_screen <- function(con, id, top, taxdump_dir = NULL, ts = as.integer(Sys.time())) {
+write_blast_screen <- function(con, id, path, scaffold, top, taxdump_dir = NULL, ts = as.integer(Sys.time())) {
   lin <- NA_character_
   if (!is.na(top$staxid) && have_taxdump(taxdump_dir)) {
     lin <- tryCatch({
@@ -129,7 +124,8 @@ write_blast_screen <- function(con, id, top, taxdump_dir = NULL, ts = as.integer
       error = function(e) NA_character_)
   }
   DBI::dbAppendTable(con, "blast_screen", data.frame(
-    ID = id, accession = top$accession, title = top$title, species = top$species,
+    ID = id, path = as.integer(path), scaffold = as.integer(scaffold),
+    accession = top$accession, title = top$title, species = top$species,
     staxid = top$staxid, lineage = lin %||% NA_character_,
     pident = top$pident, qcovs = top$qcovs, evalue = top$evalue,
     is_nuclear_rrna = as.integer(is_nuclear_rrna_title(top$title)),
