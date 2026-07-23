@@ -433,6 +433,9 @@ new_db <- function(
     );"
   )
 
+  # assembly_backup (original pre-trim state so a trim can be undone) ----
+  DBI::dbExecute(con, ASSEMBLY_BACKUP_DDL)
+
   # annotations (nrDNA feature model: 18S/ITS1/5.8S/ITS2/28S) ----
   # status/flags are filled by curation (curate_one); tool/edited by annotation.
   DBI::dbExecute(

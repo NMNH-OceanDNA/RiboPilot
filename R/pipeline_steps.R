@@ -74,6 +74,9 @@ stitch_one <- function(con, id, fasta_out = NULL) {
     "INSERT INTO stitched (ID, path, sequence, length, reference_accession, n_gaps, n_redundant, time_stamp)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     params = list(id, st$path, st$seq, nchar(st$seq), st$ref_acc, st$n_gaps, st$n_redundant, ts))
+  # A re-stitch is a fresh assembly; any pre-trim backup for this sample is stale.
+  tryCatch(DBI::dbExecute(con, "DELETE FROM assembly_backup WHERE ID = ?", params = list(id)),
+    error = function(e) NULL)
   if (!is.null(fasta_out)) {
     writeLines(c(paste0(">", id), st$seq), fasta_out)
   }
@@ -326,6 +329,20 @@ trim_assembly <- function(con, id, from, to) {
   n <- nchar(s$sequence[1])
   from <- max(1L, as.integer(from)); to <- min(n, as.integer(to))
   if (from > to) stop("Invalid trim range.", call. = FALSE)
+
+  # Snapshot the original (pre-trim) state once, so [restore_assembly()] can undo
+  # this. Only the first trim writes it, so restore always returns the full assembly.
+  ensure_assembly_backup(con)
+  if (DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM assembly_backup WHERE ID = ?", params = list(id))$n == 0) {
+    ann0 <- DBI::dbGetQuery(con, "SELECT * FROM annotations WHERE ID = ?", params = list(id))
+    cov0 <- DBI::dbGetQuery(con, "SELECT depths FROM coverage WHERE ID = ?", params = list(id))
+    DBI::dbExecute(con,
+      "INSERT INTO assembly_backup (ID, sequence, length, annotations, coverage, time_stamp)
+       VALUES (?, ?, ?, ?, ?, ?)",
+      params = list(id, s$sequence[1], n,
+        as.character(jsonlite::toJSON(ann0, dataframe = "rows", na = "null")),
+        if (nrow(cov0)) cov0$depths[1] else NA_character_, as.integer(Sys.time())))
+  }
   new_seq <- substr(s$sequence[1], from, to); new_len <- nchar(new_seq)
 
   DBI::dbExecute(con, "UPDATE stitched SET sequence = ?, length = ? WHERE ID = ?",
@@ -354,4 +371,47 @@ trim_assembly <- function(con, id, from, to) {
       params = list(paste(dep, collapse = ","), mean(dep), min(dep), max(dep), id))
   }
   invisible(new_len)
+}
+
+#' Ensure the assembly_backup table exists (idempotent).
+#' @noRd
+ensure_assembly_backup <- function(con) {
+  DBI::dbExecute(con, ASSEMBLY_BACKUP_DDL)
+}
+
+#' Restore a sample's assembly to its original (pre-trim) state
+#'
+#' Reverses one or more [trim_assembly()] calls by writing back the snapshot
+#' taken at the first trim: the full-length sequence, the original annotation
+#' rows, and the untrimmed coverage track. The snapshot is left in place so a
+#' fresh trim + restore returns to the same original.
+#' @param con Open project DB connection. @param id Sample ID.
+#' @return (invisibly) the restored length.
+#' @noRd
+restore_assembly <- function(con, id) {
+  ensure_assembly_backup(con)
+  bak <- DBI::dbGetQuery(con,
+    "SELECT sequence, length, annotations, coverage FROM assembly_backup WHERE ID = ?", params = list(id))
+  if (nrow(bak) == 0 || is.na(bak$sequence[1])) {
+    stop("No original assembly on record for ", id, " (nothing to restore).", call. = FALSE)
+  }
+  DBI::dbExecute(con, "UPDATE stitched SET sequence = ?, length = ? WHERE ID = ?",
+    params = list(bak$sequence[1], bak$length[1], id))
+
+  DBI::dbExecute(con, "DELETE FROM annotations WHERE ID = ?", params = list(id))
+  if (!is.na(bak$annotations[1]) && nzchar(bak$annotations[1])) {
+    ann <- jsonlite::fromJSON(bak$annotations[1])
+    if (is.data.frame(ann) && nrow(ann) > 0) {
+      ann$ID <- id
+      DBI::dbAppendTable(con, "annotations", ann)
+    }
+  }
+
+  if (!is.na(bak$coverage[1]) && nzchar(bak$coverage[1])) {
+    dep <- as.numeric(strsplit(bak$coverage[1], ",")[[1]])
+    DBI::dbExecute(con,
+      "UPDATE coverage SET depths = ?, mean_depth = ?, min_depth = ?, max_depth = ? WHERE ID = ?",
+      params = list(bak$coverage[1], mean(dep), min(dep), max(dep), id))
+  }
+  invisible(bak$length[1])
 }

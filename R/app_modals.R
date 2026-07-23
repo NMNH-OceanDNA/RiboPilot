@@ -52,8 +52,9 @@ annotate_modal <- function(id) {
     div(style = "color:#888; font-size:0.82em; margin-bottom:4px;",
       "Click a feature to make it active for editing + reference alignment below."),
     reactable::reactableOutput("feature_tbl"),
-    div(style = "margin:6px 0;",
-      actionButton("trim_btn", "Trim assembly...", icon = icon("scissors"), class = "btn-sm")),
+    div(style = "margin:6px 0; display:flex; gap:6px;",
+      actionButton("trim_btn", "Trim assembly...", icon = icon("scissors"), class = "btn-sm"),
+      actionButton("restore_btn", "Restore assembly", icon = icon("rotate-left"), class = "btn-sm")),
     tags$hr(style = "margin:10px 0;"),
 
     # ---- collapsible detail panels (coverage above synteny, per request) ----
@@ -164,22 +165,30 @@ run_modal <- function(mode, n, headless = FALSE, sched = NULL, script = "") {
 #' @noRd
 trim_modal <- function(n, a_from, a_to) {
   modalDialog(
-    title = "Trim assembly", size = "m",
+    title = "Trim assembly", size = "l",
     tags$p(class = "text-muted", style = "font-size:0.85em;",
       sprintf("Current assembly length: %d bp. Annotated span: %d..%d bp.", n, a_from, a_to)),
     shinyWidgets::prettyRadioButtons("trim_mode", "Trim to:",
       choices = c("Annotated feature boundaries" = "annotated", "Custom range" = "custom"),
-      selected = "annotated", status = "primary"),
+      selected = "annotated", status = "primary", inline = TRUE),
+    tags$p(class = "text-muted", style = "font-size:0.8em; margin:2px 0;",
+      "Drag across the plot to set the kept window (grey = trimmed); drag the box ",
+      "edges to adjust. The From/To values track your selection."),
+    plotOutput("trim_plot", height = "230px",
+      brush = brushOpts(id = "trim_brush", direction = "x", resetOnNew = FALSE,
+        fill = "#4C9BE8", opacity = 0.15)),
     conditionalPanel("input.trim_mode == 'custom'",
-      div(style = "display:flex; gap:1em;",
+      div(style = "display:flex; gap:1em; margin-top:6px;",
         numericInput("trim_from", "From (bp)", value = a_from, min = 1, max = n),
         numericInput("trim_to", "To (bp)", value = a_to, min = 1, max = n))),
     opts_help("Trimming cuts the flanks off the stitched assembly and shifts every ",
       "feature coordinate + the coverage track to match. Features that fall entirely ",
-      "outside the kept range are removed."),
+      "outside the kept range are removed. Use \"Restore assembly\" to undo."),
     footer = tagList(
       actionButton("trim_apply", "Trim", icon = icon("scissors"), class = "btn-danger btn-sm"),
-      modalButton("Cancel"))
+      # actionButton (not modalButton) so Cancel reopens the annotate details
+      # modal instead of dropping back to the main Annotate table.
+      actionButton("trim_cancel", "Cancel", class = "btn-sm"))
   )
 }
 
@@ -329,6 +338,28 @@ plot_coverage <- function(id) {
     ggplot2::theme_minimal(base_size = 11) +
     ggplot2::theme(panel.grid.minor = ggplot2::element_blank(),
       plot.margin = ggplot2::margin(14, 6, 6, 6))
+}
+
+#' Coverage + annotation plot for the trim modal, with the kept window marked
+#'
+#' Reuses [plot_coverage()] and overlays the trim window: the flanks that would
+#' be cut are greyed out and the two boundaries drawn as dashed lines.
+#' @noRd
+plot_trim <- function(id, from = NA, to = NA) {
+  g <- plot_coverage(id)
+  if (is.null(g)) {
+    return(NULL)
+  }
+  if (!is.na(from) && !is.na(to) && to >= from) {
+    g <- g +
+      ggplot2::annotate("rect", xmin = -Inf, xmax = from, ymin = -Inf, ymax = Inf,
+        fill = "#5b5b5b", alpha = 0.32) +
+      ggplot2::annotate("rect", xmin = to, xmax = Inf, ymin = -Inf, ymax = Inf,
+        fill = "#5b5b5b", alpha = 0.32) +
+      ggplot2::geom_vline(xintercept = c(from, to), linetype = "dashed",
+        colour = "#111111", linewidth = 0.7)
+  }
+  g
 }
 
 #' gggenes synteny map: the sample's annotations over its BLAST reference's

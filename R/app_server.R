@@ -998,6 +998,36 @@ app_server <- function(input, output, session) {
     a_to <- if (nrow(span) && !is.na(span$b[1])) span$b[1] else s$length[1]
     showModal(trim_modal(s$length[1], a_from, a_to))
   })
+
+  # Interactive trim plot: coverage + features with the kept window shaded. The
+  # window is the annotated span (annotated mode) or the From/To inputs (custom).
+  trim_window <- reactive({
+    id <- sel_id(); req(id)
+    if ((input$trim_mode %||% "annotated") == "annotated") {
+      sp <- app_query("SELECT MIN(start) AS a, MAX(stop) AS b FROM annotations WHERE ID = ?", params = list(id))
+      n <- app_query("SELECT length FROM stitched WHERE ID = ?", params = list(id))$length
+      lo <- if (nrow(sp) && !is.na(sp$a[1])) sp$a[1] else 1L
+      hi <- if (nrow(sp) && !is.na(sp$b[1])) sp$b[1] else if (length(n)) n[1] else NA
+      c(lo, hi)
+    } else {
+      c(suppressWarnings(as.integer(input$trim_from)), suppressWarnings(as.integer(input$trim_to)))
+    }
+  })
+  output$trim_plot <- renderPlot({ edit_tick(); w <- trim_window(); plot_trim(sel_id(), w[1], w[2]) },
+    height = 230)
+  # Dragging a brush over the plot sets the custom window from the x-range.
+  observeEvent(input$trim_brush, {
+    b <- input$trim_brush; id <- sel_id(); req(b, id)
+    n <- app_query("SELECT length FROM stitched WHERE ID = ?", params = list(id))$length
+    n <- if (length(n)) n[1] else NA
+    lo <- max(1L, round(b$xmin)); hi <- round(b$xmax)
+    if (!is.na(n)) hi <- min(n, hi)
+    if (is.na(hi) || hi <= lo) return()
+    shinyWidgets::updatePrettyRadioButtons(session, "trim_mode", selected = "custom")
+    updateNumericInput(session, "trim_from", value = lo)
+    updateNumericInput(session, "trim_to", value = hi)
+  })
+
   observeEvent(input$trim_apply, {
     id <- sel_id(); req(id)
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
@@ -1016,8 +1046,31 @@ app_server <- function(input, output, session) {
       TRUE
     }, error = function(e) { showNotification(conditionMessage(e), type = "error"); FALSE })
     if (isTRUE(ok)) {
-      edit_tick(edit_tick() + 1); refresh(refresh() + 1); removeModal()
+      edit_tick(edit_tick() + 1); refresh(refresh() + 1)
+      showModal(annotate_modal(id))  # back to the details modal, now showing trimmed coords
       showNotification("Assembly trimmed; feature coordinates + coverage shifted.", type = "message")
+    }
+  })
+
+  # Cancel out of the trim modal: return to the annotate details modal.
+  observeEvent(input$trim_cancel, {
+    id <- sel_id(); req(id)
+    showModal(annotate_modal(id))
+  })
+
+  # ---- restore an assembly to its original (pre-trim) length ----
+  observeEvent(input$restore_btn, {
+    id <- sel_id(); req(id)
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    ok <- tryCatch({
+      len <- restore_assembly(con, id)
+      tryCatch(curate_one(con, id), error = function(e) NULL)  # recompute flags for the full assembly
+      len
+    }, error = function(e) { showNotification(conditionMessage(e), type = "warning"); NULL })
+    if (!is.null(ok)) {
+      edit_tick(edit_tick() + 1); refresh(refresh() + 1)
+      showModal(annotate_modal(id))
+      showNotification(paste0("Assembly restored to original length (", ok, " bp)."), type = "message")
     }
   })
 

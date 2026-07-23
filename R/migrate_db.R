@@ -5,7 +5,20 @@
 
 #' Current project-DB schema version. Bump when adding a migration step below.
 #' @noRd
-RIBOPILOT_SCHEMA_VERSION <- 5L
+RIBOPILOT_SCHEMA_VERSION <- 6L
+
+#' DDL for the assembly_backup table (original pre-trim state, for undo/restore).
+#' Shared by new_db() and the v6 migration so both agree on the schema.
+#' @noRd
+ASSEMBLY_BACKUP_DDL <- "CREATE TABLE IF NOT EXISTS assembly_backup (
+  ID TEXT NOT NULL,
+  sequence TEXT,
+  length INTEGER,
+  annotations TEXT,
+  coverage TEXT,
+  time_stamp INTEGER,
+  PRIMARY KEY (ID)
+);"
 
 #' The pre-v4 restrictive remote-BLAST entrez_query.
 #'
@@ -135,6 +148,9 @@ migrate_db <- function(con) {
 
   # --- schema v5: taxonomy-stage timestamp on samples ("Last Updated" column) ---
   add_col("samples", "time_stamp", "INTEGER")
+
+  # --- schema v6: assembly_backup (original pre-trim state, for restore) ---
+  if (!has_tbl("assembly_backup")) DBI::dbExecute(con, ASSEMBLY_BACKUP_DDL)
 
   if (ver < RIBOPILOT_SCHEMA_VERSION) {
     DBI::dbExecute(con, sprintf("PRAGMA user_version = %d", RIBOPILOT_SCHEMA_VERSION))
