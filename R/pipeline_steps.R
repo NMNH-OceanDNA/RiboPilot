@@ -35,7 +35,42 @@ score_one <- function(con, id, out_dir, taxdump_dir = NULL) {
     sample_lineage = lineage %||% NA_character_,
     blast_db = blast_db, taxdump_dir = td, with_staxids = FALSE)
   write_path_scores(con, id, scored)
+  tryCatch(blast_scaffolds_local(con, id, blast_db), error = function(e) NULL)
   invisible(scored)
+}
+
+#' Per-scaffold BLAST (local seed DB) -> assemblies.blast_* best hit
+#'
+#' Gives each assembly unit its own top hit for review (accession / species /
+#' percent identity), so per-scaffold hits are visible without a remote BLAST.
+#' Best-effort: a no-op when blastn / the seed DB is unavailable.
+#' @param con Open DBI connection. @param id Sample ID. @param blast_db BLAST db prefix.
+#' @noRd
+blast_scaffolds_local <- function(con, id, blast_db) {
+  if (is.null(blast_db) || is.na(blast_db) || !nzchar(blast_db)) {
+    return(invisible())
+  }
+  scaf <- DBI::dbGetQuery(con,
+    "SELECT path, scaffold, sequence FROM assemblies WHERE ID = ? ORDER BY path, scaffold", params = list(id))
+  if (nrow(scaf) == 0) {
+    return(invisible())
+  }
+  fa <- tempfile(fileext = ".fasta"); on.exit(unlink(fa), add = TRUE)
+  writeLines(paste0(">", scaf$path, ".", scaf$scaffold, "\n", scaf$sequence), fa)
+  bh <- tryCatch(blast_best_hits(fa, blast_db), error = function(e) data.frame())
+  if (nrow(bh) == 0) {
+    return(invisible())
+  }
+  for (i in seq_len(nrow(bh))) {
+    ps <- strsplit(bh$qseqid[i], "\\.")[[1]]
+    if (length(ps) != 2) next
+    DBI::dbExecute(con,
+      "UPDATE assemblies SET blast_accession = ?, blast_species = ?, blast_pident = ?
+       WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = list(sub("_.*", "", bh$sseqid[i]), sseqid_species(bh$sseqid[i]),
+        round(bh$pident[i], 1), id, as.integer(ps[1]), as.integer(ps[2])))
+  }
+  invisible()
 }
 
 #' Stitch one sample's selected path; write the `stitched` table + return fasta
@@ -91,11 +126,12 @@ stitch_one <- function(con, id, fasta_out = NULL) {
 #' @param positions ITSx positions file (or NULL).
 #' @return (invisibly) the feature data.frame.
 #' @export
-reconcile_one <- function(con, id, gff = NULL, positions = NULL) {
+reconcile_one <- function(con, id, path = 1L, scaffold = 1L, gff = NULL, positions = NULL) {
   # Ensure any columns added after this project was created exist before writing
   # (e.g. annotations.model_coverage); reconcile runs before curate, which also
   # migrates, so an older project would otherwise fail here on the first WF2 run.
   ensure_curate_schema(con)
+  path <- as.integer(path); scaffold <- as.integer(scaffold)
   bar <- if (!is.null(gff) && file.exists(gff)) parse_barrnap(readLines(gff, warn = FALSE)) else data.frame()
   pos_lines <- if (!is.null(positions) && file.exists(positions)) readLines(positions, warn = FALSE) else character(0)
   its <- parse_itsx(pos_lines)
@@ -103,9 +139,10 @@ reconcile_one <- function(con, id, gff = NULL, positions = NULL) {
   chimeric <- as.integer(itsx_is_chimeric(pos_lines))
   ts <- as.integer(Sys.time())
 
-  DBI::dbExecute(con, "DELETE FROM annotations WHERE ID = ?", params = list(id))
+  DBI::dbExecute(con, "DELETE FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(id, path, scaffold))
   if (nrow(feat) > 0) {
-    df <- data.frame(ID = id, element = feat$element, type = feat$type,
+    df <- data.frame(ID = id, path = path, scaffold = scaffold, element = feat$element, type = feat$type,
       start = feat$start, stop = feat$stop, length = feat$length, strand = feat$strand,
       model_coverage = feat$model_cov %||% NA_real_,
       tool = feat$tool, edited = 0L, notes = NA_character_, time_stamp = ts, stringsAsFactors = FALSE)
@@ -113,8 +150,9 @@ reconcile_one <- function(con, id, gff = NULL, positions = NULL) {
   }
   missing <- setdiff(c(RRNA_GENES, RRNA_SPACERS), feat$element)
   DBI::dbExecute(con,
-    "UPDATE annotate SET n_features = ?, missing = ?, chimeric = ?, annotate_switch = 2, time_stamp = ? WHERE ID = ?",
-    params = list(nrow(feat), paste(missing, collapse = ","), chimeric, ts, id))
+    "UPDATE annotate SET n_features = ?, missing = ?, chimeric = ?, annotate_switch = 2, time_stamp = ?
+     WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(nrow(feat), paste(missing, collapse = ","), chimeric, ts, id, path, scaffold))
   invisible(feat)
 }
 
@@ -223,6 +261,16 @@ load_assemblies <- function(con, out_dir, ID) {
     n_dropped <- n_paths_raw - mp
   }
 
+  # Orient each kept scaffold to the sense (5'->3') strand before storing, so
+  # per-scaffold annotation/coverage/export all see plus-strand features. Stitching
+  # used to normalize orientation once per sample; with independent per-scaffold
+  # annotation it must happen per scaffold. No-op (unchanged) when no rRNA anchor
+  # caller is on PATH or the scaffold has no anchors; length is preserved by RC.
+  for (i in seq_len(nrow(df))) {
+    or <- tryCatch(orient_rrna_sense(df$sequence[i]), error = function(e) NULL)
+    if (!is.null(or) && isTRUE(or$flipped)) df$sequence[i] <- or$seq
+  }
+
   # replace this sample's assemblies
   DBI::dbExecute(con, "DELETE FROM assemblies WHERE ID = ?", params = list(ID))
   DBI::dbAppendTable(con, "assemblies", df)
@@ -242,6 +290,31 @@ load_assemblies <- function(con, out_dir, ID) {
     "UPDATE assemble SET paths=?, scaffolds=?, length=?, topology=?,
      assemble_switch=2, assemble_notes=?, time_stamp=? WHERE ID=?",
     params = list(n_paths, n_scaffolds, length_str, topo_str, notes, ts, ID))
+
+  # Seed one annotate unit per non-ignored scaffold, inheriting the sample's opts
+  # from any existing annotate row (the init placeholder or a prior run), then
+  # drop annotate units whose scaffold no longer exists after this (re)assembly.
+  DBI::dbExecute(con,
+    "INSERT OR IGNORE INTO annotate
+       (ID, path, scaffold, annotate_switch, annotate_lock, annotate_opts, curate_opts, reviewed)
+     SELECT a.ID, a.path, a.scaffold, 1, 0,
+            COALESCE(o.annotate_opts,'default'), COALESCE(o.curate_opts,'default'), 'no'
+     FROM assemblies a
+     LEFT JOIN (SELECT annotate_opts, curate_opts FROM annotate WHERE ID = ? LIMIT 1) o
+     WHERE a.ID = ? AND COALESCE(a.ignore,0) = 0",
+    params = list(ID, ID))
+  # Drop annotate units (and their orphaned annotations/coverage) whose scaffold
+  # no longer exists or is now ignored after this (re)assembly.
+  for (tbl in c("annotate", "annotations", "coverage")) {
+    DBI::dbExecute(con, sprintf(
+      "DELETE FROM %s WHERE ID = ? AND NOT EXISTS
+         (SELECT 1 FROM assemblies a WHERE a.ID = %s.ID AND a.path = %s.path
+            AND a.scaffold = %s.scaffold AND COALESCE(a.ignore,0) = 0)",
+      tbl, tbl, tbl, tbl), params = list(ID))
+  }
+  # A (re)assembly invalidates any pre-trim undo snapshots for this sample.
+  tryCatch(DBI::dbExecute(con, "DELETE FROM assembly_backup WHERE ID = ?", params = list(ID)),
+    error = function(e) NULL)
   invisible(nrow(df))
 }
 
@@ -311,64 +384,71 @@ stitch_selected <- function(con, id, seeds_cache) {
     path = p, n_gaps = st$n_gaps, n_redundant = st$n_redundant)
 }
 
-#' Trim a sample's stitched assembly to [from, to] (stitched coordinates),
-#' shifting its annotations and coverage to match. Features that fall entirely
-#' outside the kept range are dropped; overlapping features are clamped. Used by
-#' the Annotate tab's "Trim assembly" control.
+#' Trim one assembly unit (ID,path,scaffold) to [from, to], shifting its
+#' annotations and coverage to match. Features that fall entirely outside the
+#' kept range are dropped; overlapping features are clamped. Used by the Annotate
+#' tab's "Trim assembly" control.
 #'
 #' @param con Open DBI connection.
-#' @param id Sample ID.
-#' @param from,to 1-based inclusive kept range in stitched coordinates.
-#' @return (invisibly) the new stitched length.
+#' @param id,path,scaffold Assembly unit.
+#' @param from,to 1-based inclusive kept range in the unit's coordinates.
+#' @return (invisibly) the new unit length.
 #' @noRd
-trim_assembly <- function(con, id, from, to) {
-  s <- DBI::dbGetQuery(con, "SELECT sequence FROM stitched WHERE ID = ?", params = list(id))
+trim_assembly <- function(con, id, path = 1L, scaffold = 1L, from, to) {
+  path <- as.integer(path); scaffold <- as.integer(scaffold)
+  s <- DBI::dbGetQuery(con, "SELECT sequence FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(id, path, scaffold))
   if (nrow(s) == 0 || is.na(s$sequence[1]) || !nzchar(s$sequence[1])) {
-    stop("No stitched sequence for ", id, call. = FALSE)
+    stop("No sequence for unit ", id, ".", path, ".", scaffold, call. = FALSE)
   }
   n <- nchar(s$sequence[1])
   from <- max(1L, as.integer(from)); to <- min(n, as.integer(to))
   if (from > to) stop("Invalid trim range.", call. = FALSE)
 
-  # Snapshot the original (pre-trim) state once, so [restore_assembly()] can undo
-  # this. Only the first trim writes it, so restore always returns the full assembly.
+  # Snapshot the original (pre-trim) unit state once, so [restore_assembly()] can
+  # undo this. Only the first trim writes it, so restore always returns the full unit.
   ensure_assembly_backup(con)
-  if (DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM assembly_backup WHERE ID = ?", params = list(id))$n == 0) {
-    ann0 <- DBI::dbGetQuery(con, "SELECT * FROM annotations WHERE ID = ?", params = list(id))
-    cov0 <- DBI::dbGetQuery(con, "SELECT depths FROM coverage WHERE ID = ?", params = list(id))
+  if (DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM assembly_backup WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = list(id, path, scaffold))$n == 0) {
+    ann0 <- DBI::dbGetQuery(con, "SELECT * FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = list(id, path, scaffold))
+    cov0 <- DBI::dbGetQuery(con, "SELECT depths FROM coverage WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = list(id, path, scaffold))
     DBI::dbExecute(con,
-      "INSERT INTO assembly_backup (ID, sequence, length, annotations, coverage, time_stamp)
-       VALUES (?, ?, ?, ?, ?, ?)",
-      params = list(id, s$sequence[1], n,
+      "INSERT INTO assembly_backup (ID, path, scaffold, sequence, length, annotations, coverage, time_stamp)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      params = list(id, path, scaffold, s$sequence[1], n,
         as.character(jsonlite::toJSON(ann0, dataframe = "rows", na = "null")),
         if (nrow(cov0)) cov0$depths[1] else NA_character_, as.integer(Sys.time())))
   }
   new_seq <- substr(s$sequence[1], from, to); new_len <- nchar(new_seq)
 
-  DBI::dbExecute(con, "UPDATE stitched SET sequence = ?, length = ? WHERE ID = ?",
-    params = list(new_seq, new_len, id))
+  DBI::dbExecute(con, "UPDATE assemblies SET sequence = ?, length = ?, edited = 1 WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(new_seq, new_len, id, path, scaffold))
 
-  ann <- DBI::dbGetQuery(con, "SELECT element, start, stop FROM annotations WHERE ID = ?", params = list(id))
+  ann <- DBI::dbGetQuery(con, "SELECT element, start, stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(id, path, scaffold))
   for (i in seq_len(nrow(ann))) {
     ns <- ann$start[i] - from + 1; nt <- ann$stop[i] - from + 1
     if (nt < 1 || ns > new_len) {
-      DBI::dbExecute(con, "DELETE FROM annotations WHERE ID = ? AND element = ?",
-        params = list(id, ann$element[i]))
+      DBI::dbExecute(con, "DELETE FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?",
+        params = list(id, path, scaffold, ann$element[i]))
       next
     }
     ns <- max(1L, ns); nt <- min(new_len, nt)
     DBI::dbExecute(con,
-      "UPDATE annotations SET start = ?, stop = ?, length = ?, edited = 1 WHERE ID = ? AND element = ?",
-      params = list(ns, nt, nt - ns + 1, id, ann$element[i]))
+      "UPDATE annotations SET start = ?, stop = ?, length = ?, edited = 1 WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?",
+      params = list(ns, nt, nt - ns + 1, id, path, scaffold, ann$element[i]))
   }
 
-  cov <- DBI::dbGetQuery(con, "SELECT depths FROM coverage WHERE ID = ?", params = list(id))
+  cov <- DBI::dbGetQuery(con, "SELECT depths FROM coverage WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(id, path, scaffold))
   if (nrow(cov) > 0 && !is.na(cov$depths[1]) && nzchar(cov$depths[1])) {
     dep <- as.numeric(strsplit(cov$depths[1], ",")[[1]])
     dep <- dep[from:min(length(dep), to)]
     DBI::dbExecute(con,
-      "UPDATE coverage SET depths = ?, mean_depth = ?, min_depth = ?, max_depth = ? WHERE ID = ?",
-      params = list(paste(dep, collapse = ","), mean(dep), min(dep), max(dep), id))
+      "UPDATE coverage SET depths = ?, mean_depth = ?, min_depth = ?, max_depth = ? WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = list(paste(dep, collapse = ","), mean(dep), min(dep), max(dep), id, path, scaffold))
   }
   invisible(new_len)
 }
@@ -379,30 +459,64 @@ ensure_assembly_backup <- function(con) {
   DBI::dbExecute(con, ASSEMBLY_BACKUP_DDL)
 }
 
+#' Reconcile a unit's annotate row after its assemblies.ignore flag changed
+#'
+#' Ignoring a scaffold drops it from annotation/export, so its annotate unit (and
+#' any annotations/coverage) are removed; un-ignoring re-seeds the annotate unit
+#' and queues it for (re-)annotation. Mirrors MitoPilot's ignore reconciliation.
+#' @param con Open DBI connection. @param id,path,scaffold Assembly unit.
+#' @param ignore New ignore flag (1 = ignored, 0 = kept).
+#' @noRd
+reconcile_ignore_unit <- function(con, id, path, scaffold, ignore) {
+  path <- as.integer(path); scaffold <- as.integer(scaffold)
+  if (isTRUE(as.integer(ignore) == 1L)) {
+    for (t in c("annotate", "annotations", "coverage")) {
+      DBI::dbExecute(con, sprintf("DELETE FROM %s WHERE ID = ? AND path = ? AND scaffold = ?", t),
+        params = list(id, path, scaffold))
+    }
+  } else {
+    o <- DBI::dbGetQuery(con,
+      "SELECT annotate_opts, curate_opts FROM annotate WHERE ID = ? LIMIT 1", params = list(id))
+    DBI::dbExecute(con,
+      "INSERT OR IGNORE INTO annotate
+         (ID, path, scaffold, annotate_switch, annotate_lock, annotate_opts, curate_opts, reviewed)
+       VALUES (?, ?, ?, 1, 0, ?, ?, 'no')",
+      params = list(id, path, scaffold,
+        if (nrow(o)) o$annotate_opts[1] else "default",
+        if (nrow(o)) o$curate_opts[1] else "default"))
+    DBI::dbExecute(con, "UPDATE annotate SET annotate_switch = 1 WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = list(id, path, scaffold))
+  }
+  invisible()
+}
+
 #' Restore a sample's assembly to its original (pre-trim) state
 #'
 #' Reverses one or more [trim_assembly()] calls by writing back the snapshot
 #' taken at the first trim: the full-length sequence, the original annotation
 #' rows, and the untrimmed coverage track. The snapshot is left in place so a
 #' fresh trim + restore returns to the same original.
-#' @param con Open project DB connection. @param id Sample ID.
+#' @param con Open project DB connection. @param id,path,scaffold Assembly unit.
 #' @return (invisibly) the restored length.
 #' @noRd
-restore_assembly <- function(con, id) {
+restore_assembly <- function(con, id, path = 1L, scaffold = 1L) {
   ensure_assembly_backup(con)
+  path <- as.integer(path); scaffold <- as.integer(scaffold)
   bak <- DBI::dbGetQuery(con,
-    "SELECT sequence, length, annotations, coverage FROM assembly_backup WHERE ID = ?", params = list(id))
+    "SELECT sequence, length, annotations, coverage FROM assembly_backup WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(id, path, scaffold))
   if (nrow(bak) == 0 || is.na(bak$sequence[1])) {
-    stop("No original assembly on record for ", id, " (nothing to restore).", call. = FALSE)
+    stop("No original assembly on record for this unit (nothing to restore).", call. = FALSE)
   }
-  DBI::dbExecute(con, "UPDATE stitched SET sequence = ?, length = ? WHERE ID = ?",
-    params = list(bak$sequence[1], bak$length[1], id))
+  DBI::dbExecute(con, "UPDATE assemblies SET sequence = ?, length = ?, edited = 1 WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(bak$sequence[1], bak$length[1], id, path, scaffold))
 
-  DBI::dbExecute(con, "DELETE FROM annotations WHERE ID = ?", params = list(id))
+  DBI::dbExecute(con, "DELETE FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(id, path, scaffold))
   if (!is.na(bak$annotations[1]) && nzchar(bak$annotations[1])) {
     ann <- jsonlite::fromJSON(bak$annotations[1])
     if (is.data.frame(ann) && nrow(ann) > 0) {
-      ann$ID <- id
+      ann$ID <- id; ann$path <- path; ann$scaffold <- scaffold
       DBI::dbAppendTable(con, "annotations", ann)
     }
   }
@@ -410,8 +524,8 @@ restore_assembly <- function(con, id) {
   if (!is.na(bak$coverage[1]) && nzchar(bak$coverage[1])) {
     dep <- as.numeric(strsplit(bak$coverage[1], ",")[[1]])
     DBI::dbExecute(con,
-      "UPDATE coverage SET depths = ?, mean_depth = ?, min_depth = ?, max_depth = ? WHERE ID = ?",
-      params = list(bak$coverage[1], mean(dep), min(dep), max(dep), id))
+      "UPDATE coverage SET depths = ?, mean_depth = ?, min_depth = ?, max_depth = ? WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = list(bak$coverage[1], mean(dep), min(dep), max(dep), id, path, scaffold))
   }
   invisible(bak$length[1])
 }

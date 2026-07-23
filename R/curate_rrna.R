@@ -220,12 +220,14 @@ ensure_curate_schema <- function(con) {
 #' @param ruleset Optional ruleset override (else read from `curate_opts`).
 #' @return (invisibly) the curate_rrna_core() result.
 #' @export
-curate_one <- function(con, id, ruleset = NULL) {
+curate_one <- function(con, id, path = 1L, scaffold = 1L, ruleset = NULL) {
   ensure_curate_schema(con)
+  path <- as.integer(path); scaffold <- as.integer(scaffold)
 
   feats <- DBI::dbGetQuery(con,
-    "SELECT element, type, start, stop, length, strand, model_coverage FROM annotations WHERE ID = ?",
-    params = list(id))
+    "SELECT element, type, start, stop, length, strand, model_coverage FROM annotations
+     WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(id, path, scaffold))
 
   sample_lineage <- DBI::dbGetQuery(con, "SELECT lineage FROM samples WHERE ID = ?",
     params = list(id))$lineage[1]
@@ -238,7 +240,8 @@ curate_one <- function(con, id, ruleset = NULL) {
   if (is.null(ruleset)) {
     ruleset <- tryCatch(DBI::dbGetQuery(con,
       "SELECT co.ruleset FROM annotate an JOIN curate_opts co ON an.curate_opts = co.curate_opts
-       WHERE an.ID = ?", params = list(id))$ruleset[1], error = function(e) NA_character_)
+       WHERE an.ID = ? AND an.path = ? AND an.scaffold = ?",
+      params = list(id, path, scaffold))$ruleset[1], error = function(e) NA_character_)
   }
   ruleset_note <- NA_character_
   if (length(ruleset) == 0 || is.na(ruleset) || !nzchar(ruleset) ||
@@ -273,7 +276,8 @@ curate_one <- function(con, id, ruleset = NULL) {
   hit_is_nuc <- if (nrow(scr) > 0) as.integer(scr$is_nuclear_rrna[1]) else NA_integer_
 
   chimeric <- tryCatch(DBI::dbGetQuery(con,
-    "SELECT chimeric FROM annotate WHERE ID = ?", params = list(id))$chimeric[1],
+    "SELECT chimeric FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(id, path, scaffold))$chimeric[1],
     error = function(e) NA_integer_)
 
   res <- curate_rrna_core(feats, params, ref_pid = ref_pid, ref_cov = ref_cov,
@@ -291,15 +295,15 @@ curate_one <- function(con, id, ruleset = NULL) {
     if (nrow(res$features) > 0) {
       for (i in seq_len(nrow(res$features))) {
         DBI::dbExecute(con,
-          "UPDATE annotations SET status = ?, flags = ? WHERE ID = ? AND element = ?",
+          "UPDATE annotations SET status = ?, flags = ? WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?",
           params = list(res$features$status[i],
             if (nzchar(res$features$flags[i])) res$features$flags[i] else NA_character_,
-            id, res$features$element[i]))
+            id, path, scaffold, res$features$element[i]))
       }
     }
     DBI::dbExecute(con,
-      "UPDATE annotate SET n_flags = ?, annotate_notes = ?, time_stamp = ? WHERE ID = ?",
-      params = list(res$n_flags, res$notes, ts, id))
+      "UPDATE annotate SET n_flags = ?, annotate_notes = ?, time_stamp = ? WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = list(res$n_flags, res$notes, ts, id, path, scaffold))
   })
   invisible(res)
 }
