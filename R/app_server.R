@@ -388,6 +388,12 @@ app_server <- function(input, output, session) {
     on.exit(DBI::dbDisconnect(con))
     for (id in ids) DBI::dbExecute(con, sql, params = list(id))
     refresh(refresh() + 1)
+    # refresh() re-renders the table, which drops the client-side selection.
+    # Reselect the same samples by ID once the new table has been flushed.
+    session$onFlushed(function() {
+      idx <- which(isolate(samples_data())$ID %in% ids)
+      if (length(idx) > 0) reactable::updateReactable("tbl", selected = idx)
+    }, once = TRUE)
     showNotification(paste("Updated", length(ids), "sample(s)."), type = "message")
   }
   observeEvent(input$lock_btn, {  # toggle lock on selected
