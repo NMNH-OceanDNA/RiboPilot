@@ -11,22 +11,22 @@ process query_samples {
     path 'samplesheet.tsv'
     script:
     """
-    sqlite3 -header -separator '\t' '${params.db}' "
+    # Header is written explicitly (sqlite3 -header emits nothing for 0 rows, and
+    # splitCsv(header:true) then fails); an empty result becomes a header-only
+    # file so the workflow simply does nothing instead of crashing.
+    printf 'ID\tR1\tR2\tpre_cpus\tpre_mem\tasm_cpus\tasm_mem\tfastp\tgetOrganelle\tseeds_db\tlabels_db\n' > samplesheet.tsv
+    sqlite3 -separator '\t' '${params.db}' "
       SELECT p.ID, p.R1, p.R2,
              COALESCE(po.cpus,4) AS pre_cpus, COALESCE(po.memory,8) AS pre_mem,
              COALESCE(ao.cpus,4) AS asm_cpus, COALESCE(ao.memory,16) AS asm_mem,
              po.fastp AS fastp,
-             -- Cap GetOrganelle's isomer paths at the sample's max_paths. The rDNA
-             -- tandem repeat is a graph cycle, so GetOrganelle (which disentangles
-             -- graphs as circular genomes) can otherwise emit up to its default
-             -- 1000 paths, all of which would then be scored.
              ao.getOrganelle || ' --max-paths-num ' || COALESCE(ao.max_paths, 10) AS getOrganelle,
              ao.seeds_db, ao.labels_db
       FROM assemble a
       JOIN preprocess p     ON a.ID = p.ID
       JOIN assemble_opts ao ON a.assemble_opts = ao.assemble_opts
       JOIN pre_opts po      ON p.pre_opts = po.pre_opts
-      WHERE a.assemble_switch IN (1,4) AND a.assemble_lock = 0;" > samplesheet.tsv
+      WHERE a.assemble_switch IN (1,4) AND a.assemble_lock = 0;" >> samplesheet.tsv
     """
 }
 
@@ -38,7 +38,8 @@ process query_fallback_samples {
     path 'samplesheet.tsv'
     script:
     """
-    sqlite3 -header -separator '\t' '${params.db}' "
+    printf 'ID\tR1\tR2\tpre_cpus\tpre_mem\tasm_cpus\tasm_mem\tfastp\n' > samplesheet.tsv
+    sqlite3 -separator '\t' '${params.db}' "
       SELECT p.ID, p.R1, p.R2,
              COALESCE(po.cpus,4) AS pre_cpus, COALESCE(po.memory,8) AS pre_mem,
              COALESCE(ao.cpus,4) AS asm_cpus, COALESCE(ao.memory,16) AS asm_mem,
@@ -47,7 +48,7 @@ process query_fallback_samples {
       JOIN preprocess p     ON a.ID = p.ID
       JOIN assemble_opts ao ON a.assemble_opts = ao.assemble_opts
       JOIN pre_opts po      ON p.pre_opts = po.pre_opts
-      WHERE a.assemble_switch = 5 AND a.assemble_lock = 0;" > samplesheet.tsv
+      WHERE a.assemble_switch = 5 AND a.assemble_lock = 0;" >> samplesheet.tsv
     """
 }
 
@@ -60,14 +61,15 @@ process query_annotate_samples {
     path 'samplesheet.tsv'
     script:
     """
-    sqlite3 -header -separator '\t' '${params.db}' "
+    printf 'ID\tpath\tscaffold\tcpus\tmem\n' > samplesheet.tsv
+    sqlite3 -separator '\t' '${params.db}' "
       SELECT an.ID, an.path, an.scaffold, COALESCE(ao.cpus,4) AS cpus, COALESCE(ao.memory,8) AS mem
       FROM annotate an
       JOIN assemble a ON a.ID = an.ID
       JOIN annotate_opts ao ON an.annotate_opts = ao.annotate_opts
       JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
       WHERE an.annotate_switch IN (1,4) AND an.annotate_lock = 0 AND a.assemble_lock = 1
-        AND COALESCE(asm.ignore,0) = 0;" > samplesheet.tsv
+        AND COALESCE(asm.ignore,0) = 0;" >> samplesheet.tsv
     """
 }
 
