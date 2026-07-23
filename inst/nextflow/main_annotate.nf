@@ -6,6 +6,7 @@
 // (Per-scaffold BLAST + reference alignment are added in a later step.)
 
 include { query_annotate_samples; annotate_tools; reconcile; curate } from './modules/pipeline_r.nf'
+include { blast_ref_align } from './modules/blast_ref.nf'
 
 params.publishDir = 'out'
 params.db = ''
@@ -19,5 +20,8 @@ workflow {
     units = rows.map { r -> tuple(r.ID, r.path, r.scaffold, r.cpus, r.mem) }
     annotate_tools(units)
     reconcile(annotate_tools.out)
-    curate(reconcile.out)
+    // per-feature sample-vs-reference alignment (per unit) before curation, so
+    // the reference-identity flags are available (no-op if WF1 found no reference)
+    blast_ref_align(reconcile.out)
+    curate(blast_ref_align.out)
 }

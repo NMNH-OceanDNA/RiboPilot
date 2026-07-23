@@ -8,6 +8,8 @@
 include { preprocess } from './modules/preprocess.nf'
 include { assemble } from './modules/assemble.nf'
 include { query_samples; score } from './modules/pipeline_r.nf'
+include { blast_genbank } from './modules/blast.nf'
+include { blast_ref_fetch } from './modules/blast_ref.nf'
 include { coverage } from './modules/coverage.nf'
 
 params.publishDir = 'out'
@@ -38,6 +40,11 @@ workflow {
     // BLAST). Then map reads to the scaffolds for per-unit coverage. Stops at the
     // assembly-review stage; annotation/curation happen per unit in WF2.
     score(assemble.out.paths)
+    // per-scaffold remote GenBank BLAST -> ranked reference candidates + screen,
+    // then fetch each candidate reference (sequence + features) from NCBI
+    blast_genbank(score.out)
+    blast_ref_fetch(blast_genbank.out)
+    // per-unit coverage (independent branch off score)
     cov_in = score.out.join(preprocess.out.reads.map { id, reads, after -> tuple(id, reads) })
     coverage(cov_in)
 }
