@@ -1,5 +1,43 @@
 # Shiny modal dialogs (Assemble / Annotate) + their plot/table helpers.
 
+#' Coloured yes/no/na status badge (mirrors MitoPilot's details-modal badges).
+#'
+#' `invert` flips the colour mapping so "yes" reads as a warning (used for
+#' Problem). `neutral_no` renders "no" in grey rather than green (used for
+#' Partial, where "no" just means complete, not "good").
+#' @noRd
+status_badge <- function(label, state, invert = FALSE, neutral_no = FALSE) {
+  val <- if (is.null(state) || length(state) == 0 || is.na(state)) "na" else as.character(state)
+  color_val <- if (neutral_no && val == "no") "na" else val
+  bg <- if (color_val == "yes") { if (invert) "#fde8d0" else "#d4edda" }
+    else if (color_val == "no") { if (invert) "#d4edda" else "#fde8d0" } else "#e9ecef"
+  fg <- if (color_val == "yes") { if (invert) "#7d4a1e" else "#2d6a4f" }
+    else if (color_val == "no") { if (invert) "#2d6a4f" else "#7d4a1e" } else "#6c757d"
+  span(style = paste0("background:", bg, "; color:", fg,
+      "; border-radius:3px; padding:2px 8px; font-size:0.75em; font-weight:600; white-space:nowrap;"),
+    paste0(label, ": ", toupper(val)))
+}
+
+#' Sample taxon header line for the detail modals (organism + taxid + rank).
+#' @noRd
+modal_taxon_header <- function(id) {
+  s <- app_query("SELECT Taxon, sci_name, taxid, rank FROM samples WHERE ID = ?", params = list(id))
+  if (nrow(s) == 0) {
+    return(NULL)
+  }
+  name <- if (!is.na(s$sci_name[1]) && nzchar(s$sci_name[1])) s$sci_name[1] else s$Taxon[1]
+  meta <- c(
+    if (!is.na(s$taxid[1]) && nzchar(as.character(s$taxid[1])))
+      sprintf("<a href='https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=%s' target='_blank'>taxid %s</a>",
+        s$taxid[1], s$taxid[1]),
+    if (!is.na(s$rank[1]) && nzchar(s$rank[1])) s$rank[1])
+  div(style = "margin:-6px 0 8px; color:#333; font-size:0.92em;",
+    tags$b(name %||% id),
+    if (length(meta) > 0) HTML(paste0(" &middot; ", paste(meta, collapse = " &middot; "))),
+    if (!is.na(name) && !is.na(s$Taxon[1]) && !identical(s$Taxon[1], name))
+      tags$span(style = "color:#999;", sprintf(" (input: %s)", s$Taxon[1])))
+}
+
 #' Assemble details modal: pick the selected path; view scores + scaffolds
 #' @noRd
 assemble_modal <- function(id) {
@@ -10,6 +48,7 @@ assemble_modal <- function(id) {
       actionButton("set_selected", "Set as selected path", class = "btn-primary btn-sm"),
       modalButton("Close")
     ),
+    modal_taxon_header(id),
     uiOutput("sel_path_ui"),
     h5("Candidate paths (auto-selected in green)"),
     reactable::reactableOutput("assemble_scores"),
@@ -47,6 +86,9 @@ annotate_modal <- function(id) {
       actionButton("lock_and_close", "Lock & Close", class = "btn-primary btn-sm"),
       modalButton("Close")
     ),
+    modal_taxon_header(id),
+    div(style = "margin:-2px 0 8px; display:flex; gap:6px; flex-wrap:wrap;",
+      uiOutput("modal_status_badges", inline = TRUE)),
     # ---- gene list (drives the active feature for the editor + alignment) ----
     h5("Feature model", style = "margin:2px 0 4px;"),
     div(style = "color:#888; font-size:0.82em; margin-bottom:4px;",

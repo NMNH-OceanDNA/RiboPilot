@@ -789,6 +789,20 @@ app_server <- function(input, output, session) {
 
   output$coverage_plot <- renderPlot({ edit_tick(); plot_coverage(sel_id()) }, height = 128)
 
+  # Annotate modal header badges: reviewed / problem / partial (live via refresh()).
+  output$modal_status_badges <- renderUI({
+    refresh()
+    id <- sel_id(); req(id)
+    a <- app_query("SELECT reviewed, problematic, partial FROM annotate WHERE ID = ?", params = list(id))
+    if (nrow(a) == 0) {
+      return(NULL)
+    }
+    tagList(
+      status_badge("Reviewed", a$reviewed[1]),
+      status_badge("Problem", a$problematic[1], invert = TRUE),
+      status_badge("Partial", a$partial[1], invert = TRUE, neutral_no = TRUE))
+  })
+
   # active feature's stitched-sequence coords + context
   nudge_ctx <- reactive({
     edit_tick()
