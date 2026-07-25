@@ -7,12 +7,16 @@
 curate_actinopterygii_rrna(
   features,
   ref_pid = NULL,
+  ref_cov = NULL,
   sample_lineage = NA,
-  hit_lineage = NA
+  hit_lineage = NA,
+  hit_is_nuclear_rrna = NA,
+  chimeric = NA
 )
 }
 \arguments{
-\item{features, ref_pid, sample_lineage, hit_lineage}{see [curate_rrna_core()].}
+\item{features, ref_pid, sample_lineage, hit_lineage, hit_is_nuclear_rrna}{see
+[curate_rrna_core()].}
 }
 \value{
 see [curate_rrna_core()].

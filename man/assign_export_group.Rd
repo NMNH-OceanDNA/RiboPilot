@@ -2,13 +2,15 @@
 % Please edit documentation in R/export.R
 \name{assign_export_group}
 \alias{assign_export_group}
-\title{Assign selected samples to an export group}
+\title{Assign selected units to an export group (export_group is per unit now)}
 \usage{
-assign_export_group(path, ids, group)
+assign_export_group(path, units, group)
 }
 \arguments{
-\item{path}{Project dir. @param ids Sample IDs. @param group Group name.}
+\item{path}{Project dir. @param units data.frame(ID, path, scaffold) OR a
+character vector of sample IDs (assigns all of each sample's units).
+@param group Group name.}
 }
 \description{
-Assign selected samples to an export group
+Assign selected units to an export group (export_group is per unit now)
 }

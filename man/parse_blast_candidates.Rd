@@ -2,9 +2,17 @@
 % Please edit documentation in R/blast_genbank.R
 \name{parse_blast_candidates}
 \alias{parse_blast_candidates}
-\title{Parse remote blastn hits into ranked reference candidates}
+\title{Parse remote blastn hits into ranked reference candidates + a contamination
+screen}
 \usage{
-parse_blast_candidates(con, id, hits_file)
+parse_blast_candidates(
+  con,
+  id,
+  path = 1L,
+  scaffold = 1L,
+  hits_file,
+  taxdump_dir = NULL
+)
 }
 \arguments{
 \item{con}{Open project DB connection.}
@@ -12,13 +20,25 @@ parse_blast_candidates(con, id, hits_file)
 \item{id}{Sample ID.}
 
 \item{hits_file}{blastn outfmt-6 output (or a "NO_SIGNIFICANT_HITS" sentinel).}
+
+\item{taxdump_dir}{Optional pinned taxdump for resolving the screen hit's
+lineage. Without it the lineage is left NA, which curation flags rather
+than treats as clean.}
 }
 \value{
 (invisibly) the ranked candidate data.frame.
 }
 \description{
-Reads a blastn `-outfmt "6 saccver stitle pident qcovs evalue"` file for one
-sample, dedups by accession (best pident*qcovs), ranks, writes
-`blast_ref_candidates`, and sets the rank-1 hit as the sample's reference
-(`stitched.reference_accession` + `assemble.blast_*`).
+Reads a blastn `-outfmt "6 saccver stitle pident qcovs evalue staxids"` file
+for one sample and splits it two ways:
+}
+\details{
+* **Reference panel** - hits whose title is nuclear rDNA. Deduped by
+  accession (best pident*qcovs), ranked into `blast_ref_candidates`, rank-1
+  set as the sample's reference (`stitched.reference_accession` +
+  `assemble.blast_*`). Same records the restricted search returned before.
+* **Contamination screen** - the top hit over *all* of core_nt, unfiltered,
+  into `blast_screen`. This is the only signal that can distinguish "the host"
+  from "a symbiont" or "not nuclear rDNA at all", so it is deliberately taken
+  before the nuclear-rDNA filter.
 }

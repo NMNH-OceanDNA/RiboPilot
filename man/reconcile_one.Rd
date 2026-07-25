@@ -4,7 +4,7 @@
 \alias{reconcile_one}
 \title{Reconcile barrnap + ITSx outputs for one sample; write annotations}
 \usage{
-reconcile_one(con, id, gff = NULL, positions = NULL)
+reconcile_one(con, id, path = 1L, scaffold = 1L, gff = NULL, positions = NULL)
 }
 \arguments{
 \item{con}{Open DBI connection.}

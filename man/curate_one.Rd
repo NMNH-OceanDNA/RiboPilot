@@ -4,7 +4,7 @@
 \alias{curate_one}
 \title{Curate one sample's annotations and write results back to the DB}
 \usage{
-curate_one(con, id, ruleset = NULL)
+curate_one(con, id, path = 1L, scaffold = 1L, ruleset = NULL)
 }
 \arguments{
 \item{con}{Open DBI connection.}

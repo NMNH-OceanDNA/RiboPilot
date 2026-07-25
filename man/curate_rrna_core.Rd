@@ -8,8 +8,11 @@ curate_rrna_core(
   features,
   params = rrna_params(),
   ref_pid = NULL,
+  ref_cov = NULL,
   sample_lineage = NA,
-  hit_lineage = NA
+  hit_lineage = NA,
+  hit_is_nuclear_rrna = NA,
+  chimeric = NA
 )
 }
 \arguments{
@@ -22,8 +25,23 @@ as produced by [reconcile_features()] / stored in the `annotations` table.}
 the top reference), from the `blast_ref_alignment` table. Missing elements
 are skipped (identity check is opportunistic).}
 
+\item{ref_cov}{Optional named numeric vector (element -> fraction of the
+element covered by the reference alignment, `blast_ref_alignment.aln_cov`).
+The identity check is skipped when coverage is below `min_ref_coverage`, so
+a partial reference cannot raise a false low_identity flag.}
+
 \item{sample_lineage, hit_lineage}{Optional lineage strings for the contaminant
-check (sample's assigned lineage vs. top BLAST-hit lineage).}
+check: the sample's assigned lineage vs. the lineage of the top hit over
+*all* of core_nt (`blast_screen.lineage`), not the nuclear-rDNA reference
+panel. An unknown lineage on either side raises `contaminant_unchecked`
+rather than passing silently.}
+
+\item{hit_is_nuclear_rrna}{Optional 0/1 (`blast_screen.is_nuclear_rrna`):
+whether that top hit is a nuclear rDNA record at all. 0 raises
+`not_nuclear_rdna`.}
+
+\item{chimeric}{Optional 0/1/logical (`annotate.chimeric`): whether ITSx
+flagged the sequence as chimeric. TRUE raises `chimeric`.}
 }
 \value{
 list(features, flags, n_flags, notes) where `features` gains `status`
