@@ -7,8 +7,9 @@
 export_bundle(
   path = ".",
   ids = NULL,
+  units = NULL,
   group = NULL,
-  out_dir = file.path(path, "export"),
+  out_dir = file.path(path, "out"),
   label = NULL,
   markers = TRUE,
   report = TRUE,
@@ -20,12 +21,17 @@ export_bundle(
 \arguments{
 \item{path}{Project directory.}
 
-\item{ids}{Sample IDs to export (default: all with a stitched sequence). If
-`group` is given, restricted to that group.}
+\item{ids}{Sample IDs to export (default: every exportable unit). If `group`
+is given, restricted to that group. Sample-grain: every exportable unit of
+a listed sample is included. Use `units` to pick individual scaffolds.}
+
+\item{units}{Optional data.frame(ID, path, scaffold) restricting the export to
+those exact assembly units. Applied on top of `ids` / `group`.}
 
 \item{group}{Export-group name to filter by and label the bundle.}
 
-\item{out_dir}{Output directory (default `<path>/export`).}
+\item{out_dir}{Project "out" directory (default `<path>/out`); files land in
+`<out_dir>/export/<label>`, mirroring MitoPilot.}
 
 \item{label}{Bundle label (default: `group` or "export").}
 

@@ -79,6 +79,14 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
   n_units <- tryCatch(app_query("SELECT COUNT(*) n FROM annotate WHERE ID = ?", params = list(id))$n[1],
     error = function(e) 1L)
   unit_lbl <- if (isTRUE(n_units > 1)) sprintf(" [path %s / scaffold %s]", path, scaffold) else ""
+  # Seed the notes box from the DB. Re-opening the same unit assigns an
+  # identical() value to sel_unit, which does not invalidate the reactiveVal, so
+  # the server-side reset observer never fires; a value-less textAreaInput then
+  # reports "" and the write observer persists it over the stored note.
+  notes <- tryCatch(app_query(
+    "SELECT annotate_notes FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(id, as.integer(path), as.integer(scaffold)))$annotate_notes[1],
+    error = function(e) NA_character_)
   modalDialog(
     title = paste0("Annotate - ", id, unit_lbl),
     size = "l", easyClose = FALSE,
@@ -146,7 +154,9 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
 
     rp_details("Notes", open = FALSE,
       textAreaInput("annotate_notes", label = NULL, width = "100%",
-        placeholder = "Notes for this sample's annotation"))
+        value = (notes %||% NA_character_) %|NA|% "",
+        placeholder = "Notes for this annotation unit"),
+      actionButton("annotate_notes_clear", "Clear notes", class = "btn-sm"))
   )
 }
 
@@ -254,13 +264,13 @@ group_modal <- function() {
 #' were ignored and every bundle collapsed into one undifferentiated "export".
 #' @noRd
 export_modal <- function(groups, n_locked) {
-  choices <- c("All locked samples (single bundle)" = "__all__",
+  choices <- c("All locked units (single bundle)" = "__all__",
     stats::setNames(groups, groups))
   modalDialog(
     title = "Export GenBank bundle", size = "m", easyClose = TRUE,
     if (length(groups) == 0) {
       tags$p(class = "text-muted", style = "font-size:0.9em;",
-        sprintf("No export groups assigned. Exporting all %d annotation-locked sample(s) as one bundle. Use \"Assign Group\" to batch submissions.", n_locked))
+        sprintf("No export groups assigned. Exporting %d annotation-locked unit(s) as one bundle. Use \"Assign Group\" to batch submissions.", n_locked))
     } else {
       shinyWidgets::pickerInput("export_group_sel", "Export group:",
         choices = choices, selected = "__all__", width = "100%")

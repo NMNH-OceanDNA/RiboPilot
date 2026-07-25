@@ -72,6 +72,22 @@ rt_flag_badge <- function() {
     }")
 }
 
+#' Render a kept-scaffold count: red when nothing survives triage, else plain
+#'
+#' Zero kept units means the sample has no assembly to annotate or export, which
+#' is otherwise indistinguishable from a normal low count.
+#' @noRd
+rt_kept_count <- function() {
+  htmlwidgets::JS(
+    "function(cellInfo) {
+      var n = cellInfo.value
+      if (n === null || n === undefined || n === '') return ''
+      n = Number(n)
+      if (n === 0) return '<span style=\"background:#f8d7da; color:#842029; border-radius:3px; padding:1px 6px; font-size:0.85em;\">0</span>'
+      return String(n)
+    }")
+}
+
 #' Render an NCBI accession as a clickable link
 #' @noRd
 rt_ncbi_link <- function() {

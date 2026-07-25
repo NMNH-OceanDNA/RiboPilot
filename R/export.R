@@ -325,8 +325,11 @@ export_report_html <- function(con, units, out_html, label) {
 #' Build a GenBank submission bundle for a set of samples (one export group)
 #'
 #' @param path Project directory.
-#' @param ids Sample IDs to export (default: all with a stitched sequence). If
-#'   `group` is given, restricted to that group.
+#' @param ids Sample IDs to export (default: every exportable unit). If `group`
+#'   is given, restricted to that group. Sample-grain: every exportable unit of
+#'   a listed sample is included. Use `units` to pick individual scaffolds.
+#' @param units Optional data.frame(ID, path, scaffold) restricting the export to
+#'   those exact assembly units. Applied on top of `ids` / `group`.
 #' @param group Export-group name to filter by and label the bundle.
 #' @param out_dir Project "out" directory (default `<path>/out`); files land in
 #'   `<out_dir>/export/<label>`, mirroring MitoPilot.
@@ -338,29 +341,41 @@ export_report_html <- function(con, units, out_html, label) {
 #' @param zip Also write `<out_dir>/<label>.zip`.
 #' @return (invisibly) the group output directory.
 #' @export
-export_bundle <- function(path = ".", ids = NULL, group = NULL, out_dir = file.path(path, "out"),
+export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
+                          out_dir = file.path(path, "out"),
                           label = NULL, markers = TRUE, report = TRUE, template = NULL,
                           run_table2asn = FALSE, zip = TRUE) {
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(path, ".sqlite"))
   on.exit(DBI::dbDisconnect(con), add = TRUE)
 
   # Export annotation-locked, non-ignored, non-problematic UNITS (one GenBank
-  # record per (ID, path, scaffold)). Filtered by group / ids when given.
-  units <- DBI::dbGetQuery(con,
+  # record per (ID, path, scaffold)). Filtered by group / ids / units when given.
+  all_units <- DBI::dbGetQuery(con,
     "SELECT an.ID, an.path, an.scaffold, an.export_group
      FROM annotate an
      JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
      WHERE an.annotate_lock = 1 AND COALESCE(asm.ignore,0) = 0
        AND COALESCE(an.problematic,'') != 'yes'
      ORDER BY an.ID, an.path, an.scaffold")
-  if (!is.null(group)) units <- units[!is.na(units$export_group) & units$export_group == group, , drop = FALSE]
-  if (!is.null(ids)) units <- units[units$ID %in% ids, , drop = FALSE]
-  if (nrow(units) == 0) {
+  sel <- all_units
+  if (!is.null(group)) sel <- sel[!is.na(sel$export_group) & sel$export_group == group, , drop = FALSE]
+  if (!is.null(ids)) sel <- sel[sel$ID %in% ids, , drop = FALSE]
+  if (!is.null(units) && nrow(units) > 0) {
+    key <- function(d) paste(d$ID, as.integer(d$path), as.integer(d$scaffold))
+    sel <- sel[key(sel) %in% key(units), , drop = FALSE]
+  }
+  if (nrow(sel) == 0) {
     stop("No annotation-locked units to export.", call. = FALSE)
   }
-  # SeqID: the sample's ID when it exports a single unit, else ID_p<path>_s<scaffold>
-  n_per_id <- table(units$ID)
-  units$seqid <- ifelse(n_per_id[units$ID] > 1,
+  # SeqID: the sample's ID when it exports a single unit, else ID_p<path>_s<scaffold>.
+  # Counted over ALL exportable units of the sample, not over this bundle's
+  # subset, so a record keeps the same SeqID across a group export and a
+  # whole-project export. Renaming a record after an accession is bound to it
+  # cannot be undone.
+  n_per_id <- table(all_units$ID)
+  units <- sel
+  n_units <- as.integer(n_per_id[units$ID])
+  units$seqid <- ifelse(!is.na(n_units) & n_units > 1,
     sprintf("%s_p%s_s%s", units$ID, units$path, units$scaffold), units$ID)
   label <- label %||% group %||% "export"
 

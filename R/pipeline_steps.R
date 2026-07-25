@@ -271,20 +271,32 @@ load_assemblies <- function(con, out_dir, ID) {
     if (!is.null(or) && isTRUE(or$flipped)) df$sequence[i] <- or$seq
   }
 
+  # Carry the curator's keep/drop decisions across a re-assembly. The rows are
+  # replaced wholesale below, and opts_apply re-queues a sample whenever its
+  # assemble_opts change, so without this every ignore flag is silently reset.
+  prev <- tryCatch(DBI::dbGetQuery(con,
+    "SELECT path, scaffold, COALESCE(ignore,0) AS ignore FROM assemblies WHERE ID = ?",
+    params = list(ID)), error = function(e) data.frame())
+  if (nrow(prev) > 0) {
+    i <- match(paste(df$path, df$scaffold), paste(prev$path, prev$scaffold))
+    df$ignore <- ifelse(is.na(i), 0L, as.integer(prev$ignore[i]))
+  }
+
   # replace this sample's assemblies
   DBI::dbExecute(con, "DELETE FROM assemblies WHERE ID = ?", params = list(ID))
   DBI::dbAppendTable(con, "assemblies", df)
 
   # per-sample summary
   n_paths <- length(unique(df$path))
-  n_scaffolds <- max(table(df$path))
+  max_per_path <- max(table(df$path))   # drives the "disconnected contigs" note
+  n_scaffolds <- nrow(df)               # total units, not the biggest path's count
   length_str <- paste(sort(unique(df$length), decreasing = TRUE), collapse = ";")
   topo_str <- paste(sort(unique(stats::na.omit(df$topology))), collapse = ";")
   cap_note <- if (n_dropped > 0)
     sprintf("kept top %d of %d paths (max_paths)", mp, n_paths_raw) else ""
   notes <- paste(c(
     if (n_paths > 1) "Unable to resolve single assembly from reads"
-    else if (n_scaffolds > 1) "Output contains disconnected contigs" else NULL,
+    else if (max_per_path > 1) "Output contains disconnected contigs" else NULL,
     if (nzchar(cap_note)) cap_note else NULL), collapse = "; ")
   DBI::dbExecute(con,
     "UPDATE assemble SET paths=?, scaffolds=?, length=?, topology=?,

@@ -111,10 +111,15 @@ app_server <- function(input, output, session) {
       app_query(
         "SELECT a.assemble_lock, a.assemble_switch, s.ID, s.Taxon, s.sci_name, s.taxid,
            pp.pre_opts, a.assemble_opts, a.blast_opts,
-           a.paths, a.scaffolds, a.length,
+           a.paths, a.length,
+           -- unit counts come from `assemblies` so they stay live as scaffolds
+           -- are kept/dropped. a.blast_* is not selected: nothing writes it (the
+           -- per-unit hits live in `assemblies`), so those columns were blank.
+           (SELECT COUNT(*) FROM assemblies x WHERE x.ID = s.ID) AS units,
+           (SELECT COUNT(*) FROM assemblies x WHERE x.ID = s.ID
+              AND COALESCE(x.ignore,0) = 0) AS kept,
            (SELECT p.path FROM path_scores p WHERE p.ID = s.ID AND p.auto_select = 1) AS sel_path,
            (SELECT round(MAX(p.score),3) FROM path_scores p WHERE p.ID = s.ID) AS best_score,
-           a.blast_species, a.blast_accession, a.blast_pident, a.blast_qcovs,
            a.assemble_notes AS notes, a.time_stamp,
            'Details' AS details, 'Output' AS output
          FROM samples s LEFT JOIN assemble a ON s.ID = a.ID
@@ -197,7 +202,9 @@ app_server <- function(input, output, session) {
       missing = reactable::colDef(name = "Missing", minWidth = 120, html = TRUE, cell = rt_longtext()),
       length = reactable::colDef(name = "Length", width = 90),
       paths = reactable::colDef(name = "Paths", width = 80),
-      scaffolds = reactable::colDef(name = "Scaffolds", width = 90),
+      units = reactable::colDef(name = "Units", width = 70),
+      kept = reactable::colDef(name = "Kept", width = 70, html = TRUE,
+        cell = rt_kept_count()),
       sel_path = reactable::colDef(name = "Selected Path", width = 110),
       best_score = reactable::colDef(name = "Best Score", width = 100),
       export_group = reactable::colDef(name = "Group", minWidth = 110, html = TRUE, cell = rt_longtext()),
@@ -249,8 +256,7 @@ app_server <- function(input, output, session) {
     # Column groups (Assemble table): collapse wide sections via the "Columns"
     # picker. Columns not in a named group are Core and always shown.
     col_groups <- list(
-      Stats = c("paths", "scaffolds", "sel_path", "best_score"),
-      BLAST = c("blast_species", "blast_accession", "blast_pident", "blast_qcovs"),
+      Stats = c("paths", "units", "kept", "sel_path", "best_score"),
       Options = c("pre_opts", "assemble_opts", "blast_opts", "annotate_opts", "curate_opts"))
     keep_cols <- cols[intersect(names(cols), names(d))]
     if (mode == "Assemble") {
@@ -752,27 +758,34 @@ app_server <- function(input, output, session) {
   # ---- Export ----
   output$export_sel_n <- renderText({
     refresh()
-    paste(length(export_ids()), "locked & ready")
+    n <- nrow(export_units_df())
+    paste(n, if (n == 1) "unit" else "units", "locked & ready")
   })
-  # gate export to annotation-locked samples (validated), excluding any flagged
-  # problematic; optionally to one group
-  export_ids <- function(group = NULL) {
+  # Exportable UNITS: annotation-locked, kept, not flagged problematic;
+  # optionally narrowed to one group, else to the current selection. Unit grain
+  # throughout, so selecting one scaffold of a sample exports that scaffold.
+  export_units_df <- function(group = NULL) {
     locked <- app_query(
-      "SELECT ID FROM annotate WHERE annotate_lock = 1
-       AND COALESCE(problematic, '') != 'yes'")$ID
+      "SELECT an.ID, an.path, an.scaffold, an.export_group
+       FROM annotate an
+       JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
+       WHERE an.annotate_lock = 1 AND COALESCE(asm.ignore,0) = 0
+         AND COALESCE(an.problematic, '') != 'yes'")
+    if (nrow(locked) == 0) return(locked)
+    key <- function(d) paste(d$ID, as.integer(d$path), as.integer(d$scaffold))
     if (!is.null(group) && nzchar(group)) {
-      g <- app_query("SELECT ID FROM annotate WHERE export_group = ?", params = list(group))$ID
-      return(intersect(locked, g))
+      return(locked[!is.na(locked$export_group) & locked$export_group == group, , drop = FALSE])
     }
-    ids <- selected_ids()
-    if (length(ids)) intersect(ids, locked) else locked
+    u <- selected_units()
+    if (is.null(u) || nrow(u) == 0) return(locked)
+    locked[key(locked) %in% key(u), , drop = FALSE]
   }
   # "Export Data" opens a modal to pick a group (or all locked) before export.
   observeEvent(input$export_btn, {
     groups <- app_query(
       "SELECT DISTINCT export_group FROM annotate
        WHERE export_group IS NOT NULL AND export_group != '' ORDER BY export_group")$export_group
-    showModal(export_modal(groups, length(export_ids())))
+    showModal(export_modal(groups, nrow(export_units_df())))
   })
   export_group_choice <- function() {
     g <- input$export_group_sel %||% "__all__"
@@ -783,14 +796,14 @@ app_server <- function(input, output, session) {
   export_done_dir <- reactiveVal(NULL)
   observeEvent(input$export_go, {
     grp <- export_group_choice()
-    ids <- export_ids(grp)
-    if (length(ids) == 0) {
-      showNotification("No annotation-locked samples to export. Lock annotations first.",
+    u <- export_units_df(grp)
+    if (nrow(u) == 0) {
+      showNotification("No annotation-locked units to export. Lock annotations first.",
         type = "warning", duration = 6)
       return()
     }
     gdir <- tryCatch(
-      export_bundle(app_project(), ids = ids, group = grp,
+      export_bundle(app_project(), units = u, group = grp,
         out_dir = file.path(app_project(), "out"), zip = FALSE),
       error = function(e) {
         showNotification(paste("Export failed:", conditionMessage(e)), type = "error", duration = 8)
@@ -865,12 +878,12 @@ app_server <- function(input, output, session) {
   })
   # Toggle a scaffold's ignore flag: dropped scaffolds are excluded from
   # annotation + export; their annotate unit is removed / re-seeded to match.
-  observeEvent(input$scaf_ignore, {
-    i <- suppressWarnings(as.integer(input$scaf_ignore)); id <- sel_id(); req(!is.na(i), id)
-    d <- app_query("SELECT path, scaffold, COALESCE(ignore,0) AS ignore FROM assemblies WHERE ID = ? ORDER BY path, scaffold",
-      params = list(id))
-    req(i >= 1, i <= nrow(d))
-    p <- d$path[i]; s <- d$scaffold[i]; new_ig <- 1L - as.integer(d$ignore[i])
+  # Ignoring is destructive (reconcile_ignore_unit DELETEs the unit's annotate /
+  # annotations / coverage rows), so it is refused on a locked unit and confirmed
+  # on a reviewed or grouped one. The Annotate-mode lock guard cannot see this
+  # path, so the check has to live here.
+  pending_ignore <- reactiveVal(NULL)
+  do_scaf_ignore <- function(id, p, s, new_ig) {
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
     DBI::dbExecute(con, "UPDATE assemblies SET ignore = ? WHERE ID = ? AND path = ? AND scaffold = ?",
       params = list(new_ig, id, p, s))
@@ -879,20 +892,60 @@ app_server <- function(input, output, session) {
     showNotification(sprintf("Scaffold %s.%s %s.", p, s,
       if (new_ig == 1) "ignored (dropped from annotation/export)" else "kept + queued for annotation"),
       type = "message")
+  }
+  observeEvent(input$scaf_ignore, {
+    i <- suppressWarnings(as.integer(input$scaf_ignore)); id <- sel_id(); req(!is.na(i), id)
+    d <- app_query("SELECT path, scaffold, COALESCE(ignore,0) AS ignore FROM assemblies WHERE ID = ? ORDER BY path, scaffold",
+      params = list(id))
+    req(i >= 1, i <= nrow(d))
+    p <- d$path[i]; s <- d$scaffold[i]; new_ig <- 1L - as.integer(d$ignore[i])
+    if (new_ig == 1L) {
+      st <- app_query(
+        "SELECT annotate_lock, reviewed, export_group FROM annotate
+         WHERE ID = ? AND path = ? AND scaffold = ?", params = list(id, p, s))
+      if (nrow(st) && isTRUE(as.integer(st$annotate_lock[1]) == 1L)) {
+        showNotification(sprintf(
+          "Scaffold %s.%s is annotation-locked. Unlock that unit in Annotate mode first.", p, s),
+          type = "error", duration = 8)
+        return()
+      }
+      if (nrow(st) && (identical(st$reviewed[1], "yes") ||
+                       (!is.na(st$export_group[1]) && nzchar(st$export_group[1])))) {
+        pending_ignore(list(id = id, p = p, s = s))
+        showModal(modalDialog(
+          title = "Discard curation for this scaffold?", size = "s",
+          tags$p(sprintf(paste("Scaffold %s.%s has already been reviewed. Ignoring it deletes its",
+            "annotation, curation flags, notes and coverage. This cannot be undone."), p, s)),
+          footer = tagList(
+            actionButton("scaf_ignore_ok", "Ignore anyway", class = "btn-danger btn-sm"),
+            modalButton("Cancel"))))
+        return()
+      }
+    }
+    do_scaf_ignore(id, p, s, new_ig)
+  })
+  observeEvent(input$scaf_ignore_ok, {
+    pi <- pending_ignore(); req(pi); pending_ignore(NULL)
+    removeModal()
+    do_scaf_ignore(pi$id, pi$p, pi$s, 1L)
+    showModal(assemble_modal(pi$id))
   })
   observeEvent(input$set_selected, {
     id <- sel_id()
     req(id, input$sel_path)
     con <- app_con()
     on.exit(DBI::dbDisconnect(con))
+    # Records the reviewer's choice for display. It does NOT gate WF2, which
+    # selects units by assemblies.ignore, so nothing is re-queued here: the old
+    # sample-wide "UPDATE annotate SET annotate_switch = 1 WHERE ID = ?" also
+    # re-queued annotate-locked units the reviewer never touched.
     DBI::dbExecute(con,
       "UPDATE path_scores SET auto_select = CASE WHEN path = ? THEN 1 ELSE 0 END WHERE ID = ?",
       params = list(as.integer(input$sel_path), id))
-    # queue for re-annotation (WF2 / Annotate mode "Run")
-    DBI::dbExecute(con, "UPDATE annotate SET annotate_switch = 1 WHERE ID = ?", params = list(id))
     refresh(refresh() + 1)
-    showNotification(paste0("Set path ", input$sel_path,
-      " as selected and queued for re-annotation. Run WF2 (Annotate mode -> Run)."), type = "message")
+    showNotification(paste0("Marked path ", input$sel_path,
+      " as the selected path. To annotate only this path, ignore the other paths' scaffolds below."),
+      type = "message")
   })
 
   # ---- Annotate modal: gene list + boundary editor (edit/save/reset) + msaR ----
@@ -1235,9 +1288,25 @@ app_server <- function(input, output, session) {
   # ---- notes ----
   observeEvent(input$annotate_notes, ignoreInit = TRUE, {
     u <- sel_unit(); req(u)
+    new <- input$annotate_notes %||% ""
+    cur <- app_query("SELECT annotate_notes FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = uargs())$annotate_notes[1]
+    cur <- (cur %||% NA_character_) %|NA|% ""
+    if (identical(new, cur)) return()
+    # A freshly rendered modal reports "" before the stored value lands; never
+    # let that blank a stored note. Clearing text is done with the Clear button.
+    if (!nzchar(new) && nzchar(cur)) return()
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
     DBI::dbExecute(con, "UPDATE annotate SET annotate_notes = ? WHERE ID = ? AND path = ? AND scaffold = ?",
-      params = c(list(input$annotate_notes %||% ""), uargs()))
+      params = c(list(new), uargs()))
+  })
+  observeEvent(input$annotate_notes_clear, {
+    u <- sel_unit(); req(u)
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    DBI::dbExecute(con, "UPDATE annotate SET annotate_notes = NULL WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = uargs())
+    updateTextAreaInput(session, "annotate_notes", value = "")
+    showNotification("Notes cleared.", type = "message")
   })
 
   # nudge one boundary by the chosen step (1-50), clamp to sequence, persist
