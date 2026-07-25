@@ -250,8 +250,8 @@ group_modal <- function() {
 }
 
 #' Export modal: pick which export group to bundle (or all locked samples), then
-#' download. Without this, assigned groups were ignored and every bundle collapsed
-#' into one undifferentiated "export" zip.
+#' write it to the project's "out/export" folder. Without this, assigned groups
+#' were ignored and every bundle collapsed into one undifferentiated "export".
 #' @noRd
 export_modal <- function(groups, n_locked) {
   choices <- c("All locked samples (single bundle)" = "__all__",
@@ -266,9 +266,9 @@ export_modal <- function(groups, n_locked) {
         choices = choices, selected = "__all__", width = "100%")
     },
     tags$p(class = "text-muted", style = "font-size:0.82em; margin-top:0.6em;",
-      "Bundle: per-sample .fsa/.tbl, combined FASTA + feature table, per-marker fastas, summary CSV, and an HTML report."),
+      "Writes to the project's out/export folder: per-sample .fsa/.tbl, combined FASTA + feature table, per-marker fastas, summary CSV, and an HTML report."),
     footer = tagList(
-      shiny::downloadButton("export_dl", "Download", class = "btn-primary btn-sm"),
+      actionButton("export_go", "Export", icon = icon("download"), class = "btn-primary btn-sm"),
       modalButton("Cancel"))
   )
 }

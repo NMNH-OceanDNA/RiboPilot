@@ -1,6 +1,6 @@
 # GenBank submission bundle export (mirrors MitoPilot's group-based export).
 #
-# Samples are organized into export groups (samples.export_group). Each group /
+# Units are organized into export groups (annotate.export_group). Each group /
 # selection is exported as a combined <label>.fasta (source-modifier deflines) +
 # <label>.tbl (concatenated 5-column feature tables), per-sample .fsa/.tbl,
 # per-marker fastas (18S/28S/ITS...), a per-sample summary CSV, and a
@@ -328,7 +328,8 @@ export_report_html <- function(con, units, out_html, label) {
 #' @param ids Sample IDs to export (default: all with a stitched sequence). If
 #'   `group` is given, restricted to that group.
 #' @param group Export-group name to filter by and label the bundle.
-#' @param out_dir Output directory (default `<path>/export`).
+#' @param out_dir Project "out" directory (default `<path>/out`); files land in
+#'   `<out_dir>/export/<label>`, mirroring MitoPilot.
 #' @param label Bundle label (default: `group` or "export").
 #' @param markers,report Also write per-marker fastas / an HTML report.
 #' @param template Optional path to a GenBank submission template (`.sbt`);
@@ -337,7 +338,7 @@ export_report_html <- function(con, units, out_html, label) {
 #' @param zip Also write `<out_dir>/<label>.zip`.
 #' @return (invisibly) the group output directory.
 #' @export
-export_bundle <- function(path = ".", ids = NULL, group = NULL, out_dir = file.path(path, "export"),
+export_bundle <- function(path = ".", ids = NULL, group = NULL, out_dir = file.path(path, "out"),
                           label = NULL, markers = TRUE, report = TRUE, template = NULL,
                           run_table2asn = FALSE, zip = TRUE) {
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(path, ".sqlite"))
@@ -363,7 +364,7 @@ export_bundle <- function(path = ".", ids = NULL, group = NULL, out_dir = file.p
     sprintf("%s_p%s_s%s", units$ID, units$path, units$scaffold), units$ID)
   label <- label %||% group %||% "export"
 
-  gdir <- file.path(out_dir, label)
+  gdir <- file.path(out_dir, "export", label)
   unlink(gdir, recursive = TRUE)
   dir.create(gdir, recursive = TRUE, showWarnings = FALSE)
   if (markers) dir.create(file.path(gdir, "markers"), showWarnings = FALSE)
@@ -398,8 +399,11 @@ export_bundle <- function(path = ".", ids = NULL, group = NULL, out_dir = file.p
         if (is.na(s) || is.na(e) || e < s) {
           return(invisible())
         }
+        el_clean <- gsub("[^A-Za-z0-9]", "", el)
+        el_dir <- file.path(gdir, "markers", el_clean)
+        dir.create(el_dir, recursive = TRUE, showWarnings = FALSE)
         rec <- c(sprintf(">%s_%s [organism=%s]", seqid, el, taxon), substr(seq, s, e))
-        writeLines(rec, file.path(gdir, "markers", paste0(seqid, "_", gsub("[^A-Za-z0-9]", "", el), ".fasta")))
+        writeLines(rec, file.path(el_dir, paste0(seqid, "_", el_clean, ".fasta")))
         marker_pool[[el]] <<- c(marker_pool[[el]], rec)
       }
       for (i in seq_len(nrow(ann))) wm(ann$element[i], ann$start[i], ann$stop[i])
@@ -414,7 +418,9 @@ export_bundle <- function(path = ".", ids = NULL, group = NULL, out_dir = file.p
   writeLines(paste(group_tbl, collapse = "\n"), file.path(gdir, paste0(label, ".tbl")))
   if (markers) {
     for (el in names(marker_pool)) {
-      writeLines(marker_pool[[el]], file.path(gdir, "markers", paste0("all_", gsub("[^A-Za-z0-9]", "", el), ".fasta")))
+      el_clean <- gsub("[^A-Za-z0-9]", "", el)
+      writeLines(marker_pool[[el]],
+        file.path(gdir, "markers", el_clean, paste0("all_", el_clean, ".fasta")))
     }
   }
   # per-unit summary CSV (+ warn-only portal-parity submission-risk gate)
@@ -455,7 +461,7 @@ export_bundle <- function(path = ".", ids = NULL, group = NULL, out_dir = file.p
     ".fasta; NCBI auto-annotates the rRNA-ITS region (see README_SUBMISSION.txt).")
   if (isTRUE(zip)) {
     zf <- paste0(gdir, ".zip")
-    old <- setwd(out_dir)
+    old <- setwd(dirname(gdir))
     on.exit(setwd(old), add = TRUE)
     utils::zip(zf, label, flags = "-rq")
   }
@@ -466,7 +472,7 @@ export_bundle <- function(path = ".", ids = NULL, group = NULL, out_dir = file.p
 #' @param path Project directory. @param out_dir Output dir.
 #' @return (invisibly) the export groups exported.
 #' @export
-export_project <- function(path = ".", out_dir = file.path(path, "export")) {
+export_project <- function(path = ".", out_dir = file.path(path, "out")) {
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(path, ".sqlite"))
   groups <- DBI::dbGetQuery(con, "SELECT DISTINCT export_group FROM annotate WHERE export_group IS NOT NULL")$export_group
   DBI::dbDisconnect(con)

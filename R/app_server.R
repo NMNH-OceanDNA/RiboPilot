@@ -124,7 +124,8 @@ app_server <- function(input, output, session) {
       # export shows annotation-locked UNITS (one row per (ID, path, scaffold))
       app_query(
         "SELECT s.ID, an.path, an.scaffold, s.Taxon, s.sci_name, s.taxid, asm.length,
-           an.n_features, an.missing, an.reviewed, an.annotate_lock, an.export_group, an.time_stamp
+           an.n_features, an.missing, an.reviewed, an.problematic, an.partial,
+           an.export_group, an.time_stamp
          FROM annotate an JOIN samples s ON s.ID = an.ID
            JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
          WHERE an.annotate_lock = 1")
@@ -147,9 +148,12 @@ app_server <- function(input, output, session) {
   })
 
   # ---- reactable (MitoPilot-style: resizable, filterable, sticky, icons) ----
+  # Re-render only on structural changes (mode / column groups); the data is
+  # isolated so a refresh() pushes a data-only update below instead of a full
+  # re-render, which would reset the user's column filters, sort, and page.
   output$tbl <- reactable::renderReactable({
     mode <- input$mode %||% "Assemble"
-    d <- samples_data()
+    d <- isolate(samples_data())
     mm <- mode_meta(mode)
     lock_col <- paste0(mm$pfx, "_lock")
     state_col <- paste0(mm$pfx, "_switch")
@@ -269,6 +273,13 @@ app_server <- function(input, output, session) {
       columns = keep_cols
     )
   })
+
+  # Push data-only updates on refresh() so client-side filters / sort / page
+  # survive a lock, state, or group action (a full re-render would clear them).
+  # Mode and column-group changes still re-render via output$tbl above.
+  observeEvent(refresh(), {
+    reactable::updateReactable("tbl", data = samples_data())
+  }, ignoreInit = TRUE)
 
   # ---- open the details modal when an ID cell is clicked ----
   observeEvent(input$open_detail, {
@@ -491,7 +502,7 @@ app_server <- function(input, output, session) {
     }
     mm <- mode_meta(input$mode)
     cur <- app_query(sprintf("SELECT %s_switch AS s FROM %s WHERE ID = ?", mm$pfx, mm$tbl),
-      params = list(ids[1]))$s
+      params = list(ids[1]))$s[1]  # annotate has many rows per ID; take one for the default
     showModal(state_modal(mm$pfx, cur))
   })
   observeEvent(input$update_state, {
@@ -750,16 +761,16 @@ app_server <- function(input, output, session) {
       "SELECT ID FROM annotate WHERE annotate_lock = 1
        AND COALESCE(problematic, '') != 'yes'")$ID
     if (!is.null(group) && nzchar(group)) {
-      g <- app_query("SELECT ID FROM samples WHERE export_group = ?", params = list(group))$ID
+      g <- app_query("SELECT ID FROM annotate WHERE export_group = ?", params = list(group))$ID
       return(intersect(locked, g))
     }
     ids <- selected_ids()
     if (length(ids)) intersect(ids, locked) else locked
   }
-  # "Export Data" opens a modal to pick a group (or all locked) before download.
+  # "Export Data" opens a modal to pick a group (or all locked) before export.
   observeEvent(input$export_btn, {
     groups <- app_query(
-      "SELECT DISTINCT export_group FROM samples
+      "SELECT DISTINCT export_group FROM annotate
        WHERE export_group IS NOT NULL AND export_group != '' ORDER BY export_group")$export_group
     showModal(export_modal(groups, length(export_ids())))
   })
@@ -767,27 +778,37 @@ app_server <- function(input, output, session) {
     g <- input$export_group_sel %||% "__all__"
     if (identical(g, "__all__") || !nzchar(g)) NULL else g
   }
-  output$export_dl <- downloadHandler(
-    filename = function() {
-      grp <- export_group_choice()
-      paste0(basename(app_project()), "_", grp %||% "export", ".zip")
-    },
-    content = function(file) {
-      grp <- export_group_choice()
-      ids <- export_ids(grp)
-      if (length(ids) == 0) {
-        showNotification("No annotation-locked samples to export. Lock annotations first.",
-          type = "warning", duration = 6)
-        stop("nothing to export")
-      }
-      td <- file.path(tempdir(), paste0("rp_export_", as.integer(Sys.time())))
-      gdir <- export_bundle(app_project(), ids = ids, group = grp, out_dir = td, zip = TRUE)
-      zipf <- paste0(gdir, ".zip")
-      if (!file.exists(zipf) || !file.copy(zipf, file, overwrite = TRUE)) {
-        stop("Export bundle zip was not produced at ", zipf)
-      }
+  # Write the bundle into the project's out/export folder (no zip download,
+  # mirroring MitoPilot), then show where it landed with an "Open folder" button.
+  export_done_dir <- reactiveVal(NULL)
+  observeEvent(input$export_go, {
+    grp <- export_group_choice()
+    ids <- export_ids(grp)
+    if (length(ids) == 0) {
+      showNotification("No annotation-locked samples to export. Lock annotations first.",
+        type = "warning", duration = 6)
+      return()
     }
-  )
+    gdir <- tryCatch(
+      export_bundle(app_project(), ids = ids, group = grp,
+        out_dir = file.path(app_project(), "out"), zip = FALSE),
+      error = function(e) {
+        showNotification(paste("Export failed:", conditionMessage(e)), type = "error", duration = 8)
+        NULL
+      })
+    if (is.null(gdir)) return()
+    export_done_dir(gdir)
+    removeModal()
+    showModal(modalDialog(
+      title = "Export complete", size = "m", easyClose = TRUE,
+      tags$p("Data exported to:"),
+      div(class = "code-block", style = "white-space:normal; word-break:break-all;", gdir),
+      footer = tagList(
+        actionButton("open_export_dir", "Open folder", icon = icon("folder-open"), class = "btn-sm"),
+        modalButton("Close"))
+    ))
+  })
+  observeEvent(input$open_export_dir, open_path(export_done_dir()))
 
   # ---- Assemble modal ----
   output$sel_path_ui <- renderUI({
