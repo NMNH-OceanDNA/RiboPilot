@@ -98,6 +98,7 @@ alignment_coverage <- function(sample_aln, sample_len) {
 #'
 #' @param con Open project DB connection.
 #' @param id Sample ID.
+#' @param path,scaffold Assembly unit within the sample.
 #' @return (invisibly) number of element alignments written.
 #' @export
 compute_ref_alignment <- function(con, id, path = 1L, scaffold = 1L) {

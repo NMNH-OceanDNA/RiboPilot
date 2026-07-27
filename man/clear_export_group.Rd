@@ -7,7 +7,9 @@
 clear_export_group(path, units)
 }
 \arguments{
-\item{path}{Project dir. @param units data.frame(ID, path, scaffold) or IDs.}
+\item{path}{Project dir.}
+
+\item{units}{data.frame(ID, path, scaffold) or a character vector of IDs.}
 }
 \description{
 Clear the export group of selected units

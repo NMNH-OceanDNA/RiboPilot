@@ -189,7 +189,7 @@ stitch_scaffolds <- function(path_fasta, reference_fasta, max_gap = 2000, min_hi
   }
 
   # assemble a full layout: kept (in concat order), then redundant, then unplaced
-  order_map <- setNames(seq_len(nrow(placed)), placed$scaffold)
+  order_map <- stats::setNames(seq_len(nrow(placed)), placed$scaffold)
   out_layout <- layout
   out_layout$order <- unname(order_map[out_layout$scaffold])
   out_layout <- out_layout[order(is.na(out_layout$order), out_layout$order,

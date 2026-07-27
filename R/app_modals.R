@@ -42,7 +42,7 @@ modal_taxon_header <- function(id) {
 #' @noRd
 assemble_modal <- function(id) {
   modalDialog(
-    title = paste0("Assemble — ", id),
+    title = paste0("Assemble - ", id),
     size = "l", easyClose = TRUE,
     footer = tagList(
       actionButton("set_selected", "Set as selected path", class = "btn-primary btn-sm"),
@@ -202,7 +202,7 @@ run_modal <- function(mode, n, headless = FALSE, sched = NULL, script = "") {
   }
   modalDialog(
     title = div(style = "display:flex; justify-content:space-between; align-items:center; height:38px;",
-      span(sprintf("%s — %d sample(s) to update", wf, n)),
+      span(sprintf("%s - %d sample(s) to update", wf, n)),
       span(id = "rp_gears", class = "gears paused")),
     size = "l",
     shinyWidgets::prettyCheckbox("nf_resume", "Resume previous run?", value = TRUE,

@@ -19,6 +19,8 @@ parse_blast_candidates(
 
 \item{id}{Sample ID.}
 
+\item{path, scaffold}{Assembly unit within the sample.}
+
 \item{hits_file}{blastn outfmt-6 output (or a "NO_SIGNIFICANT_HITS" sentinel).}
 
 \item{taxdump_dir}{Optional pinned taxdump for resolving the screen hit's

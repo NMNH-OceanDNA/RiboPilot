@@ -10,6 +10,8 @@ compute_ref_alignment(con, id, path = 1L, scaffold = 1L)
 \item{con}{Open project DB connection.}
 
 \item{id}{Sample ID.}
+
+\item{path, scaffold}{Assembly unit within the sample.}
 }
 \value{
 (invisibly) number of element alignments written.

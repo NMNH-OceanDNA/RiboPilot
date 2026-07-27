@@ -7,9 +7,12 @@
 assign_export_group(path, units, group)
 }
 \arguments{
-\item{path}{Project dir. @param units data.frame(ID, path, scaffold) OR a
-character vector of sample IDs (assigns all of each sample's units).
-@param group Group name.}
+\item{path}{Project dir.}
+
+\item{units}{data.frame(ID, path, scaffold) OR a character vector of sample
+IDs (assigns all of each sample's units).}
+
+\item{group}{Group name.}
 }
 \description{
 Assign selected units to an export group (export_group is per unit now)

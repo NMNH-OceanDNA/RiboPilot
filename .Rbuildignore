@@ -17,3 +17,5 @@
 ^ref_dbs$
 ^\.taxonomy$
 ^RiboPilot_test\.R$
+^\.nextflow$
+^work$

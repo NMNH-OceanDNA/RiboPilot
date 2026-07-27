@@ -33,6 +33,7 @@ is_nuclear_rrna_title <- function(title) {
 #'
 #' @param con Open project DB connection.
 #' @param id Sample ID.
+#' @param path,scaffold Assembly unit within the sample.
 #' @param hits_file blastn outfmt-6 output (or a "NO_SIGNIFICANT_HITS" sentinel).
 #' @param taxdump_dir Optional pinned taxdump for resolving the screen hit's
 #'   lineage. Without it the lineage is left NA, which curation flags rather

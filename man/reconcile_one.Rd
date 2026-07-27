@@ -11,6 +11,8 @@ reconcile_one(con, id, path = 1L, scaffold = 1L, gff = NULL, positions = NULL)
 
 \item{id}{Sample ID.}
 
+\item{path, scaffold}{Assembly unit within the sample.}
+
 \item{gff}{barrnap GFF file (or NULL).}
 
 \item{positions}{ITSx positions file (or NULL).}

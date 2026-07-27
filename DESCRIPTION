@@ -28,6 +28,7 @@ Imports:
     ggplot2,
     glue,
     golem,
+    htmlwidgets,
     jsonlite,
     later,
     msaR,
@@ -39,11 +40,13 @@ Imports:
     shinyjs,
     shinyWidgets,
     stringr,
+    svglite,
     tools,
     utils
 Suggests:
     knitr,
     rmarkdown,
+    rstudioapi,
     testthat (>= 3.0.0),
     withr
 VignetteBuilder: knitr

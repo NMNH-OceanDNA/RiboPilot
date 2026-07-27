@@ -122,6 +122,7 @@ stitch_one <- function(con, id, fasta_out = NULL) {
 #'
 #' @param con Open DBI connection.
 #' @param id Sample ID.
+#' @param path,scaffold Assembly unit within the sample.
 #' @param gff barrnap GFF file (or NULL).
 #' @param positions ITSx positions file (or NULL).
 #' @return (invisibly) the feature data.frame.

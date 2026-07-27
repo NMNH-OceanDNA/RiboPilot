@@ -160,7 +160,7 @@ curate_rrna_core <- function(features, params = rrna_params(),
 }
 
 #' Thin actinopterygii curation wrapper.
-#' @param features,ref_pid,sample_lineage,hit_lineage,hit_is_nuclear_rrna see
+#' @param features,ref_pid,ref_cov,sample_lineage,hit_lineage,hit_is_nuclear_rrna,chimeric see
 #'   [curate_rrna_core()].
 #' @return see [curate_rrna_core()].
 #' @export
@@ -217,6 +217,7 @@ ensure_curate_schema <- function(con) {
 #'
 #' @param con Open DBI connection.
 #' @param id Sample ID.
+#' @param path,scaffold Assembly unit within the sample.
 #' @param ruleset Optional ruleset override (else read from `curate_opts`).
 #' @return (invisibly) the curate_rrna_core() result.
 #' @export

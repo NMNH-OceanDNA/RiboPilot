@@ -11,6 +11,8 @@ curate_one(con, id, path = 1L, scaffold = 1L, ruleset = NULL)
 
 \item{id}{Sample ID.}
 
+\item{path, scaffold}{Assembly unit within the sample.}
+
 \item{ruleset}{Optional ruleset override (else read from `curate_opts`).}
 }
 \value{

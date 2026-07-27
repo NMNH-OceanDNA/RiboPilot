@@ -8,9 +8,10 @@
 
 #' Assign selected units to an export group (export_group is per unit now)
 #'
-#' @param path Project dir. @param units data.frame(ID, path, scaffold) OR a
-#'   character vector of sample IDs (assigns all of each sample's units).
-#'   @param group Group name.
+#' @param path Project dir.
+#' @param units data.frame(ID, path, scaffold) OR a character vector of sample
+#'   IDs (assigns all of each sample's units).
+#' @param group Group name.
 #' @export
 assign_export_group <- function(path, units, group) {
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(path, ".sqlite"))
@@ -20,7 +21,8 @@ assign_export_group <- function(path, units, group) {
 }
 
 #' Clear the export group of selected units
-#' @param path Project dir. @param units data.frame(ID, path, scaffold) or IDs.
+#' @param path Project dir.
+#' @param units data.frame(ID, path, scaffold) or a character vector of IDs.
 #' @export
 clear_export_group <- function(path, units) {
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(path, ".sqlite"))
@@ -484,7 +486,8 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
 }
 
 #' Export every assigned export group in a project
-#' @param path Project directory. @param out_dir Output dir.
+#' @param path Project directory.
+#' @param out_dir Project "out" directory; bundles land in `<out_dir>/export`.
 #' @return (invisibly) the export groups exported.
 #' @export
 export_project <- function(path = ".", out_dir = file.path(path, "out")) {
