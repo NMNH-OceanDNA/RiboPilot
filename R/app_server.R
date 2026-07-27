@@ -1009,13 +1009,17 @@ app_server <- function(input, output, session) {
     set_unit_triage(con, id, p, s, verdict, reason = NA_character_, source = "user")
     refresh(refresh() + 1)
     showNotification(sprintf("Scaffold %s.%s marked %s.", p, s,
-      if (is.na(verdict)) "undecided" else verdict), type = "message")
+      if (is.na(verdict)) "undecided" else switch(verdict, keep = "keep", drop = "drop", verdict)),
+      type = "message")
   }
   observeEvent(input$scaf_triage, {
     id <- sel_id(); req(id)
     parts <- strsplit(as.character(input$scaf_triage), "|", fixed = TRUE)[[1]]
     req(length(parts) >= 4)
+    # exact match only: match.arg() would silently expand an abbreviation, so a
+    # malformed payload would act rather than fail
     want <- parts[4]
+    req(want %in% TRIAGE_VERDICTS)
     u <- unit_by_uid(paste(parts[1:3], collapse = "|")); req(!is.null(u))
     p <- u$path; s <- u$scaffold
     # clicking the state a row is already in clears it back to undecided

@@ -174,3 +174,20 @@ test_that("preview counts the outcome and names samples that would be emptied", 
   expect_equal(p2$n_drop, 2L)
   expect_equal(p2$emptied, character(0))
 })
+
+test_that("the triage button emits full verdict words, not letters", {
+  # A bare "k"/"d" used to resolve only through match.arg() partial matching,
+  # and then surfaced to the user as "marked k".
+  js <- as.character(RiboPilot:::rt_triage_bttn("scaf_triage"))
+  expect_match(js, "'keep'", fixed = TRUE)
+  expect_match(js, "'drop'", fixed = TRUE)
+  expect_false(grepl("toLowerCase", js, fixed = TRUE))
+})
+
+test_that("set_unit_triage rejects abbreviations instead of expanding them", {
+  con <- mk_triage_db(); on.exit(DBI::dbDisconnect(con))
+  expect_error(set_unit_triage(con, "S1", 1, 1, "k"), "must be one of")
+  expect_error(set_unit_triage(con, "S1", 1, 1, "dro"), "must be one of")
+  expect_silent(set_unit_triage(con, "S1", 1, 1, "keep"))
+  expect_silent(set_unit_triage(con, "S1", 1, 1, NA))
+})

@@ -39,8 +39,13 @@ set_unit_triage <- function(con, id, path, scaffold, verdict,
   path <- as.integer(path); scaffold <- as.integer(scaffold)
   if (length(verdict) == 0 || is.na(verdict[1]) || !nzchar(verdict[1])) {
     verdict <- NA_character_
+  } else if (verdict[1] %in% TRIAGE_VERDICTS) {
+    # exact, not match.arg(): partial matching would accept "k"/"d" and then
+    # report the abbreviation back to the caller as if it were the verdict
+    verdict <- verdict[1]
   } else {
-    verdict <- match.arg(verdict[1], TRIAGE_VERDICTS)
+    stop("verdict must be one of: ", paste(TRIAGE_VERDICTS, collapse = ", "),
+      ", or NA for undecided", call. = FALSE)
   }
   ig <- as.integer(identical(verdict, "drop"))
   DBI::dbExecute(con,

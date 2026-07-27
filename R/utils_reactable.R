@@ -164,19 +164,23 @@ rt_triage_bttn <- function(InputId) {
       var keep = (v === 'keep'), drop = (v === 'drop');
       var tip = reason ? reason : (keep ? 'kept' : (drop ? 'dropped' : 'not yet decided'));
       if (src) tip += ' (' + src + ')';
-      function btn(label, on, colOn) {
+      // Emits the full verdict word, not the button letter: the server side
+      // takes it as a verdict, and a bare 'k' only resolved to 'keep' by
+      // match.arg()'s partial matching while surfacing as \"marked k\" to the user.
+      function btn(label, verdict, on, colOn) {
         var st = on
           ? 'background:' + colOn + '; color:#fff; border:1px solid ' + colOn + ';'
           : 'background:transparent; color:#999; border:1px solid ' + (v ? '#ccc' : '#e0a800') + ';';
-        return '<a href=\"#\" style=\"display:inline-block; width:20px; text-align:center; ' +
+        return '<a href=\"#\" title=\"mark ' + verdict + '\" ' +
+          'style=\"display:inline-block; width:20px; text-align:center; ' +
           'font-size:0.75em; line-height:16px; border-radius:3px; margin-right:2px; ' +
           'text-decoration:none; ' + st + '\" ' +
           'onclick=\"event.stopPropagation(); Shiny.setInputValue(&#39;' + clickid +
-          '&#39;, &#39;' + uid + '|' + label.toLowerCase() + '&#39;, {priority: &#39;event&#39;})\">' +
+          '&#39;, &#39;' + uid + '|' + verdict + '&#39;, {priority: &#39;event&#39;})\">' +
           label + '</a>';
       }
       return '<span title=\"' + tip.replace(/\"/g, '') + '\">' +
-        btn('K', keep, '#2d6a4f') + btn('D', drop, '#c0392b') + '</span>';
+        btn('K', 'keep', keep, '#2d6a4f') + btn('D', 'drop', drop, '#c0392b') + '</span>';
     }", InputId) |> htmlwidgets::JS()
 }
 
