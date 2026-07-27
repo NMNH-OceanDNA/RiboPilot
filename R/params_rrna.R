@@ -37,19 +37,6 @@ RRNA_LENGTHS_METAZOA_INVERT <- utils::modifyList(RRNA_LENGTHS_METAZOA, list(
   "ITS2" = c(120L, 1200L)
 ))
 
-#' Curation ruleset for a clade
-#'
-#' Length ranges are for a COMPLETE, correctly assembled element; the flag/ok
-#' model has no partial concept yet, so a genuinely partial anchor is flagged
-#' short. `min_anchor_pid` is a single scalar across 18S/5.8S/28S here; a
-#' per-element threshold (the anchors evolve at very different rates) and a fix
-#' to the partial-reference identity computation are tracked separately.
-#'
-#' @param ruleset Clade key; one of [RRNA_RULESETS]. Unknown keys error rather
-#'   than silently falling back, so a typo cannot mis-curate a sample.
-#' @return list(name, lengths = named list el -> c(min,max), min_anchor_pid,
-#'   check_contaminant).
-#' @noRd
 #' Per-element reference-identity floors (%). The anchors evolve at very
 #' different rates: 18S and 5.8S are near-invariant within a phylum, while 28S is
 #' a mosaic of conserved core and hypervariable expansion segments whose overall
@@ -62,6 +49,20 @@ RRNA_ANCHOR_PID_METAZOA <- c("18S" = 95, "5.8S" = 93, "28S" = 80)
 RRNA_ANCHOR_PID_FISH    <- c("18S" = 97, "5.8S" = 95, "28S" = 85)
 RRNA_ANCHOR_PID_INVERT  <- c("18S" = 93, "5.8S" = 90, "28S" = 78)
 
+#' Curation ruleset for a clade
+#'
+#' Length ranges are for a COMPLETE, correctly assembled element; the flag/ok
+#' model has no partial concept yet, so a genuinely partial anchor is flagged
+#' short. `min_anchor_pid` is a NAMED PER-ELEMENT vector (see
+#' [RRNA_ANCHOR_PID_METAZOA]); the `curate_opts.min_anchor_pid` column and its
+#' options-modal control are still a single scalar and are not read by the
+#' engine, which is tracked separately.
+#'
+#' @param ruleset Clade key; one of [RRNA_RULESETS]. Unknown keys error rather
+#'   than silently falling back, so a typo cannot mis-curate a sample.
+#' @return list(name, lengths = named list el -> c(min,max), min_anchor_pid,
+#'   min_ref_coverage, min_anchor_coverage, check_contaminant).
+#' @noRd
 rrna_params <- function(ruleset = "metazoa_generic") {
   ruleset <- ruleset %||% "metazoa_generic"
   if (!nzchar(ruleset)) ruleset <- "metazoa_generic"

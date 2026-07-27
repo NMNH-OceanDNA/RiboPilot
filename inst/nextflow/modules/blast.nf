@@ -1,4 +1,4 @@
-// WF1 remote GenBank BLAST: megablast the stitched nrDNA sequence against
+// WF1 remote GenBank BLAST: megablast each nrDNA scaffold against
 // core_nt, then parse the hits into (a) ranked nuclear-rDNA reference
 // candidates and (b) a contamination screen. Best-effort: retries on
 // connection / rate-limit failures, then 'ignore' so other samples keep
@@ -45,15 +45,44 @@ process blast_genbank {
     UNITS=\$(sqlite3 -separator '.' '${params.db}' "SELECT path||'.'||scaffold FROM assemblies WHERE ID='${id}' AND COALESCE(ignore,0)=0;")
     for U in \$UNITS; do
         P=\${U%.*}; S=\${U#*.}
+        # Already screened on an earlier attempt: do not re-submit to NCBI. The
+        # loop exits 1 on any unit's failure under a shared retry budget, so
+        # without this a 30-unit sample re-runs every completed search.
+        DONE=\$(sqlite3 '${params.db}' "SELECT COUNT(*) FROM blast_hits WHERE ID='${id}' AND path=\$P AND scaffold=\$S;" 2>/dev/null || echo 0)
+        if [ "\${DONE:-0}" -gt 0 ]; then continue; fi
+
         sqlite3 '${params.db}' "SELECT '>'||ID||'.'||path||'.'||scaffold||char(10)||sequence FROM assemblies WHERE ID='${id}' AND path=\$P AND scaffold=\$S;" > query.fa
         [ -s query.fa ] || continue
+
+        # Keep the hit distribution, not just one row per subject: bitscore (the
+        # statistic that actually orders alignments), alignment length, and the
+        # query coordinates that make a chimera visible as two disjoint HSP sets
+        # with different subjects. Same single remote round trip as before.
+        OUTFMT="6 saccver stitle pident qcovs evalue staxids bitscore length qstart qend sstart send"
         if blastn -remote -db core_nt -query query.fa \
-            -outfmt "6 saccver stitle pident qcovs evalue staxids" \
-            -max_target_seqs "\${MTS:-50}" -max_hsps 1 -task megablast \
+            -outfmt "\$OUTFMT" \
+            -max_target_seqs "\${MTS:-50}" -max_hsps 5 -task megablast \
             \${EQ_OPT:+\$EQ_OPT "\$EQ"} \${XO} > hits.txt; then
             [ -s hits.txt ] || echo "NO_SIGNIFICANT_HITS" > hits.txt
         else
             exit 1
+        fi
+
+        # megablast needs a 28 bp exact match, which a divergent fungal or
+        # bacterial contaminant against a metazoan query often cannot provide,
+        # so "no hits" reads as unchecked rather than as a signal. One bounded
+        # discontiguous-megablast retry for those units only.
+        BESTCOV=\$(awk -F'\\t' 'BEGIN{m=0} \$4+0>m{m=\$4+0} END{print m+0}' hits.txt 2>/dev/null || echo 0)
+        if grep -q NO_SIGNIFICANT_HITS hits.txt || [ "\${BESTCOV%%.*}" -lt 25 ]; then
+            if blastn -remote -db core_nt -query query.fa \
+                -outfmt "\$OUTFMT" \
+                -max_target_seqs "\${MTS:-50}" -max_hsps 5 -task dc-megablast \
+                \${EQ_OPT:+\$EQ_OPT "\$EQ"} \${XO} > hits_dc.txt 2>/dev/null; then
+                if [ -s hits_dc.txt ]; then
+                    echo "dc-megablast fallback used for ${id} \$P.\$S" >&2
+                    mv hits_dc.txt hits.txt
+                fi
+            fi
         fi
         RIBOPILOT_SRC='${params.ribopilot_src}' rp_blast.R '${params.db}' '${id}' "\$P" "\$S" hits.txt '${params.taxdump_dir}'
     done

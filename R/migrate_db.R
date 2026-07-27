@@ -5,7 +5,42 @@
 
 #' Current project-DB schema version. Bump when adding a migration step below.
 #' @noRd
-RIBOPILOT_SCHEMA_VERSION <- 8L
+RIBOPILOT_SCHEMA_VERSION <- 10L
+
+#' DDL for blast_hits: the full retained BLAST hit distribution per unit.
+#'
+#' One row per (subject, HSP). The pipeline already pays for a remote core_nt
+#' search and used to keep a single row of up to 50 subjects; everything a
+#' contamination call needs -- the hit distribution, the on/off-target bitscore
+#' margin, and the positional structure that separates a chimera from a clean
+#' scaffold -- was discarded. Shared by new_db() and the v9 migration.
+#' @noRd
+BLAST_HITS_DDL <- "CREATE TABLE IF NOT EXISTS blast_hits (
+  ID TEXT NOT NULL,
+  path INTEGER NOT NULL DEFAULT 1,
+  scaffold INTEGER NOT NULL DEFAULT 1,
+  hit_rank INTEGER NOT NULL,
+  hsp INTEGER NOT NULL DEFAULT 1,
+  accession TEXT,
+  title TEXT,
+  species TEXT,
+  staxid INTEGER,
+  lineage TEXT,
+  lineage_taxids TEXT,
+  rank_distance INTEGER,
+  pident REAL,
+  qcovs REAL,
+  evalue REAL,
+  bitscore REAL,
+  aln_len INTEGER,
+  qstart INTEGER,
+  qend INTEGER,
+  sstart INTEGER,
+  send INTEGER,
+  is_nuclear_rrna INTEGER,
+  time_stamp INTEGER,
+  PRIMARY KEY (ID, path, scaffold, hit_rank, hsp)
+);"
 
 #' DDL for the assembly_backup table (original pre-trim state, for undo/restore).
 #' Shared by new_db() and the v6 migration so both agree on the schema.
@@ -248,10 +283,71 @@ migrate_db <- function(con) {
         PRIMARY KEY (ID, path, scaffold, accession, element));")
   }
 
+  # --- schema v9: retained BLAST hit distribution + rank-aligned lineages ---
+  DBI::dbExecute(con, BLAST_HITS_DDL)
+  # Which search wrote assemblies.blast_*: the local clade seed DB (host-clade
+  # by construction, so its identity carries no contamination signal) or the
+  # unrestricted remote core_nt search. Previously indistinguishable.
+  add_col("assemblies", "blast_source", "TEXT")
+  # Rank-aligned taxid path for the frozen sample lineage, so rank_distance()
+  # can compare on taxids rather than name tokens.
+  add_col("samples", "lineage_taxids", "TEXT")
+  add_col("blast_screen", "lineage_taxids", "TEXT")
+  add_col("blast_screen", "rank_distance", "INTEGER")
+  add_col("blast_screen", "bitscore", "REAL")
+  add_col("blast_ref_candidates", "bitscore", "REAL")
+  # blast_hits is the ranking source of truth from v9 on; drop any partial rows
+  # written by an interrupted pre-v9 run so a re-BLAST repopulates cleanly.
+  if (ver < 9L && has_tbl("blast_hits")) DBI::dbExecute(con, "DELETE FROM blast_hits;")
+
+  # --- schema v10: median per-position depth ---
+  # The relative-depth comparison in the app is meant to reflect abundance, but a
+  # mean over an rDNA scaffold is inflated by the conserved cores in proportion
+  # to how much core the scaffold contains. The per-position track is already
+  # stored, so existing projects can be back-filled without re-running coverage.
+  add_col("coverage", "median_depth", "REAL")
+
   if (ver < RIBOPILOT_SCHEMA_VERSION) {
     DBI::dbExecute(con, sprintf("PRAGMA user_version = %d", RIBOPILOT_SCHEMA_VERSION))
   }
   invisible(RIBOPILOT_SCHEMA_VERSION)
+}
+
+#' Back-fill `coverage.median_depth` from the stored per-position tracks
+#'
+#' Computed lazily rather than inside [migrate_db()]: a depth track is one
+#' comma-joined integer per base, so a large project holds hundreds of MB of
+#' them and parsing every row would make opening the app crawl. Rows written
+#' before schema v10 keep a NULL median and fall back to the mean until this
+#' runs.
+#'
+#' @param con Open project DB connection.
+#' @param limit Maximum rows to fill in one call (NULL = all).
+#' @return (invisibly) the number of rows filled.
+#' @export
+backfill_coverage_median <- function(con, limit = NULL) {
+  if (!("median_depth" %in% DBI::dbListFields(con, "coverage"))) {
+    return(invisible(0L))
+  }
+  q <- "SELECT ID, path, scaffold, depths FROM coverage
+        WHERE median_depth IS NULL AND depths IS NOT NULL AND depths != ''"
+  if (!is.null(limit)) q <- paste(q, "LIMIT", as.integer(limit))
+  d <- tryCatch(DBI::dbGetQuery(con, q), error = function(e) data.frame())
+  if (nrow(d) == 0) {
+    return(invisible(0L))
+  }
+  upd <- DBI::dbSendStatement(con,
+    "UPDATE coverage SET median_depth = ? WHERE ID = ? AND path = ? AND scaffold = ?")
+  on.exit(DBI::dbClearResult(upd), add = TRUE)
+  n <- 0L
+  for (i in seq_len(nrow(d))) {
+    v <- suppressWarnings(as.numeric(strsplit(d$depths[i], ",", fixed = TRUE)[[1]]))
+    v <- v[!is.na(v)]
+    if (!length(v)) next
+    DBI::dbBind(upd, list(round(stats::median(v), 2), d$ID[i], d$path[i], d$scaffold[i]))
+    n <- n + 1L
+  }
+  invisible(n)
 }
 
 #' Copy a project's `.sqlite` into `<path>/.old_sqlite_dbs/` before an upgrade

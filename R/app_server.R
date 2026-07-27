@@ -856,26 +856,147 @@ app_server <- function(input, output, session) {
         auto_select = reactable::colDef(name = "Auto", width = 60)),
       rowStyle = function(index) if (isTRUE(d$auto_select[index] == 1)) list(background = "#eafaf0") else NULL)
   })
-  output$assemble_scaffolds <- reactable::renderReactable({
+  # Single source of truth for the scaffold table AND its click handlers. The
+  # handlers used to re-query and index by row position, so any change to the
+  # display order silently acted on the wrong scaffold; clicks are now keyed on
+  # the row's own uid and nothing depends on ordering.
+  scaffold_rows <- reactive({
     id <- sel_id(); req(id); refresh()
-    d <- app_query("SELECT path, scaffold, length, topology,
-         blast_species, blast_accession, blast_pident, COALESCE(ignore,0) AS ignore
-       FROM assemblies WHERE ID = ? ORDER BY path, scaffold", params = list(id))
+    unit_evidence(id)
+  })
+  unit_by_uid <- function(uid) {
+    d <- scaffold_rows()
+    if (is.null(uid) || !nrow(d)) return(NULL)
+    p <- strsplit(as.character(uid), "|", fixed = TRUE)[[1]]
+    if (length(p) < 3) return(NULL)
+    r <- d[d$path == as.integer(p[2]) & d$scaffold == as.integer(p[3]), , drop = FALSE]
+    if (!nrow(r)) NULL else r[1, ]
+  }
+  output$assemble_scaffolds <- reactable::renderReactable({
+    d <- scaffold_rows()
+    if (nrow(d) == 0) {
+      return(reactable::reactable(
+        data.frame(` ` = "No assembled scaffolds for this sample yet.", check.names = FALSE),
+        compact = TRUE))
+    }
     d$include <- ifelse(d$ignore == 1, "ignored", "kept")
-    reactable::reactable(d, compact = TRUE, resizable = TRUE, defaultPageSize = 10,
-      defaultColDef = reactable::colDef(align = "left"),
+    d$hits <- "hits"
+    # reactable renders in data-frame column order, so the row identifier has to
+    # lead here; colDef(sticky=) alone does not move it.
+    lead <- c("unit", "length", "topology", "depth", "elements")
+    d <- d[, c(intersect(lead, names(d)), setdiff(names(d), lead)), drop = FALSE]
+    reactable::reactable(d, compact = TRUE, resizable = TRUE, filterable = TRUE,
+      searchable = TRUE, sortable = TRUE, wrap = FALSE, defaultPageSize = 20,
+      defaultColDef = reactable::colDef(align = "left", show = FALSE),
       columns = list(
-        path = reactable::colDef(name = "Path", width = 60),
-        scaffold = reactable::colDef(name = "Scaf", width = 60),
-        length = reactable::colDef(name = "Length", width = 90),
-        topology = reactable::colDef(name = "Topology", width = 90),
-        blast_species = reactable::colDef(name = "BLAST Hit", minWidth = 150, html = TRUE, cell = rt_longtext()),
-        blast_accession = reactable::colDef(name = "Accession", minWidth = 110, html = TRUE, cell = rt_ncbi_link()),
-        blast_pident = reactable::colDef(name = "%ID", width = 70),
-        ignore = reactable::colDef(show = FALSE),
-        include = reactable::colDef(name = "Include (click)", width = 130, html = TRUE, cell = rt_link("scaf_ignore"))),
+        unit = reactable::colDef(name = "Unit", width = 72, show = TRUE, sticky = "left"),
+        length = reactable::colDef(name = "Length", width = 80, show = TRUE),
+        topology = reactable::colDef(name = "Topology", width = 85, show = TRUE),
+        # The number is this scaffold's absolute median depth; the bar beside it
+        # is that value as a fraction of the sample's deepest scaffold. Naming
+        # the column "relative" described the bar and misdescribed the number.
+        depth = reactable::colDef(name = "Median depth", width = 125, show = TRUE, html = TRUE,
+          cell = rt_depth_bar("depth_max")),
+        elements = reactable::colDef(name = "rRNA features", width = 240, show = TRUE, html = TRUE,
+          cell = rt_element_strip()),
+        screen_species = reactable::colDef(name = "Top GenBank hit", minWidth = 160, show = TRUE,
+          html = TRUE, cell = rt_longtext()),
+        shares = reactable::colDef(name = "Shares", width = 105, show = TRUE, html = TRUE,
+          cell = rt_shares_badge()),
+        odd_one_out = reactable::colDef(name = "", width = 55, show = TRUE, html = TRUE,
+          filterable = FALSE, cell = rt_odd_badge()),
+        screen_accession = reactable::colDef(name = "Accession", width = 110, show = TRUE,
+          html = TRUE, cell = rt_ncbi_link()),
+        screen_pident = reactable::colDef(name = "%ID", width = 65, show = TRUE),
+        hits = reactable::colDef(name = "", width = 55, show = TRUE, html = TRUE, filterable = FALSE,
+          cell = rt_unit_link("scaf_hits")),
+        include = reactable::colDef(name = "Include", width = 90, show = TRUE, html = TRUE,
+          filterable = FALSE, cell = rt_unit_link("scaf_ignore")),
+        uid = reactable::colDef(show = FALSE), depth_max = reactable::colDef(show = FALSE),
+        sib_taxon = reactable::colDef(show = FALSE), sib_rank = reactable::colDef(show = FALSE)),
       rowStyle = function(index) if (isTRUE(d$ignore[index] == 1)) list(background = "#f3f3f3", color = "#999") else NULL)
   })
+
+  # ---- per-unit BLAST evidence: the unfiltered screen vs the rDNA panel ----
+  sel_hit_unit <- reactiveVal(NULL)
+  observeEvent(input$scaf_hits, {
+    u <- unit_by_uid(input$scaf_hits); req(!is.null(u))
+    sel_hit_unit(list(path = u$path, scaffold = u$scaffold))
+  })
+  # default to the first kept unit so the panel is never empty on open
+  observeEvent(scaffold_rows(), {
+    d <- scaffold_rows()
+    if (nrow(d) == 0) { sel_hit_unit(NULL); return() }
+    cur <- sel_hit_unit()
+    if (!is.null(cur) && any(d$path == cur$path & d$scaffold == cur$scaffold)) return()
+    k <- which(d$ignore == 0)[1]
+    if (is.na(k)) k <- 1L
+    sel_hit_unit(list(path = d$path[k], scaffold = d$scaffold[k]))
+  })
+  output$unit_screen <- renderUI({
+    h <- sel_hit_unit(); d <- scaffold_rows()
+    if (is.null(h) || nrow(d) == 0) return(NULL)
+    r <- d[d$path == h$path & d$scaffold == h$scaffold, , drop = FALSE]
+    if (nrow(r) == 0) return(NULL)
+    r <- r[1, ]
+    lbl <- sprintf("Scaffold p%s.s%s", r$path, r$scaffold)
+    if (is.na(r$screen_accession)) {
+      return(tagList(
+        tags$b(lbl),
+        div(style = "color:#888; margin-top:4px;",
+          "No GenBank screen for this scaffold yet (run WF1 with BLAST enabled).")))
+    }
+    tagList(
+      tags$b(lbl),
+      div(style = "margin-top:4px;",
+        tags$span(style = "color:#555;", "Best match anywhere in core_nt, NOT restricted to nuclear rDNA:")),
+      div(class = "code-block", style = "white-space:normal; margin-top:3px;",
+        HTML(sprintf("<b>%s</b> &nbsp; %s &nbsp; %s%% id &nbsp; %s%% cov<br><span style='color:#666;'>%s</span>",
+          r$screen_species %|NA|% "unknown",
+          sprintf("<a href='https://www.ncbi.nlm.nih.gov/nuccore/%s' target='_blank'>%s</a>",
+            r$screen_accession, r$screen_accession),
+          r$screen_pident %|NA|% "?", r$screen_qcovs %|NA|% "?",
+          r$screen_title %|NA|% ""))),
+      div(style = "margin-top:5px;",
+        # yes is the GOOD case here (the hit is a nuclear rDNA record), so no invert
+        status_badge("Nuclear rDNA", if (isTRUE(r$is_nuclear_rrna == 1)) "yes" else "no"),
+        tags$span(style = "margin-left:8px; color:#555;",
+          sprintf("shares %s with %s",
+            if (is.na(r$shares)) "no resolved rank" else r$shares,
+            r$sci_name %|NA|% "this sample"))),
+      if (isTRUE(r$odd_one_out)) div(style = "margin-top:5px; color:#7d4a1e;",
+        sprintf("This scaffold's top hit differs from the rest of this sample (%s at %s).",
+          r$sib_taxon %|NA|% "the majority", r$sib_rank %|NA|% "")))
+  })
+  output$unit_candidates <- reactable::renderReactable({
+    h <- sel_hit_unit(); id <- sel_id(); req(!is.null(h), id)
+    d <- app_query(
+      "SELECT rank, accession, species, title, pident, qcovs, bitscore, evalue
+       FROM blast_ref_candidates WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY rank",
+      params = list(id, h$path, h$scaffold))
+    if (nrow(d) == 0) {
+      # An empty panel is itself a finding: the nuclear-rDNA title filter matched
+      # nothing, which is common in sparse invertebrate clades.
+      return(reactable::reactable(data.frame(
+        ` ` = "No nuclear rDNA reference matched this scaffold. See the unrestricted screen above.",
+        check.names = FALSE), compact = TRUE))
+    }
+    reactable::reactable(d, compact = TRUE, resizable = TRUE, filterable = TRUE,
+      wrap = FALSE, defaultPageSize = 10, defaultColDef = reactable::colDef(align = "left"),
+      columns = list(
+        rank = reactable::colDef(name = "#", width = 45),
+        accession = reactable::colDef(name = "Accession", width = 115, html = TRUE, cell = rt_ncbi_link()),
+        species = reactable::colDef(name = "Species", minWidth = 140, html = TRUE, cell = rt_longtext()),
+        title = reactable::colDef(name = "Title", minWidth = 240, html = TRUE, cell = rt_longtext()),
+        pident = reactable::colDef(name = "%ID", width = 65),
+        qcovs = reactable::colDef(name = "Cov", width = 60),
+        bitscore = reactable::colDef(name = "Bits", width = 70),
+        evalue = reactable::colDef(name = "E", width = 80)))
+  })
+  output$unit_coverage_plot <- renderPlot({
+    h <- sel_hit_unit(); id <- sel_id(); req(!is.null(h), id)
+    plot_coverage(id, h$path, h$scaffold)
+  }, height = 130)
   # Toggle a scaffold's ignore flag: dropped scaffolds are excluded from
   # annotation + export; their annotate unit is removed / re-seeded to match.
   # Ignoring is destructive (reconcile_ignore_unit DELETEs the unit's annotate /
@@ -894,11 +1015,9 @@ app_server <- function(input, output, session) {
       type = "message")
   }
   observeEvent(input$scaf_ignore, {
-    i <- suppressWarnings(as.integer(input$scaf_ignore)); id <- sel_id(); req(!is.na(i), id)
-    d <- app_query("SELECT path, scaffold, COALESCE(ignore,0) AS ignore FROM assemblies WHERE ID = ? ORDER BY path, scaffold",
-      params = list(id))
-    req(i >= 1, i <= nrow(d))
-    p <- d$path[i]; s <- d$scaffold[i]; new_ig <- 1L - as.integer(d$ignore[i])
+    id <- sel_id(); req(id)
+    u <- unit_by_uid(input$scaf_ignore); req(!is.null(u))
+    p <- u$path; s <- u$scaffold; new_ig <- 1L - as.integer(u$ignore)
     if (new_ig == 1L) {
       st <- app_query(
         "SELECT annotate_lock, reviewed, export_group FROM annotate

@@ -1,13 +1,16 @@
 # reactable rendering helpers (mirrors MitoPilot's utils_reactable.R).
 
 #' Highlight selected row(s)
+#'
+#' Returns nothing for unselected rows so `striped = TRUE` still bands the
+#' table; forcing #FFFFFF here silently cancelled it.
 #' @noRd
 rt_highlight_row <- function() {
   htmlwidgets::JS("
     function(rowInfo) {
       if (typeof rowInfo === 'undefined') return
-      var col = rowInfo.selected ? '#D3BEC2' : '#FFFFFF'
-      return { background: col }
+      if (!rowInfo.selected) return null
+      return { background: '#D3BEC2' }
     }")
 }
 
@@ -114,6 +117,122 @@ rt_link <- function(InputId) {
         `</a>`;
     }", InputId
   ) |> htmlwidgets::JS()
+}
+
+#' Clickable cell keyed on the row's own `uid`, not its position
+#'
+#' [rt_link()] sends `cellInfo.index + 1`, so every handler has to re-query and
+#' index back into the result: if the two orderings ever disagree the click acts
+#' on the WRONG row, and on this table that means deleting another scaffold's
+#' curation. The uid (`ID|path|scaffold`) is carried in the row itself, so
+#' sorting, filtering and paging cannot desynchronise it. IDs are constrained to
+#' `^[a-zA-Z0-9_:-]+$` at project creation, so `|` cannot occur inside one.
+#' @param InputId shiny input id to set on click.
+#' @param suffix Optional string appended after a second `|` (e.g. an action).
+#' @noRd
+rt_unit_link <- function(InputId, suffix = NULL) {
+  sprintf(
+    "function(cellInfo) {
+      var clickid = '%s';
+      var uid = cellInfo.row['uid'];
+      if (uid === null || uid === undefined) return cellInfo.value ? cellInfo.value : '';
+      var payload = uid%s;
+      return `<a href='#' class='grow' ` +
+        `onclick='event.stopPropagation(); Shiny.setInputValue(&#39;${clickid}&#39;, ` +
+        `&#39;${payload}&#39;, {priority: &#39;event&#39;})'>` +
+        (cellInfo.value ? cellInfo.value : '') + `</a>`;
+    }", InputId, if (is.null(suffix)) "" else sprintf(" + '|%s'", suffix)
+  ) |> htmlwidgets::JS()
+}
+
+#' Render the deepest shared taxonomic rank between a hit and the sample
+#'
+#' Deliberately never asserts "host". The evidence supports "shares X at rank Y",
+#' and a green host badge on a co-extracted copepod would be worse than showing
+#' nothing. `no reference` renders NEUTRAL GREY, not amber: for an offline
+#' project or a sparse clade it is the normal state, and painting it as
+#' needs-attention makes every sample in the tool's core use case look broken.
+#' @noRd
+rt_shares_badge <- function() {
+  htmlwidgets::JS(
+    "function(cellInfo) {
+      var v = cellInfo.value
+      if (v === null || v === undefined || v === '' || v === 'NA')
+        return '<span style=\"color:#999;\" title=\"no reference resolved for this scaffold\">no reference</span>'
+      var close = {species:1, genus:1, family:1}
+      var mid   = {order:1, class:1}
+      var bg, fg
+      if (close[v])      { bg = '#d4edda'; fg = '#2d6a4f' }
+      else if (mid[v])   { bg = '#eef7e6'; fg = '#40693f' }
+      else if (v === 'none') { bg = '#f8d7da'; fg = '#842029' }
+      else               { bg = '#fde8d0'; fg = '#7d4a1e' }
+      var t = cellInfo.row['screen_species'] ? cellInfo.row['screen_species'] : ''
+      return '<span title=\"top GenBank hit: ' + t + '\" style=\"background:' + bg +
+        '; color:' + fg + '; border-radius:3px; padding:1px 6px; font-size:0.85em;\">' + v + '</span>'
+    }")
+}
+
+#' Flag a scaffold whose top hit disagrees with its own siblings
+#' @noRd
+rt_odd_badge <- function() {
+  htmlwidgets::JS(
+    "function(cellInfo) {
+      if (cellInfo.value !== true && cellInfo.value !== 'TRUE') return ''
+      var sib = cellInfo.row['sib_taxon'] ? cellInfo.row['sib_taxon'] : 'the others'
+      var rk  = cellInfo.row['sib_rank'] ? cellInfo.row['sib_rank'] : ''
+      return '<span title=\"this scaffold&#39;s top hit differs from the rest of the sample (' +
+        sib + ' at ' + rk + ')\" style=\"background:#fde8d0; color:#7d4a1e; border-radius:3px;' +
+        ' padding:1px 6px; font-size:0.85em;\">odd</span>'
+    }")
+}
+
+#' Inline depth bar relative to the deepest scaffold of the same sample
+#'
+#' The value is the MEDIAN per-position depth where one is stored (see
+#' R/coverage.R for why a mean misleads on an rDNA scaffold); the tooltip names
+#' which statistic it is, so a pre-v10 row falling back to the mean is not read
+#' as a median.
+#' @param max_col Column holding the sample maximum.
+#' @noRd
+rt_depth_bar <- function(max_col = "depth_max") {
+  sprintf(
+    "function(cellInfo) {
+      var v = cellInfo.value, m = cellInfo.row['%s']
+      if (v === null || v === undefined || v === '') return ''
+      var stat = cellInfo.row['depth_stat'] ? cellInfo.row['depth_stat'] : 'median'
+      var mean = cellInfo.row['depth_mean']
+      var tip = stat + ' depth ' + v + 'x'
+      if (mean !== null && mean !== undefined && mean !== '' && stat === 'median') tip += ' (mean ' + mean + 'x)'
+      if (!m || m <= 0) return '<span title=\"' + tip + '\">' + v + '</span>'
+      var f = Math.max(0, Math.min(1, v / m))
+      var w = Math.round(f * 46)
+      var col = f < 0.05 ? '#c0392b' : (f < 0.33 ? '#b8860b' : '#2d6a4f')
+      tip += ', ' + Math.round(f*100) + '%% of this sample&#39;s deepest scaffold'
+      if (v === 0) tip += ' -- over half this scaffold has no coverage'
+      return '<span title=\"' + tip + '\">' +
+        '<span style=\"display:inline-block; width:48px; height:8px; background:#eee; vertical-align:middle;\">' +
+        '<span style=\"display:inline-block; width:' + w + 'px; height:8px; background:' + col + ';\"></span></span>' +
+        '<span style=\"margin-left:5px; font-size:0.85em; color:#555;\">' + v + '</span></span>'
+    }", max_col) |> htmlwidgets::JS()
+}
+
+#' Render the five rDNA elements as filled/hollow pills
+#' @noRd
+rt_element_strip <- function() {
+  htmlwidgets::JS(
+    "function(cellInfo) {
+      var want = ['18S','ITS1','5.8S','ITS2','28S']
+      var have = (cellInfo.value ? String(cellInfo.value) : '').split(',')
+      var out = ''
+      for (var i = 0; i < want.length; i++) {
+        var on = have.indexOf(want[i]) >= 0
+        out += '<span style=\"display:inline-block; margin-right:2px; padding:0 4px; font-size:0.72em;' +
+          ' border-radius:2px; border:1px solid ' + (on ? '#2d6a4f' : '#ccc') + '; color:' +
+          (on ? '#fff' : '#bbb') + '; background:' + (on ? '#2d6a4f' : 'transparent') + ';\">' +
+          want[i] + '</span>'
+      }
+      return '<span title=\"rRNA/ITS features annotated on this scaffold\">' + out + '</span>'
+    }")
 }
 
 #' Format a unix timestamp as a date

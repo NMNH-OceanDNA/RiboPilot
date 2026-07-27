@@ -73,6 +73,30 @@ process query_annotate_samples {
     """
 }
 
+// WF1: the assembly units of ONE sample that has just been assembled, so
+// annotation can run over every scaffold as it is produced rather than waiting
+// for the user to review and lock. Unlike query_annotate_samples this does not
+// gate on assemble_lock or annotate_switch: nothing has been reviewed yet.
+process query_sample_units {
+    cache false
+    executor 'local'
+    tag "${id}"
+    input:
+    val id
+    output:
+    tuple val(id), path('units.tsv')
+    script:
+    """
+    printf 'ID\tpath\tscaffold\tcpus\tmem\n' > units.tsv
+    sqlite3 -separator '\t' '${params.db}' "
+      SELECT an.ID, an.path, an.scaffold, COALESCE(ao.cpus,4) AS cpus, COALESCE(ao.memory,8) AS mem
+      FROM annotate an
+      JOIN annotate_opts ao ON an.annotate_opts = ao.annotate_opts
+      JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
+      WHERE an.ID = '${id}' AND an.annotate_lock = 0 AND COALESCE(asm.ignore,0) = 0;" >> units.tsv
+    """
+}
+
 // Load assemblies + score candidate paths (auto-select). Reads the published
 // assembly fastas from the project out/ dir; the staged inputs force ordering
 // after assemble.
@@ -114,6 +138,9 @@ process stitch {
 process annotate_tools {
     cache false
     tag "${id}.${upath}.${uscaf}"
+    // One scaffold's barrnap/ITSx failure must not sink the whole sample: WF1
+    // now annotates every unit, including short fragments and contaminants.
+    errorStrategy 'ignore'
     cpus { nthreads as int }
     memory { "${mem} GB" }
     input:
