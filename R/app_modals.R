@@ -49,12 +49,30 @@ assemble_modal <- function(id) {
       modalButton("Close")
     ),
     modal_taxon_header(id),
-    uiOutput("sel_path_ui"),
-    h5("Candidate paths (auto-selected in green)"),
-    reactable::reactableOutput("assemble_scores"),
-    hr(),
-    h5("Scaffolds"),
-    reactable::reactableOutput("assemble_scaffolds")
+    h5("Scaffolds", style = "margin:2px 0 4px;"),
+    div(style = "color:#888; font-size:0.82em; margin-bottom:4px;",
+      paste("Depth is relative to this sample's deepest scaffold.",
+        "\"Shares\" is the deepest rank the scaffold's top GenBank hit has in common",
+        "with the sample; \"no reference\" is normal for an under-represented taxon.")),
+    reactable::reactableOutput("assemble_scaffolds"),
+    tags$hr(style = "margin:10px 0;"),
+
+    # The evidence that settles the keep/drop call, at the point it is made.
+    # blast_screen and blast_ref_candidates are both written per unit by WF1 and
+    # neither was rendered anywhere: when they name different organisms, that is
+    # the contamination signal.
+    rp_details("GenBank evidence for the selected scaffold",
+      uiOutput("unit_screen"),
+      div(style = "margin-top:8px; color:#555;",
+        "Best matches among records whose title says nuclear rDNA:"),
+      reactable::reactableOutput("unit_candidates")),
+
+    rp_details("Read coverage (selected scaffold)", open = FALSE,
+      plotOutput("unit_coverage_plot", height = "140px")),
+
+    rp_details("Candidate paths", open = FALSE,
+      uiOutput("sel_path_ui"),
+      reactable::reactableOutput("assemble_scores"))
   )
 }
 
