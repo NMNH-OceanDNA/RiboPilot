@@ -892,7 +892,10 @@ app_server <- function(input, output, session) {
         unit = reactable::colDef(name = "Unit", width = 72, show = TRUE, sticky = "left"),
         length = reactable::colDef(name = "Length", width = 80, show = TRUE),
         topology = reactable::colDef(name = "Topology", width = 85, show = TRUE),
-        depth = reactable::colDef(name = "Depth (rel)", width = 110, show = TRUE, html = TRUE,
+        # The number is this scaffold's absolute median depth; the bar beside it
+        # is that value as a fraction of the sample's deepest scaffold. Naming
+        # the column "relative" described the bar and misdescribed the number.
+        depth = reactable::colDef(name = "Median depth", width = 125, show = TRUE, html = TRUE,
           cell = rt_depth_bar("depth_max")),
         elements = reactable::colDef(name = "rRNA features", width = 240, show = TRUE, html = TRUE,
           cell = rt_element_strip()),
@@ -955,7 +958,8 @@ app_server <- function(input, output, session) {
           r$screen_pident %|NA|% "?", r$screen_qcovs %|NA|% "?",
           r$screen_title %|NA|% ""))),
       div(style = "margin-top:5px;",
-        status_badge("Nuclear rDNA", if (isTRUE(r$is_nuclear_rrna == 1)) "yes" else "no", invert = TRUE),
+        # yes is the GOOD case here (the hit is a nuclear rDNA record), so no invert
+        status_badge("Nuclear rDNA", if (isTRUE(r$is_nuclear_rrna == 1)) "yes" else "no"),
         tags$span(style = "margin-left:8px; color:#555;",
           sprintf("shares %s with %s",
             if (is.na(r$shares)) "no resolved rank" else r$shares,
