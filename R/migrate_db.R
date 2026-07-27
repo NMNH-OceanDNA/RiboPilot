@@ -5,7 +5,42 @@
 
 #' Current project-DB schema version. Bump when adding a migration step below.
 #' @noRd
-RIBOPILOT_SCHEMA_VERSION <- 8L
+RIBOPILOT_SCHEMA_VERSION <- 9L
+
+#' DDL for blast_hits: the full retained BLAST hit distribution per unit.
+#'
+#' One row per (subject, HSP). The pipeline already pays for a remote core_nt
+#' search and used to keep a single row of up to 50 subjects; everything a
+#' contamination call needs -- the hit distribution, the on/off-target bitscore
+#' margin, and the positional structure that separates a chimera from a clean
+#' scaffold -- was discarded. Shared by new_db() and the v9 migration.
+#' @noRd
+BLAST_HITS_DDL <- "CREATE TABLE IF NOT EXISTS blast_hits (
+  ID TEXT NOT NULL,
+  path INTEGER NOT NULL DEFAULT 1,
+  scaffold INTEGER NOT NULL DEFAULT 1,
+  hit_rank INTEGER NOT NULL,
+  hsp INTEGER NOT NULL DEFAULT 1,
+  accession TEXT,
+  title TEXT,
+  species TEXT,
+  staxid INTEGER,
+  lineage TEXT,
+  lineage_taxids TEXT,
+  rank_distance INTEGER,
+  pident REAL,
+  qcovs REAL,
+  evalue REAL,
+  bitscore REAL,
+  aln_len INTEGER,
+  qstart INTEGER,
+  qend INTEGER,
+  sstart INTEGER,
+  send INTEGER,
+  is_nuclear_rrna INTEGER,
+  time_stamp INTEGER,
+  PRIMARY KEY (ID, path, scaffold, hit_rank, hsp)
+);"
 
 #' DDL for the assembly_backup table (original pre-trim state, for undo/restore).
 #' Shared by new_db() and the v6 migration so both agree on the schema.
@@ -247,6 +282,23 @@ migrate_db <- function(con) {
         sample_aln TEXT, ref_aln TEXT, time_stamp INTEGER,
         PRIMARY KEY (ID, path, scaffold, accession, element));")
   }
+
+  # --- schema v9: retained BLAST hit distribution + rank-aligned lineages ---
+  DBI::dbExecute(con, BLAST_HITS_DDL)
+  # Which search wrote assemblies.blast_*: the local clade seed DB (host-clade
+  # by construction, so its identity carries no contamination signal) or the
+  # unrestricted remote core_nt search. Previously indistinguishable.
+  add_col("assemblies", "blast_source", "TEXT")
+  # Rank-aligned taxid path for the frozen sample lineage, so rank_distance()
+  # can compare on taxids rather than name tokens.
+  add_col("samples", "lineage_taxids", "TEXT")
+  add_col("blast_screen", "lineage_taxids", "TEXT")
+  add_col("blast_screen", "rank_distance", "INTEGER")
+  add_col("blast_screen", "bitscore", "REAL")
+  add_col("blast_ref_candidates", "bitscore", "REAL")
+  # blast_hits is the ranking source of truth from v9 on; drop any partial rows
+  # written by an interrupted pre-v9 run so a re-BLAST repopulates cleanly.
+  if (ver < 9L && has_tbl("blast_hits")) DBI::dbExecute(con, "DELETE FROM blast_hits;")
 
   if (ver < RIBOPILOT_SCHEMA_VERSION) {
     DBI::dbExecute(con, sprintf("PRAGMA user_version = %d", RIBOPILOT_SCHEMA_VERSION))

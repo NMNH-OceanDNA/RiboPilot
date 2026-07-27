@@ -65,8 +65,6 @@ nt_nudge <- function(id, sym) {
     style = "min-width:34px; padding:1px 8px; font-weight:bold;")
 }
 
-#' Annotate & curate modal: feature map, per-feature nucleotide editor + review
-#' @noRd
 #' A collapsible <details> section (open by default unless open = FALSE).
 #' @noRd
 rp_details <- function(summary, ..., open = TRUE) {

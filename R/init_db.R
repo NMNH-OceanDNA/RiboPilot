@@ -93,6 +93,7 @@ new_db <- function(
       rank = NA_character_,
       match_type = NA_character_,
       lineage = NA_character_,
+      lineage_taxids = NA_character_,
       taxonomy_switch = 1L,
       taxonomy_lock = 0L,
       export_group = NA_character_,
@@ -291,11 +292,15 @@ new_db <- function(
       blast_qcovs REAL,
       blast_evalue REAL,
       blast_lineage TEXT,
+      blast_source TEXT,
       edit_positions TEXT,
       time_stamp INTEGER,
       PRIMARY KEY (ID, path, scaffold)
     );"
   )
+
+  # blast_hits (full retained hit distribution per unit; see BLAST_HITS_DDL) ----
+  DBI::dbExecute(con, BLAST_HITS_DDL)
 
   # assembly_blast (per-path BLAST hits) ----
   DBI::dbExecute(
@@ -329,6 +334,7 @@ new_db <- function(
       pident REAL,
       qcovs REAL,
       evalue REAL,
+      bitscore REAL,
       time_stamp INTEGER,
       PRIMARY KEY (ID, path, scaffold, rank)
     );"
@@ -350,9 +356,12 @@ new_db <- function(
       species TEXT,
       staxid INTEGER,
       lineage TEXT,
+      lineage_taxids TEXT,
+      rank_distance INTEGER,
       pident REAL,
       qcovs REAL,
       evalue REAL,
+      bitscore REAL,
       is_nuclear_rrna INTEGER,
       time_stamp INTEGER,
       PRIMARY KEY (ID, path, scaffold)
