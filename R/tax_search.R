@@ -134,10 +134,11 @@ resolve_samples_taxonomy <- function(con, ids, taxdump_dir) {
   for (i in seq_len(nrow(rows))) {
     DBI::dbExecute(con,
       "UPDATE samples SET taxid = ?, sci_name = ?, rank = ?, lineage = ?, match_type = ?,
-         taxonomy_switch = 2 WHERE ID = ?",
+         taxonomy_switch = 2, time_stamp = ? WHERE ID = ?",
       params = list(
         if (is.na(m$taxid[i])) NA_integer_ else as.integer(m$taxid[i]),
-        m$sci_name[i], m$rank[i], m$lineage[i], m$match_type[i], rows$ID[i]))
+        m$sci_name[i], m$rank[i], m$lineage[i], m$match_type[i],
+        as.integer(Sys.time()), rows$ID[i]))
   }
   invisible(nrow(rows))
 }
@@ -152,8 +153,9 @@ assign_samples_taxid <- function(con, ids, taxid, taxdump_dir) {
   for (id in ids) {
     DBI::dbExecute(con,
       "UPDATE samples SET taxid = ?, sci_name = ?, rank = ?, lineage = ?,
-         match_type = 'manual', taxonomy_switch = 2 WHERE ID = ?",
-      params = list(as.integer(taxid), m$sci_name, m$rank, m$lineage, id))
+         match_type = 'manual', taxonomy_switch = 2, time_stamp = ? WHERE ID = ?",
+      params = list(as.integer(taxid), m$sci_name, m$rank, m$lineage,
+        as.integer(Sys.time()), id))
   }
   invisible(length(ids))
 }

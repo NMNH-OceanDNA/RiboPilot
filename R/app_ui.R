@@ -1,17 +1,23 @@
+# Filter choices, shared by the pickers and the server-side visible-row mask so
+# the two cannot drift (that drift is what made "Hold" a no-op).
+LOCK_CHOICES <- c("Unlocked" = "0", "Locked" = "1")
+STATE_CHOICES <- c("Hold" = "0", "Ready" = "1", "In progress" = "4",
+  "Done" = "2", "Failed" = "3")
+
 #' Lock + state status filter pickers (mirrors MitoPilot); values match the
-#' assemble/annotate lock (0/1) and switch (1/2/3/4) codes.
+#' assemble/annotate lock (0/1) and switch (0/1/2/3/4) codes. Each mode gets its
+#' own picker ids (`<mode>_lock_filter` / `<mode>_state_filter`) so the Assemble
+#' and Annotate filters do not share a DOM id and leak across modes.
 #' @noRd
 filter_pickers <- function(mode) {
-  state_choices <- c("Hold" = "0", "Ready" = "1", "In progress" = "4",
-    "Done" = "2", "Failed" = "3")
   picker_opts <- list(`actions-box` = TRUE, `select-all-text` = "All",
     `deselect-all-text` = "None", `selected-text-format` = "count > 0", width = "140px")
   shiny::tagList(
-    shinyWidgets::pickerInput("lock_filter", label = "Lock:", width = "140px",
-      choices = c("Unlocked" = "0", "Locked" = "1"), selected = c("0", "1"),
+    shinyWidgets::pickerInput(paste0(mode, "_lock_filter"), label = "Lock:", width = "140px",
+      choices = LOCK_CHOICES, selected = unname(LOCK_CHOICES),
       multiple = TRUE, options = picker_opts),
-    shinyWidgets::pickerInput("state_filter", label = "State:", width = "140px",
-      choices = state_choices, selected = unname(state_choices),
+    shinyWidgets::pickerInput(paste0(mode, "_state_filter"), label = "State:", width = "140px",
+      choices = STATE_CHOICES, selected = unname(STATE_CHOICES),
       multiple = TRUE, options = picker_opts)
   )
 }
@@ -50,24 +56,32 @@ app_ui <- function(request) {
               bttn("run_btn", "Update", "circle-play"))),
           shiny::conditionalPanel("input.mode == 'Annotate'",
             ctrls(bttn("state_btn", "State"), bttn("lock_btn", "Lock"),
-              bttn("reviewed_btn", "Mark Reviewed"), bttn("run_btn", "Update", "circle-play"))),
+              bttn("reviewed_btn", "Reviewed"), bttn("problematic_btn", "Problem"),
+              bttn("partial_btn", "Partial"), bttn("run_btn", "Update", "circle-play"))),
           shiny::conditionalPanel("input.mode == 'Export'",
             ctrls(bttn("assign_group_btn", "Assign Group"), bttn("clear_group_btn", "Clear Group"),
-              shiny::downloadButton("export_dl", "Export Data", class = "btn-sm"),
+              bttn("export_btn", "Export Data", "download"),
               shiny::span(shiny::textOutput("export_sel_n", inline = TRUE),
                 style = "color:#888; font-size:0.85em;"))),
-          shiny::div(style = "margin-left:auto;",
-            # disabled for now (work-dir browser not reliable yet)
-            shinyjs::disabled(shinyWidgets::actionBttn("workdirs_btn", "Work Dirs",
-              icon = shiny::icon("folder-tree"), style = "material-flat", size = "sm")))
+          shiny::div(style = "margin-left:auto; display:flex; gap:0.9em; align-items:center;",
+            shiny::span(shiny::textOutput("n_selected", inline = TRUE),
+              style = "color:#888; font-size:0.85em;"),
+            shiny::downloadButton("table_csv", "CSV", class = "btn-sm"),
+            shinyWidgets::actionBttn("workdirs_btn", "Work Dirs",
+              icon = shiny::icon("folder-tree"), style = "material-flat", size = "sm"))
         ),
         # ---- filter row (status pickers, below the control bar like MitoPilot) ----
         shiny::conditionalPanel("input.mode == 'Assemble'",
           shiny::div(style = "display:flex; flex-flow:row wrap; gap:1em; align-items:flex-end; margin:0.6em 0 0.7em;",
-            filter_pickers("assemble"))),
+            filter_pickers("Assemble"),
+            shinyWidgets::pickerInput("col_groups", "Columns:", width = "170px",
+              choices = c("Stats", "Options"),
+              selected = c("Stats", "Options"), multiple = TRUE,
+              options = list(`actions-box` = TRUE, `select-all-text` = "All",
+                `deselect-all-text` = "None", `selected-text-format` = "count > 0")))),
         shiny::conditionalPanel("input.mode == 'Annotate'",
           shiny::div(style = "display:flex; flex-flow:row wrap; gap:1em; align-items:flex-end; margin:0.6em 0 0.7em;",
-            filter_pickers("annotate"))),
+            filter_pickers("Annotate"))),
         shiny::div(
           style = "flex:1 1 auto; min-height:0; overflow:hidden;",
           reactable::reactableOutput("tbl", height = "100%")

@@ -2,14 +2,14 @@
 % Please edit documentation in R/coverage.R
 \name{write_coverage}
 \alias{write_coverage}
-\title{Write per-position read depth for one sample's stitched sequence}
+\title{Write per-position read depth for one assembly unit (ID, path, scaffold)}
 \usage{
-write_coverage(con, id, depth_file)
+write_coverage(con, id, path = 1L, scaffold = 1L, depth_file)
 }
 \arguments{
 \item{con}{Open project DB connection.}
 
-\item{id}{Sample ID.}
+\item{id, path, scaffold}{Assembly unit.}
 
 \item{depth_file}{`samtools depth -a` output (ref, pos, depth), tab-separated.}
 }
@@ -17,5 +17,5 @@ write_coverage(con, id, depth_file)
 (invisibly) the mean depth.
 }
 \description{
-Write per-position read depth for one sample's stitched sequence
+Write per-position read depth for one assembly unit (ID, path, scaffold)
 }

@@ -1,12 +1,11 @@
-// RiboPilot WF2 (self-contained): annotate + curate assemblies the user has
-// reviewed and locked (assemble_lock = 1), and re-annotate samples whose
-// selected path later changed. Reads queued sample IDs from the DB (sqlite3),
-// then stitch the selected path -> barrnap + ITSx -> reconcile -> reference
-// alignment -> curate, writing results back to the DB. The reference sequences
-// were already fetched in WF1, so blast_ref_align just reads the DB. Same
-// sqlite3 + R-script-process pattern as WF1.
+// RiboPilot WF2 (self-contained): annotate + curate the assembly UNITS
+// (ID, path, scaffold) of samples the user has reviewed and locked
+// (assemble_lock = 1). Each non-ignored scaffold is annotated INDEPENDENTLY
+// (no stitching): its sequence is pulled from the assemblies table ->
+// barrnap + ITSx -> reconcile -> curate, per unit, written back to the DB.
+// (Per-scaffold BLAST + reference alignment are added in a later step.)
 
-include { query_annotate_samples; stitch; annotate_tools; reconcile; curate } from './modules/pipeline_r.nf'
+include { query_annotate_samples; annotate_tools; reconcile; curate } from './modules/pipeline_r.nf'
 include { blast_ref_align } from './modules/blast_ref.nf'
 
 params.publishDir = 'out'
@@ -17,16 +16,12 @@ params.taxdump_dir = ''
 
 workflow {
     rows = query_annotate_samples().splitCsv(header: true, sep: '\t')
-    ids = rows.map { r -> r.ID }
-    stitch(ids)
-    // carry each sample's annotate_opts cpus/memory into annotate_tools
-    ann_res = rows.map { r -> tuple(r.ID, r.cpus, r.mem) }
-    ann_in = stitch.out.join(ann_res).map { id, fasta, cpus, mem -> tuple(id, fasta, cpus, mem) }
-    annotate_tools(ann_in)
+    // one job per (ID, path, scaffold) unit, carrying its compute settings
+    units = rows.map { r -> tuple(r.ID, r.path, r.scaffold, r.cpus, r.mem) }
+    annotate_tools(units)
     reconcile(annotate_tools.out)
-    // per-feature sample-vs-reference alignment before curation, so the
-    // reference-identity flags are available (opportunistic: no-op if WF1's
-    // GenBank BLAST found no reference for this sample)
+    // per-feature sample-vs-reference alignment (per unit) before curation, so
+    // the reference-identity flags are available (no-op if WF1 found no reference)
     blast_ref_align(reconcile.out)
     curate(blast_ref_align.out)
 }

@@ -1,16 +1,34 @@
 .onAttach <- function(libname, pkgname) {
-  nf_check <- tryCatch(
-    system2("nextflow", args = "-version", stdout = TRUE, stderr = FALSE),
-    error = function(e) character(0)
-  )
-  nf_version <- nf_check[stringr::str_detect(nf_check, "version")] |> stringr::str_squish()
-  if (length(nf_version) == 0) {
-    packageStartupMessage("A Nextflow installation is needed to run the RiboPilot pipeline.")
-    glue::glue("Please install Nextflow from {crayon::underline('https://www.nextflow.io/')}") |>
-      packageStartupMessage()
-    return(invisible())
+  version <- nf_installed_version()
+  status <- nf_version_status(version)
+  # Refuse to load on an unsupported-old Nextflow, but never during package
+  # build/check/dev-load (that final load-test would fail on CI/install).
+  if (status == "too_old" && !in_r_build_context()) {
+    stop(glue::glue(
+      "Nextflow {version} is below the minimum supported version ",
+      "({NF_MIN_SUPPORTED}). {nf_update_hint()}"), call. = FALSE)
   }
   glue::glue("Welcome to {crayon::bold(crayon::white('{RiboPilot}'))}!") |> packageStartupMessage()
-  glue::glue("Using Nextflow {nf_version}") |> packageStartupMessage()
-  return(invisible())
+  switch(status,
+    missing = {
+      packageStartupMessage("A Nextflow installation is needed to run the RiboPilot pipeline.")
+      glue::glue("Please install Nextflow (>= {NF_MIN_SUPPORTED}) from ",
+        "{crayon::underline('https://www.nextflow.io/')}") |> packageStartupMessage()
+    },
+    too_old = packageStartupMessage(glue::glue(
+      "Nextflow {version} is below the supported range ({nf_supported_label()}). ",
+      "{nf_update_hint()}")),
+    too_new = packageStartupMessage(glue::glue(
+      "Using Nextflow {version} (newer than the verified range {nf_supported_label()}); ",
+      "runs will be pinned to {NF_MAX_SUPPORTED} via NXF_VER.")),
+    supported = glue::glue("Using Nextflow {version} (supported {nf_supported_label()})") |>
+      packageStartupMessage()
+  )
+  invisible()
 }
+
+# Column names used non-standardly inside dplyr / ggplot2 aes(); R CMD check
+# cannot see that they are data columns rather than missing globals.
+utils::globalVariables(c(
+  ".data", "ID", "R1", "R2", "depth", "element", "mid", "molecule", "pos", "start"
+))

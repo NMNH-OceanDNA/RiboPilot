@@ -45,6 +45,7 @@ run_fallback <- function(path = ".", ids = NULL, method = c("bait", "denovo"),
   }
   path <- normalizePath(path)
   stopifnot(file.exists(file.path(path, ".sqlite")), file.exists(file.path(path, ".config")))
+  check_nextflow_version("run_fallback", nextflow = nextflow)
 
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(path, ".sqlite"))
   if (is.null(ids)) ids <- fallback_candidates(con)
@@ -61,7 +62,7 @@ run_fallback <- function(path = ".", ids = NULL, method = c("bait", "denovo"),
   message("Running Nextflow assembly fallback (", method, ") for ", length(ids), " sample(s)...")
   args <- nf_command(path, "fallback", resume = TRUE, work = work,
     ribopilot_src = ribopilot_src, method = method)
-  nf_cmd <- paste(c(shQuote(nextflow), shQuote(args)), collapse = " ")
+  nf_cmd <- paste0(nxf_ver_prefix(nextflow), paste(c(shQuote(nextflow), shQuote(args)), collapse = " "))
   status <- system2("bash", c("-c", shQuote(paste0("cd ", shQuote(path), " && ", nf_cmd))), wait = TRUE)
   if (status != 0) {
     warning("Nextflow (fallback) exited with status ", status)

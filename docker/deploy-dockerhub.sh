@@ -1,14 +1,20 @@
 #!/bin/bash
 # Build the RiboPilot Docker image and push it to Docker Hub.
-# Usage: docker/deploy-dockerhub.sh <tag>   (run from the repository root)
+# Usage: docker/deploy-dockerhub.sh [tag]   (run from the repository root)
+#
+# The tag defaults to the DESCRIPTION Version, which is what new_project()
+# derives its default `container` from. Keep them derived from the same source
+# or the published tag and the tag every project asks for will drift apart.
 
 repo='ribopilot'
-tag="${1}"
+tag="${1:-$(awk '/^Version:/{print $2}' DESCRIPTION)}"
 
 if [ -z "$tag" ]; then
-  echo "You forgot to specify an image tag."
+  echo "Could not determine a tag (no argument, and no Version in DESCRIPTION)."
+  echo "Run from the repository root, or pass a tag explicitly."
   exit 1
 fi
+echo "Image tag: ${repo}:${tag}"
 
 read -p "Enter your Docker Hub username: " username
 read -s -p "Enter your Docker Hub password: " password

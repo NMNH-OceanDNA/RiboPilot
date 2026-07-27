@@ -67,6 +67,9 @@ new_project <- function(
   if (is.null(config) && (is.null(executor) || !nzchar(executor))) {
     stop("Invalid executor.")
   }
+  if (!is.null(executor) && executor %in% CONTAINER_EXECUTORS) {
+    check_container_image(container)
+  }
 
   # RStudio project (optional) ----
   if (Rproj && !isFALSE(Sys.getenv("RSTUDIO", FALSE))) {

@@ -70,11 +70,14 @@ new_db <- function(
   }
 
   # Default GetOrganelle nr databases (broad Actinopterygii) when unset ----
-  seeds_db <- seeds_db %||% "https://raw.githubusercontent.com/dmacguigan/RiboPilot/main/ref_dbs/getOrganelle/seeds/actinopterygii_rrna_seeds.fasta"
-  labels_db <- labels_db %||% "https://raw.githubusercontent.com/dmacguigan/RiboPilot/main/ref_dbs/getOrganelle/labels/actinopterygii_rrna_labels.fasta"
+  seeds_db <- seeds_db %||% DEFAULT_SEEDS_DB
+  labels_db <- labels_db %||% DEFAULT_LABELS_DB
   # expand '~' in local paths so Nextflow/GetOrganelle can find them
   if (!grepl("^https?://", seeds_db)) seeds_db <- path.expand(seeds_db)
   if (!grepl("^https?://", labels_db)) labels_db <- path.expand(labels_db)
+  # Fail here, not four hours into a run as an opaque GetOrganelle error.
+  check_reference_db(seeds_db, "seeds")
+  check_reference_db(labels_db, "labels")
 
   # Connect ----
   con <- DBI::dbConnect(RSQLite::SQLite(), dbname = db_path)
@@ -92,7 +95,8 @@ new_db <- function(
       lineage = NA_character_,
       taxonomy_switch = 1L,
       taxonomy_lock = 0L,
-      export_group = NA_character_
+      export_group = NA_character_,
+      time_stamp = NA_integer_
     )
   glue::glue_sql(
     "CREATE TABLE samples ({cols*}, PRIMARY KEY (ID))",
@@ -249,16 +253,18 @@ new_db <- function(
       data.frame(
         blast_opts = "default",
         run_blast = 1L,
-        # Remote GenBank (core_nt) search restricted to nuclear ribosomal + ITS
-        # records, excluding organellar rRNA (mito 12S/16S, plastid).
-        entrez_query = paste(
-          "(internal transcribed spacer[Title] OR 18S ribosomal RNA[Title]",
-          "OR 28S ribosomal RNA[Title] OR 5.8S ribosomal RNA[Title]",
-          "OR small subunit ribosomal RNA[Title]",
-          "OR large subunit ribosomal RNA[Title])",
-          "NOT (mitochondrion[Title] OR chloroplast[Title] OR plastid[Title])"),
+        # Unrestricted by default. Restricting the search to nuclear rRNA titles
+        # also restricts what a contaminant is allowed to look like, so a
+        # symbiont / bacterial 16S / mitochondrial assembly could only ever
+        # match a distant nuclear rDNA record and appeared plausible. The
+        # nuclear-rDNA filter is applied client-side in
+        # parse_blast_candidates() instead. Setting this blinds the
+        # contamination screen to anything outside the query.
+        entrez_query = "",
         extra_opts = "",
-        max_target_seqs = 5L
+        # Needs enough depth that real nuclear rDNA references still make the
+        # panel after the client-side filter drops non-rDNA hits.
+        max_target_seqs = 50L
       ),
       in_place = TRUE, copy = TRUE, by = "blast_opts"
     )
@@ -309,11 +315,13 @@ new_db <- function(
     );"
   )
 
-  # blast_ref_candidates (ranked remote-GenBank hits per sample) ----
+  # blast_ref_candidates (ranked remote-GenBank hits per assembly unit) ----
   DBI::dbExecute(
     con,
     "CREATE TABLE blast_ref_candidates (
       ID TEXT NOT NULL,
+      path INTEGER NOT NULL DEFAULT 1,
+      scaffold INTEGER NOT NULL DEFAULT 1,
       rank INTEGER NOT NULL,
       accession TEXT,
       species TEXT,
@@ -322,7 +330,32 @@ new_db <- function(
       qcovs REAL,
       evalue REAL,
       time_stamp INTEGER,
-      PRIMARY KEY (ID, rank)
+      PRIMARY KEY (ID, path, scaffold, rank)
+    );"
+  )
+
+  # blast_screen (contamination screen: top remote hit over ALL of core_nt) ----
+  # Distinct from blast_ref_candidates, which is filtered to nuclear rDNA. This
+  # row is the unfiltered best hit and is what the contaminant check reads: it
+  # is the only place that can say "this is not the host, and not even nuclear
+  # rDNA".
+  DBI::dbExecute(
+    con,
+    "CREATE TABLE blast_screen (
+      ID TEXT NOT NULL,
+      path INTEGER NOT NULL DEFAULT 1,
+      scaffold INTEGER NOT NULL DEFAULT 1,
+      accession TEXT,
+      title TEXT,
+      species TEXT,
+      staxid INTEGER,
+      lineage TEXT,
+      pident REAL,
+      qcovs REAL,
+      evalue REAL,
+      is_nuclear_rrna INTEGER,
+      time_stamp INTEGER,
+      PRIMARY KEY (ID, path, scaffold)
     );"
   )
 
@@ -362,28 +395,33 @@ new_db <- function(
     con,
     "CREATE TABLE blast_ref_alignment (
       ID TEXT NOT NULL,
+      path INTEGER NOT NULL DEFAULT 1,
+      scaffold INTEGER NOT NULL DEFAULT 1,
       accession TEXT NOT NULL,
       element TEXT NOT NULL,
       pid REAL,
+      aln_cov REAL,
       aln_len INTEGER,
       sample_aln TEXT,
       ref_aln TEXT,
       time_stamp INTEGER,
-      PRIMARY KEY (ID, accession, element)
+      PRIMARY KEY (ID, path, scaffold, accession, element)
     );"
   )
 
-  # coverage (per-position read depth on the stitched sequence) ----
+  # coverage (per-position read depth per assembly unit) ----
   DBI::dbExecute(
     con,
     "CREATE TABLE coverage (
       ID TEXT NOT NULL,
+      path INTEGER NOT NULL DEFAULT 1,
+      scaffold INTEGER NOT NULL DEFAULT 1,
       mean_depth REAL,
       min_depth INTEGER,
       max_depth INTEGER,
       depths TEXT,
       time_stamp INTEGER,
-      PRIMARY KEY (ID)
+      PRIMARY KEY (ID, path, scaffold)
     );"
   )
 
@@ -403,53 +441,69 @@ new_db <- function(
     );"
   )
 
-  # annotations (nrDNA feature model: 18S/ITS1/5.8S/ITS2/28S) ----
+  # assembly_backup (original pre-trim state so a trim can be undone) ----
+  DBI::dbExecute(con, ASSEMBLY_BACKUP_DDL)
+
+  # annotations (nrDNA feature model per assembly unit) ----
   # status/flags are filled by curation (curate_one); tool/edited by annotation.
   DBI::dbExecute(
     con,
     "CREATE TABLE annotations (
       ID TEXT NOT NULL,
+      path INTEGER NOT NULL DEFAULT 1,
+      scaffold INTEGER NOT NULL DEFAULT 1,
       element TEXT NOT NULL,
       type TEXT,
       start INTEGER,
       stop INTEGER,
       length INTEGER,
       strand TEXT,
+      model_coverage REAL,
       tool TEXT,
       status TEXT,
       flags TEXT,
       edited INTEGER,
       notes TEXT,
       time_stamp INTEGER,
-      PRIMARY KEY (ID, element)
+      PRIMARY KEY (ID, path, scaffold, element)
     );"
   )
 
-  # annotate (per-sample annotation + curation summary) ----
-  # n_flags / annotate_notes are filled by curation; curate_opts selects the
-  # per-clade ruleset (see curate_opts table).
+  # annotate (per-unit annotation + curation summary) ----
+  # One row per assembly unit (ID, path, scaffold); seeded per unit by
+  # load_assemblies() after assembly. n_flags / annotate_notes filled by curation;
+  # curate_opts selects the per-clade ruleset (see curate_opts table).
   DBI::dbExecute(
     con,
     "CREATE TABLE annotate (
       ID TEXT NOT NULL,
+      path INTEGER NOT NULL DEFAULT 1,
+      scaffold INTEGER NOT NULL DEFAULT 1,
       annotate_switch INTEGER,
       annotate_lock INTEGER,
       n_features INTEGER,
       missing TEXT,
+      chimeric INTEGER,
       annotate_opts TEXT,
       curate_opts TEXT,
       n_flags INTEGER,
       annotate_notes TEXT,
       reviewed TEXT,
+      problematic TEXT,
+      partial TEXT,
+      export_group TEXT,
       time_stamp INTEGER,
-      PRIMARY KEY (ID)
+      PRIMARY KEY (ID, path, scaffold)
     );"
   )
+  # Seed a placeholder unit (1,1) per sample; load_assemblies() fills the real
+  # per-scaffold units once assembly has produced them.
   dplyr::tbl(con, "annotate") |>
     dplyr::rows_upsert(
-      data.frame(ID = mapping$ID, annotate_switch = 1L, annotate_lock = 0L,
+      data.frame(ID = mapping$ID, path = 1L, scaffold = 1L,
+        annotate_switch = 1L, annotate_lock = 0L,
         annotate_opts = "default", curate_opts = "default", reviewed = "no"),
-      in_place = TRUE, copy = TRUE, by = "ID"
+      in_place = TRUE, copy = TRUE, by = c("ID", "path", "scaffold")
     )
 
   # annotate_opts (barrnap + ITSx settings) ----

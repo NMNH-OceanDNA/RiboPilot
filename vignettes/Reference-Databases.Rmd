@@ -32,7 +32,7 @@ query you would type on the [NCBI website](https://www.ncbi.nlm.nih.gov/)) and a
 short label for the group. It then downloads the relevant 18S, 5.8S, 28S, and ITS
 sequences and prepares the reference data.
 
-```{r}
+```{r, purl = FALSE}
 # 1. First, just check how many sequences are available. Nothing is downloaded.
 RiboPilot::build_reference_db(
   '"Gastropoda"[Organism]', "gastropoda",
@@ -61,7 +61,7 @@ where you have run <code>conda activate ribopilot</code>, or keep the
 When you set up a project, point it at the reference data you built by adding two
 lines to `new_project()`:
 
-```{r}
+```{r, purl = FALSE}
 RiboPilot::new_project(
   path       = "~/my_project",
   mapping_fn = "~/my_samples.csv",

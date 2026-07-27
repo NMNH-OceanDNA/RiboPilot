@@ -3,28 +3,54 @@
 # blast_genbank result handling, adapted to RiboPilot's sqlite3/R-script model
 # and targeting nuclear rRNA + ITS references.
 
-#' Parse remote blastn hits into ranked reference candidates
+#' Is a BLAST subject title a nuclear rDNA record?
 #'
-#' Reads a blastn `-outfmt "6 saccver stitle pident qcovs evalue"` file for one
-#' sample, dedups by accession (best pident*qcovs), ranks, writes
-#' `blast_ref_candidates`, and sets the rank-1 hit as the sample's reference
-#' (`stitched.reference_accession` + `assemble.blast_*`).
+#' Client-side equivalent of the restrictive `entrez_query` that used to be
+#' pushed to NCBI. Applied to the hit list rather than the search space, so the
+#' search itself can stay unrestricted.
+#' @param title Character vector of subject titles.
+#' @noRd
+is_nuclear_rrna_title <- function(title) {
+  t <- ifelse(is.na(title), "", title)
+  grepl(NUCLEAR_RRNA_TITLE_RE, t, ignore.case = TRUE) &
+    !grepl(ORGANELLAR_TITLE_RE, t, ignore.case = TRUE)
+}
+
+#' Parse remote blastn hits into ranked reference candidates + a contamination
+#' screen
+#'
+#' Reads a blastn `-outfmt "6 saccver stitle pident qcovs evalue staxids"` file
+#' for one sample and splits it two ways:
+#'
+#' * **Reference panel** - hits whose title is nuclear rDNA. Deduped by
+#'   accession (best pident*qcovs), ranked into `blast_ref_candidates`, rank-1
+#'   set as the sample's reference (`stitched.reference_accession` +
+#'   `assemble.blast_*`). Same records the restricted search returned before.
+#' * **Contamination screen** - the top hit over *all* of core_nt, unfiltered,
+#'   into `blast_screen`. This is the only signal that can distinguish "the host"
+#'   from "a symbiont" or "not nuclear rDNA at all", so it is deliberately taken
+#'   before the nuclear-rDNA filter.
 #'
 #' @param con Open project DB connection.
 #' @param id Sample ID.
+#' @param path,scaffold Assembly unit within the sample.
 #' @param hits_file blastn outfmt-6 output (or a "NO_SIGNIFICANT_HITS" sentinel).
+#' @param taxdump_dir Optional pinned taxdump for resolving the screen hit's
+#'   lineage. Without it the lineage is left NA, which curation flags rather
+#'   than treats as clean.
 #' @return (invisibly) the ranked candidate data.frame.
 #' @export
-parse_blast_candidates <- function(con, id, hits_file) {
+parse_blast_candidates <- function(con, id, path = 1L, scaffold = 1L, hits_file, taxdump_dir = NULL) {
   ts <- as.integer(Sys.time())
-  DBI::dbExecute(con, "DELETE FROM blast_ref_candidates WHERE ID = ?", params = list(id))
+  path <- as.integer(path); scaffold <- as.integer(scaffold)
+  DBI::dbExecute(con, "DELETE FROM blast_ref_candidates WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(id, path, scaffold))
+  DBI::dbExecute(con, "DELETE FROM blast_screen WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(id, path, scaffold))
 
   lines <- if (file.exists(hits_file)) readLines(hits_file, warn = FALSE) else character(0)
   lines <- lines[nzchar(trimws(lines))]
   if (length(lines) == 0 || any(grepl("NO_SIGNIFICANT_HITS", lines))) {
-    DBI::dbExecute(con,
-      "UPDATE assemble SET assemble_notes = TRIM(COALESCE(assemble_notes,'') || ' [blast] no significant GenBank hits') WHERE ID = ?",
-      params = list(id))
     return(invisible(data.frame()))
   }
 
@@ -33,7 +59,14 @@ parse_blast_candidates <- function(con, id, hits_file) {
     data.frame(accession = x[1], title = x[2],
       pident = suppressWarnings(as.numeric(x[3])),
       qcovs = suppressWarnings(as.numeric(x[4])),
-      evalue = suppressWarnings(as.numeric(x[5])), stringsAsFactors = FALSE)
+      evalue = suppressWarnings(as.numeric(x[5])),
+      # staxids may be absent (older outfmt) or ";"-joined for merged records.
+      staxid = if (length(x) >= 6) {
+        suppressWarnings(as.integer(strsplit(x[6], ";")[[1]][1]))
+      } else {
+        NA_integer_
+      },
+      stringsAsFactors = FALSE)
   }))
   if (is.null(p) || nrow(p) == 0) return(invisible(data.frame()))
 
@@ -43,21 +76,62 @@ parse_blast_candidates <- function(con, id, hits_file) {
   p <- p[order(-p$score), ]
   p <- p[!duplicated(p$accession), ]
   p <- p[order(-p$score), ]
-  p$rank <- seq_len(nrow(p))
 
-  df <- data.frame(ID = id, rank = p$rank, accession = p$accession, species = p$species,
-    title = p$title, pident = p$pident, qcovs = p$qcovs, evalue = p$evalue,
-    time_stamp = ts, stringsAsFactors = FALSE)
+  # --- contamination screen: top hit over everything, before any filtering ---
+  write_blast_screen(con, id, path, scaffold, p[1, ], taxdump_dir = taxdump_dir, ts = ts)
+
+  # --- reference panel: nuclear rDNA only ---
+  ref <- p[is_nuclear_rrna_title(p$title), , drop = FALSE]
+  if (nrow(ref) == 0) {
+    return(invisible(data.frame()))
+  }
+  ref$rank <- seq_len(nrow(ref))
+
+  df <- data.frame(ID = id, path = path, scaffold = scaffold, rank = ref$rank, accession = ref$accession,
+    species = ref$species, title = ref$title, pident = ref$pident,
+    qcovs = ref$qcovs, evalue = ref$evalue, time_stamp = ts,
+    stringsAsFactors = FALSE)
   DBI::dbAppendTable(con, "blast_ref_candidates", df)
 
-  top <- p[1, ]
+  top <- ref[1, ]
   DBI::dbExecute(con,
-    "UPDATE assemble SET blast_accession = ?, blast_species = ?, blast_pident = ?, blast_qcovs = ?, blast_evalue = ? WHERE ID = ?",
-    params = list(top$accession, top$species, top$pident, top$qcovs, top$evalue, id))
-  DBI::dbExecute(con,
-    "UPDATE stitched SET reference_accession = ? WHERE ID = ?",
-    params = list(top$accession, id))
+    "UPDATE assemblies SET blast_accession = ?, blast_species = ?, blast_pident = ?, blast_qcovs = ?, blast_evalue = ?
+     WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(top$accession, top$species, top$pident, top$qcovs, top$evalue, id, path, scaffold))
   invisible(df)
+}
+
+#' Write the contamination-screen row for a sample's top unfiltered hit
+#'
+#' Resolves the hit's lineage from its staxid when a taxdump is available,
+#' falling back to the parsed species name. Leaves `lineage` NA when neither
+#' works; curation treats an unknown lineage as a flag, not as clean.
+#' @noRd
+write_blast_screen <- function(con, id, path, scaffold, top, taxdump_dir = NULL, ts = as.integer(Sys.time())) {
+  lin <- NA_character_
+  if (!is.na(top$staxid) && have_taxdump(taxdump_dir)) {
+    lin <- tryCatch({
+      dd <- if (file.exists(file.path(taxdump_dir, "names.dmp"))) {
+        taxdump_dir
+      } else {
+        extract_taxdump(taxdump_dir)
+      }
+      tk_taxid_info(top$staxid, dd)$lineage[1]
+    }, error = function(e) NA_character_)
+  }
+  if ((is.na(lin) || !nzchar(lin)) && !is.na(top$species) && nzchar(top$species)) {
+    lin <- tryCatch(
+      resolve_taxonomy(top$species, taxdump_dir = taxdump_dir)$lineage[1],
+      error = function(e) NA_character_)
+  }
+  DBI::dbAppendTable(con, "blast_screen", data.frame(
+    ID = id, path = as.integer(path), scaffold = as.integer(scaffold),
+    accession = top$accession, title = top$title, species = top$species,
+    staxid = top$staxid, lineage = lin %||% NA_character_,
+    pident = top$pident, qcovs = top$qcovs, evalue = top$evalue,
+    is_nuclear_rrna = as.integer(is_nuclear_rrna_title(top$title)),
+    time_stamp = ts, stringsAsFactors = FALSE))
+  invisible(lin)
 }
 
 #' Best-effort species name from a GenBank defline title

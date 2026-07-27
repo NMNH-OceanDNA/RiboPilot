@@ -11,17 +11,22 @@ process query_samples {
     path 'samplesheet.tsv'
     script:
     """
-    sqlite3 -header -separator '\t' '${params.db}' "
+    # Header is written explicitly (sqlite3 -header emits nothing for 0 rows, and
+    # splitCsv(header:true) then fails); an empty result becomes a header-only
+    # file so the workflow simply does nothing instead of crashing.
+    printf 'ID\tR1\tR2\tpre_cpus\tpre_mem\tasm_cpus\tasm_mem\tfastp\tgetOrganelle\tseeds_db\tlabels_db\n' > samplesheet.tsv
+    sqlite3 -separator '\t' '${params.db}' "
       SELECT p.ID, p.R1, p.R2,
              COALESCE(po.cpus,4) AS pre_cpus, COALESCE(po.memory,8) AS pre_mem,
              COALESCE(ao.cpus,4) AS asm_cpus, COALESCE(ao.memory,16) AS asm_mem,
-             po.fastp AS fastp, ao.getOrganelle AS getOrganelle,
+             po.fastp AS fastp,
+             ao.getOrganelle || ' --max-paths-num ' || COALESCE(ao.max_paths, 10) AS getOrganelle,
              ao.seeds_db, ao.labels_db
       FROM assemble a
       JOIN preprocess p     ON a.ID = p.ID
       JOIN assemble_opts ao ON a.assemble_opts = ao.assemble_opts
       JOIN pre_opts po      ON p.pre_opts = po.pre_opts
-      WHERE a.assemble_switch IN (1,4) AND a.assemble_lock = 0;" > samplesheet.tsv
+      WHERE a.assemble_switch IN (1,4) AND a.assemble_lock = 0;" >> samplesheet.tsv
     """
 }
 
@@ -33,7 +38,8 @@ process query_fallback_samples {
     path 'samplesheet.tsv'
     script:
     """
-    sqlite3 -header -separator '\t' '${params.db}' "
+    printf 'ID\tR1\tR2\tpre_cpus\tpre_mem\tasm_cpus\tasm_mem\tfastp\n' > samplesheet.tsv
+    sqlite3 -separator '\t' '${params.db}' "
       SELECT p.ID, p.R1, p.R2,
              COALESCE(po.cpus,4) AS pre_cpus, COALESCE(po.memory,8) AS pre_mem,
              COALESCE(ao.cpus,4) AS asm_cpus, COALESCE(ao.memory,16) AS asm_mem,
@@ -42,7 +48,7 @@ process query_fallback_samples {
       JOIN preprocess p     ON a.ID = p.ID
       JOIN assemble_opts ao ON a.assemble_opts = ao.assemble_opts
       JOIN pre_opts po      ON p.pre_opts = po.pre_opts
-      WHERE a.assemble_switch = 5 AND a.assemble_lock = 0;" > samplesheet.tsv
+      WHERE a.assemble_switch = 5 AND a.assemble_lock = 0;" >> samplesheet.tsv
     """
 }
 
@@ -55,13 +61,15 @@ process query_annotate_samples {
     path 'samplesheet.tsv'
     script:
     """
-    sqlite3 -header -separator '\t' '${params.db}' "
-      SELECT an.ID, COALESCE(ao.cpus,4) AS cpus, COALESCE(ao.memory,8) AS mem
+    printf 'ID\tpath\tscaffold\tcpus\tmem\n' > samplesheet.tsv
+    sqlite3 -separator '\t' '${params.db}' "
+      SELECT an.ID, an.path, an.scaffold, COALESCE(ao.cpus,4) AS cpus, COALESCE(ao.memory,8) AS mem
       FROM annotate an
       JOIN assemble a ON a.ID = an.ID
       JOIN annotate_opts ao ON an.annotate_opts = ao.annotate_opts
+      JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
       WHERE an.annotate_switch IN (1,4) AND an.annotate_lock = 0 AND a.assemble_lock = 1
-        AND EXISTS (SELECT 1 FROM assemblies x WHERE x.ID = an.ID);" > samplesheet.tsv
+        AND COALESCE(asm.ignore,0) = 0;" >> samplesheet.tsv
     """
 }
 
@@ -83,77 +91,86 @@ process score {
 }
 
 // Stitch the selected path into one sequence -> stitched table + fasta.
+// A sample with no usable assembly has nothing to stitch; that is a recorded
+// outcome (load_assemblies marks it failed), not an error, so the fasta is
+// optional and the sample simply drops out of the downstream channel instead
+// of aborting every other sample in the run.
 process stitch {
     cache false
     tag "${id}"
     input:
     val id
     output:
-    tuple val(id), path("${id}.stitched.fasta")
+    tuple val(id), path("${id}.stitched.fasta"), optional: true
     script:
     """
     RIBOPILOT_SRC='${params.ribopilot_src}' rp_stitch.R '${params.db}' '${id}' ${id}.stitched.fasta
     """
 }
 
-// rRNA anchors (pybarrnap or barrnap) + ITSx (spacers) on the stitched
-// sequence, with tool/kingdom/taxon pulled per-sample from annotate_opts.
+// rRNA anchors (pybarrnap or barrnap) + ITSx (spacers) on ONE assembly unit's
+// scaffold sequence (pulled from the assemblies table), with tool/kingdom/taxon
+// per-unit from annotate_opts. Annotation now runs per (ID, path, scaffold).
 process annotate_tools {
     cache false
-    tag "${id}"
+    tag "${id}.${upath}.${uscaf}"
     cpus { nthreads as int }
     memory { "${mem} GB" }
     input:
-    tuple val(id), path(stitched), val(nthreads), val(mem)
+    tuple val(id), val(upath), val(uscaf), val(nthreads), val(mem)
     output:
-    tuple val(id), path("${id}.barrnap.gff"), path("${id}.itsx.positions.txt")
+    tuple val(id), val(upath), val(uscaf), path("unit.barrnap.gff"), path("unit.itsx.positions.txt")
     script:
     """
+    # write this unit's scaffold sequence to a fasta straight from the DB
+    sqlite3 '${params.db}' \
+      "SELECT '>'||ID||'.'||path||'.'||scaffold||char(10)||sequence FROM assemblies
+       WHERE ID='${id}' AND path=${upath} AND scaffold=${uscaf};" > unit.fasta
+
     read TOOL KINGDOM ITSXT ITSXO <<< "\$(sqlite3 -separator ' ' '${params.db}' "
       SELECT COALESCE(ao.rrna_tool,'pybarrnap'), COALESCE(ao.rrna_kingdom,'euk'),
              COALESCE(ao.itsx_taxon,'all'), COALESCE(ao.itsx_opts,'')
       FROM annotate an JOIN annotate_opts ao ON an.annotate_opts = ao.annotate_opts
-      WHERE an.ID = '${id}';")"
+      WHERE an.ID = '${id}' AND an.path = ${upath} AND an.scaffold = ${uscaf};")"
     TOOL="\${TOOL:-pybarrnap}"; KINGDOM="\${KINGDOM:-euk}"; ITSXT="\${ITSXT:-all}"
 
     if [ "\$TOOL" = "barrnap" ]; then
-        barrnap --kingdom "\$KINGDOM" --quiet ${stitched} > ${id}.barrnap.gff
+        barrnap --kingdom "\$KINGDOM" --quiet unit.fasta > unit.barrnap.gff
     else
-        pybarrnap -k "\$KINGDOM" -t ${task.cpus} -q ${stitched} > ${id}.barrnap.gff
+        pybarrnap -k "\$KINGDOM" -t ${task.cpus} -q unit.fasta > unit.barrnap.gff
     fi
 
-    ITSx -i ${stitched} -o ${id}.itsx --save_regions none --graphical F \
+    ITSx -i unit.fasta -o unit.itsx --save_regions none --graphical F \
         --cpu ${task.cpus} -t "\$ITSXT" --preserve T \$ITSXO || true
-    [ -f ${id}.itsx.positions.txt ] || : > ${id}.itsx.positions.txt
+    [ -f unit.itsx.positions.txt ] || : > unit.itsx.positions.txt
     """
 }
 
-// Reconcile barrnap + ITSx into the feature model -> annotations table.
+// Reconcile barrnap + ITSx into the feature model -> annotations table (per unit).
 process reconcile {
     cache false
-    tag "${id}"
+    tag "${id}.${upath}.${uscaf}"
     input:
-    tuple val(id), path(gff), path(pos)
+    tuple val(id), val(upath), val(uscaf), path(gff), path(pos)
     output:
-    val id
+    tuple val(id), val(upath), val(uscaf)
     script:
     """
-    RIBOPILOT_SRC='${params.ribopilot_src}' rp_reconcile.R '${params.db}' '${id}' ${gff} ${pos}
+    RIBOPILOT_SRC='${params.ribopilot_src}' rp_reconcile.R '${params.db}' '${id}' ${upath} ${uscaf} ${gff} ${pos}
     """
 }
 
-// Curate the reconciled feature model: structural + reference flags -> per-
-// feature status/flags + per-sample n_flags/notes. Reads any reference identity
-// already in the DB (blast_ref_alignment); never blocks on remote BLAST.
+// Curate the reconciled feature model per unit: structural + reference flags ->
+// per-feature status/flags + per-unit n_flags/notes.
 process curate {
     cache false
-    tag "${id}"
+    tag "${id}.${upath}.${uscaf}"
     input:
-    val id
+    tuple val(id), val(upath), val(uscaf)
     output:
-    val id
+    tuple val(id), val(upath), val(uscaf)
     script:
     """
-    RIBOPILOT_SRC='${params.ribopilot_src}' rp_curate.R '${params.db}' '${id}'
+    RIBOPILOT_SRC='${params.ribopilot_src}' rp_curate.R '${params.db}' '${id}' ${upath} ${uscaf}
     """
 }

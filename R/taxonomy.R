@@ -134,7 +134,7 @@ tk_name2taxid <- function(names, dir) {
     return(integer(0))
   }
   out <- tk_run("name2taxid", paste(names, collapse = "\n"), dir)
-  res <- setNames(rep(NA_integer_, length(names)), names)
+  res <- stats::setNames(rep(NA_integer_, length(names)), names)
   for (p in strsplit(out, "\t")) {
     nm <- p[1]
     tx <- suppressWarnings(as.integer(p[2] %||% NA))
@@ -235,7 +235,7 @@ resolve_taxonomy_local <- function(taxa, dir) {
       epithet <- strsplit(clean[miss[k]], " ")[[1]][2]
       sp <- tk_genus_species(gt, dir)
       if (nrow(sp) > 0) {
-        sp$dist <- as.integer(adist(tolower(clean[miss[k]]), tolower(sp$name)))
+        sp$dist <- as.integer(utils::adist(tolower(clean[miss[k]]), tolower(sp$name)))
         sp <- sp[order(sp$dist), ]
         if (sp$dist[1] <= max(2, ceiling(nchar(epithet) / 3))) {
           res$match_type[miss[k]] <- "fuzzy_species"

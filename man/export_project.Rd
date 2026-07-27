@@ -4,10 +4,12 @@
 \alias{export_project}
 \title{Export every assigned export group in a project}
 \usage{
-export_project(path = ".", out_dir = file.path(path, "export"))
+export_project(path = ".", out_dir = file.path(path, "out"))
 }
 \arguments{
-\item{path}{Project directory. @param out_dir Output dir.}
+\item{path}{Project directory.}
+
+\item{out_dir}{Project "out" directory; bundles land in `<out_dir>/export`.}
 }
 \value{
 (invisibly) the export groups exported.

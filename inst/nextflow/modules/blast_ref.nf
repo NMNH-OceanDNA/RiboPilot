@@ -17,7 +17,7 @@ process blast_ref_fetch {
 
     script:
     """
-    ACCS=\$(sqlite3 '${params.db}' "SELECT accession FROM blast_ref_candidates WHERE ID = '${id}' ORDER BY rank;")
+    ACCS=\$(sqlite3 '${params.db}' "SELECT DISTINCT accession FROM blast_ref_candidates WHERE ID = '${id}';")
     if [ -z "\$ACCS" ]; then echo "no candidates for ${id}"; exit 0; fi
     if [ "${task.attempt}" -gt 1 ]; then sleep \$(( (${task.attempt} - 1) * 30 )); fi
     export NCBI_API_KEY='${params.ncbi_api_key ?: ""}'
@@ -34,17 +34,17 @@ process blast_ref_fetch {
 
 process blast_ref_align {
     cache false
-    tag "${id}"
+    tag "${id}.${upath}.${uscaf}"
     errorStrategy 'ignore'
 
     input:
-    val id
+    tuple val(id), val(upath), val(uscaf)
 
     output:
-    val id
+    tuple val(id), val(upath), val(uscaf)
 
     script:
     """
-    RIBOPILOT_SRC='${params.ribopilot_src}' rp_ref_align.R '${params.db}' '${id}'
+    RIBOPILOT_SRC='${params.ribopilot_src}' rp_ref_align.R '${params.db}' '${id}' ${upath} ${uscaf}
     """
 }

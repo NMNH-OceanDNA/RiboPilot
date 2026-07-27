@@ -2,9 +2,73 @@
 #
 # GetOrganelle nr often fragments one rDNA repeat unit into several scaffolds (e.g. an 18S
 # piece + two 28S pieces). Before scoring/annotation we order and orient a path's
-# scaffolds along a reference rDNA sequence into one canonical 5'->3'
-# 18S-ITS1-5.8S-ITS2-28S sequence, inserting gap runs where scaffolds don't abut.
-# This mirrors MitoPilot's scaffold_join, driven here by BLAST to a reference.
+# scaffolds into one canonical 5'->3' 18S-ITS1-5.8S-ITS2-28S sequence.
+#
+# Two strategies:
+#  - order_scaffolds_by_content(): reference-free, orders by each scaffold's own
+#    rRNA anchors. Robust when GenBank has no full-repeat reference (the norm for
+#    sparse invertebrate clades), where reference placement scrambles scaffolds.
+#  - stitch_scaffolds(): reference-guided (BLAST to a seed), mirrors MitoPilot's
+#    scaffold_join. Used as a fallback when no scaffold has a detectable anchor.
+
+#' Order + orient a path's scaffolds into a canonical 5'->3' rDNA sequence using
+#' each scaffold's own rRNA anchors (reference-free)
+#'
+#' Ranks each scaffold by the earliest rDNA element it carries (18S < 5.8S < 28S,
+#' via the anchor caller), orients each so its anchors are on the plus strand,
+#' and concatenates in that order. No N-gaps are inserted (a missing inter-scaffold
+#' region is left as a real join, not fabricated sequence, so curation sees the
+#' true short/absent spacer). Scaffolds with no detectable anchor sort last.
+#'
+#' @param seqs Named character vector / DNAStringSet of a path's scaffolds.
+#' @return list(sequence, order = ordered scaffold names, n_anchored,
+#'   n_unanchored), or NULL if no scaffold has an anchor.
+#' @noRd
+order_scaffolds_by_content <- function(seqs) {
+  seqs <- as.character(seqs)
+  nm <- names(seqs)
+  if (is.null(nm)) nm <- as.character(seq_along(seqs))
+  el_idx <- stats::setNames(seq_along(RRNA_ELEMENT_ORDER), RRNA_ELEMENT_ORDER)
+
+  info <- lapply(seq_along(seqs), function(i) {
+    s <- seqs[[i]]
+    fa <- tempfile(fileext = ".fasta")
+    on.exit(unlink(fa), add = TRUE)
+    writeLines(c(">s", s), fa)
+    bar <- tryCatch(call_rrna_anchors(fa), error = function(e) data.frame())
+    if (is.null(bar) || nrow(bar) == 0) {
+      return(list(name = nm[i], seq = s, rank = Inf, start = Inf, anchored = FALSE))
+    }
+    # Orient the scaffold to plus if its anchors are a minus-strand majority.
+    strands <- bar$strand[bar$strand %in% c("+", "-")]
+    if (length(strands) && sum(strands == "-") > sum(strands == "+")) {
+      s <- as.character(Biostrings::reverseComplement(Biostrings::DNAString(s)))
+      writeLines(c(">s", s), fa)
+      bar <- tryCatch(call_rrna_anchors(fa), error = function(e) bar)
+    }
+    present <- bar$element[bar$element %in% names(el_idx)]
+    rank <- if (length(present)) min(el_idx[present]) else Inf
+    earliest <- names(el_idx)[match(rank, el_idx)]
+    start <- if (!is.na(earliest) && earliest %in% bar$element) {
+      min(bar$start[bar$element == earliest])
+    } else {
+      Inf
+    }
+    list(name = nm[i], seq = s, rank = rank, start = start, anchored = TRUE)
+  })
+
+  n_anchored <- sum(vapply(info, `[[`, logical(1), "anchored"))
+  if (n_anchored == 0) return(NULL)
+  ord <- order(vapply(info, `[[`, numeric(1), "rank"),
+               vapply(info, `[[`, numeric(1), "start"))
+  info <- info[ord]
+  list(
+    sequence = paste(vapply(info, `[[`, character(1), "seq"), collapse = ""),
+    order = vapply(info, `[[`, character(1), "name"),
+    n_anchored = n_anchored,
+    n_unanchored = length(info) - n_anchored
+  )
+}
 
 #' Order + orient a path's scaffolds along a reference and stitch them
 #'
@@ -125,7 +189,7 @@ stitch_scaffolds <- function(path_fasta, reference_fasta, max_gap = 2000, min_hi
   }
 
   # assemble a full layout: kept (in concat order), then redundant, then unplaced
-  order_map <- setNames(seq_len(nrow(placed)), placed$scaffold)
+  order_map <- stats::setNames(seq_len(nrow(placed)), placed$scaffold)
   out_layout <- layout
   out_layout$order <- unname(order_map[out_layout$scaffold])
   out_layout <- out_layout[order(is.na(out_layout$order), out_layout$order,

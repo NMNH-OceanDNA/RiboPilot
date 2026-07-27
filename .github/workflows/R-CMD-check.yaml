@@ -1,0 +1,38 @@
+# Runs R CMD check (including the testthat suite) on push/PR. Vignette building
+# is skipped (it needs the external pipeline tools), and the check fails only on
+# ERROR so pre-release documentation NOTEs/WARNINGs do not block.
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+name: R-CMD-check
+
+permissions: read-all
+
+jobs:
+  R-CMD-check:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+      R_KEEP_PKG_SOURCE: yes
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+
+      # Bioconductor deps (Biostrings, DECIPHER, pwalign) are resolved from the
+      # DESCRIPTION Imports by setup-r-dependencies.
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::rcmdcheck
+          needs: check
+
+      - uses: r-lib/actions/check-r-package@v2
+        with:
+          args: 'c("--no-manual", "--no-build-vignettes")'
+          error-on: '"error"'
+          upload-snapshots: true

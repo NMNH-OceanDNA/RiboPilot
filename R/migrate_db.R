@@ -5,7 +5,35 @@
 
 #' Current project-DB schema version. Bump when adding a migration step below.
 #' @noRd
-RIBOPILOT_SCHEMA_VERSION <- 3L
+RIBOPILOT_SCHEMA_VERSION <- 8L
+
+#' DDL for the assembly_backup table (original pre-trim state, for undo/restore).
+#' Shared by new_db() and the v6 migration so both agree on the schema.
+#' @noRd
+ASSEMBLY_BACKUP_DDL <- "CREATE TABLE IF NOT EXISTS assembly_backup (
+  ID TEXT NOT NULL,
+  path INTEGER NOT NULL DEFAULT 1,
+  scaffold INTEGER NOT NULL DEFAULT 1,
+  sequence TEXT,
+  length INTEGER,
+  annotations TEXT,
+  coverage TEXT,
+  time_stamp INTEGER,
+  PRIMARY KEY (ID, path, scaffold)
+);"
+
+#' The pre-v4 restrictive remote-BLAST entrez_query.
+#'
+#' Retired because it restricted the search space, not just the ranking, so the
+#' contamination screen could only ever see nuclear rDNA. Matched literally so
+#' the v4 migration only clears it where the user never customized it.
+#' @noRd
+LEGACY_ENTREZ_QUERY <- paste(
+  "(internal transcribed spacer[Title] OR 18S ribosomal RNA[Title]",
+  "OR 28S ribosomal RNA[Title] OR 5.8S ribosomal RNA[Title]",
+  "OR small subunit ribosomal RNA[Title]",
+  "OR large subunit ribosomal RNA[Title])",
+  "NOT (mitochondrion[Title] OR chloroplast[Title] OR plastid[Title])")
 
 #' Bring a project database up to the current schema (idempotent, additive)
 #'
@@ -82,10 +110,164 @@ migrate_db <- function(con) {
     DBI::dbExecute(con, "UPDATE samples SET taxonomy_lock = 1, taxonomy_switch = 2")
   }
 
+  # --- schema v4: contamination screen over the unrestricted remote BLAST ---
+  if (!has_tbl("blast_screen")) {
+    DBI::dbExecute(con,
+      "CREATE TABLE blast_screen (
+        ID TEXT NOT NULL,
+        accession TEXT,
+        title TEXT,
+        species TEXT,
+        staxid INTEGER,
+        lineage TEXT,
+        pident REAL,
+        qcovs REAL,
+        evalue REAL,
+        is_nuclear_rrna INTEGER,
+        time_stamp INTEGER,
+        PRIMARY KEY (ID)
+      );")
+  }
+  # ITSx chimera flag surfaced through curation.
+  add_col("annotate", "chimeric", "INTEGER")
+  # Fraction of the rRNA model an anchor covers (truncation signal).
+  add_col("annotations", "model_coverage", "REAL")
+  # Fraction of a sample element covered by its reference alignment.
+  add_col("blast_ref_alignment", "aln_cov", "REAL")
+  # Curator flags beyond `reviewed`: problematic (exclude from export) + partial.
+  add_col("annotate", "problematic", "TEXT")
+  add_col("annotate", "partial", "TEXT")
+  # Retire the restrictive entrez_query, but only where it is still verbatim the
+  # old default -- a query the user chose is theirs to keep.
+  if (has_tbl("blast_opts")) {
+    DBI::dbExecute(con,
+      "UPDATE blast_opts SET entrez_query = '' WHERE TRIM(COALESCE(entrez_query,'')) = TRIM(?)",
+      params = list(LEGACY_ENTREZ_QUERY))
+    # 5 was tuned for a pre-filtered search; the client-side filter needs depth.
+    DBI::dbExecute(con,
+      "UPDATE blast_opts SET max_target_seqs = 50 WHERE COALESCE(max_target_seqs,5) = 5")
+  }
+
+  # --- schema v5: taxonomy-stage timestamp on samples ("Last Updated" column) ---
+  add_col("samples", "time_stamp", "INTEGER")
+
+  # --- schema v6: assembly_backup (original pre-trim state, for restore) ---
+  if (!has_tbl("assembly_backup")) DBI::dbExecute(con, ASSEMBLY_BACKUP_DDL)
+
+  # --- schema v7: per-(ID,path,scaffold) assembly units (drop the stitch model) ---
+  # annotate/annotations/coverage move from per-sample to per-unit. Existing
+  # stitch-based annotations + coverage are invalid under the per-scaffold model
+  # (their coords are on the stitched sequence, not a single scaffold), so they
+  # are cleared and annotation is re-queued (annotate_switch = 1).
+  if (has_tbl("annotate") && !has_col("annotate", "path")) {
+    DBI::dbExecute(con, "CREATE TABLE annotate_new (
+        ID TEXT NOT NULL, path INTEGER NOT NULL DEFAULT 1, scaffold INTEGER NOT NULL DEFAULT 1,
+        annotate_switch INTEGER, annotate_lock INTEGER, n_features INTEGER, missing TEXT,
+        chimeric INTEGER, annotate_opts TEXT, curate_opts TEXT, n_flags INTEGER,
+        annotate_notes TEXT, reviewed TEXT, problematic TEXT, partial TEXT,
+        export_group TEXT, time_stamp INTEGER, PRIMARY KEY (ID, path, scaffold));")
+    if (has_tbl("assemblies")) {
+      DBI::dbExecute(con,
+        "INSERT OR IGNORE INTO annotate_new
+           (ID, path, scaffold, annotate_switch, annotate_lock, annotate_opts, curate_opts, reviewed)
+         SELECT a.ID, a.path, a.scaffold, 1, 0,
+                COALESCE(o.annotate_opts,'default'), COALESCE(o.curate_opts,'default'), 'no'
+         FROM assemblies a LEFT JOIN annotate o ON o.ID = a.ID
+         WHERE COALESCE(a.ignore, 0) = 0;")
+    }
+    # samples with no (non-ignored) assemblies keep a placeholder (1,1) unit
+    DBI::dbExecute(con,
+      "INSERT OR IGNORE INTO annotate_new
+         (ID, path, scaffold, annotate_switch, annotate_lock, annotate_opts, curate_opts, reviewed)
+       SELECT o.ID, 1, 1, 1, 0,
+              COALESCE(o.annotate_opts,'default'), COALESCE(o.curate_opts,'default'), 'no'
+       FROM annotate o;")
+    if (has_col("samples", "export_group")) {
+      DBI::dbExecute(con,
+        "UPDATE annotate_new SET export_group =
+           (SELECT s.export_group FROM samples s WHERE s.ID = annotate_new.ID)
+         WHERE EXISTS (SELECT 1 FROM samples s WHERE s.ID = annotate_new.ID
+                       AND TRIM(COALESCE(s.export_group,'')) != '');")
+    }
+    DBI::dbExecute(con, "DROP TABLE annotate;")
+    DBI::dbExecute(con, "ALTER TABLE annotate_new RENAME TO annotate;")
+  }
+  if (has_tbl("annotations") && !has_col("annotations", "path")) {
+    DBI::dbExecute(con, "DROP TABLE annotations;")
+    DBI::dbExecute(con, "CREATE TABLE annotations (
+        ID TEXT NOT NULL, path INTEGER NOT NULL DEFAULT 1, scaffold INTEGER NOT NULL DEFAULT 1,
+        element TEXT NOT NULL, type TEXT, start INTEGER, stop INTEGER, length INTEGER, strand TEXT,
+        model_coverage REAL, tool TEXT, status TEXT, flags TEXT, edited INTEGER, notes TEXT,
+        time_stamp INTEGER, PRIMARY KEY (ID, path, scaffold, element));")
+    if (has_tbl("annotate")) DBI::dbExecute(con, "UPDATE annotate SET annotate_switch = 1;")
+    # The GenBank screen + reference alignment were computed on the (now invalid)
+    # stitched sequence and keyed per sample; clear them so curation does not
+    # mis-attribute one sample-level hit to every scaffold unit. They are
+    # repopulated per unit by the (re-added) per-scaffold BLAST step.
+    for (t in c("blast_screen", "blast_ref_alignment", "blast_ref_candidates")) {
+      if (has_tbl(t)) DBI::dbExecute(con, sprintf("DELETE FROM %s;", t))
+    }
+  }
+  if (has_tbl("coverage") && !has_col("coverage", "path")) {
+    DBI::dbExecute(con, "DROP TABLE coverage;")
+    DBI::dbExecute(con, "CREATE TABLE coverage (
+        ID TEXT NOT NULL, path INTEGER NOT NULL DEFAULT 1, scaffold INTEGER NOT NULL DEFAULT 1,
+        mean_depth REAL, min_depth INTEGER, max_depth INTEGER, depths TEXT, time_stamp INTEGER,
+        PRIMARY KEY (ID, path, scaffold));")
+  }
+  # assembly_backup (trim undo state) becomes per-unit; it is transient, so just
+  # rebuild it empty when it predates the unit key.
+  if (has_tbl("assembly_backup") && !has_col("assembly_backup", "path")) {
+    DBI::dbExecute(con, "DROP TABLE assembly_backup;")
+    DBI::dbExecute(con, ASSEMBLY_BACKUP_DDL)
+  }
+
+  # --- schema v8: per-unit GenBank BLAST reference tables (rebuild empty) ---
+  # blast_ref_candidates / blast_screen / blast_ref_alignment move to
+  # per-(ID,path,scaffold). v7 already cleared them, so recreate with the new keys.
+  if (has_tbl("blast_ref_candidates") && !has_col("blast_ref_candidates", "path")) {
+    DBI::dbExecute(con, "DROP TABLE blast_ref_candidates;")
+    DBI::dbExecute(con, "CREATE TABLE blast_ref_candidates (
+        ID TEXT NOT NULL, path INTEGER NOT NULL DEFAULT 1, scaffold INTEGER NOT NULL DEFAULT 1,
+        rank INTEGER NOT NULL, accession TEXT, species TEXT, title TEXT, pident REAL, qcovs REAL,
+        evalue REAL, time_stamp INTEGER, PRIMARY KEY (ID, path, scaffold, rank));")
+  }
+  if (has_tbl("blast_screen") && !has_col("blast_screen", "path")) {
+    DBI::dbExecute(con, "DROP TABLE blast_screen;")
+    DBI::dbExecute(con, "CREATE TABLE blast_screen (
+        ID TEXT NOT NULL, path INTEGER NOT NULL DEFAULT 1, scaffold INTEGER NOT NULL DEFAULT 1,
+        accession TEXT, title TEXT, species TEXT, staxid INTEGER, lineage TEXT, pident REAL, qcovs REAL,
+        evalue REAL, is_nuclear_rrna INTEGER, time_stamp INTEGER, PRIMARY KEY (ID, path, scaffold));")
+  }
+  if (has_tbl("blast_ref_alignment") && !has_col("blast_ref_alignment", "path")) {
+    DBI::dbExecute(con, "DROP TABLE blast_ref_alignment;")
+    DBI::dbExecute(con, "CREATE TABLE blast_ref_alignment (
+        ID TEXT NOT NULL, path INTEGER NOT NULL DEFAULT 1, scaffold INTEGER NOT NULL DEFAULT 1,
+        accession TEXT NOT NULL, element TEXT NOT NULL, pid REAL, aln_cov REAL, aln_len INTEGER,
+        sample_aln TEXT, ref_aln TEXT, time_stamp INTEGER,
+        PRIMARY KEY (ID, path, scaffold, accession, element));")
+  }
+
   if (ver < RIBOPILOT_SCHEMA_VERSION) {
     DBI::dbExecute(con, sprintf("PRAGMA user_version = %d", RIBOPILOT_SCHEMA_VERSION))
   }
   invisible(RIBOPILOT_SCHEMA_VERSION)
+}
+
+#' Copy a project's `.sqlite` into `<path>/.old_sqlite_dbs/` before an upgrade
+#'
+#' Migrations `ALTER` tables in place, which makes the DB unopenable by an older
+#' RiboPilot the user may still have on a cluster; keep a copy to fall back to.
+#' @noRd
+backup_project_db <- function(path) {
+  db <- file.path(path, ".sqlite")
+  if (!file.exists(db)) return(invisible(NULL))
+  bdir <- file.path(path, ".old_sqlite_dbs")
+  dir.create(bdir, showWarnings = FALSE)
+  dest <- file.path(bdir, sprintf("sqlite.%d", as.integer(Sys.time())))
+  tryCatch(file.copy(db, dest, overwrite = FALSE),
+    error = function(e) warning("Could not back up project DB: ", conditionMessage(e)))
+  invisible(dest)
 }
 
 #' Migrate the project database at a path to the current schema
@@ -98,6 +280,14 @@ migrate_project <- function(path = ".") {
   if (!file.exists(db)) {
     stop("No project database found at ", db, call. = FALSE)
   }
+  # Back up first when an actual upgrade is pending (older schema version).
+  ver <- tryCatch({
+    c0 <- DBI::dbConnect(RSQLite::SQLite(), db)
+    on.exit(DBI::dbDisconnect(c0), add = TRUE)
+    DBI::dbGetQuery(c0, "PRAGMA user_version")[[1]]
+  }, error = function(e) 0L)
+  if (isTRUE(ver < RIBOPILOT_SCHEMA_VERSION)) backup_project_db(path)
+
   con <- DBI::dbConnect(RSQLite::SQLite(), db)
   on.exit(DBI::dbDisconnect(con))
   migrate_db(con)

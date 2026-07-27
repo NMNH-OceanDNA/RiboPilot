@@ -23,6 +23,43 @@ RRNA_ELEMENT_ORDER <- c("ETS", "18S", "ITS1", "5.8S", "ITS2", "28S", "IGS")
 #' @noRd
 RRNA_ELEMENT_CHOICES <- c(RRNA_GENES, RRNA_SPACERS, RRNA_EXTRA)
 
+#' Default GetOrganelle nrDNA reference databases (broad Actinopterygii).
+#'
+#' Single source of truth for the packaged defaults; these are only resolvable
+#' once the RiboPilot repository is public. Non-fish projects should build their
+#' own with [build_reference_db()] rather than rely on these.
+#' @noRd
+DEFAULT_SEEDS_DB <- paste0("https://raw.githubusercontent.com/dmacguigan/RiboPilot/",
+  "main/ref_dbs/getOrganelle/seeds/actinopterygii_rrna_seeds.fasta")
+
+#' @noRd
+DEFAULT_LABELS_DB <- paste0("https://raw.githubusercontent.com/dmacguigan/RiboPilot/",
+  "main/ref_dbs/getOrganelle/labels/actinopterygii_rrna_labels.fasta")
+
+#' Executors that run processes inside a container image.
+#'
+#' Everything except the conda profile, which uses the active environment's
+#' tools and sets no `container` directive.
+#' @noRd
+CONTAINER_EXECUTORS <- c("docker", "local", "awsbatch", "slurm", "pbs", "sge",
+                         "lsf", "NMNH_Hydra", "NOAA_SEDNA")
+
+#' Titles of nuclear rDNA records, as a regex over BLAST subject titles.
+#'
+#' Mirrors what the remote BLAST `entrez_query` used to restrict the search
+#' space to. Applied client-side now, so the search itself can stay unrestricted
+#' (and therefore able to see contaminants), while the reference panel is still
+#' drawn only from real nuclear rDNA records.
+#' @noRd
+NUCLEAR_RRNA_TITLE_RE <- paste0(
+  "internal transcribed spacer|",
+  "18S ribosomal RNA|28S ribosomal RNA|5\\.8S ribosomal RNA|",
+  "small subunit ribosomal RNA|large subunit ribosomal RNA")
+
+#' Titles indicating an organellar (non-nuclear) record.
+#' @noRd
+ORGANELLAR_TITLE_RE <- "mitochondri|chloroplast|plastid|apicoplast|kinetoplast"
+
 #' GenBank feature type for an nrDNA element name.
 #'
 #' rRNA genes -> "rRNA"; transcribed spacers -> "misc_RNA".

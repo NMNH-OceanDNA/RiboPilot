@@ -1,12 +1,13 @@
 // RiboPilot WF1 (self-contained): read samples from the project DB via sqlite3,
-// preprocess (fastp) + assemble (GetOrganelle), then score -> stitch, plus the
-// assembly-review aids (reference BLAST + coverage). Annotation and curation are
-// deliberately NOT here: they run in WF2 (main_annotate.nf) after the user
-// reviews and locks the assembly. No nf-sqldb plugin, no R around Nextflow.
+// preprocess (fastp) + assemble (GetOrganelle), then score the candidate paths.
+// score() also loads the per-scaffold `assemblies` rows and seeds one annotate
+// unit per non-ignored scaffold. Assemblies are NOT stitched; each scaffold is
+// annotated independently in WF2 after the user reviews and locks the assembly.
+// (Per-scaffold GenBank BLAST + coverage are added in a later step.)
 
 include { preprocess } from './modules/preprocess.nf'
 include { assemble } from './modules/assemble.nf'
-include { query_samples; score; stitch } from './modules/pipeline_r.nf'
+include { query_samples; score } from './modules/pipeline_r.nf'
 include { blast_genbank } from './modules/blast.nf'
 include { blast_ref_fetch } from './modules/blast_ref.nf'
 include { coverage } from './modules/coverage.nf'
@@ -35,15 +36,15 @@ workflow {
         .map { id, reads, cpus, mem, go, seeds, labels -> tuple(id, reads, cpus, mem, go, seeds, labels) }
     assemble(asm_in)
 
-    // WF1 finalization (self-contained R/tool processes writing the DB). Stops
-    // at the assembly-review stage; annotation/curation happen in WF2.
+    // Load assemblies + score paths (also seeds annotate units + per-scaffold
+    // BLAST). Then map reads to the scaffolds for per-unit coverage. Stops at the
+    // assembly-review stage; annotation/curation happen per unit in WF2.
     score(assemble.out.paths)
-    stitch(score.out)
-    // remote GenBank BLAST of the stitched sequence -> ranked reference candidates
-    blast_genbank(stitch.out.map { id, fasta -> id })
-    // fetch each candidate reference (sequence + rRNA/ITS features) from NCBI
+    // per-scaffold remote GenBank BLAST -> ranked reference candidates + screen,
+    // then fetch each candidate reference (sequence + features) from NCBI
+    blast_genbank(score.out)
     blast_ref_fetch(blast_genbank.out)
-    // map trimmed reads back to the stitched sequence -> per-position coverage
-    cov_in = stitch.out.join(preprocess.out.reads.map { id, reads, after -> tuple(id, reads) })
+    // per-unit coverage (independent branch off score)
+    cov_in = score.out.join(preprocess.out.reads.map { id, reads, after -> tuple(id, reads) })
     coverage(cov_in)
 }

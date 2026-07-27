@@ -4,12 +4,14 @@
 \alias{compute_ref_alignment}
 \title{Compute per-feature sample-vs-reference alignments for one sample}
 \usage{
-compute_ref_alignment(con, id)
+compute_ref_alignment(con, id, path = 1L, scaffold = 1L)
 }
 \arguments{
 \item{con}{Open project DB connection.}
 
 \item{id}{Sample ID.}
+
+\item{path, scaffold}{Assembly unit within the sample.}
 }
 \value{
 (invisibly) number of element alignments written.

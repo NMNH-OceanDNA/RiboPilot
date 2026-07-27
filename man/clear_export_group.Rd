@@ -2,10 +2,15 @@
 % Please edit documentation in R/export.R
 \name{clear_export_group}
 \alias{clear_export_group}
-\title{Clear the export group of selected samples}
+\title{Clear the export group of selected units}
 \usage{
-clear_export_group(path, ids)
+clear_export_group(path, units)
+}
+\arguments{
+\item{path}{Project dir.}
+
+\item{units}{data.frame(ID, path, scaffold) or a character vector of IDs.}
 }
 \description{
-Clear the export group of selected samples
+Clear the export group of selected units
 }

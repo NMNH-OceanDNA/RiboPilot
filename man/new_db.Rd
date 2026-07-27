@@ -12,9 +12,9 @@ new_db(
   assemble_cpus = 6,
   assemble_memory = 24,
   seeds_db =
-    "https://raw.githubusercontent.com/Smithsonian/RiboPilot/main/ref_dbs/getOrganelle/seeds/actinopterygii_rrna_seeds.fasta",
+    "https://raw.githubusercontent.com/dmacguigan/RiboPilot/main/ref_dbs/getOrganelle/seeds/actinopterygii_rrna_seeds.fasta",
   labels_db =
-    "https://raw.githubusercontent.com/Smithsonian/RiboPilot/main/ref_dbs/getOrganelle/labels/actinopterygii_rrna_labels.fasta",
+    "https://raw.githubusercontent.com/dmacguigan/RiboPilot/main/ref_dbs/getOrganelle/labels/actinopterygii_rrna_labels.fasta",
   getOrganelle = paste("-F anonym", "-R 10 -k 21,45,65,85,105,115", "--larger-auto-ws"),
   target = "anonym",
   max_paths = 10,
