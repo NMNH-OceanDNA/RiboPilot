@@ -187,6 +187,11 @@ rt_odd_badge <- function() {
 }
 
 #' Inline depth bar relative to the deepest scaffold of the same sample
+#'
+#' The value is the MEDIAN per-position depth where one is stored (see
+#' R/coverage.R for why a mean misleads on an rDNA scaffold); the tooltip names
+#' which statistic it is, so a pre-v10 row falling back to the mean is not read
+#' as a median.
 #' @param max_col Column holding the sample maximum.
 #' @noRd
 rt_depth_bar <- function(max_col = "depth_max") {
@@ -194,11 +199,17 @@ rt_depth_bar <- function(max_col = "depth_max") {
     "function(cellInfo) {
       var v = cellInfo.value, m = cellInfo.row['%s']
       if (v === null || v === undefined || v === '') return ''
-      if (!m || m <= 0) return String(v)
+      var stat = cellInfo.row['depth_stat'] ? cellInfo.row['depth_stat'] : 'median'
+      var mean = cellInfo.row['depth_mean']
+      var tip = stat + ' depth ' + v + 'x'
+      if (mean !== null && mean !== undefined && mean !== '' && stat === 'median') tip += ' (mean ' + mean + 'x)'
+      if (!m || m <= 0) return '<span title=\"' + tip + '\">' + v + '</span>'
       var f = Math.max(0, Math.min(1, v / m))
       var w = Math.round(f * 46)
       var col = f < 0.05 ? '#c0392b' : (f < 0.33 ? '#b8860b' : '#2d6a4f')
-      return '<span title=\"' + v + 'x, ' + Math.round(f*100) + '%% of this sample&#39;s deepest scaffold\">' +
+      tip += ', ' + Math.round(f*100) + '%% of this sample&#39;s deepest scaffold'
+      if (v === 0) tip += ' -- over half this scaffold has no coverage'
+      return '<span title=\"' + tip + '\">' +
         '<span style=\"display:inline-block; width:48px; height:8px; background:#eee; vertical-align:middle;\">' +
         '<span style=\"display:inline-block; width:' + w + 'px; height:8px; background:' + col + ';\"></span></span>' +
         '<span style=\"margin-left:5px; font-size:0.85em; color:#555;\">' + v + '</span></span>'

@@ -5,7 +5,7 @@
 
 #' Current project-DB schema version. Bump when adding a migration step below.
 #' @noRd
-RIBOPILOT_SCHEMA_VERSION <- 9L
+RIBOPILOT_SCHEMA_VERSION <- 10L
 
 #' DDL for blast_hits: the full retained BLAST hit distribution per unit.
 #'
@@ -300,10 +300,54 @@ migrate_db <- function(con) {
   # written by an interrupted pre-v9 run so a re-BLAST repopulates cleanly.
   if (ver < 9L && has_tbl("blast_hits")) DBI::dbExecute(con, "DELETE FROM blast_hits;")
 
+  # --- schema v10: median per-position depth ---
+  # The relative-depth comparison in the app is meant to reflect abundance, but a
+  # mean over an rDNA scaffold is inflated by the conserved cores in proportion
+  # to how much core the scaffold contains. The per-position track is already
+  # stored, so existing projects can be back-filled without re-running coverage.
+  add_col("coverage", "median_depth", "REAL")
+
   if (ver < RIBOPILOT_SCHEMA_VERSION) {
     DBI::dbExecute(con, sprintf("PRAGMA user_version = %d", RIBOPILOT_SCHEMA_VERSION))
   }
   invisible(RIBOPILOT_SCHEMA_VERSION)
+}
+
+#' Back-fill `coverage.median_depth` from the stored per-position tracks
+#'
+#' Computed lazily rather than inside [migrate_db()]: a depth track is one
+#' comma-joined integer per base, so a large project holds hundreds of MB of
+#' them and parsing every row would make opening the app crawl. Rows written
+#' before schema v10 keep a NULL median and fall back to the mean until this
+#' runs.
+#'
+#' @param con Open project DB connection.
+#' @param limit Maximum rows to fill in one call (NULL = all).
+#' @return (invisibly) the number of rows filled.
+#' @export
+backfill_coverage_median <- function(con, limit = NULL) {
+  if (!("median_depth" %in% DBI::dbListFields(con, "coverage"))) {
+    return(invisible(0L))
+  }
+  q <- "SELECT ID, path, scaffold, depths FROM coverage
+        WHERE median_depth IS NULL AND depths IS NOT NULL AND depths != ''"
+  if (!is.null(limit)) q <- paste(q, "LIMIT", as.integer(limit))
+  d <- tryCatch(DBI::dbGetQuery(con, q), error = function(e) data.frame())
+  if (nrow(d) == 0) {
+    return(invisible(0L))
+  }
+  upd <- DBI::dbSendStatement(con,
+    "UPDATE coverage SET median_depth = ? WHERE ID = ? AND path = ? AND scaffold = ?")
+  on.exit(DBI::dbClearResult(upd), add = TRUE)
+  n <- 0L
+  for (i in seq_len(nrow(d))) {
+    v <- suppressWarnings(as.numeric(strsplit(d$depths[i], ",", fixed = TRUE)[[1]]))
+    v <- v[!is.na(v)]
+    if (!length(v)) next
+    DBI::dbBind(upd, list(round(stats::median(v), 2), d$ID[i], d$path[i], d$scaffold[i]))
+    n <- n + 1L
+  }
+  invisible(n)
 }
 
 #' Copy a project's `.sqlite` into `<path>/.old_sqlite_dbs/` before an upgrade

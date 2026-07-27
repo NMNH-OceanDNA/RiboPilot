@@ -426,6 +426,7 @@ new_db <- function(
       path INTEGER NOT NULL DEFAULT 1,
       scaffold INTEGER NOT NULL DEFAULT 1,
       mean_depth REAL,
+      median_depth REAL,
       min_depth INTEGER,
       max_depth INTEGER,
       depths TEXT,

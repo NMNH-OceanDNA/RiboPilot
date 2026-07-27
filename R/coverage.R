@@ -1,5 +1,16 @@
 # Coverage: parse `samtools depth -a` output (reads mapped back to one assembly
 # unit's scaffold sequence) into a per-unit coverage row.
+#
+# Both a mean and a MEDIAN per-position depth are stored. Coverage along an rDNA
+# scaffold is not uniform: the conserved 18S/28S cores recruit multi-mapping
+# reads from every copy of the array (and from any other organism's rDNA in the
+# sample) while the spacers do not, so a mean is pulled up by those regions --
+# and pulled up unevenly, because how much a scaffold is inflated depends on how
+# much conserved core it happens to contain. That biases exactly the comparison
+# the app makes with it (this scaffold's depth against its siblings'), which is
+# supposed to reflect abundance rather than element composition. On real
+# RiboPilot samples mean/median runs 1.01-1.26; the short conserved-core-heavy
+# fragments where it should be worst are the ones a curator most needs to judge.
 
 #' Write per-position read depth for one assembly unit (ID, path, scaffold)
 #'
@@ -22,14 +33,14 @@ write_coverage <- function(con, id, path = 1L, scaffold = 1L, depth_file) {
   }
   if (length(dep) == 0) {
     DBI::dbAppendTable(con, "coverage", data.frame(ID = id, path = path, scaffold = scaffold,
-      mean_depth = 0, min_depth = 0L, max_depth = 0L, depths = "", time_stamp = ts,
-      stringsAsFactors = FALSE))
+      mean_depth = 0, median_depth = 0, min_depth = 0L, max_depth = 0L, depths = "",
+      time_stamp = ts, stringsAsFactors = FALSE))
     return(invisible(0))
   }
   DBI::dbAppendTable(con, "coverage", data.frame(ID = id, path = path, scaffold = scaffold,
-    mean_depth = round(mean(dep), 2), min_depth = as.integer(min(dep)),
-    max_depth = as.integer(max(dep)), depths = paste(dep, collapse = ","),
-    time_stamp = ts, stringsAsFactors = FALSE))
+    mean_depth = round(mean(dep), 2), median_depth = round(stats::median(dep), 2),
+    min_depth = as.integer(min(dep)), max_depth = as.integer(max(dep)),
+    depths = paste(dep, collapse = ","), time_stamp = ts, stringsAsFactors = FALSE))
   invisible(mean(dep))
 }
 
@@ -60,9 +71,9 @@ write_coverage_units <- function(con, id, depth_file) {
     if (length(dep) == 0) next
     DBI::dbAppendTable(con, "coverage", data.frame(ID = id,
       path = as.integer(ps[1]), scaffold = as.integer(ps[2]),
-      mean_depth = round(mean(dep), 2), min_depth = as.integer(min(dep)),
-      max_depth = as.integer(max(dep)), depths = paste(dep, collapse = ","),
-      time_stamp = ts, stringsAsFactors = FALSE))
+      mean_depth = round(mean(dep), 2), median_depth = round(stats::median(dep), 2),
+      min_depth = as.integer(min(dep)), max_depth = as.integer(max(dep)),
+      depths = paste(dep, collapse = ","), time_stamp = ts, stringsAsFactors = FALSE))
     n <- n + 1L
   }
   invisible(n)
