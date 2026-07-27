@@ -317,12 +317,15 @@ load_assemblies <- function(con, out_dir, ID) {
      WHERE a.ID = ? AND COALESCE(a.ignore,0) = 0",
     params = list(ID, ID))
   # Drop annotate units (and their orphaned annotations/coverage) whose scaffold
-  # no longer exists or is now ignored after this (re)assembly.
+  # no longer exists after this (re)assembly. Deliberately NOT gated on
+  # assemblies.ignore: a curator-dropped scaffold still exists, and treating it
+  # as an orphan here would delete on the next WF1 run exactly the annotation
+  # that reconcile_ignore_unit now takes care to preserve.
   for (tbl in c("annotate", "annotations", "coverage")) {
     DBI::dbExecute(con, sprintf(
       "DELETE FROM %s WHERE ID = ? AND NOT EXISTS
          (SELECT 1 FROM assemblies a WHERE a.ID = %s.ID AND a.path = %s.path
-            AND a.scaffold = %s.scaffold AND COALESCE(a.ignore,0) = 0)",
+            AND a.scaffold = %s.scaffold)",
       tbl, tbl, tbl, tbl), params = list(ID))
   }
   # A (re)assembly invalidates any pre-trim undo snapshots for this sample.
@@ -483,10 +486,15 @@ ensure_assembly_backup <- function(con) {
 reconcile_ignore_unit <- function(con, id, path, scaffold, ignore) {
   path <- as.integer(path); scaffold <- as.integer(scaffold)
   if (isTRUE(as.integer(ignore) == 1L)) {
-    for (t in c("annotate", "annotations", "coverage")) {
-      DBI::dbExecute(con, sprintf("DELETE FROM %s WHERE ID = ? AND path = ? AND scaffold = ?", t),
-        params = list(id, path, scaffold))
-    }
+    # HOLD, do not delete. WF1 annotates every unit as it is assembled, so the
+    # rows discarded here are completed work, and "drop it, look again, put it
+    # back" is the normal motion when a divergent scaffold might be a real
+    # intragenomic array copy rather than a contaminant. The unit is already
+    # invisible to the app, to WF2 and to export -- all three filter
+    # COALESCE(asm.ignore,0) = 0 -- so deleting bought nothing.
+    DBI::dbExecute(con,
+      "UPDATE annotate SET annotate_switch = 0 WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = list(id, path, scaffold))
   } else {
     o <- DBI::dbGetQuery(con,
       "SELECT annotate_opts, curate_opts FROM annotate WHERE ID = ? LIMIT 1", params = list(id))
@@ -497,7 +505,14 @@ reconcile_ignore_unit <- function(con, id, path, scaffold, ignore) {
       params = list(id, path, scaffold,
         if (nrow(o)) o$annotate_opts[1] else "default",
         if (nrow(o)) o$curate_opts[1] else "default"))
-    DBI::dbExecute(con, "UPDATE annotate SET annotate_switch = 1 WHERE ID = ? AND path = ? AND scaffold = ?",
+    # Re-queue only when the unit has no feature model; one that was merely held
+    # comes back already annotated and should not cost a WF2 round trip.
+    n <- tryCatch(DBI::dbGetQuery(con,
+      "SELECT COUNT(*) n FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = list(id, path, scaffold))$n[1], error = function(e) 0L)
+    DBI::dbExecute(con,
+      sprintf("UPDATE annotate SET annotate_switch = %d WHERE ID = ? AND path = ? AND scaffold = ?",
+        if (isTRUE(n > 0)) 2L else 1L),
       params = list(id, path, scaffold))
   }
   invisible()

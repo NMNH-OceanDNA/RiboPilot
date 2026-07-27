@@ -40,7 +40,7 @@ config_param <- function(config_lines, key) {
 #' Run the assembly workflow (WF1) for a project
 #'
 #' Launches the self-contained Nextflow pipeline: it reads samples from the
-#' project database, runs fastp + GetOrganelle, then scores and stitches each
+#' project database, runs fastp + GetOrganelle, then scores and annotates each
 #' assembly and computes the assembly-review aids (reference BLAST + coverage),
 #' writing everything back to the database. Annotation and curation are handled
 #' by the annotation workflow ([run_annotate()], WF2) after you review and lock
@@ -75,8 +75,9 @@ run_assembly <- function(path = ".", nextflow = "nextflow", work = file.path(pat
   if (status != 0) {
     warning("Nextflow exited with status ", status)
   } else {
-    message("WF1 complete (assemble -> score -> stitch -> BLAST + coverage) written to the database. ",
-      "Review and lock assemblies in the app, then run annotation (WF2).")
+    message("WF1 complete (assemble -> score -> BLAST + coverage -> annotate + curate) ",
+      "written to the database. Every scaffold is annotated as it is assembled; ",
+      "review and lock assemblies in the app, then curate per unit in Annotate mode.")
   }
   invisible(status)
 }

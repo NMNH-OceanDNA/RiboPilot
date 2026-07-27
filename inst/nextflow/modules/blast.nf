@@ -1,4 +1,4 @@
-// WF1 remote GenBank BLAST: megablast the stitched nrDNA sequence against
+// WF1 remote GenBank BLAST: megablast each nrDNA scaffold against
 // core_nt, then parse the hits into (a) ranked nuclear-rDNA reference
 // candidates and (b) a contamination screen. Best-effort: retries on
 // connection / rate-limit failures, then 'ignore' so other samples keep

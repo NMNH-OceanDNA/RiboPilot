@@ -41,17 +41,52 @@ test_that("a re-assembly preserves per-scaffold ignore flags", {
   expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM assemblies")$n, 2)
   expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM annotate")$n, 2)
 
+  # WF1 annotates every unit as it is assembled, so give scaffold 2 a feature
+  # model before dropping it -- that is the work a destructive drop would lose.
+  DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,2,'18S')")
+
   # curator drops scaffold 2
   DBI::dbExecute(con, "UPDATE assemblies SET ignore = 1 WHERE ID='S1' AND path=1 AND scaffold=2")
   RiboPilot:::reconcile_ignore_unit(con, "S1", 1L, 2L, 1L)
-  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM annotate")$n, 1)
+
+  # HELD, not deleted: the unit is already invisible downstream (everything
+  # filters on assemblies.ignore), so dropping its curation buys nothing and
+  # makes "drop it, look again, put it back" cost a re-annotation.
+  st <- DBI::dbGetQuery(con, "SELECT annotate_switch FROM annotate WHERE ID='S1' AND path=1 AND scaffold=2")
+  expect_equal(nrow(st), 1L)
+  expect_equal(st$annotate_switch, 0L)
+  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM annotations WHERE scaffold=2")$n, 1)
 
   # re-run assembly over the same output
   RiboPilot:::load_assemblies(con, dir, "S1")
   ig <- DBI::dbGetQuery(con, "SELECT scaffold, ignore FROM assemblies WHERE ID='S1' ORDER BY scaffold")
   expect_equal(ig$ignore, c(0L, 1L))
-  # the dropped unit must not be re-seeded for annotation
-  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM annotate")$n, 1)
+  # a re-assembly must not treat a curator-dropped unit as an orphan
+  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM annotate")$n, 2)
+  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM annotations WHERE scaffold=2")$n, 1)
+})
+
+test_that("un-ignoring a held unit does not re-queue an already-annotated one", {
+  dir <- withr::local_tempdir()
+  con <- mk_asm_db(dir)
+  on.exit(DBI::dbDisconnect(con))
+  write_asm_fasta(dir)
+  RiboPilot:::load_assemblies(con, dir, "S1")
+  DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,2,'18S')")
+
+  RiboPilot:::reconcile_ignore_unit(con, "S1", 1L, 2L, 1L)   # drop
+  RiboPilot:::reconcile_ignore_unit(con, "S1", 1L, 2L, 0L)   # put back
+  st <- DBI::dbGetQuery(con,
+    "SELECT annotate_switch FROM annotate WHERE ID='S1' AND path=1 AND scaffold=2")
+  expect_equal(st$annotate_switch, 2L)   # already annotated -> done, no WF2 round trip
+
+  # a unit with no feature model still queues for annotation
+  DBI::dbExecute(con, "DELETE FROM annotations WHERE scaffold=1")
+  RiboPilot:::reconcile_ignore_unit(con, "S1", 1L, 1L, 1L)
+  RiboPilot:::reconcile_ignore_unit(con, "S1", 1L, 1L, 0L)
+  st1 <- DBI::dbGetQuery(con,
+    "SELECT annotate_switch FROM annotate WHERE ID='S1' AND path=1 AND scaffold=1")
+  expect_equal(st1$annotate_switch, 1L)
 })
 
 test_that("assemble.scaffolds records total units, not the largest path's count", {

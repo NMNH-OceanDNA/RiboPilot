@@ -61,11 +61,13 @@ test_that("ignoring by uid acts on that exact scaffold, whatever the row order",
     ig <- RiboPilot:::app_query(
       "SELECT path, scaffold, ignore FROM assemblies WHERE ID='S1' ORDER BY path, scaffold")
     expect_equal(ig$ignore, c(0L, 0L, 0L, 1L))       # only p2.s2
-    # and its annotate unit went with it, not another unit's
+    # its annotate unit is HELD, not deleted, and only that one is held
     left <- RiboPilot:::app_query(
-      "SELECT path, scaffold FROM annotate WHERE ID='S1' ORDER BY path, scaffold")
-    expect_equal(nrow(left), 3)
-    expect_false(any(left$path == 2 & left$scaffold == 2))
+      "SELECT path, scaffold, annotate_switch FROM annotate WHERE ID='S1' ORDER BY path, scaffold")
+    expect_equal(nrow(left), 4)
+    held <- left$annotate_switch == 0L
+    expect_equal(which(held), 4L)
+    expect_true(left$path[held] == 2 && left$scaffold[held] == 2)
   })
 })
 
