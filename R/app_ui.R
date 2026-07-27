@@ -53,6 +53,7 @@ app_ui <- function(request) {
               bttn("run_btn", "Update", "circle-play"))),
           shiny::conditionalPanel("input.mode == 'Assemble'",
             ctrls(bttn("state_btn", "State"), bttn("lock_btn", "Lock"),
+              bttn("triage_btn", "Triage", "filter"),
               bttn("run_btn", "Update", "circle-play"))),
           shiny::conditionalPanel("input.mode == 'Annotate'",
             ctrls(bttn("state_btn", "State"), bttn("lock_btn", "Lock"),

@@ -46,7 +46,7 @@ mk_app_project <- function(env = parent.frame()) {
   dir
 }
 
-test_that("ignoring by uid acts on that exact scaffold, whatever the row order", {
+test_that("triaging by uid acts on that exact scaffold, whatever the row order", {
   skip_if_not_installed("withr")
   dir <- mk_app_project()
   withr::local_dir(dir)
@@ -59,7 +59,7 @@ test_that("ignoring by uid acts on that exact scaffold, whatever the row order",
 
     # p2.s2 is the LAST row by (path, scaffold) but the FIRST by length. A
     # position-keyed handler would disagree with itself here.
-    session$setInputs(scaf_ignore = "S1|2|2")
+    session$setInputs(scaf_triage = "S1|2|2|drop")
     session$flushReact()
 
     ig <- RiboPilot:::app_query(
@@ -75,7 +75,7 @@ test_that("ignoring by uid acts on that exact scaffold, whatever the row order",
   })
 })
 
-test_that("a uid for a unit that does not exist is ignored, not misapplied", {
+test_that("a uid for a unit that does not exist is dropped, not misapplied", {
   skip_if_not_installed("withr")
   dir <- mk_app_project()
   withr::local_dir(dir)
@@ -84,11 +84,11 @@ test_that("a uid for a unit that does not exist is ignored, not misapplied", {
     session$setInputs(mode = "Assemble")
     sel_id("S1")
     session$flushReact()
-    session$setInputs(scaf_ignore = "S1|9|9")
+    session$setInputs(scaf_triage = "S1|9|9|drop")
     session$flushReact()
     ig <- RiboPilot:::app_query("SELECT ignore FROM assemblies WHERE ID='S1'")
     expect_true(all(ig$ignore == 0))     # nothing touched
-    session$setInputs(scaf_ignore = "garbage")
+    session$setInputs(scaf_triage = "garbage")
     session$flushReact()
     expect_true(all(RiboPilot:::app_query("SELECT ignore FROM assemblies WHERE ID='S1'")$ignore == 0))
   })
@@ -111,7 +111,7 @@ test_that("the scaffold table actually shows its evidence columns", {
     vis <- vapply(Filter(function(c) !identical(c$show, FALSE), cols),
       function(c) c$id, character(1))
     for (want in c("unit", "length", "depth", "elements", "screen_species",
-                   "shares", "odd_one_out", "include", "hits")) {
+                   "shares", "odd_one_out", "triage", "hits")) {
       expect_true(want %in% vis, info = paste("column not visible:", want))
     }
     # the uid must travel to the browser (the click key) but stay out of sight
@@ -130,4 +130,41 @@ test_that("the evidence table exposes a uid for every unit", {
   # unknown / empty ID yields no rows (typed frame for a real ID, bare for none)
   expect_equal(nrow(RiboPilot:::unit_evidence("nope")), 0L)
   expect_equal(nrow(RiboPilot:::unit_evidence("")), 0L)
+})
+
+test_that("bulk triage previews before it writes, and applying honours the preview", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+  # make every unit droppable: no features, and a non-rDNA top hit
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "DELETE FROM annotations")
+  for (u in list(c(1,1), c(1,2), c(2,1), c(2,2))) {
+    DBI::dbExecute(con, "INSERT INTO blast_screen (ID,path,scaffold,species,is_nuclear_rrna) VALUES('S1',?,?,'Homo sapiens',0)",
+      params = list(u[1], u[2]))
+  }
+  DBI::dbDisconnect(con)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    sel_id("S1")
+    session$flushReact()
+
+    # opening the modal must not change anything
+    session$setInputs(triage_btn = 1, triage_depth_frac = 0.05, triage_overwrite_user = FALSE)
+    session$flushReact()
+    expect_true(all(RiboPilot:::app_query("SELECT COALESCE(ignore,0) i FROM assemblies WHERE ID='S1'")$i == 0))
+    prev <- output$triage_preview$html      # renderUI returns list(html, deps)
+    expect_true(nzchar(prev))
+    expect_match(prev, "Would drop 4 of 4")
+    expect_match(prev, "NO scaffolds kept")  # the outcome that silently loses a sample
+
+    session$setInputs(triage_apply = 1)
+    session$flushReact()
+    r <- RiboPilot:::app_query(
+      "SELECT triage, triage_source, COALESCE(ignore,0) i FROM assemblies WHERE ID='S1'")
+    expect_true(all(r$triage == "drop"))
+    expect_true(all(r$triage_source == "auto"))
+    expect_true(all(r$i == 1L))
+  })
 })

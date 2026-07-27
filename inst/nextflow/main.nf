@@ -13,7 +13,7 @@
 
 include { preprocess } from './modules/preprocess.nf'
 include { assemble } from './modules/assemble.nf'
-include { query_samples; query_sample_units; score; annotate_tools; reconcile; curate } from './modules/pipeline_r.nf'
+include { query_samples; query_sample_units; score; annotate_tools; reconcile; curate; triage } from './modules/pipeline_r.nf'
 include { blast_genbank } from './modules/blast.nf'
 include { blast_ref_fetch; blast_ref_align } from './modules/blast_ref.nf'
 include { coverage } from './modules/coverage.nf'
@@ -76,4 +76,11 @@ workflow {
         .map { id, upath, uscaf, _refs -> tuple(id, upath, uscaf) }
     blast_ref_align(aln_in)
     curate(blast_ref_align.out)
+
+    // Propose keep/drop/undecided once ALL of a sample's units are curated, so
+    // sibling concordance and the within-sample depth ratio see the full set.
+    // groupTuple emits one entry per sample when the upstream channel closes.
+    triage(curate.out.map { id, upath, uscaf -> tuple(id, "${upath}.${uscaf}") }
+        .groupTuple()
+        .map { id, _units -> id })
 }

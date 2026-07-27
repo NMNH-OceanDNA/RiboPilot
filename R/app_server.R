@@ -879,11 +879,10 @@ app_server <- function(input, output, session) {
         data.frame(` ` = "No assembled scaffolds for this sample yet.", check.names = FALSE),
         compact = TRUE))
     }
-    d$include <- ifelse(d$ignore == 1, "ignored", "kept")
     d$hits <- "hits"
     # reactable renders in data-frame column order, so the row identifier has to
     # lead here; colDef(sticky=) alone does not move it.
-    lead <- c("unit", "length", "topology", "depth", "elements")
+    lead <- c("unit", "triage", "length", "topology", "depth", "elements")
     d <- d[, c(intersect(lead, names(d)), setdiff(names(d), lead)), drop = FALSE]
     reactable::reactable(d, compact = TRUE, resizable = TRUE, filterable = TRUE,
       searchable = TRUE, sortable = TRUE, wrap = FALSE, defaultPageSize = 20,
@@ -910,8 +909,10 @@ app_server <- function(input, output, session) {
         screen_pident = reactable::colDef(name = "%ID", width = 65, show = TRUE),
         hits = reactable::colDef(name = "", width = 55, show = TRUE, html = TRUE, filterable = FALSE,
           cell = rt_unit_link("scaf_hits")),
-        include = reactable::colDef(name = "Include", width = 90, show = TRUE, html = TRUE,
-          filterable = FALSE, cell = rt_unit_link("scaf_ignore")),
+        triage = reactable::colDef(name = "Keep", width = 68, show = TRUE, html = TRUE,
+          filterable = FALSE, cell = rt_triage_bttn("scaf_triage")),
+        triage_reason = reactable::colDef(name = "Why", minWidth = 200, show = TRUE,
+          html = TRUE, cell = rt_longtext()),
         uid = reactable::colDef(show = FALSE), depth_max = reactable::colDef(show = FALSE),
         sib_taxon = reactable::colDef(show = FALSE), sib_rank = reactable::colDef(show = FALSE)),
       rowStyle = function(index) if (isTRUE(d$ignore[index] == 1)) list(background = "#f3f3f3", color = "#999") else NULL)
@@ -997,28 +998,30 @@ app_server <- function(input, output, session) {
     h <- sel_hit_unit(); id <- sel_id(); req(!is.null(h), id)
     plot_coverage(id, h$path, h$scaffold)
   }, height = 130)
-  # Toggle a scaffold's ignore flag: dropped scaffolds are excluded from
-  # annotation + export; their annotate unit is removed / re-seeded to match.
-  # Ignoring is destructive (reconcile_ignore_unit DELETEs the unit's annotate /
-  # annotations / coverage rows), so it is refused on a locked unit and confirmed
-  # on a reviewed or grouped one. The Annotate-mode lock guard cannot see this
-  # path, so the check has to live here.
-  pending_ignore <- reactiveVal(NULL)
-  do_scaf_ignore <- function(id, p, s, new_ig) {
+  # Triage one scaffold: keep / drop / undecided. `assemblies.ignore` is derived
+  # from the verdict by set_unit_triage(), so nothing downstream changes.
+  # Dropping is no longer destructive (the annotate row is held, not deleted),
+  # so a reviewed unit only warns; an annotation-locked one is still refused,
+  # because the Annotate-mode lock guard cannot see this path.
+  pending_triage <- reactiveVal(NULL)
+  do_scaf_triage <- function(id, p, s, verdict) {
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    DBI::dbExecute(con, "UPDATE assemblies SET ignore = ? WHERE ID = ? AND path = ? AND scaffold = ?",
-      params = list(new_ig, id, p, s))
-    reconcile_ignore_unit(con, id, p, s, new_ig)
+    set_unit_triage(con, id, p, s, verdict, reason = NA_character_, source = "user")
     refresh(refresh() + 1)
-    showNotification(sprintf("Scaffold %s.%s %s.", p, s,
-      if (new_ig == 1) "ignored (dropped from annotation/export)" else "kept + queued for annotation"),
-      type = "message")
+    showNotification(sprintf("Scaffold %s.%s marked %s.", p, s,
+      if (is.na(verdict)) "undecided" else verdict), type = "message")
   }
-  observeEvent(input$scaf_ignore, {
+  observeEvent(input$scaf_triage, {
     id <- sel_id(); req(id)
-    u <- unit_by_uid(input$scaf_ignore); req(!is.null(u))
-    p <- u$path; s <- u$scaffold; new_ig <- 1L - as.integer(u$ignore)
-    if (new_ig == 1L) {
+    parts <- strsplit(as.character(input$scaf_triage), "|", fixed = TRUE)[[1]]
+    req(length(parts) >= 4)
+    want <- parts[4]
+    u <- unit_by_uid(paste(parts[1:3], collapse = "|")); req(!is.null(u))
+    p <- u$path; s <- u$scaffold
+    # clicking the state a row is already in clears it back to undecided
+    verdict <- if (identical(u$triage %|NA|% "", want)) NA_character_ else want
+
+    if (identical(verdict, "drop")) {
       st <- app_query(
         "SELECT annotate_lock, reviewed, export_group FROM annotate
          WHERE ID = ? AND path = ? AND scaffold = ?", params = list(id, p, s))
@@ -1030,25 +1033,69 @@ app_server <- function(input, output, session) {
       }
       if (nrow(st) && (identical(st$reviewed[1], "yes") ||
                        (!is.na(st$export_group[1]) && nzchar(st$export_group[1])))) {
-        pending_ignore(list(id = id, p = p, s = s))
+        pending_triage(list(id = id, p = p, s = s))
         showModal(modalDialog(
-          title = "Discard curation for this scaffold?", size = "s",
-          tags$p(sprintf(paste("Scaffold %s.%s has already been reviewed. Ignoring it deletes its",
-            "annotation, curation flags, notes and coverage. This cannot be undone."), p, s)),
+          title = "Drop a reviewed scaffold?", size = "s",
+          tags$p(sprintf(paste("Scaffold %s.%s has already been reviewed. Dropping it excludes it",
+            "from annotation and export. Its annotation and curation are kept, so this can be undone."), p, s)),
           footer = tagList(
-            actionButton("scaf_ignore_ok", "Ignore anyway", class = "btn-danger btn-sm"),
+            actionButton("scaf_triage_ok", "Drop it", class = "btn-danger btn-sm"),
             modalButton("Cancel"))))
         return()
       }
     }
-    do_scaf_ignore(id, p, s, new_ig)
+    do_scaf_triage(id, p, s, verdict)
   })
-  observeEvent(input$scaf_ignore_ok, {
-    pi <- pending_ignore(); req(pi); pending_ignore(NULL)
+  observeEvent(input$scaf_triage_ok, {
+    pt <- pending_triage(); req(pt); pending_triage(NULL)
     removeModal()
-    do_scaf_ignore(pi$id, pi$p, pi$s, 1L)
-    showModal(assemble_modal(pi$id))
+    do_scaf_triage(pt$id, pt$p, pt$s, "drop")
+    showModal(assemble_modal(pt$id))
   })
+  # ---- bulk triage over the selected samples ----
+  triage_opts <- reactive({
+    list(min_depth_frac = suppressWarnings(as.numeric(input$triage_depth_frac %||% 0.05)))
+  })
+  triage_target_ids <- function() {
+    ids <- unique(selected_ids())
+    if (length(ids)) ids else unique(samples_data()$ID)
+  }
+  observeEvent(input$triage_btn, {
+    showModal(triage_modal(length(triage_target_ids())))
+  })
+  output$triage_preview <- renderUI({
+    ids <- triage_target_ids()
+    if (!length(ids)) return(em("No samples to triage."))
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    p <- tryCatch(triage_preview(con, ids, opts = triage_opts(),
+      overwrite_user = isTRUE(input$triage_overwrite_user)), error = function(e) NULL)
+    if (is.null(p)) return(em("Could not build a preview."))
+    tagList(
+      tags$p(sprintf("Would drop %d of %d scaffold(s) across %d sample(s); %d kept, %d left undecided.",
+        p$n_drop, p$n_units, p$n_samples, p$n_keep, p$n_undecided)),
+      if (p$n_user_skipped > 0) tags$p(style = "color:#555;",
+        sprintf("%d scaffold(s) you decided by hand will be left alone.", p$n_user_skipped)),
+      if (p$n_locked_skipped > 0) tags$p(style = "color:#555;",
+        sprintf("%d annotation-locked scaffold(s) will be left alone.", p$n_locked_skipped)),
+      if (length(p$emptied) > 0) div(style = "color:#842029; font-weight:600; margin-top:6px;",
+        sprintf("%d sample(s) would end up with NO scaffolds kept: %s",
+          length(p$emptied), paste(utils::head(p$emptied, 12), collapse = ", ")))
+      else div(style = "color:#2d6a4f; margin-top:6px;", "No sample would be left with nothing kept."))
+  })
+  observeEvent(input$triage_apply, {
+    ids <- triage_target_ids(); req(length(ids))
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    n <- 0L
+    for (id in ids) {
+      n <- n + tryCatch(auto_triage_sample(con, id, opts = triage_opts(),
+        overwrite_user = isTRUE(input$triage_overwrite_user)), error = function(e) 0L)
+    }
+    removeModal()
+    refresh(refresh() + 1)
+    showNotification(sprintf("Triage updated %d scaffold(s) across %d sample(s).", n, length(ids)),
+      type = "message")
+  })
+
   observeEvent(input$set_selected, {
     id <- sel_id()
     req(id, input$sel_path)

@@ -78,6 +78,35 @@ assemble_modal <- function(id) {
   )
 }
 
+#' Bulk triage modal: re-run automatic triage over the selected samples
+#'
+#' A bulk write across a project is the highest-blast-radius action in the app,
+#' so it always shows what it would do first, including how many samples would
+#' end up with NOTHING kept. Never applied without the count.
+#' @noRd
+triage_modal <- function(n_samples) {
+  modalDialog(
+    title = sprintf("Triage scaffolds - %d selected sample(s)", n_samples),
+    size = "m", easyClose = TRUE,
+    tags$p(class = "text-muted", style = "font-size:0.86em;",
+      paste("Proposes keep / drop / undecided per scaffold from the evidence already",
+        "in the database. A scaffold is only dropped on positive evidence that it is not",
+        "nuclear rDNA; anything merely unusual is left undecided, which still exports.")),
+    div(style = "margin:0.4em 0;",
+      shinyWidgets::prettyCheckbox("triage_overwrite_user",
+        "Also re-decide scaffolds I set by hand", value = FALSE, status = "danger")),
+    div(style = "margin:0.2em 0 0.6em;",
+      numericInput("triage_depth_frac",
+        "Flag scaffolds below this fraction of the sample's deepest scaffold",
+        value = 0.05, min = 0, max = 1, step = 0.01, width = "320px")),
+    tags$hr(style = "margin:8px 0;"),
+    uiOutput("triage_preview"),
+    footer = tagList(
+      actionButton("triage_apply", "Apply", class = "btn-danger btn-sm"),
+      modalButton("Cancel"))
+  )
+}
+
 #' 5'/3' nucleotide-boundary nudge control (mirrors MitoPilot rRNA nudge)
 #' @noRd
 nt_nudge <- function(id, sym) {
