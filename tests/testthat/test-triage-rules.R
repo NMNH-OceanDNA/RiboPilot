@@ -79,17 +79,32 @@ test_that("depth never appears in any reason", {
   d <- RiboPilot:::triage_rules(us(
     list(feats = 5, nuc = 1, sp = "Danio rerio", tx = FISH_T),
     list(feats = 0, nuc = 0, sp = "Homo sapiens", tx = FISH_T)))
-  expect_false(any(grepl("depth", d$new_reason %|NA|% "", ignore.case = TRUE)))
+  # %|NA|% is scalar only (R/utils.R:10), so drop the NAs instead of coalescing
+  expect_false(any(grepl("depth", stats::na.omit(d$new_reason), ignore.case = TRUE)))
 })
 
-test_that("turning a rule off moves its units to the next rule, not to keep", {
-  d0 <- RiboPilot:::triage_rules(us(list(feats = 0, nuc = 0, sp = "Homo sapiens", tx = FISH_T)))
-  expect_equal(d0$new_rule, "no_feat_non_rdna")
+test_that("turning a rule off moves its units to the next MATCHING rule", {
+  # the odd unit matches both no_feat_non_rdna and odd_one_out, so turning the
+  # first off must fall through to the second rather than to keep
+  frame <- function() us(
+    list(feats = 5, nuc = 1, sp = "Danio rerio", tx = FISH_T),
+    list(feats = 5, nuc = 1, sp = "Danio rerio", tx = FISH_T),
+    list(feats = 5, nuc = 1, sp = "Danio rerio", tx = FISH_T),
+    list(feats = 0, nuc = 0, sp = "Cyclops sp.", tx = COPE_T))
+  d0 <- RiboPilot:::triage_rules(frame())
+  expect_equal(d0$new_rule[4], "no_feat_non_rdna")
+  expect_equal(d0$new_triage[4], "drop")
 
   act <- RiboPilot:::normalize_triage_actions(list(no_feat_non_rdna = "off"))
-  d1 <- RiboPilot:::triage_rules(us(list(feats = 0, nuc = 0, sp = "Homo sapiens", tx = FISH_T)), act)
-  expect_equal(d1$new_rule, "feat_non_rdna_hit")
-  expect_true(is.na(d1$new_triage))
+  d1 <- RiboPilot:::triage_rules(frame(), act)
+  expect_equal(d1$new_rule[4], "odd_one_out")
+  expect_true(is.na(d1$new_triage[4]))
+
+  # when NO other rule matches, turning the only matching rule off IS a keep
+  d2 <- RiboPilot:::triage_rules(
+    us(list(feats = 0, nuc = 0, sp = "Homo sapiens", tx = FISH_T)), act)
+  expect_true(is.na(d2$new_rule))
+  expect_equal(d2$new_triage, "keep")
 })
 
 test_that("an action a rule cannot support is softened to flag", {
