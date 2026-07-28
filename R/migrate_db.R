@@ -359,6 +359,9 @@ migrate_db <- function(con) {
   }
   add_col("assemble", "triage_opts", "TEXT DEFAULT 'default'")
   add_col("assemblies", "triage_rule", "TEXT")
+  # unit_evidence() hard-selects coverage.depths for the sparkline, so its
+  # absence would break the whole scaffold query rather than one cell
+  add_col("coverage", "depths", "TEXT")
   if (ver < 12L && has_col("assemble", "triage_opts")) {
     DBI::dbExecute(con, "UPDATE assemble SET triage_opts = 'default' WHERE triage_opts IS NULL")
   }

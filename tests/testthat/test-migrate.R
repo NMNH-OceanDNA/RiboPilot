@@ -152,3 +152,17 @@ test_that("v12 adds triage_opts, its seed row, and the rule columns", {
   expect_true("triage_rule" %in% DBI::dbListFields(con, "assemblies"))
   expect_equal(DBI::dbGetQuery(con, "PRAGMA user_version")[[1]], 12L)
 })
+
+test_that("v12 backfills coverage.depths when a coverage table has path but not depths", {
+  # Not a real migration path -- init_db.R and the pre-v8 coverage rebuild
+  # always add path and depths together -- but unit_evidence() now hard-selects
+  # depths, so its absence would break the whole scaffold query, not one cell.
+  con <- mk_v8_db()
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "CREATE TABLE coverage(ID TEXT, path INT, scaffold INT, mean_depth REAL)")
+  expect_false("depths" %in% DBI::dbListFields(con, "coverage"))
+
+  migrate_db(con)
+
+  expect_true("depths" %in% DBI::dbListFields(con, "coverage"))
+})
