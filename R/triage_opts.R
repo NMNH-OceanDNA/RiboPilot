@@ -49,11 +49,15 @@ write_triage_opts <- function(con, actions, preset = "default") {
   a <- normalize_triage_actions(actions)
   keys <- triage_rule_keys()
   cols <- vapply(keys, triage_opts_col, character(1))
-  DBI::dbExecute(con, "DELETE FROM triage_opts WHERE triage_opts = ?", params = list(preset))
-  DBI::dbExecute(con,
-    sprintf("INSERT INTO triage_opts (triage_opts, %s) VALUES (%s)",
-      paste(cols, collapse = ", "),
-      paste(rep("?", length(cols) + 1), collapse = ", ")),
-    params = c(list(preset), unname(a[keys])))
+  # one transaction: a failed insert after a committed delete would silently
+  # discard a customised preset and leave the project on the defaults
+  DBI::dbWithTransaction(con, {
+    DBI::dbExecute(con, "DELETE FROM triage_opts WHERE triage_opts = ?", params = list(preset))
+    DBI::dbExecute(con,
+      sprintf("INSERT INTO triage_opts (triage_opts, %s) VALUES (%s)",
+        paste(cols, collapse = ", "),
+        paste(rep("?", length(cols) + 1), collapse = ", ")),
+      params = c(list(preset), unname(a[keys])))
+  })
   invisible(preset)
 }

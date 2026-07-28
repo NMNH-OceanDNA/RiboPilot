@@ -54,3 +54,13 @@ test_that("write then read round-trips every rule", {
   RiboPilot:::write_triage_opts(con, want)
   expect_equal(RiboPilot:::triage_opts_row(con, "default"), want)
 })
+
+test_that("a failed write leaves the stored preset intact", {
+  con <- mk_opts_db(); on.exit(DBI::dbDisconnect(con))
+  RiboPilot:::write_triage_opts(con, list(odd_one_out = "off"), preset = "keepme")
+  DBI::dbExecute(con,
+    "CREATE TRIGGER boom BEFORE INSERT ON triage_opts
+     BEGIN SELECT RAISE(ABORT, 'boom'); END;")
+  expect_error(RiboPilot:::write_triage_opts(con, list(no_screen = "off"), preset = "keepme"))
+  expect_equal(RiboPilot:::triage_opts_row(con, "keepme")$odd_one_out, "off")
+})
