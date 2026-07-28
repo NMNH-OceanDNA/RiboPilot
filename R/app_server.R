@@ -1108,7 +1108,9 @@ app_server <- function(input, output, session) {
       tags$p(sprintf("Would drop %d of %d scaffold(s) across %d sample(s); %d kept, %d left undecided.",
         p$n_drop, p$n_units, p$n_samples, p$n_keep, p$n_undecided)),
       if (no_drop) tags$p(style = "color:#555;",
-        "No rule is set to Drop, so Apply will only add and clear reasons."),
+        "No rule is set to Drop, so Apply will only add and clear reasons.")
+      else if (p$n_drop == 0) tags$p(style = "color:#555;",
+        "A rule is set to Drop, but nothing in this selection will be dropped."),
       if (p$n_user_skipped > 0) tags$p(style = "color:#555;",
         sprintf("%d scaffold(s) you decided by hand will be left alone.", p$n_user_skipped)),
       if (p$n_locked_skipped > 0) tags$p(style = "color:#555;",

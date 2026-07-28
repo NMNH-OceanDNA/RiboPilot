@@ -14,14 +14,22 @@ test_that("the modal renders one control per rule, in registry order", {
 })
 
 test_that("drop is offered only on the combination rules", {
-  m <- RiboPilot:::triage_modal(1, RiboPilot:::triage_actions_default())
-  html <- as.character(m)
-  for (def in RiboPilot:::TRIAGE_RULE_DEFS) {
-    blk <- RiboPilot:::triage_rule_control(def, def$default)
-    has_drop <- grepl("Drop", as.character(blk), fixed = TRUE)
-    expect_equal(has_drop, "drop" %in% def$actions)
+  # asserts against the RENDERED modal, not against triage_rule_control()'s own
+  # inputs: comparing a helper's output to the argument it was given passes
+  # whatever the modal actually shows
+  html <- as.character(RiboPilot:::triage_modal(1, RiboPilot:::triage_actions_default()))
+  keys <- RiboPilot:::triage_rule_keys()
+  pos <- vapply(keys, function(k)
+    regexpr(paste0('id="triage_rule_', k, '"'), html, fixed = TRUE)[1], numeric(1))
+  expect_false(any(pos < 0))
+  ends <- c(pos[-1] - 1, nchar(html))
+  for (i in seq_along(keys)) {
+    seg <- substr(html, pos[i], ends[i])
+    expect_true(grepl('value="off"', seg, fixed = TRUE), info = keys[i])
+    expect_true(grepl('value="flag"', seg, fixed = TRUE), info = keys[i])
+    expect_equal(grepl('value="drop"', seg, fixed = TRUE),
+      "drop" %in% RiboPilot:::TRIAGE_RULE_DEFS[[i]]$actions, info = keys[i])
   }
-  expect_true(nzchar(html))
 })
 
 test_that("the legend explains both counts without jargon", {

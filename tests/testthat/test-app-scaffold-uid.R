@@ -168,3 +168,32 @@ test_that("bulk triage previews before it writes, and applying honours the previ
     expect_true(all(r$i == 1L))
   })
 })
+
+test_that("preview says so when a Drop rule is armed but everything it matches is hand-decided", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+  # same droppable evidence as above, but every unit is already a user
+  # decision: with overwrite off, auto-triage must skip all of them
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "DELETE FROM annotations")
+  for (u in list(c(1,1), c(1,2), c(2,1), c(2,2))) {
+    DBI::dbExecute(con, "INSERT INTO blast_screen (ID,path,scaffold,species,is_nuclear_rrna) VALUES('S1',?,?,'Homo sapiens',0)",
+      params = list(u[1], u[2]))
+    DBI::dbExecute(con,
+      "UPDATE assemblies SET triage = 'keep', triage_source = 'user' WHERE ID='S1' AND path=? AND scaffold=?",
+      params = list(u[1], u[2]))
+  }
+  DBI::dbDisconnect(con)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    sel_id("S1")
+    session$flushReact()
+    session$setInputs(triage_btn = 1, triage_overwrite_user = FALSE)
+    session$flushReact()
+    prev <- output$triage_preview$html
+    expect_true(nzchar(prev))
+    expect_match(prev, "nothing in this selection will be dropped", fixed = TRUE)
+  })
+})
