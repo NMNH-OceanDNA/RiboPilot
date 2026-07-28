@@ -40,6 +40,10 @@
 - `curate_rrna_core` + first clade wrappers/params (start with a well-sampled
   metazoan clade, e.g. fish or a mollusc group already used in MitoPilot tests).
 - Anchor/length/divergence/contaminant flags; boundary snapping.
+- Auto-triage became six named, per-rule-controllable Off/Flag/Drop rules over
+  the annotation and GenBank-screen channels, configured from a shared
+  `triage_opts` preset; sequencing depth was removed from the decision and is
+  now display-only (`09_TRIAGE_RULES_AND_DEPTH.md`).
 - Deliverable: automated pass with human-in-the-loop flag resolution.
 
 ### Phase 4 - Export + fallbacks
