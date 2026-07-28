@@ -71,9 +71,12 @@ workflow {
     // blast_ref_fetch emits one -- a join would silently drop the extras, and a
     // sample whose BLAST failed would drop entirely. ifEmpty keeps the branch
     // alive when no sample produced a reference (offline run, BLAST disabled).
-    ref_done = blast_ref_fetch.out.collect().ifEmpty { ['none'] }
-    aln_in = reconcile.out.combine(ref_done.map { refs -> tuple(refs) })
-        .map { id, upath, uscaf, _refs -> tuple(id, upath, uscaf) }
+    // The collected list is reduced to one scalar sentinel before combine:
+    // combine splices a list operand element-by-element, so carrying the list
+    // itself would widen every unit tuple by however many samples were fetched.
+    ref_done = blast_ref_fetch.out.collect().map { 'ready' }.ifEmpty('ready')
+    aln_in = reconcile.out.combine(ref_done)
+        .map { id, upath, uscaf, _ready -> tuple(id, upath, uscaf) }
     blast_ref_align(aln_in)
     curate(blast_ref_align.out)
 
