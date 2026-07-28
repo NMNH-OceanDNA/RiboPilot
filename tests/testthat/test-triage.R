@@ -3,98 +3,29 @@
 # becomes UNDECIDED, which still flows downstream.
 
 FISH_T <- "33208;7711;186623;7952;2743709;7954;7955"
-COPE_T <- "33208;6656;6854;6843;1;2;3"
-
-st <- function(...) {
-  rows <- list(...)
-  d <- do.call(rbind, lapply(seq_along(rows), function(i) {
-    r <- rows[[i]]
-    data.frame(path = 1L, scaffold = i, length = r$length %||% 5000L,
-      ignore = 0L, triage = r$triage %||% NA_character_,
-      triage_reason = NA_character_, triage_source = r$source %||% NA_character_,
-      depth = r$depth %||% 100, screen_species = r$sp %||% NA_character_,
-      screen_taxids = r$tx %||% NA_character_, rank_distance = r$rd %||% NA_integer_,
-      is_nuclear_rrna = r$nuc %||% NA_integer_, sample_taxids = FISH_T,
-      sci_name = "Danio rerio", n_features = r$feats %||% 5L,
-      annotate_lock = r$lock %||% 0L, reviewed = "no", stringsAsFactors = FALSE)
-  }))
-  d
-}
-
-test_that("a drop needs positive evidence on BOTH available channels", {
-  # no features AND the best core_nt match is not nuclear rDNA -> drop
-  d <- RiboPilot:::triage_rules(st(list(feats = 0, nuc = 0, sp = "Homo sapiens", tx = FISH_T)))
-  expect_equal(d$new_triage, "drop")
-  expect_match(d$new_reason, "no rRNA or ITS features")
-  expect_match(d$new_reason, "not a nuclear rDNA record")
-
-  # no features alone is NOT enough: annotation may simply not have run
-  d2 <- RiboPilot:::triage_rules(st(list(feats = 0, nuc = 1, sp = "Danio rerio", tx = FISH_T)))
-  expect_true(is.na(d2$new_triage))
-  expect_match(d2$new_reason, "no rRNA or ITS features")
-
-  # a non-rDNA top hit alone is NOT enough: the scaffold still has a feature model
-  d3 <- RiboPilot:::triage_rules(st(list(feats = 5, nuc = 0, sp = "Homo sapiens", tx = FISH_T)))
-  expect_true(is.na(d3$new_triage))
-})
-
-test_that("taxonomic distance alone never drops a scaffold", {
-  # The failure mode that would make the tool useless for its target taxa: an
-  # under-represented organism whose nearest reference is in another phylum.
-  d <- RiboPilot:::triage_rules(st(
-    list(feats = 5, nuc = 1, sp = "Distant relative", tx = COPE_T, rd = 6L)))
-  expect_false(identical(d$new_triage, "drop"))
-})
-
-test_that("a clean scaffold is kept with no reason attached", {
-  d <- RiboPilot:::triage_rules(st(list(feats = 5, nuc = 1, sp = "Danio rerio", tx = FISH_T)))
-  expect_equal(d$new_triage, "keep")
-  expect_true(is.na(d$new_reason))
-})
-
-test_that("shallow and odd-one-out scaffolds are flagged, not dropped", {
-  # 3 fish + 1 copepod, all annotated: the copepod is the odd one out
-  d <- RiboPilot:::triage_rules(st(
-    list(feats = 5, nuc = 1, sp = "Danio rerio", tx = FISH_T),
-    list(feats = 5, nuc = 1, sp = "Danio rerio", tx = FISH_T),
-    list(feats = 5, nuc = 1, sp = "Danio rerio", tx = FISH_T),
-    list(feats = 5, nuc = 1, sp = "Cyclops sp.", tx = COPE_T)))
-  expect_equal(d$new_triage[1:3], rep("keep", 3))
-  expect_true(is.na(d$new_triage[4]))
-  expect_match(d$new_reason[4], "differs from this sample's other scaffolds")
-
-  # depth well below the sample max is a flag with a legible reason
-  s <- RiboPilot:::triage_rules(st(
-    list(feats = 5, nuc = 1, sp = "Danio rerio", tx = FISH_T, depth = 200),
-    list(feats = 5, nuc = 1, sp = "Danio rerio", tx = FISH_T, depth = 4)))
-  expect_equal(s$new_triage[1], "keep")
-  expect_true(is.na(s$new_triage[2]))
-  expect_match(s$new_reason[2], "2% of this sample's deepest scaffold")
-})
-
-test_that("a missing GenBank screen is undecided, never a drop", {
-  d <- RiboPilot:::triage_rules(st(list(feats = 5, nuc = NA, sp = NA, tx = NA)))
-  expect_true(is.na(d$new_triage))
-  expect_match(d$new_reason, "screen has not run")
-})
 
 # ---- DB-backed behaviour -----------------------------------------------------
+# Pure-rule behaviour (the rule registry itself) is owned by test-triage-rules.R.
 
 mk_triage_db <- function() {
   con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
   DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, length INT,
-    ignore INT, triage TEXT, triage_reason TEXT, triage_source TEXT)")
+    ignore INT, triage TEXT, triage_reason TEXT, triage_source TEXT, triage_rule TEXT)")
   DBI::dbExecute(con, "CREATE TABLE annotate(ID TEXT, path INT, scaffold INT, annotate_switch INT,
-    annotate_lock INT, annotate_opts TEXT, curate_opts TEXT, reviewed TEXT)")
+    annotate_lock INT, annotate_opts TEXT, curate_opts TEXT, reviewed TEXT, n_features INT)")
   DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT)")
   DBI::dbExecute(con, "CREATE TABLE coverage(ID TEXT, path INT, scaffold INT, mean_depth REAL, median_depth REAL)")
   DBI::dbExecute(con, "CREATE TABLE blast_screen(ID TEXT, path INT, scaffold INT, species TEXT,
     lineage_taxids TEXT, rank_distance INT, is_nuclear_rrna INT)")
   DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT, sci_name TEXT, lineage_taxids TEXT)")
+  DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, triage_opts TEXT)")
+  DBI::dbExecute(con, RiboPilot:::TRIAGE_OPTS_DDL)
+  DBI::dbExecute(con, RiboPilot:::TRIAGE_OPTS_SEED)
+  DBI::dbExecute(con, "INSERT INTO assemble VALUES('S1','default')")
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S1','Danio rerio',?)", params = list(FISH_T))
   for (s in 1:3) {
-    DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',1,?,5000,0,NULL,NULL,NULL)", params = list(s))
-    DBI::dbExecute(con, "INSERT INTO annotate VALUES('S1',1,?,2,0,'default','default','no')", params = list(s))
+    DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',1,?,5000,0,NULL,NULL,NULL,NULL)", params = list(s))
+    DBI::dbExecute(con, "INSERT INTO annotate VALUES('S1',1,?,2,0,'default','default','no',1)", params = list(s))
     DBI::dbExecute(con, "INSERT INTO coverage VALUES('S1',1,?,100,100)", params = list(s))
     DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,?,'18S')", params = list(s))
     DBI::dbExecute(con, "INSERT INTO blast_screen VALUES('S1',1,?,'Danio rerio',?,0,1)",
@@ -102,6 +33,71 @@ mk_triage_db <- function() {
   }
   con
 }
+
+test_that("unit_triage_state reports whether annotation actually ran", {
+  con <- mk_triage_db(); on.exit(DBI::dbDisconnect(con))
+  d <- RiboPilot:::unit_triage_state(con, "S1")
+  expect_true("annotated_n" %in% names(d))
+  expect_false(any(is.na(d$annotated_n)))
+
+  DBI::dbExecute(con, "UPDATE annotate SET n_features = NULL WHERE scaffold = 2")
+  d2 <- RiboPilot:::unit_triage_state(con, "S1")
+  expect_true(is.na(d2$annotated_n[2]))
+})
+
+test_that("a unit whose annotation never ran is never dropped", {
+  con <- mk_triage_db(); on.exit(DBI::dbDisconnect(con))
+  # the exact shape that used to drop on a tool failure: no annotation rows and
+  # a best hit that fails the nuclear-rDNA title regex
+  DBI::dbExecute(con, "DELETE FROM annotations WHERE scaffold = 1")
+  DBI::dbExecute(con, "UPDATE annotate SET n_features = NULL WHERE scaffold = 1")
+  DBI::dbExecute(con, "UPDATE blast_screen SET is_nuclear_rrna = 0, species = 'Homo sapiens' WHERE scaffold = 1")
+
+  auto_triage_sample(con, "S1")
+  r <- DBI::dbGetQuery(con, "SELECT triage, triage_rule, ignore FROM assemblies WHERE scaffold = 1")
+  expect_true(is.na(r$triage))
+  expect_equal(r$triage_rule, "not_annotated")
+  expect_equal(r$ignore, 0L)
+})
+
+test_that("the rule that fired is recorded alongside the reason", {
+  con <- mk_triage_db(); on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "DELETE FROM annotations WHERE scaffold = 1")
+  DBI::dbExecute(con, "UPDATE annotate SET n_features = 0 WHERE scaffold = 1")
+  DBI::dbExecute(con, "UPDATE blast_screen SET is_nuclear_rrna = 0, species = 'Homo sapiens' WHERE scaffold = 1")
+
+  auto_triage_sample(con, "S1")
+  r <- DBI::dbGetQuery(con, "SELECT triage, triage_rule FROM assemblies WHERE scaffold = 1")
+  expect_equal(r$triage, "drop")
+  expect_equal(r$triage_rule, "no_feat_non_rdna")
+})
+
+test_that("auto-triage honours the sample's triage_opts preset", {
+  con <- mk_triage_db(); on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "DELETE FROM annotations WHERE scaffold = 1")
+  DBI::dbExecute(con, "UPDATE annotate SET n_features = 0 WHERE scaffold = 1")
+  DBI::dbExecute(con, "UPDATE blast_screen SET is_nuclear_rrna = 0, species = 'Homo sapiens' WHERE scaffold = 1")
+  RiboPilot:::write_triage_opts(con, list(no_feat_non_rdna = "flag"))
+
+  auto_triage_sample(con, "S1")
+  r <- DBI::dbGetQuery(con, "SELECT triage, triage_rule FROM assemblies WHERE scaffold = 1")
+  expect_true(is.na(r$triage))
+  expect_equal(r$triage_rule, "no_feat_non_rdna")
+})
+
+test_that("preview reports per-rule counts alongside the totals", {
+  con <- mk_triage_db(); on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "DELETE FROM annotations")
+  DBI::dbExecute(con, "UPDATE annotate SET n_features = 0")
+  DBI::dbExecute(con, "UPDATE blast_screen SET is_nuclear_rrna = 0, species = 'Homo sapiens'")
+
+  p <- triage_preview(con, "S1")
+  expect_true(is.data.frame(p$by_rule))
+  expect_equal(nrow(p$by_rule), 6L)
+  expect_equal(sum(p$by_rule$n_decided), p$n_units)
+  expect_true(all(p$by_rule$n_matching >= p$by_rule$n_decided))
+  expect_equal(p$by_rule$n_decided[p$by_rule$key == "no_feat_non_rdna"], 3L)
+})
 
 test_that("set_unit_triage derives ignore and records who decided", {
   con <- mk_triage_db(); on.exit(DBI::dbDisconnect(con))

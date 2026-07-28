@@ -4,20 +4,21 @@
 \alias{triage_preview}
 \title{What would bulk triage do, without doing it}
 \usage{
-triage_preview(con, ids, opts = TRIAGE_DEFAULTS, overwrite_user = FALSE)
+triage_preview(con, ids, opts = NULL, overwrite_user = FALSE)
 }
 \arguments{
 \item{con}{Open project DB connection.}
 
 \item{ids}{Sample IDs to consider.}
 
-\item{opts}{See [TRIAGE_DEFAULTS].}
+\item{opts}{Named list of per-rule actions; NULL reads the sample's
+triage_opts preset.}
 
 \item{overwrite_user}{Include units a curator decided by hand.}
 }
 \value{
 list(n_units, n_drop, n_undecided, n_keep, n_samples, emptied,
-  n_user_skipped, n_locked_skipped).
+  n_user_skipped, n_locked_skipped, by_rule).
 }
 \description{
 A bulk write across a whole project is the highest-blast-radius action in the
