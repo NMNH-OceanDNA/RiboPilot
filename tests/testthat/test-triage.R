@@ -99,6 +99,42 @@ test_that("preview reports per-rule counts alongside the totals", {
   expect_equal(p$by_rule$n_decided[p$by_rule$key == "no_feat_non_rdna"], 3L)
 })
 
+test_that("a hand-decided unit is excluded from by_rule counts, but not from n_units", {
+  con <- mk_triage_db(); on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "DELETE FROM annotations")
+  DBI::dbExecute(con, "UPDATE annotate SET n_features = 0")
+  DBI::dbExecute(con, "UPDATE blast_screen SET is_nuclear_rrna = 0, species = 'Homo sapiens'")
+  # scaffold 1 already has a curator's verdict; Apply will leave it alone
+  set_unit_triage(con, "S1", 1, 1, "keep", source = "user")
+
+  p <- triage_preview(con, "S1")
+  expect_equal(p$n_units, 3L)              # still describes the whole selection
+  expect_equal(p$n_user_skipped, 1L)
+  # only the 2 units Apply would actually touch are counted per-rule
+  expect_equal(p$by_rule$n_decided[p$by_rule$key == "no_feat_non_rdna"], 2L)
+  expect_equal(sum(p$by_rule$n_decided), 2L)
+})
+
+test_that("samples on different presets report a mixed action, not one sample's", {
+  con <- mk_triage_db(); on.exit(DBI::dbDisconnect(con))
+  # a second sample, following a preset that disagrees with 'default' on one rule
+  RiboPilot:::write_triage_opts(con, list(no_feat_non_rdna = "flag"), preset = "gentle")
+  DBI::dbExecute(con, "INSERT INTO assemble VALUES('S2','gentle')")
+  DBI::dbExecute(con, "INSERT INTO samples VALUES('S2','Danio rerio',?)", params = list(FISH_T))
+  DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S2',1,1,5000,0,NULL,NULL,NULL,NULL)")
+  DBI::dbExecute(con, "INSERT INTO annotate VALUES('S2',1,1,2,0,'default','default','no',1)")
+  DBI::dbExecute(con, "INSERT INTO coverage VALUES('S2',1,1,100,100)")
+  DBI::dbExecute(con, "INSERT INTO annotations VALUES('S2',1,1,'18S')")
+  DBI::dbExecute(con, "INSERT INTO blast_screen VALUES('S2',1,1,'Danio rerio',?,0,1)",
+    params = list(FISH_T))
+
+  p <- triage_preview(con, c("S1", "S2"))
+  # 'default' says drop, 'gentle' says flag: neither sample's action alone is honest
+  expect_equal(p$by_rule$action[p$by_rule$key == "no_feat_non_rdna"], "mixed")
+  # a rule neither preset customised must not be flattened to "mixed"
+  expect_equal(p$by_rule$action[p$by_rule$key == "odd_one_out"], "flag")
+})
+
 test_that("set_unit_triage derives ignore and records who decided", {
   con <- mk_triage_db(); on.exit(DBI::dbDisconnect(con))
   set_unit_triage(con, "S1", 1, 2, "drop", reason = "test", source = "user")

@@ -146,19 +146,25 @@ triage_preview <- function(con, ids, opts = NULL, overwrite_user = FALSE) {
     d <- unit_triage_state(con, id)
     if (nrow(d) == 0) next
     act <- normalize_triage_actions(opts %||% triage_opts_for(con, id))
-    cnt <- triage_rule_counts(d, act)
-    acc <- if (is.null(acc)) cnt else {
-      acc$n_decided <- acc$n_decided + cnt$n_decided
-      acc$n_matching <- acc$n_matching + cnt$n_matching
-      acc
-    }
     d <- triage_rules(d, act)
     skip_user <- !isTRUE(overwrite_user) & identical_user(d$triage_source)
     skip_lock <- !is.na(d$annotate_lock) & d$annotate_lock == 1
+    skipped <- skip_user | skip_lock
+    # count only the units Apply would touch, so the per-rule table cannot
+    # disagree with the totals rendered beside it
+    cnt <- triage_rule_counts(d[!skipped, , drop = FALSE], act)
+    if (is.null(acc)) {
+      acc <- cnt
+    } else {
+      acc$n_decided <- acc$n_decided + cnt$n_decided
+      acc$n_matching <- acc$n_matching + cnt$n_matching
+      # samples may follow different presets; never report one sample's action
+      # as if it governed the whole selection
+      acc$action[acc$action != cnt$action] <- "mixed"
+    }
     res$n_user_skipped <- res$n_user_skipped + sum(skip_user & !skip_lock)
     res$n_locked_skipped <- res$n_locked_skipped + sum(skip_lock)
-    # a skipped unit keeps whatever it already had
-    eff <- ifelse(skip_user | skip_lock, d$triage, d$new_triage)
+    eff <- ifelse(skipped, d$triage, d$new_triage)
     res$n_units <- res$n_units + nrow(d)
     res$n_drop <- res$n_drop + sum(eff %in% "drop")
     res$n_keep <- res$n_keep + sum(eff %in% "keep")
@@ -167,7 +173,7 @@ triage_preview <- function(con, ids, opts = NULL, overwrite_user = FALSE) {
     if (all(eff %in% "drop")) res$emptied <- c(res$emptied, id)
   }
   res$by_rule <- acc %||% triage_rule_counts(
-    data.frame()[0, ], normalize_triage_actions(opts))
+    data.frame(), normalize_triage_actions(opts %||% triage_opts_row(con)))
   res
 }
 
