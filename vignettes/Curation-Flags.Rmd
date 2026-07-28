@@ -54,9 +54,15 @@ never silently overwritten (more on that below).
 
 The proposal rests on two evidence channels that are independent of one
 another: **annotation**, from barrnap and ITSx run locally on the assembly, and
-the **GenBank screen**, the best reference match found remotely. Because the two
-channels can fail for unrelated reasons, RiboPilot only ever auto-drops a
-scaffold when both agree there is a problem; neither channel is trusted alone.
+the **GenBank screen**, the best reference match found remotely. RiboPilot
+never drops a scaffold on one channel's silence: a rule can only drop once
+both the annotation tools and the GenBank screen have actually reported on
+the scaffold. By default, the only rule that drops is the one where both
+channels independently say the scaffold is not nuclear rDNA. Two other rules
+can be switched to Drop as well, but they fire when the channels *disagree*
+with each other rather than agree; turning either on is a deliberate choice
+about which channel you trust more for your material, not more of the same
+corroboration - see the table below for which is which.
 
 RiboPilot checks a scaffold against six named rules, in this order. The first
 rule that matches decides the outcome; if none match, the scaffold is kept.
@@ -84,14 +90,14 @@ distance is the normal state for an under-studied group, not proof of
 contamination, which is exactly the case RiboPilot exists to serve. For that
 reason, disagreement with sibling scaffolds can only ever flag, never drop.
 
-## Your own decisions stick
+# Your own decisions stick
 
 If you keep or drop a scaffold by hand, that decision is recorded as yours,
 and a later automatic re-run will not overwrite it, even if the rules above
 would now propose something different. Re-triaging only touches scaffolds it
 decided itself, unless you explicitly ask it to reconsider your calls too.
 
-## Depth is shown, not decided
+# Depth is shown, not decided
 
 The scaffold table shows each scaffold's median per-position read depth and a
 small sparkline of depth along its length, but depth never decides a keep,
