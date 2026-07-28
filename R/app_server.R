@@ -1064,10 +1064,14 @@ app_server <- function(input, output, session) {
     ids <- unique(selected_ids())
     if (length(ids)) ids else unique(samples_data()$ID)
   }
+  # the preset the modal was opened with; seeding from the shipped defaults
+  # instead would report -- and on Apply write back -- settings the curator
+  # never chose, until the browser echoed the controls back
+  triage_preset <- reactiveVal(NULL)
   # settings come from the DB so the modal and the WF1 triage process agree; the
   # inputs override them live so the preview reflects what Apply would do.
   triage_actions <- reactive({
-    a <- triage_actions_default()
+    a <- triage_preset() %||% triage_actions_default()
     for (k in triage_rule_keys()) {
       v <- input[[paste0("triage_rule_", k)]]
       if (!is.null(v) && nzchar(v)) a[[k]] <- v
@@ -1078,6 +1082,7 @@ app_server <- function(input, output, session) {
     ids <- triage_target_ids()
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
     cur <- if (length(ids)) triage_opts_for(con, ids[1]) else triage_actions_default()
+    triage_preset(cur)
     showModal(triage_modal(length(ids), cur))
   })
   triage_pv <- reactive({

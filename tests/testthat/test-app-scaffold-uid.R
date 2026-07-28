@@ -171,6 +171,37 @@ test_that("bulk triage previews before it writes, and applying honours the previ
   })
 })
 
+test_that("the modal previews the stored preset, not the shipped defaults", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+  # same droppable evidence, but the project's preset says flag, not drop. No
+  # triage_rule_* input is ever set here, standing in for the window before the
+  # browser echoes the controls back: the preview must already honour the preset.
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "DELETE FROM annotations")
+  for (u in list(c(1,1), c(1,2), c(2,1), c(2,2))) {
+    DBI::dbExecute(con, "INSERT INTO blast_screen (ID,path,scaffold,species,is_nuclear_rrna) VALUES('S1',?,?,'Homo sapiens',0)",
+      params = list(u[1], u[2]))
+  }
+  RiboPilot:::write_triage_opts(con, list(no_feat_non_rdna = "flag", odd_one_out = "off"))
+  DBI::dbDisconnect(con)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    sel_id("S1")
+    session$flushReact()
+    session$setInputs(triage_btn = 1, triage_overwrite_user = FALSE)
+    session$flushReact()
+
+    expect_equal(triage_actions()$no_feat_non_rdna, "flag")
+    expect_equal(triage_actions()$odd_one_out, "off")
+    prev <- output$triage_preview$html
+    expect_match(prev, "Would drop 0 of 4")
+    expect_match(prev, "No rule is set to Drop", fixed = TRUE)
+  })
+})
+
 test_that("preview says so when a Drop rule is armed but everything it matches is hand-decided", {
   skip_if_not_installed("withr")
   dir <- mk_app_project()

@@ -3,6 +3,10 @@
 # becomes UNDECIDED, which still flows downstream.
 
 FISH_T <- "33208;7711;186623;7952;2743709;7954;7955"
+# rank-aligned to FISH_T, in the 7-field form parse_rank_names() expects
+FISH_L <- "Metazoa;Chordata;Actinopteri;Cypriniformes;Danionidae;Danio;Danio rerio"
+COPE_T <- "33208;6656;6854;6843;1;2;3"
+COPE_L <- "Metazoa;Arthropoda;Hexanauplia;Cyclopoida;Cyclopidae;Cyclops;Cyclops sp."
 
 # ---- DB-backed behaviour -----------------------------------------------------
 # Pure-rule behaviour (the rule registry itself) is owned by test-triage-rules.R.
@@ -16,7 +20,7 @@ mk_triage_db <- function() {
   DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT)")
   DBI::dbExecute(con, "CREATE TABLE coverage(ID TEXT, path INT, scaffold INT, mean_depth REAL, median_depth REAL)")
   DBI::dbExecute(con, "CREATE TABLE blast_screen(ID TEXT, path INT, scaffold INT, species TEXT,
-    lineage_taxids TEXT, rank_distance INT, is_nuclear_rrna INT)")
+    lineage TEXT, lineage_taxids TEXT, rank_distance INT, is_nuclear_rrna INT)")
   DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT, sci_name TEXT, lineage_taxids TEXT)")
   DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, triage_opts TEXT)")
   DBI::dbExecute(con, RiboPilot:::TRIAGE_OPTS_DDL)
@@ -28,10 +32,22 @@ mk_triage_db <- function() {
     DBI::dbExecute(con, "INSERT INTO annotate VALUES('S1',1,?,2,0,'default','default','no',1)", params = list(s))
     DBI::dbExecute(con, "INSERT INTO coverage VALUES('S1',1,?,100,100)", params = list(s))
     DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,?,'18S')", params = list(s))
-    DBI::dbExecute(con, "INSERT INTO blast_screen VALUES('S1',1,?,'Danio rerio',?,0,1)",
-      params = list(s, FISH_T))
+    DBI::dbExecute(con, "INSERT INTO blast_screen VALUES('S1',1,?,'Danio rerio',?,?,0,1)",
+      params = list(s, FISH_L, FISH_T))
   }
   con
+}
+
+# one more annotated, screened unit on S1
+add_unit <- function(con, scaffold, sp, lin, tx, nuc = 1L) {
+  DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',1,?,5000,0,NULL,NULL,NULL,NULL)",
+    params = list(scaffold))
+  DBI::dbExecute(con, "INSERT INTO annotate VALUES('S1',1,?,2,0,'default','default','no',1)",
+    params = list(scaffold))
+  DBI::dbExecute(con, "INSERT INTO coverage VALUES('S1',1,?,100,100)", params = list(scaffold))
+  DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,?,'18S')", params = list(scaffold))
+  DBI::dbExecute(con, "INSERT INTO blast_screen VALUES('S1',1,?,?,?,?,0,?)",
+    params = list(scaffold, sp, lin, tx, nuc))
 }
 
 test_that("unit_triage_state reports whether annotation actually ran", {
@@ -115,6 +131,53 @@ test_that("a hand-decided unit is excluded from by_rule counts, but not from n_u
   expect_equal(sum(p$by_rule$n_decided), 2L)
 })
 
+test_that("preview and Apply agree on odd_one_out when a unit is skipped", {
+  con <- mk_triage_db(); on.exit(DBI::dbDisconnect(con))
+  # sibling concordance is a property of the whole sample: three fish scaffolds
+  # and two copepod ones have a strict species majority only while all five
+  # vote. Counting on the unskipped subset alone loses it, and the preview then
+  # reports a rule Apply goes on to fire.
+  add_unit(con, 4, "Cyclops sp.", COPE_L, COPE_T)
+  add_unit(con, 5, "Cyclops sp.", COPE_L, COPE_T)
+  set_unit_triage(con, "S1", 1, 1, "keep", source = "user")
+
+  p <- triage_preview(con, "S1")
+  n_previewed <- p$by_rule$n_decided[p$by_rule$key == "odd_one_out"]
+  expect_equal(n_previewed, 2L)
+
+  auto_triage_sample(con, "S1")
+  n_applied <- DBI::dbGetQuery(con,
+    "SELECT COUNT(*) AS n FROM assemblies WHERE triage_rule = 'odd_one_out'")$n
+  expect_equal(n_applied, n_previewed)
+})
+
+test_that("the odd-one-out reason names the sibling taxon", {
+  con <- mk_triage_db(); on.exit(DBI::dbDisconnect(con))
+  add_unit(con, 4, "Cyclops sp.", COPE_L, COPE_T)
+
+  auto_triage_sample(con, "S1")
+  r <- DBI::dbGetQuery(con,
+    "SELECT triage, triage_rule, triage_reason FROM assemblies WHERE scaffold = 4")
+  expect_equal(r$triage_rule, "odd_one_out")
+  expect_true(is.na(r$triage))
+  expect_match(r$triage_reason, "Danio rerio at species", fixed = TRUE)
+  expect_false(grepl("the majority", r$triage_reason, fixed = TRUE))
+})
+
+test_that("a unit with no annotate row at all is never dropped", {
+  con <- mk_triage_db(); on.exit(DBI::dbDisconnect(con))
+  # not merely a NULL n_features: the whole row is absent
+  DBI::dbExecute(con, "DELETE FROM annotations WHERE scaffold = 1")
+  DBI::dbExecute(con, "DELETE FROM annotate WHERE scaffold = 1")
+  DBI::dbExecute(con, "UPDATE blast_screen SET is_nuclear_rrna = 0, species = 'Homo sapiens' WHERE scaffold = 1")
+
+  auto_triage_sample(con, "S1")
+  r <- DBI::dbGetQuery(con, "SELECT triage, triage_rule, ignore FROM assemblies WHERE scaffold = 1")
+  expect_true(is.na(r$triage))
+  expect_equal(r$triage_rule, "not_annotated")
+  expect_equal(r$ignore, 0L)
+})
+
 test_that("samples on different presets report a mixed action, not one sample's", {
   con <- mk_triage_db(); on.exit(DBI::dbDisconnect(con))
   # a second sample, following a preset that disagrees with 'default' on one rule
@@ -125,8 +188,8 @@ test_that("samples on different presets report a mixed action, not one sample's"
   DBI::dbExecute(con, "INSERT INTO annotate VALUES('S2',1,1,2,0,'default','default','no',1)")
   DBI::dbExecute(con, "INSERT INTO coverage VALUES('S2',1,1,100,100)")
   DBI::dbExecute(con, "INSERT INTO annotations VALUES('S2',1,1,'18S')")
-  DBI::dbExecute(con, "INSERT INTO blast_screen VALUES('S2',1,1,'Danio rerio',?,0,1)",
-    params = list(FISH_T))
+  DBI::dbExecute(con, "INSERT INTO blast_screen VALUES('S2',1,1,'Danio rerio',?,?,0,1)",
+    params = list(FISH_L, FISH_T))
 
   p <- triage_preview(con, c("S1", "S2"))
   # 'default' says drop, 'gentle' says flag: neither sample's action alone is honest

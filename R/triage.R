@@ -70,7 +70,8 @@ unit_triage_state <- function(con, id) {
     "SELECT a.path, a.scaffold, a.length, COALESCE(a.ignore,0) AS ignore,
        a.triage, a.triage_reason, a.triage_source, a.triage_rule,
        COALESCE(c.median_depth, c.mean_depth) AS depth,
-       b.species AS screen_species, b.lineage_taxids AS screen_taxids,
+       b.species AS screen_species, b.lineage AS screen_lineage,
+       b.lineage_taxids AS screen_taxids,
        b.rank_distance, b.is_nuclear_rrna,
        s.lineage_taxids AS sample_taxids, s.sci_name,
        (SELECT COUNT(*) FROM annotations n
@@ -151,8 +152,9 @@ triage_preview <- function(con, ids, opts = NULL, overwrite_user = FALSE) {
     skip_lock <- !is.na(d$annotate_lock) & d$annotate_lock == 1
     skipped <- skip_user | skip_lock
     # count only the units Apply would touch, so the per-rule table cannot
-    # disagree with the totals rendered beside it
-    cnt <- triage_rule_counts(d[!skipped, , drop = FALSE], act)
+    # disagree with the totals rendered beside it; the rules still see the whole
+    # sample, as Apply does, because sibling concordance depends on it
+    cnt <- triage_rule_counts(d, act, mask = !skipped)
     if (is.null(acc)) {
       acc <- cnt
     } else {

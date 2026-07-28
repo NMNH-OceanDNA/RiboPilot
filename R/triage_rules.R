@@ -138,7 +138,8 @@ triage_rule_ctx <- function(d) {
     sp = ifelse(is.na(sp), "unknown", sp),
     sib = unit_concordance(data.frame(
       screen_taxids = d$screen_taxids %||% rep(NA_character_, n),
-      screen_lineage = rep(NA_character_, n), stringsAsFactors = FALSE))
+      screen_lineage = d$screen_lineage %||% rep(NA_character_, n),
+      stringsAsFactors = FALSE))
   )
 }
 
@@ -165,9 +166,10 @@ triage_rule_matrix <- function(d) {
 #'
 #' @param d Frame from [unit_triage_state()].
 #' @param opts Named list key -> action; see [normalize_triage_actions()].
+#' @param m Rule matrix for `d`, for callers that already built one.
 #' @return `d` with `new_triage`, `new_reason` and `new_rule` columns.
 #' @noRd
-triage_rules <- function(d, opts = triage_actions_default()) {
+triage_rules <- function(d, opts = triage_actions_default(), m = triage_rule_matrix(d)) {
   if (is.null(d)) d <- data.frame()
   n <- nrow(d)
   d$new_triage <- rep(NA_character_, n)
@@ -175,7 +177,6 @@ triage_rules <- function(d, opts = triage_actions_default()) {
   d$new_rule <- rep(NA_character_, n)
   if (n == 0) return(d)
   act <- normalize_triage_actions(opts)
-  m <- triage_rule_matrix(d)
   keys <- colnames(m)
   for (i in seq_len(n)) {
     hit <- NA_integer_
@@ -201,8 +202,13 @@ triage_rules <- function(d, opts = triage_actions_default()) {
 #' `n_decided` is first-match and partitions the units. `n_matching` counts
 #' every unit meeting the rule, including ones a rule above acted on first, so
 #' a rule set to off still reports what turning it back on would reach.
+#'
+#' `mask` restricts the COUNTING only. The rules stay evaluated over the whole
+#' frame because sibling concordance is a property of the full set of scaffolds,
+#' so counting a subset by re-running the rules on it would report a different
+#' verdict than the one the caller is about to write.
 #' @noRd
-triage_rule_counts <- function(d, opts = triage_actions_default()) {
+triage_rule_counts <- function(d, opts = triage_actions_default(), mask = NULL) {
   act <- normalize_triage_actions(opts)
   keys <- triage_rule_keys()
   out <- data.frame(
@@ -213,8 +219,13 @@ triage_rule_counts <- function(d, opts = triage_actions_default()) {
     n_decided = 0L, n_matching = 0L, stringsAsFactors = FALSE)
   rownames(out) <- NULL
   if (nrow(d) == 0) return(out)
-  out$n_matching <- as.integer(colSums(!is.na(triage_rule_matrix(d))))
-  fired <- triage_rules(d, act)$new_rule
+  m <- triage_rule_matrix(d)
+  fired <- triage_rules(d, act, m = m)$new_rule
+  if (!is.null(mask)) {
+    m <- m[mask, , drop = FALSE]
+    fired <- fired[mask]
+  }
+  out$n_matching <- as.integer(colSums(!is.na(m)))
   out$n_decided <- as.integer(vapply(keys, function(k) sum(fired %in% k), integer(1)))
   out
 }
