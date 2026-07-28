@@ -100,8 +100,16 @@ Rule 6 also needs the screen and so necessarily follows rule 2.
 
 ### 3.1 Why only 3-5 may drop
 
-A drop requires positive evidence from two independent channels. Rules 1, 2 and
-6 rest on one channel or on its absence:
+A drop requires that both independent channels have actually reported on the
+scaffold. That is the invariant, and it is weaker than concurrence: only rule 3
+is a case where both channels independently say the scaffold is not the target
+locus, and only rule 3 drops by default. Rules 4 and 5 fire on channel
+DISAGREEMENT and are droppable only if a curator opts in, having decided which
+channel they trust for their material. Do not describe the scheme as "drops only
+when both channels agree"; that is true of the default configuration, not of the
+rule set.
+
+Rules 1, 2 and 6 rest on one channel or on its absence, and may never drop:
 
 - `not_annotated` and `no_screen` assert only that evidence is missing.
 - `odd_one_out` is pure taxonomic distance, which
