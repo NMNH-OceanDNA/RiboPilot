@@ -78,3 +78,33 @@ write_coverage_units <- function(con, id, depth_file) {
   }
   invisible(n)
 }
+
+#' Reduce a per-position depth track to a bounded number of points
+#'
+#' Takes the value at evenly spaced positions rather than a mean, so a dropout
+#' stays visible instead of being averaged away.
+#' @param x Numeric depths, in position order.
+#' @param n Maximum points to keep.
+#' @return Numeric vector of length at most `n`, first and last preserved.
+#' @noRd
+downsample_depths <- function(x, n = 100) {
+  x <- as.numeric(x)
+  x <- x[!is.na(x)]
+  if (length(x) <= n) return(x)
+  x[unique(round(seq(1, length(x), length.out = n)))]
+}
+
+#' Downsampled depth track as a comma-separated string for a table cell
+#' @param depths_blob The stored `coverage.depths` value.
+#' @param n Maximum points to keep.
+#' @return Comma-separated string, or NA when there is no usable track.
+#' @noRd
+depth_track_string <- function(depths_blob, n = 100) {
+  if (length(depths_blob) == 0 || is.na(depths_blob[1]) || !nzchar(depths_blob[1])) {
+    return(NA_character_)
+  }
+  v <- suppressWarnings(as.numeric(strsplit(depths_blob[1], "[,;[:space:]]+")[[1]]))
+  v <- v[!is.na(v)]
+  if (length(v) == 0) return(NA_character_)
+  paste(round(downsample_depths(v, n), 1), collapse = ",")
+}

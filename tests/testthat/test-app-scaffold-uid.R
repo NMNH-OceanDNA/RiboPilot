@@ -19,7 +19,8 @@ mk_app_project <- function(env = parent.frame()) {
     annotate_lock INT, annotate_opts TEXT, curate_opts TEXT, reviewed TEXT, problematic TEXT,
     partial TEXT, n_features INT, missing TEXT, n_flags INT, annotate_notes TEXT, export_group TEXT, time_stamp INT)")
   DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT, start INT)")
-  DBI::dbExecute(con, "CREATE TABLE coverage(ID TEXT, path INT, scaffold INT, mean_depth REAL)")
+  DBI::dbExecute(con, "CREATE TABLE coverage(ID TEXT, path INT, scaffold INT, mean_depth REAL,
+    min_depth INT, max_depth INT, depths TEXT)")
   DBI::dbExecute(con, "CREATE TABLE blast_screen(ID TEXT, path INT, scaffold INT, accession TEXT, title TEXT,
     species TEXT, staxid INT, lineage TEXT, lineage_taxids TEXT, rank_distance INT, pident REAL,
     qcovs REAL, evalue REAL, bitscore REAL, is_nuclear_rrna INT)")
@@ -36,7 +37,8 @@ mk_app_project <- function(env = parent.frame()) {
       params = list(u[1], u[2], u[3]))
     DBI::dbExecute(con, "INSERT INTO annotate VALUES('S1',?,?,1,0,'default','default','no','no','no',3,'',0,NULL,NULL,1)",
       params = list(u[1], u[2]))
-    DBI::dbExecute(con, "INSERT INTO coverage VALUES('S1',?,?,100)", params = list(u[1], u[2]))
+    DBI::dbExecute(con, "INSERT INTO coverage (ID,path,scaffold,mean_depth) VALUES('S1',?,?,100)",
+      params = list(u[1], u[2]))
   }
   # Bring the fixture up to the current schema rather than hand-listing every
   # column: run_app() migrates on open, so this is what the app actually sees,

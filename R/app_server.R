@@ -882,7 +882,7 @@ app_server <- function(input, output, session) {
     d$hits <- "hits"
     # reactable renders in data-frame column order, so the row identifier has to
     # lead here; colDef(sticky=) alone does not move it.
-    lead <- c("unit", "triage", "length", "topology", "depth", "elements")
+    lead <- c("unit", "triage", "length", "topology", "depth", "depth_track", "elements")
     d <- d[, c(intersect(lead, names(d)), setdiff(names(d), lead)), drop = FALSE]
     reactable::reactable(d, compact = TRUE, resizable = TRUE, filterable = TRUE,
       searchable = TRUE, sortable = TRUE, wrap = FALSE, defaultPageSize = 20,
@@ -896,6 +896,9 @@ app_server <- function(input, output, session) {
         # the column "relative" described the bar and misdescribed the number.
         depth = reactable::colDef(name = "Median depth", width = 125, show = TRUE, html = TRUE,
           cell = rt_depth_bar("depth_max")),
+        depth_track = reactable::colDef(name = "Coverage", width = 100, show = TRUE,
+          filterable = FALSE, sortable = FALSE, html = TRUE,
+          cell = rt_depth_sparkline()),
         elements = reactable::colDef(name = "rRNA features", width = 240, show = TRUE, html = TRUE,
           cell = rt_element_strip()),
         screen_species = reactable::colDef(name = "Top GenBank hit", minWidth = 160, show = TRUE,

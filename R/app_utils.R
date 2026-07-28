@@ -105,6 +105,7 @@ unit_evidence <- function(id) {
        ROUND(COALESCE(c.median_depth, c.mean_depth), 1) AS depth,
        CASE WHEN c.median_depth IS NULL THEN 'mean' ELSE 'median' END AS depth_stat,
        ROUND(c.mean_depth, 1) AS depth_mean,
+       c.depths AS depths_raw,
        b.species AS screen_species, b.accession AS screen_accession, b.title AS screen_title,
        b.pident AS screen_pident, b.qcovs AS screen_qcovs, b.bitscore AS screen_bitscore,
        b.lineage AS screen_lineage, b.lineage_taxids AS screen_taxids,
@@ -123,6 +124,9 @@ unit_evidence <- function(id) {
   }
   d$uid <- paste(id, d$path, d$scaffold, sep = "|")
   d$unit <- sprintf("p%s.s%s", d$path, d$scaffold)
+  d$depth_track <- vapply(d$depths_raw %||% rep(NA_character_, nrow(d)),
+    depth_track_string, character(1), USE.NAMES = FALSE)
+  d$depths_raw <- NULL
   # Median per position, not mean: an rDNA scaffold's conserved 18S/28S cores
   # recruit multi-mapping reads that the spacers do not, so a mean is inflated in
   # proportion to how much core the scaffold contains -- which is composition,
