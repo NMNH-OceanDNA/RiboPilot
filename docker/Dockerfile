@@ -78,7 +78,9 @@ RUN mamba install -y \
         'r-shiny' \
         'r-shinyjs' \
         'r-shinywidgets' \
-        'r-stringr' && \
+        'r-stringr' \
+        'r-htmlwidgets' \
+        'r-svglite' && \
     mamba clean -a -y
 
 # --- Install RiboPilot last so R-code edits only invalidate this cheap layer.

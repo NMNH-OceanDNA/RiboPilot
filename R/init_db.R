@@ -293,6 +293,9 @@ new_db <- function(
       blast_evalue REAL,
       blast_lineage TEXT,
       blast_source TEXT,
+      triage TEXT,
+      triage_reason TEXT,
+      triage_source TEXT,
       edit_positions TEXT,
       time_stamp INTEGER,
       PRIMARY KEY (ID, path, scaffold)

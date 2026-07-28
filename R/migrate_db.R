@@ -5,7 +5,7 @@
 
 #' Current project-DB schema version. Bump when adding a migration step below.
 #' @noRd
-RIBOPILOT_SCHEMA_VERSION <- 10L
+RIBOPILOT_SCHEMA_VERSION <- 11L
 
 #' DDL for blast_hits: the full retained BLAST hit distribution per unit.
 #'
@@ -306,6 +306,26 @@ migrate_db <- function(con) {
   # to how much core the scaffold contains. The per-position track is already
   # stored, so existing projects can be back-filled without re-running coverage.
   add_col("coverage", "median_depth", "REAL")
+
+  # --- schema v11: tri-state per-scaffold triage ---
+  # `ignore` is a binary with no "not looked at yet" state and no record of why,
+  # so a fresh sample and a fully reviewed one are indistinguishable and a
+  # machine-made drop is indistinguishable from the curator's. triage carries the
+  # decision, triage_reason carries the justification in plain English, and
+  # triage_source says who made it so an auto re-run never overwrites a human.
+  # `ignore` stays the single downstream gate (WF2, the app and export all filter
+  # on it) and becomes derived from triage rather than hand-written.
+  add_col("assemblies", "triage", "TEXT")
+  add_col("assemblies", "triage_reason", "TEXT")
+  add_col("assemblies", "triage_source", "TEXT")
+  # Existing projects: an ignored scaffold was a deliberate human decision, so
+  # adopt it as such rather than leaving it undecided and re-triaging over it.
+  if (ver < 11L && has_col("assemblies", "triage")) {
+    DBI::dbExecute(con,
+      "UPDATE assemblies SET triage = 'drop', triage_source = 'user',
+         triage_reason = 'dropped before triage was recorded'
+       WHERE COALESCE(ignore,0) = 1 AND triage IS NULL")
+  }
 
   if (ver < RIBOPILOT_SCHEMA_VERSION) {
     DBI::dbExecute(con, sprintf("PRAGMA user_version = %d", RIBOPILOT_SCHEMA_VERSION))

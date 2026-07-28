@@ -189,6 +189,23 @@ process reconcile {
 
 // Curate the reconciled feature model per unit: structural + reference flags ->
 // per-feature status/flags + per-unit n_flags/notes.
+// Propose keep/drop/undecided per unit once a sample's evidence is complete
+// (features from reconcile, screen from blast_genbank, depth from coverage).
+// Advisory only: a drop needs positive evidence, and a user decision is sticky.
+process triage {
+    cache false
+    tag "${id}"
+    errorStrategy 'ignore'
+    input:
+    val id
+    output:
+    val id
+    script:
+    """
+    RIBOPILOT_SRC='${params.ribopilot_src}' rp_triage.R '${params.db}' '${id}'
+    """
+}
+
 process curate {
     cache false
     tag "${id}.${upath}.${uscaf}"

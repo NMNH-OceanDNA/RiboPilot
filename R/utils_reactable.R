@@ -145,6 +145,45 @@ rt_unit_link <- function(InputId, suffix = NULL) {
   ) |> htmlwidgets::JS()
 }
 
+#' Tri-state keep / drop control, emitting "<uid>|keep" or "<uid>|drop"
+#'
+#' The third state is the ABSENCE of a decision, not a third button: a unit with
+#' no verdict shows both outlines unfilled and an amber cast. Clicking the state
+#' a row is already in clears it back to undecided, so a decision is reversible
+#' without a separate control.
+#' @param InputId shiny input id to set on click.
+#' @noRd
+rt_triage_bttn <- function(InputId) {
+  sprintf(
+    "function(cellInfo) {
+      var clickid = '%s';
+      var uid = cellInfo.row['uid'];
+      var v = cellInfo.value;
+      var reason = cellInfo.row['triage_reason'] ? cellInfo.row['triage_reason'] : '';
+      var src = cellInfo.row['triage_source'];
+      var keep = (v === 'keep'), drop = (v === 'drop');
+      var tip = reason ? reason : (keep ? 'kept' : (drop ? 'dropped' : 'not yet decided'));
+      if (src) tip += ' (' + src + ')';
+      // Emits the full verdict word, not the button letter: the server side
+      // takes it as a verdict, and a bare 'k' only resolved to 'keep' by
+      // match.arg()'s partial matching while surfacing as \"marked k\" to the user.
+      function btn(label, verdict, on, colOn) {
+        var st = on
+          ? 'background:' + colOn + '; color:#fff; border:1px solid ' + colOn + ';'
+          : 'background:transparent; color:#999; border:1px solid ' + (v ? '#ccc' : '#e0a800') + ';';
+        return '<a href=\"#\" title=\"mark ' + verdict + '\" ' +
+          'style=\"display:inline-block; width:20px; text-align:center; ' +
+          'font-size:0.75em; line-height:16px; border-radius:3px; margin-right:2px; ' +
+          'text-decoration:none; ' + st + '\" ' +
+          'onclick=\"event.stopPropagation(); Shiny.setInputValue(&#39;' + clickid +
+          '&#39;, &#39;' + uid + '|' + verdict + '&#39;, {priority: &#39;event&#39;})\">' +
+          label + '</a>';
+      }
+      return '<span title=\"' + tip.replace(/\"/g, '') + '\">' +
+        btn('K', 'keep', keep, '#2d6a4f') + btn('D', 'drop', drop, '#c0392b') + '</span>';
+    }", InputId) |> htmlwidgets::JS()
+}
+
 #' Render the deepest shared taxonomic rank between a hit and the sample
 #'
 #' Deliberately never asserts "host". The evidence supports "shares X at rank Y",
