@@ -1057,26 +1057,58 @@ app_server <- function(input, output, session) {
     showModal(assemble_modal(pt$id))
   })
   # ---- bulk triage over the selected samples ----
-  triage_opts <- reactive({
-    list(min_depth_frac = suppressWarnings(as.numeric(input$triage_depth_frac %||% 0.05)))
-  })
   triage_target_ids <- function() {
     ids <- unique(selected_ids())
     if (length(ids)) ids else unique(samples_data()$ID)
   }
-  observeEvent(input$triage_btn, {
-    showModal(triage_modal(length(triage_target_ids())))
+  # settings come from the DB so the modal and the WF1 triage process agree; the
+  # inputs override them live so the preview reflects what Apply would do.
+  triage_actions <- reactive({
+    a <- triage_actions_default()
+    for (k in triage_rule_keys()) {
+      v <- input[[paste0("triage_rule_", k)]]
+      if (!is.null(v) && nzchar(v)) a[[k]] <- v
+    }
+    normalize_triage_actions(a)
   })
-  output$triage_preview <- renderUI({
+  observeEvent(input$triage_btn, {
     ids <- triage_target_ids()
-    if (!length(ids)) return(em("No samples to triage."))
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    p <- tryCatch(triage_preview(con, ids, opts = triage_opts(),
+    cur <- if (length(ids)) triage_opts_for(con, ids[1]) else triage_actions_default()
+    showModal(triage_modal(length(ids), cur))
+  })
+  triage_pv <- reactive({
+    ids <- triage_target_ids()
+    if (!length(ids)) return(NULL)
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    tryCatch(triage_preview(con, ids, opts = triage_actions(),
       overwrite_user = isTRUE(input$triage_overwrite_user)), error = function(e) NULL)
-    if (is.null(p)) return(em("Could not build a preview."))
+  })
+  # one count output per rule, rendered into the static table so changing a
+  # control never rebuilds (and resets) the controls themselves
+  for (k in triage_rule_keys()) {
+    local({
+      key <- k
+      output[[paste0("triage_n_", key)]] <- renderUI({
+        p <- triage_pv()
+        if (is.null(p) || is.null(p$by_rule)) return(span("-"))
+        r <- p$by_rule[p$by_rule$key == key, ]
+        if (nrow(r) == 0) return(span("-"))
+        span(style = "white-space:nowrap;",
+          tags$strong(r$n_decided[1]), " / ",
+          span(style = "color:#777;", r$n_matching[1]))
+      })
+    })
+  }
+  output$triage_preview <- renderUI({
+    p <- triage_pv()
+    if (is.null(p)) return(em("No samples to triage."))
+    no_drop <- !any(triage_actions() %in% "drop")
     tagList(
       tags$p(sprintf("Would drop %d of %d scaffold(s) across %d sample(s); %d kept, %d left undecided.",
         p$n_drop, p$n_units, p$n_samples, p$n_keep, p$n_undecided)),
+      if (no_drop) tags$p(style = "color:#555;",
+        "No rule is set to Drop, so Apply will only add and clear reasons."),
       if (p$n_user_skipped > 0) tags$p(style = "color:#555;",
         sprintf("%d scaffold(s) you decided by hand will be left alone.", p$n_user_skipped)),
       if (p$n_locked_skipped > 0) tags$p(style = "color:#555;",
@@ -1089,9 +1121,12 @@ app_server <- function(input, output, session) {
   observeEvent(input$triage_apply, {
     ids <- triage_target_ids(); req(length(ids))
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    act <- triage_actions()
+    # persist first: a pipeline re-run must reproduce what the curator just saw
+    write_triage_opts(con, act)
     n <- 0L
     for (id in ids) {
-      n <- n + tryCatch(auto_triage_sample(con, id, opts = triage_opts(),
+      n <- n + tryCatch(auto_triage_sample(con, id, opts = act,
         overwrite_user = isTRUE(input$triage_overwrite_user)), error = function(e) 0L)
     }
     removeModal()

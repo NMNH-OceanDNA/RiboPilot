@@ -151,7 +151,7 @@ test_that("bulk triage previews before it writes, and applying honours the previ
     session$flushReact()
 
     # opening the modal must not change anything
-    session$setInputs(triage_btn = 1, triage_depth_frac = 0.05, triage_overwrite_user = FALSE)
+    session$setInputs(triage_btn = 1, triage_overwrite_user = FALSE)
     session$flushReact()
     expect_true(all(RiboPilot:::app_query("SELECT COALESCE(ignore,0) i FROM assemblies WHERE ID='S1'")$i == 0))
     prev <- output$triage_preview$html      # renderUI returns list(html, deps)
