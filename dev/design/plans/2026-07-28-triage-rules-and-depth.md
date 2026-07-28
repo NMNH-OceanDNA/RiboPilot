@@ -471,11 +471,22 @@ git commit -m "feat(triage): named, ordered rule registry over both evidence cha
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `tests/testthat/test-migrate.R`:
+The existing helper in this file is `mk_v8_db()` (line 7), and it does **not**
+create an `assemble` table, so `add_col("assemble", "triage_opts", ...)` would
+silently no-op. Add the table to the helper first, since a real v8 project has
+one, inserting after the `assemblies` CREATE:
+
+```r
+  DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT PRIMARY KEY, assemble_switch INT,
+    assemble_lock INT, assemble_opts TEXT, blast_opts TEXT)")
+  DBI::dbExecute(con, "INSERT INTO assemble VALUES('S1',2,0,'default','default')")
+```
+
+Then append to `tests/testthat/test-migrate.R`:
 
 ```r
 test_that("v12 adds triage_opts, its seed row, and the rule columns", {
-  con <- mk_old_db()
+  con <- mk_v8_db()
   on.exit(DBI::dbDisconnect(con))
   migrate_db(con)
 
@@ -496,7 +507,8 @@ test_that("v12 adds triage_opts, its seed row, and the rule columns", {
 })
 ```
 
-Note: `mk_old_db()` already exists in this file. Read it before writing the test and reuse it exactly; if it does not create an `assemble` table, add one there rather than inventing a second helper.
+Adding `assemble` to `mk_v8_db()` also exercises the existing v9-v11 migrations
+against it, so re-run the whole file, not just the new test.
 
 - [ ] **Step 2: Run test to verify it fails**
 
