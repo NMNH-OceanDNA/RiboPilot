@@ -744,14 +744,35 @@ write_triage_opts <- function(con, actions, preset = "default") {
   a <- normalize_triage_actions(actions)
   keys <- triage_rule_keys()
   cols <- vapply(keys, triage_opts_col, character(1))
-  DBI::dbExecute(con, "DELETE FROM triage_opts WHERE triage_opts = ?", params = list(preset))
-  DBI::dbExecute(con,
-    sprintf("INSERT INTO triage_opts (triage_opts, %s) VALUES (%s)",
-      paste(cols, collapse = ", "),
-      paste(rep("?", length(cols) + 1), collapse = ", ")),
-    params = c(list(preset), unname(a[keys])))
+  # one transaction: a failed insert after a committed delete would silently
+  # discard a customised preset and leave the project on the defaults
+  DBI::dbWithTransaction(con, {
+    DBI::dbExecute(con, "DELETE FROM triage_opts WHERE triage_opts = ?", params = list(preset))
+    DBI::dbExecute(con,
+      sprintf("INSERT INTO triage_opts (triage_opts, %s) VALUES (%s)",
+        paste(cols, collapse = ", "),
+        paste(rep("?", length(cols) + 1), collapse = ", ")),
+      params = c(list(preset), unname(a[keys])))
+  })
   invisible(preset)
 }
+```
+
+The `sprintf()` interpolates only `cols`, which comes from `triage_rule_keys()`,
+and the placeholder string. Every caller-supplied value goes through `params`.
+
+Add one test pinning the rollback, using a trigger to induce a failing insert:
+
+```r
+test_that("a failed write leaves the stored preset intact", {
+  con <- mk_opts_db(); on.exit(DBI::dbDisconnect(con))
+  RiboPilot:::write_triage_opts(con, list(odd_one_out = "off"), preset = "keepme")
+  DBI::dbExecute(con,
+    "CREATE TRIGGER boom BEFORE INSERT ON triage_opts
+     BEGIN SELECT RAISE(ABORT, 'boom'); END;")
+  expect_error(RiboPilot:::write_triage_opts(con, list(no_screen = "off"), preset = "keepme"))
+  expect_equal(RiboPilot:::triage_opts_row(con, "keepme")$odd_one_out, "off")
+})
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
