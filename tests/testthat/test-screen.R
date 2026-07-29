@@ -279,8 +279,12 @@ test_that("screen_sample covers every unit and sets reference support", {
 test_that("screen_sample touches only its own sample, not the whole project", {
   # a prior sub-project shipped an ungated whole-project rescan here, caught
   # only by measurement (O(units^2) on a live run); this pins scope by
-  # construction rather than relying on that happening again.
+  # construction rather than relying on that happening again. S1 and S2 are
+  # deliberately ASYMMETRIC -- different unit counts, and S2 owns a (path,
+  # scaffold) tuple S1 has none of -- so an unfiltered query cannot land on
+  # the right rows by re-iterating a shared shape.
   con <- mk_screen_db(); on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S2',2,5)")
   add_hits(con, 1, FISH_T, id = "S1")
   add_hits(con, 2, FISH_T, id = "S1")
   add_hits(con, 1, FISH_T, id = "S2")
@@ -296,24 +300,46 @@ test_that("screen_sample touches only its own sample, not the whole project", {
 
   s1_before <- DBI::dbGetQuery(con, "SELECT * FROM screen WHERE ID='S1' ORDER BY scaffold")
   screen_sample(con, "S2")
-  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM screen WHERE ID='S2'")$n, 2L)
+  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM screen WHERE ID='S2'")$n, 3L)
   s1_after <- DBI::dbGetQuery(con, "SELECT * FROM screen WHERE ID='S1' ORDER BY scaffold")
   expect_equal(s1_before, s1_after)
 })
 
-test_that("recomputed reference_support agrees with the stored rank_distance column", {
-  # in the ordinary case (sample lineage already resolved when blast_genbank
-  # stored the hit, so it wrote a real rank_distance) the two independent
-  # computations -- read the stored column, or recompute from lineage_taxids --
-  # must land on the same answer. A future divergence here would mean
-  # rank_distance() semantics changed at only one of its two call sites.
+test_that("recomputed reference_support agrees with the stored rank_distance column at a specific nonzero minimum", {
+  # oracle: two on-target hits at DIFFERENT, hand-computed distances, neither
+  # zero, with the stored rank_distance values written literally rather than
+  # via rank_distance() itself -- so this cannot pass merely because both
+  # sides call the same (possibly broken) function. A congener (same genus,
+  # different species) sits at distance 1; a different-family hit sharing
+  # only order sits at distance 3; the minimum across the unit is 1.
   con <- mk_screen_db(); on.exit(DBI::dbDisconnect(con))
-  add_hits(con, 1, FISH_T)
+  cong    <- "33208;7711;186623;7952;2743709;7954;90001"
+  difffam <- "33208;7711;186623;7952;55555;66666;77777"
+  expect_equal(rank_distance(cong, FISH_T), 1L)
+  expect_equal(rank_distance(difffam, FISH_T), 3L)
+
+  DBI::dbExecute(con,
+    "INSERT INTO blast_hits (ID,path,scaffold,hit_rank,hsp,bitscore,lineage_taxids,lineage,hit_class,rank_distance)
+     VALUES ('S1',1,1,1,1,900,?,?,'rdna',1)",
+    params = list(cong, "Eukaryota;Chordata;Actinopteri;Anabantiformes;Congeneridae;Congen;congen_sp"))
+  DBI::dbExecute(con,
+    "INSERT INTO blast_hits (ID,path,scaffold,hit_rank,hsp,bitscore,lineage_taxids,lineage,hit_class,rank_distance)
+     VALUES ('S1',1,1,2,1,800,?,?,'rdna',3)",
+    params = list(difffam, "Eukaryota;Mollusca;Bivalvia;Veneroida;Veneridae;Venus;mercenaria"))
+
   screen_one(con, "S1", 1, 1)
+  expect_equal(DBI::dbGetQuery(con, "SELECT screen_verdict v FROM screen WHERE scaffold=1")$v,
+    "on_target")
+
   RiboPilot:::update_reference_support(con, "S1")
   recomputed <- DBI::dbGetQuery(con,
     "SELECT reference_support v FROM samples WHERE ID='S1'")$v
   stored <- DBI::dbGetQuery(con,
     "SELECT MIN(rank_distance) v FROM blast_hits WHERE ID='S1' AND scaffold=1")$v
-  expect_equal(recomputed, stored)
+  stored_vals <- DBI::dbGetQuery(con,
+    "SELECT rank_distance v FROM blast_hits WHERE ID='S1' AND scaffold=1 ORDER BY hit_rank")$v
+
+  expect_equal(recomputed, 1L)          # the hardcoded oracle
+  expect_equal(recomputed, stored)      # agrees with the stored column
+  expect_equal(stored_vals, c(1L, 3L))  # the stored column holds the values intended
 })
