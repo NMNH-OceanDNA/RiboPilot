@@ -95,5 +95,10 @@ workflow {
         .groupTuple()
         .map { id, _units -> tuple(id, true) }
         .join(screen.out.map { id -> tuple(id, true) }, remainder: true)
+        // remainder: true also admits screen-only entries, so a sample with a
+        // screen but no curation would reach triage. Requiring the left side
+        // keeps triage waiting for curation. Both lines are load-bearing:
+        // dropping either one reintroduces a bug the other does not cover.
+        .filter { entry -> entry[1] != null }
         .map { id, _a, _b -> id })
 }

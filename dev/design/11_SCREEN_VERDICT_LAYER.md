@@ -282,6 +282,14 @@ not evidence.
 
 ## 10. Out of scope
 
+**`samples.reference_support` has no consumer yet.** `update_reference_support()`
+computes it and writes it to the `samples` table on every `screen_sample()` run,
+and it holds the minimum rank distance across the sample's on-target units. No
+code reads it back. Section 3 says the UI must say so when it is 4 or worse
+("nearest reference is at class distance"); that UI is deliberately deferred, so
+until it is built the column is written and never read. Recording the deferral
+here rather than leaving it to be rediscovered as a dead write.
+
 The identity envelope and everything that depends on it; the tool-kingdom
 channel (3c); the positional, chimeric and depth channels (3d); cross-sample
 screening and `paralogous_variant` (3e); and splitting `annotate_notes` into

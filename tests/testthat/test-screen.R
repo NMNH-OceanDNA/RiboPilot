@@ -6,10 +6,12 @@ FISH_T <- "33208;7711;186623;7952;2743709;7954;7955"
 FUNGI_T <- "4751;4890;147545;5042;1131492;5052;5062"
 COPE_T <- "33208;6656;6854;6843;1;2;3"
 
-# one hit row as blast_hits stores it
-hit <- function(tax, bs, cls = "rdna", lin = "K;p;c;o;f;g;s") {
+# one hit row as blast_hits stores it. hit_rank is the per-subject rank, so two
+# rows sharing one are two HSPs of ONE accession; the default gives every row
+# its own accession.
+hit <- function(tax, bs, cls = "rdna", lin = "K;p;c;o;f;g;s", hr = NA_integer_) {
   data.frame(hit_class = cls, bitscore = bs, lineage_taxids = tax,
-    lineage = lin, stringsAsFactors = FALSE)
+    lineage = lin, hit_rank = hr, stringsAsFactors = FALSE)
 }
 hits <- function(...) do.call(rbind, list(...))
 
@@ -185,6 +187,86 @@ test_that("a different-phylum contaminant is not waved through as concordant", {
   expect_lt(r$terms$separation, 1)
 })
 
+test_that("three HSPs of ONE accession are one vote, not three", {
+  # blast_hits stores one row per HSP and blast.nf runs blastn with
+  # -max_hsps 5, so an accession casts up to five votes unless the HSPs are
+  # collapsed first. COUNT(DISTINCT hit_rank) here is 1: whatever this unit
+  # knows, it knows from a single GenBank subject, which is not enough to
+  # satisfy either the LCA's min_hits or the unanimity floor.
+  h <- hits(hit(FUNGI_T, 880, hr = 1), hit(FUNGI_T, 900, hr = 1),
+            hit(FUNGI_T, 890, hr = 1))
+  expect_equal(length(unique(h$hit_rank)), 1L)
+
+  kept <- RiboPilot:::screen_one_vote_per_subject(h)
+  expect_equal(nrow(kept), 1L)
+  expect_equal(kept$bitscore, 900)   # the best-bitscore HSP is the one kept
+
+  r <- RiboPilot:::screen_channel_taxonomy(h, FISH_T)
+  expect_equal(r$lca_n_hits, 1L)     # one distinct accession, one vote
+  expect_equal(r$terms$separation, 0)
+  expect_lt(r$confidence, 0.6)
+  expect_equal(r$verdict, "uncertain")
+})
+
+test_that("three DISTINCT accessions still produce a confident verdict", {
+  # the HSP collapse must not disable the feature: the same three bitscores
+  # spread across three subjects are three votes and do decide the unit
+  h <- hits(hit(FUNGI_T, 900, hr = 1), hit(FUNGI_T, 890, hr = 2),
+            hit(FUNGI_T, 880, hr = 3))
+  expect_equal(length(unique(h$hit_rank)), 3L)
+  r <- RiboPilot:::screen_channel_taxonomy(h, FISH_T)
+  expect_equal(r$lca_n_hits, 3L)
+  expect_equal(r$verdict, "off_target")
+  expect_gte(r$confidence, 0.6)
+})
+
+test_that("two distinct accessions do not clear the gate on unanimity alone", {
+  # unanimity sets separation to 1, worth 0.40 of the 0.60 gate, so two rows
+  # agreeing at species rank used to reach 0.76 with nothing else behind them
+  h <- hits(hit(FUNGI_T, 900, hr = 1), hit(FUNGI_T, 890, hr = 2))
+  r <- RiboPilot:::screen_channel_taxonomy(h, FISH_T)
+  expect_equal(r$lca_n_hits, 2L)
+  expect_equal(r$terms$separation, 0)
+  expect_lt(r$confidence, 0.6)
+  expect_equal(r$verdict, "uncertain")
+})
+
+test_that("three hits of one congener are on_target, not off_target", {
+  # the congener's own species is absent from the sample's path, so testing
+  # `lca_taxid %in% samp` calls a clean unit off_target at 0.790. That is the
+  # too-strict rule the margin already discarded, and it fires hardest on the
+  # under-described taxa this tool exists to serve.
+  cong <- "33208;7711;186623;7952;2743709;7954;90001"
+  h <- hits(hit(cong, 900, hr = 1), hit(cong, 890, hr = 2), hit(cong, 880, hr = 3))
+  r <- RiboPilot:::screen_channel_taxonomy(h, FISH_T)
+  expect_equal(r$lca_taxid, 90001L)          # the LCA is NOT on the sample's path
+  expect_false(r$lca_taxid %in% RiboPilot:::parse_rank_taxids(FISH_T))
+  expect_equal(r$host_concordant, 1L)        # but its ancestry is
+  expect_equal(r$verdict, "on_target")
+})
+
+test_that("a same-phylum different-class hit is still concordant", {
+  # phylum is the shallowest thing the concordance test accepts, and for a
+  # sparse clade it may be the nearest reference GenBank has
+  otherclass <- "33208;7711;80000;80001;80002;80003;80004"
+  h <- hits(hit(otherclass, 900, hr = 1), hit(otherclass, 890, hr = 2),
+            hit(otherclass, 880, hr = 3))
+  r <- RiboPilot:::screen_channel_taxonomy(h, FISH_T)
+  expect_equal(r$host_concordant, 1L)
+  expect_equal(r$verdict, "on_target")
+})
+
+test_that("a kingdom-only sample lineage is no_reference, not off_target", {
+  # dropping the shallowest slot leaves nothing to compare at phylum or
+  # deeper. Read as discordant, every hit becomes unanimous and clean host
+  # data scores off_target at 0.790.
+  h <- hits(hit(FISH_T, 900), hit(FISH_T, 890), hit(FISH_T, 880))
+  r <- RiboPilot:::screen_channel_taxonomy(h, "33208;;;;;;")
+  expect_equal(r$verdict, "no_reference")
+  expect_equal(r$reason_code, "unresolved_sample_lineage")
+  expect_true(is.na(r$host_concordant))
+})
+
 test_that("no identity threshold appears anywhere in the scoring core", {
   # the envelope was deferred after measurement (doc 08 section 3.2.1); a pident
   # comparison here would be a defect, so pin its absence. Deparse the functions
@@ -266,6 +348,29 @@ test_that("a row stored at a lower version is recomputed without force", {
   expect_false(identical(r$s, "OLD"))
 })
 
+test_that("a stored no_reference row is recomputed once evidence arrives, without force", {
+  # no_reference records MISSING evidence, and the evidence routinely arrives
+  # later: BLAST disabled on the first pass, or the sample's lineage resolved
+  # afterwards. Skipping on version alone made the verdict permanent.
+  con <- mk_screen_db(); on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "UPDATE samples SET lineage_taxids = NULL WHERE ID = 'S1'")
+  screen_one(con, "S1", 1, 1)
+  r0 <- DBI::dbGetQuery(con,
+    "SELECT screen_verdict v, screen_version ver FROM screen WHERE scaffold=1")
+  expect_equal(r0$v, "no_reference")
+  expect_equal(r0$ver, RiboPilot:::SCREEN_VERSION)   # already current, so only
+                                                    # the verdict can trigger it
+
+  add_hits(con, 1, FISH_T)
+  DBI::dbExecute(con, "UPDATE samples SET lineage_taxids = ? WHERE ID = 'S1'",
+    params = list(FISH_T))
+  screen_one(con, "S1", 1, 1)
+  r1 <- DBI::dbGetQuery(con,
+    "SELECT screen_verdict v, lca_n_hits n FROM screen WHERE scaffold=1")
+  expect_equal(r1$v, "on_target")
+  expect_equal(r1$n, 3L)
+})
+
 test_that("screen_sample covers every unit and sets reference support", {
   con <- mk_screen_db(); on.exit(DBI::dbDisconnect(con))
   add_hits(con, 1, FISH_T); add_hits(con, 2, FISH_T)
@@ -306,17 +411,20 @@ test_that("screen_sample touches only its own sample, not the whole project", {
 })
 
 test_that("recomputed reference_support agrees with the stored rank_distance column at a specific nonzero minimum", {
-  # oracle: two on-target hits at DIFFERENT, hand-computed distances, neither
+  # oracle: three on-target hits at DIFFERENT, hand-computed distances, none
   # zero, with the stored rank_distance values written literally rather than
   # via rank_distance() itself -- so this cannot pass merely because both
   # sides call the same (possibly broken) function. A congener (same genus,
-  # different species) sits at distance 1; a different-family hit sharing
-  # only order sits at distance 3; the minimum across the unit is 1.
+  # different species) sits at distance 1; two different-family hits sharing
+  # only order sit at distance 3; the minimum across the unit is 1.
+  # Three DISTINCT accessions, because the unanimity floor is three.
   con <- mk_screen_db(); on.exit(DBI::dbDisconnect(con))
-  cong    <- "33208;7711;186623;7952;2743709;7954;90001"
-  difffam <- "33208;7711;186623;7952;55555;66666;77777"
+  cong     <- "33208;7711;186623;7952;2743709;7954;90001"
+  difffam  <- "33208;7711;186623;7952;55555;66666;77777"
+  difffam2 <- "33208;7711;186623;7952;55556;66667;77778"
   expect_equal(rank_distance(cong, FISH_T), 1L)
   expect_equal(rank_distance(difffam, FISH_T), 3L)
+  expect_equal(rank_distance(difffam2, FISH_T), 3L)
 
   DBI::dbExecute(con,
     "INSERT INTO blast_hits (ID,path,scaffold,hit_rank,hsp,bitscore,lineage_taxids,lineage,hit_class,rank_distance)
@@ -326,6 +434,10 @@ test_that("recomputed reference_support agrees with the stored rank_distance col
     "INSERT INTO blast_hits (ID,path,scaffold,hit_rank,hsp,bitscore,lineage_taxids,lineage,hit_class,rank_distance)
      VALUES ('S1',1,1,2,1,800,?,?,'rdna',3)",
     params = list(difffam, "Eukaryota;Mollusca;Bivalvia;Veneroida;Veneridae;Venus;mercenaria"))
+  DBI::dbExecute(con,
+    "INSERT INTO blast_hits (ID,path,scaffold,hit_rank,hsp,bitscore,lineage_taxids,lineage,hit_class,rank_distance)
+     VALUES ('S1',1,1,3,1,780,?,?,'rdna',3)",
+    params = list(difffam2, "Eukaryota;Chordata;Actinopteri;Anabantiformes;Otherfam;Otherg;other_sp"))
 
   screen_one(con, "S1", 1, 1)
   expect_equal(DBI::dbGetQuery(con, "SELECT screen_verdict v FROM screen WHERE scaffold=1")$v,
@@ -341,5 +453,5 @@ test_that("recomputed reference_support agrees with the stored rank_distance col
 
   expect_equal(recomputed, 1L)          # the hardcoded oracle
   expect_equal(recomputed, stored)      # agrees with the stored column
-  expect_equal(stored_vals, c(1L, 3L))  # the stored column holds the values intended
+  expect_equal(stored_vals, c(1L, 3L, 3L))  # the stored column holds the values intended
 })
