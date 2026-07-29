@@ -113,8 +113,9 @@ parse_blast_candidates <- function(con, id, path = 1L, scaffold = 1L, hits_file,
   write_blast_screen(con, id, path, scaffold, subj[1, ], hits = h, ts = ts)
 
   # --- reference panel: nuclear rDNA only ---
-  # assembly-level records are poor per-element references, so the panel stays
-  # rdna-only rather than admitting uninformative hits
+  # equivalent to the old is_nuclear_rrna filter, since that predicate now
+  # delegates to the same classifier. Written against hit_class directly so the
+  # intent stays explicit and survives if the legacy wrapper is retired.
   ref <- subj[subj$hit_class == "rdna", , drop = FALSE]
   if (nrow(ref) == 0) {
     return(invisible(data.frame()))
