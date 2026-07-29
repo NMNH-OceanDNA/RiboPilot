@@ -511,7 +511,11 @@ Add after the v12 block, before the `user_version` write:
   # pure function of the stored title, so history is repairable offline: the
   # backfill costs no remote BLAST, which matters because a real run takes hours.
   add_col("blast_hits", "hit_class", "TEXT")
-  if (has_tbl("blast_hits")) backfill_hit_class(con)
+  # gated on the version, not just on the table existing: parse_blast_candidates()
+  # calls migrate_db() once per unit, so an ungated backfill would rescan the
+  # whole project on every unit, O(units^2) across the run this repair exists to
+  # avoid repeating. Rows written after v13 get their class from the parse path.
+  if (ver < 13L && has_tbl("blast_hits")) backfill_hit_class(con)
 ```
 
 Add next to `backfill_coverage_median()`:
@@ -537,8 +541,11 @@ backfill_hit_class <- function(con) {
     todo$hit_class <- classify_hit_title(todo$title)
     DBI::dbWithTransaction(con, {
       up <- DBI::dbSendStatement(con, "UPDATE blast_hits SET hit_class = ? WHERE rowid = ?")
-      on.exit(DBI::dbClearResult(up), add = TRUE)
-      DBI::dbBind(up, list(todo$hit_class, todo$rid))
+      # not on.exit(): inside dbWithTransaction the block is forced in the
+      # caller's frame, so on.exit would register on this function rather than
+      # the block. finally still releases the handle if dbBind throws.
+      tryCatch(DBI::dbBind(up, list(todo$hit_class, todo$rid)),
+        finally = DBI::dbClearResult(up))
     })
   }
   # recompute the screen flag for every unit that HAS hits
