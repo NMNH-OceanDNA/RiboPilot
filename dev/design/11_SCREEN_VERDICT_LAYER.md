@@ -118,9 +118,16 @@ Reads the unit's `blast_hits` rows, then:
    weighted LCA sits on the sample's path; the margin asks the same question of
    each hit individually, so that the two best-supported opposing hits can be
    compared. A hit is concordant here when its own rank-aligned taxid path
-   contains the sample's DEEPEST RESOLVED taxid, that is the last non-NA entry
-   of `parse_rank_taxids(samples.lineage_taxids)`. Keep the two named apart in
+   shares ANY resolved taxid with the sample's path. Keep the two named apart in
    the code; conflating them silently changes what the margin measures.
+
+   It must NOT test the sample's deepest resolved taxid. That was the first
+   definition and it is wrong: a congener then counts as discordant, so a clean
+   unit whose hits are an exact species match plus two same-genus relatives
+   splits 1-against-2, yields a tiny margin, and scores `uncertain`. Measured at
+   0.349 before the fix. Sharing any resolved taxid is the test that means
+   "on the sample's lineage at all", which is what an on-target versus
+   off-target margin is supposed to compare.
 
 ## 5. Confidence
 
@@ -130,7 +137,14 @@ Three sub-scores in [0, 1], combined as a weighted mean:
 |---|---|---|
 | `support` | `min(1, lca_n_hits / 10)` | 0.30 |
 | `resolution` | rank depth of `lca_rank` over `RRNA_LINEAGE_RANKS` (`species` 1.00, `genus` 0.86, `family` 0.71, `order` 0.57, `class` 0.43, `phylum` 0.29, `kingdom` 0.14, `none` 0) | 0.30 |
-| `separation` | `min(1, abs(margin) / top_bitscore)`; **1 when every surviving hit falls on one side of the concordance test**, since nothing opposes the winner; 0 when margin is NA for any other reason | 0.40 |
+| `separation` | `min(1, abs(margin) / top_bitscore)`; **1 when at least two hits vote and every one falls on the same side of the concordance test**, since nothing opposes the winner; 0 when margin is NA for any other reason | 0.40 |
+
+Unanimity requires at least two voting hits. Without that floor a single hit is
+unopposed by definition and scores full separation, so one discordant accession
+alone reaches confidence 0.73 and produces an `off_target` verdict. Measured
+before the fix. That is the one-mislabelled-accession failure that
+`bitscore_weighted_lca()`'s own minimum-of-three exists to prevent, and it must
+not be reintroduced here.
 
 **These weights are priors, not measurements.** That is the same caveat that
 deferred the envelope, and it is why the screen rule ships as Flag. They live in
