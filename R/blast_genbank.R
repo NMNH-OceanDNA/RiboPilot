@@ -56,6 +56,7 @@ parse_blast_candidates <- function(con, id, path = 1L, scaffold = 1L, hits_file,
   }
   h$species <- extract_species(h$title)
   h$is_nuclear_rrna <- as.integer(is_nuclear_rrna_title(h$title))
+  h$hit_class <- classify_hit_title(h$title)
 
   # Rank SUBJECTS by their best bitscore. The old pident*qcovs score
   # systematically preferred short high-identity hits: a 400 bp conserved-18S-core
@@ -101,18 +102,20 @@ parse_blast_candidates <- function(con, id, path = 1L, scaffold = 1L, hits_file,
     lineage_taxids = h$lineage_taxids, rank_distance = h$rank_distance,
     pident = h$pident, qcovs = h$qcovs, evalue = h$evalue, bitscore = h$bitscore,
     aln_len = h$aln_len, qstart = h$qstart, qend = h$qend, sstart = h$sstart,
-    send = h$send, is_nuclear_rrna = h$is_nuclear_rrna, time_stamp = ts,
-    stringsAsFactors = FALSE)
+    send = h$send, is_nuclear_rrna = h$is_nuclear_rrna, hit_class = h$hit_class,
+    time_stamp = ts, stringsAsFactors = FALSE)
   DBI::dbAppendTable(con, "blast_hits", hits)
 
   # one row per subject, best HSP first, for the two derived tables
   subj <- h[!duplicated(h$hit_rank), , drop = FALSE]
 
   # --- contamination screen: top subject over everything, before any filtering ---
-  write_blast_screen(con, id, path, scaffold, subj[1, ], ts = ts)
+  write_blast_screen(con, id, path, scaffold, subj[1, ], hits = h, ts = ts)
 
   # --- reference panel: nuclear rDNA only ---
-  ref <- subj[subj$is_nuclear_rrna == 1L, , drop = FALSE]
+  # assembly-level records are poor per-element references, so the panel stays
+  # rdna-only rather than admitting uninformative hits
+  ref <- subj[subj$hit_class == "rdna", , drop = FALSE]
   if (nrow(ref) == 0) {
     return(invisible(data.frame()))
   }
@@ -190,7 +193,8 @@ parse_blast_hits_file <- function(hits_file) {
 #' `lineage` NA when the hit carried no usable taxid; curation treats an unknown
 #' lineage as a flag, not as clean.
 #' @noRd
-write_blast_screen <- function(con, id, path, scaffold, top, ts = as.integer(Sys.time())) {
+write_blast_screen <- function(con, id, path, scaffold, top, hits = NULL,
+                               ts = as.integer(Sys.time())) {
   cols <- DBI::dbListFields(con, "blast_screen")
   row <- data.frame(
     ID = id, path = as.integer(path), scaffold = as.integer(scaffold),
@@ -200,7 +204,11 @@ write_blast_screen <- function(con, id, path, scaffold, top, ts = as.integer(Sys
     rank_distance = top$rank_distance %||% NA_integer_,
     pident = top$pident, qcovs = top$qcovs, evalue = top$evalue,
     bitscore = top$bitscore %||% NA_real_,
-    is_nuclear_rrna = as.integer(top$is_nuclear_rrna %||% is_nuclear_rrna_title(top$title)),
+    is_nuclear_rrna = if (!is.null(hits)) {
+      consensus_hit_class(hits$hit_class, hits$bitscore)
+    } else {
+      consensus_hit_class(top$hit_class %||% classify_hit_title(top$title), top$bitscore)
+    },
     time_stamp = ts, stringsAsFactors = FALSE)
   DBI::dbAppendTable(con, "blast_screen", row[, intersect(names(row), cols), drop = FALSE])
   invisible(row$lineage)
