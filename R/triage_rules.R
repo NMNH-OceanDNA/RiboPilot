@@ -182,6 +182,9 @@ triage_rules <- function(d, opts = triage_actions_default(), m = triage_rule_mat
   d$new_reason <- rep(NA_character_, n)
   d$new_rule <- rep(NA_character_, n)
   if (n == 0) return(d)
+  # an m built from another frame, row-permuted, or stripped of dimnames would
+  # attribute a verdict to the wrong scaffold instead of erroring
+  stopifnot(nrow(m) == n, identical(colnames(m), triage_rule_keys()))
   act <- normalize_triage_actions(opts)
   keys <- colnames(m)
   for (i in seq_len(n)) {

@@ -120,15 +120,27 @@ auto_triage_sample <- function(con, id, opts = NULL, overwrite_user = FALSE) {
   for (i in seq_len(nrow(d))) {
     if (!isTRUE(overwrite_user) && identical(d$triage_source[i], "user")) next
     if (isTRUE(d$annotate_lock[i] == 1)) next
-    same <- identical(d$triage[i] %|NA|% "", d$new_triage[i] %|NA|% "") &&
-      identical(d$triage_reason[i] %|NA|% "", d$new_reason[i] %|NA|% "") &&
-      identical(d$triage_rule[i] %|NA|% "", d$new_rule[i] %|NA|% "")
-    if (same) next
+    if (isTRUE(triage_unit_same(d$triage[i], d$triage_reason[i], d$triage_rule[i],
+      d$new_triage[i], d$new_reason[i], d$new_rule[i]))) next
     set_unit_triage(con, id, d$path[i], d$scaffold[i], d$new_triage[i],
       reason = d$new_reason[i], source = "auto", rule = d$new_rule[i])
     changed <- changed + 1L
   }
   invisible(changed)
+}
+
+#' Does a proposed verdict match the one already stored
+#'
+#' Vectorised, with NA and "" the same absent value. The preview's headline is
+#' only true while it uses the identical comparison the writer uses, so both
+#' call this and neither reimplements it.
+#' @noRd
+triage_unit_same <- function(stored_triage, stored_reason, stored_rule,
+                             new_triage, new_reason, new_rule) {
+  navl <- function(x) ifelse(is.na(x), "", as.character(x))
+  (navl(stored_triage) == navl(new_triage)) &
+    (navl(stored_reason) == navl(new_reason)) &
+    (navl(stored_rule) == navl(new_rule))
 }
 
 #' What would bulk triage do, without doing it
@@ -150,11 +162,11 @@ auto_triage_sample <- function(con, id, opts = NULL, overwrite_user = FALSE) {
 #' @param overwrite_user Include units a curator decided by hand.
 #' @return list with, for the END STATE after Apply: n_units, n_drop, n_undecided,
 #'   n_keep, n_samples, emptied, n_user_skipped, n_locked_skipped, by_rule; and,
-#'   for what Apply would actually CHANGE (units where `skipped` is FALSE only):
-#'   n_new_drop, n_new_keep, n_new_flag (counts of `new_triage` among those
-#'   units), and n_changed (units among those whose stored triage/reason/rule
-#'   differ from the proposed ones, by the same comparison auto_triage_sample()
-#'   uses to decide what to write).
+#'   for what Apply would actually CHANGE: n_changed (units that are not skipped
+#'   and whose stored triage/reason/rule differ from the proposed ones, by the
+#'   same comparison auto_triage_sample() uses to decide what to write), broken
+#'   down by proposed verdict into n_new_drop, n_new_keep and n_new_flag, which
+#'   therefore sum to n_changed.
 #' @export
 triage_preview <- function(con, ids, opts = NULL, overwrite_user = FALSE) {
   res <- list(n_units = 0L, n_drop = 0L, n_undecided = 0L, n_keep = 0L,
@@ -177,8 +189,11 @@ triage_preview <- function(con, ids, opts = NULL, overwrite_user = FALSE) {
     skipped <- skip_user | skip_lock | all_off
     # count only the units Apply would touch, so the per-rule table cannot
     # disagree with the totals rendered beside it; the rules still see the whole
-    # sample, as Apply does, because sibling concordance depends on it
-    cnt <- triage_rule_counts(d, act, mask = !skipped)
+    # sample, as Apply does, because sibling concordance depends on it.
+    # all_off is deliberately NOT in this mask: Matching is the "what am I
+    # giving up" number, and all-off is exactly when it is wanted. Decided is 0
+    # under all-off anyway, since no rule can fire.
+    cnt <- triage_rule_counts(d, act, mask = !(skip_user | skip_lock))
     if (is.null(acc)) {
       acc <- cnt
     } else {
@@ -197,19 +212,16 @@ triage_preview <- function(con, ids, opts = NULL, overwrite_user = FALSE) {
     res$n_undecided <- res$n_undecided + sum(is.na(eff))
     res$n_samples <- res$n_samples + 1L
     if (all(eff %in% "drop")) res$emptied <- c(res$emptied, id)
-    # what Apply actually touches: units NOT skipped, and among those, whether
-    # the proposed triple differs from what is already stored -- mirroring the
-    # exact skip comparison auto_triage_sample() uses, so preview and apply
-    # can never disagree on which units "change"
-    touch <- !skipped
-    navl <- function(x) ifelse(is.na(x), "", x)
-    same <- (navl(d$triage) == navl(d$new_triage)) &
-      (navl(d$triage_reason) == navl(d$new_reason)) &
-      (navl(d$triage_rule) == navl(d$new_rule))
-    res$n_new_drop <- res$n_new_drop + sum(touch & d$new_triage %in% "drop")
-    res$n_new_keep <- res$n_new_keep + sum(touch & d$new_triage %in% "keep")
-    res$n_new_flag <- res$n_new_flag + sum(touch & is.na(d$new_triage))
-    res$n_changed <- res$n_changed + sum(touch & !same)
+    # what Apply actually writes: units NOT skipped whose proposed triple
+    # differs from what is stored. "Newly dropped/kept/flagged" is a breakdown
+    # of that set, not of every proposal, or the breakdown outruns the headline
+    same <- triage_unit_same(d$triage, d$triage_reason, d$triage_rule,
+      d$new_triage, d$new_reason, d$new_rule)
+    chg <- !skipped & !same
+    res$n_new_drop <- res$n_new_drop + sum(chg & d$new_triage %in% "drop")
+    res$n_new_keep <- res$n_new_keep + sum(chg & d$new_triage %in% "keep")
+    res$n_new_flag <- res$n_new_flag + sum(chg & is.na(d$new_triage))
+    res$n_changed <- res$n_changed + sum(chg)
   }
   res$by_rule <- acc %||% triage_rule_counts(
     data.frame(), normalize_triage_actions(opts %||% triage_opts_row(con)))

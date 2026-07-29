@@ -309,24 +309,7 @@ and to removing a channel that was never sound.
 
 ## 10. Known follow-ups
 
-Both were found by the final pre-merge review, judged non-blocking, and left
-deliberately. Both concern the annotation gate, which is the safety property
-this design exists to establish, so they are recorded here rather than lost.
-
-1. **`triage_rules()`'s optional `m` argument can silently mis-attribute.**
-   The precomputed rule matrix is accepted without checking that it was built
-   from the same frame. An `m` from a different frame of equal dimensions, or a
-   row-permuted one, moves a verdict onto the wrong scaffold, including onto a
-   crashed-annotation scaffold that must never be dropped. Only an undersized
-   `m` errors; an `m` with stripped `dimnames` silently returns `keep` for
-   everything. Nothing can trigger this today, since the sole caller builds `m`
-   from the same `d` two lines earlier. Fix is one line before the loop:
-   `stopifnot(nrow(m) == n, identical(colnames(m), triage_rule_keys()))`.
-
-2. **The "no annotate row at all" test does not pin the gate it appears to.**
-   Deleting `!isTRUE(ctx$annotated[i]) ||` from the `no_feat_non_rdna` gate
-   leaves the whole suite passing. The test runs only the default action set,
-   where `not_annotated` is first in evaluation order and shadows the drop rule
-   by first-match. The gate is load-bearing only when `not_annotated` is set to
-   `off`, which is a legal setting and is correct in the code. Adding
-   `opts = list(not_annotated = "off")` to that test makes it bite.
+Both follow-ups recorded here after the pre-merge review are now closed: the
+optional `m` argument to `triage_rules()` is guarded against a matrix that does
+not belong to its frame, and the "no annotate row at all" test runs with
+`not_annotated` off so it pins the annotation gate it names.

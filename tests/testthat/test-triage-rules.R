@@ -148,6 +148,20 @@ test_that("counts partition on Decided and overlap on Matching", {
   expect_equal(off$n_matching, 1L)
 })
 
+test_that("a rule matrix that does not belong to the frame errors", {
+  d <- us(
+    list(ann = NA, feats = 0, nuc = 0, sp = "Homo sapiens", tx = FISH_T),
+    list(feats = 5, nuc = 1, sp = "Danio rerio", tx = FISH_T))
+  m <- RiboPilot:::triage_rule_matrix(d)
+  expect_silent(RiboPilot:::triage_rules(d, m = m))
+
+  # an m from another frame mis-attributes a verdict, including a drop onto the
+  # crashed-annotation unit; stripped dimnames used to return keep for all
+  expect_error(RiboPilot:::triage_rules(d, m = m[1, , drop = FALSE]))
+  expect_error(RiboPilot:::triage_rules(d, m = unname(m)))
+  expect_error(RiboPilot:::triage_rules(d, m = m[, 1:3, drop = FALSE]))
+})
+
 test_that("an empty frame returns empty columns rather than erroring", {
   d <- RiboPilot:::triage_rules(us()[0, ])
   expect_equal(nrow(d), 0L)

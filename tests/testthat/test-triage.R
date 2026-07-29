@@ -170,11 +170,14 @@ test_that("a unit with no annotate row at all is never dropped", {
   DBI::dbExecute(con, "DELETE FROM annotations WHERE scaffold = 1")
   DBI::dbExecute(con, "DELETE FROM annotate WHERE scaffold = 1")
   DBI::dbExecute(con, "UPDATE blast_screen SET is_nuclear_rrna = 0, species = 'Homo sapiens' WHERE scaffold = 1")
+  # not_annotated is first in evaluation order and would shadow the gate this
+  # test names, leaving it green even with the gate deleted
+  opts <- RiboPilot:::normalize_triage_actions(list(not_annotated = "off"))
 
-  auto_triage_sample(con, "S1")
+  auto_triage_sample(con, "S1", opts = opts)
   r <- DBI::dbGetQuery(con, "SELECT triage, triage_rule, ignore FROM assemblies WHERE scaffold = 1")
-  expect_true(is.na(r$triage))
-  expect_equal(r$triage_rule, "not_annotated")
+  expect_false(identical(r$triage, "drop"))
+  expect_false(identical(r$triage_rule, "no_feat_non_rdna"))
   expect_equal(r$ignore, 0L)
 })
 
@@ -326,7 +329,7 @@ test_that("n_new_drop counts only units Apply will newly drop", {
   expect_equal(p$n_user_skipped, 1L)
 })
 
-test_that("n_new_drop + n_new_keep + n_new_flag equals the units Apply would touch", {
+test_that("n_new_drop + n_new_keep + n_new_flag equals n_changed", {
   con <- mk_triage_db(); on.exit(DBI::dbDisconnect(con))
   # scaffold 1: hand-decided, skipped
   set_unit_triage(con, "S1", 1, 1, "keep", source = "user")
@@ -342,8 +345,29 @@ test_that("n_new_drop + n_new_keep + n_new_flag equals the units Apply would tou
   DBI::dbExecute(con, "UPDATE annotate SET n_features = 0 WHERE scaffold = 5")
 
   p <- triage_preview(con, "S1")
-  n_unskipped <- p$n_units - p$n_user_skipped - p$n_locked_skipped
-  expect_equal(p$n_new_drop + p$n_new_keep + p$n_new_flag, n_unskipped)
+  # nothing is stored yet, so every unskipped unit is also a change
+  expect_equal(p$n_new_drop + p$n_new_keep + p$n_new_flag, p$n_changed)
+  expect_equal(p$n_changed, p$n_units - p$n_user_skipped - p$n_locked_skipped)
+
+  # once applied, the same units are still proposed the same verdicts but none
+  # of them is a write: the breakdown must go to zero with the headline
+  auto_triage_sample(con, "S1")
+  p2 <- triage_preview(con, "S1")
+  expect_equal(p2$n_changed, 0L)
+  expect_equal(p2$n_new_drop + p2$n_new_keep + p2$n_new_flag, 0L)
+})
+
+test_that("every rule off zeroes Decided but leaves Matching populated", {
+  con <- mk_triage_db(); on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "DELETE FROM annotations")
+  DBI::dbExecute(con, "UPDATE annotate SET n_features = 0")
+  DBI::dbExecute(con, "UPDATE blast_screen SET is_nuclear_rrna = 0, species = 'Homo sapiens'")
+
+  p <- triage_preview(con, "S1", opts = all_rules_off())
+  expect_equal(sum(p$by_rule$n_decided), 0L)
+  # what turning the rules back on would reach: the "am I giving anything up"
+  # number, which all-off is exactly when a curator wants
+  expect_equal(p$by_rule$n_matching[p$by_rule$key == "no_feat_non_rdna"], 3L)
 })
 
 # ---- every rule off is a deliberate no-op, not a keep sweep (section 3.3) ---

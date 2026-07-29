@@ -1117,6 +1117,11 @@ app_server <- function(input, output, session) {
       tags$p(
         if (all_off)
           "Every rule is off, so Apply would change nothing."
+        else if (p$n_changed == 0 && p$n_units > 0 &&
+            p$n_user_skipped + p$n_locked_skipped == p$n_units)
+          # nothing is compared against these rules here, so saying the stored
+          # verdicts match them would be a claim about units never examined
+          "Every scaffold in this selection is hand-decided or annotation-locked, so Apply would skip them all."
         else if (p$n_changed == 0)
           "Apply would change nothing: every scaffold already has the verdict these rules propose."
         else
@@ -1136,10 +1141,15 @@ app_server <- function(input, output, session) {
         sprintf("%d scaffold(s) you decided by hand will be left alone.", p$n_user_skipped)),
       if (p$n_locked_skipped > 0) tags$p(style = "color:#555;",
         sprintf("%d annotation-locked scaffold(s) will be left alone.", p$n_locked_skipped)),
+      # under all-off nothing is caused by Apply, so this reports the standing
+      # state rather than an outcome
       if (length(p$emptied) > 0) div(style = "color:#842029; font-weight:600; margin-top:6px;",
-        sprintf("%d sample(s) would end up with NO scaffolds kept: %s",
+        sprintf(if (all_off) "%d sample(s) currently have NO scaffolds kept: %s"
+          else "%d sample(s) would end up with NO scaffolds kept: %s",
           length(p$emptied), paste(utils::head(p$emptied, 12), collapse = ", ")))
-      else div(style = "color:#2d6a4f; margin-top:6px;", "No sample would be left with nothing kept."))
+      else div(style = "color:#2d6a4f; margin-top:6px;",
+        if (all_off) "No sample currently has nothing kept."
+        else "No sample would be left with nothing kept."))
   })
   observeEvent(input$triage_apply, {
     ids <- triage_target_ids(); req(length(ids))
