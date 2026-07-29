@@ -81,8 +81,11 @@ workflow {
     curate(blast_ref_align.out)
 
     // The screen reads only blast_hits, so it hangs off blast_genbank rather
-    // than the curate chain. triage joins on it, so a sample is triaged only
-    // once both its curation and its screen exist.
+    // than the curate chain. triage joins on it so a sample is triaged once its
+    // curation is complete and its screen has been ATTEMPTED. remainder: true is
+    // load-bearing: screen carries errorStrategy 'ignore', so an inner join
+    // would drop a fully curated sample whenever its screen or its upstream
+    // BLAST failed, which is the same trap the ref_done sentinel above avoids.
     screen(blast_genbank.out)
 
     // Propose keep/drop/undecided once ALL of a sample's units are curated, so
@@ -91,6 +94,6 @@ workflow {
     triage(curate.out.map { id, upath, uscaf -> tuple(id, "${upath}.${uscaf}") }
         .groupTuple()
         .map { id, _units -> tuple(id, true) }
-        .join(screen.out.map { id -> tuple(id, true) })
+        .join(screen.out.map { id -> tuple(id, true) }, remainder: true)
         .map { id, _a, _b -> id })
 }

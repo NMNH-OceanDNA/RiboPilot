@@ -56,4 +56,9 @@ test_that("triage's input joins on screen.out", {
     grepl("\\)\\)$", main_nf[start:length(main_nf)]))[1]
   block <- paste(main_nf[start:end], collapse = "\n")
   expect_match(block, "\\.join\\(screen\\.out")
+  # screen carries errorStrategy 'ignore', so an inner join would silently drop
+  # a fully curated sample whenever its screen (or its upstream BLAST) failed.
+  # remainder: true is what keeps that sample in triage; guard it specifically,
+  # not just the presence of a join.
+  expect_match(block, "\\.join\\(screen\\.out\\.map \\{ id -> tuple\\(id, true\\) \\}, remainder: true\\)")
 })
