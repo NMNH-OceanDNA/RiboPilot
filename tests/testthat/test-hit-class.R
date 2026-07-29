@@ -83,14 +83,19 @@ test_that("fewer than three hits still vote, and empty input is NA", {
 })
 
 test_that("the vote window is inclusive at 10 percent below the top", {
-  # isolated from the minimum-of-3 fallback so the boundary is what is tested
-  cls <- c("rdna", "rdna", "rdna", "rdna", "other")
-  bs <- c(1000, 950, 940, 900, 899)
-  # the 900 hit is exactly at the boundary and votes; the 899 is outside it
-  expect_equal(RiboPilot:::consensus_hit_class(cls, bs), 1L)
-  # flip the in-window hits to other and the excluded 899 cannot rescue rdna
+  # 4 hits are in the window, so the minimum-of-3 fallback cannot mask the
+  # boundary: the hit at exactly 900 is the only thing that decides each call
+  bs <- c(1000, 950, 930, 900)
+  # 900 votes other, so other (950 + 900) beats rdna (1000); excluding it
+  # would leave rdna ahead
   expect_equal(RiboPilot:::consensus_hit_class(
-    c("other", "other", "other", "other", "rdna"), bs), 0L)
+    c("rdna", "other", "uninformative", "other"), bs), 0L)
+  # the mirrored case, so neither answer can be right by accident
+  expect_equal(RiboPilot:::consensus_hit_class(
+    c("other", "rdna", "uninformative", "rdna"), bs), 1L)
+  # and a hit just below the boundary stays out: counting 899 would flip this
+  expect_equal(RiboPilot:::consensus_hit_class(
+    c("rdna", "other", "uninformative", "other", "rdna"), c(bs, 899)), 0L)
 })
 
 test_that("the minimum of three never shrinks a window that is already larger", {

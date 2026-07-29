@@ -49,7 +49,7 @@ must say so.
 | # | Test | Result | Why it is at this precedence |
 |---|---|---|---|
 | 1 | organellar (`mitochondri`, `chloroplast`, `plastid`, `apicoplast`, `kinetoplast`) | `other` | A mitochondrial LSU record contains "large subunit ribosomal RNA". The veto must beat the rDNA phrase or every organellar assembly reads as the target locus. This is the single offline-independent signal that can say "this is a mitochondrial assembly, not nuclear rDNA". |
-| 2 | `16S` or `23S`, and NOT also `18S`, `28S`, `5.8S` or an ITS phrase | `other` | Guards the broadened patterns below. "16S rRNA gene" must not match a generic "rRNA gene" pattern. A bacterial hit is real negative evidence and must stay negative. The eukaryotic exception exists because a few records name both, for example an operon spanning entry or a title listing several genes. |
+| 2 | `12S`, `16S` or `23S`, and NOT also `18S`, `28S` or `5.8S` | `other` | Guards the broadened patterns below. "16S rRNA gene" must not match a generic "rRNA gene" pattern. A bacterial or mitochondrial-SSU hit is real negative evidence and must stay negative; a 12S record often names no organelle for rule 1 to catch. The exception exists because a few records name both, for example an operon spanning entry or a title listing several genes. It deliberately excludes the spacer phrases, because bacterial `16S-23S internal transcribed spacer` records are a large class in core_nt. |
 | 3 | nuclear rDNA phrasing | `rdna` | See the pattern list below. |
 | 4 | assembly-level (`chromosome`, `unplaced`, `scaffold`, `contig`, `whole genome shotgun`, `haplotype`) | `uninformative` | The title describes the container, not the locus. |
 | 5 | anything else | `other` | Preserves today's default, so the only titles that change class are the assembly-level ones. |
@@ -58,12 +58,15 @@ The nuclear rDNA pattern broadens the current
 `NUCLEAR_RRNA_TITLE_RE` (R/constants.R:54-57) to cover the phrasings GenBank
 actually uses:
 
-- `internal transcribed spacer`, `ITS1`, `ITS2`, `external transcribed spacer`
+- `internal transcribed spacer`, `ITS1`, `ITS2`, `external transcribed spacer`.
+  The `ITS` token alone is matched case-sensitively, because the rest of the
+  pattern is case-insensitive and would otherwise match the English word "its".
 - `18S`, `28S`, `5.8S`, `5S` each followed by `ribosomal RNA` or `rRNA`
 - `small subunit ribosomal RNA`, `large subunit ribosomal RNA`
 - `SSU rRNA`, `LSU rRNA`
+- `45S`, `pre-ribosomal` (the RefSeq `RNA45SN1-5` pre-rRNA records)
 - `ribosomal RNA gene`, `rRNA gene` (safe only because rule 2 above has already
-  removed 16S and 23S)
+  removed 12S, 16S and 23S)
 - `intergenic spacer` and `IGS` where accompanied by a ribosomal marker
 
 **5S is classified `rdna`.** It is nuclear ribosomal DNA. Whether a given record
@@ -75,9 +78,12 @@ something a title can settle. Recorded here because the choice is arguable.
 
 `blast_hits` gains `hit_class TEXT`. `is_nuclear_rrna` keeps its INTEGER type
 and its existing 1 and 0 meanings, so nothing that reads it today breaks. It
-gains one new state: `NA` for a unit with no informative hits. Callers that
-treat it as strictly binary must be checked, and triage is the only one, handled
-in section 6. Per-hit `blast_hits.is_nuclear_rrna` is left exactly as it is and
+gains one new state: `NA` for a unit with no informative hits. Three callers
+read it and all three must handle `NA`: triage (handled in section 6), the
+scaffold screen panel at `R/app_server.R:966`, which passes `NA` through to the
+neutral badge rather than rendering it as "no", and `R/curate_rrna.R:132`, which
+is already `NA`-safe because it tests with `identical()` rather than `==`.
+Per-hit `blast_hits.is_nuclear_rrna` is left exactly as it is and
 becomes redundant with `hit_class`; it is kept rather than dropped because the
 migration contract is additive and pre-v13 rows already carry it.
 

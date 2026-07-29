@@ -193,8 +193,13 @@ parse_blast_hits_file <- function(hits_file) {
 #' in the single batched call made by [parse_blast_candidates()]. Leaves
 #' `lineage` NA when the hit carried no usable taxid; curation treats an unknown
 #' lineage as a flag, not as clean.
+#'
+#' `hits` is the unit's full hit frame, carrying at least `hit_class` and
+#' `bitscore`. It is required: the flag is a property of the whole distribution,
+#' and any single-row fallback would restore the hit-number-one reading this
+#' replaced.
 #' @noRd
-write_blast_screen <- function(con, id, path, scaffold, top, hits = NULL,
+write_blast_screen <- function(con, id, path, scaffold, top, hits,
                                ts = as.integer(Sys.time())) {
   cols <- DBI::dbListFields(con, "blast_screen")
   row <- data.frame(
@@ -205,11 +210,7 @@ write_blast_screen <- function(con, id, path, scaffold, top, hits = NULL,
     rank_distance = top$rank_distance %||% NA_integer_,
     pident = top$pident, qcovs = top$qcovs, evalue = top$evalue,
     bitscore = top$bitscore %||% NA_real_,
-    is_nuclear_rrna = if (!is.null(hits)) {
-      consensus_hit_class(hits$hit_class, hits$bitscore)
-    } else {
-      consensus_hit_class(top$hit_class %||% classify_hit_title(top$title), top$bitscore)
-    },
+    is_nuclear_rrna = consensus_hit_class(hits$hit_class, hits$bitscore),
     time_stamp = ts, stringsAsFactors = FALSE)
   DBI::dbAppendTable(con, "blast_screen", row[, intersect(names(row), cols), drop = FALSE])
   invisible(row$lineage)

@@ -49,24 +49,33 @@ CONTAINER_EXECUTORS <- c("docker", "local", "awsbatch", "slurm", "pbs", "sge",
 #' Broadened from a literal-phrase list because GenBank writes the same locus
 #' many ways: "28S ribosomal RNA (ACC), rRNA" carries no "gene", and a
 #' chromosome-level host record may name the locus in passing. Safe to include
-#' the bare "rRNA gene" construction only because PROKARYOTIC_RRNA_RE is tested
+#' the bare "rRNA gene" construction only because NON_NUCLEAR_RRNA_RE is tested
 #' first.
+#'
+#' The ITS token is case-sensitive (the inline `(?-i:...)`) because the rest of
+#' the pattern runs case-insensitively, where it would match the English "its".
 #' @noRd
 NUCLEAR_RRNA_TITLE_RE <- paste0(
-  "internal transcribed spacer|external transcribed spacer|\\bITS[12]?\\b|",
+  "internal transcribed spacer|external transcribed spacer|(?-i:\\bITS[12]?\\b)|",
   "\\b(18S|28S|5\\.8S|5S)\\b[^;]{0,40}?(ribosomal RNA|rRNA)|",
   "small subunit ribosomal RNA|large subunit ribosomal RNA|",
   "\\b(SSU|LSU)\\b[^;]{0,20}?rRNA|",
+  "\\b45S\\b|pre-ribosomal|",
   "ribosomal RNA gene|\\brRNA gene\\b|ribosomal DNA|\\brDNA\\b")
 
-#' Titles naming a prokaryotic ribosomal subunit.
+#' Titles naming a ribosomal subunit that is not nuclear.
+#'
+#' 16S and 23S are prokaryotic; 12S is the metazoan mitochondrial SSU, whose
+#' records often carry no organelle word for [ORGANELLAR_TITLE_RE] to catch.
 #' @noRd
-PROKARYOTIC_RRNA_RE <- "\\b(16S|23S)\\b"
+NON_NUCLEAR_RRNA_RE <- "\\b(12S|16S|23S)\\b"
 
-#' Eukaryotic nuclear rDNA markers, used to spare a record that names both.
+#' Nuclear rDNA subunit names, used to spare a record that names both.
+#'
+#' Deliberately excludes the spacer tokens: bacterial 16S-23S internal
+#' transcribed spacer records are common in core_nt and must stay vetoed.
 #' @noRd
-EUKARYOTIC_RRNA_MARKER_RE <- paste0(
-  "\\b(18S|28S|5\\.8S)\\b|internal transcribed spacer|\\bITS[12]?\\b")
+NUCLEAR_RRNA_MARKER_RE <- "\\b(18S|28S|5\\.8S)\\b"
 
 #' Titles describing an assembly rather than a locus.
 #'

@@ -962,8 +962,10 @@ app_server <- function(input, output, session) {
           r$screen_pident %|NA|% "?", r$screen_qcovs %|NA|% "?",
           r$screen_title %|NA|% ""))),
       div(style = "margin-top:5px;",
-        # yes is the GOOD case here (the hit is a nuclear rDNA record), so no invert
-        status_badge("Nuclear rDNA", if (isTRUE(r$is_nuclear_rrna == 1)) "yes" else "no"),
+        # yes is the GOOD case here (the hit is a nuclear rDNA record), so no invert.
+        # NA means no hit said either way and must not render as "no".
+        status_badge("Nuclear rDNA",
+          if (is.na(r$is_nuclear_rrna)) NA else if (r$is_nuclear_rrna == 1) "yes" else "no"),
         tags$span(style = "margin-left:8px; color:#555;",
           sprintf("shares %s with %s",
             if (is.na(r$shares)) "no resolved rank" else r$shares,

@@ -47,4 +47,9 @@ title,expected,source,note
 "Danio rerio actin alpha 1 mRNA, complete cds",other,authored,protein coding
 "Danio rerio recombination activating gene 1 (rag1), partial cds",other,authored,protein coding
 "Danio rerio clone CH211-152C2, complete sequence",other,authored,unrecognised phrasing defaults to other
+"Uncultured bacterium clone 16S-23S internal transcribed spacer region",other,authored,a spacer token must not spare a prokaryotic record from the non-nuclear veto
+"Mus musculus Xist gene and its flanking regions",other,authored,the English word its must not match the ITS token
+"Aspergillus niger ITS1 and ITS2 regions, complete sequence",rdna,authored,the uppercase ITS token must still match after the case-sensitive fix
+"Homo sapiens RNA, 45S pre-ribosomal N4 (RNA45SN4), ribosomal RNA",rdna,authored,RefSeq 45S pre-rRNA is genuine nuclear rDNA
+"Danio rerio voucher X 12S ribosomal RNA gene, partial sequence",other,authored,12S is the mitochondrial SSU and carries no organelle word to veto on
 "",uninformative,authored,empty title says nothing
