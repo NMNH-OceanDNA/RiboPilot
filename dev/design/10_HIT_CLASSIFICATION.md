@@ -187,3 +187,39 @@ The identity envelope, the `screen` verdict table, the evidence channels, and
 the `screen` / `screen_tools` / `cross_sample_screen` processes are 3b onward.
 Classifying a record by taxonomy rather than by title is explicitly not this
 layer's job, per section 1.
+
+## 10. Known follow-ups
+
+Found by the final pre-merge review, judged non-blocking, and left deliberately.
+Recorded here rather than in scratch so they survive.
+
+1. **`pre-ribosomal` is broader than it needs to be.** It is unanchored, so
+   protein-coding deflines match: `"Homo sapiens pre-ribosomal RNA processing
+   protein mRNA, complete cds"` classifies `rdna`. `\b45S\b` alone already
+   covers both real RefSeq shapes (`45S pre-ribosomal N4` and `45S pre-rRNA`),
+   so narrowing `R/constants.R:63` to `\b45S\b` removes the false positives at
+   no fixture cost. The direction of the error is a false 1, which consensus
+   voting dampens, which is why it did not block.
+
+2. **The consensus window is taken before uninformative hits are dropped.** A
+   window holding two chromosome records and one rDNA record therefore decides
+   on a single vote, which is what the minimum-of-three exists to prevent.
+   Selecting the window over INFORMATIVE hits would serve the stated intent
+   better. Section 5 fixes the current order, so changing it moves the spec.
+
+3. **The consensus votes per HSP, not per subject.** An accession with five
+   HSPs casts five votes while a single-HSP accession casts one. Bitscore
+   weighting partly tracks alignment length so the bias runs both ways, and the
+   live path and the offline backfill use the same un-deduped query, so they
+   agree. If this is ever changed, `backfill_hit_class()`'s query must be
+   deduped in the SAME commit, or the two paths diverge and the repair stops
+   matching what a fresh parse would produce.
+
+4. **A narrow interaction between two of the fixes.** Removing the spacer
+   phrases from the nuclear marker list (so bacterial `16S-23S internal
+   transcribed spacer` records stay `other`) and adding `12S` to the veto
+   combine on one contrived shape: a nuclear record naming only a spacer whose
+   voucher or clone code carries a standalone `12S`/`16S` token, for example
+   `"clone CH211-12S internal transcribed spacer 1"`, now classifies `other`.
+   Accepted against the large real class of bacterial spacer records the fix
+   targets.
