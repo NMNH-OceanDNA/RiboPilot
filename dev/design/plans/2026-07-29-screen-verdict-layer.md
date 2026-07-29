@@ -59,7 +59,7 @@
   - `SCREEN_VERDICTS`, `SCREEN_CLASSES`, `SCREEN_NO_REF_CODES` - the allowed strings
   - `SCREEN_WEIGHTS` - `list(support = 0.30, resolution = 0.30, separation = 0.40)`
   - `screen_rank_depth(rank)` -> numeric in [0, 1]
-  - `screen_confidence_terms(lca_n_hits, lca_rank, margin, top_bitscore)` -> `list(support, resolution, separation, confidence)`
+  - `screen_confidence_terms(lca_n_hits, lca_rank, margin, top_bitscore, unanimous = FALSE)` -> `list(support, resolution, separation, confidence)`
   - `screen_class_for(lca_kingdom, lca_taxon)` -> one of `SCREEN_CLASSES` or `NA_character_`
   - `screen_channel_taxonomy(hits, sample_taxids)` -> `list(verdict, class, confidence, reason, terms, lca_taxid, lca_taxon, lca_rank, lca_n_hits, host_concordant, margin)`
 
@@ -162,9 +162,22 @@ test_that("an unresolvable sample lineage is no_reference with its own code", {
   expect_equal(r$reason_code, "unresolved_sample_lineage")
 })
 
+test_that("unanimity is maximal separation, not missing separation", {
+  # a unit whose hits ALL agree with the host has no opposing hit to measure a
+  # margin against. Scoring that 0 would put the cleanest possible scaffold
+  # below the uncertainty gate, which is backwards.
+  tm <- RiboPilot:::screen_confidence_terms(3, "species", NA_real_, 900,
+    unanimous = TRUE)
+  expect_equal(tm$separation, 1)
+  h <- hits(hit(FISH_T, 900), hit(FISH_T, 890), hit(FISH_T, 880))
+  r <- RiboPilot:::screen_channel_taxonomy(h, FISH_T)
+  expect_equal(r$verdict, "on_target")
+  expect_gte(r$confidence, 0.6)
+})
+
 test_that("a resolvable but weakly supported unit is uncertain, with evidence kept", {
-  # one hit, shallow rank, no opposing hit to separate against
-  h <- hits(hit(FUNGI_T, 100))
+  # one hit resolving only to kingdom: unanimous, but almost nothing behind it
+  h <- hits(hit("4751;;;;;;", 100, lin = "Fungi;;;;;;"))
   r <- RiboPilot:::screen_channel_taxonomy(h, FISH_T)
   expect_equal(r$verdict, "uncertain")
   expect_lt(r$confidence, 0.6)
@@ -250,12 +263,21 @@ screen_rank_depth <- function(rank) {
 }
 
 #' The three confidence terms and their weighted mean
+#'
+#' `unanimous` means every surviving hit fell on one side of the concordance
+#' test, so there is no opposing hit to measure a margin against. That is
+#' MAXIMAL separation, not absent separation: a unit whose hits all agree with
+#' the host is the cleanest case there is, and scoring it 0 would put the
+#' cleanest possible scaffold below the uncertainty gate.
 #' @noRd
-screen_confidence_terms <- function(lca_n_hits, lca_rank, margin, top_bitscore) {
+screen_confidence_terms <- function(lca_n_hits, lca_rank, margin, top_bitscore,
+                                    unanimous = FALSE) {
   support <- min(1, (lca_n_hits %||% 0) / 10)
   resolution <- screen_rank_depth(lca_rank)
-  separation <- if (is.na(margin %|NA|% NA) || is.na(top_bitscore %|NA|% NA) ||
-                    !isTRUE(top_bitscore > 0)) {
+  separation <- if (isTRUE(unanimous)) {
+    1
+  } else if (is.na(margin %|NA|% NA) || is.na(top_bitscore %|NA|% NA) ||
+             !isTRUE(top_bitscore > 0)) {
     0
   } else {
     min(1, abs(margin) / top_bitscore)
@@ -335,8 +357,11 @@ screen_channel_taxonomy <- function(hits, sample_taxids) {
   best <- function(v) if (any(v)) max(h$bitscore[v], na.rm = TRUE) else NA_real_
   out$margin <- best(hit_conc) - best(!hit_conc)
 
+  # every surviving hit on one side means nothing opposes the winner, which is
+  # maximal separation rather than missing separation
+  unanimous <- all(hit_conc) || !any(hit_conc)
   tm <- screen_confidence_terms(lca$n_hits, lca$rank, out$margin,
-    suppressWarnings(max(h$bitscore, na.rm = TRUE)))
+    suppressWarnings(max(h$bitscore, na.rm = TRUE)), unanimous = unanimous)
   out$terms <- tm[c("support", "resolution", "separation")]
   out$confidence <- tm$confidence
   out$reason_code <- NA_character_

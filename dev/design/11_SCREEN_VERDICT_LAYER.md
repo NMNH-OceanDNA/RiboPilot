@@ -130,7 +130,7 @@ Three sub-scores in [0, 1], combined as a weighted mean:
 |---|---|---|
 | `support` | `min(1, lca_n_hits / 10)` | 0.30 |
 | `resolution` | rank depth of `lca_rank` over `RRNA_LINEAGE_RANKS` (`species` 1.00, `genus` 0.86, `family` 0.71, `order` 0.57, `class` 0.43, `phylum` 0.29, `kingdom` 0.14, `none` 0) | 0.30 |
-| `separation` | `min(1, abs(margin) / top_bitscore)`; 0 when margin is NA | 0.40 |
+| `separation` | `min(1, abs(margin) / top_bitscore)`; **1 when every surviving hit falls on one side of the concordance test**, since nothing opposes the winner; 0 when margin is NA for any other reason | 0.40 |
 
 **These weights are priors, not measurements.** That is the same caveat that
 deferred the envelope, and it is why the screen rule ships as Flag. They live in
