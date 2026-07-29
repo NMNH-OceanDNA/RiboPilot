@@ -184,13 +184,13 @@ screen_variant_clause <- function(cls, group, identity, len_delta) {
   if (identical(cls, "singleton")) {
     return("singleton, the sample's only comparable on-target unit")
   }
-  head <- sprintf("%s, group %s", cls, group)
+  lead <- sprintf("%s, group %s", cls, group)
   if (is.na(identity)) {
-    return(paste0(head, ", this is the group representative"))
+    return(paste0(lead, ", this is the group representative"))
   }
   # the measured identity always prints, so a curator sees the number rather
   # than only the label
-  paste0(head, sprintf(
+  paste0(lead, sprintf(
     ", anchors %.2f percent identical to the group representative", identity),
     if (is.na(len_delta)) "" else sprintf(", total length differs by %d bp", len_delta))
 }
@@ -260,8 +260,10 @@ screen_variants <- function(con, id) {
 
   min_pid <- screen_params(con, id)$min_isomer_anchor_pid %||%
     SCREEN_PARAMS_DEFAULT$min_isomer_anchor_pid
+  # as.integer before %d: sprintf errors on a non-whole double, and nothing
+  # guarantees the driver hands back integers for these columns
   g <- screen_variant_groups(data.frame(
-    key = sprintf("%d.%d", u$path[ui], u$scaffold[ui]),
+    key = sprintf("%d.%d", as.integer(u$path[ui]), as.integer(u$scaffold[ui])),
     anchor = anchors, total_length = len, stringsAsFactors = FALSE), min_pid)
 
   n <- 0L
