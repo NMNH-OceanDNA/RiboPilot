@@ -13,7 +13,7 @@
 
 include { preprocess } from './modules/preprocess.nf'
 include { assemble } from './modules/assemble.nf'
-include { query_samples; query_sample_units; score; annotate_tools; reconcile; curate; triage } from './modules/pipeline_r.nf'
+include { query_samples; query_sample_units; score; annotate_tools; reconcile; curate; triage; screen } from './modules/pipeline_r.nf'
 include { blast_genbank } from './modules/blast.nf'
 include { blast_ref_fetch; blast_ref_align } from './modules/blast_ref.nf'
 include { coverage } from './modules/coverage.nf'
@@ -80,10 +80,17 @@ workflow {
     blast_ref_align(aln_in)
     curate(blast_ref_align.out)
 
+    // The screen reads only blast_hits, so it hangs off blast_genbank rather
+    // than the curate chain. triage joins on it, so a sample is triaged only
+    // once both its curation and its screen exist.
+    screen(blast_genbank.out)
+
     // Propose keep/drop/undecided once ALL of a sample's units are curated, so
     // sibling concordance and the within-sample depth ratio see the full set.
     // groupTuple emits one entry per sample when the upstream channel closes.
     triage(curate.out.map { id, upath, uscaf -> tuple(id, "${upath}.${uscaf}") }
         .groupTuple()
-        .map { id, _units -> id })
+        .map { id, _units -> tuple(id, true) }
+        .join(screen.out.map { id -> tuple(id, true) })
+        .map { id, _a, _b -> id })
 }

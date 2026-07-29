@@ -206,6 +206,22 @@ process triage {
     """
 }
 
+// Machine contamination verdict per unit, from the retained BLAST hit
+// distribution. Best-effort: a taxonomy failure must not sink a sample.
+process screen {
+    cache false
+    tag "${id}"
+    errorStrategy 'ignore'
+    input:
+    val id
+    output:
+    val id
+    script:
+    """
+    RIBOPILOT_SRC='${params.ribopilot_src}' rp_screen.R '${params.db}' '${id}'
+    """
+}
+
 process curate {
     cache false
     tag "${id}.${upath}.${uscaf}"

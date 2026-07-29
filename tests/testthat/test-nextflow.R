@@ -27,3 +27,33 @@ test_that("nxf_ver_prefix is empty when Nextflow is missing", {
   # nf_pin_version(<bogus binary>) -> NA -> empty prefix, so nothing is pinned.
   expect_equal(RiboPilot:::nxf_ver_prefix("definitely-not-a-real-nextflow-bin"), "")
 })
+
+# WF1 pipeline wiring: the screen must run per sample and triage must wait for
+# it, so a sample is triaged only once both its curation and its screen exist.
+
+main_nf <- readLines(system.file("nextflow", "main.nf", package = "RiboPilot"))
+pipeline_r_nf <- readLines(system.file("nextflow", "modules", "pipeline_r.nf", package = "RiboPilot"))
+
+test_that("main.nf includes screen from pipeline_r.nf", {
+  include_line <- grep("^include \\{.*\\} from './modules/pipeline_r.nf'$", main_nf, value = TRUE)
+  expect_length(include_line, 1)
+  expect_match(include_line, "\\bscreen\\b")
+})
+
+test_that("screen process exists in pipeline_r.nf with errorStrategy 'ignore'", {
+  start <- grep("^process screen \\{", pipeline_r_nf)
+  expect_length(start, 1)
+  end <- start - 1 + which(pipeline_r_nf[start:length(pipeline_r_nf)] == "}")[1]
+  body <- pipeline_r_nf[start:end]
+  expect_true(any(grepl("errorStrategy 'ignore'", body)))
+  expect_true(any(grepl("cache false", body)))
+})
+
+test_that("triage's input joins on screen.out", {
+  start <- grep("^\\s*triage\\(", main_nf)
+  expect_length(start, 1)
+  end <- start - 1 + which(grepl("^\\s*\\}\\s*$", main_nf[start:length(main_nf)]) |
+    grepl("\\)\\)$", main_nf[start:length(main_nf)]))[1]
+  block <- paste(main_nf[start:end], collapse = "\n")
+  expect_match(block, "\\.join\\(screen\\.out")
+})
