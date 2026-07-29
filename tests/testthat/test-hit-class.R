@@ -81,3 +81,34 @@ test_that("fewer than three hits still vote, and empty input is NA", {
   expect_true(is.na(RiboPilot:::consensus_hit_class(character(0), numeric(0))))
   expect_true(is.na(RiboPilot:::consensus_hit_class(NA_character_, NA_real_)))
 })
+
+test_that("the vote window is inclusive at 10 percent below the top", {
+  # isolated from the minimum-of-3 fallback so the boundary is what is tested
+  cls <- c("rdna", "rdna", "rdna", "rdna", "other")
+  bs <- c(1000, 950, 940, 900, 899)
+  # the 900 hit is exactly at the boundary and votes; the 899 is outside it
+  expect_equal(RiboPilot:::consensus_hit_class(cls, bs), 1L)
+  # flip the in-window hits to other and the excluded 899 cannot rescue rdna
+  expect_equal(RiboPilot:::consensus_hit_class(
+    c("other", "other", "other", "other", "rdna"), bs), 0L)
+})
+
+test_that("the minimum of three never shrinks a window that is already larger", {
+  # 5 rdna inside the window, 1 other at the top: if the fallback truncated to
+  # the top 3 the result would be unchanged, so make the outlier decisive only
+  # when the window is wrongly narrowed
+  cls <- c("other", "other", "rdna", "rdna", "rdna", "rdna", "rdna")
+  bs <- c(1000, 999, 998, 997, 996, 995, 994)
+  expect_equal(RiboPilot:::consensus_hit_class(cls, bs), 1L)
+})
+
+test_that("uninformative hits inside the window do not dilute the vote", {
+  cls <- c("rdna", "rdna", rep("uninformative", 50))
+  bs <- c(1000, 990, rep(950, 50))
+  expect_equal(RiboPilot:::consensus_hit_class(cls, bs), 1L)
+})
+
+test_that("mismatched vector lengths error rather than voting on misaligned rows", {
+  expect_error(RiboPilot:::consensus_hit_class(c("rdna", "other"), 900))
+  expect_error(RiboPilot:::consensus_hit_class("rdna", c(900, 800)))
+})

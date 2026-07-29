@@ -56,6 +56,9 @@ classify_hit_title <- function(title) {
 #'   informative.
 #' @noRd
 consensus_hit_class <- function(hit_class, bitscore) {
+  # parallel vectors: a mismatch either crashes on a poisoned max() or silently
+  # votes on misaligned rows, so fail loudly instead
+  stopifnot(length(hit_class) == length(bitscore))
   hc <- as.character(hit_class)
   bs <- suppressWarnings(as.numeric(bitscore))
   ok <- !is.na(hc) & !is.na(bs)
