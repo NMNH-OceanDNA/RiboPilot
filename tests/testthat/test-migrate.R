@@ -227,3 +227,21 @@ test_that("the backfill leaves units with no hits alone and is idempotent", {
   expect_equal(DBI::dbGetQuery(con,
     "SELECT is_nuclear_rrna FROM blast_screen WHERE scaffold=1")$is_nuclear_rrna, 1L)
 })
+
+test_that("migrate_db does not rescan blast_hits when already at v13", {
+  # parse_blast_candidates() calls migrate_db() once per unit; an ungated
+  # backfill would rescan the whole project every time, so a DB already at v13
+  # must come out of migrate_db() with its NULL hit_class rows untouched.
+  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "CREATE TABLE blast_hits(ID TEXT, path INT, scaffold INT,
+    hit_rank INT, title TEXT, bitscore REAL, hit_class TEXT)")
+  DBI::dbExecute(con, "INSERT INTO blast_hits VALUES('S1',1,1,1,
+    'Danio rerio 18S ribosomal RNA gene, complete sequence', 900, NULL)")
+  DBI::dbExecute(con, "PRAGMA user_version = 13")
+
+  migrate_db(con)
+
+  cls <- DBI::dbGetQuery(con, "SELECT hit_class FROM blast_hits WHERE scaffold=1")$hit_class
+  expect_true(is.na(cls))
+})
