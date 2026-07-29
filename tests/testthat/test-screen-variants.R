@@ -419,3 +419,41 @@ test_that("a sample with one on-target unit is a singleton, not NA", {
   expect_match(DBI::dbGetQuery(con, "SELECT screen_reason r FROM screen WHERE scaffold=1")$r,
     "variant: singleton", fixed = TRUE)
 })
+
+# --- the app badge ---
+
+test_that("the variant badge never borrows the off-target red or warning language", {
+  js <- as.character(RiboPilot:::rt_variant_badge())
+  red <- as.character(RiboPilot:::rt_screen_badge())
+  expect_true(grepl("#f8d7da", red, fixed = TRUE))   # the off_target red exists
+  expect_false(grepl("#f8d7da", js, fixed = TRUE))   # and is not reused here
+  expect_false(grepl("warn", js, ignore.case = TRUE))
+  # an isomer is neutral; a paralog is information, and the two differ
+  expect_true(grepl("#eeeeee", js, fixed = TRUE))
+  expect_true(grepl("#dbe9f6", js, fixed = TRUE))
+})
+
+test_that("the badge renders nothing for a singleton or an unscreened unit", {
+  js <- as.character(RiboPilot:::rt_variant_badge())
+  # a project that has never been screened must not sprout placeholder badges
+  expect_true(grepl("v === 'singleton'", js, fixed = TRUE))
+  expect_true(grepl("v === null", js, fixed = TRUE))
+  expect_true(grepl("return ''", js, fixed = TRUE))
+})
+
+test_that("the badge surfaces the measured identity and the group label", {
+  js <- as.character(RiboPilot:::rt_variant_badge())
+  expect_true(grepl("variant_identity", js, fixed = TRUE))
+  expect_true(grepl("variant_group", js, fixed = TRUE))
+  expect_true(grepl("percent identical to the group representative", js, fixed = TRUE))
+  # the two curator messages the spec dictates
+  expect_true(grepl("pick either", js, fixed = TRUE))
+  expect_true(grepl("determines what GenBank receives", js, fixed = TRUE))
+})
+
+test_that("unit_evidence selects the variant columns so the table can render them", {
+  src <- paste(deparse(RiboPilot:::unit_evidence), collapse = " ")
+  for (col in c("variant_class", "variant_group", "variant_identity")) {
+    expect_true(grepl(col, src, fixed = TRUE), info = col)
+  }
+})

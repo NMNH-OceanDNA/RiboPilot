@@ -248,6 +248,43 @@ rt_screen_badge <- function() {
     }")
 }
 
+#' Render the intragenomic variant class: is this scaffold one of several rDNA
+#' copies, or the same molecule assembled twice.
+#'
+#' NEITHER class is a defect, so neither may borrow [rt_screen_badge()]'s
+#' off-target red. An isomer renders NEUTRAL, because it is telling the curator a
+#' decision does NOT matter. A paralog renders as INFORMATION: it is real
+#' biology, documented in Octocorallia, Scyphozoa and other groups, and colouring
+#' it like a problem is what this sub-project exists to stop. A `singleton` and a
+#' unit with no finding render empty rather than as a badge, so a project that
+#' has never been screened does not sprout a column of placeholders.
+#'
+#' The measured identity to the group representative goes in the title attribute,
+#' so the number is reachable without widening the table.
+#' @noRd
+rt_variant_badge <- function() {
+  htmlwidgets::JS(
+    "function(cellInfo) {
+      var v = cellInfo.value
+      if (v === null || v === undefined || v === '' || v === 'NA' || v === 'singleton')
+        return ''
+      var row = cellInfo.row || {}
+      var grp = row['variant_group']
+      var pid = row['variant_identity']
+      var tip = v === 'isomer'
+        ? 'same molecule assembled two ways; differs only in spacer copy number, pick either'
+        : 'this sample carries several rDNA copies; which you lock determines what GenBank receives'
+      if (pid !== null && pid !== undefined && pid !== '')
+        tip += ' (anchors ' + pid + ' percent identical to the group representative)'
+      var bg, fg
+      if (v === 'isomer') { bg = '#eeeeee'; fg = '#555555' }
+      else                { bg = '#dbe9f6'; fg = '#1d4e79' }
+      return '<span title=\"' + tip + '\" style=\"background:' + bg + '; color:' + fg +
+        '; border-radius:3px; padding:1px 6px; font-size:0.85em;\">' + v +
+        (grp ? ' ' + grp : '') + '</span>'
+    }")
+}
+
 #' Inline depth bar relative to the deepest scaffold of the same sample
 #'
 #' The value is the MEDIAN per-position depth where one is stored (see
