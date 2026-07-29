@@ -78,27 +78,63 @@ assemble_modal <- function(id) {
   )
 }
 
+#' One rule's three-way action control
+#'
+#' Off is the disable, so there is no separate tickbox. Drop is offered only on
+#' rules that combine both evidence channels; on the others it is absent and the
+#' label carries the reason, because a control that looks available and refuses
+#' to act is worse than one that is not there.
+#' @noRd
+triage_rule_control <- function(def, current) {
+  choices <- c("Off" = "off", "Flag" = "flag")
+  if ("drop" %in% def$actions) choices <- c(choices, "Drop" = "drop")
+  shinyWidgets::radioGroupButtons(
+    inputId = paste0("triage_rule_", def$key),
+    label = NULL, choices = choices, selected = current,
+    size = "xs", individual = FALSE)
+}
+
 #' Bulk triage modal: re-run automatic triage over the selected samples
 #'
 #' A bulk write across a project is the highest-blast-radius action in the app,
-#' so it always shows what it would do first, including how many samples would
-#' end up with NOTHING kept. Never applied without the count.
+#' so it always shows what it would do first, per rule, including how many
+#' samples would end up with NOTHING kept. Never applied without the counts.
+#' @param n_samples Number of samples the action would cover.
+#' @param actions Named list key -> action, from [triage_opts_for()].
 #' @noRd
-triage_modal <- function(n_samples) {
+triage_modal <- function(n_samples, actions = triage_actions_default()) {
+  rows <- lapply(TRIAGE_RULE_DEFS, function(def) {
+    tags$tr(
+      tags$td(style = "padding:3px 8px 3px 0; vertical-align:top;",
+        tags$div(style = "font-weight:600;", def$label),
+        tags$div(class = "text-muted", style = "font-size:0.8em;", def$meaning)),
+      tags$td(style = "padding:3px 8px; vertical-align:top; white-space:nowrap;",
+        triage_rule_control(def, actions[[def$key]])),
+      tags$td(style = "padding:3px 8px; vertical-align:top; text-align:right;",
+        uiOutput(paste0("triage_n_", def$key), inline = TRUE)))
+  })
   modalDialog(
     title = sprintf("Triage scaffolds - %d selected sample(s)", n_samples),
-    size = "m", easyClose = TRUE,
+    size = "l", easyClose = TRUE,
     tags$p(class = "text-muted", style = "font-size:0.86em;",
       paste("Proposes keep / drop / undecided per scaffold from the evidence already",
-        "in the database. A scaffold is only dropped on positive evidence that it is not",
-        "nuclear rDNA; anything merely unusual is left undecided, which still exports.")),
+        "in the database. Depth is shown in the scaffold table but never decides:",
+        "high depth is often k-mer collapse across the conserved core or IGS",
+        "subrepeats, and low depth is often isomer paths splitting reads.")),
+    tags$table(style = "width:100%; font-size:0.9em;",
+      tags$thead(tags$tr(
+        tags$th(style = "text-align:left;", "Rule"),
+        tags$th(style = "text-align:left;", "Action"),
+        tags$th(style = "text-align:right;", "Decided / Matching"))),
+      tags$tbody(rows)),
+    tags$p(class = "text-muted", style = "font-size:0.8em; margin-top:6px;",
+      paste("Rules are applied top to bottom and the first one that matches decides",
+        "whether to drop or flag the scaffold. \"Decided\" counts scaffolds this rule",
+        "will drop or flag. \"Matching\" counts every scaffold that meets the rule,",
+        "even if a higher-priority rule acts on it first.")),
     div(style = "margin:0.4em 0;",
       shinyWidgets::prettyCheckbox("triage_overwrite_user",
         "Also re-decide scaffolds I set by hand", value = FALSE, status = "danger")),
-    div(style = "margin:0.2em 0 0.6em;",
-      numericInput("triage_depth_frac",
-        "Flag scaffolds below this fraction of the sample's deepest scaffold",
-        value = 0.05, min = 0, max = 1, step = 0.01, width = "320px")),
     tags$hr(style = "margin:8px 0;"),
     uiOutput("triage_preview"),
     footer = tagList(

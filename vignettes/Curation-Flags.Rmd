@@ -44,6 +44,73 @@ The last two checks (`low_identity` and `contaminant`) rely on looking up a
 reference match on NCBI during assembly. If that lookup was unavailable at the
 time, those two checks are simply skipped and the others still apply.
 
+# How scaffolds are kept or dropped (auto-triage)
+
+Flags above point at something worth a look; they never remove data. Separately,
+once a scaffold has been annotated and screened against GenBank, RiboPilot also
+proposes a keep, drop or flag call for the scaffold itself, in the Assemble tab.
+You can review and override every call by hand, and your own decisions are
+never silently overwritten (more on that below).
+
+The proposal rests on two evidence channels that are independent of one
+another: **annotation**, from barrnap and ITSx run locally on the assembly, and
+the **GenBank screen**, the best reference match found remotely. RiboPilot
+never drops a scaffold on one channel's silence: a rule can only drop once
+both the annotation tools and the GenBank screen have actually reported on
+the scaffold. By default, the only rule that drops is the one where both
+channels independently say the scaffold is not nuclear rDNA. Two other rules
+can be switched to Drop as well, but they fire when the channels *disagree*
+with each other rather than agree; turning either on is a deliberate choice
+about which channel you trust more for your material, not more of the same
+corroboration - see the table below for which is which.
+
+RiboPilot checks a scaffold against six named rules, in this order. The first
+rule that matches decides the outcome; if none match, the scaffold is kept.
+Only three of the six rules can ever drop a scaffold - the other three only
+flag, because their evidence is a missing channel or is taxonomic distance
+alone, neither of which is a safe basis for removing a scaffold by itself.
+
+| # | Rule | What it means | Can it drop? |
+|---|---|---|---|
+| 1 | Annotation has not run | Neither annotation tool has reported on this scaffold yet. | No, flag only |
+| 2 | GenBank screen has not run | No usable core_nt hit is recorded, so the scaffold cannot be judged against GenBank. | No, flag only |
+| 3 | No annotations, non-rDNA hit | Annotation found no rRNA or ITS feature, and the best GenBank match is not a nuclear rDNA record. | Yes - dropped by default |
+| 4 | No annotations but rDNA hit | Annotation found no rRNA or ITS feature, though the best GenBank match is a nuclear rDNA record. | Optional; flagged by default |
+| 5 | Has annotations but non-rDNA hit | The scaffold has a feature model, but its best GenBank match is not a nuclear rDNA record. | Optional; flagged by default |
+| 6 | Disagrees with sibling scaffolds | This scaffold's top hit disagrees with the majority of this sample's other scaffolds. | No, flag only |
+
+Each rule can be turned off if it does not suit your data. Switching every
+rule off at once makes Apply a no-op: it changes nothing, rather than
+marking every remaining scaffold "keep" on the strength of no active checks.
+Rules 4 and 5
+can be turned up to Drop if you want RiboPilot to act on them automatically
+rather than just flag them for you to review. This setting lives with the
+project, not with any one run, so the app and the pipeline never disagree
+about what a rule is set to do.
+
+Rule 6 deserves a special note: a low-identity hit at a large taxonomic
+distance is the normal state for an under-studied group, not proof of
+contamination, which is exactly the case RiboPilot exists to serve. For that
+reason, disagreement with sibling scaffolds can only ever flag, never drop.
+
+# Your own decisions stick
+
+If you keep or drop a scaffold by hand, that decision is recorded as yours,
+and a later automatic re-run will not overwrite it, even if the rules above
+would now propose something different. Re-triaging only touches scaffolds it
+decided itself, unless you explicitly ask it to reconsider your calls too.
+
+# Depth is shown, not decided
+
+The scaffold table shows each scaffold's median per-position read depth and a
+small sparkline of depth along its length, but depth never decides a keep,
+drop or flag call. In an rDNA assembly, depth is a poor judge of abundance:
+near-identical assembly paths often collapse together, so very high depth
+often just means several paths were combined rather than that the sequence
+is unusually abundant. Low depth can just as easily mean one molecule's reads
+were split across such paths rather than that the sequence is rare. The
+number is worth a look; it is not sound enough to decide anything on its own.
+
 # How the checks are tuned per group
 
 Some checks, especially the expected lengths, depend on the group of organisms.

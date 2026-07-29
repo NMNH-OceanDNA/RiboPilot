@@ -11,7 +11,8 @@ set_unit_triage(
   scaffold,
   verdict,
   reason = NA_character_,
-  source = c("user", "auto")
+  source = c("user", "auto"),
+  rule = NA_character_
 )
 }
 \arguments{
@@ -24,6 +25,8 @@ set_unit_triage(
 \item{reason}{Short plain-English justification, shown to the curator.}
 
 \item{source}{"user" or "auto".}
+
+\item{rule}{Key of the rule that fired, or NA for a user decision.}
 }
 \value{
 (invisibly) the derived ignore flag.

@@ -19,7 +19,8 @@ mk_app_project <- function(env = parent.frame()) {
     annotate_lock INT, annotate_opts TEXT, curate_opts TEXT, reviewed TEXT, problematic TEXT,
     partial TEXT, n_features INT, missing TEXT, n_flags INT, annotate_notes TEXT, export_group TEXT, time_stamp INT)")
   DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT, start INT)")
-  DBI::dbExecute(con, "CREATE TABLE coverage(ID TEXT, path INT, scaffold INT, mean_depth REAL)")
+  DBI::dbExecute(con, "CREATE TABLE coverage(ID TEXT, path INT, scaffold INT, mean_depth REAL,
+    min_depth INT, max_depth INT, depths TEXT)")
   DBI::dbExecute(con, "CREATE TABLE blast_screen(ID TEXT, path INT, scaffold INT, accession TEXT, title TEXT,
     species TEXT, staxid INT, lineage TEXT, lineage_taxids TEXT, rank_distance INT, pident REAL,
     qcovs REAL, evalue REAL, bitscore REAL, is_nuclear_rrna INT)")
@@ -36,7 +37,8 @@ mk_app_project <- function(env = parent.frame()) {
       params = list(u[1], u[2], u[3]))
     DBI::dbExecute(con, "INSERT INTO annotate VALUES('S1',?,?,1,0,'default','default','no','no','no',3,'',0,NULL,NULL,1)",
       params = list(u[1], u[2]))
-    DBI::dbExecute(con, "INSERT INTO coverage VALUES('S1',?,?,100)", params = list(u[1], u[2]))
+    DBI::dbExecute(con, "INSERT INTO coverage (ID,path,scaffold,mean_depth) VALUES('S1',?,?,100)",
+      params = list(u[1], u[2]))
   }
   # Bring the fixture up to the current schema rather than hand-listing every
   # column: run_app() migrates on open, so this is what the app actually sees,
@@ -151,12 +153,14 @@ test_that("bulk triage previews before it writes, and applying honours the previ
     session$flushReact()
 
     # opening the modal must not change anything
-    session$setInputs(triage_btn = 1, triage_depth_frac = 0.05, triage_overwrite_user = FALSE)
+    session$setInputs(triage_btn = 1, triage_overwrite_user = FALSE)
     session$flushReact()
     expect_true(all(RiboPilot:::app_query("SELECT COALESCE(ignore,0) i FROM assemblies WHERE ID='S1'")$i == 0))
     prev <- output$triage_preview$html      # renderUI returns list(html, deps)
     expect_true(nzchar(prev))
-    expect_match(prev, "Would drop 4 of 4")
+    expect_match(prev, "Apply would change 4 of 4", fixed = TRUE)
+    expect_match(prev, "4 newly dropped", fixed = TRUE)
+    expect_match(prev, "Resulting state across 1 sample(s): 4 dropped", fixed = TRUE)
     expect_match(prev, "NO scaffolds kept")  # the outcome that silently loses a sample
 
     session$setInputs(triage_apply = 1)
@@ -166,5 +170,127 @@ test_that("bulk triage previews before it writes, and applying honours the previ
     expect_true(all(r$triage == "drop"))
     expect_true(all(r$triage_source == "auto"))
     expect_true(all(r$i == 1L))
+  })
+})
+
+test_that("the modal previews the stored preset, not the shipped defaults", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+  # same droppable evidence, but the project's preset says flag, not drop. No
+  # triage_rule_* input is ever set here, standing in for the window before the
+  # browser echoes the controls back: the preview must already honour the preset.
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "DELETE FROM annotations")
+  for (u in list(c(1,1), c(1,2), c(2,1), c(2,2))) {
+    DBI::dbExecute(con, "INSERT INTO blast_screen (ID,path,scaffold,species,is_nuclear_rrna) VALUES('S1',?,?,'Homo sapiens',0)",
+      params = list(u[1], u[2]))
+  }
+  RiboPilot:::write_triage_opts(con, list(no_feat_non_rdna = "flag", odd_one_out = "off"))
+  DBI::dbDisconnect(con)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    sel_id("S1")
+    session$flushReact()
+    session$setInputs(triage_btn = 1, triage_overwrite_user = FALSE)
+    session$flushReact()
+
+    expect_equal(triage_actions()$no_feat_non_rdna, "flag")
+    expect_equal(triage_actions()$odd_one_out, "off")
+    prev <- output$triage_preview$html
+    expect_match(prev, "0 newly dropped", fixed = TRUE)
+    expect_match(prev, "Resulting state across 1 sample(s): 0 dropped", fixed = TRUE)
+    expect_match(prev, "No rule is set to Drop", fixed = TRUE)
+  })
+})
+
+test_that("preview says so when a Drop rule is armed but everything it matches is hand-decided", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+  # same droppable evidence as above, but every unit is already a user
+  # decision: with overwrite off, auto-triage must skip all of them
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "DELETE FROM annotations")
+  for (u in list(c(1,1), c(1,2), c(2,1), c(2,2))) {
+    DBI::dbExecute(con, "INSERT INTO blast_screen (ID,path,scaffold,species,is_nuclear_rrna) VALUES('S1',?,?,'Homo sapiens',0)",
+      params = list(u[1], u[2]))
+    DBI::dbExecute(con,
+      "UPDATE assemblies SET triage = 'keep', triage_source = 'user' WHERE ID='S1' AND path=? AND scaffold=?",
+      params = list(u[1], u[2]))
+  }
+  DBI::dbDisconnect(con)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    sel_id("S1")
+    session$flushReact()
+    session$setInputs(triage_btn = 1, triage_overwrite_user = FALSE)
+    session$flushReact()
+    prev <- output$triage_preview$html
+    expect_true(nzchar(prev))
+    expect_match(prev, "nothing in this selection will be dropped", fixed = TRUE)
+  })
+})
+
+test_that("turning every rule off says Apply changes nothing, not 'Would drop'", {
+  # the reported bug: with every rule off, the preview kept saying "Would drop
+  # N" because it reported the END STATE (which includes standing hand-decided
+  # drops), not what Apply itself would touch
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  # p1.s1 hand-decided drop, p1.s2 hand-decided keep: standing curator calls
+  DBI::dbExecute(con,
+    "UPDATE assemblies SET triage='drop', triage_source='user' WHERE ID='S1' AND path=1 AND scaffold=1")
+  DBI::dbExecute(con,
+    "UPDATE assemblies SET triage='keep', triage_source='user' WHERE ID='S1' AND path=1 AND scaffold=2")
+  # p2.s1 and p2.s2 already auto-triaged to keep by an earlier run, matching
+  # exactly what every rule off would propose again
+  DBI::dbExecute(con,
+    "UPDATE assemblies SET triage='keep', triage_source='auto' WHERE ID='S1' AND path=2 AND scaffold=1")
+  DBI::dbExecute(con,
+    "UPDATE assemblies SET triage='keep', triage_source='auto' WHERE ID='S1' AND path=2 AND scaffold=2")
+  DBI::dbDisconnect(con)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    sel_id("S1")
+    session$flushReact()
+    session$setInputs(triage_btn = 1, triage_overwrite_user = FALSE)
+    off_inputs <- stats::setNames(as.list(rep("off", length(RiboPilot:::triage_rule_keys()))),
+      paste0("triage_rule_", RiboPilot:::triage_rule_keys()))
+    do.call(session$setInputs, off_inputs)
+    session$flushReact()
+
+    expect_true(all(vapply(RiboPilot:::triage_rule_keys(),
+      function(k) triage_actions()[[k]] == "off", logical(1))))
+    prev <- output$triage_preview$html
+    expect_true(nzchar(prev))
+    expect_match(prev, "Apply would change nothing", fixed = TRUE)
+    expect_false(grepl("Would drop", prev, fixed = TRUE))
+  })
+})
+
+test_that("the all-off message replaces the no-Drop note instead of also printing it", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    sel_id("S1")
+    session$flushReact()
+    session$setInputs(triage_btn = 1, triage_overwrite_user = FALSE)
+    off_inputs <- stats::setNames(as.list(rep("off", length(RiboPilot:::triage_rule_keys()))),
+      paste0("triage_rule_", RiboPilot:::triage_rule_keys()))
+    do.call(session$setInputs, off_inputs)
+    session$flushReact()
+
+    prev <- output$triage_preview$html
+    expect_match(prev, "Every rule is off, so Apply would change nothing.", fixed = TRUE)
+    expect_false(grepl("No rule is set to Drop", prev, fixed = TRUE))
   })
 })

@@ -26,3 +26,6 @@ docker/RiboPilot_*.tar.gz
 .serena/
 test_run/
 out/
+
+# subagent-driven-development scratch workspace
+/.superpowers/

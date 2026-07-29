@@ -173,6 +173,7 @@ new_db <- function(
       hide_switch INTEGER,
       assemble_opts TEXT,
       blast_opts TEXT,
+      triage_opts TEXT DEFAULT 'default',
       blast_accession TEXT,
       blast_species TEXT,
       blast_pident REAL,
@@ -296,6 +297,7 @@ new_db <- function(
       triage TEXT,
       triage_reason TEXT,
       triage_source TEXT,
+      triage_rule TEXT,
       edit_positions TEXT,
       time_stamp INTEGER,
       PRIMARY KEY (ID, path, scaffold)
@@ -561,6 +563,10 @@ new_db <- function(
         min_anchor_pid = 85, check_contaminant = 1L),
       in_place = TRUE, copy = TRUE, by = "curate_opts"
     )
+
+  # triage_opts (per-rule triage actions; see TRIAGE_RULE_DEFS) ----
+  DBI::dbExecute(con, TRIAGE_OPTS_DDL)
+  DBI::dbExecute(con, TRIAGE_OPTS_SEED)
 
   # path_scores (taxonomy-aware candidate scoring + auto-select) ----
   DBI::dbExecute(

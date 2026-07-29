@@ -882,7 +882,7 @@ app_server <- function(input, output, session) {
     d$hits <- "hits"
     # reactable renders in data-frame column order, so the row identifier has to
     # lead here; colDef(sticky=) alone does not move it.
-    lead <- c("unit", "triage", "length", "topology", "depth", "elements")
+    lead <- c("unit", "triage", "length", "topology", "depth", "depth_track", "elements")
     d <- d[, c(intersect(lead, names(d)), setdiff(names(d), lead)), drop = FALSE]
     reactable::reactable(d, compact = TRUE, resizable = TRUE, filterable = TRUE,
       searchable = TRUE, sortable = TRUE, wrap = FALSE, defaultPageSize = 20,
@@ -896,6 +896,9 @@ app_server <- function(input, output, session) {
         # the column "relative" described the bar and misdescribed the number.
         depth = reactable::colDef(name = "Median depth", width = 125, show = TRUE, html = TRUE,
           cell = rt_depth_bar("depth_max")),
+        depth_track = reactable::colDef(name = "Coverage", width = 100, show = TRUE,
+          filterable = FALSE, sortable = FALSE, html = TRUE,
+          cell = rt_depth_sparkline()),
         elements = reactable::colDef(name = "rRNA features", width = 240, show = TRUE, html = TRUE,
           cell = rt_element_strip()),
         screen_species = reactable::colDef(name = "Top GenBank hit", minWidth = 160, show = TRUE,
@@ -1057,41 +1060,106 @@ app_server <- function(input, output, session) {
     showModal(assemble_modal(pt$id))
   })
   # ---- bulk triage over the selected samples ----
-  triage_opts <- reactive({
-    list(min_depth_frac = suppressWarnings(as.numeric(input$triage_depth_frac %||% 0.05)))
-  })
   triage_target_ids <- function() {
     ids <- unique(selected_ids())
     if (length(ids)) ids else unique(samples_data()$ID)
   }
-  observeEvent(input$triage_btn, {
-    showModal(triage_modal(length(triage_target_ids())))
+  # the preset the modal was opened with; seeding from the shipped defaults
+  # instead would report -- and on Apply write back -- settings the curator
+  # never chose, until the browser echoed the controls back
+  triage_preset <- reactiveVal(NULL)
+  # settings come from the DB so the modal and the WF1 triage process agree; the
+  # inputs override them live so the preview reflects what Apply would do.
+  triage_actions <- reactive({
+    a <- triage_preset() %||% triage_actions_default()
+    for (k in triage_rule_keys()) {
+      v <- input[[paste0("triage_rule_", k)]]
+      if (!is.null(v) && nzchar(v)) a[[k]] <- v
+    }
+    normalize_triage_actions(a)
   })
-  output$triage_preview <- renderUI({
+  observeEvent(input$triage_btn, {
     ids <- triage_target_ids()
-    if (!length(ids)) return(em("No samples to triage."))
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    p <- tryCatch(triage_preview(con, ids, opts = triage_opts(),
+    cur <- if (length(ids)) triage_opts_for(con, ids[1]) else triage_actions_default()
+    triage_preset(cur)
+    showModal(triage_modal(length(ids), cur))
+  })
+  triage_pv <- reactive({
+    ids <- triage_target_ids()
+    if (!length(ids)) return(NULL)
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    tryCatch(triage_preview(con, ids, opts = triage_actions(),
       overwrite_user = isTRUE(input$triage_overwrite_user)), error = function(e) NULL)
-    if (is.null(p)) return(em("Could not build a preview."))
+  })
+  # one count output per rule, rendered into the static table so changing a
+  # control never rebuilds (and resets) the controls themselves
+  for (k in triage_rule_keys()) {
+    local({
+      key <- k
+      output[[paste0("triage_n_", key)]] <- renderUI({
+        p <- triage_pv()
+        if (is.null(p) || is.null(p$by_rule)) return(span("-"))
+        r <- p$by_rule[p$by_rule$key == key, ]
+        if (nrow(r) == 0) return(span("-"))
+        span(style = "white-space:nowrap;",
+          tags$strong(r$n_decided[1]), " / ",
+          span(style = "color:#777;", r$n_matching[1]))
+      })
+    })
+  }
+  output$triage_preview <- renderUI({
+    p <- triage_pv()
+    if (is.null(p)) return(em("No samples to triage."))
+    no_drop <- !any(triage_actions() %in% "drop")
+    all_off <- triage_all_off(triage_actions())
     tagList(
-      tags$p(sprintf("Would drop %d of %d scaffold(s) across %d sample(s); %d kept, %d left undecided.",
-        p$n_drop, p$n_units, p$n_samples, p$n_keep, p$n_undecided)),
+      tags$p(
+        if (all_off)
+          "Every rule is off, so Apply would change nothing."
+        else if (p$n_changed == 0 && p$n_units > 0 &&
+            p$n_user_skipped + p$n_locked_skipped == p$n_units)
+          # nothing is compared against these rules here, so saying the stored
+          # verdicts match them would be a claim about units never examined
+          "Every scaffold in this selection is hand-decided or annotation-locked, so Apply would skip them all."
+        else if (p$n_changed == 0)
+          "Apply would change nothing: every scaffold already has the verdict these rules propose."
+        else
+          sprintf(paste("Apply would change %d of %d scaffold(s):",
+            "%d newly dropped, %d newly kept, %d newly flagged."),
+            p$n_changed, p$n_units, p$n_new_drop, p$n_new_keep, p$n_new_flag)),
+      tags$p(sprintf("Resulting state across %d sample(s): %d dropped, %d kept, %d undecided.",
+        p$n_samples, p$n_drop, p$n_keep, p$n_undecided)),
+      # the all-off message above already says Apply is a no-op; do not also
+      # print the no-Drop note, or the modal shows two overlapping sentences
+      if (all_off) NULL
+      else if (no_drop) tags$p(style = "color:#555;",
+        "No rule is set to Drop, so Apply will only add and clear reasons.")
+      else if (p$n_new_drop == 0) tags$p(style = "color:#555;",
+        "A rule is set to Drop, but nothing in this selection will be dropped."),
       if (p$n_user_skipped > 0) tags$p(style = "color:#555;",
         sprintf("%d scaffold(s) you decided by hand will be left alone.", p$n_user_skipped)),
       if (p$n_locked_skipped > 0) tags$p(style = "color:#555;",
         sprintf("%d annotation-locked scaffold(s) will be left alone.", p$n_locked_skipped)),
+      # under all-off nothing is caused by Apply, so this reports the standing
+      # state rather than an outcome
       if (length(p$emptied) > 0) div(style = "color:#842029; font-weight:600; margin-top:6px;",
-        sprintf("%d sample(s) would end up with NO scaffolds kept: %s",
+        sprintf(if (all_off) "%d sample(s) currently have NO scaffolds kept: %s"
+          else "%d sample(s) would end up with NO scaffolds kept: %s",
           length(p$emptied), paste(utils::head(p$emptied, 12), collapse = ", ")))
-      else div(style = "color:#2d6a4f; margin-top:6px;", "No sample would be left with nothing kept."))
+      else div(style = "color:#2d6a4f; margin-top:6px;",
+        if (all_off) "No sample currently has nothing kept."
+        else "No sample would be left with nothing kept."))
   })
   observeEvent(input$triage_apply, {
     ids <- triage_target_ids(); req(length(ids))
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    act <- triage_actions()
+    # persist first: a pipeline re-run must reproduce what the curator just saw
+    write_triage_opts(con, act)
     n <- 0L
     for (id in ids) {
-      n <- n + tryCatch(auto_triage_sample(con, id, opts = triage_opts(),
+      n <- n + tryCatch(auto_triage_sample(con, id, opts = act,
         overwrite_user = isTRUE(input$triage_overwrite_user)), error = function(e) 0L)
     }
     removeModal()

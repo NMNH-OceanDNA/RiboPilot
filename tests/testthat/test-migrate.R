@@ -16,8 +16,11 @@ mk_v8_db <- function() {
   DBI::dbExecute(con, "CREATE TABLE blast_ref_candidates(ID TEXT, path INT, scaffold INT, rank INT,
     accession TEXT, species TEXT, title TEXT, pident REAL, qcovs REAL, evalue REAL, time_stamp INT,
     PRIMARY KEY (ID, path, scaffold, rank))")
+  DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT PRIMARY KEY, assemble_switch INT,
+    assemble_lock INT, assemble_opts TEXT, blast_opts TEXT)")
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S1', 7955, 'Metazoa; Chordata')")
   DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',1,1,'ACGT','AA1','Danio rerio',99,80,1e-90,0)")
+  DBI::dbExecute(con, "INSERT INTO assemble VALUES('S1',2,0,'default','default')")
   DBI::dbExecute(con, "INSERT INTO blast_screen VALUES('S1',1,1,'AA1','t','Danio rerio',7955,'Metazoa',99,80,1e-90,1,1)")
   DBI::dbExecute(con, "PRAGMA user_version = 8")
   con
@@ -127,4 +130,39 @@ test_that("write_coverage stores both statistics", {
   expect_equal(d$median_depth, 10)
   expect_equal(d$mean_depth, 109)
   expect_equal(d$max_depth, 1000L)
+})
+
+test_that("v12 adds triage_opts, its seed row, and the rule columns", {
+  con <- mk_v8_db()
+  on.exit(DBI::dbDisconnect(con))
+  migrate_db(con)
+
+  expect_true("triage_opts" %in% DBI::dbListTables(con))
+  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM triage_opts")$n, 1L)
+
+  # every rule key has a column, and the seed carries the shipped defaults
+  r <- DBI::dbGetQuery(con, "SELECT * FROM triage_opts WHERE triage_opts = 'default'")
+  for (k in RiboPilot:::triage_rule_keys()) {
+    expect_true(paste0("rule_", k) %in% names(r))
+  }
+  expect_equal(r$rule_no_feat_non_rdna, "drop")
+  expect_equal(r$rule_odd_one_out, "flag")
+
+  expect_true("triage_opts" %in% DBI::dbListFields(con, "assemble"))
+  expect_true("triage_rule" %in% DBI::dbListFields(con, "assemblies"))
+  expect_equal(DBI::dbGetQuery(con, "PRAGMA user_version")[[1]], 12L)
+})
+
+test_that("v12 backfills coverage.depths when a coverage table has path but not depths", {
+  # Not a real migration path -- init_db.R and the pre-v8 coverage rebuild
+  # always add path and depths together -- but unit_evidence() now hard-selects
+  # depths, so its absence would break the whole scaffold query, not one cell.
+  con <- mk_v8_db()
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "CREATE TABLE coverage(ID TEXT, path INT, scaffold INT, mean_depth REAL)")
+  expect_false("depths" %in% DBI::dbListFields(con, "coverage"))
+
+  migrate_db(con)
+
+  expect_true("depths" %in% DBI::dbListFields(con, "coverage"))
 })

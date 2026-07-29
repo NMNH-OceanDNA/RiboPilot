@@ -4,14 +4,15 @@
 \alias{auto_triage_sample}
 \title{Apply automatic triage to one sample}
 \usage{
-auto_triage_sample(con, id, opts = TRIAGE_DEFAULTS, overwrite_user = FALSE)
+auto_triage_sample(con, id, opts = NULL, overwrite_user = FALSE)
 }
 \arguments{
 \item{con}{Open project DB connection.}
 
 \item{id}{Sample ID.}
 
-\item{opts}{See [TRIAGE_DEFAULTS].}
+\item{opts}{Named list of per-rule actions; NULL reads the sample's
+triage_opts preset.}
 
 \item{overwrite_user}{Also re-decide units a curator set by hand.}
 }
@@ -20,5 +21,8 @@ auto_triage_sample(con, id, opts = TRIAGE_DEFAULTS, overwrite_user = FALSE)
 }
 \description{
 Skips any unit a human has already decided (`triage_source = 'user'`) and any
-unit whose annotation is locked, so re-running is safe.
+unit whose annotation is locked, so re-running is safe. If every rule is set
+to "off", this is a complete no-op and writes nothing: see
+dev/design/09_TRIAGE_RULES_AND_DEPTH.md section 3.3 for why that special
+case exists.
 }

@@ -5,7 +5,7 @@
 
 #' Current project-DB schema version. Bump when adding a migration step below.
 #' @noRd
-RIBOPILOT_SCHEMA_VERSION <- 11L
+RIBOPILOT_SCHEMA_VERSION <- 12L
 
 #' DDL for blast_hits: the full retained BLAST hit distribution per unit.
 #'
@@ -41,6 +41,27 @@ BLAST_HITS_DDL <- "CREATE TABLE IF NOT EXISTS blast_hits (
   time_stamp INTEGER,
   PRIMARY KEY (ID, path, scaffold, hit_rank, hsp)
 );"
+
+#' DDL for the triage_opts table (per-rule action presets).
+#' Shared by new_db() and the v12 migration so both agree on the schema.
+#' @noRd
+TRIAGE_OPTS_DDL <- "CREATE TABLE IF NOT EXISTS triage_opts (
+  triage_opts            TEXT NOT NULL,
+  rule_not_annotated     TEXT,
+  rule_no_screen         TEXT,
+  rule_no_feat_non_rdna  TEXT,
+  rule_no_feat_rdna_hit  TEXT,
+  rule_feat_non_rdna_hit TEXT,
+  rule_odd_one_out       TEXT,
+  PRIMARY KEY (triage_opts)
+);"
+
+#' Seed row for triage_opts, matching TRIAGE_RULE_DEFS defaults.
+#' @noRd
+TRIAGE_OPTS_SEED <- "INSERT INTO triage_opts
+  (triage_opts, rule_not_annotated, rule_no_screen, rule_no_feat_non_rdna,
+   rule_no_feat_rdna_hit, rule_feat_non_rdna_hit, rule_odd_one_out)
+  VALUES ('default', 'flag', 'flag', 'drop', 'flag', 'flag', 'flag');"
 
 #' DDL for the assembly_backup table (original pre-trim state, for undo/restore).
 #' Shared by new_db() and the v6 migration so both agree on the schema.
@@ -325,6 +346,24 @@ migrate_db <- function(con) {
       "UPDATE assemblies SET triage = 'drop', triage_source = 'user',
          triage_reason = 'dropped before triage was recorded'
        WHERE COALESCE(ignore,0) = 1 AND triage IS NULL")
+  }
+
+  # --- schema v12: named, individually controllable triage rules ---
+  # The rules were an anonymous if/else chain with no per-rule setting, so the
+  # WF1 triage process and the app could not be made to agree on anything the
+  # curator changed. triage_opts holds one action per rule; triage_rule records
+  # which rule produced a unit's current verdict.
+  if (!has_tbl("triage_opts")) DBI::dbExecute(con, TRIAGE_OPTS_DDL)
+  if (DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM triage_opts")$n == 0) {
+    DBI::dbExecute(con, TRIAGE_OPTS_SEED)
+  }
+  add_col("assemble", "triage_opts", "TEXT DEFAULT 'default'")
+  add_col("assemblies", "triage_rule", "TEXT")
+  # unit_evidence() hard-selects coverage.depths for the sparkline, so its
+  # absence would break the whole scaffold query rather than one cell
+  add_col("coverage", "depths", "TEXT")
+  if (ver < 12L && has_col("assemble", "triage_opts")) {
+    DBI::dbExecute(con, "UPDATE assemble SET triage_opts = 'default' WHERE triage_opts IS NULL")
   }
 
   if (ver < RIBOPILOT_SCHEMA_VERSION) {

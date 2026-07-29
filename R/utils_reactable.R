@@ -338,3 +338,31 @@ rt_icon_disabled <- function(icon, title = "") {
     }", title, icon
   ) |> htmlwidgets::JS()
 }
+
+#' Inline depth sparkline from a comma-separated track
+#'
+#' Shown because a curator deciding keep/drop should see coverage shape, and
+#' deliberately not used by any rule: high depth is often k-mer collapse across
+#' the conserved core or IGS subrepeats, and low depth is often isomer paths
+#' splitting reads.
+#' @noRd
+rt_depth_sparkline <- function() {
+  htmlwidgets::JS(
+    "function(cellInfo) {
+      var v = cellInfo.value;
+      if (v === null || v === undefined || v === '' || v === 'NA') return '';
+      var a = String(v).split(',').map(Number).filter(function(x){ return !isNaN(x); });
+      if (a.length < 2) return '';
+      var w = 90, h = 18, mx = Math.max.apply(null, a);
+      if (!(mx > 0)) return '';
+      var pts = a.map(function(y, i) {
+        var px = (i / (a.length - 1)) * w;
+        var py = h - (y / mx) * h;
+        return px.toFixed(1) + ',' + py.toFixed(1);
+      }).join(' ');
+      return '<svg width=\"' + w + '\" height=\"' + h + '\" ' +
+        'viewBox=\"0 0 ' + w + ' ' + h + '\" preserveAspectRatio=\"none\">' +
+        '<polyline points=\"' + pts + '\" fill=\"none\" stroke=\"#6c757d\" ' +
+        'stroke-width=\"1\"/></svg>';
+    }")
+}
