@@ -114,6 +114,27 @@ test_that("export records the variant fact for a paralog and does NOT gate", {
   expect_true(all(is.na(risk) | !nzchar(risk)))
 })
 
+test_that("n_variants counts comparable units, not every screen row", {
+  # S1 unit 1 is an on-target singleton; unit 2 is a contaminant with no variant
+  # class. n_variants must be 1, which counting screen rows would report as 2.
+  dir <- mk_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, RiboPilot:::SCREEN_DDL)
+  DBI::dbExecute(con,
+    "INSERT INTO screen (ID,path,scaffold,screen_verdict,screen_version,variant_class,variant_group)
+     VALUES ('S1',1,1,'on_target',3,'singleton','g1')")
+  DBI::dbExecute(con,
+    "INSERT INTO screen (ID,path,scaffold,screen_verdict,screen_version)
+     VALUES ('S1',1,2,'off_target',3)")
+  DBI::dbDisconnect(con)
+
+  g <- bundle(dir, ids = "S1", label = "counts")
+  smry <- utils::read.csv(Sys.glob(file.path(g, "*_summary.csv")), stringsAsFactors = FALSE)
+  expect_equal(unique(smry$n_variants), 1L)
+  expect_equal(smry$variant_class[smry$scaffold == 1], "singleton")
+  expect_true(is.na(smry$variant_class[smry$scaffold == 2]))
+})
+
 test_that("a project with no screen table still exports, with NA variant columns", {
   dir <- mk_project()
   g <- bundle(dir, ids = "S2", label = "noscreen")
