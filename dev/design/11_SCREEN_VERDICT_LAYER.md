@@ -118,7 +118,8 @@ Reads the unit's `blast_hits` rows, then:
    weighted LCA sits on the sample's path; the margin asks the same question of
    each hit individually, so that the two best-supported opposing hits can be
    compared. A hit is concordant here when its own rank-aligned taxid path
-   shares ANY resolved taxid with the sample's path. Keep the two named apart in
+   shares a resolved taxid with the sample's path AT PHYLUM RANK OR DEEPER,
+   that is anywhere below the shallowest slot. Keep the two named apart in
    the code; conflating them silently changes what the margin measures.
 
    It must NOT test the sample's deepest resolved taxid. That was the first
@@ -128,6 +129,14 @@ Reads the unit's `blast_hits` rows, then:
    0.349 before the fix. Sharing any resolved taxid is the test that means
    "on the sample's lineage at all", which is what an on-target versus
    off-target margin is supposed to compare.
+
+   It must also NOT accept a match at the shallowest rank alone. Sharing only
+   the kingdom slot means "both are animals", which every metazoan contaminant
+   satisfies. Measured: with a plain any-shared-taxid test, three host hits plus
+   two hits from a DIFFERENT PHYLUM read as unanimous and scored `on_target` at
+   0.79, where the correct reading is a split, a real margin, and `uncertain` at
+   0.479. Requiring phylum or deeper keeps a congener concordant and a
+   different-phylum hit discordant, which is the distinction the margin needs.
 
 ## 5. Confidence
 
