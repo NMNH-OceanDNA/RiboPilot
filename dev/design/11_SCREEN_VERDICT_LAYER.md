@@ -83,7 +83,7 @@ Plus:
   ("nearest reference is at class distance") rather than staying silent.
 - `triage_opts.rule_screen_off_target TEXT` - the new rule's action, seeded
   `'flag'`.
-- `SCREEN_VERSION <- 1L`, an internal constant. `screen_one()` rewrites a row
+- `SCREEN_VERSION <- 2L`, an internal constant. `screen_one()` rewrites a row
   whose stored `screen_version` is lower, so a scoring change can force a
   recompute without a schema migration.
 
@@ -100,17 +100,36 @@ tests exercise.
 
 Reads the unit's `blast_hits` rows, then:
 
-1. **Exclude placeholders.** Drop any hit whose lineage fails
+1. **One vote per accession.** `blast_hits` stores one row per HSP and
+   `blast.nf` runs blastn with `-max_hsps 5`, so an accession can contribute up
+   to five rows. Reduce to the best-bitscore row per `hit_rank` BEFORE scoring,
+   as `parse_blast_candidates()` already does. Without this a single accession
+   with three HSPs satisfies both the LCA's `min_hits` and the unanimity floor
+   and can alone produce a confident `off_target`. Measured: one Fusarium
+   accession, three HSPs, `off_target` at 0.79 with one distinct accession.
+2. **Exclude placeholders.** Drop any hit whose lineage fails
    `is_placeholder_taxon()` (R/taxonomy_ranks.R:45). Uncultured and
    environmental records dominate core_nt 18S and resolve to superkingdom only,
    which every rank rule reads as maximum taxonomic distance.
-2. **Weighted LCA.** `bitscore_weighted_lca()` over the surviving
+3. **Weighted LCA.** `bitscore_weighted_lca()` over the surviving
    `hit_class = 'rdna'` rows, giving `lca_taxid`, `lca_taxon`, `lca_rank` and
    `lca_n_hits`.
-3. **Concordance.** `host_concordant` is 1 when `lca_taxid` appears in the
-   sample's rank-aligned taxid path (`parse_rank_taxids(samples.lineage_taxids)`),
-   0 when it does not, NA when either side is unresolvable.
-4. **Margin.** Best bitscore among concordant hits minus best bitscore among
+4. **Concordance.** `host_concordant` is 1 when the LCA sits on the sample's
+   lineage AT PHYLUM RANK OR DEEPER, using the same shared-taxid test as the
+   margin, 0 when it does not, NA when either side is unresolvable.
+
+   It must NOT test `lca_taxid %in% samp` alone. That is the too-strict rule the
+   margin already discarded: three hits of one congener give an LCA at that
+   congener's species, which is absent from the sample's own path, so a clean
+   unit scores `off_target`. Measured at 0.790 with class `metazoan_other`. It
+   fires hardest on the under-described taxa this tool exists to serve.
+
+   When the sample's path resolves ONLY at the shallowest slot there is nothing
+   to compare at phylum or deeper. That is `no_reference` with reason code
+   `unresolved_sample_lineage`, NOT a discordant verdict; treating it as
+   discordant makes every hit unanimous and scores clean host data `off_target`
+   at 0.790.
+5. **Margin.** Best bitscore among concordant hits minus best bitscore among
    discordant hits. NA when either side has no hits.
 
    Note this uses a SECOND, per-hit notion of concordance, distinct from
@@ -146,9 +165,16 @@ Three sub-scores in [0, 1], combined as a weighted mean:
 |---|---|---|
 | `support` | `min(1, lca_n_hits / 10)` | 0.30 |
 | `resolution` | rank depth of `lca_rank` over `RRNA_LINEAGE_RANKS` (`species` 1.00, `genus` 0.86, `family` 0.71, `order` 0.57, `class` 0.43, `phylum` 0.29, `kingdom` 0.14, `none` 0) | 0.30 |
-| `separation` | `min(1, abs(margin) / top_bitscore)`; **1 when at least two hits vote and every one falls on the same side of the concordance test**, since nothing opposes the winner; 0 when margin is NA for any other reason | 0.40 |
+| `separation` | `min(1, abs(margin) / top_bitscore)`; **1 when at least three DISTINCT ACCESSIONS vote and every one falls on the same side of the concordance test**, since nothing opposes the winner; 0 when margin is NA for any other reason | 0.40 |
 
-Unanimity requires at least two voting hits. Without that floor a single hit is
+Unanimity requires at least three distinct accessions, matching
+`bitscore_weighted_lca()`'s own `min_hits`. Two is not enough: unanimity sets
+separation to 1, which is worth 0.40 of the 0.60 gate, so any two rows agreeing
+at species rank clear it at 0.76. That single fact is what let several
+single-accession defects land above the gate rather than in `uncertain` where
+they belong.
+
+Historical note, kept because the first floor was too low. Without that floor a single hit is
 unopposed by definition and scores full separation, so one discordant accession
 alone reaches confidence 0.73 and produces an `off_target` verdict. Measured
 before the fix. That is the one-mislabelled-accession failure that
