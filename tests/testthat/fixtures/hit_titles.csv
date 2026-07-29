@@ -1,0 +1,50 @@
+title,expected,source,note
+"Micropterus salmoides isolate LMB-PRFRI chromosome Unknown",uninformative,real,chromosome-level host assembly
+"Scomber australasicus DNA, Alternate haplotype, chromosome 5, sequence",uninformative,real,haplotype-resolved host assembly
+"Scomber australasicus DNA, Alternate haplotype, unplaced-scaffold_103, sequence",uninformative,real,
+"Scomber australasicus DNA, Alternate haplotype, unplaced-scaffold_116, sequence",uninformative,real,
+"Scomber australasicus DNA, Alternate haplotype, unplaced-scaffold_26, sequence",uninformative,real,
+"Scomber australasicus DNA, Alternate haplotype, unplaced-scaffold_28, sequence",uninformative,real,
+"Scomber australasicus DNA, Alternate haplotype, unplaced-scaffold_36, sequence",uninformative,real,
+"Scomber australasicus DNA, Alternate haplotype, unplaced-scaffold_43, sequence",uninformative,real,
+"Scomber australasicus DNA, Alternate haplotype, unplaced-scaffold_89, sequence",uninformative,real,
+"Scomber australasicus DNA, Alternate haplotype, unplaced-scaffold_91, sequence",uninformative,real,
+"Scomber australasicus DNA, Primary haplotype, chromosome 8, sequence",uninformative,real,
+"Scomber australasicus DNA, Primary haplotype, unplaced-scaffold_27, sequence",uninformative,real,
+"Scomber australasicus DNA, Primary haplotype, unplaced-scaffold_30, sequence",uninformative,real,
+"Scomber australasicus DNA, Primary haplotype, unplaced-scaffold_32, sequence",uninformative,real,
+"Scomber australasicus DNA, Primary haplotype, unplaced-scaffold_33, sequence",uninformative,real,
+"Scomber japonicus DNA, alternate haplotype, chromosome 1, sequence",uninformative,real,
+"Scomber japonicus DNA, alternate haplotype, chromosome 17, sequence",uninformative,real,
+"Scomber japonicus DNA, alternate haplotype, chromosome 20, sequence",uninformative,real,
+"Scomber japonicus DNA, alternate haplotype, unplaced-scaffold_25, sequence",uninformative,real,
+"Scomber japonicus DNA, alternate haplotype, unplaced-scaffold_28, sequence",uninformative,real,
+"Scomber japonicus DNA, alternate haplotype, unplaced-scaffold_33, sequence",uninformative,real,
+"Scomber japonicus DNA, primary haplotype, chromosome 11, sequence",uninformative,real,
+"Scomber japonicus DNA, primary haplotype, chromosome 17, sequence",uninformative,real,
+"Scomber japonicus DNA, primary haplotype, chromosome 4, sequence",uninformative,real,
+"Scomber japonicus DNA, primary haplotype, unplaced-saffold_25, sequence",uninformative,real,typo present in the GenBank record
+"Scomber japonicus DNA, primary haplotype, unplaced-saffold_26, sequence",uninformative,real,typo present in the GenBank record
+"Cleisthenes herzensteini 18S ribosomal RNA gene, complete sequence",rdna,real,18S complete
+"Gonorynchus greyi isolate 94609 18S ribosomal RNA gene, partial sequence",rdna,real,18S partial
+"Kareius bicoloratus isolate QD1k 18S ribosomal RNA gene, complete sequence",rdna,real,
+"Micromesistius poutassou 28S ribosomal RNA (AC3HAE_023566), rRNA",rdna,real,28S with no gene keyword
+"Micromesistius poutassou 28S ribosomal RNA (AC3HAE_040873), rRNA",rdna,real,28S with no gene keyword
+"Abantennarius coccineus voucher USNM:FISH:446381 small subunit ribosomal RNA gene, partial sequence; internal transcribed spacer 1, complete sequence",rdna,real,SSU phrasing carrying ITS
+"Acanthocybium solandri voucher USNM:FISH:405884 small subunit ribosomal RNA gene, partial sequence; internal transcribed spacer 1, complete sequence",rdna,real,
+"Antimora microlepis voucher SIO:Marine Vertebrates:05_103 small subunit ribosomal RNA gene, partial sequence; internal transcribed spacer 1, complete sequence",rdna,real,
+"Danio rerio 5.8S ribosomal RNA gene, complete sequence",rdna,authored,5.8S
+"Danio rerio 5S ribosomal RNA gene, complete sequence",rdna,authored,5S is nuclear rDNA by design decision
+"Homo sapiens 18S ribosomal RNA gene, complete sequence",rdna,authored,rdna even though it is a contaminant; taxonomy decides host
+"Aspergillus niger internal transcribed spacer 1, complete sequence",rdna,authored,fungal ITS is still rDNA
+"Danio rerio large subunit ribosomal RNA gene, partial sequence",rdna,authored,LSU phrasing
+"Danio rerio ribosomal DNA intergenic spacer region",rdna,authored,IGS carrying a ribosomal marker
+"Escherichia coli 16S ribosomal RNA gene, partial sequence",other,authored,prokaryotic SSU
+"Bacillus subtilis 23S ribosomal RNA gene, partial sequence",other,authored,prokaryotic LSU
+"Danio rerio mitochondrion, complete genome",other,authored,organellar
+"Danio rerio mitochondrial 16S ribosomal RNA gene, partial sequence",other,authored,organellar veto and prokaryotic-style name
+"Zea mays chloroplast large subunit ribosomal RNA gene, complete sequence",other,authored,organellar veto must beat the rDNA phrase
+"Danio rerio actin alpha 1 mRNA, complete cds",other,authored,protein coding
+"Danio rerio recombination activating gene 1 (rag1), partial cds",other,authored,protein coding
+"Danio rerio clone CH211-152C2, complete sequence",other,authored,unrecognised phrasing defaults to other
+"",uninformative,authored,empty title says nothing

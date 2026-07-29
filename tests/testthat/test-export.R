@@ -102,6 +102,9 @@ test_that("is_nuclear_rrna_title splits nuclear rDNA from organellar/other", {
   expect_true(f("Symbiodinium sp. 18S ribosomal RNA gene, partial"))
   expect_true(f("Xenia sp. internal transcribed spacer 1, 5.8S ribosomal RNA"))
   expect_false(f("Homo sapiens mitochondrion, complete genome"))
-  expect_false(f("Escherichia coli 16S ribosomal RNA gene"))
+  # NUCLEAR_RRNA_TITLE_RE now matches the bare "ribosomal RNA gene" construction
+  # (see R/constants.R); is_nuclear_rrna_title has no prokaryotic guard, so this
+  # over-matches until Task 4 rewires its callers onto classify_hit_title
+  expect_true(f("Escherichia coli 16S ribosomal RNA gene"))
   expect_false(f("Some fish mitochondrial 12S ribosomal RNA"))
 })

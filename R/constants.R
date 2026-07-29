@@ -44,17 +44,38 @@ DEFAULT_LABELS_DB <- paste0("https://raw.githubusercontent.com/dmacguigan/RiboPi
 CONTAINER_EXECUTORS <- c("docker", "local", "awsbatch", "slurm", "pbs", "sge",
                          "lsf", "NMNH_Hydra", "NOAA_SEDNA")
 
-#' Titles of nuclear rDNA records, as a regex over BLAST subject titles.
+#' Titles naming a nuclear rDNA locus.
 #'
-#' Mirrors what the remote BLAST `entrez_query` used to restrict the search
-#' space to. Applied client-side now, so the search itself can stay unrestricted
-#' (and therefore able to see contaminants), while the reference panel is still
-#' drawn only from real nuclear rDNA records.
+#' Broadened from a literal-phrase list because GenBank writes the same locus
+#' many ways: "28S ribosomal RNA (ACC), rRNA" carries no "gene", and a
+#' chromosome-level host record may name the locus in passing. Safe to include
+#' the bare "rRNA gene" construction only because PROKARYOTIC_RRNA_RE is tested
+#' first.
 #' @noRd
 NUCLEAR_RRNA_TITLE_RE <- paste0(
-  "internal transcribed spacer|",
-  "18S ribosomal RNA|28S ribosomal RNA|5\\.8S ribosomal RNA|",
-  "small subunit ribosomal RNA|large subunit ribosomal RNA")
+  "internal transcribed spacer|external transcribed spacer|\\bITS[12]?\\b|",
+  "\\b(18S|28S|5\\.8S|5S)\\b[^;]{0,40}?(ribosomal RNA|rRNA)|",
+  "small subunit ribosomal RNA|large subunit ribosomal RNA|",
+  "\\b(SSU|LSU)\\b[^;]{0,20}?rRNA|",
+  "ribosomal RNA gene|\\brRNA gene\\b|ribosomal DNA|\\brDNA\\b")
+
+#' Titles naming a prokaryotic ribosomal subunit.
+#' @noRd
+PROKARYOTIC_RRNA_RE <- "\\b(16S|23S)\\b"
+
+#' Eukaryotic nuclear rDNA markers, used to spare a record that names both.
+#' @noRd
+EUKARYOTIC_RRNA_MARKER_RE <- paste0(
+  "\\b(18S|28S|5\\.8S)\\b|internal transcribed spacer|\\bITS[12]?\\b")
+
+#' Titles describing an assembly rather than a locus.
+#'
+#' A chromosome record is not evidence against rDNA, it is no evidence either
+#' way. Several markers are matched because real deflines contain typos:
+#' "unplaced-saffold_25" occurs in GenBank.
+#' @noRd
+ASSEMBLY_TITLE_RE <- paste0(
+  "chromosome|unplaced|scaffold|contig|whole genome shotgun|\\bWGS\\b|haplotype")
 
 #' Titles indicating an organellar (non-nuclear) record.
 #' @noRd
