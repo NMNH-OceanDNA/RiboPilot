@@ -338,6 +338,9 @@ screen_sample <- function(con, id, force = FALSE) {
     params = list(id))
   for (i in seq_len(nrow(u))) screen_one(con, id, u$path[i], u$scaffold[i], force = force)
   update_reference_support(con, id)
+  # after the loop, never before: screen_one() rewrites a row with DELETE plus
+  # append, so a variant column written first would be silently wiped
+  screen_variants(con, id)
   invisible(nrow(u))
 }
 

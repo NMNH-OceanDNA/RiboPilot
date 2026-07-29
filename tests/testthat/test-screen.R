@@ -282,15 +282,20 @@ mk_screen_db <- function() {
   DBI::dbExecute(con, RiboPilot:::SCREEN_DDL)
   DBI::dbExecute(con, RiboPilot:::BLAST_HITS_DDL)
   DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT, lineage_taxids TEXT, reference_support INT)")
-  DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT)")
+  # sequence/length are in the base assemblies DDL and the variant pass reads
+  # them, so the fixture must carry them or it tests a schema that cannot exist
+  DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT,
+    sequence TEXT, length INT)")
+  DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT,
+    element TEXT, start INT, stop INT, strand TEXT)")
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S1',?,NULL)", params = list(FISH_T))
-  DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',1,1)")
-  DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',1,2)")
+  DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',1,1,NULL,NULL)")
+  DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',1,2,NULL,NULL)")
   # a second sample, present so per-sample driver calls can be pinned as scoped
   # to their own sample rather than accidentally scanning the whole project
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S2',?,NULL)", params = list(FISH_T))
-  DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S2',1,1)")
-  DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S2',1,2)")
+  DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S2',1,1,NULL,NULL)")
+  DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S2',1,2,NULL,NULL)")
   con
 }
 add_hits <- function(con, scaf, tax, n = 3, bs = 900,
@@ -389,7 +394,7 @@ test_that("screen_sample touches only its own sample, not the whole project", {
   # scaffold) tuple S1 has none of -- so an unfiltered query cannot land on
   # the right rows by re-iterating a shared shape.
   con <- mk_screen_db(); on.exit(DBI::dbDisconnect(con))
-  DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S2',2,5)")
+  DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S2',2,5,NULL,NULL)")
   add_hits(con, 1, FISH_T, id = "S1")
   add_hits(con, 2, FISH_T, id = "S1")
   add_hits(con, 1, FISH_T, id = "S2")

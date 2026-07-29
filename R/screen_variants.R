@@ -23,6 +23,14 @@
 #' @noRd
 SCREEN_ANCHOR_ELEMENTS <- c("18S", "5.8S", "28S")
 
+#' Separator introducing the variant clause inside `screen_reason`.
+#'
+#' The clause is appended to the verdict's own reason rather than given a column
+#' of its own, so everything from this token onward is stripped before a rewrite:
+#' a rerun must not stack duplicates.
+#' @noRd
+VARIANT_REASON_SEP <- " | variant: "
+
 #' Percent identity between two anchor strings
 #'
 #' Identical strings short-circuit to 100 rather than aligning. That is the
@@ -167,4 +175,108 @@ screen_anchor_string <- function(seq, ann) {
       character(1), USE.NAMES = FALSE)
   }
   paste(parts, collapse = "")
+}
+
+#' The curator-facing sentence for one unit's variant finding
+#' @noRd
+screen_variant_clause <- function(cls, group, identity, len_delta) {
+  if (is.na(cls)) return(NA_character_)
+  if (identical(cls, "singleton")) {
+    return("singleton, the sample's only comparable on-target unit")
+  }
+  head <- sprintf("%s, group %s", cls, group)
+  if (is.na(identity)) {
+    return(paste0(head, ", this is the group representative"))
+  }
+  # the measured identity always prints, so a curator sees the number rather
+  # than only the label
+  paste0(head, sprintf(
+    ", anchors %.2f percent identical to the group representative", identity),
+    if (is.na(len_delta)) "" else sprintf(", total length differs by %d bp", len_delta))
+}
+
+#' Strip any previous variant clause from a stored reason
+#' @noRd
+screen_reason_base <- function(reason) {
+  if (is.na(reason)) return(NA_character_)
+  sub(paste0(VARIANT_REASON_SEP, ".*$"), "", reason)
+}
+
+#' Classify one sample's on-target units as isomers, paralogs or a singleton
+#'
+#' Runs AFTER the per-unit loop in [screen_sample()], never before: [screen_one()]
+#' rewrites a row with DELETE + append, so a variant column written first would
+#' be silently wiped. Writes with UPDATE for the same reason, so the pass cannot
+#' destroy the verdict columns screen_one() owns.
+#'
+#' Only `on_target` units are compared; everything else is a contamination
+#' question the screen already owns, and a unit that has changed verdict has any
+#' stale finding cleared.
+#'
+#' No version guard: the only caller is the per-sample `screen` pipeline process,
+#' once per run, and identical anchors short-circuit without aligning.
+#' @param con Open project DB connection.
+#' @param id Sample ID.
+#' @return (invisibly) the number of units given a variant class.
+#' @noRd
+screen_variants <- function(con, id) {
+  u <- DBI::dbGetQuery(con,
+    "SELECT s.path, s.scaffold, s.screen_verdict, s.screen_reason, s.variant_class,
+            a.sequence, a.length
+       FROM screen s
+       LEFT JOIN assemblies a
+         ON a.ID = s.ID AND a.path = s.path AND a.scaffold = s.scaffold
+      WHERE s.ID = ? ORDER BY s.path, s.scaffold", params = list(id))
+  if (nrow(u) == 0) return(invisible(0L))
+
+  keep <- !is.na(u$screen_verdict) & u$screen_verdict == "on_target"
+  # a unit that is no longer on_target must not keep a stale finding
+  for (i in which(!keep)) {
+    DBI::dbExecute(con,
+      "UPDATE screen SET variant_class = NULL, variant_group = NULL,
+         variant_identity = NULL, screen_reason = ?
+       WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = list(screen_reason_base(u$screen_reason[i]), id, u$path[i], u$scaffold[i]))
+  }
+  ui <- which(keep)
+  if (!length(ui)) return(invisible(0L))
+
+  anchors <- vapply(ui, function(i) {
+    ann <- DBI::dbGetQuery(con,
+      "SELECT element, start, stop, strand FROM annotations
+        WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = list(id, u$path[i], u$scaffold[i]))
+    screen_anchor_string(u$sequence[i], ann)
+  }, character(1), USE.NAMES = FALSE)
+
+  len <- as.integer(u$length[ui])
+  # fall back to the stored sequence when assemblies.length is unset, so a
+  # missing column cannot make every unit tie and scramble the representative
+  nolen <- is.na(len)
+  if (any(nolen)) len[nolen] <- nchar(u$sequence[ui][nolen])
+
+  min_pid <- screen_params(con, id)$min_isomer_anchor_pid %||%
+    SCREEN_PARAMS_DEFAULT$min_isomer_anchor_pid
+  g <- screen_variant_groups(data.frame(
+    key = sprintf("%d.%d", u$path[ui], u$scaffold[ui]),
+    anchor = anchors, total_length = len, stringsAsFactors = FALSE), min_pid)
+
+  n <- 0L
+  for (j in seq_along(ui)) {
+    i <- ui[j]
+    clause <- screen_variant_clause(g$variant_class[j], g$variant_group[j],
+      g$variant_identity[j], g$len_delta[j])
+    base <- screen_reason_base(u$screen_reason[i])
+    reason <- if (is.na(clause)) base else {
+      paste0(base %|NA|% "", VARIANT_REASON_SEP, clause)
+    }
+    DBI::dbExecute(con,
+      "UPDATE screen SET variant_class = ?, variant_group = ?, variant_identity = ?,
+         screen_reason = ?
+       WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = list(g$variant_class[j], g$variant_group[j],
+        round(g$variant_identity[j], 2), reason, id, u$path[i], u$scaffold[i]))
+    if (!is.na(g$variant_class[j])) n <- n + 1L
+  }
+  invisible(n)
 }

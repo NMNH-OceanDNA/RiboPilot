@@ -193,3 +193,189 @@ test_that("a chained group still forms and the spread stays visible", {
   expect_equal(length(unique(g$variant_group)), 1L)
   expect_false(anyNA(g$variant_identity[g$key != "u1"]))
 })
+
+# --- the per-sample DB pass ---
+
+FISH_T <- "33208;7711;186623;7952;2743709;7954;7955"
+FUNGI_T <- "4751;4890;147545;5042;1131492;5052;5062"
+FISH_LIN <- "Eukaryota;Chordata;Actinopteri;o;f;g;s"
+FUNGI_LIN <- "Eukaryota;Ascomycota;Sordariomycetes;o;f;g;s"
+
+mk_variant_db <- function() {
+  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+  DBI::dbExecute(con, RiboPilot:::SCREEN_DDL)
+  DBI::dbExecute(con, RiboPilot:::BLAST_HITS_DDL)
+  DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT, lineage TEXT, lineage_taxids TEXT,
+    reference_support INT)")
+  DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT,
+    sequence TEXT, length INT)")
+  DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT,
+    element TEXT, start INT, stop INT, strand TEXT)")
+  for (s in c("S1", "S2")) {
+    DBI::dbExecute(con, "INSERT INTO samples VALUES(?,'Metazoa; Chordata; Actinopteri',?,NULL)",
+      params = list(s, FISH_T))
+  }
+  con
+}
+
+# One unit: `anchor` is annotated as 18S at the head, `spacer` bases of
+# unannotated remainder follow, so the anchor string is exactly `anchor` and the
+# total length varies independently of it.
+add_unit <- function(con, scaf, anchor, spacer, tax = FISH_T, lin = FISH_LIN,
+                     id = "S1", annotate = TRUE, strand = "+") {
+  seq <- paste0(anchor, strrep("A", spacer))
+  DBI::dbExecute(con, "INSERT INTO assemblies VALUES(?,1,?,?,?)",
+    params = list(id, scaf, seq, nchar(seq)))
+  if (annotate) {
+    DBI::dbExecute(con, "INSERT INTO annotations VALUES(?,1,?, '18S',1,?,?)",
+      params = list(id, scaf, nchar(anchor), strand))
+  }
+  for (i in 1:3) {
+    DBI::dbExecute(con,
+      "INSERT INTO blast_hits
+         (ID,path,scaffold,hit_rank,hsp,bitscore,lineage_taxids,lineage,hit_class,rank_distance)
+       VALUES (?,1,?,?,1,?,?,?,'rdna',?)",
+      params = list(id, scaf, i, 900 - i, tax, lin,
+        as.integer(RiboPilot:::rank_distance(tax, FISH_T))))
+  }
+}
+
+test_that("two on-target units with near-identical anchors are isomers, both on_target", {
+  # the orthogonality this design turns on: the finding is not a verdict
+  con <- mk_variant_db(); on.exit(DBI::dbDisconnect(con))
+  add_unit(con, 1, A, 2000L)
+  add_unit(con, 2, A1, 200L)
+  screen_sample(con, "S1")
+  r <- DBI::dbGetQuery(con, "SELECT * FROM screen WHERE ID='S1' ORDER BY scaffold")
+  expect_equal(r$screen_verdict, c("on_target", "on_target"))
+  expect_equal(r$variant_class, c("isomer", "isomer"))
+  expect_equal(length(unique(r$variant_group)), 1L)
+})
+
+test_that("a paralogous unit stays on_target", {
+  con <- mk_variant_db(); on.exit(DBI::dbDisconnect(con))
+  add_unit(con, 1, A, 2000L)
+  add_unit(con, 2, B, 2000L)
+  screen_sample(con, "S1")
+  r <- DBI::dbGetQuery(con, "SELECT * FROM screen WHERE ID='S1' ORDER BY scaffold")
+  expect_equal(r$screen_verdict, c("on_target", "on_target"))
+  expect_equal(r$variant_class, c("paralog", "paralog"))
+  expect_equal(length(unique(r$variant_group)), 2L)
+})
+
+test_that("an off_target unit is never compared and its variant columns stay NA", {
+  con <- mk_variant_db(); on.exit(DBI::dbDisconnect(con))
+  add_unit(con, 1, A, 2000L)
+  add_unit(con, 2, A, 200L, tax = FUNGI_T, lin = FUNGI_LIN)
+  screen_sample(con, "S1")
+  r <- DBI::dbGetQuery(con, "SELECT * FROM screen WHERE ID='S1' ORDER BY scaffold")
+  expect_equal(r$screen_verdict[2], "off_target")
+  expect_true(is.na(r$variant_class[2]))
+  expect_true(is.na(r$variant_group[2]))
+  # and the surviving unit is a singleton, not half of an isomer pair
+  expect_equal(r$variant_class[1], "singleton")
+})
+
+test_that("a unit whose anchors are unannotated is NA, not singleton", {
+  con <- mk_variant_db(); on.exit(DBI::dbDisconnect(con))
+  add_unit(con, 1, A, 2000L)
+  add_unit(con, 2, A, 2000L, annotate = FALSE)
+  screen_sample(con, "S1")
+  r <- DBI::dbGetQuery(con, "SELECT * FROM screen WHERE ID='S1' ORDER BY scaffold")
+  expect_equal(r$screen_verdict[2], "on_target")
+  expect_true(is.na(r$variant_class[2]))
+  expect_equal(r$variant_class[1], "singleton")
+})
+
+test_that("the measured identity appears in the reason string", {
+  con <- mk_variant_db(); on.exit(DBI::dbDisconnect(con))
+  add_unit(con, 1, A, 2000L)
+  add_unit(con, 2, A1, 200L)
+  screen_sample(con, "S1")
+  r <- DBI::dbGetQuery(con, "SELECT screen_reason FROM screen WHERE scaffold=2")
+  expect_match(r$screen_reason, "variant: isomer", fixed = TRUE)
+  expect_match(r$screen_reason, "99\\.[0-9]+ percent")
+  expect_match(r$screen_reason, "total length differs by 1800 bp", fixed = TRUE)
+  # the verdict's own evidence survives beside it
+  expect_match(r$screen_reason, "confidence", fixed = TRUE)
+})
+
+test_that("rerunning does not stack duplicate variant clauses", {
+  con <- mk_variant_db(); on.exit(DBI::dbDisconnect(con))
+  add_unit(con, 1, A, 2000L)
+  add_unit(con, 2, A1, 200L)
+  screen_sample(con, "S1")
+  screen_sample(con, "S1", force = TRUE)
+  screen_sample(con, "S1", force = TRUE)
+  r <- DBI::dbGetQuery(con, "SELECT screen_reason FROM screen WHERE scaffold=2")
+  expect_equal(lengths(regmatches(r$screen_reason,
+    gregexpr("variant:", r$screen_reason, fixed = TRUE))), 1L)
+})
+
+test_that("a unit that turns off_target loses its stale variant finding", {
+  con <- mk_variant_db(); on.exit(DBI::dbDisconnect(con))
+  add_unit(con, 1, A, 2000L)
+  add_unit(con, 2, A1, 200L)
+  screen_sample(con, "S1")
+  expect_equal(DBI::dbGetQuery(con,
+    "SELECT variant_class v FROM screen WHERE scaffold=2")$v, "isomer")
+  # the evidence changes: this unit is now a fungal contaminant
+  DBI::dbExecute(con, "DELETE FROM blast_hits WHERE scaffold=2")
+  for (i in 1:3) {
+    DBI::dbExecute(con,
+      "INSERT INTO blast_hits
+         (ID,path,scaffold,hit_rank,hsp,bitscore,lineage_taxids,lineage,hit_class)
+       VALUES ('S1',1,2,?,1,?,?,?,'rdna')",
+      params = list(i, 900 - i, FUNGI_T, FUNGI_LIN))
+  }
+  screen_sample(con, "S1", force = TRUE)
+  r <- DBI::dbGetQuery(con, "SELECT * FROM screen WHERE scaffold=2")
+  expect_equal(r$screen_verdict, "off_target")
+  expect_true(is.na(r$variant_class))
+  expect_false(grepl("variant:", r$screen_reason, fixed = TRUE))
+})
+
+test_that("the variant pass touches only its own sample", {
+  con <- mk_variant_db(); on.exit(DBI::dbDisconnect(con))
+  add_unit(con, 1, A, 2000L)
+  add_unit(con, 2, A1, 200L)
+  # asymmetric on purpose: S2 is a paralog pair, so a leaked write would be
+  # visible as the wrong class rather than coincidentally correct
+  add_unit(con, 1, A, 500L, id = "S2")
+  add_unit(con, 2, B, 500L, id = "S2")
+  screen_sample(con, "S1")
+  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM screen WHERE ID='S2'")$n, 0L)
+  screen_sample(con, "S2")
+  expect_equal(DBI::dbGetQuery(con,
+    "SELECT variant_class v FROM screen WHERE ID='S2' ORDER BY scaffold")$v,
+    c("paralog", "paralog"))
+  expect_equal(DBI::dbGetQuery(con,
+    "SELECT variant_class v FROM screen WHERE ID='S1' ORDER BY scaffold")$v,
+    c("isomer", "isomer"))
+})
+
+test_that("SCREEN_VERSION at 3 forces a v2 row to recompute and gain a class", {
+  con <- mk_variant_db(); on.exit(DBI::dbDisconnect(con))
+  add_unit(con, 1, A, 2000L)
+  add_unit(con, 2, A1, 200L)
+  DBI::dbExecute(con,
+    "INSERT INTO screen (ID,path,scaffold,screen_verdict,screen_version)
+     VALUES ('S1',1,1,'on_target',2)")
+  screen_sample(con, "S1")
+  r <- DBI::dbGetQuery(con, "SELECT screen_version, variant_class FROM screen WHERE scaffold=1")
+  expect_equal(r$screen_version, 3L)
+  expect_equal(r$variant_class, "isomer")
+})
+
+test_that("a sample with one on-target unit is a singleton, not NA", {
+  con <- mk_variant_db(); on.exit(DBI::dbDisconnect(con))
+  add_unit(con, 1, A, 2000L)
+  screen_sample(con, "S1")
+  r <- DBI::dbGetQuery(con, "SELECT variant_class, variant_group, variant_identity
+    FROM screen WHERE scaffold=1")
+  expect_equal(r$variant_class, "singleton")
+  expect_equal(r$variant_group, "g1")
+  expect_true(is.na(r$variant_identity))
+  expect_match(DBI::dbGetQuery(con, "SELECT screen_reason r FROM screen WHERE scaffold=1")$r,
+    "variant: singleton", fixed = TRUE)
+})
