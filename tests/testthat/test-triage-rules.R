@@ -190,6 +190,20 @@ test_that("the screen rule fires only on an off_target verdict", {
   }
 })
 
+test_that("the screen rule claims a scaffold before the sibling rule sees it", {
+  # a single contaminant scaffold in an otherwise-coherent sample satisfies
+  # BOTH conditions at once: off_target AND the odd one out among its
+  # siblings. First-match-wins means registry order decides who claims it;
+  # the disjoint fixtures elsewhere never pin that ordering.
+  d <- RiboPilot:::triage_rules(us(
+    list(feats = 5, nuc = 1, sp = "Danio rerio", tx = FISH_T),
+    list(feats = 5, nuc = 1, sp = "Danio rerio", tx = FISH_T),
+    list(feats = 5, nuc = 1, sp = "Danio rerio", tx = FISH_T),
+    list(feats = 5, nuc = 1, sp = "Cyclops sp.", tx = COPE_T, screen = "off_target")))
+  expect_equal(d$new_rule[4], "screen_off_target")
+  expect_true(is.na(d$new_triage[4]))          # ships as flag, not drop
+})
+
 test_that("the screen rule sits after the combination rules and before odd_one_out", {
   k <- RiboPilot:::triage_rule_keys()
   expect_equal(k[length(k) - 1], "screen_off_target")
