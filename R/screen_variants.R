@@ -199,7 +199,10 @@ screen_variant_clause <- function(cls, group, identity, len_delta) {
 #' @noRd
 screen_reason_base <- function(reason) {
   if (is.na(reason)) return(NA_character_)
-  sub(paste0(VARIANT_REASON_SEP, ".*$"), "", reason)
+  # fixed match, never a regex: the separator contains '|', which as a pattern is
+  # alternation and matches a bare space anywhere in the verdict's own reason
+  i <- regexpr(VARIANT_REASON_SEP, reason, fixed = TRUE)[1]
+  if (i > 0) substr(reason, 1, i - 1) else reason
 }
 
 #' Classify one sample's on-target units as isomers, paralogs or a singleton

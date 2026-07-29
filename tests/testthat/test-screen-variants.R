@@ -304,12 +304,52 @@ test_that("rerunning does not stack duplicate variant clauses", {
   con <- mk_variant_db(); on.exit(DBI::dbDisconnect(con))
   add_unit(con, 1, A, 2000L)
   add_unit(con, 2, A1, 200L)
+  # NOT force = TRUE: a forced rerun makes screen_one rewrite a fresh reason, so
+  # the strip is never exercised. Unforced, the rows are already current and
+  # screen_one skips them, so the variant pass appends onto its own last clause.
   screen_sample(con, "S1")
-  screen_sample(con, "S1", force = TRUE)
-  screen_sample(con, "S1", force = TRUE)
+  screen_sample(con, "S1")
+  screen_sample(con, "S1")
   r <- DBI::dbGetQuery(con, "SELECT screen_reason FROM screen WHERE scaffold=2")
   expect_equal(lengths(regmatches(r$screen_reason,
     gregexpr("variant:", r$screen_reason, fixed = TRUE))), 1L)
+  expect_match(r$screen_reason, "confidence", fixed = TRUE)
+})
+
+test_that("the measured identity is stored in variant_identity, not only in the reason", {
+  con <- mk_variant_db(); on.exit(DBI::dbDisconnect(con))
+  add_unit(con, 1, A, 2000L)
+  add_unit(con, 2, A1, 200L)
+  screen_sample(con, "S1")
+  r <- DBI::dbGetQuery(con,
+    "SELECT scaffold, variant_identity FROM screen WHERE ID='S1' ORDER BY scaffold")
+  # scaffold 1 is the longer unit and so the group representative
+  expect_true(is.na(r$variant_identity[1]))
+  expect_false(is.na(r$variant_identity[2]))
+  expect_gt(r$variant_identity[2], 99.5)
+  expect_lte(r$variant_identity[2], 100)
+})
+
+test_that("screen_variants clears a stale finding left on a non-on_target unit", {
+  # exercises the guard directly: reached through screen_sample() the DELETE plus
+  # append in screen_one() would already have wiped the columns, so this is the
+  # only way to pin that screen_variants() does not leave a contaminant looking
+  # like an intragenomic variant
+  con <- mk_variant_db(); on.exit(DBI::dbDisconnect(con))
+  add_unit(con, 1, A, 2000L)
+  DBI::dbExecute(con,
+    "INSERT INTO screen (ID,path,scaffold,screen_verdict,screen_version,screen_reason,
+       variant_class,variant_group,variant_identity)
+     VALUES ('S1',1,2,'off_target',3,'hits agree on Fusarium | variant: isomer, group g1',
+       'isomer','g1',99.9)")
+  RiboPilot:::screen_variants(con, "S1")
+  r <- DBI::dbGetQuery(con, "SELECT * FROM screen WHERE scaffold=2")
+  expect_true(is.na(r$variant_class))
+  expect_true(is.na(r$variant_group))
+  expect_true(is.na(r$variant_identity))
+  # the verdict's own reason survives; only the variant clause goes
+  expect_equal(r$screen_reason, "hits agree on Fusarium")
+  expect_equal(r$screen_verdict, "off_target")
 })
 
 test_that("a unit that turns off_target loses its stale variant finding", {
