@@ -42,3 +42,34 @@ classify_hit_title <- function(title) {
   out[!nzchar(t)] <- "uninformative"
   out
 }
+
+#' Decide a unit's nuclear-rDNA flag from its hit distribution
+#'
+#' Votes over hits within 10 percent of the top bitscore, taking at least three
+#' where that many exist, which is the same defence against one mislabelled
+#' GenBank accession that [bitscore_weighted_lca()] uses. Uninformative hits are
+#' dropped from the vote rather than counted against rDNA.
+#'
+#' @param hit_class Character vector of [HIT_CLASSES].
+#' @param bitscore Numeric vector, same length.
+#' @return `1L` (nuclear rDNA), `0L` (not), or `NA_integer_` when no hit is
+#'   informative.
+#' @noRd
+consensus_hit_class <- function(hit_class, bitscore) {
+  hc <- as.character(hit_class)
+  bs <- suppressWarnings(as.numeric(bitscore))
+  ok <- !is.na(hc) & !is.na(bs)
+  hc <- hc[ok]; bs <- bs[ok]
+  if (length(bs) == 0) return(NA_integer_)
+  sel <- bs >= 0.9 * max(bs)
+  if (sum(sel) < 3L) {
+    sel <- seq_along(bs) %in% order(bs, decreasing = TRUE)[seq_len(min(3L, length(bs)))]
+  }
+  hc <- hc[sel]; bs <- bs[sel]
+  keep <- hc %in% c("rdna", "other")
+  if (!any(keep)) return(NA_integer_)
+  hc <- hc[keep]; bs <- bs[keep]
+  # tie resolves to rdna: a false 0 raises a spurious triage flag, a false 1
+  # only fails to raise one
+  if (sum(bs[hc == "rdna"]) >= sum(bs[hc == "other"])) 1L else 0L
+}
