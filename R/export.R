@@ -254,6 +254,7 @@ export_summary_df <- function(con, units) {
        JOIN annotate an ON an.ID = s.ID AND an.path = ? AND an.scaffold = ?
        JOIN assemblies asm ON asm.ID = s.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
        WHERE s.ID = ?", params = list(u$path, u$scaffold, u$ID))
+    v <- unit_variant_facts(con, u$ID, u$path, u$scaffold)
     data.frame(seqid = u$seqid, ID = u$ID, path = u$path, scaffold = u$scaffold,
       organism = if (nrow(m)) m$organism[1] else NA_character_,
       length = if (nrow(m)) m$length[1] else NA_integer_,
@@ -262,9 +263,40 @@ export_summary_df <- function(con, units) {
       reviewed = if (nrow(m)) m$reviewed[1] else NA_character_,
       partial = if (nrow(m)) m$partial[1] else NA_character_,
       problematic = if (nrow(m)) m$problematic[1] else NA_character_,
+      variant_class = v$variant_class, variant_group = v$variant_group,
+      variant_identity = v$variant_identity, n_variants = v$n_variants,
       submission_risk = submission_risks(con, u$ID, u$path, u$scaffold)$note,
       stringsAsFactors = FALSE)
   }))
+}
+
+#' The intragenomic variant fact for one exported unit
+#'
+#' Records that a unit is one of N intragenomic variants detected in its sample
+#' and the anchor identity between them. It answers doc 08's open question 7
+#' without imposing a submission policy: the fact is recorded, the choice stays
+#' the curator's. Deliberately NOT routed through [submission_risks()] -- a
+#' paralog is real biology, and warning on export is the behaviour this
+#' sub-project exists to remove.
+#'
+#' `n_variants` counts the sample's COMPARABLE on-target units, so it agrees with
+#' what the grouping actually measured rather than with how many units exist.
+#' @noRd
+unit_variant_facts <- function(con, id, path = 1L, scaffold = 1L) {
+  out <- list(variant_class = NA_character_, variant_group = NA_character_,
+    variant_identity = NA_real_, n_variants = NA_integer_)
+  d <- tryCatch(DBI::dbGetQuery(con,
+    "SELECT path, scaffold, variant_class, variant_group, variant_identity
+       FROM screen WHERE ID = ?", params = list(id)),
+    error = function(e) data.frame())
+  if (nrow(d) == 0) return(out)
+  i <- which(d$path == as.integer(path) & d$scaffold == as.integer(scaffold))
+  if (!length(i)) return(out)
+  out$variant_class <- d$variant_class[i[1]]
+  out$variant_group <- d$variant_group[i[1]]
+  out$variant_identity <- d$variant_identity[i[1]]
+  out$n_variants <- sum(!is.na(d$variant_class))
+  out
 }
 
 #' Inline SVG feature-map for one unit (for the HTML report)
