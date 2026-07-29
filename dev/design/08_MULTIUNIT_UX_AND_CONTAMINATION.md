@@ -632,6 +632,24 @@ tools already emit a taxonomic signal per scaffold and the pipeline discards it.
   toward on_target.** Same kingdom returns score 0 with
   `availability = "uninformative"`, distinct from `"unavailable"`.
 
+**Status 2026-07-29: channel (b) is RETIRED, not deferred.** Its stated
+justification here is that it is the only channel working fully offline, and the
+maintainer has confirmed users never run RiboPilot offline. What remains is
+covered elsewhere or is redundant: a bacterial or fungal contaminant is already
+caught by channel (a)'s taxonomy, which this section itself calls "heavily
+correlated" with (b); the prokaryotic call would in any case need corroboration
+"by a prokaryotic taxid path", which is channel (a) again; and a mitochondrial
+assembly is caught offline-independently by `ORGANELLAR_TITLE_RE` in
+`dev/design/10_HIT_CLASSIFICATION.md`. The only case genuinely uncovered is a
+scaffold with zero usable GenBank hits, which the screen already reports
+honestly as `no_reference` rather than guessing.
+
+Two pieces are worth salvaging on their own merits, because the pipeline pays
+for the computation and discards the answer: `parse_barrnap()`'s name map
+(R/annotate.R) recognises only 18S, 5.8S and 28S, so a 16S or 23S call is
+silently dropped; and ITSx writes its winning taxonomic profile to disk while
+`parse_itsx()` reads only the coordinate line.
+
 **(c) Depth**, as a within-sample ratio, never deciding alone.
 
 The intuition is right but the usual arithmetic is wrong by more than an order
