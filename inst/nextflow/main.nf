@@ -13,7 +13,7 @@
 
 include { preprocess } from './modules/preprocess.nf'
 include { assemble } from './modules/assemble.nf'
-include { query_samples; query_sample_units; score; annotate_tools; reconcile; curate; triage } from './modules/pipeline_r.nf'
+include { query_samples; query_sample_units; score; annotate_tools; reconcile; curate; triage; screen } from './modules/pipeline_r.nf'
 include { blast_genbank } from './modules/blast.nf'
 include { blast_ref_fetch; blast_ref_align } from './modules/blast_ref.nf'
 include { coverage } from './modules/coverage.nf'
@@ -80,10 +80,25 @@ workflow {
     blast_ref_align(aln_in)
     curate(blast_ref_align.out)
 
+    // The screen reads only blast_hits, so it hangs off blast_genbank rather
+    // than the curate chain. triage joins on it so a sample is triaged once its
+    // curation is complete and its screen has been ATTEMPTED. remainder: true is
+    // load-bearing: screen carries errorStrategy 'ignore', so an inner join
+    // would drop a fully curated sample whenever its screen or its upstream
+    // BLAST failed, which is the same trap the ref_done sentinel above avoids.
+    screen(blast_genbank.out)
+
     // Propose keep/drop/undecided once ALL of a sample's units are curated, so
     // sibling concordance and the within-sample depth ratio see the full set.
     // groupTuple emits one entry per sample when the upstream channel closes.
     triage(curate.out.map { id, upath, uscaf -> tuple(id, "${upath}.${uscaf}") }
         .groupTuple()
-        .map { id, _units -> id })
+        .map { id, _units -> tuple(id, true) }
+        .join(screen.out.map { id -> tuple(id, true) }, remainder: true)
+        // remainder: true also admits screen-only entries, so a sample with a
+        // screen but no curation would reach triage. Requiring the left side
+        // keeps triage waiting for curation. Both lines are load-bearing:
+        // dropping either one reintroduces a bug the other does not cover.
+        .filter { entry -> entry[1] != null }
+        .map { id, _a, _b -> id })
 }

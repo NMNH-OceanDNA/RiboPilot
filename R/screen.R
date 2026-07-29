@@ -1,0 +1,360 @@
+# The screen's taxonomy channel: does this unit's hit distribution agree on a
+# taxon, and is that taxon the host's.
+#
+# It uses NO identity threshold. The identity envelope was deferred after
+# measurement against the reference project (doc 08 section 3.2.1): that corpus
+# has 2 hits at phylum distance and none beyond, so it cannot calibrate a bound
+# acting there, and genuine host 18S reaches 99.6 percent at class distance, so
+# no ceiling can sit below that without flagging real host data.
+#
+# What this cannot do: separate two metazoans. A copepod and a fish both sit
+# under Metazoa, so concordance against the sample's path says nothing. Doc 08
+# section 3.5 puts those cases in the depth and cross-sample channels.
+
+#' Scoring version. Bump to force a recompute of stored rows.
+#' @noRd
+SCREEN_VERSION <- 2L
+
+#' @noRd
+SCREEN_VERDICTS <- c("on_target", "off_target", "no_reference", "uncertain")
+
+#' @noRd
+SCREEN_CLASSES <- c("bacterial", "archaeal", "fungal", "algal_plant",
+  "other_euk", "metazoan_other", "human")
+
+#' @noRd
+SCREEN_NO_REF_CODES <- c("no_hits", "no_taxdump", "unresolved_sample_lineage",
+  "unresolved_hit_lineages")
+
+#' Confidence weights.
+#'
+#' Priors, not measurements, which is why the screen rule ships as Flag rather
+#' than Drop. Any change here must bump [SCREEN_VERSION].
+#' @noRd
+SCREEN_WEIGHTS <- list(support = 0.30, resolution = 0.30, separation = 0.40)
+
+#' Confidence below which a verdict is recorded as uncertain.
+#' @noRd
+SCREEN_MIN_CONFIDENCE <- 0.6
+
+#' Depth of a resolved rank, 0 (nothing) to 1 (species)
+#' @noRd
+screen_rank_depth <- function(rank) {
+  if (length(rank) == 0 || is.na(rank[1])) return(0)
+  i <- match(rank[1], RRNA_LINEAGE_RANKS)
+  if (is.na(i)) 0 else i / length(RRNA_LINEAGE_RANKS)
+}
+
+#' The three confidence terms and their weighted mean
+#'
+#' `unanimous` means every surviving hit fell on one side of the concordance
+#' test, so there is no opposing hit to measure a margin against. That is
+#' MAXIMAL separation, not absent separation: a unit whose hits all agree with
+#' the host is the cleanest case there is, and scoring it 0 would put the
+#' cleanest possible scaffold below the uncertainty gate.
+#'
+#' It is also worth 0.40 of the 0.60 gate on its own, which is why the caller
+#' only claims it for at least three DISTINCT accessions: two rows agreeing at
+#' species rank would otherwise clear the gate at 0.76 on nothing else.
+#' @noRd
+screen_confidence_terms <- function(lca_n_hits, lca_rank, margin, top_bitscore,
+                                    unanimous = FALSE) {
+  support <- min(1, (lca_n_hits %||% 0) / 10)
+  resolution <- screen_rank_depth(lca_rank)
+  separation <- if (isTRUE(unanimous)) {
+    1
+  } else if (is.na(margin %|NA|% NA) || is.na(top_bitscore %|NA|% NA) ||
+             !isTRUE(top_bitscore > 0)) {
+    0
+  } else {
+    min(1, abs(margin) / top_bitscore)
+  }
+  w <- SCREEN_WEIGHTS
+  list(support = support, resolution = resolution, separation = separation,
+    confidence = unname(support * w$support + resolution * w$resolution +
+      separation * w$separation))
+}
+
+#' Well-known kingdom/domain-rank taxids, stable across taxdump versions.
+#'
+#' Classification keys off the taxid rather than the kingdom-rank NAME:
+#' taxids are immune to synonyms, homonyms and defline formatting, exactly the
+#' reason [rank_distance()] compares taxids and treats names as display-only.
+#' @noRd
+SCREEN_KINGDOM_TAXIDS <- c("2" = "bacterial", "2157" = "archaeal",
+  "4751" = "fungal", "33090" = "algal_plant", "33208" = "metazoan_other")
+
+#' Off-target subclass from the LCA's rank-aligned taxid path and its taxon label
+#'
+#' Matches the WHOLE path rather than a single rank slot: whether taxonkit's
+#' `{K}` emits superkingdom or kingdom decides whether Bacteria/Archaea or
+#' Fungi/Viridiplantae/Metazoa lands in slot 1, and this codebase disagrees
+#' with itself about which (doc 08 line 510 vs taxonomy_ranks.R:24). Matching
+#' the whole path is correct under either reading.
+#' @param lca_taxids Rank-aligned taxid path of the LCA (";"-joined string or
+#'   integer vector from [parse_rank_taxids()]).
+#' @param lca_taxon The LCA's own taxon label (used only for the human check).
+#' @noRd
+screen_class_for <- function(lca_taxids, lca_taxon) {
+  if (isTRUE(tolower(lca_taxon %|NA|% "") == "homo sapiens")) return("human")
+  p <- if (is.character(lca_taxids)) parse_rank_taxids(lca_taxids) else lca_taxids
+  p <- p[!is.na(p)]
+  if (!length(p)) return(NA_character_)
+  # most specific first: a metazoan path also contains Eukaryota, and slot 1
+  # may be superkingdom or kingdom depending on the taxdump
+  for (k in c("4751", "33090", "33208", "2", "2157")) {
+    if (as.integer(k) %in% p) return(unname(SCREEN_KINGDOM_TAXIDS[k]))
+  }
+  "other_euk"
+}
+
+#' One vote per accession: the best-bitscore HSP of each subject
+#'
+#' `blast_hits` stores one row per HSP and blastn runs with `-max_hsps 5`, so a
+#' single accession can otherwise cast up to five votes and alone satisfy both
+#' [bitscore_weighted_lca()]'s `min_hits` and the unanimity floor.
+#' `parse_blast_candidates()` assigns `hit_rank` per subject, so one `hit_rank`
+#' is one accession; a frame without the column is already one row per subject.
+#' @noRd
+screen_one_vote_per_subject <- function(hits) {
+  if (is.null(hits) || nrow(hits) == 0) return(hits)
+  hr <- if (!is.null(hits$hit_rank)) as.integer(hits$hit_rank) else seq_len(nrow(hits))
+  # an unranked row cannot be pooled with any other, so give it its own key
+  if (any(is.na(hr))) hr[is.na(hr)] <- -seq_len(sum(is.na(hr)))
+  bs <- hits$bitscore %||% rep(NA_real_, nrow(hits))
+  bs[is.na(bs)] <- -Inf
+  ord <- order(hr, -bs)
+  hits[ord, , drop = FALSE][!duplicated(hr[ord]), , drop = FALSE]
+}
+
+#' Largest value, or NA for an empty or all-NA vector
+#'
+#' `max(na.rm = TRUE)` over an all-NA side returns -Inf and warns into the
+#' pipeline log, which would make the margin infinite and force separation to 1.
+#' @noRd
+screen_max <- function(x) {
+  x <- x[!is.na(x)]
+  if (length(x)) max(x) else NA_real_
+}
+
+#' Score one unit's hit distribution against its sample's lineage
+#'
+#' @param hits Frame with `hit_class`, `bitscore`, `lineage_taxids`, `lineage`
+#'   and optionally `hit_rank` (one rank per subject accession).
+#' @param sample_taxids The sample's rank-aligned taxid path.
+#' @return list(verdict, class, confidence, reason, reason_code, terms,
+#'   lca_taxid, lca_taxon, lca_rank, lca_n_hits, host_concordant, margin).
+#' @noRd
+screen_channel_taxonomy <- function(hits, sample_taxids) {
+  out <- list(verdict = "no_reference", class = NA_character_, confidence = 0,
+    reason = NA_character_, reason_code = "no_hits",
+    terms = list(support = 0, resolution = 0, separation = 0),
+    lca_taxid = NA_integer_, lca_taxon = NA_character_, lca_rank = NA_character_,
+    lca_n_hits = 0L, host_concordant = NA_integer_, margin = NA_real_)
+
+  samp <- parse_rank_taxids(sample_taxids %||% NA_character_)
+  # concordance is tested at phylum rank or deeper, so a path resolved only at
+  # the shallowest slot leaves nothing to compare. That is missing evidence, not
+  # contrary evidence: read as discordant it makes every hit unanimous and
+  # scores clean host data off_target.
+  samp_ok <- samp[-1]
+  samp_ok <- samp_ok[!is.na(samp_ok)]
+  if (!length(samp_ok)) {
+    out$reason_code <- "unresolved_sample_lineage"
+    out$reason <- "the sample's own lineage is unresolved below the shallowest rank"
+    return(out)
+  }
+  if (is.null(hits) || nrow(hits) == 0) {
+    out$reason <- "no GenBank hits are stored for this scaffold"
+    return(out)
+  }
+  hits <- screen_one_vote_per_subject(hits)
+
+  # uncultured/environmental records carry their junk label at the deepest
+  # FILLED rank (taxonkit still writes it into the species slot), which every
+  # rank rule would otherwise read as a real species; a merely blank rank
+  # (nothing filled in yet) is normal and must not be excluded on that basis
+  # alone, so the check looks at the deepest non-empty raw field, not at
+  # whichever rank position happens to be blank.
+  deepest_raw <- vapply(hits$lineage, function(x) {
+    f <- trimws(strsplit(x %|NA|% "", ";", fixed = TRUE)[[1]])
+    f <- f[nzchar(f)]
+    if (length(f) == 0) NA_character_ else f[length(f)]
+  }, character(1), USE.NAMES = FALSE)
+  keep <- hits$hit_class %in% "rdna" & !is.na(deepest_raw) & !is_placeholder_taxon(deepest_raw)
+  h <- hits[keep, , drop = FALSE]
+  if (nrow(h) == 0) {
+    out$reason_code <- "unresolved_hit_lineages"
+    out$reason <- "no hit resolved to a usable lineage"
+    return(out)
+  }
+
+  lca <- bitscore_weighted_lca(h$lineage_taxids, h$bitscore, h$lineage)
+  if (is.na(lca$taxid)) {
+    out$reason_code <- "unresolved_hit_lineages"
+    out$reason <- "the hits agree on no shared taxon"
+    out$lca_n_hits <- lca$n_hits
+    return(out)
+  }
+  out$lca_taxid <- lca$taxid; out$lca_taxon <- lca$taxon
+  out$lca_rank <- lca$rank;  out$lca_n_hits <- lca$n_hits
+
+  # host_concordant asks about the unit's SINGLE weighted LCA: does that one
+  # taxon sit on the sample's path at phylum rank or deeper. The LCA's own
+  # ancestry is the prefix of any hit that voted for it, truncated at its rank.
+  #
+  # It must not test `lca$taxid %in% samp` alone. That is the too-strict rule
+  # the margin already discarded: three hits of one congener put the LCA at the
+  # congener's species, which is absent from the sample's path, so a clean unit
+  # scores off_target. It fires hardest on under-described taxa.
+  lca_pos <- match(lca$rank, RRNA_LINEAGE_RANKS)
+  hit_paths <- lapply(h$lineage_taxids, parse_rank_taxids)
+  donor <- Find(function(p) isTRUE(p[lca_pos] == lca$taxid), hit_paths)
+  lca_path <- if (is.null(donor)) integer(0) else donor[seq_len(lca_pos)][-1]
+  lca_path <- lca_path[!is.na(lca_path)]
+  out$host_concordant <- as.integer(any(lca_path %in% samp_ok))
+
+  # the margin uses a SECOND, per-hit concordance, distinct from the unit-level
+  # one above: it compares the two best-supported opposing hits, asking the same
+  # question of each hit individually rather than of the single LCA.
+  # a hit is on the sample's lineage when their paths share a resolved taxid at
+  # PHYLUM or deeper. Sharing only the shallowest slot means "both are animals",
+  # which every metazoan contaminant satisfies: three host hits plus two from a
+  # different phylum would otherwise read as unanimous and score on_target.
+  hit_conc <- vapply(hit_paths, function(p) {
+    p <- p[-1]
+    any(p[!is.na(p)] %in% samp_ok)
+  }, logical(1), USE.NAMES = FALSE)
+  out$margin <- screen_max(h$bitscore[hit_conc]) - screen_max(h$bitscore[!hit_conc])
+
+  # every surviving hit on one side means nothing opposes the winner, which is
+  # maximal separation rather than missing separation. The floor is three
+  # DISTINCT accessions, matching bitscore_weighted_lca()'s own min_hits: one
+  # row is unopposed by definition, and two rows agreeing at species rank would
+  # clear the 0.60 gate at 0.76 on unanimity alone.
+  unanimous <- (all(hit_conc) || !any(hit_conc)) && lca$n_hits >= 3
+  top_bitscore <- screen_max(h$bitscore)
+  tm <- screen_confidence_terms(lca$n_hits, lca$rank, out$margin,
+    top_bitscore, unanimous = unanimous)
+  out$terms <- tm[c("support", "resolution", "separation")]
+  out$confidence <- tm$confidence
+  out$reason_code <- NA_character_
+
+  out$verdict <- if (tm$confidence < SCREEN_MIN_CONFIDENCE) {
+    "uncertain"
+  } else if (identical(out$host_concordant, 1L)) {
+    "on_target"
+  } else {
+    "off_target"
+  }
+  if (identical(out$verdict, "off_target")) {
+    # the best-supported surviving hit, not whichever row the query returned
+    # first; and the whole path, not one rank slot: see screen_class_for()
+    bs <- h$bitscore
+    bs[is.na(bs)] <- -Inf
+    out$class <- screen_class_for(h$lineage_taxids[which.max(bs)], lca$taxon)
+  }
+  out$reason <- sprintf(
+    "hits agree on %s (%s, %d voting); %s the sample's lineage. support %.2f w %.2f, resolution %.2f w %.2f, separation %.2f w %.2f -> confidence %.2f",
+    lca$taxon %|NA|% "an unnamed taxon", lca$rank, lca$n_hits,
+    if (identical(out$host_concordant, 1L)) "on" else "NOT on",
+    tm$support, SCREEN_WEIGHTS$support, tm$resolution, SCREEN_WEIGHTS$resolution,
+    tm$separation, SCREEN_WEIGHTS$separation, tm$confidence)
+  out
+}
+
+#' Score and store one unit's screen verdict
+#'
+#' Skips a row already stored at the current [SCREEN_VERSION] unless `force`, so
+#' re-running the pipeline is cheap and a scoring change forces a recompute
+#' without a schema migration.
+#'
+#' A stored `no_reference` is always recomputed: it records missing evidence,
+#' and the evidence routinely arrives later. A unit screened before BLAST ran,
+#' or before the sample's lineage was resolved, would otherwise keep that
+#' verdict for the life of the project.
+#'
+#' @param con Open project DB connection.
+#' @param id,path,scaffold Assembly unit.
+#' @param force Recompute even when the stored row is current.
+#' @return (invisibly) the verdict written, or the stored one when skipped.
+#' @export
+screen_one <- function(con, id, path = 1L, scaffold = 1L, force = FALSE) {
+  path <- as.integer(path); scaffold <- as.integer(scaffold)
+  cur <- DBI::dbGetQuery(con,
+    "SELECT screen_verdict, screen_version FROM screen
+     WHERE ID = ? AND path = ? AND scaffold = ?", params = list(id, path, scaffold))
+  if (!isTRUE(force) && nrow(cur) == 1 &&
+      isTRUE((cur$screen_version[1] %|NA|% -1L) >= SCREEN_VERSION) &&
+      !identical(cur$screen_verdict[1] %|NA|% "", "no_reference")) {
+    return(invisible(cur$screen_verdict[1]))
+  }
+  hits <- DBI::dbGetQuery(con,
+    "SELECT hit_rank, hit_class, bitscore, lineage_taxids, lineage FROM blast_hits
+     WHERE ID = ? AND path = ? AND scaffold = ?
+     ORDER BY hit_rank, hsp", params = list(id, path, scaffold))
+  samp <- tryCatch(DBI::dbGetQuery(con,
+    "SELECT lineage_taxids t FROM samples WHERE ID = ?", params = list(id))$t[1],
+    error = function(e) NA_character_)
+  r <- screen_channel_taxonomy(hits, samp)
+  DBI::dbExecute(con,
+    "DELETE FROM screen WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(id, path, scaffold))
+  DBI::dbAppendTable(con, "screen", data.frame(
+    ID = id, path = path, scaffold = scaffold,
+    screen_verdict = r$verdict, screen_class = r$class,
+    screen_confidence = r$confidence, screen_reason = r$reason,
+    screen_version = SCREEN_VERSION, lca_taxid = r$lca_taxid,
+    lca_taxon = r$lca_taxon, lca_rank = r$lca_rank, lca_n_hits = r$lca_n_hits,
+    host_concordant = r$host_concordant, margin = r$margin,
+    time_stamp = as.integer(Sys.time()), stringsAsFactors = FALSE))
+  invisible(r$verdict)
+}
+
+#' Screen every unit of one sample and refresh its reference support
+#' @param con Open project DB connection.
+#' @param id Sample ID.
+#' @param force Recompute rows already at the current version.
+#' @return (invisibly) the number of units screened.
+#' @export
+screen_sample <- function(con, id, force = FALSE) {
+  u <- DBI::dbGetQuery(con,
+    "SELECT path, scaffold FROM assemblies WHERE ID = ? ORDER BY path, scaffold",
+    params = list(id))
+  for (i in seq_len(nrow(u))) screen_one(con, id, u$path[i], u$scaffold[i], force = force)
+  update_reference_support(con, id)
+  invisible(nrow(u))
+}
+
+#' Refresh a sample's reference support
+#'
+#' The minimum rank distance across the sample's ON-TARGET units only. Computed
+#' from on-target units because a sample whose only resolvable hits belong to a
+#' contaminant would otherwise report excellent support for the wrong organism.
+#'
+#' Recomputed fresh from each hit's `lineage_taxids` against the sample's own
+#' lineage, rather than read from the stored `blast_hits.rank_distance` column:
+#' that column is only ever populated at BLAST time when the sample lineage
+#' was already resolved, and stays NULL for every hit otherwise, which would
+#' silently starve this of a value for exactly the samples still awaiting
+#' taxonomy resolution.
+#' @noRd
+update_reference_support <- function(con, id) {
+  samp <- tryCatch(DBI::dbGetQuery(con,
+    "SELECT lineage_taxids t FROM samples WHERE ID = ?", params = list(id))$t[1],
+    error = function(e) NA_character_)
+  h <- DBI::dbGetQuery(con,
+    "SELECT h.lineage_taxids FROM blast_hits h
+       JOIN screen s ON s.ID = h.ID AND s.path = h.path AND s.scaffold = h.scaffold
+     WHERE h.ID = ? AND s.screen_verdict = 'on_target'", params = list(id))
+  v <- NA_integer_
+  if (nrow(h) > 0 && !is.na(samp %|NA|% NA) && nzchar(samp %|NA|% "")) {
+    d <- vapply(h$lineage_taxids, function(x) {
+      if (is.na(x)) NA_integer_ else as.integer(rank_distance(x, samp))
+    }, integer(1), USE.NAMES = FALSE)
+    if (!all(is.na(d))) v <- min(d, na.rm = TRUE)
+  }
+  DBI::dbExecute(con, "UPDATE samples SET reference_support = ? WHERE ID = ?",
+    params = list(v, id))
+  invisible(v)
+}

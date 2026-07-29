@@ -75,6 +75,18 @@ TRIAGE_RULE_DEFS <- list(
     }
   ),
   list(
+    key = "screen_off_target",
+    label = "GenBank taxonomy disagrees with the sample",
+    meaning = "The scaffold's BLAST hits agree on a taxon that is not on this sample's lineage.",
+    actions = TRIAGE_ACTIONS,
+    default = "flag",
+    test = function(d, i, ctx) {
+      if (!identical(ctx$screen[i], "off_target")) return(NA_character_)
+      sprintf("the scaffold's GenBank hits agree on %s, which does not sit on this sample's lineage",
+        ctx$screen_taxon[i] %|NA|% "another taxon")
+    }
+  ),
+  list(
     key = "odd_one_out",
     label = "Disagrees with sibling scaffolds",
     meaning = "This scaffold's top hit disagrees with the majority of this sample's other scaffolds.",
@@ -142,6 +154,8 @@ triage_rule_ctx <- function(d) {
     n_feat = d$n_features %||% rep(0L, n),
     nuc = nuc,
     sp = ifelse(is.na(sp), "unknown", sp),
+    screen = d$screen_verdict %||% rep(NA_character_, n),
+    screen_taxon = d$lca_taxon %||% rep(NA_character_, n),
     sib = unit_concordance(data.frame(
       screen_taxids = d$screen_taxids %||% rep(NA_character_, n),
       screen_lineage = d$screen_lineage %||% rep(NA_character_, n),

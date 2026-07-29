@@ -461,6 +461,39 @@ All numbers live in `rrna_params()` as a per-clade `screen` sublist, so the
 sparse-GenBank rulesets (R/params_rrna.R:102-104) can widen them. The per-clade
 widening must relax the ITS rule too, not only the envelope tolerance.
 
+#### 3.2.1 Measured against the reference project, 2026-07-29
+
+Before building the envelope, its constants were checked against the only real
+identity data available: 1833 BLAST hits from the ten-sample fish project. Two
+findings, both of which must be respected by any future attempt.
+
+**The corpus cannot calibrate the envelope.** The envelope acts on high identity
+at LARGE rank distance, and the corpus is almost entirely close-range: 12 hits at
+species, 48 genus, 388 family, 211 order, 1172 class, **2 at phylum, and none
+beyond**. There is no data in the band where the envelope would fire.
+
+**The near side rules out a naive ceiling.** Mapping 1110 HSPs onto annotated
+element spans at >= 60% element coverage, maximum identity for GENUINE host hits:
+
+| element | family (d2) | order (d3) | class (d4) |
+|---|---|---|---|
+| 18S | 100.0 | 99.7 | 99.6 |
+| 28S | 99.8 | 99.5 | 98.0 |
+| 5.8S | 99.4 | 100.0 | 99.4 |
+| ITS1 / ITS2 | 83.9 | 87.3 | 83.0 |
+
+Genuine host 18S reaches 99.6% at class distance, so any envelope firing on high
+identity below phylum distance would flag real host data, which is the failure
+section 3.2 says would make the tool useless. Section 3.2 predicts the
+discriminating power concentrates on 28S; measured, even 28S sits at 98.0% at
+class distance. Only ITS shows usable slope, and only 16 HSPs of it were
+observed.
+
+**Constraints for any future envelope:** it must not fire below phylum distance
+for 18S, 28S or 5.8S; ITS is the only element with measured slope; and the
+constants must come from data in the d5-d7 band, which does not yet exist. This
+is why sub-project 3b was built WITHOUT the envelope.
+
 ### 3.3 Taxonomy primitives (prerequisite for everything else)
 
 Every taxonomic comparison in the codebase is built on a lineage string that
@@ -598,6 +631,24 @@ tools already emit a taxonomic signal per scaffold and the pipeline discards it.
   contaminant. So: **tool_kingdom may only ever push toward off_target, never
   toward on_target.** Same kingdom returns score 0 with
   `availability = "uninformative"`, distinct from `"unavailable"`.
+
+**Status 2026-07-29: channel (b) is RETIRED, not deferred.** Its stated
+justification here is that it is the only channel working fully offline, and the
+maintainer has confirmed users never run RiboPilot offline. What remains is
+covered elsewhere or is redundant: a bacterial or fungal contaminant is already
+caught by channel (a)'s taxonomy, which this section itself calls "heavily
+correlated" with (b); the prokaryotic call would in any case need corroboration
+"by a prokaryotic taxid path", which is channel (a) again; and a mitochondrial
+assembly is caught offline-independently by `ORGANELLAR_TITLE_RE` in
+`dev/design/10_HIT_CLASSIFICATION.md`. The only case genuinely uncovered is a
+scaffold with zero usable GenBank hits, which the screen already reports
+honestly as `no_reference` rather than guessing.
+
+Two pieces are worth salvaging on their own merits, because the pipeline pays
+for the computation and discards the answer: `parse_barrnap()`'s name map
+(R/annotate.R) recognises only 18S, 5.8S and 28S, so a 16S or 23S call is
+silently dropped; and ITSx writes its winning taxonomic profile to disk while
+`parse_itsx()` reads only the coordinate line.
 
 **(c) Depth**, as a within-sample ratio, never deciding alone.
 

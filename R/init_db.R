@@ -97,6 +97,7 @@ new_db <- function(
       taxonomy_switch = 1L,
       taxonomy_lock = 0L,
       export_group = NA_character_,
+      reference_support = NA_integer_,
       time_stamp = NA_integer_
     )
   glue::glue_sql(
@@ -567,6 +568,9 @@ new_db <- function(
   # triage_opts (per-rule triage actions; see TRIAGE_RULE_DEFS) ----
   DBI::dbExecute(con, TRIAGE_OPTS_DDL)
   DBI::dbExecute(con, TRIAGE_OPTS_SEED)
+
+  # screen (contamination verdict per unit; see SCREEN_DDL) ----
+  DBI::dbExecute(con, SCREEN_DDL)
 
   # path_scores (taxonomy-aware candidate scoring + auto-select) ----
   DBI::dbExecute(

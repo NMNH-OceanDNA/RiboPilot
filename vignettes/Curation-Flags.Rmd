@@ -58,15 +58,17 @@ the **GenBank screen**, the best reference match found remotely. RiboPilot
 never drops a scaffold on one channel's silence: a rule can only drop once
 both the annotation tools and the GenBank screen have actually reported on
 the scaffold. By default, the only rule that drops is the one where both
-channels independently say the scaffold is not nuclear rDNA. Two other rules
-can be switched to Drop as well, but they fire when the channels *disagree*
-with each other rather than agree; turning either on is a deliberate choice
-about which channel you trust more for your material, not more of the same
-corroboration - see the table below for which is which.
+channels independently say the scaffold is not nuclear rDNA. Three other
+rules can be switched to Drop as well: two fire when annotation and the
+GenBank screen *disagree* with each other, and one fires when the GenBank
+screen's own consensus disagrees with the sample's identity. Turning any of
+them on is a deliberate choice about which evidence you trust more for your
+material, not more of the same corroboration - see the table below for
+which is which.
 
-RiboPilot checks a scaffold against six named rules, in this order. The first
-rule that matches decides the outcome; if none match, the scaffold is kept.
-Only three of the six rules can ever drop a scaffold - the other three only
+RiboPilot checks a scaffold against seven named rules, in this order. The
+first rule that matches decides the outcome; if none match, the scaffold is
+kept. Four of the seven rules can ever drop a scaffold - the other three only
 flag, because their evidence is a missing channel or is taxonomic distance
 alone, neither of which is a safe basis for removing a scaffold by itself.
 
@@ -77,7 +79,8 @@ alone, neither of which is a safe basis for removing a scaffold by itself.
 | 3 | No annotations, non-rDNA hit | Annotation found no rRNA or ITS feature, and the best GenBank match is not a nuclear rDNA record. | Yes - dropped by default |
 | 4 | No annotations but rDNA hit | Annotation found no rRNA or ITS feature, though the best GenBank match is a nuclear rDNA record. | Optional; flagged by default |
 | 5 | Has annotations but non-rDNA hit | The scaffold has a feature model, but its best GenBank match is not a nuclear rDNA record. | Optional; flagged by default |
-| 6 | Disagrees with sibling scaffolds | This scaffold's top hit disagrees with the majority of this sample's other scaffolds. | No, flag only |
+| 6 | GenBank taxonomy disagrees with the sample | The scaffold's BLAST hits agree on a taxon that is not on this sample's lineage. | Optional; flagged by default |
+| 7 | Disagrees with sibling scaffolds | This scaffold's top hit disagrees with the majority of this sample's other scaffolds. | No, flag only |
 
 Rule 2 also covers a case that looks different but is judged the same way: a
 scaffold whose only GenBank matches are whole-genome or chromosome-level
@@ -85,16 +88,28 @@ assemblies. Such a record does not say what the aligned region actually is, so
 RiboPilot reports the scaffold as unjudged rather than guessing that it is not
 nuclear rDNA.
 
+Rule 6 is a separate check from the rest of the table: it asks whether the
+scaffold's GenBank hits agree on a taxon, and whether that taxon sits on your
+sample's own lineage. This is the check that catches a fungal, bacterial or
+plant contaminant riding along with a metazoan sample. It compares only
+against your sample's own lineage, so it cannot separate two metazoans from
+each other - a copepod and a fish both sit under Metazoa, and rule 6 has no
+way to prefer one over the other. A `no_reference` result is a normal state
+for an offline project or a sparse clade, not a problem in itself: it means
+the screen had nothing usable to compare against, not that something is
+wrong. The verdict is also shown as a Screen column in the Assemble tab's
+scaffold table, alongside the rest of the evidence.
+
 Each rule can be turned off if it does not suit your data. Switching every
 rule off at once makes Apply a no-op: it changes nothing, rather than
 marking every remaining scaffold "keep" on the strength of no active checks.
-Rules 4 and 5
+Rules 4, 5 and 6
 can be turned up to Drop if you want RiboPilot to act on them automatically
 rather than just flag them for you to review. This setting lives with the
 project, not with any one run, so the app and the pipeline never disagree
 about what a rule is set to do.
 
-Rule 6 deserves a special note: a low-identity hit at a large taxonomic
+Rule 7 deserves a special note: a low-identity hit at a large taxonomic
 distance is the normal state for an under-studied group, not proof of
 contamination, which is exactly the case RiboPilot exists to serve. For that
 reason, disagreement with sibling scaffolds can only ever flag, never drop.
