@@ -49,6 +49,24 @@ RRNA_ANCHOR_PID_METAZOA <- c("18S" = 95, "5.8S" = 93, "28S" = 80)
 RRNA_ANCHOR_PID_FISH    <- c("18S" = 97, "5.8S" = 95, "28S" = 85)
 RRNA_ANCHOR_PID_INVERT  <- c("18S" = 93, "5.8S" = 90, "28S" = 78)
 
+#' Screen tunables, shared by every ruleset until a clade needs its own.
+#'
+#' The three weights are priors, not measurements, which is why the screen rule
+#' ships as Flag rather than Drop. `min_isomer_anchor_pid` is a prior too, but a
+#' safer one: it compares two sequences from ONE organism rather than across
+#' taxa, and "are these two anchors the same sequence" has a far tighter natural
+#' answer than "how similar may two different organisms be". Any change to any
+#' value here must bump `SCREEN_VERSION`.
+#'
+#' Defined here rather than in R/screen.R because a package with no Collate
+#' field sources alphabetically, so this file loads first.
+#' @noRd
+SCREEN_PARAMS_DEFAULT <- list(
+  support = 0.30, resolution = 0.30, separation = 0.40,
+  min_confidence = 0.6,
+  min_isomer_anchor_pid = 99.5
+)
+
 #' Curation ruleset for a clade
 #'
 #' Length ranges are for a COMPLETE, correctly assembled element; the flag/ok
@@ -61,7 +79,7 @@ RRNA_ANCHOR_PID_INVERT  <- c("18S" = 93, "5.8S" = 90, "28S" = 78)
 #' @param ruleset Clade key; one of [RRNA_RULESETS]. Unknown keys error rather
 #'   than silently falling back, so a typo cannot mis-curate a sample.
 #' @return list(name, lengths = named list el -> c(min,max), min_anchor_pid,
-#'   min_ref_coverage, min_anchor_coverage, check_contaminant).
+#'   min_ref_coverage, min_anchor_coverage, check_contaminant, screen).
 #' @noRd
 rrna_params <- function(ruleset = "metazoa_generic") {
   ruleset <- ruleset %||% "metazoa_generic"
@@ -75,7 +93,10 @@ rrna_params <- function(ruleset = "metazoa_generic") {
     min_anchor_pid = RRNA_ANCHOR_PID_METAZOA,
     min_ref_coverage = 0.5,   # fraction of the sample element the ref must cover
     min_anchor_coverage = 90, # % of the rRNA model an anchor must cover (else "truncated")
-    check_contaminant = TRUE
+    check_contaminant = TRUE,
+    # Screen tunables. Docs 11 and 12 both site them here so a clade can retune
+    # them; until 3c they were top-level constants no ruleset could reach.
+    screen = SCREEN_PARAMS_DEFAULT
   )
   invert <- function(name) {
     utils::modifyList(base, list(name = name, lengths = RRNA_LENGTHS_METAZOA_INVERT,

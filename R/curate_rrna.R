@@ -207,6 +207,40 @@ ensure_curate_schema <- function(con) {
   invisible()
 }
 
+#' Resolve which clade ruleset governs a unit
+#'
+#' Precedence: explicit argument > the unit's `curate_opts` row. When that is
+#' unset or the generic default, auto-select a clade ruleset from the sample's
+#' lineage so a clade sample is not silently curated against the generic ranges.
+#' If a lineage is present but matches no clade ruleset, `note` is
+#' `no_clade_ruleset` so the fallback is visible rather than silent.
+#'
+#' Shared by [curate_one()] and the screen, which needs the same answer to reach
+#' a clade's `screen` tunables.
+#' @return list(ruleset, note)
+#' @noRd
+resolve_ruleset <- function(con, id, path = 1L, scaffold = 1L, ruleset = NULL) {
+  sample_lineage <- tryCatch(DBI::dbGetQuery(con,
+    "SELECT lineage FROM samples WHERE ID = ?", params = list(id))$lineage[1],
+    error = function(e) NA_character_)
+  if (is.null(ruleset)) {
+    ruleset <- tryCatch(DBI::dbGetQuery(con,
+      "SELECT co.ruleset FROM annotate an JOIN curate_opts co ON an.curate_opts = co.curate_opts
+       WHERE an.ID = ? AND an.path = ? AND an.scaffold = ?",
+      params = list(id, path, scaffold))$ruleset[1], error = function(e) NA_character_)
+  }
+  note <- NA_character_
+  if (length(ruleset) == 0 || is.na(ruleset) || !nzchar(ruleset) ||
+      identical(ruleset, "metazoa_generic")) {
+    ruleset <- ruleset_for_lineage(sample_lineage)
+    if (identical(ruleset, "metazoa_generic") && length(sample_lineage) &&
+        !is.na(sample_lineage) && nzchar(trimws(sample_lineage))) {
+      note <- "no_clade_ruleset"
+    }
+  }
+  list(ruleset = ruleset, note = note)
+}
+
 #' Curate one sample's annotations and write results back to the DB
 #'
 #' Reads the reconciled `annotations`, the sample's `curate_opts` ruleset, any
@@ -233,26 +267,9 @@ curate_one <- function(con, id, path = 1L, scaffold = 1L, ruleset = NULL) {
   sample_lineage <- DBI::dbGetQuery(con, "SELECT lineage FROM samples WHERE ID = ?",
     params = list(id))$lineage[1]
 
-  # Ruleset: explicit arg > sample's curate_opts row. When that is unset or the
-  # generic default, auto-select a clade ruleset from the sample's lineage so a
-  # clade sample is not silently curated against the generic ranges. If a lineage
-  # is present but matches no clade ruleset, record no_clade_ruleset so the
-  # fallback is visible rather than silent.
-  if (is.null(ruleset)) {
-    ruleset <- tryCatch(DBI::dbGetQuery(con,
-      "SELECT co.ruleset FROM annotate an JOIN curate_opts co ON an.curate_opts = co.curate_opts
-       WHERE an.ID = ? AND an.path = ? AND an.scaffold = ?",
-      params = list(id, path, scaffold))$ruleset[1], error = function(e) NA_character_)
-  }
-  ruleset_note <- NA_character_
-  if (length(ruleset) == 0 || is.na(ruleset) || !nzchar(ruleset) ||
-      identical(ruleset, "metazoa_generic")) {
-    ruleset <- ruleset_for_lineage(sample_lineage)
-    if (identical(ruleset, "metazoa_generic") && length(sample_lineage) &&
-        !is.na(sample_lineage) && nzchar(trimws(sample_lineage))) {
-      ruleset_note <- "no_clade_ruleset"
-    }
-  }
+  rs <- resolve_ruleset(con, id, path, scaffold, ruleset)
+  ruleset <- rs$ruleset
+  ruleset_note <- rs$note
   params <- rrna_params(ruleset)
 
   # Per-feature reference identity + coverage (opportunistic; empty when

@@ -455,3 +455,18 @@ test_that("recomputed reference_support agrees with the stored rank_distance col
   expect_equal(recomputed, stored)      # agrees with the stored column
   expect_equal(stored_vals, c(1L, 3L, 3L))  # the stored column holds the values intended
 })
+
+test_that("the scoring core reads its weights from the params sublist", {
+  h <- hits(hit(FISH_T, 900), hit(FISH_T, 890), hit(FISH_T, 880))
+  base <- RiboPilot:::screen_channel_taxonomy(h, FISH_T)
+  # a ruleset that weighted support alone would score this differently; if the
+  # core ignored the argument, both calls would agree
+  tuned <- RiboPilot:::screen_channel_taxonomy(h, FISH_T,
+    params = list(support = 1, resolution = 0, separation = 0, min_confidence = 0.6))
+  expect_false(isTRUE(all.equal(base$confidence, tuned$confidence)))
+  expect_equal(tuned$confidence, 0.3)  # lca_n_hits 3 -> support 0.3, weight 1
+})
+
+test_that("SCREEN_VERSION is 3 so v2 rows recompute", {
+  expect_equal(RiboPilot:::SCREEN_VERSION, 3L)
+})
