@@ -33,7 +33,7 @@ TRIAGE_RULE_DEFS <- list(
     default = "flag",
     test = function(d, i, ctx) {
       if (isTRUE(ctx$screened[i])) return(NA_character_)
-      "the GenBank screen has not run for this scaffold"
+      "no GenBank hit says whether this scaffold is nuclear rDNA"
     }
   ),
   list(

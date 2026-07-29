@@ -46,7 +46,7 @@ test_that("a scaffold with no usable hit is flagged, never dropped", {
   d <- RiboPilot:::triage_rules(us(list(feats = 5, nuc = NA)))
   expect_equal(d$new_rule, "no_screen")
   expect_true(is.na(d$new_triage))
-  expect_match(d$new_reason, "GenBank screen has not run")
+  expect_match(d$new_reason, "nuclear rDNA")
 })
 
 test_that("the 2x2 over the two channels is exhaustive", {
@@ -166,4 +166,13 @@ test_that("an empty frame returns empty columns rather than erroring", {
   d <- RiboPilot:::triage_rules(us()[0, ])
   expect_equal(nrow(d), 0L)
   expect_true(all(c("new_triage", "new_reason", "new_rule") %in% names(d)))
+})
+
+test_that("the no_screen reason covers an unclassifiable hit, not just a missing run", {
+  # is_nuclear_rrna is now NA both when the screen did not run and when it ran
+  # and every hit was assembly-level, so the reason must not assert the former
+  d <- RiboPilot:::triage_rules(us(list(feats = 5, nuc = NA)))
+  expect_equal(d$new_rule, "no_screen")
+  expect_false(grepl("has not run for this scaffold", d$new_reason, fixed = TRUE))
+  expect_match(d$new_reason, "nuclear rDNA")
 })
