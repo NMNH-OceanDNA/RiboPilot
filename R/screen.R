@@ -205,3 +205,92 @@ screen_channel_taxonomy <- function(hits, sample_taxids) {
     tm$separation, SCREEN_WEIGHTS$separation, tm$confidence)
   out
 }
+
+#' Score and store one unit's screen verdict
+#'
+#' Skips a row already stored at the current [SCREEN_VERSION] unless `force`, so
+#' re-running the pipeline is cheap and a scoring change forces a recompute
+#' without a schema migration.
+#'
+#' @param con Open project DB connection.
+#' @param id,path,scaffold Assembly unit.
+#' @param force Recompute even when the stored row is current.
+#' @return (invisibly) the verdict written, or the stored one when skipped.
+#' @export
+screen_one <- function(con, id, path = 1L, scaffold = 1L, force = FALSE) {
+  path <- as.integer(path); scaffold <- as.integer(scaffold)
+  cur <- DBI::dbGetQuery(con,
+    "SELECT screen_verdict, screen_version FROM screen
+     WHERE ID = ? AND path = ? AND scaffold = ?", params = list(id, path, scaffold))
+  if (!isTRUE(force) && nrow(cur) == 1 &&
+      isTRUE((cur$screen_version[1] %|NA|% -1L) >= SCREEN_VERSION)) {
+    return(invisible(cur$screen_verdict[1]))
+  }
+  hits <- DBI::dbGetQuery(con,
+    "SELECT hit_class, bitscore, lineage_taxids, lineage FROM blast_hits
+     WHERE ID = ? AND path = ? AND scaffold = ?", params = list(id, path, scaffold))
+  samp <- tryCatch(DBI::dbGetQuery(con,
+    "SELECT lineage_taxids t FROM samples WHERE ID = ?", params = list(id))$t[1],
+    error = function(e) NA_character_)
+  r <- screen_channel_taxonomy(hits, samp)
+  DBI::dbExecute(con,
+    "DELETE FROM screen WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(id, path, scaffold))
+  DBI::dbAppendTable(con, "screen", data.frame(
+    ID = id, path = path, scaffold = scaffold,
+    screen_verdict = r$verdict, screen_class = r$class,
+    screen_confidence = r$confidence, screen_reason = r$reason,
+    screen_version = SCREEN_VERSION, lca_taxid = r$lca_taxid,
+    lca_taxon = r$lca_taxon, lca_rank = r$lca_rank, lca_n_hits = r$lca_n_hits,
+    host_concordant = r$host_concordant, margin = r$margin,
+    time_stamp = as.integer(Sys.time()), stringsAsFactors = FALSE))
+  invisible(r$verdict)
+}
+
+#' Screen every unit of one sample and refresh its reference support
+#' @param con Open project DB connection.
+#' @param id Sample ID.
+#' @param force Recompute rows already at the current version.
+#' @return (invisibly) the number of units screened.
+#' @export
+screen_sample <- function(con, id, force = FALSE) {
+  u <- DBI::dbGetQuery(con,
+    "SELECT path, scaffold FROM assemblies WHERE ID = ? ORDER BY path, scaffold",
+    params = list(id))
+  for (i in seq_len(nrow(u))) screen_one(con, id, u$path[i], u$scaffold[i], force = force)
+  update_reference_support(con, id)
+  invisible(nrow(u))
+}
+
+#' Refresh a sample's reference support
+#'
+#' The minimum rank distance across the sample's ON-TARGET units only. Computed
+#' from on-target units because a sample whose only resolvable hits belong to a
+#' contaminant would otherwise report excellent support for the wrong organism.
+#'
+#' Recomputed fresh from each hit's `lineage_taxids` against the sample's own
+#' lineage, rather than read from the stored `blast_hits.rank_distance` column:
+#' that column is only ever populated at BLAST time when the sample lineage
+#' was already resolved, and stays NULL for every hit otherwise, which would
+#' silently starve this of a value for exactly the samples still awaiting
+#' taxonomy resolution.
+#' @noRd
+update_reference_support <- function(con, id) {
+  samp <- tryCatch(DBI::dbGetQuery(con,
+    "SELECT lineage_taxids t FROM samples WHERE ID = ?", params = list(id))$t[1],
+    error = function(e) NA_character_)
+  h <- DBI::dbGetQuery(con,
+    "SELECT h.lineage_taxids FROM blast_hits h
+       JOIN screen s ON s.ID = h.ID AND s.path = h.path AND s.scaffold = h.scaffold
+     WHERE h.ID = ? AND s.screen_verdict = 'on_target'", params = list(id))
+  v <- NA_integer_
+  if (nrow(h) > 0 && !is.na(samp %|NA|% NA) && nzchar(samp %|NA|% "")) {
+    d <- vapply(h$lineage_taxids, function(x) {
+      if (is.na(x)) NA_integer_ else as.integer(rank_distance(x, samp))
+    }, integer(1), USE.NAMES = FALSE)
+    if (!all(is.na(d))) v <- min(d, na.rm = TRUE)
+  }
+  DBI::dbExecute(con, "UPDATE samples SET reference_support = ? WHERE ID = ?",
+    params = list(v, id))
+  invisible(v)
+}

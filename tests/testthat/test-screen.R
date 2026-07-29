@@ -194,3 +194,76 @@ test_that("no identity threshold appears anywhere in the scoring core", {
                  deparse(RiboPilot:::screen_confidence_terms)), collapse = " ")
   expect_false(grepl("pident", src, fixed = TRUE))
 })
+
+mk_screen_db <- function() {
+  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+  DBI::dbExecute(con, RiboPilot:::SCREEN_DDL)
+  DBI::dbExecute(con, RiboPilot:::BLAST_HITS_DDL)
+  DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT, lineage_taxids TEXT, reference_support INT)")
+  DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT)")
+  DBI::dbExecute(con, "INSERT INTO samples VALUES('S1',?,NULL)", params = list(FISH_T))
+  DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',1,1)")
+  DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',1,2)")
+  con
+}
+add_hits <- function(con, scaf, tax, n = 3, bs = 900, lin = "Eukaryota;Chordata;Actinopteri;o;f;g;s") {
+  for (i in seq_len(n)) {
+    DBI::dbExecute(con,
+      "INSERT INTO blast_hits (ID,path,scaffold,hit_rank,hsp,bitscore,lineage_taxids,lineage,hit_class)
+       VALUES ('S1',1,?,?,1,?,?,?,'rdna')",
+      params = list(scaf, i, bs - i, tax, lin))
+  }
+}
+
+test_that("screen_one writes one row carrying the verdict and its evidence", {
+  con <- mk_screen_db(); on.exit(DBI::dbDisconnect(con))
+  add_hits(con, 1, FISH_T)
+  screen_one(con, "S1", 1, 1)
+  r <- DBI::dbGetQuery(con, "SELECT * FROM screen WHERE scaffold=1")
+  expect_equal(nrow(r), 1L)
+  expect_equal(r$screen_verdict, "on_target")
+  expect_equal(r$host_concordant, 1L)
+  expect_equal(r$screen_version, RiboPilot:::SCREEN_VERSION)
+  expect_true(!is.na(r$screen_reason) && nzchar(r$screen_reason))
+})
+
+test_that("a unit with no hits gets a no_reference row rather than none", {
+  con <- mk_screen_db(); on.exit(DBI::dbDisconnect(con))
+  screen_one(con, "S1", 1, 2)
+  r <- DBI::dbGetQuery(con, "SELECT screen_verdict FROM screen WHERE scaffold=2")
+  expect_equal(r$screen_verdict, "no_reference")
+})
+
+test_that("a stored row at the current version is left alone unless forced", {
+  con <- mk_screen_db(); on.exit(DBI::dbDisconnect(con))
+  add_hits(con, 1, FISH_T)
+  screen_one(con, "S1", 1, 1)
+  DBI::dbExecute(con, "UPDATE screen SET screen_reason='SENTINEL' WHERE scaffold=1")
+  screen_one(con, "S1", 1, 1)
+  expect_equal(DBI::dbGetQuery(con, "SELECT screen_reason r FROM screen WHERE scaffold=1")$r,
+    "SENTINEL")
+  screen_one(con, "S1", 1, 1, force = TRUE)
+  expect_false(identical(
+    DBI::dbGetQuery(con, "SELECT screen_reason r FROM screen WHERE scaffold=1")$r, "SENTINEL"))
+})
+
+test_that("a row stored at a lower version is recomputed without force", {
+  con <- mk_screen_db(); on.exit(DBI::dbDisconnect(con))
+  add_hits(con, 1, FISH_T)
+  screen_one(con, "S1", 1, 1)
+  DBI::dbExecute(con, "UPDATE screen SET screen_version=0, screen_reason='OLD' WHERE scaffold=1")
+  screen_one(con, "S1", 1, 1)
+  r <- DBI::dbGetQuery(con, "SELECT screen_version v, screen_reason s FROM screen WHERE scaffold=1")
+  expect_equal(r$v, RiboPilot:::SCREEN_VERSION)
+  expect_false(identical(r$s, "OLD"))
+})
+
+test_that("screen_sample covers every unit and sets reference support", {
+  con <- mk_screen_db(); on.exit(DBI::dbDisconnect(con))
+  add_hits(con, 1, FISH_T); add_hits(con, 2, FISH_T)
+  n <- screen_sample(con, "S1")
+  expect_equal(n, 2L)
+  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM screen")$n, 2L)
+  rs <- DBI::dbGetQuery(con, "SELECT reference_support v FROM samples WHERE ID='S1'")$v
+  expect_false(is.na(rs))
+})
