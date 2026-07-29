@@ -21,3 +21,9 @@ Skips a row already stored at the current [SCREEN_VERSION] unless `force`, so
 re-running the pipeline is cheap and a scoring change forces a recompute
 without a schema migration.
 }
+\details{
+A stored `no_reference` is always recomputed: it records missing evidence,
+and the evidence routinely arrives later. A unit screened before BLAST ran,
+or before the sample's lineage was resolved, would otherwise keep that
+verdict for the life of the project.
+}
