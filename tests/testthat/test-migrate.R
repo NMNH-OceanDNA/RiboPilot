@@ -150,7 +150,7 @@ test_that("v12 adds triage_opts, its seed row, and the rule columns", {
 
   expect_true("triage_opts" %in% DBI::dbListFields(con, "assemble"))
   expect_true("triage_rule" %in% DBI::dbListFields(con, "assemblies"))
-  expect_equal(DBI::dbGetQuery(con, "PRAGMA user_version")[[1]], 12L)
+  expect_equal(DBI::dbGetQuery(con, "PRAGMA user_version")[[1]], RiboPilot:::RIBOPILOT_SCHEMA_VERSION)
 })
 
 test_that("v12 backfills coverage.depths when a coverage table has path but not depths", {
@@ -165,4 +165,83 @@ test_that("v12 backfills coverage.depths when a coverage table has path but not 
   migrate_db(con)
 
   expect_true("depths" %in% DBI::dbListFields(con, "coverage"))
+})
+
+test_that("v13 adds hit_class and backfills it from stored titles", {
+  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+  on.exit(DBI::dbDisconnect(con))
+  # a v12-shaped blast_hits, i.e. with every column EXCEPT hit_class
+  DBI::dbExecute(con, "CREATE TABLE blast_hits(ID TEXT, path INT, scaffold INT,
+    hit_rank INT, hsp INT, accession TEXT, title TEXT, species TEXT, staxid INT,
+    lineage TEXT, lineage_taxids TEXT, rank_distance INT, pident REAL, qcovs REAL,
+    evalue REAL, bitscore REAL, aln_len INT, qstart INT, qend INT, sstart INT,
+    send INT, is_nuclear_rrna INT, time_stamp INT)")
+  DBI::dbExecute(con, "CREATE TABLE blast_screen(ID TEXT, path INT, scaffold INT,
+    is_nuclear_rrna INT)")
+  DBI::dbExecute(con, "INSERT INTO blast_screen VALUES('S1',1,1,0)")
+  DBI::dbExecute(con, "INSERT INTO blast_screen VALUES('S1',1,2,0)")
+  ins <- "INSERT INTO blast_hits (ID,path,scaffold,hit_rank,hsp,title,bitscore,is_nuclear_rrna)
+          VALUES (?,?,?,?,1,?,?,?)"
+  # unit 1: all chromosome records, the case that used to score 0
+  for (i in 1:3) DBI::dbExecute(con, ins, params = list("S1", 1L, 1L, i,
+    sprintf("Scomber japonicus DNA, primary haplotype, chromosome %d, sequence", i), 900 - i, 0L))
+  # unit 2: genuine rDNA
+  for (i in 1:3) DBI::dbExecute(con, ins, params = list("S1", 1L, 2L, i,
+    "Danio rerio 18S ribosomal RNA gene, complete sequence", 900 - i, 1L))
+  DBI::dbExecute(con, "PRAGMA user_version = 12")
+
+  migrate_db(con)
+
+  expect_true("hit_class" %in% DBI::dbListFields(con, "blast_hits"))
+  expect_equal(DBI::dbGetQuery(con, "PRAGMA user_version")[[1]], 13L)
+  cls <- DBI::dbGetQuery(con, "SELECT scaffold, hit_class FROM blast_hits ORDER BY scaffold, hit_rank")
+  expect_equal(unique(cls$hit_class[cls$scaffold == 1]), "uninformative")
+  expect_equal(unique(cls$hit_class[cls$scaffold == 2]), "rdna")
+
+  # the repair: unit 1 goes from a false 0 to NA, unit 2 to 1
+  scr <- DBI::dbGetQuery(con, "SELECT scaffold, is_nuclear_rrna FROM blast_screen ORDER BY scaffold")
+  expect_true(is.na(scr$is_nuclear_rrna[scr$scaffold == 1]))
+  expect_equal(scr$is_nuclear_rrna[scr$scaffold == 2], 1L)
+})
+
+test_that("the backfill leaves units with no hits alone and is idempotent", {
+  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "CREATE TABLE blast_hits(ID TEXT, path INT, scaffold INT,
+    hit_rank INT, title TEXT, bitscore REAL, hit_class TEXT)")
+  DBI::dbExecute(con, "CREATE TABLE blast_screen(ID TEXT, path INT, scaffold INT,
+    is_nuclear_rrna INT)")
+  # a screened unit with NO hits rows must keep whatever it had
+  DBI::dbExecute(con, "INSERT INTO blast_screen VALUES('S1',1,9,1)")
+  RiboPilot:::backfill_hit_class(con)
+  expect_equal(DBI::dbGetQuery(con,
+    "SELECT is_nuclear_rrna FROM blast_screen WHERE scaffold=9")$is_nuclear_rrna, 1L)
+
+  DBI::dbExecute(con, "INSERT INTO blast_hits VALUES('S1',1,1,1,
+    'Danio rerio 18S ribosomal RNA gene, complete sequence', 900, NULL)")
+  DBI::dbExecute(con, "INSERT INTO blast_screen VALUES('S1',1,1,0)")
+  n1 <- RiboPilot:::backfill_hit_class(con)
+  expect_equal(n1, 1L)
+  n2 <- RiboPilot:::backfill_hit_class(con)
+  expect_equal(n2, 0L)   # nothing left to classify
+  expect_equal(DBI::dbGetQuery(con,
+    "SELECT is_nuclear_rrna FROM blast_screen WHERE scaffold=1")$is_nuclear_rrna, 1L)
+})
+
+test_that("migrate_db does not rescan blast_hits when already at v13", {
+  # parse_blast_candidates() calls migrate_db() once per unit; an ungated
+  # backfill would rescan the whole project every time, so a DB already at v13
+  # must come out of migrate_db() with its NULL hit_class rows untouched.
+  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "CREATE TABLE blast_hits(ID TEXT, path INT, scaffold INT,
+    hit_rank INT, title TEXT, bitscore REAL, hit_class TEXT)")
+  DBI::dbExecute(con, "INSERT INTO blast_hits VALUES('S1',1,1,1,
+    'Danio rerio 18S ribosomal RNA gene, complete sequence', 900, NULL)")
+  DBI::dbExecute(con, "PRAGMA user_version = 13")
+
+  migrate_db(con)
+
+  cls <- DBI::dbGetQuery(con, "SELECT hit_class FROM blast_hits WHERE scaffold=1")$hit_class
+  expect_true(is.na(cls))
 })

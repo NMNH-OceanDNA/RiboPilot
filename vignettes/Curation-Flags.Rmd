@@ -79,6 +79,12 @@ alone, neither of which is a safe basis for removing a scaffold by itself.
 | 5 | Has annotations but non-rDNA hit | The scaffold has a feature model, but its best GenBank match is not a nuclear rDNA record. | Optional; flagged by default |
 | 6 | Disagrees with sibling scaffolds | This scaffold's top hit disagrees with the majority of this sample's other scaffolds. | No, flag only |
 
+Rule 2 also covers a case that looks different but is judged the same way: a
+scaffold whose only GenBank matches are whole-genome or chromosome-level
+assemblies. Such a record does not say what the aligned region actually is, so
+RiboPilot reports the scaffold as unjudged rather than guessing that it is not
+nuclear rDNA.
+
 Each rule can be turned off if it does not suit your data. Switching every
 rule off at once makes Apply a no-op: it changes nothing, rather than
 marking every remaining scaffold "keep" on the strength of no active checks.

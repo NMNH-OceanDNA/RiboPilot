@@ -5,7 +5,7 @@
 
 #' Current project-DB schema version. Bump when adding a migration step below.
 #' @noRd
-RIBOPILOT_SCHEMA_VERSION <- 12L
+RIBOPILOT_SCHEMA_VERSION <- 13L
 
 #' DDL for blast_hits: the full retained BLAST hit distribution per unit.
 #'
@@ -38,6 +38,7 @@ BLAST_HITS_DDL <- "CREATE TABLE IF NOT EXISTS blast_hits (
   sstart INTEGER,
   send INTEGER,
   is_nuclear_rrna INTEGER,
+  hit_class TEXT,
   time_stamp INTEGER,
   PRIMARY KEY (ID, path, scaffold, hit_rank, hsp)
 );"
@@ -366,6 +367,18 @@ migrate_db <- function(con) {
     DBI::dbExecute(con, "UPDATE assemble SET triage_opts = 'default' WHERE triage_opts IS NULL")
   }
 
+  # --- schema v13: three-state hit classification ---
+  # is_nuclear_rrna was a literal-phrase regex over ONE hit's title, so a
+  # chromosome-level host record read as "not nuclear rDNA". Classification is a
+  # pure function of the stored title, so history is repairable offline: the
+  # backfill costs no remote BLAST, which matters because a real run takes hours.
+  add_col("blast_hits", "hit_class", "TEXT")
+  # gated on the version, not just on the table existing: parse_blast_candidates()
+  # calls migrate_db() once per unit, so an ungated backfill would rescan the
+  # whole project on every unit, O(units^2) across the run this repair exists to
+  # avoid repeating. Rows written after v13 get their class from the parse path.
+  if (ver < 13L && has_tbl("blast_hits")) backfill_hit_class(con)
+
   if (ver < RIBOPILOT_SCHEMA_VERSION) {
     DBI::dbExecute(con, sprintf("PRAGMA user_version = %d", RIBOPILOT_SCHEMA_VERSION))
   }
@@ -405,6 +418,54 @@ backfill_coverage_median <- function(con, limit = NULL) {
     if (!length(v)) next
     DBI::dbBind(upd, list(round(stats::median(v), 2), d$ID[i], d$path[i], d$scaffold[i]))
     n <- n + 1L
+  }
+  invisible(n)
+}
+
+#' Classify stored BLAST hit titles and recompute the per-unit screen flag
+#'
+#' Runs offline over titles already in the database, so an existing project is
+#' repaired without repeating its remote BLAST. Units with no `blast_hits` rows
+#' are left exactly as they are: absence of hits is not evidence.
+#'
+#' @param con Open project DB connection.
+#' @return (invisibly) the number of `blast_hits` rows classified.
+#' @noRd
+backfill_hit_class <- function(con) {
+  if (!("hit_class" %in% DBI::dbListFields(con, "blast_hits"))) {
+    return(invisible(0L))
+  }
+  todo <- DBI::dbGetQuery(con,
+    "SELECT rowid AS rid, title FROM blast_hits WHERE hit_class IS NULL")
+  n <- nrow(todo)
+  if (n > 0) {
+    todo$hit_class <- classify_hit_title(todo$title)
+    DBI::dbWithTransaction(con, {
+      up <- DBI::dbSendStatement(con, "UPDATE blast_hits SET hit_class = ? WHERE rowid = ?")
+      # not on.exit(): inside dbWithTransaction the block is forced in the
+      # caller's frame, so on.exit would register on this function rather than
+      # the block. finally still releases the handle if dbBind throws.
+      tryCatch(DBI::dbBind(up, list(todo$hit_class, todo$rid)),
+        finally = DBI::dbClearResult(up))
+    })
+  }
+  # recompute the screen flag for every unit that HAS hits
+  units <- DBI::dbGetQuery(con,
+    "SELECT DISTINCT ID, path, scaffold FROM blast_hits")
+  if (nrow(units) > 0 && "blast_screen" %in% DBI::dbListTables(con)) {
+    DBI::dbWithTransaction(con, {
+      for (i in seq_len(nrow(units))) {
+        h <- DBI::dbGetQuery(con,
+          "SELECT hit_class, bitscore FROM blast_hits
+           WHERE ID = ? AND path = ? AND scaffold = ?",
+          params = list(units$ID[i], units$path[i], units$scaffold[i]))
+        DBI::dbExecute(con,
+          "UPDATE blast_screen SET is_nuclear_rrna = ?
+           WHERE ID = ? AND path = ? AND scaffold = ?",
+          params = list(consensus_hit_class(h$hit_class, h$bitscore),
+            units$ID[i], units$path[i], units$scaffold[i]))
+      }
+    })
   }
   invisible(n)
 }

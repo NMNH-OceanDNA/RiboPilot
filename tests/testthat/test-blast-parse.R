@@ -113,6 +113,24 @@ test_that("re-parsing a unit replaces its rows rather than duplicating them", {
   expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM blast_ref_candidates")$n, 1)
 })
 
+test_that("parse writes hit_class and takes the screen flag from consensus", {
+  con <- mk_blast_db()
+  on.exit(DBI::dbDisconnect(con))
+  # three chromosome-level host hits: informative about nothing
+  f <- write_hits(c(
+    "CM001.1\tScomber japonicus DNA, primary haplotype, chromosome 1, sequence\t99\t90\t0.0\t9999\t900\t1500\t1\t1500\t1\t1500",
+    "CM002.1\tScomber japonicus DNA, primary haplotype, chromosome 4, sequence\t98\t90\t0.0\t9999\t890\t1500\t1\t1500\t1\t1500",
+    "CM003.1\tScomber japonicus DNA, alternate haplotype, chromosome 1, sequence\t97\t90\t0.0\t9999\t880\t1500\t1\t1500\t1\t1500"))
+  RiboPilot:::parse_blast_candidates(con, "S1", 1, 1, hits_file = f)
+
+  cls <- DBI::dbGetQuery(con, "SELECT DISTINCT hit_class FROM blast_hits")$hit_class
+  expect_equal(cls, "uninformative")
+  flag <- DBI::dbGetQuery(con, "SELECT is_nuclear_rrna FROM blast_screen")$is_nuclear_rrna
+  expect_true(is.na(flag))
+  # and an assembly-level record is not offered as a reference
+  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM blast_ref_candidates")$n, 0L)
+})
+
 test_that("rank_distance is left NA when no taxdump resolved the hits", {
   # Offline projects must record "not judged", never a spurious distance.
   f <- write_hits(hit("AA1", "Danio rerio 18S ribosomal RNA gene", 99, 80, 1500, 1600, 1, 1600))
