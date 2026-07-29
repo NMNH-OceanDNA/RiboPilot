@@ -60,7 +60,7 @@ NUCLEAR_RRNA_TITLE_RE <- paste0(
   "\\b(18S|28S|5\\.8S|5S)\\b[^;]{0,40}?(ribosomal RNA|rRNA)|",
   "small subunit ribosomal RNA|large subunit ribosomal RNA|",
   "\\b(SSU|LSU)\\b[^;]{0,20}?rRNA|",
-  "\\b45S\\b|pre-ribosomal|",
+  "\\b45S\\b|",
   "ribosomal RNA gene|\\brRNA gene\\b|ribosomal DNA|\\brDNA\\b")
 
 #' Titles naming a ribosomal subunit that is not nuclear.

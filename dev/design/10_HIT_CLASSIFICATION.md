@@ -64,7 +64,10 @@ actually uses:
 - `18S`, `28S`, `5.8S`, `5S` each followed by `ribosomal RNA` or `rRNA`
 - `small subunit ribosomal RNA`, `large subunit ribosomal RNA`
 - `SSU rRNA`, `LSU rRNA`
-- `45S`, `pre-ribosomal` (the RefSeq `RNA45SN1-5` pre-rRNA records)
+- `45S` (the RefSeq `RNA45SN1-5` pre-rRNA records; the `45S` token alone covers
+  both `45S pre-ribosomal N4` and `45S pre-rRNA`, and a bare `pre-ribosomal`
+  alternation was removed because it also matched protein-coding deflines such
+  as `pre-ribosomal RNA processing protein mRNA`)
 - `ribosomal RNA gene`, `rRNA gene` (safe only because rule 2 above has already
   removed 12S, 16S and 23S)
 - `intergenic spacer` and `IGS` where accompanied by a ribosomal marker
@@ -193,21 +196,13 @@ layer's job, per section 1.
 Found by the final pre-merge review, judged non-blocking, and left deliberately.
 Recorded here rather than in scratch so they survive.
 
-1. **`pre-ribosomal` is broader than it needs to be.** It is unanchored, so
-   protein-coding deflines match: `"Homo sapiens pre-ribosomal RNA processing
-   protein mRNA, complete cds"` classifies `rdna`. `\b45S\b` alone already
-   covers both real RefSeq shapes (`45S pre-ribosomal N4` and `45S pre-rRNA`),
-   so narrowing `R/constants.R:63` to `\b45S\b` removes the false positives at
-   no fixture cost. The direction of the error is a false 1, which consensus
-   voting dampens, which is why it did not block.
-
-2. **The consensus window is taken before uninformative hits are dropped.** A
+1. **The consensus window is taken before uninformative hits are dropped.** A
    window holding two chromosome records and one rDNA record therefore decides
    on a single vote, which is what the minimum-of-three exists to prevent.
    Selecting the window over INFORMATIVE hits would serve the stated intent
    better. Section 5 fixes the current order, so changing it moves the spec.
 
-3. **The consensus votes per HSP, not per subject.** An accession with five
+2. **The consensus votes per HSP, not per subject.** An accession with five
    HSPs casts five votes while a single-HSP accession casts one. Bitscore
    weighting partly tracks alignment length so the bias runs both ways, and the
    live path and the offline backfill use the same un-deduped query, so they
@@ -215,7 +210,7 @@ Recorded here rather than in scratch so they survive.
    deduped in the SAME commit, or the two paths diverge and the repair stops
    matching what a fresh parse would produce.
 
-4. **A narrow interaction between two of the fixes.** Removing the spacer
+3. **A narrow interaction between two of the fixes.** Removing the spacer
    phrases from the nuclear marker list (so bacterial `16S-23S internal
    transcribed spacer` records stay `other`) and adding `12S` to the veto
    combine on one contrived shape: a nuclear record naming only a spacer whose

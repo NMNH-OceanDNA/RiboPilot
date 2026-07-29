@@ -53,3 +53,4 @@ title,expected,source,note
 "Homo sapiens RNA, 45S pre-ribosomal N4 (RNA45SN4), ribosomal RNA",rdna,authored,RefSeq 45S pre-rRNA is genuine nuclear rDNA
 "Danio rerio voucher X 12S ribosomal RNA gene, partial sequence",other,authored,12S is the mitochondrial SSU and carries no organelle word to veto on
 "",uninformative,authored,empty title says nothing
+"Homo sapiens pre-ribosomal RNA processing protein mRNA, complete cds",other,authored,unanchored pre-ribosomal would match a protein-coding record
