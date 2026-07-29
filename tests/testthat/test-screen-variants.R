@@ -167,6 +167,16 @@ test_that("group labels are deterministic, longest representative first", {
   expect_equal(g1$variant_group[g1$key == "u1"], "g2")
 })
 
+test_that("the group representative is the longest member, not the first", {
+  # input order deliberately puts the SHORT unit first: if the representative
+  # were simply the first member, this passes for the wrong reason
+  g <- RiboPilot:::screen_variant_groups(
+    mk_units(list("u1", A, 4200L), list("u2", A1, 6000L)), 99.5)
+  expect_true(is.na(g$variant_identity[g$key == "u2"]))
+  expect_false(is.na(g$variant_identity[g$key == "u1"]))
+  expect_equal(g$len_delta[g$key == "u1"], 1800L)
+})
+
 test_that("a pair at exactly the threshold groups together", {
   # the spec says "at or above", so >= not >
   fake <- mk_units(list("u1", A, 6000L), list("u2", A, 4000L))
