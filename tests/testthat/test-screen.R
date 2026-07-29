@@ -171,6 +171,20 @@ test_that("finding C: class_for matches the whole taxid path, not rank slot 1", 
   expect_equal(rf$class, "fungal")
 })
 
+test_that("a different-phylum contaminant is not waved through as concordant", {
+  # sharing only the kingdom slot means "both are animals", which every
+  # metazoan contaminant satisfies. Three exact host hits plus two hits that
+  # share nothing below kingdom (a real different phylum) must split the
+  # vote, not read as unanimous.
+  DIFFPHYLUM_T <- "33208;6656;6854;6843;1;2;3"
+  h <- hits(hit(FISH_T, 900), hit(FISH_T, 890), hit(FISH_T, 880),
+            hit(DIFFPHYLUM_T, 500), hit(DIFFPHYLUM_T, 480))
+  r <- RiboPilot:::screen_channel_taxonomy(h, FISH_T)
+  expect_equal(r$verdict, "uncertain")
+  expect_false(is.na(r$margin))
+  expect_lt(r$terms$separation, 1)
+})
+
 test_that("no identity threshold appears anywhere in the scoring core", {
   # the envelope was deferred after measurement (doc 08 section 3.2.1); a pident
   # comparison here would be a defect, so pin its absence. Deparse the functions

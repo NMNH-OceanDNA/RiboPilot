@@ -161,12 +161,14 @@ screen_channel_taxonomy <- function(hits, sample_taxids) {
 
   # the margin uses a SECOND, per-hit concordance, distinct from the unit-level
   # one above: it compares the two best-supported opposing hits.
-  # a hit is on the sample's lineage when their paths share any resolved taxid.
-  # Testing the sample's DEEPEST taxid instead would count a congener as
-  # discordant, which made a clean unit split against itself and score uncertain.
-  samp_ok <- samp[!is.na(samp)]
+  # a hit is on the sample's lineage when their paths share a resolved taxid at
+  # PHYLUM or deeper. Sharing only the shallowest slot means "both are animals",
+  # which every metazoan contaminant satisfies: three host hits plus two from a
+  # different phylum would otherwise read as unanimous and score on_target.
+  samp_ok <- samp[-1]
+  samp_ok <- samp_ok[!is.na(samp_ok)]
   hit_conc <- vapply(h$lineage_taxids, function(x) {
-    p <- parse_rank_taxids(x)
+    p <- parse_rank_taxids(x)[-1]
     any(p[!is.na(p)] %in% samp_ok)
   }, logical(1), USE.NAMES = FALSE)
   best <- function(v) if (any(v)) max(h$bitscore[v], na.rm = TRUE) else NA_real_
