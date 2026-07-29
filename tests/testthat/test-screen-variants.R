@@ -70,3 +70,116 @@ test_that("a mixed-strand unit is not comparable", {
   a <- anns(ann_row("18S", 1, 10, "+"), ann_row("28S", 11, 18, "-"))
   expect_true(is.na(RiboPilot:::screen_anchor_string(seq, a)))
 })
+
+mk_units <- function(...) {
+  do.call(rbind, lapply(list(...), function(x)
+    data.frame(key = x[[1]], anchor = x[[2]], total_length = as.integer(x[[3]]),
+      stringsAsFactors = FALSE)))
+}
+A <- strrep("ACGT", 200)
+# one substitution in 800 bp, comfortably above the 99.5 threshold
+A1 <- paste0("T", substr(A, 2, nchar(A)))
+# a genuinely divergent copy: every tenth block mutated, about 92 percent
+B <- paste0(vapply(seq_len(200), function(i)
+  if (i %% 10 == 0) "AAAA" else "ACGT", character(1)), collapse = "")
+
+test_that("identical anchors score 100 without an alignment", {
+  expect_equal(RiboPilot:::screen_anchor_pid(A, A), 100)
+})
+
+test_that("a divergent copy scores well below the threshold", {
+  expect_lt(RiboPilot:::screen_anchor_pid(A, B), 99.5)
+})
+
+test_that("an unalignable input yields NA rather than an error", {
+  expect_true(is.na(RiboPilot:::screen_anchor_pid(A, NA_character_)))
+  expect_true(is.na(RiboPilot:::screen_anchor_pid(A, "")))
+})
+
+test_that("two units with near-identical anchors and different lengths are isomers", {
+  g <- RiboPilot:::screen_variant_groups(
+    mk_units(list("u1", A, 6000L), list("u2", A1, 4200L)), 99.5)
+  expect_equal(unique(g$variant_class), "isomer")
+  expect_equal(length(unique(g$variant_group)), 1L)
+  # the longest member is the representative and has nothing to compare against
+  expect_true(is.na(g$variant_identity[g$key == "u1"]))
+  expect_gt(g$variant_identity[g$key == "u2"], 99.5)
+  expect_equal(g$len_delta[g$key == "u2"], 1800L)
+})
+
+test_that("identical anchors AND identical length are still isomers", {
+  # the spec's table has no row for this; two units that agree on everything are
+  # the same molecule assembled twice, for which "pick either" is exactly right
+  g <- RiboPilot:::screen_variant_groups(
+    mk_units(list("u1", A, 5000L), list("u2", A, 5000L)), 99.5)
+  expect_equal(unique(g$variant_class), "isomer")
+})
+
+test_that("two units differing beyond the threshold are paralogs in separate groups", {
+  g <- RiboPilot:::screen_variant_groups(
+    mk_units(list("u1", A, 6000L), list("u2", B, 6000L)), 99.5)
+  expect_equal(unique(g$variant_class), "paralog")
+  expect_equal(length(unique(g$variant_group)), 2L)
+  # each is its own group's representative, so neither has an identity to record
+  expect_true(all(is.na(g$variant_identity)))
+})
+
+test_that("a mixed set forms one isomer group and one paralog group", {
+  g <- RiboPilot:::screen_variant_groups(
+    mk_units(list("u1", A, 6000L), list("u2", A1, 4200L), list("u3", B, 5000L)), 99.5)
+  # every comparable unit reads paralog once the sample carries two copies:
+  # telling u1 "pick either" would be false when u3 exists
+  expect_equal(unique(g$variant_class), "paralog")
+  expect_equal(g$variant_group[g$key == "u1"], g$variant_group[g$key == "u2"])
+  expect_false(g$variant_group[g$key == "u1"] == g$variant_group[g$key == "u3"])
+})
+
+test_that("a three-unit isomer set forms one group", {
+  g <- RiboPilot:::screen_variant_groups(
+    mk_units(list("u1", A, 6000L), list("u2", A1, 5000L), list("u3", A, 4000L)), 99.5)
+  expect_equal(length(unique(g$variant_group)), 1L)
+  expect_equal(unique(g$variant_class), "isomer")
+})
+
+test_that("a single comparable unit is a singleton with no identity", {
+  g <- RiboPilot:::screen_variant_groups(mk_units(list("u1", A, 6000L)), 99.5)
+  expect_equal(g$variant_class, "singleton")
+  # recording 100 would assert a measurement that was never made
+  expect_true(is.na(g$variant_identity))
+})
+
+test_that("an uncomparable unit is NA, not singleton", {
+  g <- RiboPilot:::screen_variant_groups(
+    mk_units(list("u1", A, 6000L), list("u2", NA_character_, 900L)), 99.5)
+  expect_true(is.na(g$variant_class[g$key == "u2"]))
+  expect_true(is.na(g$variant_group[g$key == "u2"]))
+  # and it does not make the remaining unit look like it had company
+  expect_equal(g$variant_class[g$key == "u1"], "singleton")
+})
+
+test_that("group labels are deterministic, longest representative first", {
+  g1 <- RiboPilot:::screen_variant_groups(
+    mk_units(list("u1", A, 4000L), list("u2", B, 9000L)), 99.5)
+  g2 <- RiboPilot:::screen_variant_groups(
+    mk_units(list("u2", B, 9000L), list("u1", A, 4000L)), 99.5)
+  expect_equal(g1$variant_group[g1$key == "u2"], "g1")
+  expect_equal(g2$variant_group[g2$key == "u2"], "g1")
+  expect_equal(g1$variant_group[g1$key == "u1"], "g2")
+})
+
+test_that("a pair at exactly the threshold groups together", {
+  # the spec says "at or above", so >= not >
+  fake <- mk_units(list("u1", A, 6000L), list("u2", A, 4000L))
+  expect_equal(length(unique(
+    RiboPilot:::screen_variant_groups(fake, 100)$variant_group)), 1L)
+})
+
+test_that("a chained group still forms and the spread stays visible", {
+  # A matches A1 and A1 matches A2, but A may not match A2. The group forms and
+  # variant_identity makes the spread visible rather than hiding it.
+  A2 <- paste0("TT", substr(A, 3, nchar(A)))
+  g <- RiboPilot:::screen_variant_groups(
+    mk_units(list("u1", A, 6000L), list("u2", A1, 5000L), list("u3", A2, 4000L)), 99.5)
+  expect_equal(length(unique(g$variant_group)), 1L)
+  expect_false(anyNA(g$variant_identity[g$key != "u1"]))
+})

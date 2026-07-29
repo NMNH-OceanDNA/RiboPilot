@@ -23,6 +23,112 @@
 #' @noRd
 SCREEN_ANCHOR_ELEMENTS <- c("18S", "5.8S", "28S")
 
+#' Percent identity between two anchor strings
+#'
+#' Identical strings short-circuit to 100 rather than aligning. That is the
+#' common isomer case, and an overlap alignment over roughly 4 kb of anchor is
+#' O(n*m). A failed alignment returns NA rather than erroring: one unalignable
+#' pair must not sink a sample's whole screen.
+#' @return numeric percent on the 0-100 scale [pwalign_pid()] uses, or NA.
+#' @noRd
+screen_anchor_pid <- function(a, b) {
+  if (length(a) == 0 || length(b) == 0) return(NA_real_)
+  if (is.na(a[1]) || is.na(b[1]) || !nzchar(a[1]) || !nzchar(b[1])) return(NA_real_)
+  if (identical(a[1], b[1])) return(100)
+  aln <- tryCatch(pairwise_nt(a[1], b[1], type = "overlap"), error = function(e) NULL)
+  if (is.null(aln)) return(NA_real_)
+  tryCatch(as.numeric(pwalign_pid(aln)), error = function(e) NA_real_)
+}
+
+#' Group a sample's comparable units by anchor identity
+#'
+#' Grouping is transitive-by-threshold: units mutually at or above `min_pid`
+#' form one group, and the chain A-B-C where A does not match C still forms one
+#' group. `variant_identity` then makes the spread visible rather than hiding
+#' it. Chained groups are expected to be rare at the identities involved and are
+#' not worth a clustering algorithm.
+#'
+#' `variant_class` is a per-SAMPLE property once two groups exist: telling the
+#' curator of one isomer "pick either" would be false when the sample also holds
+#' a distinct copy. `variant_group` is what says which units are interchangeable.
+#'
+#' @param units data.frame(key, anchor, total_length). An NA `anchor` is not
+#'   comparable and comes back all-NA, which is distinct from `singleton`.
+#' @param min_pid The `min_isomer_anchor_pid` in force for this sample.
+#' @return data.frame(key, variant_class, variant_group, variant_identity,
+#'   len_delta), one row per input unit, in input order.
+#' @noRd
+screen_variant_groups <- function(units, min_pid) {
+  n <- if (is.null(units)) 0L else nrow(units)
+  out <- data.frame(key = if (n) units$key else character(0),
+    variant_class = rep(NA_character_, n), variant_group = rep(NA_character_, n),
+    variant_identity = rep(NA_real_, n), len_delta = rep(NA_integer_, n),
+    stringsAsFactors = FALSE)
+  if (n == 0) return(out)
+
+  # %|NA|% is scalar only and errors on a vector, so coalesce explicitly
+  anc <- units$anchor
+  anc[is.na(anc)] <- ""
+  cmp <- which(nzchar(anc))
+  if (!length(cmp)) return(out)
+  if (length(cmp) == 1) {
+    # no second sequence exists, so there is no identity to record
+    out$variant_class[cmp] <- "singleton"
+    out$variant_group[cmp] <- "g1"
+    return(out)
+  }
+
+  k <- length(cmp)
+  pid <- matrix(NA_real_, k, k)
+  for (i in seq_len(k - 1)) {
+    for (j in seq(i + 1, k)) {
+      pid[i, j] <- pid[j, i] <- screen_anchor_pid(units$anchor[cmp[i]],
+        units$anchor[cmp[j]])
+    }
+  }
+
+  # connected components over the at-or-above-threshold edges
+  comp <- rep(NA_integer_, k)
+  nxt <- 0L
+  for (i in seq_len(k)) {
+    if (!is.na(comp[i])) next
+    nxt <- nxt + 1L
+    queue <- i
+    while (length(queue)) {
+      v <- queue[1]; queue <- queue[-1]
+      if (!is.na(comp[v])) next
+      comp[v] <- nxt
+      linked <- which(!is.na(pid[v, ]) & pid[v, ] >= min_pid & is.na(comp))
+      queue <- c(queue, linked)
+    }
+  }
+
+  len <- as.integer(units$total_length[cmp])
+  rank_len <- len
+  rank_len[is.na(rank_len)] <- -1L
+  # representative = longest member, ties broken by key so the label is stable
+  reps <- vapply(seq_len(nxt), function(g) {
+    m <- which(comp == g)
+    m[order(-rank_len[m], units$key[cmp[m]])][1]
+  }, integer(1))
+  # g1 is the group whose representative is longest, again tie-broken by key
+  gord <- order(-rank_len[reps], units$key[cmp[reps]])
+  label <- character(nxt)
+  label[gord] <- paste0("g", seq_len(nxt))
+  cls <- if (nxt == 1L) "isomer" else "paralog"
+
+  for (i in seq_len(k)) {
+    r <- reps[comp[i]]
+    out$variant_class[cmp[i]] <- cls
+    out$variant_group[cmp[i]] <- label[comp[i]]
+    if (i != r) {
+      out$variant_identity[cmp[i]] <- pid[i, r]
+      out$len_delta[cmp[i]] <- abs(len[i] - len[r])
+    }
+  }
+  out
+}
+
 #' One unit's annotated anchors concatenated into a single comparable string
 #'
 #' A unit missing all three anchors is not comparable and returns NA, which is

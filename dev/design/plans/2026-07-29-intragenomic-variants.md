@@ -253,7 +253,7 @@ Rules, in order:
 1. Keep only rows whose `element` is one of `18S`, `5.8S`, `28S`, with usable `start`/`stop`.
 2. No anchor rows at all -> `NA_character_`. A unit missing all three anchors is not comparable (doc 12 section 3.1).
 3. Mixed strands across the kept anchors -> `NA_character_`. That is a chimera signal, and concatenating antisense and sense spans produces a string that means nothing.
-4. All anchors on `-` -> build from the reverse complement of each span, in reverse element order. `orient_sequence()` normally leaves a unit on `+`, so this is defensive, but a unit that escaped orientation must not be compared against an oriented one and read as a paralog.
+4. All anchors on `-` -> reverse-complement each span, which is that anchor in sense. Do **not** also reverse the concatenation order: the element sort in rule 5 already puts them in transcription order, and reversing again double-reverses. `orient_sequence()` normally leaves a unit on `+`, so this is defensive, but a unit that escaped orientation must not be compared against an oriented one and read as a paralog on the strength of being antisense.
 5. Otherwise concatenate in fixed element order `18S`, `5.8S`, `28S`, using only the anchors present. Fixed order, never coordinate order: a circularly permuted assembly would otherwise produce a different string for the same molecule.
 
 - [ ] **Step 1: Write the failing test**
