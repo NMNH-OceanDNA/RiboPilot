@@ -261,17 +261,36 @@ classify_hit_title <- function(title) {
 }
 ```
 
-- [ ] **Step 6: Run tests to verify they pass**
+- [ ] **Step 6: Point the legacy predicate at the new classifier**
+
+`is_nuclear_rrna_title()` (R/blast_genbank.R:13) reads `NUCLEAR_RRNA_TITLE_RE`, which Step 4 just broadened, so leaving it alone would silently change its behaviour: "Escherichia coli 16S ribosomal RNA gene" would start matching the bare "ribosomal RNA gene" construction, which `test-export.R:105` correctly asserts must be FALSE. Redefine it as a thin wrapper so the two cannot diverge:
+
+```r
+#' Does this title name a nuclear rDNA record?
+#'
+#' Thin wrapper over [classify_hit_title()] so the binary predicate and the
+#' three-state classifier can never disagree. `uninformative` reads as FALSE
+#' here, which is what every existing caller already assumed.
+#' @param title Character vector of subject titles.
+#' @noRd
+is_nuclear_rrna_title <- function(title) {
+  classify_hit_title(title) == "rdna"
+}
+```
+
+Its two callers (R/blast_genbank.R:60 and :205) keep working unchanged, and `blast_hits.is_nuclear_rrna` keeps its existing 1/0 meaning. Do NOT modify those callers in this task; Task 4 rewires them.
+
+- [ ] **Step 7: Run tests to verify they pass**
 
 Run: `Rscript -e 'testthat::test_local(filter = "hit-class")'`
 Expected: PASS.
 
 If a fixture row fails, fix the PATTERN, not the fixture, unless the fixture's `expected` is genuinely wrong on the spec's own rules; in that case say so explicitly in your report.
 
-- [ ] **Step 7: Check the whole suite and commit**
+- [ ] **Step 8: Check the whole suite and commit**
 
 Run: `Rscript -e 'testthat::test_local()'`
-Expected: 0 failures. `is_nuclear_rrna_title()` still exists and its callers are untouched at this point.
+Expected: 0 failures, with `test-export.R:100`'s existing assertions passing UNCHANGED, including that a bacterial 16S record is not nuclear rDNA. If any pre-existing assertion fails, the pattern or the wrapper is wrong; do not edit the assertion.
 
 ```bash
 git add R/hit_class.R R/constants.R tests/testthat/fixtures/hit_titles.csv tests/testthat/test-hit-class.R
