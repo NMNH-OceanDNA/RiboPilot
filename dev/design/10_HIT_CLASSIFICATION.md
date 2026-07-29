@@ -141,8 +141,13 @@ ordering, action set or gate changes.
 - All 26 real `uninformative` titles from the reference project. These are the
   regression that motivated the work and must be pinned individually.
 - A stratified sample across the 575 real positives, covering each observed
-  shape: ITS (241 distinct), 28S (237), 18S (69), and the bare
-  small/large-subunit phrasing (28).
+  shape: ITS (241 distinct), 28S (237), 18S (69). The 28 titles carrying a
+  small/large-subunit phrasing are a SUBSET of the ITS ones rather than a
+  separate shape, since GenBank writes them as "small subunit ribosomal RNA
+  gene, partial sequence; internal transcribed spacer 1 ...". Sampling must not
+  double count them. Note also that 28S records appear as "28S ribosomal RNA
+  (ACCESSION), rRNA" with no "gene", so a pattern requiring "gene" would miss
+  237 distinct real titles.
 - Hand-authored rows for the categories the reference project contains none of,
   because it is ten clean fish samples: mitochondrial and chloroplast rRNA,
   prokaryotic 16S and 23S, protein-coding and mRNA records, and the adversarial
