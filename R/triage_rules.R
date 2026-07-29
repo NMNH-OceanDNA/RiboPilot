@@ -182,8 +182,10 @@ triage_rules <- function(d, opts = triage_actions_default(), m = triage_rule_mat
   d$new_reason <- rep(NA_character_, n)
   d$new_rule <- rep(NA_character_, n)
   if (n == 0) return(d)
-  # an m built from another frame, row-permuted, or stripped of dimnames would
-  # attribute a verdict to the wrong scaffold instead of erroring
+  # catches a wrong row count, stripped dimnames and truncated columns. It
+  # cannot catch a row-permuted or foreign same-shape m, which would attribute a
+  # verdict to the wrong scaffold: the matrix carries no row identity to check
+  # against. Safe only because the sole caller builds m from this same d.
   stopifnot(nrow(m) == n, identical(colnames(m), triage_rule_keys()))
   act <- normalize_triage_actions(opts)
   keys <- colnames(m)
