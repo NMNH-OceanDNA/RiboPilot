@@ -204,14 +204,22 @@ mk_screen_db <- function() {
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S1',?,NULL)", params = list(FISH_T))
   DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',1,1)")
   DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',1,2)")
+  # a second sample, present so per-sample driver calls can be pinned as scoped
+  # to their own sample rather than accidentally scanning the whole project
+  DBI::dbExecute(con, "INSERT INTO samples VALUES('S2',?,NULL)", params = list(FISH_T))
+  DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S2',1,1)")
+  DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S2',1,2)")
   con
 }
-add_hits <- function(con, scaf, tax, n = 3, bs = 900, lin = "Eukaryota;Chordata;Actinopteri;o;f;g;s") {
+add_hits <- function(con, scaf, tax, n = 3, bs = 900,
+                      lin = "Eukaryota;Chordata;Actinopteri;o;f;g;s", id = "S1",
+                      rd = rank_distance(tax, FISH_T)) {
   for (i in seq_len(n)) {
     DBI::dbExecute(con,
-      "INSERT INTO blast_hits (ID,path,scaffold,hit_rank,hsp,bitscore,lineage_taxids,lineage,hit_class)
-       VALUES ('S1',1,?,?,1,?,?,?,'rdna')",
-      params = list(scaf, i, bs - i, tax, lin))
+      "INSERT INTO blast_hits
+         (ID,path,scaffold,hit_rank,hsp,bitscore,lineage_taxids,lineage,hit_class,rank_distance)
+       VALUES (?,1,?,?,1,?,?,?,'rdna',?)",
+      params = list(id, scaf, i, bs - i, tax, lin, rd))
   }
 }
 
@@ -266,4 +274,46 @@ test_that("screen_sample covers every unit and sets reference support", {
   expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM screen")$n, 2L)
   rs <- DBI::dbGetQuery(con, "SELECT reference_support v FROM samples WHERE ID='S1'")$v
   expect_false(is.na(rs))
+})
+
+test_that("screen_sample touches only its own sample, not the whole project", {
+  # a prior sub-project shipped an ungated whole-project rescan here, caught
+  # only by measurement (O(units^2) on a live run); this pins scope by
+  # construction rather than relying on that happening again.
+  con <- mk_screen_db(); on.exit(DBI::dbDisconnect(con))
+  add_hits(con, 1, FISH_T, id = "S1")
+  add_hits(con, 2, FISH_T, id = "S1")
+  add_hits(con, 1, FISH_T, id = "S2")
+  add_hits(con, 2, FISH_T, id = "S2")
+
+  screen_sample(con, "S1")
+  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM screen WHERE ID='S1'")$n, 2L)
+  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM screen WHERE ID='S2'")$n, 0L)
+  rs1 <- DBI::dbGetQuery(con, "SELECT reference_support v FROM samples WHERE ID='S1'")$v
+  rs2 <- DBI::dbGetQuery(con, "SELECT reference_support v FROM samples WHERE ID='S2'")$v
+  expect_false(is.na(rs1))
+  expect_true(is.na(rs2))
+
+  s1_before <- DBI::dbGetQuery(con, "SELECT * FROM screen WHERE ID='S1' ORDER BY scaffold")
+  screen_sample(con, "S2")
+  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM screen WHERE ID='S2'")$n, 2L)
+  s1_after <- DBI::dbGetQuery(con, "SELECT * FROM screen WHERE ID='S1' ORDER BY scaffold")
+  expect_equal(s1_before, s1_after)
+})
+
+test_that("recomputed reference_support agrees with the stored rank_distance column", {
+  # in the ordinary case (sample lineage already resolved when blast_genbank
+  # stored the hit, so it wrote a real rank_distance) the two independent
+  # computations -- read the stored column, or recompute from lineage_taxids --
+  # must land on the same answer. A future divergence here would mean
+  # rank_distance() semantics changed at only one of its two call sites.
+  con <- mk_screen_db(); on.exit(DBI::dbDisconnect(con))
+  add_hits(con, 1, FISH_T)
+  screen_one(con, "S1", 1, 1)
+  RiboPilot:::update_reference_support(con, "S1")
+  recomputed <- DBI::dbGetQuery(con,
+    "SELECT reference_support v FROM samples WHERE ID='S1'")$v
+  stored <- DBI::dbGetQuery(con,
+    "SELECT MIN(rank_distance) v FROM blast_hits WHERE ID='S1' AND scaffold=1")$v
+  expect_equal(recomputed, stored)
 })
