@@ -135,13 +135,19 @@ auto_triage_sample <- function(con, id, opts = NULL, overwrite_user = FALSE) {
 #' @param opts Named list of per-rule actions; NULL reads the sample's
 #'   triage_opts preset.
 #' @param overwrite_user Include units a curator decided by hand.
-#' @return list(n_units, n_drop, n_undecided, n_keep, n_samples, emptied,
-#'   n_user_skipped, n_locked_skipped, by_rule).
+#' @return list with, for the END STATE after Apply: n_units, n_drop, n_undecided,
+#'   n_keep, n_samples, emptied, n_user_skipped, n_locked_skipped, by_rule; and,
+#'   for what Apply would actually CHANGE (units where `skipped` is FALSE only):
+#'   n_new_drop, n_new_keep, n_new_flag (counts of `new_triage` among those
+#'   units), and n_changed (units among those whose stored triage/reason/rule
+#'   differ from the proposed ones, by the same comparison auto_triage_sample()
+#'   uses to decide what to write).
 #' @export
 triage_preview <- function(con, ids, opts = NULL, overwrite_user = FALSE) {
   res <- list(n_units = 0L, n_drop = 0L, n_undecided = 0L, n_keep = 0L,
     n_samples = 0L, emptied = character(0), n_user_skipped = 0L,
-    n_locked_skipped = 0L, by_rule = NULL)
+    n_locked_skipped = 0L, by_rule = NULL,
+    n_new_drop = 0L, n_new_keep = 0L, n_new_flag = 0L, n_changed = 0L)
   acc <- NULL
   for (id in unique(ids)) {
     d <- unit_triage_state(con, id)
@@ -173,6 +179,19 @@ triage_preview <- function(con, ids, opts = NULL, overwrite_user = FALSE) {
     res$n_undecided <- res$n_undecided + sum(is.na(eff))
     res$n_samples <- res$n_samples + 1L
     if (all(eff %in% "drop")) res$emptied <- c(res$emptied, id)
+    # what Apply actually touches: units NOT skipped, and among those, whether
+    # the proposed triple differs from what is already stored -- mirroring the
+    # exact skip comparison auto_triage_sample() uses, so preview and apply
+    # can never disagree on which units "change"
+    touch <- !skipped
+    navl <- function(x) ifelse(is.na(x), "", x)
+    same <- (navl(d$triage) == navl(d$new_triage)) &
+      (navl(d$triage_reason) == navl(d$new_reason)) &
+      (navl(d$triage_rule) == navl(d$new_rule))
+    res$n_new_drop <- res$n_new_drop + sum(touch & d$new_triage %in% "drop")
+    res$n_new_keep <- res$n_new_keep + sum(touch & d$new_triage %in% "keep")
+    res$n_new_flag <- res$n_new_flag + sum(touch & is.na(d$new_triage))
+    res$n_changed <- res$n_changed + sum(touch & !same)
   }
   res$by_rule <- acc %||% triage_rule_counts(
     data.frame(), normalize_triage_actions(opts %||% triage_opts_row(con)))

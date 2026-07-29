@@ -17,8 +17,13 @@ triage_opts preset.}
 \item{overwrite_user}{Include units a curator decided by hand.}
 }
 \value{
-list(n_units, n_drop, n_undecided, n_keep, n_samples, emptied,
-  n_user_skipped, n_locked_skipped, by_rule).
+list with, for the END STATE after Apply: n_units, n_drop, n_undecided,
+  n_keep, n_samples, emptied, n_user_skipped, n_locked_skipped, by_rule; and,
+  for what Apply would actually CHANGE (units where `skipped` is FALSE only):
+  n_new_drop, n_new_keep, n_new_flag (counts of `new_triage` among those
+  units), and n_changed (units among those whose stored triage/reason/rule
+  differ from the proposed ones, by the same comparison auto_triage_sample()
+  uses to decide what to write).
 }
 \description{
 A bulk write across a whole project is the highest-blast-radius action in the

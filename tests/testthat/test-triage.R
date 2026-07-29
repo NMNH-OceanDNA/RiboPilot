@@ -286,3 +286,62 @@ test_that("set_unit_triage rejects abbreviations instead of expanding them", {
   expect_silent(set_unit_triage(con, "S1", 1, 1, "keep"))
   expect_silent(set_unit_triage(con, "S1", 1, 1, NA))
 })
+
+# ---- what Apply would CHANGE, as distinct from where the project ends up ----
+
+all_rules_off <- function() {
+  stats::setNames(as.list(rep("off", length(RiboPilot:::triage_rule_keys()))),
+    RiboPilot:::triage_rule_keys())
+}
+
+test_that("all rules off changes nothing, even though a hand-decided drop still counts in n_drop", {
+  con <- mk_triage_db(); on.exit(DBI::dbDisconnect(con))
+  # seed the two untouched units to the state an earlier auto run already left
+  # them in: nothing matched, so they are already explicit 'keep'
+  auto_triage_sample(con, "S1")
+  # the curator's own call, made by hand; Apply must never touch this again
+  set_unit_triage(con, "S1", 1, 1, "drop", reason = "checked by hand", source = "user")
+
+  p <- triage_preview(con, "S1", opts = all_rules_off())
+  expect_equal(p$n_changed, 0L)     # this is the user's exact complaint
+  expect_equal(p$n_drop, 1L)        # end state still reflects the standing user drop
+  expect_equal(p$n_new_drop, 0L)
+  # scaffolds 2-3 are untouched by the user, and off proposes 'keep' for both;
+  # that proposal already matches what they were seeded to, so n_changed stays 0
+  expect_equal(p$n_new_keep, 2L)
+  expect_equal(p$n_new_flag, 0L)
+})
+
+test_that("n_new_drop counts only units Apply will newly drop", {
+  con <- mk_triage_db(); on.exit(DBI::dbDisconnect(con))
+  # make every unit droppable by the default preset (no_feat_non_rdna -> drop)
+  DBI::dbExecute(con, "DELETE FROM annotations")
+  DBI::dbExecute(con, "UPDATE annotate SET n_features = 0")
+  DBI::dbExecute(con, "UPDATE blast_screen SET is_nuclear_rrna = 0, species = 'Homo sapiens'")
+  # scaffold 1 is already a curator's call; Apply skips it
+  set_unit_triage(con, "S1", 1, 1, "drop", reason = "checked by hand", source = "user")
+
+  p <- triage_preview(con, "S1")
+  expect_equal(p$n_new_drop, 2L)    # scaffolds 2 and 3 only
+  expect_equal(p$n_user_skipped, 1L)
+})
+
+test_that("n_new_drop + n_new_keep + n_new_flag equals the units Apply would touch", {
+  con <- mk_triage_db(); on.exit(DBI::dbDisconnect(con))
+  # scaffold 1: hand-decided, skipped
+  set_unit_triage(con, "S1", 1, 1, "keep", source = "user")
+  # scaffold 2 stays as-is: annotated + a nuclear hit, nothing fires -> keep
+  # scaffold 3: annotation never ran -> flagged
+  DBI::dbExecute(con, "DELETE FROM annotations WHERE scaffold = 3")
+  DBI::dbExecute(con, "UPDATE annotate SET n_features = NULL WHERE scaffold = 3")
+  # a 4th unit, feature present but a non-rDNA hit -> flagged
+  add_unit(con, 4, "Cyclops sp.", COPE_L, COPE_T, nuc = 0L)
+  # a 5th unit, no feature and a non-rDNA hit -> dropped
+  add_unit(con, 5, "Cyclops sp.", COPE_L, COPE_T, nuc = 0L)
+  DBI::dbExecute(con, "DELETE FROM annotations WHERE scaffold = 5")
+  DBI::dbExecute(con, "UPDATE annotate SET n_features = 0 WHERE scaffold = 5")
+
+  p <- triage_preview(con, "S1")
+  n_unskipped <- p$n_units - p$n_user_skipped - p$n_locked_skipped
+  expect_equal(p$n_new_drop + p$n_new_keep + p$n_new_flag, n_unskipped)
+})

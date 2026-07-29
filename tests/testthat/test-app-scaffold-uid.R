@@ -158,7 +158,9 @@ test_that("bulk triage previews before it writes, and applying honours the previ
     expect_true(all(RiboPilot:::app_query("SELECT COALESCE(ignore,0) i FROM assemblies WHERE ID='S1'")$i == 0))
     prev <- output$triage_preview$html      # renderUI returns list(html, deps)
     expect_true(nzchar(prev))
-    expect_match(prev, "Would drop 4 of 4")
+    expect_match(prev, "Apply would change 4 of 4", fixed = TRUE)
+    expect_match(prev, "4 newly dropped", fixed = TRUE)
+    expect_match(prev, "Resulting state across 1 sample(s): 4 dropped", fixed = TRUE)
     expect_match(prev, "NO scaffolds kept")  # the outcome that silently loses a sample
 
     session$setInputs(triage_apply = 1)
@@ -197,7 +199,8 @@ test_that("the modal previews the stored preset, not the shipped defaults", {
     expect_equal(triage_actions()$no_feat_non_rdna, "flag")
     expect_equal(triage_actions()$odd_one_out, "off")
     prev <- output$triage_preview$html
-    expect_match(prev, "Would drop 0 of 4")
+    expect_match(prev, "0 newly dropped", fixed = TRUE)
+    expect_match(prev, "Resulting state across 1 sample(s): 0 dropped", fixed = TRUE)
     expect_match(prev, "No rule is set to Drop", fixed = TRUE)
   })
 })
@@ -228,5 +231,45 @@ test_that("preview says so when a Drop rule is armed but everything it matches i
     prev <- output$triage_preview$html
     expect_true(nzchar(prev))
     expect_match(prev, "nothing in this selection will be dropped", fixed = TRUE)
+  })
+})
+
+test_that("turning every rule off says Apply changes nothing, not 'Would drop'", {
+  # the reported bug: with every rule off, the preview kept saying "Would drop
+  # N" because it reported the END STATE (which includes standing hand-decided
+  # drops), not what Apply itself would touch
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  # p1.s1 hand-decided drop, p1.s2 hand-decided keep: standing curator calls
+  DBI::dbExecute(con,
+    "UPDATE assemblies SET triage='drop', triage_source='user' WHERE ID='S1' AND path=1 AND scaffold=1")
+  DBI::dbExecute(con,
+    "UPDATE assemblies SET triage='keep', triage_source='user' WHERE ID='S1' AND path=1 AND scaffold=2")
+  # p2.s1 and p2.s2 already auto-triaged to keep by an earlier run, matching
+  # exactly what every rule off would propose again
+  DBI::dbExecute(con,
+    "UPDATE assemblies SET triage='keep', triage_source='auto' WHERE ID='S1' AND path=2 AND scaffold=1")
+  DBI::dbExecute(con,
+    "UPDATE assemblies SET triage='keep', triage_source='auto' WHERE ID='S1' AND path=2 AND scaffold=2")
+  DBI::dbDisconnect(con)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    sel_id("S1")
+    session$flushReact()
+    session$setInputs(triage_btn = 1, triage_overwrite_user = FALSE)
+    off_inputs <- stats::setNames(as.list(rep("off", length(RiboPilot:::triage_rule_keys()))),
+      paste0("triage_rule_", RiboPilot:::triage_rule_keys()))
+    do.call(session$setInputs, off_inputs)
+    session$flushReact()
+
+    expect_true(all(vapply(RiboPilot:::triage_rule_keys(),
+      function(k) triage_actions()[[k]] == "off", logical(1))))
+    prev <- output$triage_preview$html
+    expect_true(nzchar(prev))
+    expect_match(prev, "Apply would change nothing", fixed = TRUE)
+    expect_false(grepl("Would drop", prev, fixed = TRUE))
   })
 })

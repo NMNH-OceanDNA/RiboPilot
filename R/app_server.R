@@ -1113,11 +1113,18 @@ app_server <- function(input, output, session) {
     if (is.null(p)) return(em("No samples to triage."))
     no_drop <- !any(triage_actions() %in% "drop")
     tagList(
-      tags$p(sprintf("Would drop %d of %d scaffold(s) across %d sample(s); %d kept, %d left undecided.",
-        p$n_drop, p$n_units, p$n_samples, p$n_keep, p$n_undecided)),
+      tags$p(
+        if (p$n_changed == 0)
+          "Apply would change nothing: every scaffold already has the verdict these rules propose."
+        else
+          sprintf(paste("Apply would change %d of %d scaffold(s):",
+            "%d newly dropped, %d newly kept, %d newly flagged."),
+            p$n_changed, p$n_units, p$n_new_drop, p$n_new_keep, p$n_new_flag)),
+      tags$p(sprintf("Resulting state across %d sample(s): %d dropped, %d kept, %d undecided.",
+        p$n_samples, p$n_drop, p$n_keep, p$n_undecided)),
       if (no_drop) tags$p(style = "color:#555;",
         "No rule is set to Drop, so Apply will only add and clear reasons.")
-      else if (p$n_drop == 0) tags$p(style = "color:#555;",
+      else if (p$n_new_drop == 0) tags$p(style = "color:#555;",
         "A rule is set to Drop, but nothing in this selection will be dropped."),
       if (p$n_user_skipped > 0) tags$p(style = "color:#555;",
         sprintf("%d scaffold(s) you decided by hand will be left alone.", p$n_user_skipped)),
