@@ -80,17 +80,28 @@ screen_confidence_terms <- function(lca_n_hits, lca_rank, margin, top_bitscore,
 SCREEN_KINGDOM_TAXIDS <- c("2" = "bacterial", "2157" = "archaeal",
   "4751" = "fungal", "33090" = "algal_plant", "33208" = "metazoan_other")
 
-#' Off-target subclass from the LCA's kingdom-rank taxid and its taxon label
-#' @param lca_kingdom Integer taxid at the kingdom rank of the LCA's lineage.
+#' Off-target subclass from the LCA's rank-aligned taxid path and its taxon label
+#'
+#' Matches the WHOLE path rather than a single rank slot: whether taxonkit's
+#' `{K}` emits superkingdom or kingdom decides whether Bacteria/Archaea or
+#' Fungi/Viridiplantae/Metazoa lands in slot 1, and this codebase disagrees
+#' with itself about which (doc 08 line 510 vs taxonomy_ranks.R:24). Matching
+#' the whole path is correct under either reading.
+#' @param lca_taxids Rank-aligned taxid path of the LCA (";"-joined string or
+#'   integer vector from [parse_rank_taxids()]).
 #' @param lca_taxon The LCA's own taxon label (used only for the human check).
 #' @noRd
-screen_class_for <- function(lca_kingdom, lca_taxon) {
-  # a human handling contaminant is worth naming even though it is metazoan
+screen_class_for <- function(lca_taxids, lca_taxon) {
   if (isTRUE(tolower(lca_taxon %|NA|% "") == "homo sapiens")) return("human")
-  k <- suppressWarnings(as.integer(lca_kingdom %|NA|% NA_integer_))
-  if (is.na(k)) return(NA_character_)
-  val <- unname(SCREEN_KINGDOM_TAXIDS[as.character(k)])
-  if (is.na(val)) "other_euk" else val
+  p <- if (is.character(lca_taxids)) parse_rank_taxids(lca_taxids) else lca_taxids
+  p <- p[!is.na(p)]
+  if (!length(p)) return(NA_character_)
+  # most specific first: a metazoan path also contains Eukaryota, and slot 1
+  # may be superkingdom or kingdom depending on the taxdump
+  for (k in c("4751", "33090", "33208", "2", "2157")) {
+    if (as.integer(k) %in% p) return(unname(SCREEN_KINGDOM_TAXIDS[k]))
+  }
+  "other_euk"
 }
 
 #' Score one unit's hit distribution against its sample's lineage
@@ -149,27 +160,30 @@ screen_channel_taxonomy <- function(hits, sample_taxids) {
   out$host_concordant <- as.integer(lca$taxid %in% samp[!is.na(samp)])
 
   # the margin uses a SECOND, per-hit concordance, distinct from the unit-level
-  # one above: it compares the two best-supported opposing hits
-  deep <- utils::tail(samp[!is.na(samp)], 1)
-  hit_conc <- vapply(h$lineage_taxids, function(x)
-    isTRUE(deep %in% parse_rank_taxids(x)), logical(1), USE.NAMES = FALSE)
+  # one above: it compares the two best-supported opposing hits.
+  # a hit is on the sample's lineage when their paths share any resolved taxid.
+  # Testing the sample's DEEPEST taxid instead would count a congener as
+  # discordant, which made a clean unit split against itself and score uncertain.
+  samp_ok <- samp[!is.na(samp)]
+  hit_conc <- vapply(h$lineage_taxids, function(x) {
+    p <- parse_rank_taxids(x)
+    any(p[!is.na(p)] %in% samp_ok)
+  }, logical(1), USE.NAMES = FALSE)
   best <- function(v) if (any(v)) max(h$bitscore[v], na.rm = TRUE) else NA_real_
   out$margin <- best(hit_conc) - best(!hit_conc)
 
   # every surviving hit on one side means nothing opposes the winner, which is
-  # maximal separation rather than missing separation
-  unanimous <- all(hit_conc) || !any(hit_conc)
+  # maximal separation rather than missing separation. A lone hit is unopposed
+  # by definition; without the count floor one accession reaches confidence
+  # 0.73 and decides a scaffold on its own, which bitscore_weighted_lca()'s own
+  # minimum-of-three exists to prevent.
+  unanimous <- (all(hit_conc) || !any(hit_conc)) && lca$n_hits >= 2
   tm <- screen_confidence_terms(lca$n_hits, lca$rank, out$margin,
     suppressWarnings(max(h$bitscore, na.rm = TRUE)), unanimous = unanimous)
   out$terms <- tm[c("support", "resolution", "separation")]
   out$confidence <- tm$confidence
   out$reason_code <- NA_character_
 
-  # kingdom taxid, not name: robust to the placeholder/legacy text real
-  # taxdump exports sometimes carry at that rank
-  king_taxids <- vapply(h$lineage_taxids, function(x) parse_rank_taxids(x)[1],
-    integer(1), USE.NAMES = FALSE)
-  kingdom_taxid <- king_taxids[!is.na(king_taxids)][1]
   out$verdict <- if (tm$confidence < SCREEN_MIN_CONFIDENCE) {
     "uncertain"
   } else if (identical(out$host_concordant, 1L)) {
@@ -178,7 +192,8 @@ screen_channel_taxonomy <- function(hits, sample_taxids) {
     "off_target"
   }
   if (identical(out$verdict, "off_target")) {
-    out$class <- screen_class_for(kingdom_taxid, lca$taxon)
+    # the whole path, not one rank slot: see screen_class_for()
+    out$class <- screen_class_for(h$lineage_taxids[1], lca$taxon)
   }
   out$reason <- sprintf(
     "hits agree on %s (%s, %d voting); %s the sample's lineage. support %.2f w %.2f, resolution %.2f w %.2f, separation %.2f w %.2f -> confidence %.2f",

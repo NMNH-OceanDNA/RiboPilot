@@ -124,6 +124,53 @@ test_that("the reason names every term with its value and its weight", {
   expect_match(r$reason, "0.40", fixed = TRUE)
 })
 
+test_that("finding A: a congener hit is concordant, not discordant, on the margin", {
+  # one exact species match plus two same-genus relatives: all three share the
+  # sample's lineage above species, so none of them opposes the LCA. Testing
+  # the sample's DEEPEST taxid instead of ANY shared taxid used to count the
+  # congeners as discordant and score this uncertain.
+  cong1 <- "33208;7711;186623;7952;2743709;7954;90001"
+  cong2 <- "33208;7711;186623;7952;2743709;7954;90002"
+  h <- hits(hit(FISH_T, 900), hit(cong1, 500), hit(cong2, 480))
+  r <- RiboPilot:::screen_channel_taxonomy(h, FISH_T)
+  expect_equal(r$verdict, "on_target")
+  expect_gte(r$confidence, 0.6)
+})
+
+test_that("finding B: a lone hit cannot decide a scaffold on its own", {
+  # ONE fungal hit is discordant and, being alone, unopposed by definition; a
+  # count floor keeps that from reaching off_target unopposed
+  h1 <- hits(hit(FUNGI_T, 900))
+  r1 <- RiboPilot:::screen_channel_taxonomy(h1, FISH_T)
+  expect_equal(r1$verdict, "uncertain")
+
+  # three discordant hits clear the floor and still reach off_target
+  h3 <- hits(hit(FUNGI_T, 900), hit(FUNGI_T, 890), hit(FUNGI_T, 880))
+  r3 <- RiboPilot:::screen_channel_taxonomy(h3, FISH_T)
+  expect_equal(r3$verdict, "off_target")
+})
+
+test_that("finding C: class_for matches the whole taxid path, not rank slot 1", {
+  BACT_T <- "2;1224;1236;91347;543;561;562"
+  expect_equal(RiboPilot:::screen_class_for(BACT_T, NA_character_), "bacterial")
+  expect_equal(RiboPilot:::screen_class_for(FUNGI_T, NA_character_), "fungal")
+  expect_equal(RiboPilot:::screen_class_for(FISH_T, NA_character_), "metazoan_other")
+  # taxon label wins even though the path itself is metazoan
+  expect_equal(RiboPilot:::screen_class_for(FISH_T, "Homo sapiens"), "human")
+
+  # the call site, not just the helper: drive bacterial and fungal through
+  # screen_channel_taxonomy() too
+  hb <- hits(hit(BACT_T, 900), hit(BACT_T, 890), hit(BACT_T, 880))
+  rb <- RiboPilot:::screen_channel_taxonomy(hb, FISH_T)
+  expect_equal(rb$verdict, "off_target")
+  expect_equal(rb$class, "bacterial")
+
+  hf <- hits(hit(FUNGI_T, 900), hit(FUNGI_T, 890), hit(FUNGI_T, 880))
+  rf <- RiboPilot:::screen_channel_taxonomy(hf, FISH_T)
+  expect_equal(rf$verdict, "off_target")
+  expect_equal(rf$class, "fungal")
+})
+
 test_that("no identity threshold appears anywhere in the scoring core", {
   # the envelope was deferred after measurement (doc 08 section 3.2.1); a pident
   # comparison here would be a defect, so pin its absence. Deparse the functions
