@@ -647,8 +647,9 @@ Change the screen call at line 114 to pass the full frame:
 Change the reference filter at line 117 from `subj$is_nuclear_rrna == 1L` to:
 
 ```r
-  # assembly-level records are poor per-element references, so the panel stays
-  # rdna-only rather than admitting uninformative hits
+  # equivalent to the old is_nuclear_rrna filter, since that predicate now
+  # delegates to the same classifier. Written against hit_class directly so the
+  # intent stays explicit and survives if the legacy wrapper is retired.
   ref <- subj[subj$hit_class == "rdna", , drop = FALSE]
 ```
 
