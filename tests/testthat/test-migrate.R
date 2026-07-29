@@ -289,16 +289,30 @@ test_that("v15 adds the intragenomic variant columns to screen", {
   expect_equal(DBI::dbGetQuery(con, "PRAGMA user_version")[[1]], 15L)
 })
 
-test_that("a v14 project with a stored screen row gains the columns without losing it", {
-  # additive and idempotent: nothing is dropped or retyped, and a stored verdict
-  # survives the migration that adds columns beside it
+test_that("a real v14 project gains the variant columns and keeps its verdict", {
+  # The screen table must be built at the V14 SHAPE, not from the current
+  # SCREEN_DDL: a v8 db migrates by creating the table from that DDL, which
+  # already has the new columns, so add_col() is a no-op there and the path an
+  # existing v14 project actually takes goes untested.
   con <- mk_v8_db()
   on.exit(DBI::dbDisconnect(con))
-  migrate_db(con)
+  DBI::dbExecute(con, "CREATE TABLE screen (
+    ID TEXT NOT NULL, path INTEGER NOT NULL DEFAULT 1, scaffold INTEGER NOT NULL DEFAULT 1,
+    screen_verdict TEXT, screen_class TEXT, screen_confidence REAL, screen_reason TEXT,
+    screen_version INTEGER, lca_taxid INTEGER, lca_taxon TEXT, lca_rank TEXT,
+    lca_n_hits INTEGER, host_concordant INTEGER, margin REAL, time_stamp INTEGER,
+    PRIMARY KEY (ID, path, scaffold))")
   DBI::dbExecute(con,
     "INSERT INTO screen (ID, path, scaffold, screen_verdict, screen_version)
      VALUES ('S1',1,1,'on_target',2)")
-  migrate_db(con)  # second run must be a no-op
+  DBI::dbExecute(con, "PRAGMA user_version = 14")
+  expect_false("variant_class" %in% DBI::dbListFields(con, "screen"))
+
+  migrate_db(con)
+  migrate_db(con)  # additive and idempotent: the second run is a no-op
+  for (col in c("variant_class", "variant_group", "variant_identity")) {
+    expect_true(col %in% DBI::dbListFields(con, "screen"), info = col)
+  }
   r <- DBI::dbGetQuery(con, "SELECT * FROM screen")
   expect_equal(nrow(r), 1L)
   expect_equal(r$screen_verdict, "on_target")
