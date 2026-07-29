@@ -576,7 +576,7 @@ VARIANT_REASON_SEP <- " | variant: "
 
   The clause names the class, the group, the identity to the representative and the total-length difference, for example
   `" | variant: isomer, group g1, anchors 99.87 percent identical to the group representative, total length differs by 1800 bp"`.
-5. Cost guard: return early without aligning when every `on_target` unit already carries a non-NULL `variant_class` at `screen_version = SCREEN_VERSION` and no unit was rewritten by this call. Pairwise alignment over roughly 4 kb is O(n*m) and a rerun of an unchanged sample should not pay for it.
+5. ~~Cost guard: return early without aligning when every `on_target` unit already carries a non-NULL `variant_class`.~~ **Dropped during implementation.** The only caller is the per-sample `screen` pipeline process, once per run, measured at about 0.3 s per pair and 0 s for identical anchors. The guard as specified would also be wrong: a unit with no annotated anchors legitimately keeps a NULL `variant_class` forever, so "every on-target unit has a class" would never hold for such a sample and the guard would never fire. Recorded at doc 12 section 10.
 
 - [ ] **Step 1: Write the failing test**
 

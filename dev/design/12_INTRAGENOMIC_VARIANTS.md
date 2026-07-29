@@ -124,6 +124,27 @@ two sequences from ONE organism rather than across taxa: the question "are these
 two anchors the same sequence" has a far tighter natural answer than "how
 similar may two different organisms be".
 
+#### 4.0.0 What 99.5 means in absolute terms, measured
+
+Over a realistic anchor total of 5460 bp (18S 1800 + 5.8S 160 + 28S 3500), with
+substitutions only:
+
+| substitutions | identity | class |
+|---|---|---|
+| 0 | 100.00 | isomer |
+| 5 | 99.93 | isomer |
+| 20 | 99.74 | isomer |
+| 30 | 99.63 | isomer |
+| 60 | 99.16 | paralog |
+| 200 | 97.18 | paralog |
+
+So 99.5 splits at roughly 27 differences across the three anchors. Anything
+tighter than that is read as one molecule assembled twice.
+
+Cost, same measurement: about 0.3 s per pair, and 0 s when the anchors are
+identical, because that case short-circuits without aligning. A sample with k
+comparable units pays k(k-1)/2 alignments, and k is typically 2 to 5.
+
 ### 4.1 Why the IGS is inferred rather than measured
 
 RiboPilot's feature model has no IGS element. `parse_barrnap()` and
