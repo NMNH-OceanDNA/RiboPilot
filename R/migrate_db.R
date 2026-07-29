@@ -5,7 +5,7 @@
 
 #' Current project-DB schema version. Bump when adding a migration step below.
 #' @noRd
-RIBOPILOT_SCHEMA_VERSION <- 13L
+RIBOPILOT_SCHEMA_VERSION <- 14L
 
 #' DDL for blast_hits: the full retained BLAST hit distribution per unit.
 #'
@@ -54,6 +54,7 @@ TRIAGE_OPTS_DDL <- "CREATE TABLE IF NOT EXISTS triage_opts (
   rule_no_feat_rdna_hit  TEXT,
   rule_feat_non_rdna_hit TEXT,
   rule_odd_one_out       TEXT,
+  rule_screen_off_target TEXT,
   PRIMARY KEY (triage_opts)
 );"
 
@@ -61,8 +62,31 @@ TRIAGE_OPTS_DDL <- "CREATE TABLE IF NOT EXISTS triage_opts (
 #' @noRd
 TRIAGE_OPTS_SEED <- "INSERT INTO triage_opts
   (triage_opts, rule_not_annotated, rule_no_screen, rule_no_feat_non_rdna,
-   rule_no_feat_rdna_hit, rule_feat_non_rdna_hit, rule_odd_one_out)
-  VALUES ('default', 'flag', 'flag', 'drop', 'flag', 'flag', 'flag');"
+   rule_no_feat_rdna_hit, rule_feat_non_rdna_hit, rule_odd_one_out,
+   rule_screen_off_target)
+  VALUES ('default', 'flag', 'flag', 'drop', 'flag', 'flag', 'flag', 'flag');"
+
+#' DDL for the screen table (machine contamination verdict, one row per unit).
+#' Shared by new_db() and the v14 migration so both agree on the schema.
+#' @noRd
+SCREEN_DDL <- "CREATE TABLE IF NOT EXISTS screen (
+  ID TEXT NOT NULL,
+  path INTEGER NOT NULL DEFAULT 1,
+  scaffold INTEGER NOT NULL DEFAULT 1,
+  screen_verdict    TEXT,
+  screen_class      TEXT,
+  screen_confidence REAL,
+  screen_reason     TEXT,
+  screen_version    INTEGER,
+  lca_taxid         INTEGER,
+  lca_taxon         TEXT,
+  lca_rank          TEXT,
+  lca_n_hits        INTEGER,
+  host_concordant   INTEGER,
+  margin            REAL,
+  time_stamp        INTEGER,
+  PRIMARY KEY (ID, path, scaffold)
+);"
 
 #' DDL for the assembly_backup table (original pre-trim state, for undo/restore).
 #' Shared by new_db() and the v6 migration so both agree on the schema.
@@ -378,6 +402,20 @@ migrate_db <- function(con) {
   # whole project on every unit, O(units^2) across the run this repair exists to
   # avoid repeating. Rows written after v13 get their class from the parse path.
   if (ver < 13L && has_tbl("blast_hits")) backfill_hit_class(con)
+
+  # --- schema v14: the screen verdict layer ---
+  # The machine's opinion about a scaffold lived only as a substring inside
+  # annotate_notes, which curate_one() overwrites wholesale and the modal
+  # textarea also writes to. Created empty on purpose: scoring needs a resolved
+  # sample lineage and a taxdump, which a migration cannot assume.
+  if (!has_tbl("screen")) DBI::dbExecute(con, SCREEN_DDL)
+  add_col("samples", "reference_support", "INTEGER")
+  add_col("triage_opts", "rule_screen_off_target", "TEXT")
+  if (ver < 14L && has_col("triage_opts", "rule_screen_off_target")) {
+    DBI::dbExecute(con,
+      "UPDATE triage_opts SET rule_screen_off_target = 'flag'
+       WHERE rule_screen_off_target IS NULL")
+  }
 
   if (ver < RIBOPILOT_SCHEMA_VERSION) {
     DBI::dbExecute(con, sprintf("PRAGMA user_version = %d", RIBOPILOT_SCHEMA_VERSION))

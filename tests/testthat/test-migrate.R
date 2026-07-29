@@ -193,7 +193,7 @@ test_that("v13 adds hit_class and backfills it from stored titles", {
   migrate_db(con)
 
   expect_true("hit_class" %in% DBI::dbListFields(con, "blast_hits"))
-  expect_equal(DBI::dbGetQuery(con, "PRAGMA user_version")[[1]], 13L)
+  expect_equal(DBI::dbGetQuery(con, "PRAGMA user_version")[[1]], RiboPilot:::RIBOPILOT_SCHEMA_VERSION)
   cls <- DBI::dbGetQuery(con, "SELECT scaffold, hit_class FROM blast_hits ORDER BY scaffold, hit_rank")
   expect_equal(unique(cls$hit_class[cls$scaffold == 1]), "uninformative")
   expect_equal(unique(cls$hit_class[cls$scaffold == 2]), "rdna")
@@ -244,4 +244,34 @@ test_that("migrate_db does not rescan blast_hits when already at v13", {
 
   cls <- DBI::dbGetQuery(con, "SELECT hit_class FROM blast_hits WHERE scaffold=1")$hit_class
   expect_true(is.na(cls))
+})
+
+test_that("v14 adds the screen table and its companions", {
+  con <- mk_v8_db()
+  on.exit(DBI::dbDisconnect(con))
+  migrate_db(con)
+
+  expect_true("screen" %in% DBI::dbListTables(con))
+  for (col in c("screen_verdict", "screen_class", "screen_confidence",
+                "screen_reason", "screen_version", "lca_taxid", "lca_taxon",
+                "lca_rank", "lca_n_hits", "host_concordant", "margin")) {
+    expect_true(col %in% DBI::dbListFields(con, "screen"), info = col)
+  }
+  expect_true("reference_support" %in% DBI::dbListFields(con, "samples"))
+  expect_true("rule_screen_off_target" %in% DBI::dbListFields(con, "triage_opts"))
+  expect_equal(DBI::dbGetQuery(con, "PRAGMA user_version")[[1]], 14L)
+
+  # the new rule ships as flag, per doc 08 section 5's validation gate
+  expect_equal(DBI::dbGetQuery(con,
+    "SELECT rule_screen_off_target v FROM triage_opts WHERE triage_opts='default'")$v,
+    "flag")
+})
+
+test_that("the screen table is created empty rather than backfilled", {
+  # scoring needs samples.lineage_taxids and a taxdump, neither of which a
+  # migration can assume; an empty row must stay distinguishable from a computed one
+  con <- mk_v8_db()
+  on.exit(DBI::dbDisconnect(con))
+  migrate_db(con)
+  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM screen")$n, 0L)
 })
