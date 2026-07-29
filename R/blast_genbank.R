@@ -3,17 +3,15 @@
 # blast_genbank result handling, adapted to RiboPilot's sqlite3/R-script model
 # and targeting nuclear rRNA + ITS references.
 
-#' Is a BLAST subject title a nuclear rDNA record?
+#' Does this title name a nuclear rDNA record?
 #'
-#' Client-side equivalent of the restrictive `entrez_query` that used to be
-#' pushed to NCBI. Applied to the hit list rather than the search space, so the
-#' search itself can stay unrestricted.
+#' Thin wrapper over [classify_hit_title()] so the binary predicate and the
+#' three-state classifier can never disagree. `uninformative` reads as FALSE
+#' here, which is what every existing caller already assumed.
 #' @param title Character vector of subject titles.
 #' @noRd
 is_nuclear_rrna_title <- function(title) {
-  t <- ifelse(is.na(title), "", title)
-  grepl(NUCLEAR_RRNA_TITLE_RE, t, ignore.case = TRUE) &
-    !grepl(ORGANELLAR_TITLE_RE, t, ignore.case = TRUE)
+  classify_hit_title(title) == "rdna"
 }
 
 #' Parse remote blastn hits into ranked reference candidates + a contamination
