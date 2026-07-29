@@ -31,3 +31,9 @@ app, so it is never applied without showing the count first -- including how
 many samples would end up with NOTHING kept, which is the outcome that
 silently loses a sample.
 }
+\details{
+If every rule is "off" for a sample, that sample is treated as fully skipped:
+the preview reports its CURRENT stored state unchanged, with zero counted in
+every n_new_* counter and in n_changed. See
+dev/design/09_TRIAGE_RULES_AND_DEPTH.md section 3.3.
+}

@@ -273,3 +273,24 @@ test_that("turning every rule off says Apply changes nothing, not 'Would drop'",
     expect_false(grepl("Would drop", prev, fixed = TRUE))
   })
 })
+
+test_that("the all-off message replaces the no-Drop note instead of also printing it", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    sel_id("S1")
+    session$flushReact()
+    session$setInputs(triage_btn = 1, triage_overwrite_user = FALSE)
+    off_inputs <- stats::setNames(as.list(rep("off", length(RiboPilot:::triage_rule_keys()))),
+      paste0("triage_rule_", RiboPilot:::triage_rule_keys()))
+    do.call(session$setInputs, off_inputs)
+    session$flushReact()
+
+    prev <- output$triage_preview$html
+    expect_match(prev, "Every rule is off, so Apply would change nothing.", fixed = TRUE)
+    expect_false(grepl("No rule is set to Drop", prev, fixed = TRUE))
+  })
+})

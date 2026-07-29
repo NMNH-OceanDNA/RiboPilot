@@ -142,6 +142,30 @@ relationship with `triage_rule` instead of being assembled ad hoc:
 | `feat_non_rdna_hit` | best GenBank match (%s) is not a nuclear rDNA record |
 | `odd_one_out` | top GenBank hit (%s) differs from this sample's other scaffolds (%s at %s) |
 
+### 3.3 All rules off is a no-op, not a keep
+
+The engine's normal contract is "first enabled rule that matches wins;
+nothing matching means keep." With every rule set to Off, nothing ever
+matches, so that contract would have Apply write `keep` to every
+undecided scaffold on the strength of zero active checks. That is a
+different thing from a rule genuinely finding the scaffold clean, and the
+app must not present it as review.
+
+This is a deliberate special case, not a generalisation of the ordinary
+rule semantics: when, and only when, every rule is "off", `triage_preview()`
+and `auto_triage_sample()` treat the whole sample as skipped, the same way
+a hand-decided or annotation-locked unit is skipped. Apply then writes
+nothing, and the preview reports the CURRENT stored state unchanged --
+including that a previously undecided unit stays undecided rather than
+becoming `keep`.
+
+Partial-off does not behave this way. Five rules off and one left on still
+lets that one rule fire, and an unmatched scaffold still becomes `keep`
+exactly as before; only the all-off case is special. Turning every check
+off and then recording "reviewed and fine" on every scaffold would assert a
+review that never happened, which is the thing this exception exists to
+prevent.
+
 ## 4. Schema v12
 
 ```sql

@@ -101,6 +101,12 @@ triage_actions_default <- function() {
   stats::setNames(lapply(TRIAGE_RULE_DEFS, `[[`, "default"), triage_rule_keys())
 }
 
+#' TRUE when every rule's normalized action is "off"
+#' @noRd
+triage_all_off <- function(actions) {
+  all(vapply(triage_rule_keys(), function(k) identical(actions[[k]], "off"), logical(1)))
+}
+
 #' Coerce a partial or hand-edited action set into a complete, legal one
 #'
 #' An action a rule cannot support is softened to "flag" rather than honoured or

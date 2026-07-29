@@ -305,10 +305,10 @@ test_that("all rules off changes nothing, even though a hand-decided drop still 
   p <- triage_preview(con, "S1", opts = all_rules_off())
   expect_equal(p$n_changed, 0L)     # this is the user's exact complaint
   expect_equal(p$n_drop, 1L)        # end state still reflects the standing user drop
+  # all-off is a full skip (section 3.3): scaffolds 2-3 are not "touched and
+  # happen to match", they are never proposed anything, so every n_new_* is 0
   expect_equal(p$n_new_drop, 0L)
-  # scaffolds 2-3 are untouched by the user, and off proposes 'keep' for both;
-  # that proposal already matches what they were seeded to, so n_changed stays 0
-  expect_equal(p$n_new_keep, 2L)
+  expect_equal(p$n_new_keep, 0L)
   expect_equal(p$n_new_flag, 0L)
 })
 
@@ -344,4 +344,50 @@ test_that("n_new_drop + n_new_keep + n_new_flag equals the units Apply would tou
   p <- triage_preview(con, "S1")
   n_unskipped <- p$n_units - p$n_user_skipped - p$n_locked_skipped
   expect_equal(p$n_new_drop + p$n_new_keep + p$n_new_flag, n_unskipped)
+})
+
+# ---- every rule off is a deliberate no-op, not a keep sweep (section 3.3) ---
+
+test_that("auto-triage writes nothing when every rule is off", {
+  con <- mk_triage_db(); on.exit(DBI::dbDisconnect(con))
+  # a mix of states: one standing user decision, two still undecided
+  set_unit_triage(con, "S1", 1, 1, "drop", reason = "checked by hand", source = "user")
+  cols <- "scaffold, triage, triage_reason, triage_source, triage_rule, ignore"
+  before <- DBI::dbGetQuery(con, paste("SELECT", cols, "FROM assemblies ORDER BY scaffold"))
+
+  n <- auto_triage_sample(con, "S1", opts = all_rules_off())
+  expect_equal(n, 0L)
+
+  after <- DBI::dbGetQuery(con, paste("SELECT", cols, "FROM assemblies ORDER BY scaffold"))
+  expect_identical(before, after)
+})
+
+test_that("preview with every rule off reports the current state unchanged, not a keep sweep", {
+  con <- mk_triage_db(); on.exit(DBI::dbDisconnect(con))
+  set_unit_triage(con, "S1", 1, 1, "drop", reason = "checked by hand", source = "user")
+  # scaffolds 2 and 3 are still undecided -- never auto-triaged
+
+  p <- triage_preview(con, "S1", opts = all_rules_off())
+  expect_equal(p$n_changed, 0L)
+  expect_equal(p$n_new_drop, 0L)
+  expect_equal(p$n_new_keep, 0L)
+  expect_equal(p$n_new_flag, 0L)
+  # end state mirrors what is actually stored: 1 standing drop, 2 still undecided
+  expect_equal(p$n_drop, 1L)
+  expect_equal(p$n_keep, 0L)
+  expect_equal(p$n_undecided, 2L)
+})
+
+test_that("partial-off is not the special case: an unmatched scaffold still becomes keep with one rule on", {
+  # pins that turning five rules off and leaving one on does NOT trigger the
+  # all-off no-op: a scaffold no rule matches must still resolve to keep
+  con <- mk_triage_db(); on.exit(DBI::dbDisconnect(con))
+  opts <- all_rules_off()
+  opts$no_feat_non_rdna <- "drop"   # armed, but scaffold 1 has a feature so it never fires
+
+  n <- auto_triage_sample(con, "S1", opts = opts)
+  expect_true(n > 0)
+  r <- DBI::dbGetQuery(con, "SELECT triage, triage_source FROM assemblies WHERE scaffold = 1")
+  expect_equal(r$triage, "keep")
+  expect_equal(r$triage_source, "auto")
 })

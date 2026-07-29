@@ -79,7 +79,10 @@ alone, neither of which is a safe basis for removing a scaffold by itself.
 | 5 | Has annotations but non-rDNA hit | The scaffold has a feature model, but its best GenBank match is not a nuclear rDNA record. | Optional; flagged by default |
 | 6 | Disagrees with sibling scaffolds | This scaffold's top hit disagrees with the majority of this sample's other scaffolds. | No, flag only |
 
-Each rule can be turned off if it does not suit your data, and rules 4 and 5
+Each rule can be turned off if it does not suit your data. Switching every
+rule off at once makes Apply a no-op: it changes nothing, rather than
+marking every remaining scaffold "keep" on the strength of no active checks.
+Rules 4 and 5
 can be turned up to Drop if you want RiboPilot to act on them automatically
 rather than just flag them for you to review. This setting lives with the
 project, not with any one run, so the app and the pipeline never disagree

@@ -1112,9 +1112,12 @@ app_server <- function(input, output, session) {
     p <- triage_pv()
     if (is.null(p)) return(em("No samples to triage."))
     no_drop <- !any(triage_actions() %in% "drop")
+    all_off <- triage_all_off(triage_actions())
     tagList(
       tags$p(
-        if (p$n_changed == 0)
+        if (all_off)
+          "Every rule is off, so Apply would change nothing."
+        else if (p$n_changed == 0)
           "Apply would change nothing: every scaffold already has the verdict these rules propose."
         else
           sprintf(paste("Apply would change %d of %d scaffold(s):",
@@ -1122,7 +1125,10 @@ app_server <- function(input, output, session) {
             p$n_changed, p$n_units, p$n_new_drop, p$n_new_keep, p$n_new_flag)),
       tags$p(sprintf("Resulting state across %d sample(s): %d dropped, %d kept, %d undecided.",
         p$n_samples, p$n_drop, p$n_keep, p$n_undecided)),
-      if (no_drop) tags$p(style = "color:#555;",
+      # the all-off message above already says Apply is a no-op; do not also
+      # print the no-Drop note, or the modal shows two overlapping sentences
+      if (all_off) NULL
+      else if (no_drop) tags$p(style = "color:#555;",
         "No rule is set to Drop, so Apply will only add and clear reasons.")
       else if (p$n_new_drop == 0) tags$p(style = "color:#555;",
         "A rule is set to Drop, but nothing in this selection will be dropped."),

@@ -92,7 +92,10 @@ unit_triage_state <- function(con, id) {
 #' Apply automatic triage to one sample
 #'
 #' Skips any unit a human has already decided (`triage_source = 'user'`) and any
-#' unit whose annotation is locked, so re-running is safe.
+#' unit whose annotation is locked, so re-running is safe. If every rule is set
+#' to "off", this is a complete no-op and writes nothing: see
+#' dev/design/09_TRIAGE_RULES_AND_DEPTH.md section 3.3 for why that special
+#' case exists.
 #'
 #' @param con Open project DB connection.
 #' @param id Sample ID.
@@ -107,6 +110,11 @@ auto_triage_sample <- function(con, id, opts = NULL, overwrite_user = FALSE) {
     return(invisible(0L))
   }
   act <- normalize_triage_actions(opts %||% triage_opts_for(con, id))
+  # every rule off is a deliberate no-op, not "nothing matches, so keep": see
+  # dev/design/09_TRIAGE_RULES_AND_DEPTH.md section 3.3
+  if (triage_all_off(act)) {
+    return(invisible(0L))
+  }
   d <- triage_rules(d, act)
   changed <- 0L
   for (i in seq_len(nrow(d))) {
@@ -129,6 +137,11 @@ auto_triage_sample <- function(con, id, opts = NULL, overwrite_user = FALSE) {
 #' app, so it is never applied without showing the count first -- including how
 #' many samples would end up with NOTHING kept, which is the outcome that
 #' silently loses a sample.
+#'
+#' If every rule is "off" for a sample, that sample is treated as fully skipped:
+#' the preview reports its CURRENT stored state unchanged, with zero counted in
+#' every n_new_* counter and in n_changed. See
+#' dev/design/09_TRIAGE_RULES_AND_DEPTH.md section 3.3.
 #'
 #' @param con Open project DB connection.
 #' @param ids Sample IDs to consider.
@@ -156,7 +169,12 @@ triage_preview <- function(con, ids, opts = NULL, overwrite_user = FALSE) {
     d <- triage_rules(d, act)
     skip_user <- !isTRUE(overwrite_user) & identical_user(d$triage_source)
     skip_lock <- !is.na(d$annotate_lock) & d$annotate_lock == 1
-    skipped <- skip_user | skip_lock
+    # every rule off skips everything: see triage_all_off() and
+    # dev/design/09_TRIAGE_RULES_AND_DEPTH.md section 3.3. Deliberately not
+    # folded into skip_user/skip_lock below, which must keep counting only
+    # hand-decisions and locks
+    all_off <- triage_all_off(act)
+    skipped <- skip_user | skip_lock | all_off
     # count only the units Apply would touch, so the per-rule table cannot
     # disagree with the totals rendered beside it; the rules still see the whole
     # sample, as Apply does, because sibling concordance depends on it
