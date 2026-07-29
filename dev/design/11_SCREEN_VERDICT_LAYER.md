@@ -195,15 +195,21 @@ real dependency: without the envelope it needs no annotations and no coverage.
 It carries `errorStrategy 'ignore'` so a taxonomy failure cannot sink a sample,
 and `cache false` like the other R processes.
 
-`triage` gains a join so a sample is triaged only once both its curation and its
-screen exist:
+`triage` gains a join so a sample is triaged only once its curation is complete
+and its screen has been ATTEMPTED. The join must carry `remainder: true`. An
+inner join would gate on both SUCCEEDING, and `screen` carries
+`errorStrategy 'ignore'` precisely so a taxonomy failure cannot sink a sample,
+so an inner join would silently drop a fully curated sample from triage whenever
+its screen or its upstream BLAST failed. That is the same trap `main.nf` already
+records at the `ref_done` sentinel: a join there "would silently drop the extras,
+and a sample whose BLAST failed would drop entirely".
 
 ```
     screen(blast_genbank.out)
     triage(curate.out.map { id, upath, uscaf -> tuple(id, "${upath}.${uscaf}") }
         .groupTuple()
         .map { id, _units -> id }
-        .join(screen.out))
+        .join(screen.out, remainder: true))
 ```
 
 `inst/nextflow/bin/rp_screen.R` mirrors `rp_triage.R`: read the db path and
