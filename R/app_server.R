@@ -882,7 +882,8 @@ app_server <- function(input, output, session) {
     d$hits <- "hits"
     # reactable renders in data-frame column order, so the row identifier has to
     # lead here; colDef(sticky=) alone does not move it.
-    lead <- c("unit", "triage", "length", "topology", "depth", "depth_track", "elements")
+    lead <- c("unit", "triage", "length", "topology", "depth", "depth_track", "elements",
+      "screen_verdict")
     d <- d[, c(intersect(lead, names(d)), setdiff(names(d), lead)), drop = FALSE]
     reactable::reactable(d, compact = TRUE, resizable = TRUE, filterable = TRUE,
       searchable = TRUE, sortable = TRUE, wrap = FALSE, defaultPageSize = 20,
@@ -901,6 +902,8 @@ app_server <- function(input, output, session) {
           cell = rt_depth_sparkline()),
         elements = reactable::colDef(name = "rRNA features", width = 240, show = TRUE, html = TRUE,
           cell = rt_element_strip()),
+        screen_verdict = reactable::colDef(name = "Screen", width = 100, show = TRUE, html = TRUE,
+          cell = rt_screen_badge()),
         screen_species = reactable::colDef(name = "Top GenBank hit", minWidth = 160, show = TRUE,
           html = TRUE, cell = rt_longtext()),
         shares = reactable::colDef(name = "Shares", width = 105, show = TRUE, html = TRUE,

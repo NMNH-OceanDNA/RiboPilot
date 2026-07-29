@@ -73,6 +73,7 @@ unit_triage_state <- function(con, id) {
        b.species AS screen_species, b.lineage AS screen_lineage,
        b.lineage_taxids AS screen_taxids,
        b.rank_distance, b.is_nuclear_rrna,
+       sc.screen_verdict, sc.screen_class, sc.screen_confidence, sc.lca_taxon,
        s.lineage_taxids AS sample_taxids, s.sci_name,
        (SELECT COUNT(*) FROM annotations n
           WHERE n.ID = a.ID AND n.path = a.path AND n.scaffold = a.scaffold) AS n_features,
@@ -85,6 +86,7 @@ unit_triage_state <- function(con, id) {
      FROM assemblies a
      LEFT JOIN coverage c     ON c.ID = a.ID AND c.path = a.path AND c.scaffold = a.scaffold
      LEFT JOIN blast_screen b ON b.ID = a.ID AND b.path = a.path AND b.scaffold = a.scaffold
+     LEFT JOIN screen sc      ON sc.ID = a.ID AND sc.path = a.path AND sc.scaffold = a.scaffold
      LEFT JOIN samples s      ON s.ID = a.ID
      WHERE a.ID = ? ORDER BY a.path, a.scaffold", params = list(id))
 }

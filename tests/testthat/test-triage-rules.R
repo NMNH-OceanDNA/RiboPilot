@@ -17,6 +17,7 @@ u <- function(...) {
     is_nuclear_rrna = r$nuc %||% NA_integer_, sample_taxids = FISH_T,
     sci_name = "Danio rerio", n_features = r$feats %||% 5L,
     annotated_n = r$ann %||% 5L, annotate_lock = 0L, reviewed = "no",
+    screen_verdict = r$screen %||% NA_character_,
     stringsAsFactors = FALSE)
 }
 us <- function(...) {
@@ -29,7 +30,7 @@ us <- function(...) {
 test_that("the rule keys and their order are fixed", {
   expect_equal(RiboPilot:::triage_rule_keys(),
     c("not_annotated", "no_screen", "no_feat_non_rdna",
-      "no_feat_rdna_hit", "feat_non_rdna_hit", "odd_one_out"))
+      "no_feat_rdna_hit", "feat_non_rdna_hit", "screen_off_target", "odd_one_out"))
 })
 
 test_that("annotation that never ran is flagged, never dropped", {
@@ -136,7 +137,7 @@ test_that("counts partition on Decided and overlap on Matching", {
     list(feats = 5, nuc = 0, sp = "Homo sapiens", tx = FISH_T),
     list(feats = 5, nuc = 1, sp = "Danio rerio", tx = FISH_T))
   cnt <- RiboPilot:::triage_rule_counts(d)
-  expect_equal(nrow(cnt), 6L)
+  expect_equal(nrow(cnt), 7L)
   expect_equal(sum(cnt$n_decided), 3L)          # the clean unit fires nothing
   expect_true(all(cnt$n_matching >= cnt$n_decided))
 
@@ -175,4 +176,28 @@ test_that("the no_screen reason covers an unclassifiable hit, not just a missing
   expect_equal(d$new_rule, "no_screen")
   expect_false(grepl("has not run for this scaffold", d$new_reason, fixed = TRUE))
   expect_match(d$new_reason, "no GenBank hit says")
+})
+
+test_that("the screen rule fires only on an off_target verdict", {
+  d <- RiboPilot:::triage_rules(us(list(feats = 5, nuc = 1, screen = "off_target")))
+  expect_equal(d$new_rule, "screen_off_target")
+  expect_true(is.na(d$new_triage))          # ships as flag, not drop
+  expect_match(d$new_reason, "does not")
+
+  for (v in c("on_target", "no_reference", "uncertain", NA_character_)) {
+    d2 <- RiboPilot:::triage_rules(us(list(feats = 5, nuc = 1, screen = v)))
+    expect_false(identical(d2$new_rule, "screen_off_target"), info = v %|NA|% "NA")
+  }
+})
+
+test_that("the screen rule sits after the combination rules and before odd_one_out", {
+  k <- RiboPilot:::triage_rule_keys()
+  expect_equal(k[length(k) - 1], "screen_off_target")
+  expect_equal(k[length(k)], "odd_one_out")
+})
+
+test_that("the screen rule may be set to drop but ships as flag", {
+  def <- Filter(function(r) r$key == "screen_off_target", RiboPilot:::TRIAGE_RULE_DEFS)[[1]]
+  expect_equal(def$default, "flag")
+  expect_true("drop" %in% def$actions)
 })

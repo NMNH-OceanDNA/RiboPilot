@@ -225,6 +225,29 @@ rt_odd_badge <- function() {
     }")
 }
 
+#' Render the contamination-screen verdict: is the scaffold on this sample's
+#' own lineage.
+#'
+#' `no_reference` renders NEUTRAL GREY like [rt_shares_badge()]'s "no
+#' reference": for an offline project or a sparse clade it is the normal
+#' state, not a problem. A missing screen row (never run) reads the same way,
+#' since the app should not tell the two apart.
+#' @noRd
+rt_screen_badge <- function() {
+  htmlwidgets::JS(
+    "function(cellInfo) {
+      var v = cellInfo.value
+      if (v === null || v === undefined || v === '' || v === 'NA' || v === 'no_reference')
+        return '<span style=\"color:#999;\">no_reference</span>'
+      var bg, fg
+      if (v === 'on_target')       { bg = '#d4edda'; fg = '#2d6a4f' }
+      else if (v === 'off_target') { bg = '#f8d7da'; fg = '#842029' }
+      else                          { bg = '#fde8d0'; fg = '#7d4a1e' }
+      return '<span style=\"background:' + bg + '; color:' + fg +
+        '; border-radius:3px; padding:1px 6px; font-size:0.85em;\">' + v + '</span>'
+    }")
+}
+
 #' Inline depth bar relative to the deepest scaffold of the same sample
 #'
 #' The value is the MEDIAN per-position depth where one is stored (see
