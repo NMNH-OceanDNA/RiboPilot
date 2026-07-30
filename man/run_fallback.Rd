@@ -35,8 +35,14 @@ prepended to PATH for the run.}
 (invisibly) the Nextflow exit status (or 0 if nothing queued).
 }
 \description{
-Queues samples for the fallback workflow and launches it. By default it
-targets samples that failed the primary GetOrganelle assembly QC gate (no
-assembly, or a missing 18S/28S anchor); pass `ids` to force a specific set
-(e.g. an Option A whole-assembly cross-check of a good sample).
+Points samples at the baiting / de-novo assembler and runs the ordinary
+assembly workflow. By default it targets samples that failed the primary
+GetOrganelle assembly QC gate (no assembly, or a missing 18S/28S anchor);
+pass `ids` to force a specific set (e.g. an Option A whole-assembly
+cross-check of a good sample).
+}
+\details{
+Each targeted sample is repointed at a derived `assemble_opts` preset named
+`<current>_<method>`, so other samples sharing its original preset are
+unaffected.
 }
