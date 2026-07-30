@@ -107,6 +107,10 @@ unit_triage_state <- function(con, id) {
 #' @return (invisibly) the number of units changed.
 #' @export
 auto_triage_sample <- function(con, id, opts = NULL, overwrite_user = FALSE) {
+  # triage is the last per-sample step of WF1, so arriving here is what closes
+  # the sample's state -- not what triage goes on to decide, which is why this
+  # runs before the early returns below.
+  refresh_sample_state(con, id)
   d <- unit_triage_state(con, id)
   if (nrow(d) == 0) {
     return(invisible(0L))

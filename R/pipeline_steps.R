@@ -202,6 +202,37 @@ open_project_db <- function(db) {
   DBI::dbExecute(con, sprintf("PRAGMA journal_mode=%s;", sqlite_journal_mode(db)))
   con
 }
+#' Settle a sample's state against the work still queued for it
+#'
+#' The sample state is written by the pipeline as the sample moves through WF1:
+#' loading an assembly opens it at 4 (in progress) and triage, the last
+#' per-sample step, closes it at 2 (done). This recomputes it from what is
+#' actually pending, so a sample also closes when the remaining work is taken
+#' away rather than finished -- units held at 0 or on ignored scaffolds are a
+#' deliberate skip, not unfinished work.
+#'
+#' Only 2 and 4 are rewritten. A sample the user has held (0), queued to re-run
+#' (1), or whose assembly failed (3) is saying something this cannot improve on.
+#'
+#' @param con Open project DB connection.
+#' @param id Sample ID.
+#' @return (invisibly) the state now stored.
+#' @noRd
+refresh_sample_state <- function(con, id) {
+  pending <- tryCatch(DBI::dbGetQuery(con,
+    "SELECT COUNT(*) n FROM annotate an
+       LEFT JOIN assemblies asm
+         ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
+      WHERE an.ID = ? AND an.annotate_switch IN (1,4) AND COALESCE(asm.ignore,0) = 0",
+    params = list(id))$n[1], error = function(e) NA_integer_)
+  if (is.na(pending)) return(invisible(NA_integer_))
+  st <- if (pending > 0) 4L else 2L
+  DBI::dbExecute(con,
+    "UPDATE assemble SET assemble_switch = ? WHERE ID = ? AND assemble_switch IN (2,4)",
+    params = list(st, id))
+  invisible(st)
+}
+
 #' Load one sample's published assembly fastas into the database
 #'
 #' Parses `out/<ID>/assemble/<ID>_assembly_*.fasta` (headers
@@ -301,7 +332,7 @@ load_assemblies <- function(con, out_dir, ID) {
     if (nzchar(cap_note)) cap_note else NULL), collapse = "; ")
   DBI::dbExecute(con,
     "UPDATE assemble SET paths=?, scaffolds=?, length=?, topology=?,
-     assemble_switch=2, assemble_notes=?, time_stamp=? WHERE ID=?",
+     assemble_switch=4, assemble_notes=?, time_stamp=? WHERE ID=?",
     params = list(n_paths, n_scaffolds, length_str, topo_str, notes, ts, ID))
 
   # Seed one annotate unit per non-ignored scaffold, inheriting the sample's opts
@@ -515,6 +546,8 @@ reconcile_ignore_unit <- function(con, id, path, scaffold, ignore) {
         if (isTRUE(n > 0)) 2L else 1L),
       params = list(id, path, scaffold))
   }
+  # holding the last queued unit finishes the sample; releasing one reopens it
+  refresh_sample_state(con, id)
   invisible()
 }
 

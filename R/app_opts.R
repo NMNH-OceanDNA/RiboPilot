@@ -423,6 +423,8 @@ opts_apply <- function(pfx, sp, input, deps, ids, cur) {
       params = list(nm, id))
     DBI::dbExecute(con, sprintf("UPDATE %s SET %s = 1 WHERE ID = ?", sp$queue_tbl, sp$queue),
       params = list(id))
+    # re-queuing annotation gives the sample work again, so it is no longer done
+    if (identical(sp$queue_tbl, "annotate")) refresh_sample_state(con, id)
   }
   deps$refresh(deps$refresh() + 1)
   shiny::removeModal()

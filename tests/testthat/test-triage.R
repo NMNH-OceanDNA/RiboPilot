@@ -24,10 +24,12 @@ mk_triage_db <- function() {
   DBI::dbExecute(con, "CREATE TABLE screen(ID TEXT, path INT, scaffold INT, screen_verdict TEXT,
     screen_class TEXT, screen_confidence REAL, lca_taxon TEXT)")
   DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT, sci_name TEXT, lineage_taxids TEXT)")
-  DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, triage_opts TEXT)")
+  # assemble_switch: triage settles the sample's state, so the column it writes
+  # has to be here or the fixture stops resembling a project database
+  DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, assemble_switch INT, triage_opts TEXT)")
   DBI::dbExecute(con, RiboPilot:::TRIAGE_OPTS_DDL)
   DBI::dbExecute(con, RiboPilot:::TRIAGE_OPTS_SEED)
-  DBI::dbExecute(con, "INSERT INTO assemble VALUES('S1','default')")
+  DBI::dbExecute(con, "INSERT INTO assemble VALUES('S1',4,'default')")
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S1','Danio rerio',?)", params = list(FISH_T))
   for (s in 1:3) {
     DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',1,?,5000,0,NULL,NULL,NULL,NULL)", params = list(s))
@@ -187,7 +189,7 @@ test_that("samples on different presets report a mixed action, not one sample's"
   con <- mk_triage_db(); on.exit(DBI::dbDisconnect(con))
   # a second sample, following a preset that disagrees with 'default' on one rule
   RiboPilot:::write_triage_opts(con, list(no_feat_non_rdna = "flag"), preset = "gentle")
-  DBI::dbExecute(con, "INSERT INTO assemble VALUES('S2','gentle')")
+  DBI::dbExecute(con, "INSERT INTO assemble VALUES('S2',4,'gentle')")
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S2','Danio rerio',?)", params = list(FISH_T))
   DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S2',1,1,5000,0,NULL,NULL,NULL,NULL)")
   DBI::dbExecute(con, "INSERT INTO annotate VALUES('S2',1,1,2,0,'default','default','no',1)")
