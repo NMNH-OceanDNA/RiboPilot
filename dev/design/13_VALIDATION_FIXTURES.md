@@ -38,15 +38,17 @@ section 3.2.1.
 ## 2. Decisions
 
 1. Ground truth comes from DELIBERATE SPIKE-INS, so it is known by construction
-   rather than by anyone's judgement. A fungal rDNA record queried against
-   core_nt is a fungal contaminant; no labelling opinion is involved.
+   rather than by anyone's judgement. A fungal rDNA record is a fungal
+   contaminant whatever it is queried against; no labelling opinion is involved.
 2. The clean-host half of the corpus is REAL: the 19 units and 1833 hit rows of
    the reference project, all of which the screen currently calls `on_target`.
    That is the same 1833 doc 08 section 3.2.1 measures, so the fixture and that
    measurement share one corpus and cannot drift apart.
 3. Hit distributions are CAPTURED ONCE by a dev script and committed. Tests are
    offline, deterministic and fast; they never reach the network. This is the
-   same split as `backfill_hit_class()` versus the live parse path in 3a.
+   same split as `backfill_hit_class()` versus the live parse path in 3a. The
+   host half is captured from real core_nt results; the spike half from local
+   curated databases, for the reasons in section 3.1.1.
 4. The fixture stores hit rows in their REAL input shape, so the test exercises
    the same code path a live run does.
 5. **No default changes.** The screen rule stays Flag, the export gate is
@@ -68,8 +70,42 @@ stored verdict is `on_target`. No network.
 
 **Spike-in capture.** For each row of a small category table, resolve an
 accession with `esearch`/`efetch` (both present in `ribopilot:test`), fetch the
-record, and run it through the pipeline's own remote BLAST and
-`parse_blast_candidates()`. Emit the resulting hit distribution.
+record, blast it LOCALLY against prebuilt curated rRNA databases, and run the
+result through the pipeline's own `parse_blast_candidates()`.
+
+#### 3.1.1 Amendment: local databases, not remote core_nt
+
+The spec first said remote `core_nt`, matching the pipeline. That does not work:
+NCBI runs BLAST COMPUTE as a shared queue and it stops answering under load.
+Measured during implementation: one capture sat **85 minutes at 00:00:00 CPU**
+on a query that normally takes minutes, and an independent probe from a separate
+container hung too. Their FILE SERVING kept working throughout.
+
+So the generator fetches `SSU_eukaryote_rRNA`, `LSU_eukaryote_rRNA` and
+`16S_ribosomal_RNA` once over file serving and searches them locally. Zero NCBI
+compute per spike, seconds instead of hours, and reproducible. Each tarball
+bundles `taxdb.bt*`, which is what supplies `staxids` and therefore the lineages
+the screen scores on, so no separate taxonomy download is needed. Cached outside
+the repo at `~/.cache/ribopilot-blastdb`; never committed.
+
+`update_blastdb.pl` is NOT used: the conda-packaged script cannot find curl,
+leaves `$curl` uninitialised at its line 599, tries to exec `--user` as a
+program, and reports success anyway. The generator uses curl and tar directly.
+
+Two consequences of the curated subject pool, both real:
+
+- **The `human` subclass is unreachable.** `screen_class_for()` returns `human`
+  only when the LCA's own label is `Homo sapiens`. `SSU_eukaryote_rRNA` is type
+  material, roughly one 18S per taxon, so a human 18S query hits hedgehog,
+  opossum, rabbit, platypus and skink at similar identity and the LCA settles at
+  Mammalia. `human_on_invert` therefore expects class `metazoan_other`.
+  `tests/testthat/test-screen.R:161` covers the `human` branch as a unit; nothing
+  covers it end to end.
+- The two eukaryote databases date from **2022-12-05**, older than core_nt. The
+  database list is recorded in every spike label's `note`.
+
+The clean-host half remains real core_nt, so the fixture retains one corpus that
+is genuinely what the pipeline sees.
 
 Accessions are RESOLVED AT GENERATION TIME from a taxon plus a query, not
 hardcoded in this document, and the resolved accession is written into the
@@ -120,15 +156,38 @@ which is how the screen's actual boundary gets measured.
 |---|---|---|---|---|
 | `host_*` (19 real) | real fish scaffolds | fish | `on_target` | NA |
 | `fungal_on_fish` | fungal rDNA | fish | `off_target` | `fungal` |
-| `bacterial_on_fish` | bacterial rRNA | fish | `off_target` | `bacterial` |
+| `bacterial_on_fish` | bacterial 16S | fish | `no_reference` (BOUNDARY) | NA |
 | `algal_on_fish` | plant rDNA | fish | `off_target` | `algal_plant` |
 | `arthropod_on_fish` | arthropod rDNA | fish | `off_target` | `metazoan_other` |
 | `human_on_fish` | human rDNA | fish | `on_target` (EXPECTED MISS) | NA |
-| `human_on_invert` | the SAME human rDNA | octocoral | `off_target` | `human` |
+| `human_on_invert` | the SAME human rDNA | octocoral | `off_target` | `metazoan_other` |
+| `fungal_weak_on_fish` | top 2 accessions of the fungal capture | fish | `uncertain` | NA |
 
-Fungal, bacterial and algal_plant are the cross-kingdom cases, completing the
-kingdom set `screen_class_for()` distinguishes. Arthropod is a metazoan from a
-different phylum, which concordance does catch.
+Fungal and algal_plant are the cross-kingdom cases. Arthropod is a metazoan from
+a different phylum, which concordance does catch.
+
+### 4.2 Amendment: bacterial is a boundary, not a catch
+
+Measured: a bacterial 16S spike returns **`no_reference`**, not `off_target`, and
+it is right to. Doc 10 classifies a 16S title carrying no eukaryotic marker as
+`other` BY DESIGN, precisely so a bacterial record cannot pose as nuclear rDNA.
+The taxonomy channel scores only `hit_class = 'rdna'` rows, so all 50 of the
+spike's hits are filtered out and it has nothing to vote on.
+
+**The screen's taxonomy channel cannot return `off_target` for a pure bacterial
+contaminant.** That case is caught by the triage rules keyed on
+`is_nuclear_rrna`, a different channel from the one this fixture validates. Doc
+08 section 5 asks for a bacterial spike-in as though the screen would catch it;
+it will not, and the fixture asserts the `no_reference` so that a future change
+to `off_target` is noticed rather than welcomed unexamined.
+
+### 4.3 Why a derived `uncertain` unit exists
+
+No captured unit exercises the 0.6 gate: every one sits either well above it or
+at confidence 0. `fungal_weak_on_fish` is the fungal capture reduced to its top
+two accessions, which is a real contaminant that is resolvable but weakly
+supported, and it lands at confidence 0.274. It is labelled `source = derived`.
+Without it, removing the uncertainty gate entirely breaks no test.
 
 ### 4.1 Why human appears twice
 
@@ -202,6 +261,12 @@ A fixture that is not honest about what it cannot catch is worse than no fixture
 Two limits, both found by mutating the scoring core and watching what the corpus
 failed to notice.
 
+**No unit exercises placeholder-taxon exclusion.** Doc 11 section 4.2 says
+uncultured and environmental records "dominate core_nt 18S", but 0 of the 1833
+host hit rows has a placeholder as its deepest lineage field: these are megablast
+hits to well-curated fish references. So `is_placeholder_taxon()` is unexercised
+by the corpus, and the curated spike databases contain no such records either.
+
 **The 19 host units do not exercise doc 11 section 4.3's congener defect.**
 Reintroducing the too-strict rule that doc 11 rejected, `host_concordant` from
 `lca$taxid %in% samp_ok` alone, produces ZERO failures against this corpus. None
@@ -210,6 +275,13 @@ of these fish units has an LCA sitting off its sample's own path, so the case do
 unnoticed. `tests/testthat/test-screen.R:129` pins it synthetically, so the SUITE
 is covered; the CORPUS is not. Closing this needs a host unit whose hits are
 dominated by same-genus relatives, which none of the ten samples provides.
+
+**The phylum-or-deeper rule is enforced twice, so no single-point mutation breaks
+it.** Both `samp[-1]` and `lca_path[-1]` in `screen_channel_taxonomy()` drop the
+kingdom slot, and either alone is sufficient. Removing just one changes no
+verdict; removing both makes `human_on_invert` concordant and the fixture catches
+it by name. Redundancy rather than a gap, recorded so a future reader does not
+delete one as dead code.
 
 **The false-positive rate is measured on actinopterygians only.** Every host unit
 is a ray-finned fish from one reference project. Doc 08 section 5 asks for the
