@@ -116,18 +116,42 @@ spike_accession <- function(query) {
 }
 
 #' The same remote blastn the pipeline runs (inst/nextflow/modules/blast.nf)
+#'
+#' Wrapped in `timeout`. `blastn -remote` blocks indefinitely when the NCBI URL
+#' API stops answering, and it does: one capture sat 85 minutes at zero CPU
+#' waiting on a query that normally takes minutes. Failing fast and retrying
+#' beats an unbounded wait nobody can distinguish from progress.
 #' @noRd
-spike_blast <- function(fasta, out_file) {
+spike_blast <- function(fasta, out_file, secs = 900L) {
   fmt <- paste("6 saccver stitle pident qcovs evalue staxids bitscore length",
     "qstart qend sstart send")
-  ok <- system2("blastn", c("-remote", "-db", "core_nt", "-query", shQuote(fasta),
+  ok <- system2("timeout", c(as.character(secs), "blastn",
+    "-remote", "-db", "core_nt", "-query", shQuote(fasta),
     "-outfmt", shQuote(fmt), "-max_target_seqs", "50", "-max_hsps", "5",
     "-task", "megablast"), stdout = out_file)
+  if (identical(as.integer(ok), 124L)) {
+    stop("blastn timed out after ", secs, "s on ", basename(fasta),
+      "; NCBI is not answering, retry later", call. = FALSE)
+  }
   if (!identical(as.integer(ok), 0L) || !file.exists(out_file) ||
       file.size(out_file) == 0) {
     stop("blastn returned nothing for ", fasta, call. = FALSE)
   }
   invisible(out_file)
+}
+
+#' Is this a usable nucleotide FASTA, not an error page or a truncated record?
+#'
+#' `file.size() > 0` is too weak: eutils answers a dropped connection with an
+#' HTML body and HTTP 200, which would be accepted and BLASTed as if it were
+#' sequence.
+#' @noRd
+spike_fasta_ok <- function(fa) {
+  if (!file.exists(fa) || file.size(fa) == 0) return(FALSE)
+  ln <- tryCatch(readLines(fa, warn = FALSE), error = function(e) character(0))
+  if (length(ln) < 2 || !startsWith(ln[1], ">")) return(FALSE)
+  seq <- paste(ln[-1], collapse = "")
+  nchar(gsub("[^ACGTNacgtn]", "", seq)) >= 500
 }
 
 #' Capture each spike-in's hit distribution through the pipeline's own parser
@@ -153,6 +177,11 @@ fixture_capture_spikes <- function(db_path, taxdump_dir, taxdump_date = NA_chara
   if (!file.copy(db_path, scratch)) stop("could not copy ", db_path, call. = FALSE)
   sc <- DBI::dbConnect(RSQLite::SQLite(), scratch)
   on.exit(DBI::dbDisconnect(sc), add = TRUE)
+  # The copy arrives carrying the project's OWN blast_hits, which share the
+  # path/scaffold numbers the spikes use. Clear them: a readback that finds real
+  # host hits mixed into a spike produces a distribution labelled as a
+  # contaminant while actually being the host, which is worse than no fixture.
+  DBI::dbExecute(sc, "DELETE FROM blast_hits")
   DBI::dbExecute(sc, "INSERT INTO samples (ID, lineage_taxids) VALUES('SPIKE',?)",
     params = list(fish))
 
@@ -163,10 +192,10 @@ fixture_capture_spikes <- function(db_path, taxdump_dir, taxdump_date = NA_chara
     # eutils drops connections intermittently, so retry rather than lose the run
     for (try in 1:3) {
       system2("efetch", c("-db", "nuccore", "-id", acc, "-format", "fasta"), stdout = fa)
-      if (file.exists(fa) && file.size(fa) > 0) break
+      if (spike_fasta_ok(fa)) break
       Sys.sleep(5 * try)
     }
-    if (!file.exists(fa) || file.size(fa) == 0) stop("efetch failed for ", acc, call. = FALSE)
+    if (!spike_fasta_ok(fa)) stop("efetch gave no usable fasta for ", acc, call. = FALSE)
     cat("spike", key, "accession", acc, "\n")
     hf <- file.path(tmp, paste0(key, ".hits"))
     spike_blast(fa, hf)
@@ -174,7 +203,8 @@ fixture_capture_spikes <- function(db_path, taxdump_dir, taxdump_date = NA_chara
       hits_file = hf, taxdump_dir = taxdump_dir)
     h <- DBI::dbGetQuery(sc,
       "SELECT hit_rank, hsp, bitscore, hit_class, lineage_taxids, lineage
-         FROM blast_hits WHERE scaffold = ? ORDER BY hit_rank, hsp",
+         FROM blast_hits WHERE ID = 'SPIKE' AND path = 1 AND scaffold = ?
+        ORDER BY hit_rank, hsp",
       params = list(i))
     if (nrow(h) == 0) stop("no parsed hits for spike ", key, call. = FALSE)
     cat("  parsed", nrow(h), "hit rows\n")
