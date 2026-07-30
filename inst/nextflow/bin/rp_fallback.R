@@ -5,6 +5,9 @@
 a <- commandArgs(trailingOnly = TRUE)
 source(file.path(dirname(sub("--file=", "", grep("--file=", commandArgs(FALSE), value = TRUE))), "rp_env.R"))
 con <- open_project_db(a[1]); on.exit(DBI::dbDisconnect(con))
+# this reads columns added after some projects were created, and unlike the
+# other steps it queries before any step function has migrated
+migrate_db(con)
 opt <- DBI::dbGetQuery(con,
   "SELECT ao.seeds_db, ao.labels_db,
           COALESCE(ao.bowtie2, '--local') AS bowtie2,

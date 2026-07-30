@@ -386,6 +386,36 @@ test_that("v17 adds the bowtie2 and spades option columns with working defaults"
     RiboPilot:::RIBOPILOT_SCHEMA_VERSION)
 })
 
+test_that("concurrent migrations of the same project do not collide", {
+  # Every pipeline process migrates on open, and WF2 fans out to one process per
+  # unit, so a pending migration is attempted by a dozen processes at once. With
+  # an unserialised migration two of them both see a column missing and both
+  # ALTER, and the loser dies with "duplicate column name", failing the run.
+  skip_on_os("windows")
+  skip_on_cran()
+  db <- file.path(withr::local_tempdir(), "race.sqlite")
+  seed <- DBI::dbConnect(RSQLite::SQLite(), db)
+  DBI::dbExecute(seed, "CREATE TABLE assemble(ID TEXT PRIMARY KEY, assemble_switch INT,
+    assemble_lock INT, assemble_opts TEXT, blast_opts TEXT)")
+  mk_v15_assemble_opts(seed)
+  DBI::dbExecute(seed, "PRAGMA user_version = 15")
+  DBI::dbDisconnect(seed)
+
+  start <- as.numeric(Sys.time()) + 2   # common start instant, so they collide
+  res <- parallel::mclapply(1:12, function(i) {
+    con <- DBI::dbConnect(RSQLite::SQLite(), db)
+    on.exit(DBI::dbDisconnect(con))
+    DBI::dbExecute(con, "PRAGMA busy_timeout=15000;")
+    while (as.numeric(Sys.time()) < start) NULL
+    tryCatch({ migrate_db(con); "ok" }, error = function(e) conditionMessage(e))
+  }, mc.cores = 12)
+
+  expect_equal(unique(unlist(res)), "ok")
+  con <- DBI::dbConnect(RSQLite::SQLite(), db); on.exit(DBI::dbDisconnect(con))
+  expect_true(all(c("assembler", "bowtie2", "spades") %in%
+    DBI::dbListFields(con, "assemble_opts")))
+})
+
 test_that("a fresh database and a migrated one agree on assemble_opts columns", {
   con <- mk_v8_db(); on.exit(DBI::dbDisconnect(con))
   mk_v15_assemble_opts(con)

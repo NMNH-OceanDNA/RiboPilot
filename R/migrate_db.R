@@ -125,10 +125,28 @@ LEGACY_ENTREZ_QUERY <- paste(
 #' touching existing data. Safe to call repeatedly. New columns are only ever
 #' added, never dropped or retyped.
 #'
+#' Every pipeline process migrates when it opens the database, and WF2 fans out
+#' to one process per unit, so a pending migration is attempted by a dozen
+#' processes at once. Each step is guarded by a "does this exist yet" check, but
+#' the check and the DDL are two statements: without a write lock held across
+#' both, two processes both see a table or column missing and both create it,
+#' and the loser dies with "already exists", failing the run. The whole
+#' migration therefore runs inside one immediate transaction, so the first
+#' process to arrive does the work and the rest wait and then find nothing to do.
+#'
 #' @param con Open DBI connection to a project database.
 #' @return (invisibly) the schema version after migration.
 #' @export
 migrate_db <- function(con) {
+  # A caller already inside a transaction keeps its own; nesting would error.
+  owns_txn <- tryCatch({ DBI::dbExecute(con, "BEGIN IMMEDIATE"); TRUE },
+    error = function(e) FALSE)
+  if (owns_txn) {
+    done <- FALSE
+    on.exit(tryCatch(DBI::dbExecute(con, if (done) "COMMIT" else "ROLLBACK"),
+      error = function(e) NULL), add = TRUE)
+  }
+
   ver <- tryCatch(DBI::dbGetQuery(con, "PRAGMA user_version")[[1]], error = function(e) 0L)
   has_tbl <- function(tbl) tbl %in% DBI::dbListTables(con)
   has_col <- function(tbl, col) has_tbl(tbl) && col %in% DBI::dbListFields(con, tbl)
@@ -404,7 +422,7 @@ migrate_db <- function(con) {
   # calls migrate_db() once per unit, so an ungated backfill would rescan the
   # whole project on every unit, O(units^2) across the run this repair exists to
   # avoid repeating. Rows written after v13 get their class from the parse path.
-  if (ver < 13L && has_tbl("blast_hits")) backfill_hit_class(con)
+  if (ver < 13L && has_tbl("blast_hits")) backfill_hit_class(con, in_txn = owns_txn)
 
   # --- schema v14: the screen verdict layer ---
   # The machine's opinion about a scaffold lived only as a substring inside
@@ -456,6 +474,13 @@ migrate_db <- function(con) {
   add_col("assemble_opts", "bowtie2", "TEXT DEFAULT '--local'")
   add_col("assemble_opts", "spades", "TEXT DEFAULT '--isolate'")
 
+  # user_version is a header field, not table data, so it is set after the
+  # transaction commits rather than inside it.
+  if (owns_txn) {
+    done <- TRUE
+    DBI::dbExecute(con, "COMMIT")
+    on.exit()
+  }
   if (ver < RIBOPILOT_SCHEMA_VERSION) {
     DBI::dbExecute(con, sprintf("PRAGMA user_version = %d", RIBOPILOT_SCHEMA_VERSION))
   }
@@ -508,7 +533,12 @@ backfill_coverage_median <- function(con, limit = NULL) {
 #' @param con Open project DB connection.
 #' @return (invisibly) the number of `blast_hits` rows classified.
 #' @noRd
-backfill_hit_class <- function(con) {
+backfill_hit_class <- function(con, in_txn = FALSE) {
+  # migrate_db() calls this inside its own transaction, and SQLite has no nested
+  # ones; `in_txn` says the caller already provides the atomicity.
+  atomically <- function(code) {
+    if (in_txn) force(code) else DBI::dbWithTransaction(con, code)
+  }
   if (!("hit_class" %in% DBI::dbListFields(con, "blast_hits"))) {
     return(invisible(0L))
   }
@@ -517,11 +547,11 @@ backfill_hit_class <- function(con) {
   n <- nrow(todo)
   if (n > 0) {
     todo$hit_class <- classify_hit_title(todo$title)
-    DBI::dbWithTransaction(con, {
+    atomically({
       up <- DBI::dbSendStatement(con, "UPDATE blast_hits SET hit_class = ? WHERE rowid = ?")
-      # not on.exit(): inside dbWithTransaction the block is forced in the
-      # caller's frame, so on.exit would register on this function rather than
-      # the block. finally still releases the handle if dbBind throws.
+      # not on.exit(): the block is forced in the caller's frame, so on.exit
+      # would register on this function rather than the block. finally still
+      # releases the handle if dbBind throws.
       tryCatch(DBI::dbBind(up, list(todo$hit_class, todo$rid)),
         finally = DBI::dbClearResult(up))
     })
@@ -530,7 +560,7 @@ backfill_hit_class <- function(con) {
   units <- DBI::dbGetQuery(con,
     "SELECT DISTINCT ID, path, scaffold FROM blast_hits")
   if (nrow(units) > 0 && "blast_screen" %in% DBI::dbListTables(con)) {
-    DBI::dbWithTransaction(con, {
+    atomically({
       for (i in seq_len(nrow(units))) {
         h <- DBI::dbGetQuery(con,
           "SELECT hit_class, bitscore FROM blast_hits
