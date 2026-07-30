@@ -101,7 +101,9 @@ SPIKES <- data.frame(
     "Escherichia coli[Organism] AND 16S ribosomal RNA[Title] AND 1200:1700[SLEN]",
     "Arabidopsis thaliana[Organism] AND 18S ribosomal RNA[Title] AND 1500:2500[SLEN]",
     "Calanus[Organism] AND 18S ribosomal RNA[Title] AND 1500:2500[SLEN]",
-    "Homo sapiens[Organism] AND 18S ribosomal RNA[Title] AND 1500:2500[SLEN]"),
+    # biomol_rrna + NOT pdb: the unrestricted query resolves to a PDB structure
+    # chain (8JDM_w), which is a human 18S but poor provenance for a fixture
+    "Homo sapiens[Organism] AND 18S ribosomal RNA[Title] AND biomol_rrna[PROP] NOT pdb[Filter] AND 1500:2500[SLEN]"),
   stringsAsFactors = FALSE)
 
 #' Resolve one accession for a query
@@ -115,27 +117,74 @@ spike_accession <- function(query) {
   acc
 }
 
-#' The same remote blastn the pipeline runs (inst/nextflow/modules/blast.nf)
+#' Prebuilt curated rRNA databases, fetched once and searched LOCALLY.
 #'
-#' Wrapped in `timeout`. `blastn -remote` blocks indefinitely when the NCBI URL
-#' API stops answering, and it does: one capture sat 85 minutes at zero CPU
-#' waiting on a query that normally takes minutes. Failing fast and retrying
-#' beats an unbounded wait nobody can distinguish from progress.
+#' Not `-remote -db core_nt`. NCBI's BLAST COMPUTE is a shared queue that stops
+#' answering under load: one capture sat 85 minutes at 00:00:00 CPU on a query
+#' that normally takes minutes, and an independent probe hung too. Their FILE
+#' SERVING kept working throughout. So fetch a small curated database over file
+#' serving once and search it locally, which removes the dependency entirely and
+#' makes regeneration reproducible.
+#'
+#' Cost: about 320 MB once, dominated by taxdb, which is what supplies `staxids`
+#' and therefore the lineages the screen scores on.
+#'
+#' Fidelity note recorded in doc 13 section 3.1: the subject pool becomes curated
+#' rRNA rather than all of core_nt, and the two eukaryote DBs date from
+#' 2022-12-05. The database name and version go into every fixture label.
 #' @noRd
-spike_blast <- function(fasta, out_file, secs = 900L) {
+SPIKE_DBS <- c("SSU_eukaryote_rRNA", "LSU_eukaryote_rRNA", "16S_ribosomal_RNA")
+
+#' Ensure the local databases exist, downloading any that are missing
+#'
+#' curl and tar directly, NOT update_blastdb.pl: the conda-packaged script
+#' cannot find curl, leaves $curl uninitialized at its line 599, then tries to
+#' exec "--user" as a program and reports success anyway. Each tarball also
+#' bundles taxdb.bt*, so the taxid mapping arrives with the first database and
+#' needs no separate fetch.
+#' @noRd
+BLAST_DB_URL <- "https://ftp.ncbi.nlm.nih.gov/blast/db"
+
+spike_db_ready <- function(cache) {
+  dir.create(cache, recursive = TRUE, showWarnings = FALSE)
+  for (db in SPIKE_DBS) {
+    if (file.exists(file.path(cache, paste0(db, ".nin")))) next
+    tgz <- file.path(cache, paste0(db, ".tar.gz"))
+    cat("downloading blast db:", db, "\n")
+    ok <- system2("curl", c("-sSLf", "-o", shQuote(tgz),
+      shQuote(paste0(BLAST_DB_URL, "/", db, ".tar.gz"))))
+    if (!identical(as.integer(ok), 0L) || !file.exists(tgz)) {
+      stop("could not download blast db ", db, call. = FALSE)
+    }
+    ok <- system2("tar", c("-xzf", shQuote(tgz), "-C", shQuote(cache)))
+    if (!identical(as.integer(ok), 0L) ||
+        !file.exists(file.path(cache, paste0(db, ".nin")))) {
+      stop("could not extract blast db ", db, call. = FALSE)
+    }
+    unlink(tgz)
+  }
+  if (!length(Sys.glob(file.path(cache, "taxdb.bt?")))) {
+    stop("taxdb missing from the downloaded databases; staxids would be empty",
+      call. = FALSE)
+  }
+  cache
+}
+
+#' blastn against the local rRNA databases, same output format as the pipeline
+#' @noRd
+spike_blast <- function(fasta, out_file, cache) {
   fmt <- paste("6 saccver stitle pident qcovs evalue staxids bitscore length",
     "qstart qend sstart send")
-  ok <- system2("timeout", c(as.character(secs), "blastn",
-    "-remote", "-db", "core_nt", "-query", shQuote(fasta),
-    "-outfmt", shQuote(fmt), "-max_target_seqs", "50", "-max_hsps", "5",
-    "-task", "megablast"), stdout = out_file)
-  if (identical(as.integer(ok), 124L)) {
-    stop("blastn timed out after ", secs, "s on ", basename(fasta),
-      "; NCBI is not answering, retry later", call. = FALSE)
-  }
+  # BLASTDB via system2(env=) rather than withr: the image has RiboPilot's
+  # runtime deps, not the dev ones
+  ok <- system2("blastn",
+    c("-db", shQuote(paste(SPIKE_DBS, collapse = " ")),
+      "-query", shQuote(fasta), "-outfmt", shQuote(fmt),
+      "-max_target_seqs", "50", "-max_hsps", "5", "-task", "megablast"),
+    stdout = out_file, env = paste0("BLASTDB=", shQuote(cache)))
   if (!identical(as.integer(ok), 0L) || !file.exists(out_file) ||
       file.size(out_file) == 0) {
-    stop("blastn returned nothing for ", fasta, call. = FALSE)
+    stop("local blastn returned nothing for ", basename(fasta), call. = FALSE)
   }
   invisible(out_file)
 }
@@ -161,7 +210,9 @@ spike_fasta_ok <- function(fa) {
 #' anything: scoring happens in the test, against whatever host lineage the
 #' label carries.
 #' @noRd
-fixture_capture_spikes <- function(db_path, taxdump_dir, taxdump_date = NA_character_) {
+fixture_capture_spikes <- function(db_path, taxdump_dir, taxdump_date = NA_character_,
+                                   cache = file.path(Sys.getenv("HOME"), ".cache", "ribopilot-blastdb")) {
+  cache <- normalizePath(spike_db_ready(cache), mustWork = TRUE)
   hc <- DBI::dbConnect(RSQLite::SQLite(), db_path)
   fish <- DBI::dbGetQuery(hc,
     "SELECT lineage_taxids t FROM samples WHERE lineage_taxids IS NOT NULL LIMIT 1")$t[1]
@@ -198,7 +249,7 @@ fixture_capture_spikes <- function(db_path, taxdump_dir, taxdump_date = NA_chara
     if (!spike_fasta_ok(fa)) stop("efetch gave no usable fasta for ", acc, call. = FALSE)
     cat("spike", key, "accession", acc, "\n")
     hf <- file.path(tmp, paste0(key, ".hits"))
-    spike_blast(fa, hf)
+    spike_blast(fa, hf, cache)
     parse_blast_candidates(sc, "SPIKE", path = 1L, scaffold = i,
       hits_file = hf, taxdump_dir = taxdump_dir)
     h <- DBI::dbGetQuery(sc,
@@ -216,7 +267,8 @@ fixture_capture_spikes <- function(db_path, taxdump_dir, taxdump_date = NA_chara
       data.frame(unit = unit, category = key,
         expected_verdict = NA_character_, expected_class = NA_character_,
         source = "spike", sample_taxids = fish, accession = acc,
-        taxdump_date = taxdump_date, note = "",
+        taxdump_date = taxdump_date,
+        note = paste("local blast vs", paste(SPIKE_DBS, collapse = "+")),
         stringsAsFactors = FALSE)[, LAB_COLS])
   }
   invisible(nrow(SPIKES))

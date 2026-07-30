@@ -56,3 +56,99 @@ test_that("every host unit gets its expected verdict", {
       host[[nm]]$label$expected_verdict, info = nm)
   }
 })
+
+# --- the spike-in half ---------------------------------------------------------
+
+fx_spikes <- function() fx_where(fx_units(), function(x) identical(x$label$source, "spike"))
+
+test_that("every spike-in unit gets its expected verdict and class", {
+  # per unit, never in aggregate: an aggregate floor is what lets one whole
+  # category silently stop working
+  spikes <- fx_spikes()
+  expect_gt(length(spikes), 0)
+  for (nm in names(spikes)) {
+    r <- fx_score(spikes[[nm]])
+    lab <- spikes[[nm]]$label
+    expect_equal(r$verdict, lab$expected_verdict, info = nm)
+    if (!is.na(lab$expected_class)) expect_equal(r$class, lab$expected_class, info = nm)
+  }
+})
+
+test_that("an uncertain verdict is never counted as catching a contaminant", {
+  # counting uncertain as a catch would let the 0.6 gate be tuned to look good
+  # by declining to answer
+  catchable <- fx_where(fx_spikes(), function(x)
+    identical(x$label$expected_verdict, "off_target"))
+  expect_gt(length(catchable), 0)
+  for (nm in names(catchable)) {
+    expect_equal(fx_score(catchable[[nm]])$verdict, "off_target", info = nm)
+  }
+})
+
+test_that("each cross-kingdom spike is caught with its own subclass", {
+  u <- fx_units()
+  for (pair in list(c("fungal_on_fish", "fungal"),
+                    c("algal_on_fish", "algal_plant"),
+                    c("arthropod_on_fish", "metazoan_other"))) {
+    r <- fx_score(u[[pair[1]]])
+    expect_equal(r$verdict, "off_target", info = pair[1])
+    expect_equal(r$class, pair[2], info = pair[1])
+  }
+})
+
+test_that("a bacterial contaminant is no_reference, which is a boundary not a miss", {
+  # doc 10 classifies a 16S title with no eukaryotic marker as `other` BY DESIGN,
+  # so the taxonomy channel has no rdna rows to vote and correctly declines. A
+  # bacterial contaminant is caught by the is_nuclear_rrna triage rules instead.
+  # Asserted so that a future change making this off_target is noticed, and so
+  # nobody reads the no_reference as the screen failing.
+  x <- fx_units()[["bacterial_on_fish"]]
+  expect_equal(fx_score(x)$verdict, "no_reference")
+  expect_true(all(x$hits$hit_class == "other"))
+})
+
+test_that("the same human distribution is missed on a fish host, caught on an invertebrate", {
+  # holds the contaminant constant and varies ONLY the host, so the screen's
+  # boundary is measured rather than argued. Homo sapiens is Chordata, and so is
+  # a ray-finned fish; concordance is tested at phylum rank or deeper.
+  u <- fx_units()
+  expect_true(all(c("human_on_fish", "human_on_invert") %in% names(u)))
+  same <- u[["human_on_fish"]]; diff <- u[["human_on_invert"]]
+  expect_equal(nrow(same$hits), nrow(diff$hits))       # identical evidence
+  expect_equal(same$hits$bitscore, diff$hits$bitscore)
+  expect_false(identical(same$label$sample_taxids, diff$label$sample_taxids))
+  expect_equal(fx_score(same)$verdict, "on_target")    # different host,
+  expect_equal(fx_score(diff)$verdict, "off_target")   # different answer
+})
+
+test_that("the confusion matrix is reported", {
+  u <- fx_units()
+  got <- vapply(u, function(x) fx_score(x)$verdict, character(1))
+  want <- vapply(u, function(x) x$label$expected_verdict, character(1))
+  cat("\n--- screen validation ---\n")
+  print(table(expected = want, got = got))
+  n_host <- sum(vapply(u, function(x) identical(x$label$category, "host"), logical(1)))
+  fp <- sum(want == "on_target" & got == "off_target")
+  catch <- want == "off_target"
+  cat(sprintf("host units %d | false positives %d | recall %d/%d\n",
+    n_host, fp, sum(catch & got == "off_target"), sum(catch)))
+  expect_equal(fp, 0L)
+  expect_equal(sum(catch & got == "off_target"), sum(catch))
+})
+
+test_that("a resolvable but weakly supported contaminant is uncertain, not a catch", {
+  # the 0.6 gate is otherwise unexercised: every captured unit sits either well
+  # above it or at confidence 0. A contaminant the screen declines to call must
+  # NOT be counted as caught, or the gate could be tuned to look good by
+  # answering less often.
+  x <- fx_units()[["fungal_weak_on_fish"]]
+  r <- fx_score(x)
+  expect_equal(r$verdict, "uncertain")
+  expect_lt(r$confidence, 0.6)
+  expect_equal(r$host_concordant, 0L)   # the evidence still points off-target
+  expect_false(is.na(r$lca_taxid))      # and is still recorded
+  # and it is excluded from the recall numerator
+  catchable <- fx_where(fx_spikes(), function(y)
+    identical(y$label$expected_verdict, "off_target"))
+  expect_false("fungal_weak_on_fish" %in% names(catchable))
+})
