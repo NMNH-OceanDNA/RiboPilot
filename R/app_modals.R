@@ -68,13 +68,13 @@ assemble_modal <- function(id) {
     # blast_screen and blast_ref_candidates are both written per unit by WF1 and
     # neither was rendered anywhere: when they name different organisms, that is
     # the contamination signal.
-    rp_details("GenBank evidence for the examined scaffold",
+    rp_details("GenBank evidence for the highlighted scaffold",
       uiOutput("unit_screen"),
       div(style = "margin-top:8px; color:#555;",
         "Best matches among records whose title says nuclear rDNA:"),
       reactable::reactableOutput("unit_candidates")),
 
-    rp_details("Read coverage for the examined scaffold", open = FALSE,
+    rp_details("Read coverage for the highlighted scaffold", open = FALSE,
       uiOutput("unit_coverage_label"),
       plotOutput("unit_coverage_plot", height = "140px")),
 
