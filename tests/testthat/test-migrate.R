@@ -286,7 +286,8 @@ test_that("v15 adds the intragenomic variant columns to screen", {
   for (col in c("variant_class", "variant_group", "variant_identity")) {
     expect_true(col %in% DBI::dbListFields(con, "screen"), info = col)
   }
-  expect_equal(DBI::dbGetQuery(con, "PRAGMA user_version")[[1]], 15L)
+  expect_equal(DBI::dbGetQuery(con, "PRAGMA user_version")[[1]],
+    RiboPilot:::RIBOPILOT_SCHEMA_VERSION)
 })
 
 test_that("a real v14 project gains the variant columns and keeps its verdict", {
@@ -317,4 +318,74 @@ test_that("a real v14 project gains the variant columns and keeps its verdict", 
   expect_equal(nrow(r), 1L)
   expect_equal(r$screen_verdict, "on_target")
   expect_true(is.na(r$variant_class))
+})
+
+# --- v16: per-sample assembler ---
+
+# assemble_opts at its v15 shape. mk_v8_db() has no assemble_opts at all, and
+# add_col() guards on the table existing, so without this the migration path an
+# existing project actually takes goes untested.
+mk_v15_assemble_opts <- function(con) {
+  DBI::dbExecute(con, "CREATE TABLE assemble_opts (
+    assemble_opts TEXT NOT NULL, cpus INTEGER, memory INTEGER, getOrganelle TEXT,
+    seeds_db TEXT, labels_db TEXT, target TEXT, max_paths INTEGER,
+    max_scaffolds INTEGER, min_assembly_length INTEGER,
+    PRIMARY KEY (assemble_opts))")
+  DBI::dbExecute(con,
+    "INSERT INTO assemble_opts (assemble_opts, cpus, getOrganelle)
+     VALUES ('default', 4, '-F anonym')")
+}
+
+test_that("v16 adds assembler to assemble_opts and defaults existing presets", {
+  con <- mk_v8_db(); on.exit(DBI::dbDisconnect(con))
+  mk_v15_assemble_opts(con)
+  DBI::dbExecute(con, "PRAGMA user_version = 15")
+  expect_false("assembler" %in% DBI::dbListFields(con, "assemble_opts"))
+
+  migrate_db(con)
+  migrate_db(con)  # additive and idempotent
+
+  expect_true("assembler" %in% DBI::dbListFields(con, "assemble_opts"))
+  r <- DBI::dbGetQuery(con, "SELECT * FROM assemble_opts")
+  expect_equal(nrow(r), 1L)
+  expect_equal(r$assembler, "getorganelle")   # backfilled by the column DEFAULT
+  expect_equal(r$getOrganelle, "-F anonym")   # untouched
+  expect_equal(DBI::dbGetQuery(con, "PRAGMA user_version")[[1]], 16L)
+})
+
+test_that("v16 returns fallback-stranded samples to the ordinary queue", {
+  con <- mk_v8_db(); on.exit(DBI::dbDisconnect(con))
+  mk_v15_assemble_opts(con)
+  DBI::dbExecute(con, "INSERT INTO assemble VALUES('S5',5,0,'default','default')")
+  DBI::dbExecute(con, "INSERT INTO assemble VALUES('S4',4,0,'default','default')")
+  DBI::dbExecute(con, "PRAGMA user_version = 15")
+
+  migrate_db(con)
+
+  sw <- DBI::dbGetQuery(con, "SELECT ID, assemble_switch FROM assemble ORDER BY ID")
+  expect_equal(sw$assemble_switch[sw$ID == "S5"], 1L)  # was stranded at 5
+  expect_equal(sw$assemble_switch[sw$ID == "S4"], 4L)  # other states untouched
+  expect_equal(sw$assemble_switch[sw$ID == "S1"], 2L)
+})
+
+test_that("a fresh database and a migrated one agree on assemble_opts columns", {
+  con <- mk_v8_db(); on.exit(DBI::dbDisconnect(con))
+  mk_v15_assemble_opts(con)
+  DBI::dbExecute(con, "PRAGMA user_version = 15")
+  migrate_db(con)
+
+  dir <- withr::local_tempdir()
+  map <- file.path(dir, "mapping.csv")
+  utils::write.csv(data.frame(ID = "S1", Taxon = "Danio rerio", R1 = "a_R1.fq", R2 = "a_R2.fq"),
+    map, row.names = FALSE)
+  db <- file.path(dir, ".sqlite")
+  new_db(db_path = db, mapping_fn = map, seeds_db = map, labels_db = map)
+  fresh <- DBI::dbConnect(RSQLite::SQLite(), db)
+  on.exit(DBI::dbDisconnect(fresh), add = TRUE)
+
+  expect_true("assembler" %in% DBI::dbListFields(fresh, "assemble_opts"))
+  expect_equal(DBI::dbGetQuery(fresh, "SELECT assembler FROM assemble_opts")$assembler,
+    "getorganelle")
+  expect_setequal(DBI::dbListFields(fresh, "assemble_opts"),
+    DBI::dbListFields(con, "assemble_opts"))
 })

@@ -5,7 +5,7 @@
 
 #' Current project-DB schema version. Bump when adding a migration step below.
 #' @noRd
-RIBOPILOT_SCHEMA_VERSION <- 15L
+RIBOPILOT_SCHEMA_VERSION <- 16L
 
 #' DDL for blast_hits: the full retained BLAST hit distribution per unit.
 #'
@@ -430,6 +430,25 @@ migrate_db <- function(con) {
   add_col("screen", "variant_class", "TEXT")
   add_col("screen", "variant_group", "TEXT")
   add_col("screen", "variant_identity", "REAL")
+
+  # --- schema v16: per-sample choice of assembler ---
+  # The assembly fallback was a second Nextflow workflow that drifted out of
+  # step with main.nf and stopped working. It is now a per-sample assembler
+  # choice inside WF1, which is where every other per-sample behavioural setting
+  # already lives. SQLite backfills existing rows with the DEFAULT, so presets
+  # created before v16 read 'getorganelle' rather than NULL.
+  add_col("assemble_opts", "assembler", "TEXT DEFAULT 'getorganelle'")
+
+  # The one value rewrite in this project's migration history, so it is called
+  # out rather than left to be discovered. assemble_switch = 5 meant "queued for
+  # the fallback workflow" and was visible only to that workflow's own query.
+  # Nothing resets it on failure, so those rows are already stranded: invisible
+  # to query_samples (IN (1,4)) and to nf_pending_count(). Deleting the query
+  # that recognised 5 would strand them permanently, so they return to the
+  # ordinary queue.
+  if (has_col("assemble", "assemble_switch")) {
+    DBI::dbExecute(con, "UPDATE assemble SET assemble_switch = 1 WHERE assemble_switch = 5")
+  }
 
   if (ver < RIBOPILOT_SCHEMA_VERSION) {
     DBI::dbExecute(con, sprintf("PRAGMA user_version = %d", RIBOPILOT_SCHEMA_VERSION))
