@@ -130,8 +130,7 @@ Fungal, bacterial and algal_plant are the cross-kingdom cases, completing the
 kingdom set `screen_class_for()` distinguishes. Arthropod is a metazoan from a
 different phylum, which concordance does catch.
 
-### 4.1 Why human appears twice, and why doc 08's human spike-in is not a
-### cross-kingdom case
+### 4.1 Why human appears twice
 
 `Homo sapiens` is Chordata. So is a ray-finned fish. Concordance is tested at
 phylum rank or deeper, so a human contaminant on a FISH sample shares the phylum
