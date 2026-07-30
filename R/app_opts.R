@@ -19,6 +19,24 @@ opts_name_row <- function(name_id, edit_id, choices, selected) {
 
 `%|NA|%` <- function(x, y) if (is.null(x) || length(x) == 0 || is.na(x)) y else x
 
+# assembler values written to assemble_opts.assembler; main.nf routes anything
+# that is not "getorganelle" to the fallback assembler
+ASSEMBLER_CHOICES <- c(
+  "GetOrganelle (default)" = "getorganelle",
+  "SPAdes, baited to the seed DB" = "bait",
+  "SPAdes, de-novo (all reads)" = "denovo")
+
+# which tool-option inputs belong to each assembler. De-novo assembles all
+# reads, so it has no baiting step and no bowtie2 flags.
+assembler_fields <- function(assembler) {
+  all <- c("ao_getorg", "ao_bt2", "ao_spades")
+  show <- switch(assembler,
+    bait = c("ao_bt2", "ao_spades"),
+    denovo = "ao_spades",
+    "ao_getorg")
+  list(show = show, hide = setdiff(all, show))
+}
+
 opts_modal_shell <- function(title, n, name_row, ..., update_id) {
   shiny::modalDialog(
     title = sprintf("%s for %d sample(s)", title, n), size = "m",
@@ -57,12 +75,45 @@ assemble_opts_modal <- function(cur, choices, n) {
         value = cur$cpus %|NA|% 4, min = 1, width = "100%"))),
       shiny::div(style = "flex:1", shinyjs::disabled(shiny::numericInput("ao_mem", "Memory (GB):",
         value = cur$memory %|NA|% 16, min = 1, width = "100%")))),
-    shinyjs::disabled(shiny::textInput("ao_getorg",
-      shiny::tagList("GetOrganelle options", tool_help_icon("getOrganelle")),
-      value = cur$getOrganelle %|NA|% "", width = "100%")),
-    opts_help("Command-line flags for GetOrganelle (nrDNA assembly). Seed/label ",
-      "databases are set at project creation.",
-      href = "https://github.com/Kinggerm/GetOrganelle"),
+    # assembler choice + only that assembler's tool options, boxed off. Each
+    # help line is appended INSIDE its input's container, so hiding the input
+    # takes its help with it; a standalone help paragraph would be left behind.
+    shiny::div(style = paste("border:1px solid #ddd; border-radius:6px;",
+        "padding:12px 14px 4px; margin:8px 0 14px;"),
+      shiny::div(style = "font-weight:bold; margin-bottom:8px;", "Assembler"),
+      shinyjs::disabled(shiny::selectInput("ao_assembler", label = NULL,
+        choices = ASSEMBLER_CHOICES,
+        selected = (cur$assembler %||% "getorganelle") %|NA|% "getorganelle",
+        width = "100%")),
+      opts_help("GetOrganelle is the primary assembler. The SPAdes fallbacks are ",
+        "for samples it cannot assemble: 'baited' maps reads to the seed database ",
+        "and assembles only what maps, 'de-novo' assembles every read. Both keep ",
+        "the contigs that match the label database. The options below belong to ",
+        "the selected assembler."),
+      shiny::tagAppendChild(
+        shinyjs::disabled(shiny::textInput("ao_getorg",
+          shiny::tagList("GetOrganelle options", tool_help_icon("getOrganelle")),
+          value = cur$getOrganelle %|NA|% "", width = "100%")),
+        opts_help("Command-line flags for GetOrganelle (nrDNA assembly). Seed/label ",
+          "databases are set at project creation.",
+          href = "https://github.com/Kinggerm/GetOrganelle",
+          id = "help_ao_getorg", nested = TRUE)),
+      shiny::tagAppendChild(
+        shinyjs::disabled(shiny::textInput("ao_bt2",
+          shiny::tagList("bowtie2 options", tool_help_icon("bowtie2")),
+          value = (cur$bowtie2 %||% "--local") %|NA|% "--local", width = "100%")),
+        opts_help("Flags for the baiting step that recruits reads against the ",
+          "seed database. Output and pairing flags are set by the pipeline.",
+          href = "https://bowtie-bio.sourceforge.net/bowtie2/manual.shtml",
+          id = "help_ao_bt2", nested = TRUE)),
+      shiny::tagAppendChild(
+        shinyjs::disabled(shiny::textInput("ao_spades",
+          shiny::tagList("SPAdes options", tool_help_icon("spades")),
+          value = (cur$spades %||% "--isolate") %|NA|% "--isolate", width = "100%")),
+        opts_help("Flags for the SPAdes assembly. If SPAdes rejects the library ",
+          "the run is retried once with no extra flags.",
+          href = "https://ablab.github.io/spades/",
+          id = "help_ao_spades", nested = TRUE))),
     shiny::div(style = "display:flex; gap:2em;",
       shiny::div(style = "flex:1", shinyjs::disabled(shiny::numericInput("ao_minlen",
         "Min assembly length (bp):", value = cur$min_assembly_length %|NA|% 0, min = 0, width = "100%"))),
@@ -168,9 +219,20 @@ opts_handlers <- function(input, output, session, deps) {
   cur_row <- shiny::reactiveVal(NULL)           # base opts row (full, for new-set copy)
 
   # CLI-help popovers
-  for (tl in c("fastp", "getOrganelle", "blastn", "pybarrnap", "barrnap", "ITSx")) {
+  for (tl in c("fastp", "getOrganelle", "bowtie2", "spades", "blastn", "pybarrnap",
+               "barrnap", "ITSx")) {
     register_tool_help(tl, input, session = session)
   }
+
+  # show only the selected assembler's tool options
+  toggle_assembler_fields <- function(assembler) {
+    f <- assembler_fields(assembler)
+    for (id in f$show) shinyjs::show(id = id)
+    for (id in f$hide) shinyjs::hide(id = id)
+  }
+  shiny::observeEvent(input$ao_assembler, ignoreInit = TRUE, {
+    toggle_assembler_fields(input$ao_assembler)
+  })
 
   # sample IDs among `ids` that are locked for this step
   locked_ids <- function(ids, lock_col, tbl) {
@@ -206,12 +268,16 @@ opts_handlers <- function(input, output, session, deps) {
     cur_row(cur)
     choices <- DBI::dbGetQuery(con, sprintf("SELECT %s FROM %s ORDER BY %s", sp$key, sp$table, sp$key))[[1]]
     shiny::showModal(sp$modal(as.list(cur), choices, length(ids)))
+    if (pfx == "ao") {
+      toggle_assembler_fields((cur$assembler[1] %||% "getorganelle") %|NA|% "getorganelle")
+    }
   }
 
   # register open + edit-toggle + update observers for each opts type
   field_ids <- list(
     po = c("po_cpus", "po_mem", "po_fastp"),
-    ao = c("ao_cpus", "ao_mem", "ao_getorg", "ao_minlen", "ao_maxpaths", "ao_maxscaf"),
+    ao = c("ao_cpus", "ao_mem", "ao_getorg", "ao_minlen", "ao_maxpaths", "ao_maxscaf",
+           "ao_assembler", "ao_bt2", "ao_spades"),
     bo = c("bo_run", "bo_entrez", "bo_extra", "bo_mts"),
     no = c("no_cpus", "no_mem", "no_tool", "no_kingdom", "no_itsxtaxon", "no_itsxopts"),
     co = c("co_ruleset", "co_pid", "co_contam")
@@ -308,6 +374,35 @@ opts_edit_check <- function(sp, nm, ids, editing, deps) {
     nm, length(others)))
 }
 
+# one opts-table row from the modal inputs, with `base` supplying the fields the
+# modal does not expose. `input` may be shiny's input object or a plain list.
+opts_row <- function(pfx, nm, input, base) {
+  switch(pfx,
+    po = data.frame(pre_opts = nm, cpus = as.integer(input$po_cpus),
+      memory = as.integer(input$po_mem), fastp = input$po_fastp %||% "",
+      stringsAsFactors = FALSE),
+    ao = data.frame(assemble_opts = nm, cpus = as.integer(input$ao_cpus),
+      memory = as.integer(input$ao_mem), getOrganelle = input$ao_getorg %||% "",
+      seeds_db = base$seeds_db %||% NA_character_, labels_db = base$labels_db %||% NA_character_,
+      target = base$target %||% NA_character_, max_paths = as.integer(input$ao_maxpaths),
+      max_scaffolds = as.integer(input$ao_maxscaf),
+      min_assembly_length = as.integer(input$ao_minlen),
+      assembler = input$ao_assembler %||% "getorganelle",
+      bowtie2 = input$ao_bt2 %||% "--local", spades = input$ao_spades %||% "--isolate",
+      stringsAsFactors = FALSE),
+    bo = data.frame(blast_opts = nm, run_blast = as.integer(isTRUE(input$bo_run)),
+      entrez_query = input$bo_entrez %||% "", extra_opts = input$bo_extra %||% "",
+      max_target_seqs = as.integer(input$bo_mts), stringsAsFactors = FALSE),
+    no = data.frame(annotate_opts = nm, cpus = as.integer(input$no_cpus),
+      memory = as.integer(input$no_mem), rrna_tool = input$no_tool,
+      rrna_kingdom = input$no_kingdom, itsx_taxon = input$no_itsxtaxon %||% "all",
+      itsx_opts = input$no_itsxopts %||% "", stringsAsFactors = FALSE),
+    co = data.frame(curate_opts = nm, ruleset = input$co_ruleset,
+      min_anchor_pid = as.numeric(input$co_pid),
+      check_contaminant = as.integer(isTRUE(input$co_contam)), stringsAsFactors = FALSE)
+  )
+}
+
 # build the full opts row (edited fields overriding the base) and upsert it,
 # then assign the set to the target samples and re-queue the step.
 opts_apply <- function(pfx, sp, input, deps, ids, cur) {
@@ -319,27 +414,7 @@ opts_apply <- function(pfx, sp, input, deps, ids, cur) {
 
   con <- deps$con(); on.exit(DBI::dbDisconnect(con))
   if (editing) {
-    row <- switch(pfx,
-      po = data.frame(pre_opts = nm, cpus = as.integer(input$po_cpus),
-        memory = as.integer(input$po_mem), fastp = input$po_fastp %||% "",
-        stringsAsFactors = FALSE),
-      ao = data.frame(assemble_opts = nm, cpus = as.integer(input$ao_cpus),
-        memory = as.integer(input$ao_mem), getOrganelle = input$ao_getorg %||% "",
-        seeds_db = base$seeds_db %||% NA_character_, labels_db = base$labels_db %||% NA_character_,
-        target = base$target %||% NA_character_, max_paths = as.integer(input$ao_maxpaths),
-        max_scaffolds = as.integer(input$ao_maxscaf),
-        min_assembly_length = as.integer(input$ao_minlen), stringsAsFactors = FALSE),
-      bo = data.frame(blast_opts = nm, run_blast = as.integer(isTRUE(input$bo_run)),
-        entrez_query = input$bo_entrez %||% "", extra_opts = input$bo_extra %||% "",
-        max_target_seqs = as.integer(input$bo_mts), stringsAsFactors = FALSE),
-      no = data.frame(annotate_opts = nm, cpus = as.integer(input$no_cpus),
-        memory = as.integer(input$no_mem), rrna_tool = input$no_tool,
-        rrna_kingdom = input$no_kingdom, itsx_taxon = input$no_itsxtaxon %||% "all",
-        itsx_opts = input$no_itsxopts %||% "", stringsAsFactors = FALSE),
-      co = data.frame(curate_opts = nm, ruleset = input$co_ruleset,
-        min_anchor_pid = as.numeric(input$co_pid),
-        check_contaminant = as.integer(isTRUE(input$co_contam)), stringsAsFactors = FALSE)
-    )
+    row <- opts_row(pfx, nm, input, base)
     dplyr::rows_upsert(dplyr::tbl(con, sp$table), row, by = sp$key, in_place = TRUE, copy = TRUE)
   }
 
@@ -348,6 +423,8 @@ opts_apply <- function(pfx, sp, input, deps, ids, cur) {
       params = list(nm, id))
     DBI::dbExecute(con, sprintf("UPDATE %s SET %s = 1 WHERE ID = ?", sp$queue_tbl, sp$queue),
       params = list(id))
+    # re-queuing annotation gives the sample work again, so it is no longer done
+    if (identical(sp$queue_tbl, "annotate")) refresh_sample_state(con, id)
   }
   deps$refresh(deps$refresh() + 1)
   shiny::removeModal()

@@ -55,21 +55,27 @@ assemble_modal <- function(id) {
         "conserved 18S/28S cores); the bar shows it against this sample's deepest scaffold,",
         "which is comparable within a path but not across paths.",
         "\"Shares\" is the deepest rank the scaffold's top GenBank hit has in common",
-        "with the sample; \"no reference\" is normal for an under-represented taxon.")),
+        "with the sample; \"no reference\" is normal for an under-represented taxon.",
+        "Click a scaffold to examine its GenBank evidence and coverage below.")),
     reactable::reactableOutput("assemble_scaffolds"),
+    div(style = "margin-top:6px;",
+      actionButton("copy_fasta", "Copy FASTA", icon = icon("clipboard"), class = "btn-sm"),
+      tags$span(class = "text-muted", style = "margin-left:8px; font-size:0.82em;",
+        "Copies the ticked scaffolds as FASTA, headed by sample, taxon and unit.")),
     tags$hr(style = "margin:10px 0;"),
 
     # The evidence that settles the keep/drop call, at the point it is made.
     # blast_screen and blast_ref_candidates are both written per unit by WF1 and
     # neither was rendered anywhere: when they name different organisms, that is
     # the contamination signal.
-    rp_details("GenBank evidence for the selected scaffold",
+    rp_details("GenBank evidence for the highlighted scaffold",
       uiOutput("unit_screen"),
       div(style = "margin-top:8px; color:#555;",
         "Best matches among records whose title says nuclear rDNA:"),
       reactable::reactableOutput("unit_candidates")),
 
-    rp_details("Read coverage (selected scaffold)", open = FALSE,
+    rp_details("Read coverage for the highlighted scaffold", open = FALSE,
+      uiOutput("unit_coverage_label"),
       plotOutput("unit_coverage_plot", height = "140px")),
 
     rp_details("Candidate paths", open = FALSE,
@@ -171,7 +177,7 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
     params = list(id, as.integer(path), as.integer(scaffold)))$annotate_notes[1],
     error = function(e) NA_character_)
   modalDialog(
-    title = paste0("Annotate - ", id, unit_lbl),
+    title = paste0("Annotation Review - ", id, unit_lbl),
     size = "l", easyClose = FALSE,
     footer = tagList(
       actionButton("mark_reviewed", "Mark reviewed", class = "btn-sm"),

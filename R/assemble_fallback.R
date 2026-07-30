@@ -6,8 +6,42 @@
 # Option A (whole-assembly cross-check): skip baiting and assemble all reads.
 #
 # Both emit the same `<id>_assembly_<n>.fasta` header format the GetOrganelle
-# path produces (">id.path.scaffold topology ..."), so the entire WF1 tail
-# (load -> score -> stitch -> annotate -> reconcile -> curate) runs unchanged.
+# path produces (">id.path.scaffold topology ..."), which is what lets this be a
+# per-sample assembler swap inside WF1 rather than a workflow of its own: the
+# whole tail (load -> score -> annotate -> reconcile -> curate -> screen ->
+# triage) runs unchanged.
+
+#' Split a preset's option string into command-line arguments
+#' @noRd
+opt_args <- function(opts, default) {
+  opts <- if (is.null(opts) || length(opts) == 0 || is.na(opts)) "" else trimws(opts)
+  if (!nzchar(opts)) opts <- default
+  if (!nzchar(opts)) return(character(0))
+  strsplit(opts, "[[:space:]]+")[[1]]
+}
+
+#' bowtie2 arguments for the baiting step
+#'
+#' The output, pairing and thread flags are the pipeline's contract and are not
+#' user-overridable; `opts` supplies the alignment behaviour.
+#' @noRd
+bt2_args <- function(idx, r1, r2, out_prefix, threads, opts) {
+  c("-x", shQuote(idx), "-1", shQuote(r1), "-2", shQuote(r2),
+    "--no-unal", "--al-conc-gz", shQuote(paste0(out_prefix, ".%.fastq.gz")),
+    opt_args(opts, "--local"),
+    "--threads", as.character(threads), "-S", shQuote(tempfile(fileext = ".sam")))
+}
+
+#' SPAdes arguments; `retry = TRUE` drops the preset flags
+#'
+#' A preset flag can be what SPAdes rejected, so the retry runs the default
+#' pipeline with nothing extra.
+#' @noRd
+spades_args <- function(r1, r2, out_dir, threads, opts, retry = FALSE) {
+  c(if (!retry) opt_args(opts, "--isolate"),
+    "-1", shQuote(r1), "-2", shQuote(r2),
+    "-o", shQuote(out_dir), "-t", as.character(threads))
+}
 
 #' Bait reads by mapping to a reference with bowtie2 (concordant pairs only)
 #'
@@ -15,10 +49,11 @@
 #' @param reference Reference rRNA FASTA (clade seeds / top hit).
 #' @param out_prefix Prefix for the baited-read output pair.
 #' @param threads Threads for bowtie2.
+#' @param opts Extra bowtie2 flags from the sample's assemble_opts preset.
 #' @return Character vector `c(baited_R1, baited_R2)`, or NULL if baiting failed
 #'   or recruited no pairs.
 #' @noRd
-bait_reads <- function(r1, r2, reference, out_prefix, threads = 4) {
+bait_reads <- function(r1, r2, reference, out_prefix, threads = 4, opts = "") {
   if (!nzchar(unname(Sys.which("bowtie2"))) || !nzchar(unname(Sys.which("bowtie2-build")))) {
     return(NULL)
   }
@@ -30,9 +65,7 @@ bait_reads <- function(r1, r2, reference, out_prefix, threads = 4) {
     stdout = FALSE, stderr = FALSE) != 0) {
     return(NULL)
   }
-  ok <- system2("bowtie2", c("-x", shQuote(idx), "-1", shQuote(r1), "-2", shQuote(r2),
-    "--no-unal", "--al-conc-gz", shQuote(paste0(out_prefix, ".%.fastq.gz")),
-    "--local", "--threads", threads, "-S", shQuote(tempfile(fileext = ".sam"))),
+  ok <- system2("bowtie2", bt2_args(idx, r1, r2, out_prefix, threads, opts),
     stdout = FALSE, stderr = FALSE)
   b1 <- paste0(out_prefix, ".1.fastq.gz"); b2 <- paste0(out_prefix, ".2.fastq.gz")
   if (ok != 0 || !file.exists(b1) || !file.exists(b2) || file.info(b1)$size < 50) {
@@ -43,17 +76,17 @@ bait_reads <- function(r1, r2, reference, out_prefix, threads = 4) {
 
 #' Assemble a read pair with SPAdes; return the contigs FASTA path (or NA)
 #' @noRd
-run_spades <- function(r1, r2, out_dir, threads = 4) {
+run_spades <- function(r1, r2, out_dir, threads = 4, opts = "") {
   if (!nzchar(unname(Sys.which("spades.py")))) {
     return(NA_character_)
   }
-  ok <- system2("spades.py", c("--isolate", "-1", shQuote(r1), "-2", shQuote(r2),
-    "-o", shQuote(out_dir), "-t", threads), stdout = FALSE, stderr = FALSE)
+  ok <- system2("spades.py", spades_args(r1, r2, out_dir, threads, opts),
+    stdout = FALSE, stderr = FALSE)
   contigs <- file.path(out_dir, "contigs.fasta")
   # --isolate can reject very small/odd libraries; retry with the default pipeline
   if (ok != 0 || !file.exists(contigs)) {
-    system2("spades.py", c("-1", shQuote(r1), "-2", shQuote(r2),
-      "-o", shQuote(out_dir), "-t", threads), stdout = FALSE, stderr = FALSE)
+    system2("spades.py", spades_args(r1, r2, out_dir, threads, opts, retry = TRUE),
+      stdout = FALSE, stderr = FALSE)
   }
   if (file.exists(contigs)) contigs else NA_character_
 }
@@ -127,10 +160,13 @@ extract_rdna_contigs <- function(contigs_fa, labels_db, id, out_fa,
 #' @param out_dir Directory to write the assembly fastas into (the process cwd).
 #' @param method "bait" (B2, default) or "denovo" (A, assemble all reads).
 #' @param threads Threads for mapping/assembly.
+#' @param bowtie2_opts,spades_opts Tool flags from the sample's assemble_opts
+#'   preset.
 #' @return (invisibly) number of contigs recovered.
 #' @export
 fallback_assemble_one <- function(id, r1, r2, reference, labels_db, out_dir = ".",
-                                  method = c("bait", "denovo"), threads = 4) {
+                                  method = c("bait", "denovo"), threads = 4,
+                                  bowtie2_opts = "", spades_opts = "") {
   method <- match.arg(method)
   dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
   out_fa <- file.path(out_dir, paste0(id, "_assembly_1.fasta"))
@@ -138,7 +174,8 @@ fallback_assemble_one <- function(id, r1, r2, reference, labels_db, out_dir = ".
   reads <- c(r1, r2)
   if (method == "bait") {
     reference <- local_ref(reference)  # resolve a URL/local seeds DB to a file
-    baited <- bait_reads(r1, r2, reference, tempfile("rp_baited_"), threads = threads)
+    baited <- bait_reads(r1, r2, reference, tempfile("rp_baited_"), threads = threads,
+      opts = bowtie2_opts)
     if (is.null(baited)) {
       message("Baiting recovered no reads for ", id, "; falling back to all reads.")
     } else {
@@ -147,7 +184,7 @@ fallback_assemble_one <- function(id, r1, r2, reference, labels_db, out_dir = ".
   }
 
   sp_dir <- file.path(tempdir(), paste0("rp_spades_", id, "_", as.integer(Sys.time())))
-  contigs <- run_spades(reads[1], reads[2], sp_dir, threads = threads)
+  contigs <- run_spades(reads[1], reads[2], sp_dir, threads = threads, opts = spades_opts)
   n <- extract_rdna_contigs(contigs, labels_db, id, out_fa)
   unlink(sp_dir, recursive = TRUE)
 

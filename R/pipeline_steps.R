@@ -202,6 +202,50 @@ open_project_db <- function(db) {
   DBI::dbExecute(con, sprintf("PRAGMA journal_mode=%s;", sqlite_journal_mode(db)))
   con
 }
+#' Was this sample's last assembly stopped by the max_paths / max_scaffolds gate
+#'
+#' Recognised from the state and the note the gate writes, so it stays true
+#' across a restart and needs no extra column.
+#' @noRd
+gate_failed <- function(con, id) {
+  r <- tryCatch(DBI::dbGetQuery(con,
+    "SELECT assemble_switch, COALESCE(assemble_notes,'') AS notes FROM assemble WHERE ID = ?",
+    params = list(id)), error = function(e) data.frame())
+  if (nrow(r) == 0) return(FALSE)
+  isTRUE(r$assemble_switch[1] == 3L) && grepl("max_paths|max_scaffolds", r$notes[1])
+}
+
+#' Settle a sample's state against the work still queued for it
+#'
+#' The sample state is written by the pipeline as the sample moves through WF1:
+#' loading an assembly opens it at 4 (in progress) and triage, the last
+#' per-sample step, closes it at 2 (done). This recomputes it from what is
+#' actually pending, so a sample also closes when the remaining work is taken
+#' away rather than finished -- units held at 0 or on ignored scaffolds are a
+#' deliberate skip, not unfinished work.
+#'
+#' Only 2 and 4 are rewritten. A sample the user has held (0), queued to re-run
+#' (1), or whose assembly failed (3) is saying something this cannot improve on.
+#'
+#' @param con Open project DB connection.
+#' @param id Sample ID.
+#' @return (invisibly) the state now stored.
+#' @noRd
+refresh_sample_state <- function(con, id) {
+  pending <- tryCatch(DBI::dbGetQuery(con,
+    "SELECT COUNT(*) n FROM annotate an
+       LEFT JOIN assemblies asm
+         ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
+      WHERE an.ID = ? AND an.annotate_switch IN (1,4) AND COALESCE(asm.ignore,0) = 0",
+    params = list(id))$n[1], error = function(e) NA_integer_)
+  if (is.na(pending)) return(invisible(NA_integer_))
+  st <- if (pending > 0) 4L else 2L
+  DBI::dbExecute(con,
+    "UPDATE assemble SET assemble_switch = ? WHERE ID = ? AND assemble_switch IN (2,4)",
+    params = list(st, id))
+  invisible(st)
+}
+
 #' Load one sample's published assembly fastas into the database
 #'
 #' Parses `out/<ID>/assemble/<ID>_assembly_*.fasta` (headers
@@ -245,21 +289,46 @@ load_assemblies <- function(con, out_dir, ID) {
   }
   df <- do.call(rbind, rows)
 
-  # Enforce max_paths BEFORE scoring. A tandem repeat like the rDNA cistron makes
-  # GetOrganelle disentangle the graph into many isomer paths (up to its
-  # --max-paths-num cap); scoring every one runs barrnap per path and dominates
-  # the runtime. Keep only the max_paths paths with the greatest total assembled
-  # length (the most complete repeat units). max_paths NA/<=0 means no cap.
+  # max_paths / max_scaffolds are GATES, not caps: a sample over either one is
+  # failed here and nothing downstream runs for it. max_paths used to silently
+  # keep its top N paths by length, and max_scaffolds was read by nothing at all,
+  # so a 47-scaffold assembly went on to cost one serial remote BLAST per
+  # scaffold. Checked before the per-scaffold orientation pass, which shells out
+  # to an anchor caller for every scaffold. NA or <= 0 means no limit.
+  lim <- tryCatch(DBI::dbGetQuery(con,
+    "SELECT ao.max_paths, ao.max_scaffolds FROM assemble a
+       JOIN assemble_opts ao ON a.assemble_opts = ao.assemble_opts WHERE a.ID = ?",
+    params = list(ID)), error = function(e) data.frame())
+  over <- function(n, limit) {
+    !is.null(limit) && length(limit) && !is.na(limit) && limit > 0 && n > limit
+  }
   n_paths_raw <- length(unique(df$path))
-  n_dropped <- 0L
-  mp <- tryCatch(DBI::dbGetQuery(con,
-    "SELECT ao.max_paths FROM assemble a JOIN assemble_opts ao ON a.assemble_opts = ao.assemble_opts WHERE a.ID = ?",
-    params = list(ID))$max_paths[1], error = function(e) NA_integer_)
-  if (!is.na(mp) && mp > 0 && n_paths_raw > mp) {
-    tot <- stats::aggregate(length ~ path, data = df, FUN = sum)
-    keep <- tot$path[order(-tot$length, tot$path)][seq_len(mp)]
-    df <- df[df$path %in% keep, , drop = FALSE]
-    n_dropped <- n_paths_raw - mp
+  # per path, not summed: 3 paths of 2 scaffolds is not a 6-scaffold assembly
+  max_per_path_raw <- max(table(df$path))
+  gate <- c(
+    if (over(n_paths_raw, lim$max_paths[1]))
+      sprintf("%d paths exceeds max_paths (%d)", n_paths_raw, lim$max_paths[1]),
+    if (over(max_per_path_raw, lim$max_scaffolds[1]))
+      sprintf("%d scaffolds in a path exceeds max_scaffolds (%d)",
+        max_per_path_raw, lim$max_scaffolds[1]))
+
+  if (length(gate) > 0) {
+    # Store the sequences anyway: raising the limit and re-running should not
+    # mean re-assembling, and the curator needs to see what tripped the gate.
+    # ignore = 1 is what actually stops the work -- every downstream selection
+    # (remote BLAST, coverage, the annotate unit query, export) filters on it.
+    df$ignore <- 1L
+    DBI::dbExecute(con, "DELETE FROM assemblies WHERE ID = ?", params = list(ID))
+    DBI::dbAppendTable(con, "assemblies", df)
+    DBI::dbExecute(con, "UPDATE annotate SET annotate_switch = 0 WHERE ID = ?", params = list(ID))
+    DBI::dbExecute(con,
+      "UPDATE assemble SET paths=?, scaffolds=?, length=?, topology=?,
+       assemble_switch=3, assemble_notes=?, time_stamp=? WHERE ID=?",
+      params = list(length(unique(df$path)), nrow(df),
+        paste(sort(unique(df$length), decreasing = TRUE), collapse = ";"),
+        paste(sort(unique(stats::na.omit(df$topology))), collapse = ";"),
+        paste(gate, collapse = "; "), ts, ID))
+    return(invisible(nrow(df)))
   }
 
   # Orient each kept scaffold to the sense (5'->3') strand before storing, so
@@ -278,6 +347,11 @@ load_assemblies <- function(con, out_dir, ID) {
   prev <- tryCatch(DBI::dbGetQuery(con,
     "SELECT path, scaffold, COALESCE(ignore,0) AS ignore FROM assemblies WHERE ID = ?",
     params = list(ID)), error = function(e) data.frame())
+  # ...unless the last run was a gate failure, which ignored every scaffold
+  # wholesale. Those are not curator decisions, and carrying them would leave the
+  # sample empty after raising the limit and re-running -- the exact recovery the
+  # gate is supposed to allow.
+  if (isTRUE(gate_failed(con, ID))) prev <- data.frame()
   if (nrow(prev) > 0) {
     i <- match(paste(df$path, df$scaffold), paste(prev$path, prev$scaffold))
     df$ignore <- ifelse(is.na(i), 0L, as.integer(prev$ignore[i]))
@@ -293,15 +367,13 @@ load_assemblies <- function(con, out_dir, ID) {
   n_scaffolds <- nrow(df)               # total units, not the biggest path's count
   length_str <- paste(sort(unique(df$length), decreasing = TRUE), collapse = ";")
   topo_str <- paste(sort(unique(stats::na.omit(df$topology))), collapse = ";")
-  cap_note <- if (n_dropped > 0)
-    sprintf("kept top %d of %d paths (max_paths)", mp, n_paths_raw) else ""
   notes <- paste(c(
     if (n_paths > 1) "Unable to resolve single assembly from reads"
-    else if (max_per_path > 1) "Output contains disconnected contigs" else NULL,
-    if (nzchar(cap_note)) cap_note else NULL), collapse = "; ")
+    else if (max_per_path > 1) "Output contains disconnected contigs" else NULL),
+    collapse = "; ")
   DBI::dbExecute(con,
     "UPDATE assemble SET paths=?, scaffolds=?, length=?, topology=?,
-     assemble_switch=2, assemble_notes=?, time_stamp=? WHERE ID=?",
+     assemble_switch=4, assemble_notes=?, time_stamp=? WHERE ID=?",
     params = list(n_paths, n_scaffolds, length_str, topo_str, notes, ts, ID))
 
   # Seed one annotate unit per non-ignored scaffold, inheriting the sample's opts
@@ -515,6 +587,8 @@ reconcile_ignore_unit <- function(con, id, path, scaffold, ignore) {
         if (isTRUE(n > 0)) 2L else 1L),
       params = list(id, path, scaffold))
   }
+  # holding the last queued unit finishes the sample; releasing one reopens it
+  refresh_sample_state(con, id)
   invisible()
 }
 

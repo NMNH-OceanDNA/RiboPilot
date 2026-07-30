@@ -12,7 +12,9 @@ fallback_assemble_one(
   labels_db,
   out_dir = ".",
   method = c("bait", "denovo"),
-  threads = 4
+  threads = 4,
+  bowtie2_opts = "",
+  spades_opts = ""
 )
 }
 \arguments{
@@ -29,6 +31,9 @@ fallback_assemble_one(
 \item{method}{"bait" (B2, default) or "denovo" (A, assemble all reads).}
 
 \item{threads}{Threads for mapping/assembly.}
+
+\item{bowtie2_opts, spades_opts}{Tool flags from the sample's assemble_opts
+preset.}
 }
 \value{
 (invisibly) number of contigs recovered.

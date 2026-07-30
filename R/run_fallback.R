@@ -1,6 +1,7 @@
-# Assembly-fallback driver. Queues samples that failed the GetOrganelle (B1) QC
-# gate (or an explicit set) for a reference-guided baiting / de-novo fallback,
-# then launches the self-contained main_fallback.nf workflow.
+# Assembly-fallback driver. Points samples that failed the GetOrganelle (B1) QC
+# gate at the baiting / de-novo assembler, then runs the ordinary assembly
+# workflow. The fallback used to be a separate Nextflow workflow; it is now a
+# per-sample assembler inside WF1 (dev/design/14_ASSEMBLER_SWAP.md).
 
 #' Samples that failed the assembly QC gate (candidates for a fallback)
 #'
@@ -15,12 +16,59 @@ fallback_candidates <- function(con) {
             OR an.missing LIKE '%18S%' OR an.missing LIKE '%28S%')")$ID
 }
 
+#' Point one sample at an assemble_opts preset using the requested assembler
+#'
+#' Derives a new preset rather than editing the sample's current one in place:
+#' presets are shared, so editing would change the assembler for every other
+#' sample using it. The derived preset copies every other column from its
+#' source, and is reused on a second call rather than duplicated.
+#'
+#' @param con Open DBI connection.
+#' @param id Sample ID.
+#' @param method "bait" or "denovo".
+#' @return (invisibly) the preset name the sample now points at.
+#' @noRd
+set_sample_assembler <- function(con, id, method) {
+  src <- DBI::dbGetQuery(con,
+    "SELECT assemble_opts FROM assemble WHERE ID = ?", params = list(id))$assemble_opts
+  if (length(src) == 0 || is.na(src[1])) src <- "default" else src <- src[1]
+  derived <- paste0(src, "_", method)
+
+  exists_already <- DBI::dbGetQuery(con,
+    "SELECT COUNT(*) n FROM assemble_opts WHERE assemble_opts = ?",
+    params = list(derived))$n > 0
+  if (!exists_already) {
+    row <- DBI::dbGetQuery(con,
+      "SELECT * FROM assemble_opts WHERE assemble_opts = ?", params = list(src))
+    if (nrow(row) == 0) {
+      row <- DBI::dbGetQuery(con, "SELECT * FROM assemble_opts LIMIT 1")
+    }
+    if (nrow(row) > 0) {
+      row$assemble_opts <- derived
+      row$assembler <- method
+      DBI::dbAppendTable(con, "assemble_opts", row)
+    }
+  } else {
+    DBI::dbExecute(con, "UPDATE assemble_opts SET assembler = ? WHERE assemble_opts = ?",
+      params = list(method, derived))
+  }
+
+  DBI::dbExecute(con, "UPDATE assemble SET assemble_opts = ? WHERE ID = ?",
+    params = list(derived, id))
+  invisible(derived)
+}
+
 #' Run an assembly fallback (Option B2 baiting / Option A de-novo)
 #'
-#' Queues samples for the fallback workflow and launches it. By default it
-#' targets samples that failed the primary GetOrganelle assembly QC gate (no
-#' assembly, or a missing 18S/28S anchor); pass `ids` to force a specific set
-#' (e.g. an Option A whole-assembly cross-check of a good sample).
+#' Points samples at the baiting / de-novo assembler and runs the ordinary
+#' assembly workflow. By default it targets samples that failed the primary
+#' GetOrganelle assembly QC gate (no assembly, or a missing 18S/28S anchor);
+#' pass `ids` to force a specific set (e.g. an Option A whole-assembly
+#' cross-check of a good sample).
+#'
+#' Each targeted sample is repointed at a derived `assemble_opts` preset named
+#' `<current>_<method>`, so other samples sharing its original preset are
+#' unaffected.
 #'
 #' @param path Project directory (contains `.sqlite` and `.config`).
 #' @param ids Sample IDs to run (default: the QC-gate failures).
@@ -37,15 +85,8 @@ run_fallback <- function(path = ".", ids = NULL, method = c("bait", "denovo"),
                          nextflow = "nextflow", work = file.path(path, "work"),
                          conda_env = NULL, ribopilot_src = NULL) {
   method <- match.arg(method)
-  if (!is.null(conda_env)) {
-    bin <- resolve_conda_bin(conda_env)
-    old_path <- Sys.getenv("PATH")
-    Sys.setenv(PATH = paste(bin, old_path, sep = .Platform$path.sep))
-    on.exit(Sys.setenv(PATH = old_path), add = TRUE)
-  }
   path <- normalizePath(path)
   stopifnot(file.exists(file.path(path, ".sqlite")), file.exists(file.path(path, ".config")))
-  check_nextflow_version("run_fallback", nextflow = nextflow)
 
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(path, ".sqlite"))
   if (is.null(ids)) ids <- fallback_candidates(con)
@@ -55,20 +96,12 @@ run_fallback <- function(path = ".", ids = NULL, method = c("bait", "denovo"),
     return(invisible(0L))
   }
   for (id in ids) {
-    DBI::dbExecute(con, "UPDATE assemble SET assemble_switch = 5 WHERE ID = ?", params = list(id))
+    set_sample_assembler(con, id, method)
+    DBI::dbExecute(con, "UPDATE assemble SET assemble_switch = 1 WHERE ID = ?", params = list(id))
   }
   DBI::dbDisconnect(con)
 
-  message("Running Nextflow assembly fallback (", method, ") for ", length(ids), " sample(s)...")
-  args <- nf_command(path, "fallback", resume = TRUE, work = work,
-    ribopilot_src = ribopilot_src, method = method)
-  nf_cmd <- paste0(nxf_ver_prefix(nextflow), paste(c(shQuote(nextflow), shQuote(args)), collapse = " "))
-  status <- system2("bash", c("-c", shQuote(paste0("cd ", shQuote(path), " && ", nf_cmd))), wait = TRUE)
-  if (status != 0) {
-    warning("Nextflow (fallback) exited with status ", status)
-  } else {
-    message("Fallback complete (assemble -> score -> stitch -> BLAST + coverage) written to the database. ",
-      "Review and lock assemblies in the app, then run annotation (WF2).")
-  }
-  invisible(status)
+  message("Queued ", length(ids), " sample(s) for the ", method, " assembler.")
+  run_assembly(path = path, nextflow = nextflow, work = work,
+    conda_env = conda_env, ribopilot_src = ribopilot_src)
 }

@@ -206,7 +206,10 @@ lookup and carries on; your assemblies and annotations are not affected.
 # Step 5: Rescue difficult samples (optional)
 
 A few samples, especially shallow or unusual ones, may not assemble on the first
-pass. RiboPilot can make a second, more targeted attempt at just those samples:
+pass. RiboPilot can make a second attempt at just those samples using a
+different assembler, which fishes out the reads that look like ribosomal DNA
+first and then assembles only those. It is the same assembly step as before, so
+everything after it works exactly the same way:
 
 ```{r, purl = FALSE}
 RiboPilot::run_fallback("~/my_project", conda_env = "ribopilot")

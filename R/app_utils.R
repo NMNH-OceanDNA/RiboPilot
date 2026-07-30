@@ -195,3 +195,28 @@ unit_concordance <- function(d) {
   }
   out
 }
+
+#' Put text on the user's clipboard from the server side
+#'
+#' The Clipboard API needs a secure context, which a Shiny app served over plain
+#' http on anything but localhost is not, so the textarea + execCommand path is
+#' a real fallback rather than legacy-browser politeness. jsonlite does the
+#' escaping: a FASTA blob is full of newlines and would otherwise break the
+#' generated statement.
+#' @param text Character scalar to copy.
+#' @noRd
+copy_to_clipboard <- function(text) {
+  js_str <- as.character(jsonlite::toJSON(text, auto_unbox = TRUE))
+  shinyjs::runjs(sprintf("
+    (function(t){
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(t);
+      } else {
+        var a = document.createElement('textarea');
+        a.value = t; a.style.position = 'fixed'; a.style.opacity = '0';
+        document.body.appendChild(a); a.focus(); a.select();
+        try { document.execCommand('copy'); } finally { document.body.removeChild(a); }
+      }
+    })(%s);", js_str))
+  invisible(text)
+}

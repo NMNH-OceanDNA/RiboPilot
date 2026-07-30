@@ -219,6 +219,9 @@ new_db <- function(
       max_paths INTEGER,
       max_scaffolds INTEGER,
       min_assembly_length INTEGER,
+      assembler TEXT DEFAULT 'getorganelle',
+      bowtie2 TEXT DEFAULT '--local',
+      spades TEXT DEFAULT '--isolate',
       PRIMARY KEY (assemble_opts)
     );"
   )
@@ -234,7 +237,10 @@ new_db <- function(
         target = target,
         max_paths = max_paths,
         max_scaffolds = max_scaffolds,
-        min_assembly_length = min_assembly_length
+        min_assembly_length = min_assembly_length,
+        assembler = "getorganelle",
+        bowtie2 = "--local",
+        spades = "--isolate"
       ),
       in_place = TRUE, copy = TRUE, by = "assemble_opts"
     )

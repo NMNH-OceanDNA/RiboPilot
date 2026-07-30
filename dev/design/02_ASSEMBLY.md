@@ -158,6 +158,16 @@ nrDNA is not perfectly homogenized (incomplete concerted evolution). Expect:
 available as a manual whole-assembly cross-check. This matches MitoPilot's
 "GetOrganelle-first, alternate assembler fallback" philosophy.
 
+**Status 2026-07-30: B2 is implemented but NOT automatic.** The QC gate exists
+as `fallback_candidates()` and selects the right samples (failed assembly, or a
+missing 18S/28S anchor), but nothing invokes it on its own. A user must call
+`run_fallback()`. Since `14_ASSEMBLER_SWAP.md` that call sets a per-sample
+`assemble_opts.assembler` and re-runs the ordinary assembly workflow, so making
+it automatic is now a matter of running the gate after WF1 rather than of
+wiring a second workflow. Also note B2's baiting is a single bowtie2 pass
+(`R/assemble_fallback.R:21-42`), not the MITObim-style iterate-and-extend loop
+described above, so it does not fill spacers between anchors by iteration.
+
 ## Open assembly questions
 
 - Exact GenBank product/feature filter that keeps nuclear 18S/5.8S/28S/ITS and

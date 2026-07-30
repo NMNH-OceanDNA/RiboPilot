@@ -426,3 +426,40 @@ rt_depth_sparkline <- function() {
         'stroke-width=\"1\"/></svg>';
     }")
 }
+
+#' Row click -> "examine this unit", for tables whose tick boxes mean something else
+#'
+#' The scaffold table's tick boxes feed Copy FASTA, so the row click is free to
+#' mean "show this scaffold in the panels below". Clicks on the tick box and on
+#' the in-cell action buttons are ignored: the buttons already stop propagation,
+#' and `.selection` would otherwise both tick the row and move the panels.
+#' @param InputId Shiny input to set to the clicked row's uid.
+#' @noRd
+rt_examine_row <- function(InputId) {
+  sprintf(
+    "function(rowInfo, column) {
+      if (column.id === '.selection' || column.id === 'triage') return;
+      var uid = rowInfo.row['uid'];
+      if (uid === null || uid === undefined) return;
+      Shiny.setInputValue('%s', uid, {priority: 'event'});
+    }", InputId) |> htmlwidgets::JS()
+}
+
+#' Row style for the scaffold table: grey when dropped, marked when examined
+#'
+#' The examined unit is read from the table's `meta`, which
+#' [reactable::updateReactable()] can change without a re-render, so clicking a
+#' row does not cost the user their sort, filters and page.
+#' @noRd
+rt_scaffold_row_style <- function() {
+  htmlwidgets::JS("
+    function(rowInfo, state) {
+      var st = {};
+      if (rowInfo.row['ignore'] === 1) { st.background = '#f3f3f3'; st.color = '#999'; }
+      if (state.meta && state.meta.examined === rowInfo.row['uid']) {
+        st.background = '#eaf1fb';
+        st.boxShadow = 'inset 3px 0 0 #3c6fb5';
+      }
+      return st;
+    }")
+}

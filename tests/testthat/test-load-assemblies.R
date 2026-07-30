@@ -9,13 +9,14 @@ mk_asm_db <- function(dir) {
   DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, paths INT, scaffolds INT, length TEXT,
                        topology TEXT, assemble_switch INT, assemble_notes TEXT,
                        assemble_opts TEXT, time_stamp INT)")
-  DBI::dbExecute(con, "CREATE TABLE assemble_opts(assemble_opts TEXT, max_paths INT)")
+  DBI::dbExecute(con, "CREATE TABLE assemble_opts(assemble_opts TEXT, max_paths INT,
+                       max_scaffolds INT)")
   DBI::dbExecute(con, "CREATE TABLE annotate(ID TEXT, path INT, scaffold INT, annotate_switch INT,
                        annotate_lock INT, annotate_opts TEXT, curate_opts TEXT, reviewed TEXT,
                        PRIMARY KEY (ID, path, scaffold))")
   DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT)")
   DBI::dbExecute(con, "CREATE TABLE coverage(ID TEXT, path INT, scaffold INT, mean_depth REAL)")
-  DBI::dbExecute(con, "INSERT INTO assemble_opts VALUES('default', 10)")
+  DBI::dbExecute(con, "INSERT INTO assemble_opts VALUES('default', 10, 10)")
   DBI::dbExecute(con, "INSERT INTO assemble VALUES('S1',NULL,NULL,NULL,NULL,1,NULL,'default',NULL)")
   con
 }
@@ -102,4 +103,137 @@ test_that("assemble.scaffolds records total units, not the largest path's count"
   a <- DBI::dbGetQuery(con, "SELECT paths, scaffolds FROM assemble WHERE ID='S1'")
   expect_equal(a$paths, 2)
   expect_equal(a$scaffolds, 3)
+})
+
+# --- max_paths / max_scaffolds are gates, not caps -----------------------------
+# Both were editable in the app and documented as thresholds "for a sample to
+# continue", but max_scaffolds was read by nothing and max_paths quietly kept its
+# top N instead of stopping. A sample that blew past both went on to cost one
+# serial remote BLAST per scaffold.
+
+write_many_scaffolds <- function(dir, n, id = "S1", path = 1) {
+  ad <- file.path(dir, id, "assemble")
+  dir.create(ad, recursive = TRUE, showWarnings = FALSE)
+  writeLines(unlist(lapply(seq_len(n), function(k) {
+    c(sprintf(">%s.%d.%d linear scaffold_%d", id, path, k, k), strrep("ACGT", 100 + k))
+  })), file.path(ad, sprintf("%s_assembly_%d.fasta", id, path)))
+}
+
+gate_state <- function(con) {
+  DBI::dbGetQuery(con, "SELECT assemble_switch, assemble_notes, scaffolds FROM assemble WHERE ID='S1'")
+}
+
+test_that("too many scaffolds in a path fails the sample", {
+  dir <- withr::local_tempdir()
+  con <- mk_asm_db(dir); on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "UPDATE assemble_opts SET max_scaffolds = 3")
+  write_many_scaffolds(dir, 5)
+
+  RiboPilot:::load_assemblies(con, dir, "S1")
+
+  st <- gate_state(con)
+  expect_equal(st$assemble_switch, 3L)
+  expect_match(st$assemble_notes, "max_scaffolds")
+})
+
+test_that("a failed gate stops the downstream work, but keeps the sequences", {
+  dir <- withr::local_tempdir()
+  con <- mk_asm_db(dir); on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "UPDATE assemble_opts SET max_scaffolds = 3")
+  write_many_scaffolds(dir, 5)
+
+  RiboPilot:::load_assemblies(con, dir, "S1")
+
+  # kept, so raising the limit and re-running does not mean re-assembling
+  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM assemblies")$n, 5)
+  # every downstream step selects on ignore = 0, so this is what stops them
+  expect_equal(DBI::dbGetQuery(con,
+    "SELECT COUNT(*) n FROM assemblies WHERE COALESCE(ignore,0) = 0")$n, 0)
+  # and nothing is queued for annotation
+  expect_equal(DBI::dbGetQuery(con,
+    "SELECT COUNT(*) n FROM annotate WHERE annotate_switch = 1")$n, 0)
+})
+
+test_that("too many paths fails the sample instead of keeping the longest", {
+  dir <- withr::local_tempdir()
+  con <- mk_asm_db(dir); on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "UPDATE assemble_opts SET max_paths = 2, max_scaffolds = 10")
+  for (p in 1:3) write_many_scaffolds(dir, 1, path = p)
+
+  RiboPilot:::load_assemblies(con, dir, "S1")
+
+  st <- gate_state(con)
+  expect_equal(st$assemble_switch, 3L)
+  expect_match(st$assemble_notes, "max_paths")
+  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(DISTINCT path) n FROM assemblies")$n, 3)
+})
+
+test_that("a sample inside both limits is untouched by the gate", {
+  dir <- withr::local_tempdir()
+  con <- mk_asm_db(dir); on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "UPDATE assemble_opts SET max_paths = 10, max_scaffolds = 10")
+  write_many_scaffolds(dir, 4)
+
+  RiboPilot:::load_assemblies(con, dir, "S1")
+
+  st <- gate_state(con)
+  expect_equal(st$assemble_switch, 4L)          # in progress, not failed
+  expect_false(grepl("max_", st$assemble_notes))
+  expect_equal(DBI::dbGetQuery(con,
+    "SELECT COUNT(*) n FROM annotate WHERE annotate_switch = 1")$n, 4)
+})
+
+test_that("the limit counts scaffolds per path, not across the whole sample", {
+  # 3 paths of 2 scaffolds each is 6 units but no path is over a limit of 3
+  dir <- withr::local_tempdir()
+  con <- mk_asm_db(dir); on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "UPDATE assemble_opts SET max_paths = 5, max_scaffolds = 3")
+  for (p in 1:3) write_many_scaffolds(dir, 2, path = p)
+
+  RiboPilot:::load_assemblies(con, dir, "S1")
+  expect_equal(gate_state(con)$assemble_switch, 4L)
+})
+
+test_that("an unset or zero limit means no gate", {
+  dir <- withr::local_tempdir()
+  con <- mk_asm_db(dir); on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "UPDATE assemble_opts SET max_paths = 0, max_scaffolds = NULL")
+  write_many_scaffolds(dir, 30)
+
+  RiboPilot:::load_assemblies(con, dir, "S1")
+  expect_equal(gate_state(con)$assemble_switch, 4L)
+})
+
+test_that("raising the limit and re-running recovers a gated sample", {
+  dir <- withr::local_tempdir()
+  con <- mk_asm_db(dir); on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "UPDATE assemble_opts SET max_scaffolds = 3")
+  write_many_scaffolds(dir, 5)
+  RiboPilot:::load_assemblies(con, dir, "S1")
+  expect_equal(gate_state(con)$assemble_switch, 3L)
+
+  # the curator raises the limit and re-queues; the blanket ignore the gate set
+  # must not be mistaken for their own keep/drop decisions
+  DBI::dbExecute(con, "UPDATE assemble_opts SET max_scaffolds = 10")
+  RiboPilot:::load_assemblies(con, dir, "S1")
+
+  expect_equal(gate_state(con)$assemble_switch, 4L)
+  expect_equal(DBI::dbGetQuery(con,
+    "SELECT COUNT(*) n FROM assemblies WHERE COALESCE(ignore,0) = 0")$n, 5)
+  expect_equal(DBI::dbGetQuery(con,
+    "SELECT COUNT(*) n FROM annotate WHERE annotate_switch = 1")$n, 5)
+})
+
+test_that("a curator's own drops still survive a re-assembly", {
+  dir <- withr::local_tempdir()
+  con <- mk_asm_db(dir); on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "UPDATE assemble_opts SET max_scaffolds = 10")
+  write_many_scaffolds(dir, 4)
+  RiboPilot:::load_assemblies(con, dir, "S1")
+
+  DBI::dbExecute(con, "UPDATE assemblies SET ignore = 1 WHERE scaffold = 2")
+  RiboPilot:::load_assemblies(con, dir, "S1")
+
+  ig <- DBI::dbGetQuery(con, "SELECT scaffold, ignore FROM assemblies ORDER BY scaffold")
+  expect_equal(ig$ignore, c(0L, 1L, 0L, 0L))
 })
