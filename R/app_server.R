@@ -891,6 +891,9 @@ app_server <- function(input, output, session) {
       selection = "multiple",
       defaultColDef = reactable::colDef(align = "left", show = FALSE),
       columns = list(
+        # the tick-box column is a built-in column, so defaultColDef's show =
+        # FALSE hides it too; it has to opt back in by name
+        .selection = reactable::colDef(show = TRUE, width = 36, sticky = "left"),
         unit = reactable::colDef(name = "Unit", width = 72, show = TRUE, sticky = "left"),
         length = reactable::colDef(name = "Length", width = 80, show = TRUE),
         topology = reactable::colDef(name = "Topology", width = 85, show = TRUE),

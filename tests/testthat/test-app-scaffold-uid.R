@@ -327,3 +327,25 @@ test_that("Copy FASTA copies the ticked scaffolds, keyed on the table's own sele
     expect_false(grepl("p1.s1", copied, fixed = TRUE))
   })
 })
+
+test_that("the scaffold table actually shows its tick-box column", {
+  # the table hides columns by default (defaultColDef show = FALSE) and reactable
+  # applies that to its built-in selection column too, so the checkboxes were
+  # created and then hidden: the button was there with no way to pick a row
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    sel_id("S1")
+    session$flushReact()
+
+    # testServer hands back the widget already rendered to JSON
+    w <- jsonlite::fromJSON(output$assemble_scaffolds, simplifyVector = FALSE)
+    cols <- w$x$tag$attribs$columns
+    sel <- Filter(function(c) identical(c$id, ".selection"), cols)
+    expect_length(sel, 1)
+    expect_true(isTRUE(sel[[1]]$show))
+  })
+})
