@@ -294,3 +294,36 @@ test_that("the all-off message replaces the no-Drop note instead of also printin
     expect_false(grepl("No rule is set to Drop", prev, fixed = TRUE))
   })
 })
+
+test_that("Copy FASTA copies the ticked scaffolds, keyed on the table's own selection", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+
+  copied <- NULL
+  # intercept the browser-side write; the assertion is about what we hand it
+  testthat::local_mocked_bindings(copy_to_clipboard = function(text) {
+    copied <<- text; invisible(text)
+  })
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    sel_id("S1")
+    session$flushReact()
+
+    # nothing ticked: warn, do not put an empty blob on the clipboard
+    session$setInputs(copy_fasta = 1)
+    session$flushReact()
+    expect_null(copied)
+
+    d <- scaffold_rows()
+    pick <- which(d$path == 2 & d$scaffold == 1)
+    session$setInputs(`assemble_scaffolds__reactable__selected` = pick)
+    session$setInputs(copy_fasta = 2)
+    session$flushReact()
+
+    expect_false(is.null(copied))
+    expect_match(copied, ">S1 Danio rerio p2.s1", fixed = TRUE)
+    expect_false(grepl("p1.s1", copied, fixed = TRUE))
+  })
+})

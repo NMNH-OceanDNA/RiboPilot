@@ -532,3 +532,36 @@ export_project <- function(path = ".", out_dir = file.path(path, "out")) {
   for (g in groups) export_bundle(path, group = g, out_dir = out_dir, zip = TRUE)
   invisible(groups)
 }
+
+#' Plain FASTA for a set of assembly units, for the app's copy-to-clipboard
+#'
+#' Deliberately not the submission defline built by [export_bundle()]: this is
+#' for pasting into BLAST or an alignment, so the header is the three things
+#' that identify the sequence to a person -- sample, the taxon the user gave,
+#' and the unit. `samples.Taxon` is the user's own label; `sci_name` is what
+#' taxonomy resolution assigned and is not used here.
+#'
+#' @param con Open project DB connection.
+#' @param id Sample ID.
+#' @param units data.frame with `path` and `scaffold` columns, in output order.
+#' @param width Sequence line width.
+#' @return Character vector of FASTA lines (empty when nothing to write).
+#' @noRd
+unit_fasta_text <- function(con, id, units, width = 60) {
+  if (is.null(units) || nrow(units) == 0) return(character(0))
+  taxon <- tryCatch(DBI::dbGetQuery(con, "SELECT Taxon FROM samples WHERE ID = ?",
+    params = list(id))$Taxon[1], error = function(e) NA_character_)
+  out <- character(0)
+  for (i in seq_len(nrow(units))) {
+    p <- as.integer(units$path[i]); s <- as.integer(units$scaffold[i])
+    seq <- DBI::dbGetQuery(con,
+      "SELECT sequence FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = list(id, p, s))$sequence[1]
+    if (length(seq) == 0 || is.na(seq) || !nzchar(seq)) next
+    hdr <- paste(c(id, if (!is.na(taxon) && nzchar(taxon)) taxon else NULL,
+      sprintf("p%d.s%d", p, s)), collapse = " ")
+    starts <- seq.int(1L, nchar(seq), by = width)
+    out <- c(out, paste0(">", hdr), substring(seq, starts, starts + width - 1L))
+  }
+  out
+}

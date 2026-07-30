@@ -887,6 +887,8 @@ app_server <- function(input, output, session) {
     d <- d[, c(intersect(lead, names(d)), setdiff(names(d), lead)), drop = FALSE]
     reactable::reactable(d, compact = TRUE, resizable = TRUE, filterable = TRUE,
       searchable = TRUE, sortable = TRUE, wrap = FALSE, defaultPageSize = 20,
+      # tick boxes feed the Copy FASTA button below the table
+      selection = "multiple",
       defaultColDef = reactable::colDef(align = "left", show = FALSE),
       columns = list(
         unit = reactable::colDef(name = "Unit", width = 72, show = TRUE, sticky = "left"),
@@ -925,6 +927,23 @@ app_server <- function(input, output, session) {
         uid = reactable::colDef(show = FALSE), depth_max = reactable::colDef(show = FALSE),
         sib_taxon = reactable::colDef(show = FALSE), sib_rank = reactable::colDef(show = FALSE)),
       rowStyle = function(index) if (isTRUE(d$ignore[index] == 1)) list(background = "#f3f3f3", color = "#999") else NULL)
+  })
+
+  # ---- Copy FASTA for the ticked scaffolds ----
+  observeEvent(input$copy_fasta, {
+    d <- scaffold_rows()
+    sel <- reactable::getReactableState("assemble_scaffolds", "selected")
+    sel <- sel[!is.na(sel) & sel >= 1 & sel <= nrow(d)]
+    if (length(sel) == 0) {
+      showNotification("Tick one or more scaffolds first.", type = "warning"); return()
+    }
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    txt <- unit_fasta_text(con, sel_id(), d[sel, c("path", "scaffold"), drop = FALSE])
+    if (length(txt) == 0) {
+      showNotification("Those scaffolds have no stored sequence.", type = "warning"); return()
+    }
+    copy_to_clipboard(paste(txt, collapse = "\n"))
+    showNotification(sprintf("Copied %d scaffold(s) as FASTA.", length(sel)), type = "message")
   })
 
   # ---- per-unit BLAST evidence: the unfiltered screen vs the rDNA panel ----

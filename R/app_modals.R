@@ -57,6 +57,10 @@ assemble_modal <- function(id) {
         "\"Shares\" is the deepest rank the scaffold's top GenBank hit has in common",
         "with the sample; \"no reference\" is normal for an under-represented taxon.")),
     reactable::reactableOutput("assemble_scaffolds"),
+    div(style = "margin-top:6px;",
+      actionButton("copy_fasta", "Copy FASTA", icon = icon("clipboard"), class = "btn-sm"),
+      tags$span(class = "text-muted", style = "margin-left:8px; font-size:0.82em;",
+        "Copies the ticked scaffolds as FASTA, headed by sample, taxon and unit.")),
     tags$hr(style = "margin:10px 0;"),
 
     # The evidence that settles the keep/drop call, at the point it is made.
@@ -171,7 +175,7 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
     params = list(id, as.integer(path), as.integer(scaffold)))$annotate_notes[1],
     error = function(e) NA_character_)
   modalDialog(
-    title = paste0("Annotate - ", id, unit_lbl),
+    title = paste0("Annotation Review - ", id, unit_lbl),
     size = "l", easyClose = FALSE,
     footer = tagList(
       actionButton("mark_reviewed", "Mark reviewed", class = "btn-sm"),
