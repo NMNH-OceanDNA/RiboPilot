@@ -111,23 +111,48 @@ the per-unit expectation and the aggregate floors of section 5.
 
 ## 4. Categories
 
-| category | expected verdict | expected class | source |
-|---|---|---|---|
-| `host` | `on_target` | NA | real, 19 units |
-| `fungal` | `off_target` | `fungal` | spike-in |
-| `human` | `off_target` | `human` | spike-in |
-| `bacterial` | `off_target` | `bacterial` | spike-in |
-| `algal_plant` | `off_target` | `algal_plant` | spike-in |
-| `metazoan_other_phylum` | `off_target` | `metazoan_other` | spike-in |
-| `metazoan_same_phylum` | `on_target` (expected miss) | NA | spike-in |
+A unit in this fixture is a HIT DISTRIBUTION paired with a HOST LINEAGE. The two
+are independent: the distribution comes from BLAST, the host lineage is metadata.
+One captured distribution can therefore appear twice against different hosts,
+which is how the screen's actual boundary gets measured.
 
-The four cross-kingdom categories are the cases doc 08 section 5 names, plus
-bacterial and algal_plant to complete the kingdom set `screen_class_for()`
-already distinguishes.
+| unit | distribution | host lineage | expected verdict | expected class |
+|---|---|---|---|---|
+| `host_*` (19 real) | real fish scaffolds | fish | `on_target` | NA |
+| `fungal_on_fish` | fungal rDNA | fish | `off_target` | `fungal` |
+| `bacterial_on_fish` | bacterial rRNA | fish | `off_target` | `bacterial` |
+| `algal_on_fish` | plant rDNA | fish | `off_target` | `algal_plant` |
+| `arthropod_on_fish` | arthropod rDNA | fish | `off_target` | `metazoan_other` |
+| `human_on_fish` | human rDNA | fish | `on_target` (EXPECTED MISS) | NA |
+| `human_on_invert` | the SAME human rDNA | octocoral | `off_target` | `human` |
 
-The two metazoan categories are split because the screen's blind spot is
-narrower than doc 11 says, and getting it wrong here would build a fixture that
-tests the wrong thing.
+Fungal, bacterial and algal_plant are the cross-kingdom cases, completing the
+kingdom set `screen_class_for()` distinguishes. Arthropod is a metazoan from a
+different phylum, which concordance does catch.
+
+### 4.1 Why human appears twice, and why doc 08's human spike-in is not a
+### cross-kingdom case
+
+`Homo sapiens` is Chordata. So is a ray-finned fish. Concordance is tested at
+phylum rank or deeper, so a human contaminant on a FISH sample shares the phylum
+slot, is judged host-concordant, and comes back `on_target`. Measured:
+`on_target`, `host_concordant = 1`, confidence 0.82. Doc 08 section 5 asks for a
+human spike-in as if it were a cross-kingdom case; on a chordate host it is not,
+it is the blind spot.
+
+The same distribution against an octocoral host lineage is `off_target`, because
+Cnidaria and Chordata share only the shallowest slot. Pairing one capture with two
+hosts holds the contaminant constant and varies only the host, so the boundary is
+measured rather than argued. It also exercises the `human` subclass end to end,
+which needs the LCA's own label to resolve to `Homo sapiens` and so cannot be
+reached with authored placeholder lineage strings.
+
+The invertebrate host lineage is a real rank-aligned taxid path resolved from the
+taxdump already present in the test project. No new sequence data is needed: only
+the host's lineage varies, and that is metadata.
+
+The blind spot is narrower than doc 11 says, and getting it wrong here would
+build a fixture that tests the wrong thing.
 
 `host_concordant` asks whether the unit's LCA sits on the sample's path AT PHYLUM
 RANK OR DEEPER (doc 11 section 4.4). A metazoan from a DIFFERENT phylum therefore
@@ -154,15 +179,15 @@ be host-concordant, which is worse than uncertainty and worth recording as such.
 back `off_target` fails the suite outright. This is the assertion the gate is
 really about.
 
-**Every catchable spike-in category is caught, per category, not in aggregate.**
-Each of `fungal`, `human`, `bacterial`, `algal_plant` and
-`metazoan_other_phylum` is asserted separately, so one category degrading to zero
+**Every catchable spike-in unit is caught, per unit, not in aggregate.**
+Each of `fungal_on_fish`, `bacterial_on_fish`, `algal_on_fish`,
+`arthropod_on_fish` and `human_on_invert` is asserted separately, so one category degrading to zero
 cannot be hidden by the other four. An aggregate recall number is also printed,
 but nothing is asserted on it alone: an aggregate floor is exactly what lets a
 whole category silently stop working.
 
-**Expected misses still miss.** If a `metazoan_same_phylum` unit ever comes back
-`off_target`, the test reports it. That is a capability gain and worth noticing,
+**Expected misses still miss.** If `human_on_fish` ever comes back `off_target`,
+the test reports it. That is a capability gain and worth noticing,
 so it is surfaced rather than tolerated silently.
 
 **The confusion matrix is printed**, so the numbers are visible in the test
@@ -187,8 +212,8 @@ on data rather than on code. Doc 08 section 5 is amended to record the split.
 Arming auto-drop, or enabling the export gate. Both stay disabled. This
 sub-project produces the measurement those decisions need; it does not take them.
 
-Broadening what the screen can catch. `metazoan_same_phylum` is recorded as a
-miss, not fixed. Fixing it needs the depth and cross-sample channels (doc 08
+Broadening what the screen can catch. `human_on_fish` is recorded as a miss,
+not fixed. Fixing it needs the depth and cross-sample channels (doc 08
 sections 3.5(c) and 3.6), both of which are blocked, and this sub-project must
 not grow into them.
 
@@ -211,8 +236,8 @@ categories, and any change to the weights must bump `SCREEN_VERSION`.
   `screen_class_for()` is caught here too.
 - The test reaches no network: asserted by construction, since it reads only the
   two fixture files.
-- `metazoan_other_phylum` is caught and `metazoan_same_phylum` is missed, in the
-  same test, so the boundary of the screen's reach is stated as a measurement
+- `human_on_fish` is missed and `human_on_invert` is caught, from ONE captured
+  distribution, so the boundary of the screen's reach is stated as a measurement
   rather than as prose.
 
 ## 8. Documentation tasks
@@ -222,5 +247,8 @@ categories, and any change to the weights must bump `SCREEN_VERSION`.
 - Correct doc 11 section 1: the screen cannot separate two metazoans OF THE SAME
   PHYLUM. The copepod-and-fish example is a different-phylum case the screen does
   catch, and `tests/testthat/test-screen.R:176` has pinned that since 3b.
+- Record in doc 08 section 5 that its requested HUMAN spike-in is not a
+  cross-kingdom case on a chordate host, and is caught only when the host is not
+  a chordate. See section 4.1.
 - Record in doc 12 that `min_isomer_anchor_pid` is still unvalidated after this
   sub-project, and why spike-ins cannot reach it.
