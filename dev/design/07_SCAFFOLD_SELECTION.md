@@ -1,5 +1,76 @@
 # 07 - Scaffold / path selection and taxonomy-aware auto-select
 
+## Status 2026-07-30: stitching was DROPPED, and this document was stale
+
+The body below is the pre-pivot design and is kept for the reasoning, not as a
+statement of what the code does. Commit `b0f1b12` ("feat(pipeline): WF1/WF2
+per-scaffold workflows (drop stitching)") replaced the two-level scheme with a
+per-scaffold model, and no document recorded that until now. Read this section
+before the body.
+
+**The decision.** Level 1 (order, orient and stitch a path's scaffolds into one
+canonical repeat unit) is not built into the pipeline and will not be. The unit
+of work is `(ID, path, scaffold)`. WF1 loads assemblies, seeds one unit per
+scaffold, BLASTs each scaffold and splits the depth track per unit. WF2
+annotates each non-ignored scaffold independently, pulling that unit's sequence
+from the database. There is no stitch process in `main.nf` or
+`main_annotate.nf`.
+
+**Why.** Stitching commits to an ordering before the evidence supporting it has
+been reviewed, and it destroys the very signal the contamination work needs. A
+contaminant scaffold merged into a host repeat unit becomes one sequence with
+one taxonomy and one verdict; kept separate, it gets its own BLAST hits, its own
+screen verdict and its own keep/drop decision. Everything in
+`08_MULTIUNIT_UX_AND_CONTAMINATION.md` onward assumes the per-scaffold grain.
+
+**What this changes in the body below.**
+
+- The "Level 1 - region-label + stitch (per path)" section describes work that
+  is not in the pipeline. Its first step, annotating each scaffold to the
+  elements it covers, survives as ordinary per-scaffold annotation. Steps 2 and
+  3 do not.
+- "Implementation status (built)" ends with "Remaining: integrate stitch into
+  `score_assembly`". That is the opposite of what happened. It was removed, not
+  integrated.
+- Recommendation P1 lists "Level-1 stitch" as part of the automation core. It is
+  not.
+- The three tangled situations in "The problem" are all still real, but only the
+  framing changed for the first. Fragmentation is now surfaced to the user as
+  several units of one sample rather than silently merged. The other two are
+  handled by triage rules (`09_TRIAGE_RULES_AND_DEPTH.md`), the screen verdict
+  layer (`11_SCREEN_VERDICT_LAYER.md`) and the isomer/paralog classification
+  (`12_INTRAGENOMIC_VARIANTS.md`).
+
+**What remains in the tree, and what it is worth.** The stitching code was not
+deleted. `stitch_scaffolds()` and `order_scaffolds_by_content()`
+(`R/stitch_scaffolds.R`), `stitch_one()` and `stitch_selected()`
+(`R/pipeline_steps.R`), `inst/nextflow/bin/rp_stitch.R` and the `stitch` process
+in `modules/pipeline_r.nf` are all still present. None of them is reachable from
+the main pipeline. The only remaining caller chain runs through
+`main_fallback.nf`, which doc 08 open question 1 records as broken post-pivot,
+plus the exported legacy driver `annotate_project()`, which has zero callers
+anywhere. `stitch_scaffolds()` and `stitch_one()` are both exported, so they are
+public API and cannot simply vanish. No test covers any of it.
+
+Deleting the stitching machinery therefore depends on a decision this document
+cannot make on its own: whether the fallback workflow is still supported (doc 08
+open question 1) and what happens to `path_scores`, the `stitched` table,
+`stitch_one` and `rp_stitch.R` (open question 2, which says explicitly to decide
+them together rather than piecemeal). Until that is answered, the machinery
+stays and this section is the record of why.
+
+**The `stitched` table is now an orphan.** `R/init_db.R:447` creates it on every
+fresh project and no migration drops it. It is written only by the two
+unreachable paths above. Its only reader was `compute_feature_alignment()`,
+deleted on 2026-07-30 for the reasons doc 08 gives: it read `stitched` and
+queried `annotations` with no path or scaffold predicate, so under the
+per-scaffold model it mixed features from different units of one sample into a
+single alignment. Its successor `compute_feature_msa()` in the same file does
+the same job correctly, keying on `assemblies` with full `ID`, `path` and
+`scaffold` predicates. So in a normal run `stitched` is now created, never
+written and never read. Dropping it is part of open question 2, not a separate
+decision.
+
 ## The problem
 
 Unlike a mitogenome (one circular molecule that usually resolves to a single
@@ -35,7 +106,7 @@ taxonomy-aware discriminator to separate target from contaminant.
 
 ## Two-level selection
 
-### Level 1 - region-label + stitch (per path)
+### Level 1 - region-label + stitch (per path) - DROPPED, see the status section
 
 Before choosing between paths, make each path a single comparable object:
 
@@ -165,10 +236,14 @@ For eyeball selection when automation is uncertain:
 Remaining: integrate stitch into `score_assembly` (needs the per-path top-hit
 reference), the driver step that runs it after assembly, and the Shiny review UI.
 
+**Superseded 2026-07-30.** The stitch was never integrated and will not be; see
+the status section at the top. `b0f1b12` removed it from the pipeline.
+
 ## Recommendation / phasing
 
 - **P1 (automation core):** per-scaffold BLAST + region label + depth from GFA;
-  Level-1 stitch; Level-2 composite score with the coverage + identity + anchor
+  Level-1 stitch (**dropped, see the status section**); Level-2 composite score
+  with the coverage + identity + anchor
   terms; auto-select + ignore-not-delete losers; the flag catalog. Taxonomy term
   uses whatever lineage is available (project-level at first).
 - **P2 (taxonomy resolution):** resolve `Taxon` -> taxid -> lineage at init; add
