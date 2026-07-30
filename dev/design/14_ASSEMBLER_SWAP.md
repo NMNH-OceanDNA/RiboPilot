@@ -180,6 +180,34 @@ diverge).
   a structure, so it is called out here rather than buried: leaving them at 5
   would strand them permanently once the query that recognised 5 is deleted.
 
+## 6b. Schema v17 and the GUI picker (added after the first pass)
+
+The first pass left the assembler console-only, on the reasoning that it is an
+escape hatch rather than a routine setting. That was wrong for the actual user:
+the swap is chosen per sample after looking at a failed assembly in the app, so
+it belongs in the assembly options modal next to every other per-sample setting.
+
+The modal now boxes the assembler and its tool options together, following
+MitoPilot's `assemble_opts_modal` (`MitoPilot/R/app_assemble_utils.R:276-366`):
+the picker sits above the tool options and only the selected assembler's fields
+are shown. Each help line is appended *inside* its input's container rather than
+as a sibling paragraph, because `shinyjs::hide` hides the container; a sibling
+help line would be orphaned on screen when its input is hidden. This is the same
+trick and the same reason as MitoPilot's comment at `app_assemble.R:928-929`.
+
+Giving the fallback assemblers real option boxes needs somewhere to put the
+values, hence schema v17: `assemble_opts.bowtie2` (default `--local`) and
+`assemble_opts.spades` (default `--isolate`). The defaults are exactly the flags
+the fallback previously hardcoded, so an existing project behaves identically
+until someone edits the preset.
+
+No Nextflow change was needed. `rp_fallback.R` already opens the project
+database to read `seeds_db` and `labels_db`, so it reads the two new columns on
+the same query. The `main.nf` tuple and the `fallback_assemble` process are
+untouched, which also means the positional `it[7]` index keeps its meaning.
+
+De-novo does not show the bowtie2 box: it assembles all reads and never baits.
+
 ## 7. What this does and does not settle in doc 08 open question 2
 
 **Settled.** After this change nothing in any shipped workflow calls the stitch

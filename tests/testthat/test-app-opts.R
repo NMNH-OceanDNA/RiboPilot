@@ -9,7 +9,7 @@ ao_cur <- function(...) {
   utils::modifyList(list(assemble_opts = "default", cpus = 4L, memory = 16L,
     getOrganelle = "", seeds_db = "s.fa", labels_db = "l.fa", target = NA_character_,
     max_paths = 0L, max_scaffolds = 0L, min_assembly_length = 0L,
-    assembler = "getorganelle"), list(...))
+    assembler = "getorganelle", bowtie2 = "--local", spades = "--isolate"), list(...))
 }
 
 test_that("the assembly modal offers an assembler picker with the three assemblers", {
@@ -27,9 +27,62 @@ test_that("the assembly modal defaults to getorganelle when the value is missing
   expect_true(grepl('value="getorganelle" selected', ao_modal_html(cur), fixed = TRUE))
 })
 
+test_that("the picker comes before the tool options it switches between", {
+  html <- ao_modal_html(ao_cur())
+  expect_lt(regexpr("ao_assembler", html, fixed = TRUE),
+    regexpr("ao_getorg", html, fixed = TRUE))
+})
+
+test_that("the fallback assemblers get their own option boxes", {
+  html <- ao_modal_html(ao_cur(assembler = "bait", bowtie2 = "--local", spades = "--isolate"))
+  expect_true(grepl("ao_bt2", html, fixed = TRUE))
+  expect_true(grepl("ao_spades", html, fixed = TRUE))
+})
+
+test_that("each tool option's help sits inside its own input container", {
+  # so that hiding the input hides its help with it; a help paragraph outside
+  # the container would be left behind when the assembler is switched
+  # walk the tag tree for the input's own container, so a help paragraph that
+  # merely sits next to the input in the rendered html does not pass
+  container_of <- function(tag, id) {
+    if (inherits(tag, "list")) {
+      for (ch in tag) {
+        got <- container_of(ch, id)
+        if (!is.null(got)) return(got)
+      }
+      return(NULL)
+    }
+    if (!inherits(tag, "shiny.tag")) return(NULL)
+    if (grepl("shiny-input-container", tag$attribs$class %||% "") &&
+        grepl(sprintf('id="%s"', id), as.character(tag), fixed = TRUE)) {
+      return(tag)
+    }
+    container_of(tag$children, id)
+  }
+
+  ui <- shiny::withReactiveDomain(shiny::MockShinySession$new(),
+    assemble_opts_modal(ao_cur(), choices = c("default"), n = 1))
+  for (id in c("ao_getorg", "ao_bt2", "ao_spades")) {
+    box <- container_of(ui, id)
+    expect_false(is.null(box), info = id)
+    expect_true(grepl(sprintf('id="help_%s"', id), as.character(box), fixed = TRUE), info = id)
+  }
+})
+
+test_that("assembler_fields names the inputs to show for each assembler", {
+  expect_equal(assembler_fields("getorganelle"),
+    list(show = "ao_getorg", hide = c("ao_bt2", "ao_spades")))
+  expect_equal(assembler_fields("bait"),
+    list(show = c("ao_bt2", "ao_spades"), hide = "ao_getorg"))
+  # de-novo assembles all reads, so there is nothing to bait with
+  expect_equal(assembler_fields("denovo"),
+    list(show = "ao_spades", hide = c("ao_getorg", "ao_bt2")))
+})
+
 test_that("opts_row carries the picked assembler into the assemble_opts row", {
   input <- list(ao_cpus = 8, ao_mem = 32, ao_getorg = "-R 10", ao_minlen = 100,
-    ao_maxpaths = 2, ao_maxscaf = 3, ao_assembler = "denovo")
+    ao_maxpaths = 2, ao_maxscaf = 3, ao_assembler = "denovo",
+    ao_bt2 = "--local", ao_spades = "--careful")
   row <- opts_row("ao", "custom", input, base = list(seeds_db = "s.fa", labels_db = "l.fa"))
   expect_equal(row$assemble_opts, "custom")
   expect_equal(row$assembler, "denovo")

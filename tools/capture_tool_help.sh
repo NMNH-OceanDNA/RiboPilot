@@ -17,6 +17,8 @@ declare -A CMD=(
   [pybarrnap]="pybarrnap --help"
   [barrnap]="barrnap --help"
   [ITSx]="ITSx --help"
+  [bowtie2]="bowtie2 --help"
+  [spades]="spades.py --help"
 )
 
 for t in "${!CMD[@]}"; do
