@@ -5,7 +5,7 @@
 
 #' Current project-DB schema version. Bump when adding a migration step below.
 #' @noRd
-RIBOPILOT_SCHEMA_VERSION <- 16L
+RIBOPILOT_SCHEMA_VERSION <- 17L
 
 #' DDL for blast_hits: the full retained BLAST hit distribution per unit.
 #'
@@ -449,6 +449,12 @@ migrate_db <- function(con) {
   if (has_col("assemble", "assemble_switch")) {
     DBI::dbExecute(con, "UPDATE assemble SET assemble_switch = 1 WHERE assemble_switch = 5")
   }
+
+  # --- schema v17: per-preset flags for the fallback assembler's two tools ---
+  # The defaults are the values the fallback used to hardcode, so an existing
+  # project behaves identically until someone edits the preset.
+  add_col("assemble_opts", "bowtie2", "TEXT DEFAULT '--local'")
+  add_col("assemble_opts", "spades", "TEXT DEFAULT '--isolate'")
 
   if (ver < RIBOPILOT_SCHEMA_VERSION) {
     DBI::dbExecute(con, sprintf("PRAGMA user_version = %d", RIBOPILOT_SCHEMA_VERSION))

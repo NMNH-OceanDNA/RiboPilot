@@ -350,7 +350,8 @@ test_that("v16 adds assembler to assemble_opts and defaults existing presets", {
   expect_equal(nrow(r), 1L)
   expect_equal(r$assembler, "getorganelle")   # backfilled by the column DEFAULT
   expect_equal(r$getOrganelle, "-F anonym")   # untouched
-  expect_equal(DBI::dbGetQuery(con, "PRAGMA user_version")[[1]], 16L)
+  expect_equal(DBI::dbGetQuery(con, "PRAGMA user_version")[[1]],
+    RiboPilot:::RIBOPILOT_SCHEMA_VERSION)
 })
 
 test_that("v16 returns fallback-stranded samples to the ordinary queue", {
@@ -366,6 +367,23 @@ test_that("v16 returns fallback-stranded samples to the ordinary queue", {
   expect_equal(sw$assemble_switch[sw$ID == "S5"], 1L)  # was stranded at 5
   expect_equal(sw$assemble_switch[sw$ID == "S4"], 4L)  # other states untouched
   expect_equal(sw$assemble_switch[sw$ID == "S1"], 2L)
+})
+
+# --- v17: per-preset options for the fallback assembler ---
+
+test_that("v17 adds the bowtie2 and spades option columns with working defaults", {
+  con <- mk_v8_db(); on.exit(DBI::dbDisconnect(con))
+  mk_v15_assemble_opts(con)
+  DBI::dbExecute(con, "PRAGMA user_version = 15")
+
+  migrate_db(con)
+  migrate_db(con)  # additive and idempotent
+
+  r <- DBI::dbGetQuery(con, "SELECT * FROM assemble_opts")
+  expect_equal(r$bowtie2, "--local")     # the flags the fallback used hardcoded
+  expect_equal(r$spades, "--isolate")
+  expect_equal(DBI::dbGetQuery(con, "PRAGMA user_version")[[1]],
+    RiboPilot:::RIBOPILOT_SCHEMA_VERSION)
 })
 
 test_that("a fresh database and a migrated one agree on assemble_opts columns", {
