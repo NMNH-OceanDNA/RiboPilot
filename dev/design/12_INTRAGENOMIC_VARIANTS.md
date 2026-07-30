@@ -2,9 +2,11 @@
 
 Status: IMPLEMENTED 2026-07-29 on branch `contamination-phase3c`. Plan:
 `dev/design/plans/2026-07-29-intragenomic-variants.md`. Five statements in this
-design did not survive contact with the code; each is amended in place below
-(sections 4.0.1, 4.0.2, 5.1, 8 and 10) rather than quietly implemented
-differently.
+design did not survive contact with the code, and a sixth was caught by
+hand-testing on real data. Each is amended in place below (sections 3.1, 4.0.1,
+4.0.2, 5.1, 8 and 10) rather than quietly implemented differently. Section 3.1 is
+the one hand-testing found, and it is the most important: as specified, this
+design produced a five-unit false `isomer` group on SRR22396758.
 
 Design agreed 2026-07-29. Sub-project 3c of the contamination plan in
 `dev/design/08_MULTIUNIT_UX_AND_CONTAMINATION.md`, implementing section 3.8.
@@ -70,6 +72,46 @@ For each sample, take its `on_target` units. For each pair:
    No new dependency and no external aligner.
 3. Record the identity, and the difference in TOTAL scaffold length.
 
+### 3.1 Amendment: identity alone is not a comparison
+
+Steps 1 and 2 above are wrong as written, and shipping them produced a false
+`isomer` on real data during hand-testing. Two corrections, both implemented.
+
+**A per-unit anchor string cannot be compared against another unit's.** Step 1
+concatenates whatever anchors a unit has, and nothing required two units to
+annotate the same elements. On SRR33849683, unit 1.1 annotated 18S+5.8S+28S
+(2677 bp) and unit 1.2 annotated 28S alone (1334 bp). Comparing them is not a
+comparison, however the number comes out. Anchors are now kept SEPARATE per
+element (`screen_anchor_parts()`), and a pair is compared only on the elements
+BOTH units annotate.
+
+**`pwalign_pid()` over an overlap alignment is meaningless without coverage.**
+PID1 divides matches by the ALIGNED length, and `type = "overlap"` charges
+nothing for end gaps, so a short alignment scores perfectly. Measured on that
+same pair: identity **100.00 percent over an aligned length of 1 base**. The
+aligner found no real alignment, fell back to a one-base overlap, and PID1 read
+one match over one aligned position as perfection. The stored reason told the
+curator to pick either a complete repeat or a 1694 bp fragment.
+
+A pair is therefore comparable only when all of:
+
+- the two units share at least one annotated anchor element;
+- the shared span is at least `min_isomer_anchor_bp` (500) long;
+- the alignment covers at least `min_isomer_anchor_coverage` (0.90) of BOTH
+  sides, using `alignment_coverage()` from `R/blast_ref_align.R`.
+
+This is the pairing `min_anchor_pid` already gets from `min_ref_coverage` in
+curation, and for the same reason: a partial sequence must not trigger a
+confident call. Note the bp floor is not what caught the real case (the shared
+span was 680 bp, over the floor); coverage was 0, and that is what vetoed it.
+
+**A unit with anchors but no comparable counterpart is `NA`, not `paralog`.**
+Leaving it in a group of its own would report that the sample carries several
+rDNA copies on the strength of a measurement that was never made. Such units are
+removed before the group count decides `isomer` versus `paralog`.
+
+`SCREEN_VERSION` moves to `4L` for this, because it changes what an isomer means.
+
 ## 4. Classification
 
 | anchors | total length | `variant_class` | what the curator is told |
@@ -79,7 +121,9 @@ For each sample, take its `on_target` units. For each pair:
 | only one on-target unit in the sample | - | `singleton` | nothing |
 | anchors absent or unannotated | - | `NA` | not comparable |
 
-`min_isomer_anchor_pid` is the ONLY new constant, and its value is **99.5**
+`min_isomer_anchor_pid` was intended as the only new constant. Section 3.1 adds
+two more, `min_isomer_anchor_coverage` and `min_isomer_anchor_bp`, because
+identity without coverage admitted a false isomer on real data. Its value is **99.5**
 percent, on the 0-100 scale `pwalign_pid()` returns. Across roughly 4 kb of
 concatenated 18S+5.8S+28S that tolerates a handful of assembly errors without
 admitting a real paralog. It lives in `rrna_params()`'s `screen` sublist so a
@@ -205,7 +249,9 @@ variant_group    TEXT,   -- group label, unique within the sample
 variant_identity REAL    -- anchor identity to the group representative
 ```
 
-`SCREEN_VERSION` moves to `3L`, so existing rows recompute. No new table: the
+`SCREEN_VERSION` moves to `4L`, so existing rows recompute. (It reached `3L`
+with the columns and `4L` when the coverage and shared-element guards of section
+3.1 changed what an isomer means.) No new table: the
 finding is per unit, the recompute path exists, and a second table would need
 its own version gate kept in step with the screen's.
 

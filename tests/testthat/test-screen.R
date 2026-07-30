@@ -472,6 +472,8 @@ test_that("the scoring core reads its weights from the params sublist", {
   expect_equal(tuned$confidence, 0.3)  # lca_n_hits 3 -> support 0.3, weight 1
 })
 
-test_that("SCREEN_VERSION is 3 so v2 rows recompute", {
-  expect_equal(RiboPilot:::SCREEN_VERSION, 3L)
+test_that("SCREEN_VERSION is 4 so earlier rows recompute", {
+  # bumped by 3c twice: once for the variant columns, once when the coverage and
+  # shared-element guards changed what an isomer means
+  expect_equal(RiboPilot:::SCREEN_VERSION, 4L)
 })

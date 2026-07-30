@@ -13,7 +13,7 @@
 
 #' Scoring version. Bump to force a recompute of stored rows.
 #' @noRd
-SCREEN_VERSION <- 3L
+SCREEN_VERSION <- 4L
 
 #' @noRd
 SCREEN_VERDICTS <- c("on_target", "off_target", "no_reference", "uncertain")

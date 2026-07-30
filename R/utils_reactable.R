@@ -272,7 +272,7 @@ rt_variant_badge <- function() {
       var grp = row['variant_group']
       var pid = row['variant_identity']
       var tip = v === 'isomer'
-        ? 'same molecule assembled two ways; differs only in spacer copy number, pick either'
+        ? 'same molecule assembled two ways; differs only outside the conserved anchors, pick either'
         : 'this sample carries several rDNA copies; which you lock determines what GenBank receives'
       if (pid !== null && pid !== undefined && pid !== '')
         tip += ' (anchors ' + pid + ' percent identical to the group representative)'

@@ -58,13 +58,23 @@ RRNA_ANCHOR_PID_INVERT  <- c("18S" = 93, "5.8S" = 90, "28S" = 78)
 #' answer than "how similar may two different organisms be". Any change to any
 #' value here must bump `SCREEN_VERSION`.
 #'
+#' `min_isomer_anchor_coverage` and `min_isomer_anchor_bp` exist because identity
+#' alone cannot tell a shared sequence from a shared FRAGMENT. An overlap
+#' alignment scored by PID1 divides matches by the ALIGNED length, so a short
+#' alignment scores perfectly. Measured on SRR22396758: a 1277 bp unit scored
+#' 100.00 percent against a 6310 bp one over an alignment covering 0.2 percent of
+#' it. Pairing an identity floor with a coverage floor is the same guard
+#' `min_anchor_pid` already gets from `min_ref_coverage` above, for the same reason.
+#'
 #' Defined here rather than in R/screen.R because a package with no Collate
 #' field sources alphabetically, so this file loads first.
 #' @noRd
 SCREEN_PARAMS_DEFAULT <- list(
   support = 0.30, resolution = 0.30, separation = 0.40,
   min_confidence = 0.6,
-  min_isomer_anchor_pid = 99.5
+  min_isomer_anchor_pid = 99.5,
+  min_isomer_anchor_coverage = 0.90, # of BOTH units' shared-anchor strings
+  min_isomer_anchor_bp = 500L        # too little shared anchor to call anything
 )
 
 #' Curation ruleset for a clade
