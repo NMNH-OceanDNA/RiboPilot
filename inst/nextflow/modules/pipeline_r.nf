@@ -14,41 +14,20 @@ process query_samples {
     # Header is written explicitly (sqlite3 -header emits nothing for 0 rows, and
     # splitCsv(header:true) then fails); an empty result becomes a header-only
     # file so the workflow simply does nothing instead of crashing.
-    printf 'ID\tR1\tR2\tpre_cpus\tpre_mem\tasm_cpus\tasm_mem\tfastp\tgetOrganelle\tseeds_db\tlabels_db\n' > samplesheet.tsv
+    printf 'ID\tR1\tR2\tpre_cpus\tpre_mem\tasm_cpus\tasm_mem\tfastp\tgetOrganelle\tseeds_db\tlabels_db\tassembler\n' > samplesheet.tsv
     sqlite3 -separator '\t' '${params.db}' "
       SELECT p.ID, p.R1, p.R2,
              COALESCE(po.cpus,4) AS pre_cpus, COALESCE(po.memory,8) AS pre_mem,
              COALESCE(ao.cpus,4) AS asm_cpus, COALESCE(ao.memory,16) AS asm_mem,
              po.fastp AS fastp,
              ao.getOrganelle || ' --max-paths-num ' || COALESCE(ao.max_paths, 10) AS getOrganelle,
-             ao.seeds_db, ao.labels_db
+             ao.seeds_db, ao.labels_db,
+             COALESCE(ao.assembler, 'getorganelle') AS assembler
       FROM assemble a
       JOIN preprocess p     ON a.ID = p.ID
       JOIN assemble_opts ao ON a.assemble_opts = ao.assemble_opts
       JOIN pre_opts po      ON p.pre_opts = po.pre_opts
       WHERE a.assemble_switch IN (1,4) AND a.assemble_lock = 0;" >> samplesheet.tsv
-    """
-}
-
-// Fallback: samples queued for an assembly fallback (assemble_switch = 5).
-process query_fallback_samples {
-    cache false
-    executor 'local'
-    output:
-    path 'samplesheet.tsv'
-    script:
-    """
-    printf 'ID\tR1\tR2\tpre_cpus\tpre_mem\tasm_cpus\tasm_mem\tfastp\n' > samplesheet.tsv
-    sqlite3 -separator '\t' '${params.db}' "
-      SELECT p.ID, p.R1, p.R2,
-             COALESCE(po.cpus,4) AS pre_cpus, COALESCE(po.memory,8) AS pre_mem,
-             COALESCE(ao.cpus,4) AS asm_cpus, COALESCE(ao.memory,16) AS asm_mem,
-             po.fastp AS fastp
-      FROM assemble a
-      JOIN preprocess p     ON a.ID = p.ID
-      JOIN assemble_opts ao ON a.assemble_opts = ao.assemble_opts
-      JOIN pre_opts po      ON p.pre_opts = po.pre_opts
-      WHERE a.assemble_switch = 5 AND a.assemble_lock = 0;" >> samplesheet.tsv
     """
 }
 

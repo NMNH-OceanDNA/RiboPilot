@@ -1,7 +1,14 @@
 // RiboPilot WF1 (self-contained): read samples from the project DB via sqlite3,
-// preprocess (fastp) + assemble (GetOrganelle), score the candidate paths, then
-// annotate and curate EVERY assembly unit. Assemblies are NOT stitched; each
-// scaffold is annotated independently.
+// preprocess (fastp) + assemble, score the candidate paths, then annotate and
+// curate EVERY assembly unit. Assemblies are NOT stitched; each scaffold is
+// annotated independently.
+//
+// The assembler is chosen PER SAMPLE by assemble_opts.assembler: GetOrganelle
+// by default, or the baiting/de-novo fallback for samples GetOrganelle could
+// not assemble. Both emit the same fastas and both feed the same tail, so there
+// is one workflow rather than two. There used to be two, and the copy drifted
+// out of step with this file until it no longer ran; see
+// dev/design/14_ASSEMBLER_SWAP.md.
 //
 // Annotation runs here rather than only in WF2 because it is cheap next to
 // assembly (a few seconds per scaffold against GetOrganelle's minutes to hours)
@@ -13,6 +20,7 @@
 
 include { preprocess } from './modules/preprocess.nf'
 include { assemble } from './modules/assemble.nf'
+include { fallback_assemble } from './modules/fallback.nf'
 include { query_samples; query_sample_units; score; annotate_tools; reconcile; curate; triage; screen } from './modules/pipeline_r.nf'
 include { blast_genbank } from './modules/blast.nf'
 include { blast_ref_fetch; blast_ref_align } from './modules/blast_ref.nf'
@@ -34,16 +42,30 @@ workflow {
     pre_in = rows.map { r -> tuple(r.ID, file(params.rawDir + '/' + r.R1), file(params.rawDir + '/' + r.R2), r.pre_cpus, r.pre_mem, r.fastp) }
     preprocess(pre_in)
 
-    asm_opts = rows.map { r -> tuple(r.ID, r.asm_cpus, r.asm_mem, r.getOrganelle, file(r.seeds_db), file(r.labels_db)) }
+    asm_opts = rows.map { r -> tuple(r.ID, r.asm_cpus, r.asm_mem, r.getOrganelle, file(r.seeds_db), file(r.labels_db), r.assembler) }
     asm_in = preprocess.out.reads
         .filter { id, reads, after -> (after as Integer) >= (params.minDepth as Integer) }
         .map { id, reads, after -> tuple(id, reads) }
         .join(asm_opts)
-        .map { id, reads, cpus, mem, go, seeds, labels -> tuple(id, reads, cpus, mem, go, seeds, labels) }
-    assemble(asm_in)
+        .map { id, reads, cpus, mem, go, seeds, labels, asm -> tuple(id, reads, cpus, mem, go, seeds, labels, asm) }
+
+    // Per-sample assembler. The fallback arm is `true` rather than an equality
+    // test on purpose: branch DROPS an item matching no condition, silently, so
+    // an unrecognised assembler value would vanish from the run instead of
+    // assembling. Defaulting the unknown case to the fallback keeps the sample.
+    asm_branched = asm_in.branch {
+        go: it[7] == 'getorganelle'
+        fb: true
+    }
+    assemble(asm_branched.go.map { id, reads, cpus, mem, go, seeds, labels, _asm ->
+        tuple(id, reads, cpus, mem, go, seeds, labels) })
+    fallback_assemble(asm_branched.fb.map { id, reads, cpus, mem, _go, _seeds, _labels, asm ->
+        tuple(id, reads, cpus, mem, asm) })
 
     // Load assemblies + score paths (also seeds one annotate unit per scaffold).
-    score(assemble.out.paths)
+    // Both assemblers emit the same fasta contract, so they merge here and
+    // everything below is shared.
+    score(assemble.out.paths.mix(fallback_assemble.out.paths))
     // per-scaffold remote GenBank BLAST -> ranked reference candidates + screen,
     // then fetch each candidate reference (sequence + features) from NCBI
     blast_genbank(score.out)
