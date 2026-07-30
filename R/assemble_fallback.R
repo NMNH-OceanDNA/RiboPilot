@@ -6,8 +6,10 @@
 # Option A (whole-assembly cross-check): skip baiting and assemble all reads.
 #
 # Both emit the same `<id>_assembly_<n>.fasta` header format the GetOrganelle
-# path produces (">id.path.scaffold topology ..."), so the entire WF1 tail
-# (load -> score -> stitch -> annotate -> reconcile -> curate) runs unchanged.
+# path produces (">id.path.scaffold topology ..."), which is what lets this be a
+# per-sample assembler swap inside WF1 rather than a workflow of its own: the
+# whole tail (load -> score -> annotate -> reconcile -> curate -> screen ->
+# triage) runs unchanged.
 
 #' Bait reads by mapping to a reference with bowtie2 (concordant pairs only)
 #'

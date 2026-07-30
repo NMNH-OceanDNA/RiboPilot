@@ -1272,11 +1272,45 @@ independent GenBank records.
    broken post-pivot and `assemble_fallback.R` writes `assemblies` through a
    path none of this traverses. Repair or formally mark `run_fallback()`
    unsupported - it should not stay silently broken by deferral.
+
+   **ANSWERED 2026-07-30: supported, and it stops being a workflow.**
+   `dev/design/14_ASSEMBLER_SWAP.md`. The fallback becomes a per-sample
+   assembler inside WF1, selected by a new `assemble_opts.assembler` column
+   (schema v16), and `main_fallback.nf` is deleted. `run_fallback()` keeps its
+   signature and becomes a wrapper that repoints samples and runs the ordinary
+   assembly workflow.
+
+   Two corrections to the question as posed. The coverage arity bug it names
+   was real but minor; the substantial defect was that `main_fallback.nf` never
+   ran annotation, screening or triage at all, because it was a copy of the
+   pre-pivot tail. And `assemble_fallback.R` does NOT write `assemblies`
+   through a stray path - it writes no table at all, only FASTAs, which the
+   shared `score` process loads exactly as it loads GetOrganelle's. Its headers
+   were already the correct per-scaffold shape.
+
+   The general lesson, recorded because it is the reason the bug survived: the
+   duplication was the defect. Repairing the copy would have preserved the
+   condition that produced it.
 2. **Does `path_scores` survive?** Post-pivot it gates nothing: WF2 never reads
    it, `auto_select` drives only a dead button and two display columns. Either
    retire it with `score_candidates()`, or repurpose it as a *scaffold* scorer.
    Same question for the `stitched` table, `stitch_one`, `rp_stitch.R` and the
    stitch process - decide together, not piecemeal.
+
+   **NARROWED 2026-07-30, not answered.** After `14_ASSEMBLER_SWAP.md` no
+   shipped workflow calls the stitch machinery: `main_fallback.nf` was its last
+   caller and is gone, and `query_fallback_samples` went with it. So the bundle
+   is now unreferenced rather than half-referenced, which is what made it
+   undecidable before. It is still not deleted: `stitch_scaffolds` and
+   `stitch_one` are exported public API, so removing them is a breaking change
+   with its own question.
+
+   `path_scores` is the exception and should not be swept in with the rest. It
+   is still written by the live `score` process on every WF1 run
+   (`R/pipeline_steps.R:37`) and read by the app (`R/app_server.R:121-122`,
+   `:830`, `:842-857`). Only its stitch-side reader died. Deciding it is a
+   question about the app's Selected Path / Best Score columns, not about
+   stitching.
 3. **How aggressive should auto-triage be out of the box?** The recommendation
    here is conservative: auto-drop only on positive cross-kingdom or
    prokaryotic evidence, everything else amber. Is that the right default for a
