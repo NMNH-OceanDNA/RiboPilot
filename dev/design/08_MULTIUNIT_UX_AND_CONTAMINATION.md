@@ -1224,6 +1224,28 @@ independent GenBank records.
   validated against the asteroidea / scyphozoa / octocorallia invert clades plus
   a deliberate fungal and human spike-in. Make that a gate, not a note.
 
+  **Status 2026-07-30: the gate SPLITS into two deliverables.**
+
+  The spike-in half is delivered by `dev/design/13_VALIDATION_FIXTURES.md`: a
+  labelled corpus in `tests/testthat/fixtures/`, built from the reference
+  project's 19 clean-host units plus deliberate cross-kingdom spike-ins whose
+  ground truth is known by construction. It measures the false-positive rate,
+  which is the number this bullet is really about. It changes no default.
+
+  The clade half is BLOCKED ON DATA, not on code. The three invert read sets are
+  not downloaded, their clade reference DBs are not built, and no invert project
+  has ever been run: `mapping_asteroidea.csv`, `mapping_scyphozoa.csv` and
+  `mapping_octocorallia.csv` each define a single sample, and every test project
+  to date is actinopterygian. Satisfying it needs read downloads, three reference
+  DBs, three assemblies and three remote BLAST runs before any labelling starts.
+
+  **The human spike-in this bullet asks for is not a cross-kingdom case.** `Homo
+  sapiens` is Chordata and so is a ray-finned fish, so on a fish host a human
+  contaminant shares the phylum slot, passes concordance, and is MISSED. It is
+  caught only on a non-chordate host, which is another reason the clade half
+  matters. Doc 13 section 4.1 has the measurement; doc 11 section 1 is corrected
+  to match.
+
 ---
 
 ## 6. Considered and rejected

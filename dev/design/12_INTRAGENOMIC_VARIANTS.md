@@ -162,6 +162,15 @@ total length are the same molecule assembled twice, for which "pick either" is
 exactly the right message. The length difference is recorded in the reason string
 as evidence rather than used as a test.
 
+**Still unvalidated as of doc 13.** The validation fixture set of
+`dev/design/13_VALIDATION_FIXTURES.md` cannot reach this threshold, and no future
+spike-in corpus can. Variant comparison runs only on units the screen calls
+`on_target` (section 2.1), and a spike-in is `off_target` by construction, so a
+spiked unit is never compared to anything. Validating 99.5 needs real multi-unit
+host samples carrying genuine paralogs, which is the invert clade data doc 08
+section 5 records as blocked. This threshold is blocked on exactly the data it was
+already blocked on, and doc 13 does not change that.
+
 It is a prior, like the confidence weights, and the same caveat applies. It is
 however a much safer prior than the identity envelope was, because it compares
 two sequences from ONE organism rather than across taxa: the question "are these

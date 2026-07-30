@@ -30,11 +30,25 @@ It answers **"does this scaffold's hit distribution agree with the sample's own
 lineage"**. A fungal, bacterial or plant contaminant on a metazoan sample fails
 that outright, which is the case this catches well.
 
-It cannot separate two metazoans, because a copepod and a fish share Metazoa and
-the concordance test is against the sample's rank-aligned path. Doc 08 section
-3.5 is explicit that the within-kingdom cases need the depth and cross-sample
-channels, which are 3d and 3e. Nothing here should be described as catching a
-copepod on a fish.
+It cannot separate two metazoans OF THE SAME PHYLUM. Concordance is tested at
+phylum rank or deeper (section 4.4), so a contaminant sharing the sample's phylum
+passes it and comes back `on_target`. Doc 08 section 3.5 is explicit that those
+cases need the depth and cross-sample channels, which are 3d and 3e.
+
+**Amendment, 2026-07-30.** This paragraph originally read "It cannot separate two
+metazoans, because a copepod and a fish share Metazoa", and ended "Nothing here
+should be described as catching a copepod on a fish". Both were wrong. A copepod
+is an arthropod and a fish is a chordate, so that pair differs at PHYLUM, fails
+concordance, and IS caught. `tests/testthat/test-screen.R:176` has pinned exactly
+that since 3b, and section 4.5 below records the measurement that produced the
+phylum-or-deeper rule. The sentence predates that rule, which was adopted later
+in this same document, and was never reconciled with it.
+
+The real blind spot is narrower and worth stating precisely, because doc 13's
+fixture is built on it: a HUMAN contaminant on a FISH sample is missed, since
+both are Chordata. Measured in doc 13 section 4.1, and pinned as an expected miss
+by `tests/testthat/test-screen-validation.R`. Doc 08 section 5 asks for a human
+spike-in as though it were a cross-kingdom case; on a chordate host it is not.
 
 ## 2. Decisions
 

@@ -196,6 +196,28 @@ An `uncertain` verdict on a spike-in is NOT counted as a catch. The screen
 recording `uncertain` means it declined to decide, and counting that as success
 would let the 0.6 gate be tuned to look good by refusing to answer.
 
+## 5.1 Measured limits of the corpus itself
+
+A fixture that is not honest about what it cannot catch is worse than no fixture.
+Two limits, both found by mutating the scoring core and watching what the corpus
+failed to notice.
+
+**The 19 host units do not exercise doc 11 section 4.3's congener defect.**
+Reintroducing the too-strict rule that doc 11 rejected, `host_concordant` from
+`lca$taxid %in% samp_ok` alone, produces ZERO failures against this corpus. None
+of these fish units has an LCA sitting off its sample's own path, so the case doc
+11 measured at 0.790 does not occur here and a regression to that rule would pass
+unnoticed. `tests/testthat/test-screen.R:129` pins it synthetically, so the SUITE
+is covered; the CORPUS is not. Closing this needs a host unit whose hits are
+dominated by same-genus relatives, which none of the ten samples provides.
+
+**The false-positive rate is measured on actinopterygians only.** Every host unit
+is a ray-finned fish from one reference project. Doc 08 section 5 asks for the
+rate on under-represented invertebrate clades precisely because that is where a
+false positive is most likely and most damaging, and that is the clade half of
+the gate, still blocked. A zero here is real but narrow: it says the screen does
+not flag clean FISH data.
+
 ## 6. Out of scope
 
 **The clade half of doc 08 section 5's gate.** That gate asks for validation
