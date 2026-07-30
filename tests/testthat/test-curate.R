@@ -89,3 +89,30 @@ test_that("lineages_conflict and lineage_known behave", {
   expect_false(RiboPilot:::lineage_known(NA))
   expect_false(RiboPilot:::lineage_known(""))
 })
+
+test_that("the extracted ruleset resolver keeps curate_one's precedence", {
+  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT, lineage TEXT)")
+  DBI::dbExecute(con, "CREATE TABLE annotate(ID TEXT, path INT, scaffold INT, curate_opts TEXT)")
+  DBI::dbExecute(con, "CREATE TABLE curate_opts(curate_opts TEXT, ruleset TEXT)")
+  DBI::dbExecute(con, "INSERT INTO curate_opts VALUES('default','metazoa_generic')")
+  DBI::dbExecute(con, "INSERT INTO curate_opts VALUES('fish','actinopterygii')")
+  DBI::dbExecute(con, "INSERT INTO annotate VALUES('S1',1,1,'default')")
+  DBI::dbExecute(con, "INSERT INTO samples VALUES('S1','Eukaryota; Metazoa; Cnidaria; Scyphozoa')")
+
+  # explicit argument wins over everything
+  expect_equal(RiboPilot:::resolve_ruleset(con, "S1", 1, 1, "asteroidea")$ruleset,
+    "asteroidea")
+  # a generic curate_opts falls through to the lineage
+  expect_equal(RiboPilot:::resolve_ruleset(con, "S1", 1, 1)$ruleset, "scyphozoa")
+  # a non-generic curate_opts is honoured as-is
+  DBI::dbExecute(con, "UPDATE annotate SET curate_opts='fish'")
+  expect_equal(RiboPilot:::resolve_ruleset(con, "S1", 1, 1)$ruleset, "actinopterygii")
+  # a lineage matching no clade records the fallback rather than hiding it
+  DBI::dbExecute(con, "UPDATE annotate SET curate_opts='default'")
+  DBI::dbExecute(con, "UPDATE samples SET lineage='Eukaryota; Metazoa; Porifera'")
+  r <- RiboPilot:::resolve_ruleset(con, "S1", 1, 1)
+  expect_equal(r$ruleset, "metazoa_generic")
+  expect_equal(r$note, "no_clade_ruleset")
+})

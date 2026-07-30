@@ -182,11 +182,16 @@ before the fix. That is the one-mislabelled-accession failure that
 not be reintroduced here.
 
 **These weights are priors, not measurements.** That is the same caveat that
-deferred the envelope, and it is why the screen rule ships as Flag. They live in
-`rrna_params()`'s `screen` sublist so a clade can retune them, and
+deferred the envelope, and it is why the screen rule ships as Flag.
 `screen_reason` always prints each term with its value and its weight, so a
 curator can see when a verdict rested on a single term. Any future change to
 them must bump `SCREEN_VERSION`.
+
+**Amendment, 3c.** This section originally said the weights "live in
+`rrna_params()`'s `screen` sublist so a clade can retune them". That was not
+true of 3b as shipped: they were top-level constants in `R/screen.R`, and no
+ruleset could reach them. 3c built the sublist and moved them into it, values
+unchanged. See doc 12 section 4.0.1.
 
 ## 6. Verdicts
 

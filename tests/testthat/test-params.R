@@ -32,6 +32,42 @@ test_that("min_anchor_pid is per-element and ordered 28S < 5.8S <= 18S", {
   expect_true(is.na(RiboPilot:::anchor_pid_floor(NULL, "18S")))
 })
 
+test_that("every ruleset carries a screen sublist and its weights still sum to 1", {
+  for (rs in RiboPilot:::RRNA_RULESETS) {
+    p <- RiboPilot:::rrna_params(rs)
+    expect_true(is.list(p$screen), info = rs)
+    for (k in c("support", "resolution", "separation", "min_confidence",
+                "min_isomer_anchor_pid")) {
+      expect_true(!is.null(p$screen[[k]]), info = paste(rs, k))
+    }
+    expect_equal(sum(unlist(p$screen[c("support", "resolution", "separation")])), 1,
+      info = rs)
+  }
+})
+
+test_that("relocating the screen tunables changed none of their values", {
+  # doc 11 section 5: the weights are priors. Building the sublist must not
+  # silently retune them, or every stored verdict shifts for a reason nobody chose.
+  p <- RiboPilot:::rrna_params("metazoa_generic")$screen
+  expect_equal(p$support, 0.30)
+  expect_equal(p$resolution, 0.30)
+  expect_equal(p$separation, 0.40)
+  expect_equal(p$min_confidence, 0.6)
+  expect_equal(p$min_isomer_anchor_pid, 99.5)
+})
+
+test_that("a clade ruleset can retune the screen without touching the default", {
+  base <- RiboPilot:::rrna_params("metazoa_generic")$screen
+  for (rs in RiboPilot:::RRNA_RULESETS) {
+    expect_equal(RiboPilot:::rrna_params(rs)$screen, base, info = rs)
+  }
+  # the mechanism exists even though no clade uses it yet: modifyList on the
+  # sublist must not drop the untouched keys
+  tuned <- utils::modifyList(base, list(min_isomer_anchor_pid = 99.9))
+  expect_equal(tuned$support, 0.30)
+  expect_equal(tuned$min_isomer_anchor_pid, 99.9)
+})
+
 test_that("ruleset_for_lineage maps clades, incl. 2022 octocoral orders", {
   rl <- RiboPilot:::ruleset_for_lineage
   expect_equal(rl("Metazoa; Echinodermata; Asteroidea; Valvatida"), "asteroidea")

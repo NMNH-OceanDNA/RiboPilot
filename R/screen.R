@@ -13,7 +13,7 @@
 
 #' Scoring version. Bump to force a recompute of stored rows.
 #' @noRd
-SCREEN_VERSION <- 2L
+SCREEN_VERSION <- 4L
 
 #' @noRd
 SCREEN_VERDICTS <- c("on_target", "off_target", "no_reference", "uncertain")
@@ -26,16 +26,27 @@ SCREEN_CLASSES <- c("bacterial", "archaeal", "fungal", "algal_plant",
 SCREEN_NO_REF_CODES <- c("no_hits", "no_taxdump", "unresolved_sample_lineage",
   "unresolved_hit_lineages")
 
-#' Confidence weights.
+#' Confidence weights, and the gate below which a verdict is uncertain.
 #'
-#' Priors, not measurements, which is why the screen rule ships as Flag rather
-#' than Drop. Any change here must bump [SCREEN_VERSION].
+#' Both are views on [SCREEN_PARAMS_DEFAULT] (R/params_rrna.R) so a clade
+#' ruleset and the shipped default cannot drift apart. Any change must bump
+#' [SCREEN_VERSION].
 #' @noRd
-SCREEN_WEIGHTS <- list(support = 0.30, resolution = 0.30, separation = 0.40)
+SCREEN_WEIGHTS <- SCREEN_PARAMS_DEFAULT[c("support", "resolution", "separation")]
 
-#' Confidence below which a verdict is recorded as uncertain.
 #' @noRd
-SCREEN_MIN_CONFIDENCE <- 0.6
+SCREEN_MIN_CONFIDENCE <- SCREEN_PARAMS_DEFAULT$min_confidence
+
+#' The screen tunables for a sample, resolved through its curation ruleset
+#'
+#' Falls back to the default rather than erroring: a screen must not fail
+#' because a project predates the ruleset columns.
+#' @noRd
+screen_params <- function(con, id) {
+  rs <- tryCatch(resolve_ruleset(con, id, 1L, 1L)$ruleset, error = function(e) NULL)
+  p <- tryCatch(rrna_params(rs)$screen, error = function(e) NULL)
+  p %||% SCREEN_PARAMS_DEFAULT
+}
 
 #' Depth of a resolved rank, 0 (nothing) to 1 (species)
 #' @noRd
@@ -58,7 +69,8 @@ screen_rank_depth <- function(rank) {
 #' species rank would otherwise clear the gate at 0.76 on nothing else.
 #' @noRd
 screen_confidence_terms <- function(lca_n_hits, lca_rank, margin, top_bitscore,
-                                    unanimous = FALSE) {
+                                    unanimous = FALSE,
+                                    params = SCREEN_PARAMS_DEFAULT) {
   support <- min(1, (lca_n_hits %||% 0) / 10)
   resolution <- screen_rank_depth(lca_rank)
   separation <- if (isTRUE(unanimous)) {
@@ -69,7 +81,7 @@ screen_confidence_terms <- function(lca_n_hits, lca_rank, margin, top_bitscore,
   } else {
     min(1, abs(margin) / top_bitscore)
   }
-  w <- SCREEN_WEIGHTS
+  w <- params %||% SCREEN_PARAMS_DEFAULT
   list(support = support, resolution = resolution, separation = separation,
     confidence = unname(support * w$support + resolution * w$resolution +
       separation * w$separation))
@@ -142,10 +154,13 @@ screen_max <- function(x) {
 #' @param hits Frame with `hit_class`, `bitscore`, `lineage_taxids`, `lineage`
 #'   and optionally `hit_rank` (one rank per subject accession).
 #' @param sample_taxids The sample's rank-aligned taxid path.
+#' @param params The `screen` sublist of a ruleset (see [rrna_params()]).
 #' @return list(verdict, class, confidence, reason, reason_code, terms,
 #'   lca_taxid, lca_taxon, lca_rank, lca_n_hits, host_concordant, margin).
 #' @noRd
-screen_channel_taxonomy <- function(hits, sample_taxids) {
+screen_channel_taxonomy <- function(hits, sample_taxids,
+                                    params = SCREEN_PARAMS_DEFAULT) {
+  params <- params %||% SCREEN_PARAMS_DEFAULT
   out <- list(verdict = "no_reference", class = NA_character_, confidence = 0,
     reason = NA_character_, reason_code = "no_hits",
     terms = list(support = 0, resolution = 0, separation = 0),
@@ -235,12 +250,12 @@ screen_channel_taxonomy <- function(hits, sample_taxids) {
   unanimous <- (all(hit_conc) || !any(hit_conc)) && lca$n_hits >= 3
   top_bitscore <- screen_max(h$bitscore)
   tm <- screen_confidence_terms(lca$n_hits, lca$rank, out$margin,
-    top_bitscore, unanimous = unanimous)
+    top_bitscore, unanimous = unanimous, params = params)
   out$terms <- tm[c("support", "resolution", "separation")]
   out$confidence <- tm$confidence
   out$reason_code <- NA_character_
 
-  out$verdict <- if (tm$confidence < SCREEN_MIN_CONFIDENCE) {
+  out$verdict <- if (tm$confidence < (params$min_confidence %||% SCREEN_MIN_CONFIDENCE)) {
     "uncertain"
   } else if (identical(out$host_concordant, 1L)) {
     "on_target"
@@ -258,8 +273,8 @@ screen_channel_taxonomy <- function(hits, sample_taxids) {
     "hits agree on %s (%s, %d voting); %s the sample's lineage. support %.2f w %.2f, resolution %.2f w %.2f, separation %.2f w %.2f -> confidence %.2f",
     lca$taxon %|NA|% "an unnamed taxon", lca$rank, lca$n_hits,
     if (identical(out$host_concordant, 1L)) "on" else "NOT on",
-    tm$support, SCREEN_WEIGHTS$support, tm$resolution, SCREEN_WEIGHTS$resolution,
-    tm$separation, SCREEN_WEIGHTS$separation, tm$confidence)
+    tm$support, params$support, tm$resolution, params$resolution,
+    tm$separation, params$separation, tm$confidence)
   out
 }
 
@@ -296,7 +311,7 @@ screen_one <- function(con, id, path = 1L, scaffold = 1L, force = FALSE) {
   samp <- tryCatch(DBI::dbGetQuery(con,
     "SELECT lineage_taxids t FROM samples WHERE ID = ?", params = list(id))$t[1],
     error = function(e) NA_character_)
-  r <- screen_channel_taxonomy(hits, samp)
+  r <- screen_channel_taxonomy(hits, samp, params = screen_params(con, id))
   DBI::dbExecute(con,
     "DELETE FROM screen WHERE ID = ? AND path = ? AND scaffold = ?",
     params = list(id, path, scaffold))
@@ -323,6 +338,9 @@ screen_sample <- function(con, id, force = FALSE) {
     params = list(id))
   for (i in seq_len(nrow(u))) screen_one(con, id, u$path[i], u$scaffold[i], force = force)
   update_reference_support(con, id)
+  # after the loop, never before: screen_one() rewrites a row with DELETE plus
+  # append, so a variant column written first would be silently wiped
+  screen_variants(con, id)
   invisible(nrow(u))
 }
 

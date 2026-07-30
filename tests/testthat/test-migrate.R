@@ -90,7 +90,7 @@ test_that("a fresh new_db() matches a migrated one", {
   mig <- mk_v8_db(); on.exit(DBI::dbDisconnect(mig), add = TRUE)
   migrate_db(mig)
   # the columns v9 introduces must exist in both, or code diverges by vintage
-  for (tbl in c("blast_screen", "blast_ref_candidates", "blast_hits")) {
+  for (tbl in c("blast_screen", "blast_ref_candidates", "blast_hits", "screen")) {
     expect_true(all(DBI::dbListFields(mig, tbl) %in% DBI::dbListFields(fresh, tbl)), info = tbl)
   }
 })
@@ -259,7 +259,10 @@ test_that("v14 adds the screen table and its companions", {
   }
   expect_true("reference_support" %in% DBI::dbListFields(con, "samples"))
   expect_true("rule_screen_off_target" %in% DBI::dbListFields(con, "triage_opts"))
-  expect_equal(DBI::dbGetQuery(con, "PRAGMA user_version")[[1]], 14L)
+  # migrate_db() always stamps the latest, so this reads the constant rather
+  # than 14L; the v15 test below pins the literal for the current version
+  expect_equal(DBI::dbGetQuery(con, "PRAGMA user_version")[[1]],
+    RiboPilot:::RIBOPILOT_SCHEMA_VERSION)
 
   # the new rule ships as flag, per doc 08 section 5's validation gate
   expect_equal(DBI::dbGetQuery(con,
@@ -274,4 +277,44 @@ test_that("the screen table is created empty rather than backfilled", {
   on.exit(DBI::dbDisconnect(con))
   migrate_db(con)
   expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM screen")$n, 0L)
+})
+
+test_that("v15 adds the intragenomic variant columns to screen", {
+  con <- mk_v8_db()
+  on.exit(DBI::dbDisconnect(con))
+  migrate_db(con)
+  for (col in c("variant_class", "variant_group", "variant_identity")) {
+    expect_true(col %in% DBI::dbListFields(con, "screen"), info = col)
+  }
+  expect_equal(DBI::dbGetQuery(con, "PRAGMA user_version")[[1]], 15L)
+})
+
+test_that("a real v14 project gains the variant columns and keeps its verdict", {
+  # The screen table must be built at the V14 SHAPE, not from the current
+  # SCREEN_DDL: a v8 db migrates by creating the table from that DDL, which
+  # already has the new columns, so add_col() is a no-op there and the path an
+  # existing v14 project actually takes goes untested.
+  con <- mk_v8_db()
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "CREATE TABLE screen (
+    ID TEXT NOT NULL, path INTEGER NOT NULL DEFAULT 1, scaffold INTEGER NOT NULL DEFAULT 1,
+    screen_verdict TEXT, screen_class TEXT, screen_confidence REAL, screen_reason TEXT,
+    screen_version INTEGER, lca_taxid INTEGER, lca_taxon TEXT, lca_rank TEXT,
+    lca_n_hits INTEGER, host_concordant INTEGER, margin REAL, time_stamp INTEGER,
+    PRIMARY KEY (ID, path, scaffold))")
+  DBI::dbExecute(con,
+    "INSERT INTO screen (ID, path, scaffold, screen_verdict, screen_version)
+     VALUES ('S1',1,1,'on_target',2)")
+  DBI::dbExecute(con, "PRAGMA user_version = 14")
+  expect_false("variant_class" %in% DBI::dbListFields(con, "screen"))
+
+  migrate_db(con)
+  migrate_db(con)  # additive and idempotent: the second run is a no-op
+  for (col in c("variant_class", "variant_group", "variant_identity")) {
+    expect_true(col %in% DBI::dbListFields(con, "screen"), info = col)
+  }
+  r <- DBI::dbGetQuery(con, "SELECT * FROM screen")
+  expect_equal(nrow(r), 1L)
+  expect_equal(r$screen_verdict, "on_target")
+  expect_true(is.na(r$variant_class))
 })

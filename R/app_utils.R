@@ -111,6 +111,7 @@ unit_evidence <- function(id) {
        b.lineage AS screen_lineage, b.lineage_taxids AS screen_taxids,
        b.rank_distance, b.is_nuclear_rrna,
        sc.screen_verdict, sc.screen_class, sc.screen_confidence, sc.lca_taxon,
+       sc.variant_class, sc.variant_group, sc.variant_identity,
        s.lineage_taxids AS sample_taxids, s.sci_name,
        (SELECT GROUP_CONCAT(n.element) FROM
           (SELECT element FROM annotations WHERE ID = a.ID AND path = a.path

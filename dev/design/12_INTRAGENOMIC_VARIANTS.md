@@ -1,6 +1,14 @@
 # 12 - Intragenomic rDNA variants: isomers and paralogs
 
-Status: design agreed 2026-07-29. Sub-project 3c of the contamination plan in
+Status: IMPLEMENTED 2026-07-29 on branch `contamination-phase3c`. Plan:
+`dev/design/plans/2026-07-29-intragenomic-variants.md`. Five statements in this
+design did not survive contact with the code, and a sixth was caught by
+hand-testing on real data. Each is amended in place below (sections 3.1, 4.0.1,
+4.0.2, 5.1, 8 and 10) rather than quietly implemented differently. Section 3.1 is
+the one hand-testing found, and it is the most important: as specified, this
+design produced a five-unit false `isomer` group on SRR22396758.
+
+Design agreed 2026-07-29. Sub-project 3c of the contamination plan in
 `dev/design/08_MULTIUNIT_UX_AND_CONTAMINATION.md`, implementing section 3.8.
 Builds on 3b (`dev/design/11_SCREEN_VERDICT_LAYER.md`), which is what makes it
 computable.
@@ -64,6 +72,46 @@ For each sample, take its `on_target` units. For each pair:
    No new dependency and no external aligner.
 3. Record the identity, and the difference in TOTAL scaffold length.
 
+### 3.1 Amendment: identity alone is not a comparison
+
+Steps 1 and 2 above are wrong as written, and shipping them produced a false
+`isomer` on real data during hand-testing. Two corrections, both implemented.
+
+**A per-unit anchor string cannot be compared against another unit's.** Step 1
+concatenates whatever anchors a unit has, and nothing required two units to
+annotate the same elements. On SRR33849683, unit 1.1 annotated 18S+5.8S+28S
+(2677 bp) and unit 1.2 annotated 28S alone (1334 bp). Comparing them is not a
+comparison, however the number comes out. Anchors are now kept SEPARATE per
+element (`screen_anchor_parts()`), and a pair is compared only on the elements
+BOTH units annotate.
+
+**`pwalign_pid()` over an overlap alignment is meaningless without coverage.**
+PID1 divides matches by the ALIGNED length, and `type = "overlap"` charges
+nothing for end gaps, so a short alignment scores perfectly. Measured on that
+same pair: identity **100.00 percent over an aligned length of 1 base**. The
+aligner found no real alignment, fell back to a one-base overlap, and PID1 read
+one match over one aligned position as perfection. The stored reason told the
+curator to pick either a complete repeat or a 1694 bp fragment.
+
+A pair is therefore comparable only when all of:
+
+- the two units share at least one annotated anchor element;
+- the shared span is at least `min_isomer_anchor_bp` (500) long;
+- the alignment covers at least `min_isomer_anchor_coverage` (0.90) of BOTH
+  sides, using `alignment_coverage()` from `R/blast_ref_align.R`.
+
+This is the pairing `min_anchor_pid` already gets from `min_ref_coverage` in
+curation, and for the same reason: a partial sequence must not trigger a
+confident call. Note the bp floor is not what caught the real case (the shared
+span was 680 bp, over the floor); coverage was 0, and that is what vetoed it.
+
+**A unit with anchors but no comparable counterpart is `NA`, not `paralog`.**
+Leaving it in a group of its own would report that the sample carries several
+rDNA copies on the strength of a measurement that was never made. Such units are
+removed before the group count decides `isomer` versus `paralog`.
+
+`SCREEN_VERSION` moves to `4L` for this, because it changes what an isomer means.
+
 ## 4. Classification
 
 | anchors | total length | `variant_class` | what the curator is told |
@@ -73,15 +121,73 @@ For each sample, take its `on_target` units. For each pair:
 | only one on-target unit in the sample | - | `singleton` | nothing |
 | anchors absent or unannotated | - | `NA` | not comparable |
 
-`min_isomer_anchor_pid` is the ONLY new constant. It lives in `rrna_params()`'s
-`screen` sublist so a clade can retune it, and the reason string always prints
-the measured identity so a curator sees the number rather than only the label.
+`min_isomer_anchor_pid` was intended as the only new constant. Section 3.1 adds
+two more, `min_isomer_anchor_coverage` and `min_isomer_anchor_bp`, because
+identity without coverage admitted a false isomer on real data. Its value is **99.5**
+percent, on the 0-100 scale `pwalign_pid()` returns. Across roughly 4 kb of
+concatenated 18S+5.8S+28S that tolerates a handful of assembly errors without
+admitting a real paralog. It lives in `rrna_params()`'s `screen` sublist so a
+clade can retune it, and the reason string always prints the measured identity so
+a curator sees the number rather than only the label.
+
+#### 4.0.1 Amendment: the `screen` sublist did not exist, and 3c built it
+
+This design and doc 11 section 5 both sited the screen's tunables in
+`rrna_params()`'s `screen` sublist. Neither built it. 3b shipped `SCREEN_WEIGHTS`
+and `SCREEN_MIN_CONFIDENCE` as top-level constants in `R/screen.R`, which no
+ruleset could reach, so the claim that "a clade can retune them" was false for
+the whole of 3b.
+
+3c built the sublist. `SCREEN_PARAMS_DEFAULT` in `R/params_rrna.R` now holds the
+three weights, `min_confidence` and `min_isomer_anchor_pid`, and every ruleset
+carries it. `SCREEN_WEIGHTS` and `SCREEN_MIN_CONFIDENCE` survive as views on it
+so a clade override and the shipped default cannot drift apart. Reaching a
+sample's ruleset needed the resolution logic that was inline in `curate_one()`,
+so it was lifted verbatim into `resolve_ruleset()` and is now shared.
+
+No value changed. Every ruleset's `screen` sublist is currently identical to the
+default, so no stored verdict shifts because of the move.
+
+#### 4.0.2 Amendment: classification is on identity alone
+
+The table above gives `isomer` the condition "identity at or above the threshold
+AND total length differs", and gives no row at all for "identity at or above the
+threshold AND total length identical". Since the only two classes are `isomer`
+and `paralog`, and identity alone already decides between them, the length column
+cannot change the answer and the missing row cannot be filled without inventing a
+third class.
+
+Implemented on identity alone. Two units with identical anchors and identical
+total length are the same molecule assembled twice, for which "pick either" is
+exactly the right message. The length difference is recorded in the reason string
+as evidence rather than used as a test.
 
 It is a prior, like the confidence weights, and the same caveat applies. It is
 however a much safer prior than the identity envelope was, because it compares
 two sequences from ONE organism rather than across taxa: the question "are these
 two anchors the same sequence" has a far tighter natural answer than "how
 similar may two different organisms be".
+
+#### 4.0.0 What 99.5 means in absolute terms, measured
+
+Over a realistic anchor total of 5460 bp (18S 1800 + 5.8S 160 + 28S 3500), with
+substitutions only:
+
+| substitutions | identity | class |
+|---|---|---|
+| 0 | 100.00 | isomer |
+| 5 | 99.93 | isomer |
+| 20 | 99.74 | isomer |
+| 30 | 99.63 | isomer |
+| 60 | 99.16 | paralog |
+| 200 | 97.18 | paralog |
+
+So 99.5 splits at roughly 27 differences across the three anchors. Anything
+tighter than that is read as one molecule assembled twice.
+
+Cost, same measurement: about 0.3 s per pair, and 0 s when the anchors are
+identical, because that case short-circuits without aligning. A sample with k
+comparable units pays k(k-1)/2 alignments, and k is typically 2 to 5.
 
 ### 4.1 Why the IGS is inferred rather than measured
 
@@ -114,6 +220,24 @@ formed, and the recorded `variant_identity` makes the spread visible rather than
 hiding it. Chained groups are expected to be rare at the identities involved and
 are not worth a clustering algorithm.
 
+### 5.1 Amendment: `variant_class` is a per-sample property
+
+Section 4's table is written per PAIR. Reduced to one row per unit there is a
+case it does not decide: a sample holding an isomer pair A, B plus a distinct
+copy C. A and B are mutually isomeric, but the sample carries paralogs.
+
+Implemented so that **every** comparable unit reads `paralog` once the sample has
+two or more groups, A and B included. Telling the curator of A "pick either"
+would be false while C exists, and the paralog message, "which you lock
+determines what GenBank receives", is true of A, B and C alike. `variant_group`
+is what tells the curator that A and B are interchangeable, which is the
+information the isomer label would have carried.
+
+The consequence is that `variant_class` is constant across a sample's comparable
+units and is partly redundant with the group count. That redundancy is deliberate:
+the class is what the UI and the export summary read, and it must not say
+something false about any single unit.
+
 ## 6. Schema v15
 
 Three columns on `screen`, which already carries one row per unit and a
@@ -125,7 +249,9 @@ variant_group    TEXT,   -- group label, unique within the sample
 variant_identity REAL    -- anchor identity to the group representative
 ```
 
-`SCREEN_VERSION` moves to `3L`, so existing rows recompute. No new table: the
+`SCREEN_VERSION` moves to `4L`, so existing rows recompute. (It reached `3L`
+with the columns and `4L` when the coverage and shared-element guards of section
+3.1 changed what an isomer means.) No new table: the
 finding is per unit, the recompute path exists, and a second table would need
 its own version gate kept in step with the screen's.
 
@@ -145,20 +271,49 @@ curator's.
 **Triage.** Unchanged. No rule is added, and neither class contributes to any
 verdict.
 
-## 8. Salvage from the retired 3c
+## 8. Salvage from the retired 3c: DEFERRED, not built
 
-Two fixes that stand on their own, because the pipeline pays for the computation
-and discards the answer:
+Both items were specified as small parser fixes. Neither is. They were measured
+against the code during 3c and deferred, and this section records the
+measurements so the next worker does not rediscover them.
 
-- `parse_barrnap()`'s name map (R/annotate.R) recognises only `18S_rRNA`,
-  `5_8S_rRNA`, `5.8S_rRNA` and `28S_rRNA`, so a 16S, 23S or 5S call is silently
-  dropped. Extend the map. 5S is a normal nuclear metazoan gene and must be
-  treated as eukaryotic, not as a prokaryotic signal.
-- `parse_itsx()` reads only the coordinate line, while ITSx writes its winning
-  taxonomic profile to disk. Harvest it.
+**Extending `parse_barrnap()`'s name map retains nothing on its own.** The map at
+`R/annotate.R:32` recognises only `18S_rRNA`, `5_8S_rRNA`, `5.8S_rRNA` and
+`28S_rRNA`, so a 16S, 23S or 5S call is indeed dropped. But
+`reconcile_features()` selects elements by literal name, one at a time
+(`R/annotate.R:110-117`: `pick(bar, "18S")`, `pick(bar, "5.8S")`,
+`pick(bar, "28S")`), and `reconcile_one()` writes only what `reconcile_features()`
+returns (`R/pipeline_steps.R:139-149`). A new element emitted by the parser is
+therefore discarded one function later and never reaches the `annotations` table.
 
-Neither feeds a verdict in this sub-project. They stop information being thrown
-away, and they are what a later channel would need if one is ever built.
+Retaining it needs somewhere to put it, which is a schema decision rather than a
+parser change, and every candidate has reach: writing non-target calls as ordinary
+`annotations` rows puts them into the export feature table, the app's element
+strip, `annotate.missing`, and curation's per-element length rules
+(`RRNA_LENGTHS_METAZOA`), none of which have a concept of a non-target rRNA. When
+this is picked up, decide the store first.
+
+5S remains correct as specified: it is a normal nuclear metazoan gene and must be
+treated as eukaryotic, not as a prokaryotic signal.
+
+**The ITSx taxonomic profile never reaches R.** `parse_itsx()` reads only the
+coordinate line, and that is all it can read. Both Nextflow processes that run
+ITSx declare a single output file: `path("${id}.itsx.positions.txt")` at
+`inst/nextflow/modules/annotate.nf:12`, and `path("unit.itsx.positions.txt")` at
+`inst/nextflow/modules/pipeline_r.nf:149`. Every other file ITSx writes stays in
+the work directory and is discarded with it, so no parser change can reach the
+profile.
+
+Harvesting it needs an output declaration in both processes, a new argument
+threaded through `rp_reconcile.R` (which today takes exactly `<db> <id> <path>
+<scaffold> <gff> <pos>`), and a column to hold the result. The all-in-R path
+`run_itsx()` (`R/annotate.R:197`) is cheaper to fix, since it controls its own
+output prefix and merely ignores the other files, but fixing only that path would
+leave the pipeline and the convenience path disagreeing about what is stored,
+which is the divergence the shared-DDL convention exists to prevent.
+
+Neither item feeds a verdict, in this sub-project or in any planned one, which is
+why deferring both costs nothing now.
 
 ## 9. Testing
 
@@ -175,10 +330,36 @@ away, and they are what a later channel would need if one is ever built.
 - `SCREEN_VERSION` at `3L` forces recompute of rows stored at `2L`.
 - Export records the variant fact for a paralog and does NOT gate: a paralogous
   unit still exports.
-- `parse_barrnap()` returns 16S, 23S and 5S rather than dropping them, and 5S is
-  classified as eukaryotic.
 - Grouping: a three-unit isomer set forms one group; a mixed set forms one
   isomer group and one paralog group.
+
+Added during implementation, because the list above did not name them:
+
+- A circularly permuted unit, where 28S precedes 18S by coordinate, produces the
+  same anchor string as an unpermuted one. Ordering the concatenation by `start`
+  rather than by element makes one molecule read as a paralog of itself.
+- An all-minus unit is reverse-complemented before comparison, and a
+  MIXED-strand unit is not comparable at all. Concatenating a sense and an
+  antisense span produces a string that means nothing, and mixed strands are a
+  chimera signal rather than a paralog.
+- The group representative is the LONGEST member. A test whose input already
+  happens to list the longest unit first passes for the wrong reason.
+- Rerunning `screen_sample()` UNFORCED must not stack duplicate variant clauses
+  in `screen_reason`. Forced, `screen_one()` rewrites a fresh reason first, so a
+  forced rerun cannot exercise the strip and a test that uses `force = TRUE`
+  passes while the strip is broken. This one was found by mutation and was a live
+  defect: `VARIANT_REASON_SEP` contains `|`, which as a regex is alternation, so
+  `sub()` matched a bare space and cut a word out of the verdict's own reason.
+- `variant_identity` is asserted in the STORED COLUMN, not only in the reason
+  string. Building the clause from the in-memory value and writing NULL to the
+  column leaves a reason-only test green.
+- `n_variants` in the export summary counts COMPARABLE units, so a fixture must
+  contain a screen row with no variant class or the count is indistinguishable
+  from the row count.
+- The v15 migration must be tested against a screen table built at the V14
+  SHAPE. A v8 fixture migrates by creating the table from the current
+  `SCREEN_DDL`, which already has the new columns, so `add_col()` is a no-op
+  there and the path a real v14 project takes goes untested.
 
 ## 10. Out of scope
 
@@ -186,3 +367,14 @@ Annotating the IGS as a first-class element (see 4.1). The identity envelope and
 anything depending on it. The positional and chimeric channel, which doc 08
 section 3.5(d) requires the envelope for. Cross-sample screening and index
 hopping, which need `samples.batch` and do not exist yet. Any change to triage.
+
+Deferred during implementation, with the reasoning in section 8: extending
+`parse_barrnap()`'s name map, which needs a store decided first, and harvesting
+the ITSx taxonomic profile, which needs Nextflow output plumbing.
+
+Also not built: a version guard on the variant pass. `screen_variants()` recomputes
+every time `screen_sample()` runs. The only caller is the per-sample `screen`
+pipeline process, once per run, and identical anchors short-circuit to 100 without
+aligning, so the common isomer case costs nothing. A guard keyed on "every
+on-target unit already has a class" would also be wrong, because a unit with no
+annotated anchors legitimately keeps a NULL class forever and would defeat it.

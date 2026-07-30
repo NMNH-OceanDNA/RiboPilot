@@ -67,3 +67,79 @@ test_that("ignored and problematic units are excluded from the bundle", {
   # S1 now has one exportable unit, so it loses the suffix too
   expect_setequal(basename(Sys.glob(file.path(g, "*.fsa"))), c("S1.fsa", "S2.fsa"))
 })
+
+# Add a screen table carrying a paralog pair for S1, as screen_sample() would.
+add_screen_paralogs <- function(dir) {
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, RiboPilot:::SCREEN_DDL)
+  DBI::dbExecute(con,
+    "INSERT INTO screen (ID,path,scaffold,screen_verdict,screen_version,
+       variant_class,variant_group,variant_identity)
+     VALUES ('S1',1,1,'on_target',3,'paralog','g1',NULL)")
+  DBI::dbExecute(con,
+    "INSERT INTO screen (ID,path,scaffold,screen_verdict,screen_version,
+       variant_class,variant_group,variant_identity)
+     VALUES ('S1',1,2,'on_target',3,'paralog','g2',92.51)")
+  invisible(dir)
+}
+
+test_that("export records the variant fact for a paralog and does NOT gate", {
+  # a paralogous unit still exports: the fact is recorded, the choice stays the
+  # curator's (doc 12 section 7). Warning on export is the behaviour this
+  # sub-project exists to remove, so any warning here is a failure.
+  dir <- mk_project()
+  add_screen_paralogs(dir)
+  warns <- character(0)
+  g <- withCallingHandlers(
+    suppressMessages(export_bundle(dir, out_dir = file.path(dir, "out"),
+      markers = FALSE, report = FALSE, zip = FALSE, ids = "S1")),
+    warning = function(w) {
+      warns <<- c(warns, conditionMessage(w)); invokeRestart("muffleWarning")
+    })
+  expect_equal(warns, character(0))
+
+  smry <- utils::read.csv(Sys.glob(file.path(g, "*_summary.csv")), stringsAsFactors = FALSE)
+  expect_true(all(c("variant_class", "variant_group", "variant_identity", "n_variants")
+    %in% names(smry)))
+  expect_equal(sort(smry$variant_class), c("paralog", "paralog"))
+  expect_setequal(smry$variant_group, c("g1", "g2"))
+  expect_equal(unique(smry$n_variants), 2L)
+  # both units are still in the bundle
+  expect_setequal(basename(Sys.glob(file.path(g, "*.fsa"))),
+    c("S1_p1_s1.fsa", "S1_p1_s2.fsa"))
+  # and the variant fact never leaks into the submission-risk gate
+  # (read.csv turns the empty risk string into NA)
+  risk <- as.character(smry$submission_risk)
+  expect_true(all(is.na(risk) | !nzchar(risk)))
+})
+
+test_that("n_variants counts comparable units, not every screen row", {
+  # S1 unit 1 is an on-target singleton; unit 2 is a contaminant with no variant
+  # class. n_variants must be 1, which counting screen rows would report as 2.
+  dir <- mk_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, RiboPilot:::SCREEN_DDL)
+  DBI::dbExecute(con,
+    "INSERT INTO screen (ID,path,scaffold,screen_verdict,screen_version,variant_class,variant_group)
+     VALUES ('S1',1,1,'on_target',3,'singleton','g1')")
+  DBI::dbExecute(con,
+    "INSERT INTO screen (ID,path,scaffold,screen_verdict,screen_version)
+     VALUES ('S1',1,2,'off_target',3)")
+  DBI::dbDisconnect(con)
+
+  g <- bundle(dir, ids = "S1", label = "counts")
+  smry <- utils::read.csv(Sys.glob(file.path(g, "*_summary.csv")), stringsAsFactors = FALSE)
+  expect_equal(unique(smry$n_variants), 1L)
+  expect_equal(smry$variant_class[smry$scaffold == 1], "singleton")
+  expect_true(is.na(smry$variant_class[smry$scaffold == 2]))
+})
+
+test_that("a project with no screen table still exports, with NA variant columns", {
+  dir <- mk_project()
+  g <- bundle(dir, ids = "S2", label = "noscreen")
+  smry <- utils::read.csv(Sys.glob(file.path(g, "*_summary.csv")), stringsAsFactors = FALSE)
+  expect_true("variant_class" %in% names(smry))
+  expect_true(all(is.na(smry$variant_class)))
+  expect_true(all(is.na(smry$n_variants)))
+})

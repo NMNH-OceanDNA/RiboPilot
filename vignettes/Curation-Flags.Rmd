@@ -114,6 +114,42 @@ distance is the normal state for an under-studied group, not proof of
 contamination, which is exactly the case RiboPilot exists to serve. For that
 reason, disagreement with sibling scaffolds can only ever flag, never drop.
 
+# Several scaffolds from one organism: the Variant column
+
+None of the rules above fires on this, and that is deliberate. When a sample
+yields more than one scaffold that the GenBank screen calls on-target, the
+difference between them cannot be contamination: the screen has already
+established that both agree with your sample's own lineage. So RiboPilot
+compares them and tells you which of two situations you are looking at, in a
+Variant column in the Assemble tab's scaffold table.
+
+An **isomer** means the scaffolds are the same molecule assembled two ways:
+their conserved anchors are the same sequence, and they differ only outside
+them. Often that is spacer copy number, because the rDNA repeat's intergenic
+spacer contains subrepeats and an assembly graph can traverse a different
+number of them on different passes. It is not always: when two isomers have the
+same total length the difference cannot be copy number, so RiboPilot reports the
+measured length difference and lets you see which case you have. Picking between
+isomers is a decision that does not matter either way, and the column is
+rendered neutrally to say so.
+
+A **paralog** means the sample genuinely carries several different rDNA copies.
+This is real, documented biology in Octocorallia, Scyphozoa and other groups,
+not a defect and not a sign that anything went wrong. Here the choice does
+matter, because which scaffold you lock is what GenBank receives. The column is
+rendered as information rather than as a warning, and export records the fact
+without blocking anything: a paralogous scaffold still exports.
+
+Three details worth knowing. The comparison uses only the conserved anchors
+(18S, 5.8S and 28S), because the spacers vary in both situations and so cannot
+tell them apart. RiboPilot does not annotate the intergenic spacer as a feature,
+so any statement about spacer copy number is inferred from the unannotated
+remainder rather than measured directly. And two scaffolds are only compared on
+the anchors they **both** carry, and only when enough of each one aligns: a
+scaffold whose 28S is a short fragment is reported as not comparable rather than
+declared identical to a complete one. The measured anchor identity is always
+shown, so you can see the number the label came from rather than only the label.
+
 # Your own decisions stick
 
 If you keep or drop a scaffold by hand, that decision is recorded as yours,

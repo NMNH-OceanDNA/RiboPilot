@@ -5,7 +5,7 @@
 
 #' Current project-DB schema version. Bump when adding a migration step below.
 #' @noRd
-RIBOPILOT_SCHEMA_VERSION <- 14L
+RIBOPILOT_SCHEMA_VERSION <- 15L
 
 #' DDL for blast_hits: the full retained BLAST hit distribution per unit.
 #'
@@ -84,6 +84,9 @@ SCREEN_DDL <- "CREATE TABLE IF NOT EXISTS screen (
   lca_n_hits        INTEGER,
   host_concordant   INTEGER,
   margin            REAL,
+  variant_class     TEXT,
+  variant_group     TEXT,
+  variant_identity  REAL,
   time_stamp        INTEGER,
   PRIMARY KEY (ID, path, scaffold)
 );"
@@ -416,6 +419,17 @@ migrate_db <- function(con) {
       "UPDATE triage_opts SET rule_screen_off_target = 'flag'
        WHERE rule_screen_off_target IS NULL")
   }
+
+  # --- schema v15: intragenomic isomers and paralogs ---
+  # Orthogonal to the verdict: a paralogous variant is emphatically on_target,
+  # so the finding gets its own columns rather than a new verdict string. On the
+  # screen table because the finding is per unit and the recompute path already
+  # exists; a second table would need its own version gate kept in step with
+  # this one. No backfill: SCREEN_VERSION at 3L rewrites every stored row on the
+  # next run, which is what fills these.
+  add_col("screen", "variant_class", "TEXT")
+  add_col("screen", "variant_group", "TEXT")
+  add_col("screen", "variant_identity", "REAL")
 
   if (ver < RIBOPILOT_SCHEMA_VERSION) {
     DBI::dbExecute(con, sprintf("PRAGMA user_version = %d", RIBOPILOT_SCHEMA_VERSION))
