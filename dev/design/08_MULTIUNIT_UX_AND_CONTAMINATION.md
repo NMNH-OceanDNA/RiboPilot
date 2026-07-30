@@ -1217,6 +1217,38 @@ independent GenBank records.
   dev/prototype_stitch_viz.R still calls one). Delete
   `compute_feature_alignment()` outright - zero callers, absent from NAMESPACE,
   and actively wrong under the per-scaffold model.
+
+  **Status 2026-07-30: the doc half is DONE, the dead-code half is PART DONE and
+  the rest is blocked on open question 2.**
+
+  Done: `07_SCAFFOLD_SELECTION.md` now carries a status section recording that
+  stitching was dropped by `b0f1b12`, why, and what the per-scaffold model
+  replaced it with. That section is the record this bullet says no document
+  holds. Its three stale in-body claims (the Level-1 heading, "Remaining:
+  integrate stitch", and P1) are marked in place rather than rewritten, so the
+  pre-pivot reasoning stays readable.
+
+  Done: `compute_feature_alignment()` is deleted. Its successor
+  `compute_feature_msa()` in the same file already does the job with full `ID`,
+  `path` and `scaffold` predicates.
+
+  **Correction: "deprecate the exported pre-pivot functions" understates what is
+  involved for `stitch_scaffolds`.** It is not merely called by
+  `dev/prototype_stitch_viz.R`. `R/pipeline_steps.R:394` and
+  `R/annotate_project.R:89` both call it in package code, and it is exported
+  alongside `stitch_one`. Neither caller is reachable from the main pipeline -
+  the first only through `main_fallback.nf`, the second only if a user invokes
+  the legacy `annotate_project()` driver by hand - but "unreachable from
+  `main.nf`" is not the same as "dead", and deprecating a live-in-fallback
+  export is exactly the piecemeal move open question 2 warns against. Left in
+  place deliberately, pending answers to open questions 1 and 2.
+
+  **New consequence, recorded rather than acted on.** Deleting
+  `compute_feature_alignment()` removed the last reader of the `stitched` table.
+  `R/init_db.R:447` still creates it on every fresh project and no migration
+  drops it, so it is now created, never written on any reachable path, and never
+  read. That makes dropping it part of open question 2's bundle, not a separate
+  cleanup.
 - **Validation gate.** The envelope numbers and channel weights are unfitted
   priors, and a false positive on an under-represented taxon is the failure that
   makes the tool useless. **Auto-drop rules and the export gate should ship
