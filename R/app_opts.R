@@ -19,6 +19,13 @@ opts_name_row <- function(name_id, edit_id, choices, selected) {
 
 `%|NA|%` <- function(x, y) if (is.null(x) || length(x) == 0 || is.na(x)) y else x
 
+# assembler values written to assemble_opts.assembler; main.nf routes anything
+# that is not "getorganelle" to the fallback assembler
+ASSEMBLER_CHOICES <- c(
+  "GetOrganelle (default)" = "getorganelle",
+  "SPAdes, baited to the seed DB" = "bait",
+  "SPAdes, de-novo (all reads)" = "denovo")
+
 opts_modal_shell <- function(title, n, name_row, ..., update_id) {
   shiny::modalDialog(
     title = sprintf("%s for %d sample(s)", title, n), size = "m",
@@ -63,6 +70,15 @@ assemble_opts_modal <- function(cur, choices, n) {
     opts_help("Command-line flags for GetOrganelle (nrDNA assembly). Seed/label ",
       "databases are set at project creation.",
       href = "https://github.com/Kinggerm/GetOrganelle"),
+    shinyjs::disabled(shiny::selectInput("ao_assembler", "Assembler:",
+      choices = ASSEMBLER_CHOICES,
+      selected = (cur$assembler %||% "getorganelle") %|NA|% "getorganelle",
+      width = "100%")),
+    opts_help("GetOrganelle is the primary assembler. The two SPAdes fallbacks are ",
+      "for samples it cannot assemble: 'baited' maps reads to the seed database ",
+      "first and assembles only what maps, 'de-novo' assembles every read. Both ",
+      "keep the contigs that match the label database. The GetOrganelle flags ",
+      "above are ignored when a fallback is picked."),
     shiny::div(style = "display:flex; gap:2em;",
       shiny::div(style = "flex:1", shinyjs::disabled(shiny::numericInput("ao_minlen",
         "Min assembly length (bp):", value = cur$min_assembly_length %|NA|% 0, min = 0, width = "100%"))),
@@ -211,7 +227,8 @@ opts_handlers <- function(input, output, session, deps) {
   # register open + edit-toggle + update observers for each opts type
   field_ids <- list(
     po = c("po_cpus", "po_mem", "po_fastp"),
-    ao = c("ao_cpus", "ao_mem", "ao_getorg", "ao_minlen", "ao_maxpaths", "ao_maxscaf"),
+    ao = c("ao_cpus", "ao_mem", "ao_getorg", "ao_minlen", "ao_maxpaths", "ao_maxscaf",
+           "ao_assembler"),
     bo = c("bo_run", "bo_entrez", "bo_extra", "bo_mts"),
     no = c("no_cpus", "no_mem", "no_tool", "no_kingdom", "no_itsxtaxon", "no_itsxopts"),
     co = c("co_ruleset", "co_pid", "co_contam")
@@ -308,6 +325,33 @@ opts_edit_check <- function(sp, nm, ids, editing, deps) {
     nm, length(others)))
 }
 
+# one opts-table row from the modal inputs, with `base` supplying the fields the
+# modal does not expose. `input` may be shiny's input object or a plain list.
+opts_row <- function(pfx, nm, input, base) {
+  switch(pfx,
+    po = data.frame(pre_opts = nm, cpus = as.integer(input$po_cpus),
+      memory = as.integer(input$po_mem), fastp = input$po_fastp %||% "",
+      stringsAsFactors = FALSE),
+    ao = data.frame(assemble_opts = nm, cpus = as.integer(input$ao_cpus),
+      memory = as.integer(input$ao_mem), getOrganelle = input$ao_getorg %||% "",
+      seeds_db = base$seeds_db %||% NA_character_, labels_db = base$labels_db %||% NA_character_,
+      target = base$target %||% NA_character_, max_paths = as.integer(input$ao_maxpaths),
+      max_scaffolds = as.integer(input$ao_maxscaf),
+      min_assembly_length = as.integer(input$ao_minlen),
+      assembler = input$ao_assembler %||% "getorganelle", stringsAsFactors = FALSE),
+    bo = data.frame(blast_opts = nm, run_blast = as.integer(isTRUE(input$bo_run)),
+      entrez_query = input$bo_entrez %||% "", extra_opts = input$bo_extra %||% "",
+      max_target_seqs = as.integer(input$bo_mts), stringsAsFactors = FALSE),
+    no = data.frame(annotate_opts = nm, cpus = as.integer(input$no_cpus),
+      memory = as.integer(input$no_mem), rrna_tool = input$no_tool,
+      rrna_kingdom = input$no_kingdom, itsx_taxon = input$no_itsxtaxon %||% "all",
+      itsx_opts = input$no_itsxopts %||% "", stringsAsFactors = FALSE),
+    co = data.frame(curate_opts = nm, ruleset = input$co_ruleset,
+      min_anchor_pid = as.numeric(input$co_pid),
+      check_contaminant = as.integer(isTRUE(input$co_contam)), stringsAsFactors = FALSE)
+  )
+}
+
 # build the full opts row (edited fields overriding the base) and upsert it,
 # then assign the set to the target samples and re-queue the step.
 opts_apply <- function(pfx, sp, input, deps, ids, cur) {
@@ -319,27 +363,7 @@ opts_apply <- function(pfx, sp, input, deps, ids, cur) {
 
   con <- deps$con(); on.exit(DBI::dbDisconnect(con))
   if (editing) {
-    row <- switch(pfx,
-      po = data.frame(pre_opts = nm, cpus = as.integer(input$po_cpus),
-        memory = as.integer(input$po_mem), fastp = input$po_fastp %||% "",
-        stringsAsFactors = FALSE),
-      ao = data.frame(assemble_opts = nm, cpus = as.integer(input$ao_cpus),
-        memory = as.integer(input$ao_mem), getOrganelle = input$ao_getorg %||% "",
-        seeds_db = base$seeds_db %||% NA_character_, labels_db = base$labels_db %||% NA_character_,
-        target = base$target %||% NA_character_, max_paths = as.integer(input$ao_maxpaths),
-        max_scaffolds = as.integer(input$ao_maxscaf),
-        min_assembly_length = as.integer(input$ao_minlen), stringsAsFactors = FALSE),
-      bo = data.frame(blast_opts = nm, run_blast = as.integer(isTRUE(input$bo_run)),
-        entrez_query = input$bo_entrez %||% "", extra_opts = input$bo_extra %||% "",
-        max_target_seqs = as.integer(input$bo_mts), stringsAsFactors = FALSE),
-      no = data.frame(annotate_opts = nm, cpus = as.integer(input$no_cpus),
-        memory = as.integer(input$no_mem), rrna_tool = input$no_tool,
-        rrna_kingdom = input$no_kingdom, itsx_taxon = input$no_itsxtaxon %||% "all",
-        itsx_opts = input$no_itsxopts %||% "", stringsAsFactors = FALSE),
-      co = data.frame(curate_opts = nm, ruleset = input$co_ruleset,
-        min_anchor_pid = as.numeric(input$co_pid),
-        check_contaminant = as.integer(isTRUE(input$co_contam)), stringsAsFactors = FALSE)
-    )
+    row <- opts_row(pfx, nm, input, base)
     dplyr::rows_upsert(dplyr::tbl(con, sp$table), row, by = sp$key, in_place = TRUE, copy = TRUE)
   }
 
