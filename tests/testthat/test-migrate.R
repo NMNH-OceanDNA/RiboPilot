@@ -393,6 +393,8 @@ test_that("concurrent migrations of the same project do not collide", {
   # ALTER, and the loser dies with "duplicate column name", failing the run.
   skip_on_os("windows")
   skip_on_cran()
+  # the race needs real contention, and R CMD check caps a package at 2 cores
+  skip_if(nzchar(Sys.getenv("_R_CHECK_LIMIT_CORES_")), "R CMD check limits cores")
   db <- file.path(withr::local_tempdir(), "race.sqlite")
   seed <- DBI::dbConnect(RSQLite::SQLite(), db)
   DBI::dbExecute(seed, "CREATE TABLE assemble(ID TEXT PRIMARY KEY, assemble_switch INT,
