@@ -879,7 +879,6 @@ app_server <- function(input, output, session) {
         data.frame(` ` = "No assembled scaffolds for this sample yet.", check.names = FALSE),
         compact = TRUE))
     }
-    d$hits <- "hits"
     # reactable renders in data-frame column order, so the row identifier has to
     # lead here; colDef(sticky=) alone does not move it.
     lead <- c("unit", "triage", "length", "topology", "depth", "depth_track", "elements",
@@ -887,13 +886,19 @@ app_server <- function(input, output, session) {
     d <- d[, c(intersect(lead, names(d)), setdiff(names(d), lead)), drop = FALSE]
     reactable::reactable(d, compact = TRUE, resizable = TRUE, filterable = TRUE,
       searchable = TRUE, sortable = TRUE, wrap = FALSE, defaultPageSize = 20,
-      # tick boxes feed the Copy FASTA button below the table
+      # tick boxes feed the Copy FASTA button below the table; clicking the row
+      # anywhere else opens that scaffold in the evidence panels below
       selection = "multiple",
+      onClick = rt_examine_row("scaf_examine"),
+      meta = list(examined = isolate(examined_uid())),
       defaultColDef = reactable::colDef(align = "left", show = FALSE),
       columns = list(
         # the tick-box column is a built-in column, so defaultColDef's show =
-        # FALSE hides it too; it has to opt back in by name
-        .selection = reactable::colDef(show = TRUE, width = 36, sticky = "left"),
+        # FALSE hides it too; it has to opt back in by name. The copy icon says
+        # what the ticks are for, since they do NOT drive the panels below.
+        .selection = reactable::colDef(show = TRUE, width = 36, sticky = "left",
+          html = TRUE, header = as.character(icon("clipboard",
+            title = "Tick rows to copy as FASTA"))),
         unit = reactable::colDef(name = "Unit", width = 72, show = TRUE, sticky = "left"),
         length = reactable::colDef(name = "Length", width = 80, show = TRUE),
         topology = reactable::colDef(name = "Topology", width = 85, show = TRUE),
@@ -921,15 +926,16 @@ app_server <- function(input, output, session) {
         screen_accession = reactable::colDef(name = "Accession", width = 110, show = TRUE,
           html = TRUE, cell = rt_ncbi_link()),
         screen_pident = reactable::colDef(name = "%ID", width = 65, show = TRUE),
-        hits = reactable::colDef(name = "", width = 55, show = TRUE, html = TRUE, filterable = FALSE,
-          cell = rt_unit_link("scaf_hits")),
         triage = reactable::colDef(name = "Keep", width = 68, show = TRUE, html = TRUE,
           filterable = FALSE, cell = rt_triage_bttn("scaf_triage")),
         triage_reason = reactable::colDef(name = "Why", minWidth = 200, show = TRUE,
           html = TRUE, cell = rt_longtext()),
         uid = reactable::colDef(show = FALSE), depth_max = reactable::colDef(show = FALSE),
         sib_taxon = reactable::colDef(show = FALSE), sib_rank = reactable::colDef(show = FALSE)),
-      rowStyle = function(index) if (isTRUE(d$ignore[index] == 1)) list(background = "#f3f3f3", color = "#999") else NULL)
+      # JS rather than an R function of the row index: the examined row changes
+      # on every click, and re-rendering the table to restyle it would throw away
+      # the user's sort, filters and page.
+      rowStyle = rt_scaffold_row_style())
   })
 
   # ---- Copy FASTA for the ticked scaffolds ----
@@ -950,10 +956,22 @@ app_server <- function(input, output, session) {
   })
 
   # ---- per-unit BLAST evidence: the unfiltered screen vs the rDNA panel ----
+  # The examined unit drives both panels below the table. Clicking a row picks
+  # it; the tick boxes are for Copy FASTA and deliberately do not move it.
   sel_hit_unit <- reactiveVal(NULL)
-  observeEvent(input$scaf_hits, {
-    u <- unit_by_uid(input$scaf_hits); req(!is.null(u))
-    sel_hit_unit(list(path = u$path, scaffold = u$scaffold))
+  examined_uid <- reactive({
+    h <- sel_hit_unit()
+    if (is.null(h)) NA_character_ else paste(sel_id(), h$path, h$scaffold, sep = "|")
+  })
+  # push the highlight without re-rendering, which would drop sort and filters
+  examine_unit <- function(path, scaffold) {
+    sel_hit_unit(list(path = path, scaffold = scaffold))
+    reactable::updateReactable("assemble_scaffolds",
+      meta = list(examined = paste(sel_id(), path, scaffold, sep = "|")))
+  }
+  observeEvent(input$scaf_examine, {
+    u <- unit_by_uid(input$scaf_examine); req(!is.null(u))
+    examine_unit(u$path, u$scaffold)
   })
   # default to the first kept unit so the panel is never empty on open
   observeEvent(scaffold_rows(), {
@@ -963,7 +981,7 @@ app_server <- function(input, output, session) {
     if (!is.null(cur) && any(d$path == cur$path & d$scaffold == cur$scaffold)) return()
     k <- which(d$ignore == 0)[1]
     if (is.na(k)) k <- 1L
-    sel_hit_unit(list(path = d$path[k], scaffold = d$scaffold[k]))
+    examine_unit(d$path[k], d$scaffold[k])
   })
   output$unit_screen <- renderUI({
     h <- sel_hit_unit(); d <- scaffold_rows()
@@ -1026,6 +1044,11 @@ app_server <- function(input, output, session) {
         qcovs = reactable::colDef(name = "Cov", width = 60),
         bitscore = reactable::colDef(name = "Bits", width = 70),
         evalue = reactable::colDef(name = "E", width = 80)))
+  })
+  output$unit_coverage_label <- renderUI({
+    h <- sel_hit_unit()
+    if (is.null(h)) return(NULL)
+    tags$b(sprintf("Scaffold p%s.s%s", h$path, h$scaffold))
   })
   output$unit_coverage_plot <- renderPlot({
     h <- sel_hit_unit(); id <- sel_id(); req(!is.null(h), id)

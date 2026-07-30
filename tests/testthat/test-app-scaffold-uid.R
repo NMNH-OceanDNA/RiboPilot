@@ -113,7 +113,7 @@ test_that("the scaffold table actually shows its evidence columns", {
     vis <- vapply(Filter(function(c) !identical(c$show, FALSE), cols),
       function(c) c$id, character(1))
     for (want in c("unit", "length", "depth", "elements", "screen_species",
-                   "shares", "odd_one_out", "triage", "hits")) {
+                   "shares", "odd_one_out", "triage")) {
       expect_true(want %in% vis, info = paste("column not visible:", want))
     }
     # the uid must travel to the browser (the click key) but stay out of sight
@@ -347,5 +347,67 @@ test_that("the scaffold table actually shows its tick-box column", {
     sel <- Filter(function(c) identical(c$id, ".selection"), cols)
     expect_length(sel, 1)
     expect_true(isTRUE(sel[[1]]$show))
+  })
+})
+
+test_that("clicking a row examines that scaffold in the panels below", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    sel_id("S1")
+    session$flushReact()
+
+    session$setInputs(scaf_examine = "S1|2|2")
+    session$flushReact()
+    expect_equal(sel_hit_unit(), list(path = 2L, scaffold = 2L))
+    expect_match(output$unit_screen$html, "Scaffold p2.s2", fixed = TRUE)
+    expect_match(output$unit_coverage_label$html, "Scaffold p2.s2", fixed = TRUE)
+
+    # keyed on the row's own uid, so display order cannot misdirect it
+    session$setInputs(scaf_examine = "S1|1|2")
+    session$flushReact()
+    expect_equal(sel_hit_unit(), list(path = 1L, scaffold = 2L))
+  })
+})
+
+test_that("ticking rows for Copy FASTA does not move the examined scaffold", {
+  # the two controls mean different things; that is the whole point of the split
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    sel_id("S1")
+    session$flushReact()
+    session$setInputs(scaf_examine = "S1|1|1")
+    session$flushReact()
+
+    session$setInputs(`assemble_scaffolds__reactable__selected` = c(3L, 4L))
+    session$flushReact()
+
+    expect_equal(sel_hit_unit(), list(path = 1L, scaffold = 1L))
+  })
+})
+
+test_that("the tick column is headed with the copy icon, and the hits link is gone", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    sel_id("S1")
+    session$flushReact()
+
+    w <- jsonlite::fromJSON(output$assemble_scaffolds, simplifyVector = FALSE)
+    cols <- w$x$tag$attribs$columns
+    sel <- Filter(function(c) identical(c$id, ".selection"), cols)[[1]]
+    expect_match(sel$header, "clipboard")
+    # the old per-row link was the only way in and read as an action, not a picker
+    expect_length(Filter(function(c) identical(c$id, "hits"), cols), 0)
   })
 })
