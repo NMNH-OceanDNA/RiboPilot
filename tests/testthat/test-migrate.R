@@ -439,3 +439,24 @@ test_that("a fresh database and a migrated one agree on assemble_opts columns", 
   expect_setequal(DBI::dbListFields(fresh, "assemble_opts"),
     DBI::dbListFields(con, "assemble_opts"))
 })
+
+test_that("v18 drops the stitched table, in a migrated and a fresh database", {
+  con <- mk_v8_db(); on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "CREATE TABLE stitched(ID TEXT PRIMARY KEY, path INT, sequence TEXT,
+    length INT, reference_accession TEXT, n_gaps INT, n_redundant INT, time_stamp INT)")
+  DBI::dbExecute(con, "INSERT INTO stitched VALUES('S1',1,'ACGT',4,'AA1',0,0,1)")
+
+  migrate_db(con)
+  expect_false("stitched" %in% DBI::dbListTables(con))
+  expect_silent(migrate_db(con))
+
+  dir <- withr::local_tempdir()
+  map <- file.path(dir, "mapping.csv")
+  utils::write.csv(data.frame(ID = "S1", Taxon = "Danio rerio", R1 = "a_R1.fq", R2 = "a_R2.fq"),
+    map, row.names = FALSE)
+  db <- file.path(dir, ".sqlite")
+  new_db(db_path = db, mapping_fn = map, seeds_db = map, labels_db = map)
+  fresh <- DBI::dbConnect(RSQLite::SQLite(), db)
+  on.exit(DBI::dbDisconnect(fresh), add = TRUE)
+  expect_false("stitched" %in% DBI::dbListTables(fresh))
+})

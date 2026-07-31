@@ -304,7 +304,7 @@ run_modal <- function(mode, n, headless = FALSE, sched = NULL, script = "") {
   )
 }
 
-#' Trim-assembly modal: cut the stitched assembly to the annotated feature span
+#' Trim-assembly modal: cut the scaffold to the annotated feature span
 #' or a custom range (shifts annotations + coverage).
 #' @noRd
 trim_modal <- function(n, a_from, a_to) {
@@ -325,7 +325,7 @@ trim_modal <- function(n, a_from, a_to) {
       div(style = "display:flex; gap:1em; margin-top:6px;",
         numericInput("trim_from", "From (bp)", value = a_from, min = 1, max = n),
         numericInput("trim_to", "To (bp)", value = a_to, min = 1, max = n))),
-    opts_help("Trimming cuts the flanks off the stitched assembly and shifts every ",
+    opts_help("Trimming cuts the flanks off the scaffold and shifts every ",
       "feature coordinate + the coverage track to match. Features that fall entirely ",
       "outside the kept range are removed. Use \"Restore assembly\" to undo."),
     footer = tagList(

@@ -1,5 +1,5 @@
 # Per-sample pipeline steps, called by the WF1 Nextflow R-script processes
-# (bin/rp_score.R, bin/rp_stitch.R, bin/rp_reconcile.R). Each takes an open DBI
+# (bin/rp_score.R, bin/rp_reconcile.R). Each takes an open DBI
 # connection + a sample ID, does one stage, and writes to the database. Kept
 # separate from the project-wide drivers so a Nextflow process can run one stage
 # for one sample.
@@ -71,51 +71,6 @@ blast_scaffolds_local <- function(con, id, blast_db) {
         round(bh$pident[i], 1), id, as.integer(ps[1]), as.integer(ps[2])))
   }
   invisible()
-}
-
-#' Stitch one sample's selected path; write the `stitched` table + return fasta
-#'
-#' @param con Open DBI connection.
-#' @param id Sample ID.
-#' @param fasta_out Optional path to also write the stitched sequence as fasta.
-#' @return (invisibly) the stitched sequence.
-#' @export
-stitch_one <- function(con, id, fasta_out = NULL) {
-  seeds_env <- new.env()
-  seeds_cache <- list(get = function(db) {
-    if (is.na(db) || !nzchar(db)) {
-      return(NULL)
-    }
-    ref <- local_ref(db)
-    if (is.na(ref)) {
-      return(NULL)
-    }
-    if (is.null(seeds_env[[ref]])) seeds_env[[ref]] <- Biostrings::readDNAStringSet(ref)
-    seeds_env[[ref]]
-  })
-  st <- stitch_selected(con, id, seeds_cache)
-  if (is.null(st)) {
-    return(invisible(NULL))
-  }
-  # Normalize orientation to sense here, at the single point where the stitched
-  # sequence is written, so WF1 coverage (computed after stitch) and WF2
-  # annotation both see the same sense sequence. Deterministic, so re-stitching
-  # in WF2 reproduces it -- coverage never needs reversing.
-  or <- orient_rrna_sense(st$seq)
-  st$seq <- or$seq
-  ts <- as.integer(Sys.time())
-  DBI::dbExecute(con, "DELETE FROM stitched WHERE ID = ?", params = list(id))
-  DBI::dbExecute(con,
-    "INSERT INTO stitched (ID, path, sequence, length, reference_accession, n_gaps, n_redundant, time_stamp)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-    params = list(id, st$path, st$seq, nchar(st$seq), st$ref_acc, st$n_gaps, st$n_redundant, ts))
-  # A re-stitch is a fresh assembly; any pre-trim backup for this sample is stale.
-  tryCatch(DBI::dbExecute(con, "DELETE FROM assembly_backup WHERE ID = ?", params = list(id)),
-    error = function(e) NULL)
-  if (!is.null(fasta_out)) {
-    writeLines(c(paste0(">", id), st$seq), fasta_out)
-  }
-  invisible(st$seq)
 }
 
 #' Reconcile barrnap + ITSx outputs for one sample; write annotations
@@ -299,13 +254,32 @@ load_assemblies <- function(con, out_dir, ID) {
     "SELECT ao.max_paths, ao.max_scaffolds FROM assemble a
        JOIN assemble_opts ao ON a.assemble_opts = ao.assemble_opts WHERE a.ID = ?",
     params = list(ID)), error = function(e) data.frame())
+  # queried separately so a database without the column loses only the filter,
+  # not the two gates as well
+  ml <- tryCatch(DBI::dbGetQuery(con,
+    "SELECT ao.min_assembly_length FROM assemble a
+       JOIN assemble_opts ao ON a.assemble_opts = ao.assemble_opts WHERE a.ID = ?",
+    params = list(ID)), error = function(e) data.frame())
   over <- function(n, limit) {
     !is.null(limit) && length(limit) && !is.na(limit) && limit > 0 && n > limit
   }
-  n_paths_raw <- length(unique(df$path))
+
+  # min_assembly_length is a FILTER, not a gate: a short contig is noise, not a
+  # reason to fail the sample. Parked (ignore = 1) rather than discarded, so the
+  # sequence is still there if the curator lowers the limit, and counted out of
+  # the gate below so junk fragments cannot trip max_scaffolds.
+  minlen <- if (nrow(ml) > 0) ml$min_assembly_length[1] else NA_integer_
+  short <- if (!is.na(minlen) && minlen > 0) df$length < minlen else rep(FALSE, nrow(df))
+  short_note <- if (any(short)) sprintf("%d scaffold(s) under min_assembly_length (%d bp)",
+    sum(short), as.integer(minlen)) else NULL
+
+  kept <- df[!short, , drop = FALSE]
+  n_paths_raw <- length(unique(kept$path))
   # per path, not summed: 3 paths of 2 scaffolds is not a 6-scaffold assembly
-  max_per_path_raw <- max(table(df$path))
+  max_per_path_raw <- if (nrow(kept) > 0) max(table(kept$path)) else 0L
   gate <- c(
+    # nothing left to work with is a failure, not a silently empty sample
+    if (nrow(kept) == 0) short_note else NULL,
     if (over(n_paths_raw, lim$max_paths[1]))
       sprintf("%d paths exceeds max_paths (%d)", n_paths_raw, lim$max_paths[1]),
     if (over(max_per_path_raw, lim$max_scaffolds[1]))
@@ -356,20 +330,28 @@ load_assemblies <- function(con, out_dir, ID) {
     i <- match(paste(df$path, df$scaffold), paste(prev$path, prev$scaffold))
     df$ignore <- ifelse(is.na(i), 0L, as.integer(prev$ignore[i]))
   }
+  # applied after the carry-over: the length filter is the current settings'
+  # decision, and must not be undone by the previous run's flags
+  df$ignore[short] <- 1L
 
   # replace this sample's assemblies
   DBI::dbExecute(con, "DELETE FROM assemblies WHERE ID = ?", params = list(ID))
   DBI::dbAppendTable(con, "assemblies", df)
 
-  # per-sample summary
-  n_paths <- length(unique(df$path))
-  max_per_path <- max(table(df$path))   # drives the "disconnected contigs" note
-  n_scaffolds <- nrow(df)               # total units, not the biggest path's count
-  length_str <- paste(sort(unique(df$length), decreasing = TRUE), collapse = ";")
-  topo_str <- paste(sort(unique(stats::na.omit(df$topology))), collapse = ";")
+  # Per-sample summary, described over the scaffolds that passed the length
+  # filter. One basis for every column, or the row contradicts itself: a path of
+  # nothing but junk fragments would otherwise inflate the counts while dropping
+  # out of the path total, and the length list would advertise contigs the sample
+  # is not using.
+  n_paths <- n_paths_raw
+  max_per_path <- max_per_path_raw      # drives the "disconnected contigs" note
+  n_scaffolds <- nrow(kept)             # total units, not the biggest path's count
+  length_str <- paste(sort(unique(kept$length), decreasing = TRUE), collapse = ";")
+  topo_str <- paste(sort(unique(stats::na.omit(kept$topology))), collapse = ";")
   notes <- paste(c(
     if (n_paths > 1) "Unable to resolve single assembly from reads"
-    else if (max_per_path > 1) "Output contains disconnected contigs" else NULL),
+    else if (max_per_path > 1) "Output contains disconnected contigs" else NULL,
+    short_note),
     collapse = "; ")
   DBI::dbExecute(con,
     "UPDATE assemble SET paths=?, scaffolds=?, length=?, topology=?,
@@ -404,72 +386,6 @@ load_assemblies <- function(con, out_dir, ID) {
   tryCatch(DBI::dbExecute(con, "DELETE FROM assembly_backup WHERE ID = ?", params = list(ID)),
     error = function(e) NULL)
   invisible(nrow(df))
-}
-
-#' Stitch a sample's selected path against its top-hit reference
-#' @noRd
-stitch_selected <- function(con, id, seeds_cache) {
-  sel <- DBI::dbGetQuery(con,
-    "SELECT path, hit_id FROM path_scores WHERE ID = ? AND auto_select = 1", params = list(id))
-  if (nrow(sel) == 0) {
-    p <- DBI::dbGetQuery(con, "SELECT MIN(path) p FROM assemblies WHERE ID = ?", params = list(id))$p
-    hit_id <- NA_character_
-  } else {
-    p <- sel$path[1]
-    hit_id <- sel$hit_id[1]
-  }
-  if (is.na(p)) {
-    return(NULL)
-  }
-  scaf <- DBI::dbGetQuery(con,
-    "SELECT scaffold, sequence FROM assemblies WHERE ID = ? AND path = ? ORDER BY scaffold",
-    params = list(id, p))
-  if (nrow(scaf) == 0) {
-    return(NULL)
-  }
-  seeds_db <- DBI::dbGetQuery(con,
-    "SELECT ao.seeds_db FROM assemble a JOIN assemble_opts ao ON a.assemble_opts = ao.assemble_opts WHERE a.ID = ?",
-    params = list(id))$seeds_db[1]
-
-  seeds <- seeds_cache$get(seeds_db)
-  # Only use the top BLAST hit as a reference; do NOT fall back to the single
-  # longest seed of an arbitrary species, which orders scaffolds by an unrelated
-  # sequence.
-  refseq <- if (!is.null(seeds) && !is.na(hit_id) && hit_id %in% names(seeds)) {
-    seeds[hit_id]
-  } else {
-    NULL
-  }
-  ref_acc <- if (!is.null(refseq)) sub("_.*", "", names(refseq)[1]) else NA_character_
-
-  # Multi-scaffold: order by each scaffold's own anchors (reference-free). This
-  # is where reference placement scrambles order for sparse clades whose only
-  # GenBank hit is a single-element (e.g. 28S-only) record: an 18S scaffold
-  # cannot align to a 28S reference, so it is appended out of order.
-  if (nrow(scaf) > 1) {
-    seqs <- stats::setNames(scaf$sequence, as.character(scaf$scaffold))
-    oc <- tryCatch(order_scaffolds_by_content(seqs), error = function(e) NULL)
-    if (!is.null(oc) && oc$n_anchored > 0) {
-      return(list(seq = oc$sequence, ref_acc = ref_acc, path = p,
-        n_gaps = 0L, n_redundant = NA_integer_))
-    }
-  }
-
-  scaf_fa <- tempfile(fileext = ".fasta")
-  writeLines(paste0(">", scaf$scaffold, "\n", scaf$sequence), scaf_fa)
-  if (is.null(refseq)) {
-    return(list(seq = paste(scaf$sequence, collapse = ""), ref_acc = NA_character_,
-      path = p, n_gaps = NA_integer_, n_redundant = NA_integer_))
-  }
-  ref_fa <- tempfile(fileext = ".fasta")
-  Biostrings::writeXStringSet(refseq, ref_fa)
-  st <- tryCatch(stitch_scaffolds(scaf_fa, ref_fa), error = function(e) NULL)
-  if (is.null(st)) {
-    return(list(seq = paste(scaf$sequence, collapse = ""), ref_acc = ref_acc,
-      path = p, n_gaps = NA_integer_, n_redundant = NA_integer_))
-  }
-  list(seq = st$sequence, ref_acc = ref_acc,
-    path = p, n_gaps = st$n_gaps, n_redundant = st$n_redundant)
 }
 
 #' Trim one assembly unit (ID,path,scaffold) to [from, to], shifting its

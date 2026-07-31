@@ -1,6 +1,6 @@
 // WF1 downstream processes: read/write the project SQLite DB directly (sqlite3
-// CLI for the sample query; R-script processes for scoring / stitching /
-// annotation reconciliation). No R around Nextflow, no nf-sqldb plugin.
+// CLI for the sample query; R-script processes for scoring and annotation
+// reconciliation). No R around Nextflow, no nf-sqldb plugin.
 
 // Query the samples ready to assemble straight from the DB (replaces the R
 // samplesheet prep). Header + tab separated for splitCsv.
@@ -90,24 +90,6 @@ process score {
     """
     RIBOPILOT_SRC='${params.ribopilot_src}' rp_score.R '${params.db}' '${id}' \
         '${params.projectDir}/${params.publishDir}' '${params.taxdump_dir}'
-    """
-}
-
-// Stitch the selected path into one sequence -> stitched table + fasta.
-// A sample with no usable assembly has nothing to stitch; that is a recorded
-// outcome (load_assemblies marks it failed), not an error, so the fasta is
-// optional and the sample simply drops out of the downstream channel instead
-// of aborting every other sample in the run.
-process stitch {
-    cache false
-    tag "${id}"
-    input:
-    val id
-    output:
-    tuple val(id), path("${id}.stitched.fasta"), optional: true
-    script:
-    """
-    RIBOPILOT_SRC='${params.ribopilot_src}' rp_stitch.R '${params.db}' '${id}' ${id}.stitched.fasta
     """
 }
 

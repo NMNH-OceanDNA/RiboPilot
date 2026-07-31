@@ -1249,6 +1249,10 @@ independent GenBank records.
   drops it, so it is now created, never written on any reachable path, and never
   read. That makes dropping it part of open question 2's bundle, not a separate
   cleanup.
+
+  **Closed 2026-07-31.** Open question 2 was answered and the whole bundle,
+  including the exports this bullet proposed only deprecating, was deleted.
+  Schema v18 drops the `stitched` table in both `new_db()` and the migration.
 - **Validation gate.** The envelope numbers and channel weights are unfitted
   priors, and a false positive on an under-represented taxon is the failure that
   makes the tool useless. **Auto-drop rules and the export gate should ship
@@ -1337,7 +1341,18 @@ independent GenBank records.
    `stitch_one` are exported public API, so removing them is a breaking change
    with its own question.
 
-   `path_scores` is the exception and should not be swept in with the rest. It
+   **ANSWERED 2026-07-31 for the stitch half: deleted.** `R/stitch_scaffolds.R`,
+   `stitch_one()`, `stitch_selected()`, `inst/nextflow/bin/rp_stitch.R`, the
+   `stitch` process, `annotate_project()` and `dev/prototype_stitch_viz.R` are
+   gone, and schema v18 drops the `stitched` table from a fresh database and a
+   migrated one alike, so the two cannot diverge. The three exports were removed
+   as a breaking change on the grounds that none was reachable, none was tested,
+   and `annotate_project()` had been broken since v7 anyway (it writes
+   `annotations` without `path`/`scaffold`). See
+   `plans/2026-07-31-stitch-removal.md`.
+
+   `path_scores` is the exception and was NOT swept in; it is the live remainder
+   of this question. It
    is still written by the live `score` process on every WF1 run
    (`R/pipeline_steps.R:37`) and read by the app (`R/app_server.R:121-122`,
    `:830`, `:842-857`). Only its stitch-side reader died. Deciding it is a

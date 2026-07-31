@@ -22,8 +22,7 @@ is_nuclear_rrna_title <- function(title) {
 #'
 #' * **Reference panel** - hits whose title is nuclear rDNA. Deduped by
 #'   accession (best pident*qcovs), ranked into `blast_ref_candidates`, rank-1
-#'   set as the sample's reference (`stitched.reference_accession` +
-#'   `assemble.blast_*`). Same records the restricted search returned before.
+#'   set as the sample's reference (`assemble.blast_*`). Same records the restricted search returned before.
 #' * **Contamination screen** - the top hit over *all* of core_nt, unfiltered,
 #'   into `blast_screen`. This is the only signal that can distinguish "the host"
 #'   from "a symbiont" or "not nuclear rDNA at all", so it is deliberately taken

@@ -118,10 +118,11 @@ test_that("there is no second assembly workflow left to drift", {
   # query_fallback_samples went with the workflow that called it.
   expect_false(any(grepl("query_fallback_samples", pipeline_r_nf)))
 
-  # The stitch machinery survives pending doc 08 open question 2, but nothing
-  # reachable calls it any more: no workflow includes or invokes stitch.
+  # doc 08 open question 2 is answered: the stitch machinery is gone, not merely
+  # unreachable. Both the process and the script it called must stay gone.
   annotate_nf <- readLines(system.file("nextflow", "main_annotate.nf", package = "RiboPilot"))
-  for (nm in list(main = main_nf, annotate = annotate_nf)) {
+  for (nm in list(main = main_nf, annotate = annotate_nf, modules = pipeline_r_nf)) {
     expect_false(any(grepl("\\bstitch\\b", nm[!grepl("^\\s*//", nm)])))
   }
+  expect_false(file.exists(system.file("nextflow", "bin", "rp_stitch.R", package = "RiboPilot")))
 })

@@ -41,23 +41,28 @@ screen verdict and its own keep/drop decision. Everything in
   layer (`11_SCREEN_VERDICT_LAYER.md`) and the isomer/paralog classification
   (`12_INTRAGENOMIC_VARIANTS.md`).
 
-**What remains in the tree, and what it is worth.** The stitching code was not
-deleted. `stitch_scaffolds()` and `order_scaffolds_by_content()`
-(`R/stitch_scaffolds.R`), `stitch_one()` and `stitch_selected()`
-(`R/pipeline_steps.R`), `inst/nextflow/bin/rp_stitch.R` and the `stitch` process
-in `modules/pipeline_r.nf` are all still present. None of them is reachable from
-the main pipeline. The only remaining caller chain runs through
-`main_fallback.nf`, which doc 08 open question 1 records as broken post-pivot,
-plus the exported legacy driver `annotate_project()`, which has zero callers
-anywhere. `stitch_scaffolds()` and `stitch_one()` are both exported, so they are
-public API and cannot simply vanish. No test covers any of it.
+**Update 2026-07-31: the machinery is now DELETED.** Doc 08 open question 1 was
+answered by `14_ASSEMBLER_SWAP.md` (the fallback became a per-sample assembler
+inside WF1, and `main_fallback.nf` went away), which left the stitch bundle
+unreferenced rather than half-referenced. Question 2 was then answered
+deliberately: delete it. Gone in one commit: `R/stitch_scaffolds.R`
+(`stitch_scaffolds()`, `order_scaffolds_by_content()`), `stitch_one()` and
+`stitch_selected()` from `R/pipeline_steps.R`, `inst/nextflow/bin/rp_stitch.R`,
+the `stitch` process in `modules/pipeline_r.nf`, the exported legacy driver
+`annotate_project()`, `dev/prototype_stitch_viz.R`, and the `stitched` table,
+which schema v18 drops from both a fresh database and a migrated one.
 
-Deleting the stitching machinery therefore depends on a decision this document
-cannot make on its own: whether the fallback workflow is still supported (doc 08
-open question 1) and what happens to `path_scores`, the `stitched` table,
-`stitch_one` and `rp_stitch.R` (open question 2, which says explicitly to decide
-them together rather than piecemeal). Until that is answered, the machinery
-stays and this section is the record of why.
+`stitch_scaffolds`, `stitch_one` and `annotate_project` were exported, so this is
+a breaking API change, taken knowingly: none was reachable from either workflow,
+none had a test, and `annotate_project()` could not have worked since schema v7
+because it writes `annotations` rows without `path` or `scaffold`.
+
+`path_scores` was deliberately NOT swept in. It is written by the live `score`
+process every run and read by the app; only its stitch-side reader died. It
+remains open question 2's live remainder.
+
+The body below is the pre-pivot design. It stays as the record of why stitching
+was built and why it was dropped.
 
 **The `stitched` table is now an orphan.** `R/init_db.R:447` creates it on every
 fresh project and no migration drops it. It is written only by the two

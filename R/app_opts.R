@@ -121,6 +121,11 @@ assemble_opts_modal <- function(cur, choices, n) {
         "Max paths:", value = cur$max_paths %|NA|% 0, min = 0, width = "100%"))),
       shiny::div(style = "flex:1", shinyjs::disabled(shiny::numericInput("ao_maxscaf",
         "Max scaffolds:", value = cur$max_scaffolds %|NA|% 0, min = 0, width = "100%")))),
+    opts_help("Scaffolds under the minimum length are dropped from the sample but ",
+      "kept in the database, so lowering the limit brings them back without ",
+      "re-assembling. Max paths and max scaffolds (counted within one path) are ",
+      "different: exceeding either fails the whole sample. 0 means no limit.",
+      id = "help_ao_limits"),
     update_id = "update_ao")
 }
 

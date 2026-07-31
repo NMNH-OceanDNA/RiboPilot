@@ -447,22 +447,6 @@ new_db <- function(
     );"
   )
 
-  # stitched (one ordered/oriented sequence per selected path) ----
-  DBI::dbExecute(
-    con,
-    "CREATE TABLE stitched (
-      ID TEXT NOT NULL,
-      path INTEGER NOT NULL,
-      sequence TEXT,
-      length INTEGER,
-      reference_accession TEXT,
-      n_gaps INTEGER,
-      n_redundant INTEGER,
-      time_stamp INTEGER,
-      PRIMARY KEY (ID)
-    );"
-  )
-
   # assembly_backup (original pre-trim state so a trim can be undone) ----
   DBI::dbExecute(con, ASSEMBLY_BACKUP_DDL)
 

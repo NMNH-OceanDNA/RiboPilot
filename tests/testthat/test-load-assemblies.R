@@ -10,13 +10,13 @@ mk_asm_db <- function(dir) {
                        topology TEXT, assemble_switch INT, assemble_notes TEXT,
                        assemble_opts TEXT, time_stamp INT)")
   DBI::dbExecute(con, "CREATE TABLE assemble_opts(assemble_opts TEXT, max_paths INT,
-                       max_scaffolds INT)")
+                       max_scaffolds INT, min_assembly_length INT)")
   DBI::dbExecute(con, "CREATE TABLE annotate(ID TEXT, path INT, scaffold INT, annotate_switch INT,
                        annotate_lock INT, annotate_opts TEXT, curate_opts TEXT, reviewed TEXT,
                        PRIMARY KEY (ID, path, scaffold))")
   DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT)")
   DBI::dbExecute(con, "CREATE TABLE coverage(ID TEXT, path INT, scaffold INT, mean_depth REAL)")
-  DBI::dbExecute(con, "INSERT INTO assemble_opts VALUES('default', 10, 10)")
+  DBI::dbExecute(con, "INSERT INTO assemble_opts VALUES('default', 10, 10, NULL)")
   DBI::dbExecute(con, "INSERT INTO assemble VALUES('S1',NULL,NULL,NULL,NULL,1,NULL,'default',NULL)")
   con
 }
@@ -236,4 +236,75 @@ test_that("a curator's own drops still survive a re-assembly", {
 
   ig <- DBI::dbGetQuery(con, "SELECT scaffold, ignore FROM assemblies ORDER BY scaffold")
   expect_equal(ig$ignore, c(0L, 1L, 0L, 0L))
+})
+
+# --- min_assembly_length is a filter, not a gate -------------------------------
+# Short contigs are noise. They are parked rather than discarded (the sequence
+# stays available if the curator lowers the limit) and counted out of the gates,
+# so junk fragments cannot fail an otherwise good sample.
+# Lengths written by write_many_scaffolds(): 4 * (100 + k), i.e. 404 .. 420.
+
+test_that("scaffolds under min_assembly_length are parked, not dropped", {
+  dir <- withr::local_tempdir()
+  con <- mk_asm_db(dir); on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "UPDATE assemble_opts SET min_assembly_length = 415")
+  write_many_scaffolds(dir, 5)
+
+  RiboPilot:::load_assemblies(con, dir, "S1")
+
+  ig <- DBI::dbGetQuery(con, "SELECT scaffold, length, ignore FROM assemblies ORDER BY scaffold")
+  expect_equal(nrow(ig), 5)                       # sequences kept
+  expect_equal(ig$ignore, c(1L, 1L, 1L, 0L, 0L))  # three short ones parked
+  st <- gate_state(con)
+  expect_equal(st$assemble_switch, 4L)
+  expect_match(st$assemble_notes, "min_assembly_length")
+  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM annotate")$n, 2)
+  # the summary row describes the scaffolds the sample is actually using, on one
+  # basis: counts and the length list must not disagree about which those are
+  expect_equal(st$scaffolds, 2L)
+  expect_equal(DBI::dbGetQuery(con, "SELECT length FROM assemble WHERE ID='S1'")$length,
+    "420;416")
+})
+
+test_that("short scaffolds do not count towards max_scaffolds", {
+  dir <- withr::local_tempdir()
+  con <- mk_asm_db(dir); on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "UPDATE assemble_opts SET max_scaffolds = 3, min_assembly_length = 415")
+  write_many_scaffolds(dir, 5)   # 5 scaffolds would trip a limit of 3
+
+  RiboPilot:::load_assemblies(con, dir, "S1")
+
+  st <- gate_state(con)
+  expect_equal(st$assemble_switch, 4L)
+  expect_false(grepl("max_scaffolds", st$assemble_notes))
+})
+
+test_that("a sample whose every scaffold is too short fails", {
+  dir <- withr::local_tempdir()
+  con <- mk_asm_db(dir); on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "UPDATE assemble_opts SET min_assembly_length = 5000")
+  write_many_scaffolds(dir, 3)
+
+  RiboPilot:::load_assemblies(con, dir, "S1")
+
+  st <- gate_state(con)
+  expect_equal(st$assemble_switch, 3L)
+  expect_match(st$assemble_notes, "min_assembly_length")
+})
+
+test_that("the length filter wins over the previous run's ignore flags", {
+  dir <- withr::local_tempdir()
+  con <- mk_asm_db(dir); on.exit(DBI::dbDisconnect(con))
+  write_many_scaffolds(dir, 5)
+  RiboPilot:::load_assemblies(con, dir, "S1")
+  expect_equal(DBI::dbGetQuery(con,
+    "SELECT COUNT(*) n FROM assemblies WHERE COALESCE(ignore,0) = 0")$n, 5)
+
+  # the curator raises the floor and re-runs: carrying the old ignore = 0 over
+  # would leave the short scaffolds live
+  DBI::dbExecute(con, "UPDATE assemble_opts SET min_assembly_length = 415")
+  RiboPilot:::load_assemblies(con, dir, "S1")
+
+  ig <- DBI::dbGetQuery(con, "SELECT ignore FROM assemblies ORDER BY scaffold")$ignore
+  expect_equal(ig, c(1L, 1L, 1L, 0L, 0L))
 })

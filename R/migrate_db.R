@@ -5,7 +5,7 @@
 
 #' Current project-DB schema version. Bump when adding a migration step below.
 #' @noRd
-RIBOPILOT_SCHEMA_VERSION <- 17L
+RIBOPILOT_SCHEMA_VERSION <- 18L
 
 #' DDL for blast_hits: the full retained BLAST hit distribution per unit.
 #'
@@ -473,6 +473,14 @@ migrate_db <- function(con) {
   # project behaves identically until someone edits the preset.
   add_col("assemble_opts", "bowtie2", "TEXT DEFAULT '--local'")
   add_col("assemble_opts", "spades", "TEXT DEFAULT '--isolate'")
+
+  # --- schema v18: drop the stitch model's leftover table ---
+  # Only the second value-destroying step in this project's history, and it is
+  # deliberate: v7 replaced the stitched sequence with per-scaffold units, and
+  # since then nothing has written or read this table. Dropping it in the
+  # migration as well as in new_db() is what keeps a migrated database and a
+  # fresh one identical.
+  if (has_tbl("stitched")) DBI::dbExecute(con, "DROP TABLE stitched;")
 
   # user_version is a header field, not table data, so it is set after the
   # transaction commits rather than inside it.
