@@ -63,10 +63,14 @@ keyed by an opts hash) and replace the mito-specific tables. Proposed tables:
   unit), `paths`, `scaffolds`, `assemble_notes`, `assemble_switch/lock`,
   `assemble_opts`, `blast_opts`, best-hit BLAST columns
   (`blast_accession/species/pident/qcovs/evalue/lineage`), `time_stamp`.
-- `assemble_opts` - assembler settings. Instead of MitoFinder fields:
-  `getOrganelle`, `seeds_db`, `labels_db`, `assembler` (getorganelle | rnabloom |
-  spades-region | reference-guided), `k_list`, `target` (`nr` seed set),
-  `max_paths`, `max_scaffolds`, `min_length`, `expected_length`.
+- `assemble_opts` - assembler settings. AS BUILT (schema v17, R/init_db.R:210):
+  `cpus`, `memory`, `getOrganelle`, `seeds_db`, `labels_db`, `target`
+  (`nr` seed set), `max_paths`, `max_scaffolds`, `min_assembly_length`,
+  `assembler` (getorganelle | bait | denovo), `bowtie2`, `spades`. The earlier
+  draft here named `k_list`, `min_length` and `expected_length`, none of which
+  were ever built, and a four-value `assembler` list that was superseded by
+  PR #10. `min_assembly_length` is stored and editable but read by nothing
+  (doc 08 section 1.9).
 - `assemblies` - per path/scaffold sequence rows (like MitoPilot: `ID`, `path`,
   `scaffold`, `sequence`, `length`, `depth`, `gc`, `ignore`, `edited`,
   `edit_positions`, BLAST hit cols). One repeat unit per path.
@@ -79,6 +83,22 @@ keyed by an opts hash) and replace the mito-specific tables. Proposed tables:
 - `annotate_opts` - annotator settings (barrnap kingdom/evalue, ITSx taxon set,
   reference profile choice).
 - `curate_opts` - per-clade ruleset selection + tolerances.
+
+### Per-sample state (`assemble.assemble_switch`), as built
+
+The per-sample switch is not written once at the end of assembly. Loading a
+sample's assemblies writes state 4, "in progress". Triage, the last per-sample
+step, calls `refresh_sample_state()` (R/pipeline_steps.R:234), which counts that
+sample's un-parked units still queued or running and writes 2 (done) when none
+remain. A sample therefore also settles to 2 when its remaining units are held
+or ignored rather than finished. Only 2 and 4 are ever rewritten: held (0),
+queued (1) and failed (3) are the user's or the gate's statements and are left
+alone.
+
+Two consequences worth knowing before touching this. A sample still at 4 is
+picked up by the next run, so an interrupted run resumes on its own. And
+`nf_pending_count()` counts those samples as pending, which is why an
+interrupted project reports outstanding work instead of zero.
 
 Same DB-write discipline as MitoPilot: **writes happen driver-side over JDBC/DBI,
 not from a head-node local executor**, and curate/validate commits assemblies +
