@@ -117,3 +117,37 @@ calls it outside its own definition and the docs.
 **The claim that `-resume` skips re-assembly is read off the process
 definitions, not measured.** Verify it with a real run before relying on it in
 the docs.
+
+## Status 2026-07-31: BUILT and verified against a real project
+
+Suite 1185 tests, 0 failures. `R CMD check` clean apart from the pre-existing
+unused-Imports NOTE.
+
+**Verified end to end.** On the three-sample baited test project with every
+sample already assembled, one unit was queued for annotation
+(`annotate_switch = 1`) and WF1 run. Seven tasks: `query_samples` (which found
+nothing to assemble), `query_annotate_units`, then `annotate_tools`,
+`reconcile`, `blast_ref_align`, `curate`, `triage` for that one unit.
+`preprocess`, `assemble`, `fallback_assemble`, `score`, `blast_genbank`,
+`blast_ref_fetch`, `coverage` and `query_sample_units` all sat at zero. The unit
+returned to `annotate_switch = 2` with its five features, the sample settled at
+2, and pending work went to 0. No NCBI round trip.
+
+**A defect the suite missed and the run caught.** `run_assembly()` still passed
+`"assemble"` positionally to `nf_command()`. With the workflow parameter gone it
+bound to `resume`, and the driver died at launch. Nothing in the suite called
+the driver with a project, so nothing noticed. There is now a test that checks
+every `nf_command()` call site against the formals and allows only the project
+path to be positional; it fails if the second positional argument comes back.
+
+Mutation testing, all verified to have applied: dropping the assemble-queue
+exclusion, dropping the `ignore` filter, restoring the Annotate tab's Update
+button, restoring the annotation option columns to the Annotate query, and
+making `nf_pending_count()` forget annotate-only work each break a test. One
+earlier version of the call-site test did NOT bite (it allowed a second
+positional argument, which is the whole bug) and was tightened until it did.
+
+**Still unverified: the claim that `-resume` skips re-assembly.** It is read off
+the process definitions, not measured. The run above proves nothing about it,
+because assembly was skipped by the query rather than by the cache. Measuring it
+means queueing a real assembly, which also re-runs the remote BLAST.

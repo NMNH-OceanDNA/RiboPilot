@@ -46,3 +46,29 @@ test_that("nf_pending_count takes no workflow argument", {
   # count for something that no longer exists.
   expect_named(formals(RiboPilot:::nf_pending_count), "path")
 })
+
+test_that("every nf_command() caller matches its signature", {
+  # A real run caught run_assembly() still passing the removed workflow
+  # argument, which the suite missed because nothing calls these drivers with a
+  # project. Check the calls against the formals instead.
+  fns <- list(run_assembly = RiboPilot::run_assembly,
+    build_submit_script = RiboPilot:::build_submit_script,
+    app_server = RiboPilot:::app_server)
+  ok <- names(formals(RiboPilot:::nf_command))
+  for (nm in names(fns)) {
+    txt <- paste(deparse(fns[[nm]]), collapse = " ")
+    calls <- regmatches(txt, gregexpr("nf_command\\([^)]*\\)", txt))[[1]]
+    for (cl in calls) {
+      args <- strsplit(sub("^nf_command\\(", "", sub("\\)$", "", cl)), ",")[[1]]
+      args <- trimws(args)
+      named <- grepl("=", args, fixed = TRUE)
+      # only the project path may be positional. run_assembly() passed a second
+      # positional argument, "assemble", which silently bound to `resume` once
+      # the workflow parameter was removed, and the run died at launch.
+      expect_lte(sum(!named), 1L, label = paste(nm, cl))
+      for (a in sub("\\s*=.*", "", args[named])) {
+        expect_true(a %in% ok, info = paste(nm, cl, a))
+      }
+    }
+  }
+})
