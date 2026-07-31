@@ -24,7 +24,7 @@ nf_command <- function(path, workflow = c("assemble", "annotate"), resume = TRUE
   min_depth <- config_param(cfg_lines, "minDepth") %||% "0"
   api_key <- config_param(cfg_lines, "ncbi_api_key") %||% ""
   if (length(api_key) == 0 || is.na(api_key) || api_key %in% c("NA", "NULL")) api_key <- ""
-  src <- ribopilot_src %||% app_sys()
+  src <- ribopilot_src %||% ribopilot_src_default()
   taxdump <- file.path(path, ".taxonomy")
 
   c("run", main_nf, "-c", cfg, "-work-dir", work,
@@ -36,6 +36,20 @@ nf_command <- function(path, workflow = c("assemble", "annotate"), resume = TRUE
     "--ribopilot_src", src,
     "--taxdump_dir", taxdump,
     if (nzchar(api_key)) c("--ncbi_api_key", api_key))
+}
+
+#' Where the pipeline's R processes should load RiboPilot from
+#'
+#' `app_sys()` returns `<root>/inst` in a source checkout, which has no
+#' `DESCRIPTION`, so passing it made `rp_env.R` skip its source branch and fall
+#' back to the container's installed copy every time -- exactly the stale-install
+#' shadowing that branch exists to prevent. Pass the package root instead when
+#' one is there.
+#' @noRd
+ribopilot_src_default <- function() {
+  s <- app_sys()
+  root <- dirname(s)
+  if (file.exists(file.path(root, "DESCRIPTION")) && dir.exists(file.path(root, "R"))) root else s
 }
 
 #' Count samples eligible for a workflow (for the Update modal header)
