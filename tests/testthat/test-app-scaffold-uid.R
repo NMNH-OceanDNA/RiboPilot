@@ -441,3 +441,24 @@ test_that("the scaffold table does not report topology", {
   srv <- paste(deparse(RiboPilot:::app_server), collapse = " ")
   expect_false(grepl('name = "Topology"', srv, fixed = TRUE))
 })
+
+test_that("every visible scaffold column explains itself on hover", {
+  # the help lives in SCAFFOLD_COL_HELP; a column added without a tooltip is
+  # invisible to a plain "does it render" check.
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    sel_id("S1")
+    session$flushReact()
+    j <- jsonlite::fromJSON(as.character(output$assemble_scaffolds), simplifyVector = FALSE)
+    cols <- Filter(function(c) !identical(c$show, FALSE), j$x$tag$attribs$columns)
+    for (cd in cols) {
+      if (identical(cd$id, ".selection")) next     # its own icon carries the hint
+      expect_true(is.character(cd$header) && grepl("title=", cd$header, fixed = TRUE),
+        info = paste("no hover help on column:", cd$id))
+    }
+  })
+})

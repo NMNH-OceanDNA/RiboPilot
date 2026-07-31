@@ -118,3 +118,39 @@ rrna_element_product <- function(element) {
     element
   )
 }
+
+#' Hover help for each visible column of the assemble modal's scaffold table
+#'
+#' One place for the wording so the header tooltips and any prose describing the
+#' table cannot drift apart.
+#' @noRd
+SCAFFOLD_COL_HELP <- list(
+  unit = paste("Which assembly this row is: p<path>.s<scaffold>. One candidate path",
+    "can carry several scaffolds, and each is kept or dropped on its own."),
+  triage = paste("Keep, drop, or leave undecided. This is the only decision that counts:",
+    "dropped scaffolds are left out of annotation and export."),
+  length = "Scaffold length in base pairs.",
+  path_score = paste("Rates the whole candidate path this scaffold came from, from its length,",
+    "depth, anchor genes and GenBank hit. The same value repeats across every",
+    "scaffold of one path."),
+  depth = paste("Median read depth per position (a mean is inflated by the conserved",
+    "18S/28S cores). The bar compares it with this sample's deepest scaffold:",
+    "meaningful within a path, not across paths."),
+  depth_track = paste("Read depth along the scaffold, start to end. A deep dip in the middle",
+    "can mark a place where the assembler joined two pieces that do not belong together."),
+  elements = "The rRNA and ITS features annotation found, in the order they sit on the scaffold.",
+  screen_verdict = paste("Contamination check: whether the best GenBank match looks like the",
+    "sample's own organism (on target), something else (off target), or the",
+    "evidence is too thin to say."),
+  variant_class = paste("Whether this scaffold looks like an alternative arrangement of another",
+    "scaffold in the sample, or a second copy of the rDNA. Information only:",
+    "neither one is a fault."),
+  screen_species = "Organism named by the best GenBank match, searched against all of GenBank.",
+  shares = paste("The most specific level of classification the best GenBank match shares with",
+    "this sample. \"no reference\" is normal for a group with little in GenBank."),
+  odd_one_out = paste("Marks a scaffold whose best GenBank match disagrees with the rest of the",
+    "sample's scaffolds, which is the usual signature of contamination."),
+  screen_accession = "GenBank accession of the best match. Click it to open the record at NCBI.",
+  screen_pident = "How much of the scaffold matched the best GenBank record, as a percentage.",
+  triage_reason = "Why triage decided the way it did, or what left it undecided."
+)
