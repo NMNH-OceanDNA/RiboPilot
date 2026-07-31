@@ -5,7 +5,8 @@
 mk_asm_db <- function(dir) {
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
   DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, topology TEXT,
-                       length INT, length_raw INT, sequence TEXT, ignore INT, edited INT, time_stamp INT)")
+                       length INT, length_raw INT, sequence TEXT, ignore INT, edited INT, time_stamp INT,
+                       triage TEXT, triage_reason TEXT, triage_source TEXT, triage_rule TEXT)")
   DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, paths INT, scaffolds INT, length TEXT,
                        topology TEXT, assemble_switch INT, assemble_notes TEXT,
                        assemble_opts TEXT, time_stamp INT)")
@@ -15,6 +16,7 @@ mk_asm_db <- function(dir) {
                        annotate_lock INT, annotate_opts TEXT, curate_opts TEXT, reviewed TEXT,
                        PRIMARY KEY (ID, path, scaffold))")
   DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT)")
+  DBI::dbExecute(con, "CREATE TABLE assembly_backup(ID TEXT, path INT, scaffold INT)")
   DBI::dbExecute(con, "CREATE TABLE coverage(ID TEXT, path INT, scaffold INT, mean_depth REAL)")
   DBI::dbExecute(con, "INSERT INTO assemble_opts VALUES('default', 10, 10, NULL)")
   DBI::dbExecute(con, "INSERT INTO assemble VALUES('S1',NULL,NULL,NULL,NULL,1,NULL,'default',NULL)")
@@ -252,13 +254,24 @@ test_that("scaffolds under min_assembly_length are parked, not dropped", {
 
   RiboPilot:::load_assemblies(con, dir, "S1")
 
-  ig <- DBI::dbGetQuery(con, "SELECT scaffold, length, ignore FROM assemblies ORDER BY scaffold")
+  ig <- DBI::dbGetQuery(con,
+    "SELECT scaffold, length, ignore, triage, triage_source, triage_rule, triage_reason
+       FROM assemblies ORDER BY scaffold")
   expect_equal(nrow(ig), 5)                       # sequences kept
   expect_equal(ig$ignore, c(1L, 1L, 1L, 0L, 0L))  # three short ones parked
+  # recorded as a triage decision, with a reason the curator can read, because
+  # triage owns assemblies.ignore and would otherwise overturn a raw flag
+  expect_equal(ig$triage, c("drop", "drop", "drop", NA, NA))
+  expect_equal(ig$triage_rule[1], "too_short")
+  expect_equal(ig$triage_source[1], "auto")
+  expect_match(ig$triage_reason[1], "min_assembly_length")
   st <- gate_state(con)
   expect_equal(st$assemble_switch, 4L)
   expect_match(st$assemble_notes, "min_assembly_length")
-  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM annotate")$n, 2)
+  # the dropped units keep a held annotate row rather than a queued one, so they
+  # are not pending work and the sample can settle
+  sw <- DBI::dbGetQuery(con, "SELECT scaffold, annotate_switch FROM annotate ORDER BY scaffold")
+  expect_equal(sw$annotate_switch, c(0L, 0L, 0L, 1L, 1L))
   # the summary row describes the scaffolds the sample is actually using, on one
   # basis: counts and the length list must not disagree about which those are
   expect_equal(st$scaffolds, 2L)

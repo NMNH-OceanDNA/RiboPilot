@@ -419,3 +419,31 @@ test_that("partial-off is not the special case: an unmatched scaffold still beco
   expect_equal(r$triage, "keep")
   expect_equal(r$triage_source, "auto")
 })
+
+test_that("a flag-only rule does not clear an existing drop", {
+  # The bug an end-to-end run found. Triage owns assemblies.ignore and derives
+  # it from the verdict, so the "annotation has not run" rule -- which fires
+  # BECAUSE the scaffold was dropped and therefore never annotated -- proposed
+  # an undecided verdict, which reset ignore to 0 and re-queued the unit. The
+  # scaffold came back and its sample never settled.
+  con <- mk_triage_db(); on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "UPDATE assemblies SET triage='drop', triage_source='auto',
+    triage_rule='too_short', triage_reason='shorter than min_assembly_length (500 bp)',
+    ignore=1 WHERE scaffold = 3")
+  # dropped, so annotation never ran for it: no features, unit held
+  DBI::dbExecute(con, "DELETE FROM annotations WHERE scaffold = 3")
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_switch = 0, n_features = NULL WHERE scaffold = 3")
+
+  auto_triage_sample(con, "S1")
+
+  d <- DBI::dbGetQuery(con,
+    "SELECT triage, triage_rule, ignore FROM assemblies WHERE scaffold = 3")
+  expect_equal(d$triage, "drop")
+  expect_equal(d$ignore, 1L)
+  expect_equal(d$triage_rule, "too_short")
+  # and the held unit stays held, so it is not counted as outstanding work
+  expect_equal(DBI::dbGetQuery(con,
+    "SELECT annotate_switch FROM annotate WHERE scaffold = 3")$annotate_switch, 0L)
+  expect_equal(DBI::dbGetQuery(con,
+    "SELECT assemble_switch FROM assemble WHERE ID='S1'")$assemble_switch, 2L)
+})

@@ -265,9 +265,9 @@ load_assemblies <- function(con, out_dir, ID) {
   }
 
   # min_assembly_length is a FILTER, not a gate: a short contig is noise, not a
-  # reason to fail the sample. Parked (ignore = 1) rather than discarded, so the
-  # sequence is still there if the curator lowers the limit, and counted out of
-  # the gate below so junk fragments cannot trip max_scaffolds.
+  # reason to fail the sample. Parked (as a triage drop, below) rather than
+  # discarded, so the sequence is still there if the curator lowers the limit,
+  # and counted out of the gate here so junk fragments cannot trip max_scaffolds.
   minlen <- if (nrow(ml) > 0) ml$min_assembly_length[1] else NA_integer_
   short <- if (!is.na(minlen) && minlen > 0) df$length < minlen else rep(FALSE, nrow(df))
   short_note <- if (any(short)) sprintf("%d scaffold(s) under min_assembly_length (%d bp)",
@@ -330,9 +330,6 @@ load_assemblies <- function(con, out_dir, ID) {
     i <- match(paste(df$path, df$scaffold), paste(prev$path, prev$scaffold))
     df$ignore <- ifelse(is.na(i), 0L, as.integer(prev$ignore[i]))
   }
-  # applied after the carry-over: the length filter is the current settings'
-  # decision, and must not be undone by the previous run's flags
-  df$ignore[short] <- 1L
 
   # replace this sample's assemblies
   DBI::dbExecute(con, "DELETE FROM assemblies WHERE ID = ?", params = list(ID))
@@ -382,6 +379,21 @@ load_assemblies <- function(con, out_dir, ID) {
             AND a.scaffold = %s.scaffold)",
       tbl, tbl, tbl, tbl), params = list(ID))
   }
+  # The length filter is recorded as a triage decision, not by writing
+  # assemblies.ignore here. Triage owns that column: it derives it from the
+  # verdict, and "undecided" means ignore = 0. Setting the flag directly meant
+  # triage overturned this at the end of the same run -- it saw a scaffold with
+  # no annotation (which is exactly what parking causes), called that undecided,
+  # and un-parked it. Going through set_unit_triage() also puts the reason in
+  # front of the curator and holds the unit's annotate row.
+  if (any(short)) {
+    reason <- sprintf("shorter than min_assembly_length (%d bp)", as.integer(minlen))
+    for (i in which(short)) {
+      set_unit_triage(con, ID, df$path[i], df$scaffold[i], "drop",
+        reason = reason, source = "auto", rule = "too_short")
+    }
+  }
+
   # A (re)assembly invalidates any pre-trim undo snapshots for this sample.
   tryCatch(DBI::dbExecute(con, "DELETE FROM assembly_backup WHERE ID = ?", params = list(ID)),
     error = function(e) NULL)

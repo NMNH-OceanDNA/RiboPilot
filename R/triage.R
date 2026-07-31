@@ -126,6 +126,13 @@ auto_triage_sample <- function(con, id, opts = NULL, overwrite_user = FALSE) {
   for (i in seq_len(nrow(d))) {
     if (!isTRUE(overwrite_user) && identical(d$triage_source[i], "user")) next
     if (isTRUE(d$annotate_lock[i] == 1)) next
+    # A rule that can only flag must not CLEAR a drop. The flag rules assert
+    # that a channel is missing, and dropping a scaffold is one way to make a
+    # channel missing: parking it means annotation never runs for it, so
+    # "annotation has not run" fires and its undecided verdict would put the
+    # scaffold straight back. Only a human clears a drop.
+    if (identical(d$triage[i], "drop") &&
+        (length(d$new_triage[i]) == 0 || is.na(d$new_triage[i]))) next
     if (isTRUE(triage_unit_same(d$triage[i], d$triage_reason[i], d$triage_rule[i],
       d$new_triage[i], d$new_reason[i], d$new_rule[i]))) next
     set_unit_triage(con, id, d$path[i], d$scaffold[i], d$new_triage[i],
