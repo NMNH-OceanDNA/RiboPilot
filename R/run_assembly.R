@@ -77,7 +77,7 @@ run_assembly <- function(path = ".", nextflow = "nextflow", work = file.path(pat
   } else {
     message("WF1 complete (assemble -> score -> BLAST + coverage -> annotate + curate) ",
       "written to the database. Every scaffold is annotated as it is assembled; ",
-      "review and lock assemblies in the app, then curate per unit in Annotate mode.")
+      "review and lock assemblies in the app, then curate per unit in Annotation Review.")
   }
   invisible(status)
 }

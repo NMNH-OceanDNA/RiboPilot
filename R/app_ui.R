@@ -44,8 +44,12 @@ app_ui <- function(request) {
           # label = "" (not NULL) reserves label space above the select, which
           # counterbalances the form-group bottom margin so the picker centers
           # with the buttons (mirrors MitoPilot; no CSS override needed).
-          shinyWidgets::pickerInput("mode", label = "", width = 150,
-            choices = c("Taxonomy", "Assemble", "Annotate", "Export")),
+          # Named vector: the LABEL is what the user reads, the VALUE is what
+          # every mode branch keys on. "Annotate" stays the value so the tab can
+          # be renamed without touching the server.
+          shinyWidgets::pickerInput("mode", label = "", width = 175,
+            choices = c(Taxonomy = "Taxonomy", Assemble = "Assemble",
+              "Annotation Review" = "Annotate", Export = "Export")),
           bttn("refresh", NULL, "sync"),
           shiny::conditionalPanel("input.mode == 'Taxonomy'",
             ctrls(bttn("state_btn", "State"), bttn("lock_btn", "Lock"),

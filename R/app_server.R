@@ -256,7 +256,7 @@ app_server <- function(input, output, session) {
       Taxonomy = "No samples yet. Create the project with a mapping file (new_project()).",
       Assemble = "No taxonomy-locked samples. Assign and lock taxonomy in Taxonomy mode first.",
       Annotate = "No assembly-locked samples. Review and lock assemblies in Assemble mode first.",
-      Export   = "No annotation-locked samples. Review and lock annotations in Annotate mode first.",
+      Export   = "No annotation-locked samples. Review and lock annotations in Annotation Review first.",
       "No rows.")
 
     sorted <- if ("time_stamp" %in% names(d)) list(time_stamp = "desc") else NULL
@@ -1094,7 +1094,7 @@ app_server <- function(input, output, session) {
          WHERE ID = ? AND path = ? AND scaffold = ?", params = list(id, p, s))
       if (nrow(st) && isTRUE(as.integer(st$annotate_lock[1]) == 1L)) {
         showNotification(sprintf(
-          "Scaffold %s.%s is annotation-locked. Unlock that unit in Annotate mode first.", p, s),
+          "Scaffold %s.%s is annotation-locked. Unlock that unit in Annotation Review first.", p, s),
           type = "error", duration = 8)
         return()
       }
