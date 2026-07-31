@@ -1,23 +1,22 @@
-# Shared Nextflow command builder used by run_assembly()/run_annotate() (CLI)
-# and the app's Update modal (processx). Returns the argument vector that
-# follows the `nextflow` binary, so both a `bash -c "cd .. && nextflow <args>"`
-# call and `processx::process$new("nextflow", args, wd = path)` can use it.
+# Shared Nextflow command builder used by run_assembly() (CLI) and the app's
+# Update modal (processx). Returns the argument vector that follows the
+# `nextflow` binary, so both a `bash -c "cd .. && nextflow <args>"` call and
+# `processx::process$new("nextflow", args, wd = path)` can use it.
+#
+# There is ONE workflow. Re-annotation used to be WF2 (main_annotate.nf) and is
+# now an arm of WF1: dev/design/15_WF2_DECOMMISSION.md.
 
-#' Build the Nextflow argument vector for a project workflow
+#' Build the Nextflow argument vector for the project workflow
 #'
 #' @param path Project directory (contains `.sqlite`, `.config`).
-#' @param workflow "assemble" (WF1) or "annotate" (WF2). The assembly fallback
-#'   is no longer a workflow of its own; it is a per-sample assembler inside WF1.
 #' @param resume Add `-resume`.
 #' @param work Nextflow work dir.
 #' @param ribopilot_src Package source for R-script processes (default: loaded pkg).
 #' @return character vector of args (starting with "run").
 #' @noRd
-nf_command <- function(path, workflow = c("assemble", "annotate"), resume = TRUE,
+nf_command <- function(path, resume = TRUE,
                        work = file.path(path, "work"), ribopilot_src = NULL) {
-  workflow <- match.arg(workflow)
-  main_nf <- app_sys("nextflow", switch(workflow,
-    assemble = "main.nf", annotate = "main_annotate.nf"))
+  main_nf <- app_sys("nextflow", "main.nf")
   cfg <- file.path(path, ".config")
   cfg_lines <- if (file.exists(cfg)) readLines(cfg) else character(0)
   raw_dir <- config_param(cfg_lines, "rawDir") %||% ""
@@ -52,18 +51,24 @@ ribopilot_src_default <- function() {
   if (file.exists(file.path(root, "DESCRIPTION")) && dir.exists(file.path(root, "R"))) root else s
 }
 
-#' Count samples eligible for a workflow (for the Update modal header)
+#' Count the work one run would do (for the Update modal header)
+#'
+#' Samples queued for assembly, plus units queued for annotation only, matching
+#' what `query_samples` and `query_annotate_units` select. One button runs both,
+#' so it is one number: a sample queued for assembly is counted once even though
+#' its units will be annotated too, because assembly re-seeds them.
 #' @noRd
-nf_pending_count <- function(path, workflow = c("assemble", "annotate")) {
-  workflow <- match.arg(workflow)
+nf_pending_count <- function(path) {
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(path, ".sqlite"))
   on.exit(DBI::dbDisconnect(con))
-  sql <- if (workflow == "assemble") {
-    "SELECT COUNT(*) n FROM assemble WHERE assemble_switch IN (1,4) AND assemble_lock = 0"
-  } else {
-    "SELECT COUNT(*) n FROM annotate an JOIN assemble a ON a.ID = an.ID
-       WHERE an.annotate_switch IN (1,4) AND an.annotate_lock = 0 AND a.assemble_lock = 1
-       AND EXISTS (SELECT 1 FROM assemblies x WHERE x.ID = an.ID)"
-  }
-  DBI::dbGetQuery(con, sql)$n
+  n_asm <- DBI::dbGetQuery(con,
+    "SELECT COUNT(*) n FROM assemble WHERE assemble_switch IN (1,4) AND assemble_lock = 0")$n
+  n_ann <- DBI::dbGetQuery(con,
+    "SELECT COUNT(*) n FROM annotate an
+       JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
+       JOIN assemble a ON a.ID = an.ID
+      WHERE an.annotate_switch IN (1,4) AND an.annotate_lock = 0
+        AND COALESCE(asm.ignore,0) = 0
+        AND NOT (a.assemble_switch IN (1,4) AND COALESCE(a.assemble_lock,0) = 0)")$n
+  as.integer(n_asm + n_ann)
 }

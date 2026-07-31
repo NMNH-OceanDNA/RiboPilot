@@ -28,6 +28,8 @@ mk_app_project <- function(env = parent.frame()) {
     accession TEXT, species TEXT, title TEXT, pident REAL, qcovs REAL, bitscore REAL, evalue REAL)")
   DBI::dbExecute(con, "CREATE TABLE path_scores(ID TEXT, path INT, length INT, depth REAL, anchors TEXT,
     blast_pident REAL, hit_id TEXT, hit_species TEXT, score REAL, rank INT, auto_select INT)")
+  DBI::dbExecute(con, "INSERT INTO path_scores (ID,path,score,rank,auto_select) VALUES('S1',1,0.912,1,1)")
+  DBI::dbExecute(con, "INSERT INTO path_scores (ID,path,score,rank,auto_select) VALUES('S1',2,0.431,2,0)")
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S1','Danio rerio','Danio rerio',7955,'species','exact',NULL,NULL,1,1,NULL,1)")
   DBI::dbExecute(con, "INSERT INTO assemble VALUES('S1',1,2,'default','default',2,4,'100',NULL,1)")
   DBI::dbExecute(con, "INSERT INTO preprocess VALUES('S1','default')")
@@ -113,7 +115,7 @@ test_that("the scaffold table actually shows its evidence columns", {
     vis <- vapply(Filter(function(c) !identical(c$show, FALSE), cols),
       function(c) c$id, character(1))
     for (want in c("unit", "length", "depth", "elements", "screen_species",
-                   "shares", "odd_one_out", "triage")) {
+                   "shares", "odd_one_out", "triage", "path_score")) {
       expect_true(want %in% vis, info = paste("column not visible:", want))
     }
     # the uid must travel to the browser (the click key) but stay out of sight
@@ -409,5 +411,101 @@ test_that("the tick column is headed with the copy icon, and the hits link is go
     expect_match(sel$header, "clipboard")
     # the old per-row link was the only way in and read as an action, not a picker
     expect_length(Filter(function(c) identical(c$id, "hits"), cols), 0)
+  })
+})
+
+test_that("the scaffold table carries each unit's path score", {
+  # the score is computed per candidate path, so every scaffold of a path shows
+  # the same number; it replaced the separate "Candidate paths" panel.
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    sel_id("S1")
+    session$flushReact()
+    d <- scaffold_rows()
+    expect_equal(d$path_score[d$path == 1], c(0.912, 0.912))
+    expect_equal(d$path_score[d$path == 2], c(0.431, 0.431))
+  })
+})
+
+test_that("the scaffold table does not report topology", {
+  # GetOrganelle labels an rDNA result "circular" when it disentangles the graph
+  # as a cycle, which a tandem array does by construction. Nuclear rDNA is not a
+  # circular molecule, so the column asserted something false about every
+  # successfully assembled repeat.
+  q <- paste(deparse(RiboPilot:::unit_evidence), collapse = " ")
+  expect_false(grepl("a.topology", q, fixed = TRUE))
+  srv <- paste(deparse(RiboPilot:::app_server), collapse = " ")
+  expect_false(grepl('name = "Topology"', srv, fixed = TRUE))
+})
+
+test_that("every visible scaffold column explains itself on hover", {
+  # the help lives in SCAFFOLD_COL_HELP; a column added without a tooltip is
+  # invisible to a plain "does it render" check.
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    sel_id("S1")
+    session$flushReact()
+    j <- jsonlite::fromJSON(as.character(output$assemble_scaffolds), simplifyVector = FALSE)
+    cols <- Filter(function(c) !identical(c$show, FALSE), j$x$tag$attribs$columns)
+    for (cd in cols) {
+      if (identical(cd$id, ".selection")) next     # its own icon carries the hint
+      expect_true(is.character(cd$header) && grepl("title=", cd$header, fixed = TRUE),
+        info = paste("no hover help on column:", cd$id))
+    }
+  })
+})
+
+test_that("the Annotation Review title always names the unit", {
+  # Every edit in that modal applies to one (ID, path, scaffold). The title used
+  # to name the unit only when the sample had more than one, so a single-unit
+  # sample gave no on-screen confirmation of what was being edited.
+  # the modal reads the sample's taxonomy and notes; stub the DB out, the title
+  # is what is under test
+  testthat::local_mocked_bindings(
+    app_query = function(sql, params = NULL) data.frame(),
+    modal_taxon_header = function(id) shiny::div())
+  ttl <- function(...) {
+    m <- RiboPilot:::annotate_modal(...)
+    paste(as.character(m), collapse = " ")
+  }
+  expect_match(ttl("S1", 2L, 3L), "path 2 / scaffold 3")
+  expect_match(ttl("S1", 1L, 1L), "path 1 / scaffold 1")
+})
+
+test_that("locking two paths asks first, and 'lock anyway' goes through", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Annotate")
+    session$flushReact()
+    d <- samples_data()
+    sel <- c(which(d$path == 1 & d$scaffold == 1)[1],
+             which(d$path == 2 & d$scaffold == 1)[1])
+    session$setInputs(tbl__reactable__selected = sel)
+    session$flushReact()
+
+    # one unit from each path: the click must not write anything on its own
+    session$setInputs(lock_btn = 1)
+    session$flushReact()
+    lk <- RiboPilot:::app_query("SELECT COALESCE(annotate_lock,0) AS lock FROM annotate WHERE ID='S1'")
+    expect_true(all(lk$lock == 0))
+
+    # answering the warning applies exactly the toggle that was asked for
+    session$setInputs(lock_anyway = 1)
+    session$flushReact()
+    lk <- RiboPilot:::app_query(
+      "SELECT path, scaffold, COALESCE(annotate_lock,0) AS lock FROM annotate WHERE ID='S1'
+        ORDER BY path, scaffold")
+    expect_equal(lk$lock, c(1L, 0L, 1L, 0L))
   })
 })

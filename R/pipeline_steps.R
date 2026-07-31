@@ -85,7 +85,7 @@ blast_scaffolds_local <- function(con, id, blast_db) {
 reconcile_one <- function(con, id, path = 1L, scaffold = 1L, gff = NULL, positions = NULL) {
   # Ensure any columns added after this project was created exist before writing
   # (e.g. annotations.model_coverage); reconcile runs before curate, which also
-  # migrates, so an older project would otherwise fail here on the first WF2 run.
+  # migrates, so an older project would otherwise fail here on its first run.
   ensure_curate_schema(con)
   path <- as.integer(path); scaffold <- as.integer(scaffold)
   bar <- if (!is.null(gff) && file.exists(gff)) parse_barrnap(readLines(gff, warn = FALSE)) else data.frame()
@@ -490,7 +490,7 @@ reconcile_ignore_unit <- function(con, id, path, scaffold, ignore) {
     # rows discarded here are completed work, and "drop it, look again, put it
     # back" is the normal motion when a divergent scaffold might be a real
     # intragenomic array copy rather than a contaminant. The unit is already
-    # invisible to the app, to WF2 and to export -- all three filter
+    # invisible to the app, to annotation and to export -- all three filter
     # COALESCE(asm.ignore,0) = 0 -- so deleting bought nothing.
     DBI::dbExecute(con,
       "UPDATE annotate SET annotate_switch = 0 WHERE ID = ? AND path = ? AND scaffold = ?",
@@ -505,14 +505,21 @@ reconcile_ignore_unit <- function(con, id, path, scaffold, ignore) {
       params = list(id, path, scaffold,
         if (nrow(o)) o$annotate_opts[1] else "default",
         if (nrow(o)) o$curate_opts[1] else "default"))
-    # Re-queue only when the unit has no feature model; one that was merely held
-    # comes back already annotated and should not cost a WF2 round trip.
+    # Re-queue only when the unit has never been annotated. Feature rows are not
+    # the test on their own: a scaffold annotation legitimately found nothing on
+    # has none, and re-queueing it every time triage touches it holds the sample
+    # at "in progress" forever. annotate.n_features is written (as 0) whenever
+    # reconcile_one has run, so it, not the row count, marks annotation as done.
     n <- tryCatch(DBI::dbGetQuery(con,
       "SELECT COUNT(*) n FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?",
       params = list(id, path, scaffold))$n[1], error = function(e) 0L)
+    done <- tryCatch(DBI::dbGetQuery(con,
+      "SELECT COUNT(*) n FROM annotate
+        WHERE ID = ? AND path = ? AND scaffold = ? AND n_features IS NOT NULL",
+      params = list(id, path, scaffold))$n[1], error = function(e) 0L)
     DBI::dbExecute(con,
       sprintf("UPDATE annotate SET annotate_switch = %d WHERE ID = ? AND path = ? AND scaffold = ?",
-        if (isTRUE(n > 0)) 2L else 1L),
+        if (isTRUE(n > 0) || isTRUE(done > 0)) 2L else 1L),
       params = list(id, path, scaffold))
   }
   # holding the last queued unit finishes the sample; releasing one reopens it

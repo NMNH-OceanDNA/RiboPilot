@@ -44,8 +44,12 @@ app_ui <- function(request) {
           # label = "" (not NULL) reserves label space above the select, which
           # counterbalances the form-group bottom margin so the picker centers
           # with the buttons (mirrors MitoPilot; no CSS override needed).
-          shinyWidgets::pickerInput("mode", label = "", width = 150,
-            choices = c("Taxonomy", "Assemble", "Annotate", "Export")),
+          # Named vector: the LABEL is what the user reads, the VALUE is what
+          # every mode branch keys on. "Annotate" stays the value so the tab can
+          # be renamed without touching the server.
+          shinyWidgets::pickerInput("mode", label = "", width = 175,
+            choices = c(Taxonomy = "Taxonomy", Assemble = "Assemble",
+              "Annotation Review" = "Annotate", Export = "Export")),
           bttn("refresh", NULL, "sync"),
           shiny::conditionalPanel("input.mode == 'Taxonomy'",
             ctrls(bttn("state_btn", "State"), bttn("lock_btn", "Lock"),
@@ -55,10 +59,12 @@ app_ui <- function(request) {
             ctrls(bttn("state_btn", "State"), bttn("lock_btn", "Lock"),
               bttn("triage_btn", "Triage", "filter"),
               bttn("run_btn", "Update", "circle-play"))),
+          # No Update button here: one workflow, launched from Assemble. This tab
+          # is a review surface -- edit the feature model, trim, mark, lock.
           shiny::conditionalPanel("input.mode == 'Annotate'",
             ctrls(bttn("state_btn", "State"), bttn("lock_btn", "Lock"),
               bttn("reviewed_btn", "Reviewed"), bttn("problematic_btn", "Problem"),
-              bttn("partial_btn", "Partial"), bttn("run_btn", "Update", "circle-play"))),
+              bttn("partial_btn", "Partial"))),
           shiny::conditionalPanel("input.mode == 'Export'",
             ctrls(bttn("assign_group_btn", "Assign Group"), bttn("clear_group_btn", "Clear Group"),
               bttn("export_btn", "Export Data", "download"),

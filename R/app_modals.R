@@ -38,25 +38,17 @@ modal_taxon_header <- function(id) {
       tags$span(style = "color:#999;", sprintf(" (input: %s)", s$Taxon[1])))
 }
 
-#' Assemble details modal: pick the selected path; view scores + scaffolds
+#' Assemble details modal: scaffolds, their evidence, and keep/drop
 #' @noRd
 assemble_modal <- function(id) {
   modalDialog(
     title = paste0("Assemble - ", id),
     size = "l", easyClose = TRUE,
-    footer = tagList(
-      actionButton("set_selected", "Set as selected path", class = "btn-primary btn-sm"),
-      modalButton("Close")
-    ),
+    footer = modalButton("Close"),
     modal_taxon_header(id),
     h5("Scaffolds", style = "margin:2px 0 4px;"),
     div(style = "color:#888; font-size:0.82em; margin-bottom:4px;",
-      paste("Median depth is per-position across the scaffold (a mean is inflated by the",
-        "conserved 18S/28S cores); the bar shows it against this sample's deepest scaffold,",
-        "which is comparable within a path but not across paths.",
-        "\"Shares\" is the deepest rank the scaffold's top GenBank hit has in common",
-        "with the sample; \"no reference\" is normal for an under-represented taxon.",
-        "Click a scaffold to examine its GenBank evidence and coverage below.")),
+      paste("Click on a scaffold row to examine GenBank evidence and coverage below")),
     reactable::reactableOutput("assemble_scaffolds"),
     div(style = "margin-top:6px;",
       actionButton("copy_fasta", "Copy FASTA", icon = icon("clipboard"), class = "btn-sm"),
@@ -76,11 +68,35 @@ assemble_modal <- function(id) {
 
     rp_details("Read coverage for the highlighted scaffold", open = FALSE,
       uiOutput("unit_coverage_label"),
-      plotOutput("unit_coverage_plot", height = "140px")),
+      plotOutput("unit_coverage_plot", height = "140px"))
+  )
+}
 
-    rp_details("Candidate paths", open = FALSE,
-      uiOutput("sel_path_ui"),
-      reactable::reactableOutput("assemble_scores"))
+#' Warn that locking would leave a sample with two locked assembly paths
+#'
+#' A corner-of-the-screen notification was too easy to miss for something that
+#' silently does nothing, so this blocks until the reviewer answers. Locking two
+#' paths is unusual rather than impossible -- alternative resolutions of the same
+#' repeat are normally competing answers, not both right -- so "Lock anyway"
+#' stays available.
+#' @param ids Sample IDs that would end up with more than one locked path.
+#' @noRd
+multi_path_lock_modal <- function(ids) {
+  modalDialog(
+    title = tags$span(style = "color:#a04000;",
+      icon("triangle-exclamation"), " More than one assembly path would be locked"),
+    size = "m", easyClose = FALSE,
+    div(style = "font-size:1.02em; line-height:1.5;",
+      tags$p(paste("Paths are competing reconstructions of the same rDNA repeat, so a",
+        "sample normally carries one locked path. This would leave more than one",
+        "locked for:")),
+      tags$p(style = "font-weight:600; margin:6px 0;", paste(ids, collapse = ", ")),
+      tags$p(style = "color:#666;",
+        paste("Unlock the other path first, or proceed if you mean to keep both",
+          "(both will be annotated and exported)."))),
+    footer = tagList(
+      modalButton("Cancel"),
+      actionButton("lock_anyway", "Lock anyway", class = "btn-warning btn-sm"))
   )
 }
 
@@ -165,9 +181,10 @@ rp_details <- function(summary, ..., open = TRUE) {
 }
 
 annotate_modal <- function(id, path = 1L, scaffold = 1L) {
-  n_units <- tryCatch(app_query("SELECT COUNT(*) n FROM annotate WHERE ID = ?", params = list(id))$n[1],
-    error = function(e) 1L)
-  unit_lbl <- if (isTRUE(n_units > 1)) sprintf(" [path %s / scaffold %s]", path, scaffold) else ""
+  # Always name the unit, even when the sample has only one: every edit in here
+  # (features, trim, marks, lock) applies to one (ID, path, scaffold), and the
+  # title is the only thing on screen that says which.
+  unit_lbl <- sprintf(" [path %s / scaffold %s]", path, scaffold)
   # Seed the notes box from the DB. Re-opening the same unit assigns an
   # identical() value to sel_unit, which does not invalidate the reactiveVal, so
   # the server-side reset observer never fires; a value-less textAreaInput then
@@ -256,8 +273,8 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
 #' node): running on the host would burn the login node, so offer an editable
 #' cluster job script to Submit as job / Save instead.
 #' @noRd
-run_modal <- function(mode, n, headless = FALSE, sched = NULL, script = "") {
-  wf <- if (mode == "Annotate") "Annotation (WF2)" else "Assembly (WF1)"
+run_modal <- function(n, headless = FALSE, sched = NULL, script = "") {
+  wf <- "RiboPilot pipeline"
   cluster_section <- if (headless) {
     tagList(
       hr(style = "margin:10px 0;"),

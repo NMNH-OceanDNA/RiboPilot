@@ -111,6 +111,14 @@ app_server <- function(input, output, session) {
       app_query(
         "SELECT a.assemble_lock, a.assemble_switch, s.ID, s.Taxon, s.sci_name, s.taxid,
            pp.pre_opts, a.assemble_opts, a.blast_opts,
+           -- annotation + curation presets are set here too: one workflow runs
+           -- assembly and annotation, so every option a run consumes belongs on
+           -- the surface the run is launched from. Taken from the sample's first
+           -- unit; opts_apply writes them back across all of the sample's units.
+           (SELECT an.annotate_opts FROM annotate an WHERE an.ID = s.ID
+              ORDER BY an.path, an.scaffold LIMIT 1) AS annotate_opts,
+           (SELECT an.curate_opts FROM annotate an WHERE an.ID = s.ID
+              ORDER BY an.path, an.scaffold LIMIT 1) AS curate_opts,
            a.paths, a.length,
            -- unit counts come from `assemblies` so they stay live as scaffolds
            -- are kept/dropped. a.blast_* is not selected: nothing writes it (the
@@ -141,7 +149,7 @@ app_server <- function(input, output, session) {
         "SELECT an.annotate_lock, an.annotate_switch, s.ID, an.path, an.scaffold, s.Taxon, s.sci_name, s.taxid,
            asm.length, an.n_features, an.missing,
            asm.blast_species, asm.blast_accession, asm.blast_pident,
-           an.n_flags, an.annotate_opts, an.curate_opts, an.reviewed,
+           an.n_flags, an.reviewed,
            an.problematic, an.partial, an.time_stamp,
            'Details' AS details, 'Output' AS output
          FROM annotate an
@@ -248,7 +256,7 @@ app_server <- function(input, output, session) {
       Taxonomy = "No samples yet. Create the project with a mapping file (new_project()).",
       Assemble = "No taxonomy-locked samples. Assign and lock taxonomy in Taxonomy mode first.",
       Annotate = "No assembly-locked samples. Review and lock assemblies in Assemble mode first.",
-      Export   = "No annotation-locked samples. Review and lock annotations in Annotate mode first.",
+      Export   = "No annotation-locked samples. Review and lock annotations in Annotation Review first.",
       "No rows.")
 
     sorted <- if ("time_stamp" %in% names(d)) list(time_stamp = "desc") else NULL
@@ -491,15 +499,18 @@ app_server <- function(input, output, session) {
       viol <- tapply(seq_len(nrow(cur)), cur$ID, function(ix)
         length(unique(cur$path[ix][cur$newlock[ix] == 1L])) > 1)
       if (any(unlist(viol))) {
-        showNotification(paste("That would lock more than one assembly path for a sample.",
-          "Only one path per sample can be locked; unlock the other path first."),
-          type = "error", duration = 8)
+        # asked, not refused: the reviewer answers in the middle of the screen
+        showModal(multi_path_lock_modal(names(viol)[unlist(viol)]))
         return()
       }
-      return(set_unit_flag("UPDATE annotate SET annotate_lock = 1 - COALESCE(annotate_lock, 0) WHERE ID = ?"))
+      return(set_unit_flag(LOCK_UNIT_SQL))
     }
     set_flag(sprintf("UPDATE %s SET %s_lock = 1 - COALESCE(%s_lock, 0) WHERE ID = ?",
       mm$tbl, mm$pfx, mm$pfx))
+  })
+  observeEvent(input$lock_anyway, {
+    removeModal()
+    set_unit_flag(LOCK_UNIT_SQL)
   })
   observeEvent(input$state_btn, {  # open a picker to choose the target state
     ids <- selected_ids()
@@ -571,7 +582,6 @@ app_server <- function(input, output, session) {
   })
 
   # ---- Update modal: run the workflow with live Nextflow progress ----
-  wf_for_mode <- function() if ((input$mode %||% "") == "Annotate") "annotate" else "assemble"
   nf_process <- reactiveVal(NULL)
   prog_header <- reactiveVal(character(0))
   prog_executor <- reactiveVal("")
@@ -579,7 +589,7 @@ app_server <- function(input, output, session) {
   prog_footer <- reactiveVal(character(0))
 
   output$nf_cmd_text <- renderText({
-    args <- nf_command(app_project(), wf_for_mode(), resume = isTRUE(input$nf_resume %||% TRUE))
+    args <- nf_command(app_project(), resume = isTRUE(input$nf_resume %||% TRUE))
     paste(c("nextflow", args), collapse = " ")
   })
 
@@ -589,8 +599,8 @@ app_server <- function(input, output, session) {
     prog_header(character(0)); prog_executor(""); prog_proc(list()); prog_footer(character(0))
     hl <- app_headless()
     sched <- if (hl) detect_scheduler() else NULL
-    script <- if (hl) build_submit_script(app_project(), wf_for_mode(), resume = TRUE, sched = sched) else ""
-    showModal(run_modal(input$mode %||% "Assemble", nf_pending_count(app_project(), wf_for_mode()),
+    script <- if (hl) build_submit_script(app_project(), resume = TRUE, sched = sched) else ""
+    showModal(run_modal(nf_pending_count(app_project()),
       headless = hl, sched = sched, script = script))
   })
 
@@ -598,8 +608,8 @@ app_server <- function(input, output, session) {
   # Nextflow on the login node).
   write_submit_script <- function() {
     script <- input$submit_script_text %||%
-      build_submit_script(app_project(), wf_for_mode(), resume = isTRUE(input$nf_resume %||% TRUE))
-    f <- file.path(app_project(), paste0("submit_", wf_for_mode(), ".sh"))
+      build_submit_script(app_project(), resume = isTRUE(input$nf_resume %||% TRUE))
+    f <- file.path(app_project(), "submit_ribopilot.sh")
     writeLines(script, f)
     try(Sys.chmod(f, "0755"), silent = TRUE)
     f
@@ -694,7 +704,7 @@ app_server <- function(input, output, session) {
     nxf_pin <- nf_pin_version()
     if (!is.na(nxf_pin)) nf_env <- c(nf_env, NXF_VER = nxf_pin)
     p <- processx::process$new("nextflow",
-      args = c(nf_command(app_project(), wf_for_mode(), resume = isTRUE(input$nf_resume %||% TRUE)),
+      args = c(nf_command(app_project(), resume = isTRUE(input$nf_resume %||% TRUE)),
         "-ansi-log"),
       stdout = "|", stderr = "|", wd = app_project(),
       env = nf_env)
@@ -824,38 +834,6 @@ app_server <- function(input, output, session) {
   observeEvent(input$open_export_dir, open_path(export_done_dir()))
 
   # ---- Assemble modal ----
-  output$sel_path_ui <- renderUI({
-    id <- sel_id()
-    req(id)
-    d <- app_query("SELECT path, auto_select FROM path_scores WHERE ID = ? ORDER BY path", params = list(id))
-    if (nrow(d) == 0) {
-      return(em("No scored paths."))
-    }
-    radioButtons("sel_path", "Selected path:", choices = d$path,
-      selected = d$path[d$auto_select == 1][1], inline = TRUE)
-  })
-  output$assemble_scores <- reactable::renderReactable({
-    id <- sel_id()
-    req(id)
-    d <- app_query(
-      "SELECT path, length, round(depth,0) AS depth, anchors, blast_pident AS pident,
-         hit_species, hit_id AS accession, round(score,3) AS score, rank, auto_select
-       FROM path_scores WHERE ID = ? ORDER BY rank", params = list(id))
-    reactable::reactable(d, compact = TRUE, resizable = TRUE, defaultPageSize = 10,
-      defaultColDef = reactable::colDef(align = "left"),
-      columns = list(
-        path = reactable::colDef(name = "Path", width = 60),
-        length = reactable::colDef(name = "Length", width = 80),
-        depth = reactable::colDef(name = "Depth", width = 70),
-        anchors = reactable::colDef(name = "Anchors", minWidth = 120),
-        pident = reactable::colDef(name = "BLAST %ID", width = 90),
-        hit_species = reactable::colDef(name = "BLAST Hit", minWidth = 150, html = TRUE, cell = rt_longtext()),
-        accession = reactable::colDef(name = "Accession", minWidth = 110, html = TRUE, cell = rt_ncbi_link()),
-        score = reactable::colDef(name = "Score", width = 80),
-        rank = reactable::colDef(name = "Rank", width = 60),
-        auto_select = reactable::colDef(name = "Auto", width = 60)),
-      rowStyle = function(index) if (isTRUE(d$auto_select[index] == 1)) list(background = "#eafaf0") else NULL)
-  })
   # Single source of truth for the scaffold table AND its click handlers. The
   # handlers used to re-query and index by row position, so any change to the
   # display order silently acted on the wrong scaffold; clicks are now keyed on
@@ -881,7 +859,7 @@ app_server <- function(input, output, session) {
     }
     # reactable renders in data-frame column order, so the row identifier has to
     # lead here; colDef(sticky=) alone does not move it.
-    lead <- c("unit", "triage", "length", "topology", "depth", "depth_track", "elements",
+    lead <- c("unit", "triage", "length", "path_score", "depth", "depth_track", "elements",
       "screen_verdict", "variant_class")
     d <- d[, c(intersect(lead, names(d)), setdiff(names(d), lead)), drop = FALSE]
     reactable::reactable(d, compact = TRUE, resizable = TRUE, filterable = TRUE,
@@ -899,37 +877,54 @@ app_server <- function(input, output, session) {
         .selection = reactable::colDef(show = TRUE, width = 36, sticky = "left",
           html = TRUE, header = as.character(icon("clipboard",
             title = "Tick rows to copy as FASTA"))),
-        unit = reactable::colDef(name = "Unit", width = 72, show = TRUE, sticky = "left"),
-        length = reactable::colDef(name = "Length", width = 80, show = TRUE),
-        topology = reactable::colDef(name = "Topology", width = 85, show = TRUE),
+        # Every visible column explains itself on hover ("?" in the header), so a
+        # reviewer never has to remember which number is comparable with what.
+        unit = reactable::colDef(name = "Unit", width = 72, show = TRUE, sticky = "left",
+          html = TRUE, header = rt_help_header("Unit", SCAFFOLD_COL_HELP$unit)),
+        length = reactable::colDef(name = "Length", width = 80, show = TRUE,
+          html = TRUE, header = rt_help_header("Length", SCAFFOLD_COL_HELP$length)),
+        path_score = reactable::colDef(name = "Path score", width = 115, show = TRUE,
+          html = TRUE, header = rt_help_header("Path score", SCAFFOLD_COL_HELP$path_score)),
         # The number is this scaffold's absolute median depth; the bar beside it
         # is that value as a fraction of the sample's deepest scaffold. Naming
         # the column "relative" described the bar and misdescribed the number.
         depth = reactable::colDef(name = "Median depth", width = 125, show = TRUE, html = TRUE,
+          header = rt_help_header("Median depth", SCAFFOLD_COL_HELP$depth),
           cell = rt_depth_bar("depth_max")),
         depth_track = reactable::colDef(name = "Coverage", width = 100, show = TRUE,
           filterable = FALSE, sortable = FALSE, html = TRUE,
+          header = rt_help_header("Coverage", SCAFFOLD_COL_HELP$depth_track),
           cell = rt_depth_sparkline()),
         elements = reactable::colDef(name = "rRNA features", width = 240, show = TRUE, html = TRUE,
+          header = rt_help_header("rRNA features", SCAFFOLD_COL_HELP$elements),
           cell = rt_element_strip()),
         screen_verdict = reactable::colDef(name = "Screen", width = 100, show = TRUE, html = TRUE,
+          header = rt_help_header("Screen", SCAFFOLD_COL_HELP$screen_verdict),
           cell = rt_screen_badge()),
         # Information, not a flag: neither an isomer nor a paralog is a defect.
         variant_class = reactable::colDef(name = "Variant", width = 115, show = TRUE, html = TRUE,
+          header = rt_help_header("Variant", SCAFFOLD_COL_HELP$variant_class),
           cell = rt_variant_badge()),
         screen_species = reactable::colDef(name = "Top GenBank hit", minWidth = 160, show = TRUE,
-          html = TRUE, cell = rt_longtext()),
+          html = TRUE, header = rt_help_header("Top GenBank hit", SCAFFOLD_COL_HELP$screen_species),
+          cell = rt_longtext()),
         shares = reactable::colDef(name = "Shares", width = 105, show = TRUE, html = TRUE,
+          header = rt_help_header("Shares", SCAFFOLD_COL_HELP$shares),
           cell = rt_shares_badge()),
         odd_one_out = reactable::colDef(name = "", width = 55, show = TRUE, html = TRUE,
-          filterable = FALSE, cell = rt_odd_badge()),
+          filterable = FALSE, header = rt_help_header("", SCAFFOLD_COL_HELP$odd_one_out),
+          cell = rt_odd_badge()),
         screen_accession = reactable::colDef(name = "Accession", width = 110, show = TRUE,
-          html = TRUE, cell = rt_ncbi_link()),
-        screen_pident = reactable::colDef(name = "%ID", width = 65, show = TRUE),
+          html = TRUE, header = rt_help_header("Accession", SCAFFOLD_COL_HELP$screen_accession),
+          cell = rt_ncbi_link()),
+        screen_pident = reactable::colDef(name = "%ID", width = 65, show = TRUE,
+          html = TRUE, header = rt_help_header("%ID", SCAFFOLD_COL_HELP$screen_pident)),
         triage = reactable::colDef(name = "Keep", width = 68, show = TRUE, html = TRUE,
-          filterable = FALSE, cell = rt_triage_bttn("scaf_triage")),
+          filterable = FALSE, header = rt_help_header("Keep", SCAFFOLD_COL_HELP$triage),
+          cell = rt_triage_bttn("scaf_triage")),
         triage_reason = reactable::colDef(name = "Why", minWidth = 200, show = TRUE,
-          html = TRUE, cell = rt_longtext()),
+          html = TRUE, header = rt_help_header("Why", SCAFFOLD_COL_HELP$triage_reason),
+          cell = rt_longtext()),
         uid = reactable::colDef(show = FALSE), depth_max = reactable::colDef(show = FALSE),
         sib_taxon = reactable::colDef(show = FALSE), sib_rank = reactable::colDef(show = FALSE)),
       # JS rather than an R function of the row index: the examined row changes
@@ -1087,7 +1082,7 @@ app_server <- function(input, output, session) {
          WHERE ID = ? AND path = ? AND scaffold = ?", params = list(id, p, s))
       if (nrow(st) && isTRUE(as.integer(st$annotate_lock[1]) == 1L)) {
         showNotification(sprintf(
-          "Scaffold %s.%s is annotation-locked. Unlock that unit in Annotate mode first.", p, s),
+          "Scaffold %s.%s is annotation-locked. Unlock that unit in Annotation Review first.", p, s),
           type = "error", duration = 8)
         return()
       }
@@ -1218,24 +1213,6 @@ app_server <- function(input, output, session) {
     removeModal()
     refresh(refresh() + 1)
     showNotification(sprintf("Triage updated %d scaffold(s) across %d sample(s).", n, length(ids)),
-      type = "message")
-  })
-
-  observeEvent(input$set_selected, {
-    id <- sel_id()
-    req(id, input$sel_path)
-    con <- app_con()
-    on.exit(DBI::dbDisconnect(con))
-    # Records the reviewer's choice for display. It does NOT gate WF2, which
-    # selects units by assemblies.ignore, so nothing is re-queued here: the old
-    # sample-wide "UPDATE annotate SET annotate_switch = 1 WHERE ID = ?" also
-    # re-queued annotate-locked units the reviewer never touched.
-    DBI::dbExecute(con,
-      "UPDATE path_scores SET auto_select = CASE WHEN path = ? THEN 1 ELSE 0 END WHERE ID = ?",
-      params = list(as.integer(input$sel_path), id))
-    refresh(refresh() + 1)
-    showNotification(paste0("Marked path ", input$sel_path,
-      " as the selected path. To annotate only this path, ignore the other paths' scaffolds below."),
       type = "message")
   })
 

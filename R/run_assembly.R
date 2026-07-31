@@ -43,7 +43,7 @@ config_param <- function(config_lines, key) {
 #' project database, runs fastp + GetOrganelle, then scores and annotates each
 #' assembly and computes the assembly-review aids (reference BLAST + coverage),
 #' writing everything back to the database. Annotation and curation are handled
-#' by the annotation workflow ([run_annotate()], WF2) after you review and lock
+#' by re-running this workflow after you review and lock
 #' the assemblies in the app.
 #'
 #' @param path Project directory (contains `.sqlite` and `.config`).
@@ -69,7 +69,7 @@ run_assembly <- function(path = ".", nextflow = "nextflow", work = file.path(pat
   check_nextflow_version("run_assembly", nextflow = nextflow)
 
   message("Running Nextflow assembly (WF1) - self-contained DB I/O...")
-  args <- nf_command(path, "assemble", resume = TRUE, work = work, ribopilot_src = ribopilot_src)
+  args <- nf_command(path, resume = TRUE, work = work, ribopilot_src = ribopilot_src)
   nf_cmd <- paste0(nxf_ver_prefix(nextflow), paste(c(shQuote(nextflow), shQuote(args)), collapse = " "))
   status <- system2("bash", c("-c", shQuote(paste0("cd ", shQuote(path), " && ", nf_cmd))), wait = TRUE)
   if (status != 0) {
@@ -77,7 +77,7 @@ run_assembly <- function(path = ".", nextflow = "nextflow", work = file.path(pat
   } else {
     message("WF1 complete (assemble -> score -> BLAST + coverage -> annotate + curate) ",
       "written to the database. Every scaffold is annotated as it is assembled; ",
-      "review and lock assemblies in the app, then curate per unit in Annotate mode.")
+      "review and lock assemblies in the app, then curate per unit in Annotation Review.")
   }
   invisible(status)
 }

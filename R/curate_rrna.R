@@ -1,7 +1,7 @@
 # Reference-guided curation of the nuclear rDNA feature model. Follows
 # MitoPilot's design: a shared core (curate_rrna_core) driven by per-clade
 # params (params_rrna.R), plus thin clade wrappers. The core is pure (no DB);
-# curate_one() is the DB driver called by the WF1/WF2 Nextflow curate process,
+# curate_one() is the DB driver called by the Nextflow curate process,
 # right after reconcile writes the annotations table.
 #
 # The core never base-aligns spacers. It checks the structural model (anchors

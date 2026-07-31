@@ -1,6 +1,6 @@
 # Per-scaffold triage: keep / drop / undecided, with a reason and an owner.
 #
-# `assemblies.ignore` remains the single downstream gate -- WF2's unit query, the
+# `assemblies.ignore` remains the single downstream gate -- the annotate unit query, the
 # Annotate table and export_bundle() all filter on it -- but it is a binary with
 # no "not looked at yet" state, no record of why, and no way to tell a machine's
 # guess from the curator's decision. This module owns the decision:

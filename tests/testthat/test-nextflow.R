@@ -109,20 +109,111 @@ test_that("main.nf includes fallback_assemble and still passes seeds to GetOrgan
   expect_match(block, "tuple\\(id, reads, cpus, mem, go, seeds, labels\\)")
 })
 
-test_that("there is no second assembly workflow left to drift", {
+test_that("there is ONE workflow: no second file left to drift", {
   nf_dir <- system.file("nextflow", package = "RiboPilot")
   wf <- setdiff(list.files(nf_dir, pattern = "\\.nf$"), "nextflow.config")
-  expect_setequal(wf, c("main.nf", "main_annotate.nf"))
+  expect_setequal(wf, "main.nf")
   expect_false(file.exists(file.path(nf_dir, "main_fallback.nf")))
+  expect_false(file.exists(file.path(nf_dir, "main_annotate.nf")))
 
-  # query_fallback_samples went with the workflow that called it.
+  # each entry point went with the workflow that called it
   expect_false(any(grepl("query_fallback_samples", pipeline_r_nf)))
+  expect_false(any(grepl("query_annotate_samples", pipeline_r_nf)))
 
   # doc 08 open question 2 is answered: the stitch machinery is gone, not merely
   # unreachable. Both the process and the script it called must stay gone.
-  annotate_nf <- readLines(system.file("nextflow", "main_annotate.nf", package = "RiboPilot"))
-  for (nm in list(main = main_nf, annotate = annotate_nf, modules = pipeline_r_nf)) {
+  for (nm in list(main = main_nf, modules = pipeline_r_nf)) {
     expect_false(any(grepl("\\bstitch\\b", nm[!grepl("^\\s*//", nm)])))
   }
   expect_false(file.exists(system.file("nextflow", "bin", "rp_stitch.R", package = "RiboPilot")))
+})
+
+test_that("WF1 mixes re-queued units into the annotation chain", {
+  expect_true(any(grepl("query_annotate_units", pipeline_r_nf)))
+  code <- main_nf[!grepl("^\\s*//", main_nf)]
+  expect_true(any(grepl("query_annotate_units", code)))
+  # the two arms must merge, or re-queued units get a second chain of their own
+  # and the drift this sub-project removed comes straight back
+  expect_true(any(grepl("annotate_tools(units.mix(requeued))", code, fixed = TRUE)))
+})
+
+test_that("the wiring the annotate-only arm depends on is still there", {
+  # An annotate-only run fetches no references and runs no screen. Both of these
+  # keep it from stalling or being dropped, and neither is obviously load-bearing
+  # when read in isolation, so pin them: see dev/design/15_WF2_DECOMMISSION.md.
+  code <- paste(main_nf[!grepl("^\\s*//", main_nf)], collapse = " ")
+  expect_true(grepl("ifEmpty('ready')", code, fixed = TRUE))
+  expect_true(grepl("remainder: true", code, fixed = TRUE))
+})
+
+# The annotate-only arm's selection is SQL inside a Nextflow process, so the
+# suite would normally only see it as text. Extract that SQL and run it against a
+# fixture database: the race it prevents (a sample queued for BOTH assembly and
+# annotation being annotated twice in one run) is invisible to a text assertion.
+
+annotate_units_sql <- function() {
+  start <- grep("^process query_annotate_units \\{", pipeline_r_nf)
+  end <- start - 1 + which(pipeline_r_nf[start:length(pipeline_r_nf)] == "}")[1]
+  body <- pipeline_r_nf[start:end]
+  sql <- body[grep("SELECT an.ID", body):grep(";\" >> annotate_units.tsv", body, fixed = TRUE)]
+  sql <- sub(";\" >> annotate_units.tsv", "", paste(sql, collapse = "\n"), fixed = TRUE)
+  gsub("\\$\\{params\\.db\\}", "", sql)
+}
+
+mk_units_db <- function() {
+  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+  DBI::dbExecute(con, "CREATE TABLE annotate(ID TEXT, path INT, scaffold INT,
+    annotate_switch INT, annotate_lock INT, annotate_opts TEXT)")
+  DBI::dbExecute(con, "CREATE TABLE annotate_opts(annotate_opts TEXT, cpus INT, memory INT)")
+  DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, ignore INT)")
+  DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, assemble_switch INT, assemble_lock INT)")
+  DBI::dbExecute(con, "INSERT INTO annotate_opts VALUES('default',4,8)")
+  con
+}
+
+add_unit <- function(con, id, scaffold = 1, sw = 1, lock = 0, ignore = 0,
+                     asm_sw = 2, asm_lock = 0) {
+  DBI::dbExecute(con, "INSERT OR REPLACE INTO assemble VALUES(?,?,?)",
+    params = list(id, asm_sw, asm_lock))
+  DBI::dbExecute(con, "INSERT INTO assemblies VALUES(?,1,?,?)",
+    params = list(id, scaffold, ignore))
+  DBI::dbExecute(con, "INSERT INTO annotate VALUES(?,1,?,?,?,'default')",
+    params = list(id, scaffold, sw, lock))
+}
+
+test_that("query_annotate_units selects re-queued units and skips the rest", {
+  con <- mk_units_db(); on.exit(DBI::dbDisconnect(con))
+  add_unit(con, "QUEUED")                                  # queued, assembly done
+  add_unit(con, "DONE", sw = 2)                            # nothing outstanding
+  add_unit(con, "HELD", sw = 0)                            # deliberately held
+  add_unit(con, "LOCKED", lock = 1)                        # annotation locked
+  add_unit(con, "DROPPED", ignore = 1)                     # parked scaffold
+
+  got <- DBI::dbGetQuery(con, annotate_units_sql())$ID
+  expect_equal(got, "QUEUED")
+})
+
+test_that("query_annotate_units excludes samples this run will assemble", {
+  # Assembly re-seeds a sample's annotate units itself, so a sample queued for
+  # both would otherwise be annotated twice in one run, racing on the same rows.
+  con <- mk_units_db(); on.exit(DBI::dbDisconnect(con))
+  add_unit(con, "REASSEMBLING", asm_sw = 1)                # queued for assembly
+  add_unit(con, "ANNOTATE_ONLY", asm_sw = 2)
+
+  got <- DBI::dbGetQuery(con, annotate_units_sql())$ID
+  expect_equal(got, "ANNOTATE_ONLY")
+
+  # ...but a sample queued for assembly whose assembly is LOCKED is not going to
+  # be assembled, so its queued units are ours to annotate
+  DBI::dbExecute(con, "UPDATE assemble SET assemble_lock = 1 WHERE ID = 'REASSEMBLING'")
+  expect_setequal(DBI::dbGetQuery(con, annotate_units_sql())$ID,
+    c("REASSEMBLING", "ANNOTATE_ONLY"))
+})
+
+test_that("query_annotate_units does not require a locked assembly", {
+  # WF2 gated on assemble_lock = 1 so it could not run before review. With one
+  # workflow a unit is annotate-only work because a user queued it.
+  con <- mk_units_db(); on.exit(DBI::dbDisconnect(con))
+  add_unit(con, "UNREVIEWED", asm_sw = 2, asm_lock = 0)
+  expect_equal(DBI::dbGetQuery(con, annotate_units_sql())$ID, "UNREVIEWED")
 })

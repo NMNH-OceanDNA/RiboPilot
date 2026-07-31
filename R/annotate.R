@@ -2,7 +2,7 @@
 # ITS2 / 28S) by combining barrnap (Rfam SSU/LSU anchors) and ITSx (spacer
 # boundaries), then reconciling into one gap-free, 5'->3' feature table.
 #
-# Split so the tools (barrnap, ITSx) can run in the WF2 Nextflow workflow while R
+# Split so the tools (barrnap, ITSx) can run as Nextflow processes while R
 # does the parsing + reconciliation: parse_barrnap()/parse_itsx() consume tool
 # output; reconcile_features() combines them; run_barrnap()/run_itsx()/
 # annotate_seq() are the all-in-R convenience path.

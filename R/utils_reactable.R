@@ -32,6 +32,19 @@ rt_dynamicIcon <- function(icons = NULL) {
   ) |> htmlwidgets::JS()
 }
 
+#' Column header with a "?" that explains the column on hover
+#'
+#' Use with `colDef(html = TRUE)`. The explanation rides on the native `title`
+#' attribute, so it needs no JS and works wherever the widget is rendered.
+#' @param name Header label. @param tip One-sentence explanation.
+#' @noRd
+rt_help_header <- function(name, tip) {
+  as.character(shiny::tags$span(
+    title = tip, style = "cursor: help;",
+    name,
+    shiny::tags$span(style = "color:#999; font-size:0.85em; margin-left:3px;", "?")))
+}
+
 #' Hover tooltip for truncated text (use with wrap = FALSE)
 #' @noRd
 rt_longtext <- function() {
@@ -457,7 +470,7 @@ rt_scaffold_row_style <- function() {
       var st = {};
       if (rowInfo.row['ignore'] === 1) { st.background = '#f3f3f3'; st.color = '#999'; }
       if (state.meta && state.meta.examined === rowInfo.row['uid']) {
-        st.background = '#eaf1fb';
+        st.background = '#cadff5';
         st.boxShadow = 'inset 3px 0 0 #3c6fb5';
       }
       return st;
