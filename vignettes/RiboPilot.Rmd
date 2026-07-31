@@ -275,10 +275,25 @@ You can group samples in the app's Export tab, or export everything from R:
 RiboPilot::export_project("~/my_project")
 ```
 
-The package contains the files GenBank expects, plus a convenient FASTA file for
-each marker (18S, ITS1, 5.8S, ITS2, 28S, and the full repeat), a summary table,
-and a readable report. Any extra columns from your mapping file are carried
-through onto the submission.
+Each export group becomes one folder:
+
+```
+out/export/<group>/
+    <group>.fasta          all records in one file
+    <group>.tbl            their feature tables
+    <group>_summary.csv    one row per record
+    <group>_report.html    review report, with an alignment of every feature
+    README.txt             how to submit
+    samples/               one .fasta + .tbl per record
+    markers/               one folder per marker (18S, ITS1, 5.8S, ITS2, 28S, ITS)
+```
+
+FASTA headers are yours to write. In the app's Export tab you edit two templates,
+one for the whole record and one for the per-marker files, referring to any
+column of your mapping file as `{column_name}`. Templates are checked as you type
+and saved under a name, so a lab can keep one per submission style. Recognised
+GenBank metadata columns (specimen voucher, country, collection date and the
+rest) are still appended automatically.
 
 # The whole workflow at a glance
 

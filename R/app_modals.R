@@ -100,6 +100,29 @@ multi_path_lock_modal <- function(ids) {
   )
 }
 
+#' Warn that exporting will replace an export folder that already exists
+#'
+#' The group folder is rebuilt from scratch on every export, so a previous
+#' bundle (and anything filed alongside it) is deleted. Cheap to redo, painful
+#' to discover afterwards.
+#' @param dir The folder that would be replaced. @param n Files it holds.
+#' @noRd
+export_overwrite_modal <- function(dir, n) {
+  modalDialog(
+    title = tags$span(style = "color:#a04000;",
+      icon("triangle-exclamation"), " This export already exists"),
+    size = "m", easyClose = FALSE,
+    div(style = "font-size:1.02em; line-height:1.5;",
+      tags$p(sprintf("Exporting replaces this folder and the %d file(s) in it:", n)),
+      div(class = "code-block", style = "white-space:normal; word-break:break-all;", dir),
+      tags$p(style = "color:#666;",
+        "Rename or move it first if you need to keep the earlier bundle.")),
+    footer = tagList(
+      modalButton("Cancel"),
+      actionButton("export_overwrite_go", "Replace it", class = "btn-warning btn-sm"))
+  )
+}
+
 #' One rule's three-way action control
 #'
 #' Off is the disable, so there is no separate tickbox. Drop is offered only on
@@ -369,11 +392,13 @@ group_modal <- function() {
 #' write it to the project's "out/export" folder. Without this, assigned groups
 #' were ignored and every bundle collapsed into one undifferentiated "export".
 #' @noRd
-export_modal <- function(groups, n_locked) {
+export_modal <- function(groups, n_locked, templates = "default", template = "default",
+                         fasta_header = "", fasta_header_marker = "",
+                         columns = character(0)) {
   choices <- c("All locked units (single bundle)" = "__all__",
     stats::setNames(groups, groups))
   modalDialog(
-    title = "Export GenBank bundle", size = "m", easyClose = TRUE,
+    title = "Export GenBank bundle", size = "l", easyClose = TRUE,
     if (length(groups) == 0) {
       tags$p(class = "text-muted", style = "font-size:0.9em;",
         sprintf("No export groups assigned. Exporting %d annotation-locked unit(s) as one bundle. Use \"Assign Group\" to batch submissions.", n_locked))
@@ -381,12 +406,51 @@ export_modal <- function(groups, n_locked) {
       shinyWidgets::pickerInput("export_group_sel", "Export group:",
         choices = choices, selected = "__all__", width = "100%")
     },
+    tags$hr(style = "margin:0.9em 0 0.6em;"),
+    selectizeInput("export_template", "Header configuration:", width = "100%",
+      choices = templates, selected = template,
+      options = list(create = TRUE, maxItems = 1,
+        placeholder = "select or type a new name")),
+    opts_help("Named set of header templates. Edits are saved into the selected ",
+      "name; type a new name to keep the current headers as a separate set."),
+    uiOutput("export_hdr_status"),
+    textAreaInput("fasta_header", "Record FASTA header", value = fasta_header,
+      width = "100%", height = "60px"),
+    opts_help("Defline of each exported record. {column} is replaced with that ",
+      "column's value for the record, e.g. {seqid} or {Taxon}."),
+    uiOutput("export_hdr_marker_status"),
+    textAreaInput("fasta_header_marker", "Per-marker FASTA header",
+      value = fasta_header_marker, width = "100%", height = "60px"),
+    opts_help("Defline of each per-marker sequence. Same {column} syntax, plus ",
+      "{element} and {product} for the marker itself."),
+    tags$p(class = "text-muted", style = "font-size:0.78em; word-break:break-word;",
+      tags$b("Available columns: "),
+      if (length(columns) == 0) "none (no exportable units yet)"
+      else paste(columns, collapse = ", ")),
+    div(style = "display:flex; gap:2em; margin-top:0.4em;",
+      shinyWidgets::prettyCheckbox("export_markers", "Per-marker FASTA files",
+        value = TRUE, status = "primary"),
+      shinyWidgets::prettyCheckbox("export_report", "HTML report with alignments",
+        value = TRUE, status = "primary")),
     tags$p(class = "text-muted", style = "font-size:0.82em; margin-top:0.6em;",
-      "Writes to the project's out/export folder: per-sample .fsa/.tbl, combined FASTA + feature table, per-marker fastas, summary CSV, and an HTML report."),
+      "Writes to the project's out/export folder: per-record FASTA + feature table under samples/, combined FASTA + feature table, per-marker fastas, summary CSV, and an HTML report."),
     footer = tagList(
       actionButton("export_go", "Export", icon = icon("download"), class = "btn-primary btn-sm"),
       modalButton("Cancel"))
   )
+}
+
+#' Coloured one-line verdict for a header template
+#' @param chk result of [validate_fasta_header()].
+#' @noRd
+header_status_ui <- function(chk) {
+  if (is.null(chk)) return(NULL)
+  style <- switch(chk$level,
+    ok = list("#1a7f37", "circle-check"),
+    warn = list("#b26a00", "triangle-exclamation"),
+    list("#c0392b", "circle-xmark"))
+  tags$p(style = sprintf("color:%s; font-size:0.8em; margin:0 0 2px;", style[[1]]),
+    icon(style[[2]]), " ", chk$message)
 }
 
 #' State-picker modal: choose the state to set on the selected samples.

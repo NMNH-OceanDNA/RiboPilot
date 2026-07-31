@@ -5,7 +5,7 @@
 
 #' Current project-DB schema version. Bump when adding a migration step below.
 #' @noRd
-RIBOPILOT_SCHEMA_VERSION <- 18L
+RIBOPILOT_SCHEMA_VERSION <- 19L
 
 #' DDL for blast_hits: the full retained BLAST hit distribution per unit.
 #'
@@ -481,6 +481,9 @@ migrate_db <- function(con) {
   # migration as well as in new_db() is what keeps a migrated database and a
   # fresh one identical.
   if (has_tbl("stitched")) DBI::dbExecute(con, "DROP TABLE stitched;")
+
+  # --- schema v19: saved FASTA-header configurations for export ---
+  ensure_export_opts(con)
 
   # user_version is a header field, not table data, so it is set after the
   # transaction commits rather than inside it.
