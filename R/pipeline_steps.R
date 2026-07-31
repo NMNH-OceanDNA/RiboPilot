@@ -505,14 +505,21 @@ reconcile_ignore_unit <- function(con, id, path, scaffold, ignore) {
       params = list(id, path, scaffold,
         if (nrow(o)) o$annotate_opts[1] else "default",
         if (nrow(o)) o$curate_opts[1] else "default"))
-    # Re-queue only when the unit has no feature model; one that was merely held
-    # comes back already annotated and should not cost another annotation run.
+    # Re-queue only when the unit has never been annotated. Feature rows are not
+    # the test on their own: a scaffold annotation legitimately found nothing on
+    # has none, and re-queueing it every time triage touches it holds the sample
+    # at "in progress" forever. annotate.n_features is written (as 0) whenever
+    # reconcile_one has run, so it, not the row count, marks annotation as done.
     n <- tryCatch(DBI::dbGetQuery(con,
       "SELECT COUNT(*) n FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?",
       params = list(id, path, scaffold))$n[1], error = function(e) 0L)
+    done <- tryCatch(DBI::dbGetQuery(con,
+      "SELECT COUNT(*) n FROM annotate
+        WHERE ID = ? AND path = ? AND scaffold = ? AND n_features IS NOT NULL",
+      params = list(id, path, scaffold))$n[1], error = function(e) 0L)
     DBI::dbExecute(con,
       sprintf("UPDATE annotate SET annotate_switch = %d WHERE ID = ? AND path = ? AND scaffold = ?",
-        if (isTRUE(n > 0)) 2L else 1L),
+        if (isTRUE(n > 0) || isTRUE(done > 0)) 2L else 1L),
       params = list(id, path, scaffold))
   }
   # holding the last queued unit finishes the sample; releasing one reopens it

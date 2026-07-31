@@ -125,7 +125,8 @@ mk_triage_state_db <- function() {
   DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, length INT,
     ignore INT, triage TEXT, triage_reason TEXT, triage_source TEXT, triage_rule TEXT)")
   DBI::dbExecute(con, "CREATE TABLE annotate(ID TEXT, path INT, scaffold INT, annotate_switch INT,
-    annotate_lock INT, annotate_opts TEXT, curate_opts TEXT, reviewed TEXT, n_features INT)")
+    annotate_lock INT, annotate_opts TEXT, curate_opts TEXT, reviewed TEXT, n_features INT,
+    PRIMARY KEY (ID, path, scaffold))")
   DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT)")
   DBI::dbExecute(con, "CREATE TABLE coverage(ID TEXT, path INT, scaffold INT,
     mean_depth REAL, median_depth REAL)")
@@ -172,4 +173,33 @@ test_that("triage settles the state even when it decides nothing", {
 
   expect_equal(RiboPilot:::auto_triage_sample(con, "S1"), 0L)
   expect_equal(sample_state(con), 2L)
+})
+
+test_that("a scaffold annotation found nothing on does not hold the sample open", {
+  # annotation ran and legitimately returned no features; triage then reviews the
+  # unit and leaves it kept. That must not re-queue it, or the sample can never
+  # leave "in progress".
+  con <- mk_triage_state_db(); on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "DELETE FROM annotations WHERE scaffold = 2")
+  DBI::dbExecute(con, "UPDATE annotate SET n_features = 0 WHERE scaffold = 2")
+
+  RiboPilot:::reconcile_ignore_unit(con, "S1", 1L, 2L, 0L)
+
+  st <- DBI::dbGetQuery(con,
+    "SELECT annotate_switch FROM annotate WHERE ID='S1' AND path=1 AND scaffold=2")
+  expect_equal(st$annotate_switch, 2L)
+  expect_equal(sample_state(con), 2L)
+})
+
+test_that("a unit that was never annotated still queues", {
+  con <- mk_triage_state_db(); on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "DELETE FROM annotations WHERE scaffold = 2")
+  DBI::dbExecute(con, "UPDATE annotate SET n_features = NULL WHERE scaffold = 2")
+
+  RiboPilot:::reconcile_ignore_unit(con, "S1", 1L, 2L, 0L)
+
+  st <- DBI::dbGetQuery(con,
+    "SELECT annotate_switch FROM annotate WHERE ID='S1' AND path=1 AND scaffold=2")
+  expect_equal(st$annotate_switch, 1L)
+  expect_equal(sample_state(con), 4L)
 })
