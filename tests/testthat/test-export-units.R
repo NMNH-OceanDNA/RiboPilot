@@ -7,14 +7,14 @@ mk_project <- function() {
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
   on.exit(DBI::dbDisconnect(con))
   DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT, Taxon TEXT, sci_name TEXT, taxid INT)")
-  DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, sequence TEXT, length INT, ignore INT)")
+  DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, sequence TEXT, length INT, topology TEXT, ignore INT)")
   DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT, type TEXT, start INT, stop INT)")
   DBI::dbExecute(con, "CREATE TABLE annotate(ID TEXT, path INT, scaffold INT, annotate_lock INT,
                        problematic TEXT, partial TEXT, reviewed TEXT, chimeric INT,
                        n_features INT, missing TEXT, export_group TEXT)")
   seq <- paste0(strrep("A", 200), strrep("C", 200))
   for (u in list(c("S1", 1, 1), c("S1", 1, 2), c("S2", 1, 1))) {
-    DBI::dbExecute(con, "INSERT INTO assemblies VALUES(?,?,?,?,?,0)",
+    DBI::dbExecute(con, "INSERT INTO assemblies VALUES(?,?,?,?,?,'linear',0)",
       params = list(u[1], as.integer(u[2]), as.integer(u[3]), seq, nchar(seq)))
     DBI::dbExecute(con, "INSERT INTO annotate VALUES(?,?,?,1,'no','no','yes',0,2,'',NULL)",
       params = list(u[1], as.integer(u[2]), as.integer(u[3])))
@@ -37,13 +37,13 @@ test_that("export_bundle honours a per-unit selection", {
   dir <- mk_project()
   # one scaffold of a two-scaffold sample: the sibling must not come along
   g <- bundle(dir, units = data.frame(ID = "S1", path = 1L, scaffold = 2L))
-  fsa <- basename(Sys.glob(file.path(g, "*.fsa")))
-  expect_equal(fsa, "S1_p1_s2.fsa")
+  fsa <- basename(Sys.glob(file.path(g, "samples", "*.fasta")))
+  expect_equal(fsa, "S1_p1_s2.fasta")
 
   # sample-grain ids still export every unit of the sample
   g2 <- bundle(dir, ids = "S1", label = "byid")
-  expect_setequal(basename(Sys.glob(file.path(g2, "*.fsa"))),
-    c("S1_p1_s1.fsa", "S1_p1_s2.fsa"))
+  expect_setequal(basename(Sys.glob(file.path(g2, "samples", "*.fasta"))),
+    c("S1_p1_s1.fasta", "S1_p1_s2.fasta"))
 })
 
 test_that("SeqIDs are stable between a partial and a whole-project export", {
@@ -52,10 +52,10 @@ test_that("SeqIDs are stable between a partial and a whole-project export", {
   all <- bundle(dir, label = "all")
   # S1 has two exportable units in the DB, so it is suffixed in BOTH bundles.
   # Counting within the filtered subset instead would emit a bare "S1" here.
-  expect_true(file.exists(file.path(one, "S1_p1_s1.fsa")))
-  expect_true(file.exists(file.path(all, "S1_p1_s1.fsa")))
+  expect_true(file.exists(file.path(one, "samples", "S1_p1_s1.fasta")))
+  expect_true(file.exists(file.path(all, "samples", "S1_p1_s1.fasta")))
   # S2 has a single unit, so it keeps its bare ID
-  expect_true(file.exists(file.path(all, "S2.fsa")))
+  expect_true(file.exists(file.path(all, "samples", "S2.fasta")))
 })
 
 test_that("ignored and problematic units are excluded from the bundle", {
@@ -65,7 +65,7 @@ test_that("ignored and problematic units are excluded from the bundle", {
   DBI::dbDisconnect(con)
   g <- bundle(dir, label = "kept")
   # S1 now has one exportable unit, so it loses the suffix too
-  expect_setequal(basename(Sys.glob(file.path(g, "*.fsa"))), c("S1.fsa", "S2.fsa"))
+  expect_setequal(basename(Sys.glob(file.path(g, "samples", "*.fasta"))), c("S1.fasta", "S2.fasta"))
 })
 
 # Add a screen table carrying a paralog pair for S1, as screen_sample() would.
@@ -106,8 +106,8 @@ test_that("export records the variant fact for a paralog and does NOT gate", {
   expect_setequal(smry$variant_group, c("g1", "g2"))
   expect_equal(unique(smry$n_variants), 2L)
   # both units are still in the bundle
-  expect_setequal(basename(Sys.glob(file.path(g, "*.fsa"))),
-    c("S1_p1_s1.fsa", "S1_p1_s2.fsa"))
+  expect_setequal(basename(Sys.glob(file.path(g, "samples", "*.fasta"))),
+    c("S1_p1_s1.fasta", "S1_p1_s2.fasta"))
   # and the variant fact never leaks into the submission-risk gate
   # (read.csv turns the empty risk string into NA)
   risk <- as.character(smry$submission_risk)
