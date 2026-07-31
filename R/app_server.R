@@ -856,7 +856,7 @@ app_server <- function(input, output, session) {
     }
     # reactable renders in data-frame column order, so the row identifier has to
     # lead here; colDef(sticky=) alone does not move it.
-    lead <- c("unit", "triage", "length", "topology", "path_score", "depth", "depth_track", "elements",
+    lead <- c("unit", "triage", "length", "path_score", "depth", "depth_track", "elements",
       "screen_verdict", "variant_class")
     d <- d[, c(intersect(lead, names(d)), setdiff(names(d), lead)), drop = FALSE]
     reactable::reactable(d, compact = TRUE, resizable = TRUE, filterable = TRUE,
@@ -876,7 +876,6 @@ app_server <- function(input, output, session) {
             title = "Tick rows to copy as FASTA"))),
         unit = reactable::colDef(name = "Unit", width = 72, show = TRUE, sticky = "left"),
         length = reactable::colDef(name = "Length", width = 80, show = TRUE),
-        topology = reactable::colDef(name = "Topology", width = 85, show = TRUE),
         path_score = reactable::colDef(name = "Path score", width = 90, show = TRUE),
         # The number is this scaffold's absolute median depth; the bar beside it
         # is that value as a fraction of the sample's deepest scaffold. Naming

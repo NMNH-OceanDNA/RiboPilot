@@ -99,7 +99,11 @@ unit_evidence <- function(id) {
     return(data.frame())
   }
   d <- app_query(
-    "SELECT a.path, a.scaffold, a.length, a.topology, COALESCE(a.ignore,0) AS ignore,
+    # topology is deliberately not selected: GetOrganelle calls an rDNA result
+    # "circular" when it disentangles the assembly graph as a cycle, which a
+    # TANDEM ARRAY does by construction. Nuclear rDNA is not a circular
+    # molecule, and showing the word next to a scaffold said it was.
+    "SELECT a.path, a.scaffold, a.length, COALESCE(a.ignore,0) AS ignore,
        a.triage, a.triage_reason, a.triage_source,
        a.blast_species, a.blast_accession, a.blast_pident, a.blast_qcovs, a.blast_source,
        ROUND(COALESCE(c.median_depth, c.mean_depth), 1) AS depth,

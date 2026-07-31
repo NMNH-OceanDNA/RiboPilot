@@ -430,3 +430,14 @@ test_that("the scaffold table carries each unit's path score", {
     expect_equal(d$path_score[d$path == 2], c(0.431, 0.431))
   })
 })
+
+test_that("the scaffold table does not report topology", {
+  # GetOrganelle labels an rDNA result "circular" when it disentangles the graph
+  # as a cycle, which a tandem array does by construction. Nuclear rDNA is not a
+  # circular molecule, so the column asserted something false about every
+  # successfully assembled repeat.
+  q <- paste(deparse(RiboPilot:::unit_evidence), collapse = " ")
+  expect_false(grepl("a.topology", q, fixed = TRUE))
+  srv <- paste(deparse(RiboPilot:::app_server), collapse = " ")
+  expect_false(grepl('name = "Topology"', srv, fixed = TRUE))
+})
