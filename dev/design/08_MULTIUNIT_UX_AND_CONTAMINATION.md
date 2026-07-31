@@ -226,7 +226,8 @@ submitted rDNA sequence, and a reviewer needs it to reproduce the result.
 | BLAST hits ranked by `pident * qcovs` | R/blast_genbank.R:71-76 | Systematically favours **short** high-identity hits: a 400 bp conserved-18S-core HSP against an unrelated organism scores 99*95, a full 12 kb repeat from a genuine relative scores 95*95. Rank by bitscore, which scales with alignment length |
 | `assemblies.blast_*` is mixed-provenance with no record of which | R/pipeline_steps.R:68 (seed DB) then R/blast_genbank.R:97 (core_nt) | `blast_pident` silently means two different things. Add `blast_source TEXT` |
 | `blast.nf` exits 1 for the whole per-sample task on any unit's failure, under a shared 3-retry budget | inst/nextflow/modules/blast.nf:18-19, :56 | A 30-unit sample re-submits already-completed searches to NCBI. Cheap fix: skip units that already have hit rows |
-| `assemble_opts.max_scaffolds` stored and editable, never enforced | R/init_db.R:42, R/app_opts.R:72; R/pipeline_steps.R:254-262 enforces `max_paths` only | Directly bounds serial remote submissions. Cap by cumulative length or anchor content rather than a flat count: degraded museum extracts legitimately fragment one repeat across many short contigs |
+| ~~`assemble_opts.max_scaffolds` stored and editable, never enforced~~ FIXED | R/pipeline_steps.R:292-320 | Both `max_paths` and `max_scaffolds` are now GATES, not caps: a sample over either is failed with a note, its scaffolds parked (`ignore = 1`), and the sequences kept so raising the limit and re-running recovers it without re-assembling. `max_scaffolds` counts scaffolds within one path (worst path), not the sample total. NA or <= 0 means no limit. This doc argued against a flat count (degraded museum extracts legitimately fragment one repeat across many short contigs) and proposed capping by cumulative length or anchor content; the maintainer chose the flat count anyway, reasoning that a user can raise the limit and re-run. Recorded so the objection is not re-litigated blind |
+| `assemble_opts.min_assembly_length` stored and editable, never enforced | R/init_db.R:43, R/app_opts.R:119, R/app_opts.R:389 write it; nothing reads it | The remaining dead option of the pair. Either join it to the gate above or drop it from the schema and the modal |
 | `score_candidates()` coerces missing sub-scores to 0 | R/scaffold_scoring.R:135-146 | A path whose BLAST never ran scores identically to one that BLASTed at 0% identity. Renormalize over available sub-scores |
 | `write_blast_screen()` extracts the ~500 MB taxdump per unit with no cleanup | R/blast_genbank.R:112-119, cf. R/taxonomy.R:379-380 | Not a cumulative leak (blast.nf:58 spawns a fresh R process per unit and R clears its tempdir), but a 30-unit sample does 30 serial 500 MB untars. Cache per process |
 | `compute_feature_alignment()` reads `stitched` and queries `annotations` with no path/scaffold predicate | R/blast_ref_align.R:11 | Under the per-scaffold model this mixes features from different units of one sample into one alignment, producing wrong per-element identities and therefore wrong `low_identity` flags. Zero callers, absent from NAMESPACE - delete |
@@ -309,8 +310,10 @@ reads as a pipeline failure.
 view and the only per-scaffold control in the app: `path, scaffold, length,
 topology`, one BLAST hit, and a text-link toggle, at `defaultPageSize = 10` with
 no `filterable`, no `searchable`, no `sortable`, no selection. With
-`max_paths = 10` (R/init_db.R:41) and `max_scaffolds` unenforced, a routine rDNA
-sample is 20-40 rows, i.e. 2-4 pages of blind paging.
+`max_paths = 10` (R/init_db.R:41) and `max_scaffolds = 10` per path, a routine
+rDNA sample is 20-40 rows, i.e. 2-4 pages of blind paging. (Both are gates now,
+so an over-limit sample is failed rather than trimmed; the row count for a
+sample that passes is unchanged.)
 
 Add, all from existing tables: `coverage.mean_depth` and a within-sample
 relative depth, `assemblies.blast_qcovs` (written at R/blast_genbank.R:97, never
@@ -1031,6 +1034,16 @@ and the modal is where you act.
 ```
 
 ### 4.4 The Assemble modal becomes the evidence surface
+
+**Status 2026-07-30: the implementation has moved past this sketch.** The modal
+(R/app_modals.R:42, R/app_server.R:875) now has a scaffold table where clicking
+a row examines it, highlighted via reactable meta rather than a row index, and
+the two evidence panels below the table (GenBank screen plus nuclear-rDNA
+candidates, and read coverage) follow the examined row. The tick boxes are a
+separate multi-select used by the Copy FASTA button, which copies the ticked
+scaffolds headed by sample, taxon and unit. The old per-row "hits" text link is
+gone. `set_selected` is still present, contrary to the paragraph after the
+sketch. Read the sketch below as intent, not as a description of the app.
 
 ```
 +-- Assemble - USNM 123458 -------------------------------------------------[x]+

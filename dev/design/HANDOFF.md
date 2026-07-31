@@ -56,44 +56,34 @@ Plans live in `dev/design/plans/YYYY-MM-DD-topic.md`.
 merged sub-projects the worst defects were defects in the spec, and the
 corrections are recorded in place.
 
-## Design documents that now lag the code
+## Design documents that lagged the code
 
-Created by the last day of work. All verified 2026-07-30. This is the first
-thing to fix, because every one of them will mislead a reader who trusts it.
+Items 1 to 6 were FIXED 2026-07-31 on `assembler-swap`, each re-verified against
+the code first. Item 7 is still open and cannot be done from this branch.
 
-1. **Doc 08 section 1.9 still lists `assemble_opts.max_scaffolds` as "stored and
-   editable, never enforced"** (line 229). It is enforced now. Both it and
-   `max_paths` are gates: a sample over either limit is failed with a note and
-   its scaffolds parked, and the sequences are kept so raising the limit and
-   re-running recovers it without re-assembling. Note the doc argued AGAINST a
-   flat count ("degraded museum extracts legitimately fragment one repeat across
-   many short contigs") and the maintainer chose the flat count anyway, with the
-   reasoning "user can always go back and rerun those later". Record the decision
-   and the objection it overrode.
-2. **Doc 08 section 3 (line 312) reasons from "`max_scaffolds` unenforced"** when
-   sizing the scaffold table. Same fix.
-3. **`min_assembly_length` is still unenforced and is not recorded anywhere as
-   debt.** It sits in the schema, in `new_db()` and in the options modal, and
-   nothing reads it. It should either join the gate or be listed in doc 08
-   section 1.9 next to where `max_scaffolds` used to be.
-4. **Doc 01's `assemble_opts` field list is stale.** It names `k_list`,
-   `min_length` and `expected_length`, which do not exist, and does not name
-   `bowtie2`, `spades` or `min_assembly_length`, which do. Its `assembler` value
-   list is also wrong: the real values are getorganelle, bait, denovo.
-5. **The sample-state semantics changed and no document says so.** Assembly
-   loading writes state 4 (in progress); triage, the last per-sample step, writes
-   2 (done); a sample also settles when its remaining units are held or ignored.
-   Consequence worth writing down: samples at 4 are picked up by the next run, so
-   an interrupted run resumes, and `nf_pending_count()` reports unfinished
-   samples as pending rather than zero.
-6. **Doc 08 section 4.4 ("the Assemble modal becomes the evidence surface") is
-   now behind the implementation.** The modal gained row-click-to-examine with a
-   highlight, tick boxes, and a Copy FASTA button. The old per-row "hits" link is
-   gone.
-7. **Doc 07's sentence about the last stitch caller.** On `main` it says the only
-   remaining stitch caller chain runs through `main_fallback.nf`. PR #10 deletes
-   that file. Fix once #10 merges; it cannot be done from the branch because the
-   text is not on it.
+1. ~~Doc 08 section 1.9 lists `max_scaffolds` as never enforced.~~ Fixed: the row
+   is struck through and rewritten as the gate it now is, with the maintainer's
+   flat-count decision and the objection it overrode both recorded. Worth
+   knowing: the limit counts scaffolds within one path (the worst path), not the
+   sample total.
+2. ~~Doc 08 section 2.3 reasons from "`max_scaffolds` unenforced".~~ Fixed.
+3. ~~`min_assembly_length` unenforced and recorded nowhere.~~ Fixed: it now has
+   its own row in doc 08 section 1.9, directly under the old `max_scaffolds` row.
+   Still dead code; the decision to enforce or delete it has not been made.
+4. ~~Doc 01's `assemble_opts` field list is stale.~~ Fixed: replaced with the
+   as-built column list and a note saying which of the old names were never
+   built.
+5. ~~Sample-state semantics undocumented.~~ Fixed: doc 01 gained a "Per-sample
+   state" subsection covering the 4-then-2 sequence, which states are never
+   rewritten, and the two consequences (interrupted runs resume, and
+   `nf_pending_count()` reports the leftovers).
+6. ~~Doc 08 section 4.4 behind the implementation.~~ Fixed: a status block above
+   the sketch describes what the modal actually does. Note `set_selected` still
+   exists, contrary to that section's instruction to delete it.
+7. **STILL OPEN. Doc 07's sentence about the last stitch caller.** On `main` it
+   says the only remaining stitch caller chain runs through `main_fallback.nf`.
+   PR #10 deletes that file. Fix once #10 merges; it cannot be done from the
+   branch because the text is not on it.
 
 ## Open design questions, and what each actually needs
 
@@ -151,7 +141,9 @@ clock, not a coding task. Discuss cost with the maintainer first.
 
 ## Unblocked work available now
 
-- The seven stale-document fixes above.
+- Stale-document fix 7 above, once PR #10 merges.
+- Deciding whether `min_assembly_length` joins the assembly gate or leaves the
+  schema and the options modal (stale-document fix 3).
 - **Per-position minor-allele fraction** (doc 08 section 5). A submitted rDNA
   scaffold is a consensus over many non-identical array copies, and that is the
   first question a systematist asks of a genome-skim submission.
