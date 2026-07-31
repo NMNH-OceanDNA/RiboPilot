@@ -55,10 +55,12 @@ app_ui <- function(request) {
             ctrls(bttn("state_btn", "State"), bttn("lock_btn", "Lock"),
               bttn("triage_btn", "Triage", "filter"),
               bttn("run_btn", "Update", "circle-play"))),
+          # No Update button here: one workflow, launched from Assemble. This tab
+          # is a review surface -- edit the feature model, trim, mark, lock.
           shiny::conditionalPanel("input.mode == 'Annotate'",
             ctrls(bttn("state_btn", "State"), bttn("lock_btn", "Lock"),
               bttn("reviewed_btn", "Reviewed"), bttn("problematic_btn", "Problem"),
-              bttn("partial_btn", "Partial"), bttn("run_btn", "Update", "circle-play"))),
+              bttn("partial_btn", "Partial"))),
           shiny::conditionalPanel("input.mode == 'Export'",
             ctrls(bttn("assign_group_btn", "Assign Group"), bttn("clear_group_btn", "Clear Group"),
               bttn("export_btn", "Export Data", "download"),

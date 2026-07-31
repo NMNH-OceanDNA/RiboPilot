@@ -10,18 +10,23 @@
 // out of step with this file until it no longer ran; see
 // dev/design/14_ASSEMBLER_SWAP.md.
 //
-// Annotation runs here rather than only in WF2 because it is cheap next to
+// Annotation runs with assembly because it is cheap next to
 // assembly (a few seconds per scaffold against GetOrganelle's minutes to hours)
 // and because the reviewer needs the feature model to decide which scaffolds to
 // keep: a rRNA-features column that is empty at the moment of the keep/drop
 // decision is worse than useless, since "nothing found" and "not looked at yet"
-// render identically. WF2 (main_annotate.nf) remains the RE-annotation entry
-// point for trims, annotate_opts changes and un-ignored units.
+// render identically.
+//
+// Re-annotation lives here too. There is no second workflow: units queued after
+// review (a trim, an options change, a restored scaffold, an edited sequence)
+// enter through query_annotate_units and skip straight to the annotation chain,
+// paying for neither assembly nor a second remote BLAST. See
+// dev/design/15_WF2_DECOMMISSION.md.
 
 include { preprocess } from './modules/preprocess.nf'
 include { assemble } from './modules/assemble.nf'
 include { fallback_assemble } from './modules/fallback.nf'
-include { query_samples; query_sample_units; score; annotate_tools; reconcile; curate; triage; screen } from './modules/pipeline_r.nf'
+include { query_samples; query_annotate_units; query_sample_units; score; annotate_tools; reconcile; curate; triage; screen } from './modules/pipeline_r.nf'
 include { blast_genbank } from './modules/blast.nf'
 include { blast_ref_fetch; blast_ref_align } from './modules/blast_ref.nf'
 include { coverage } from './modules/coverage.nf'
@@ -84,7 +89,14 @@ workflow {
         .flatMap { _id, tsv ->
             tsv.splitCsv(header: true, sep: '\t')
                .collect { r -> tuple(r.ID, r.path, r.scaffold, r.cpus, r.mem) } }
-    annotate_tools(units)
+    // Units queued for annotation only, on samples this run is not assembling.
+    // Same tuple shape as the freshly assembled ones, so they mix into one
+    // channel and the whole tail below is shared.
+    requeued = query_annotate_units()
+        .splitCsv(header: true, sep: '\t')
+        .map { r -> tuple(r.ID, r.path, r.scaffold, r.cpus, r.mem) }
+
+    annotate_tools(units.mix(requeued))
     reconcile(annotate_tools.out)
 
     // Reference alignment and curation read blast_ref_alignment / blast_screen,

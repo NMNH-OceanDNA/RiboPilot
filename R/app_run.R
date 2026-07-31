@@ -20,10 +20,10 @@ detect_scheduler <- function() {
 #' than executed on the login node. The script is a starting point the user can
 #' edit in the run modal before saving/submitting.
 #' @noRd
-build_submit_script <- function(project, wf, resume = TRUE, sched = detect_scheduler()) {
-  args <- nf_command(project, wf, resume = resume)
+build_submit_script <- function(project, resume = TRUE, sched = detect_scheduler()) {
+  args <- nf_command(project, resume = resume)
   cmd <- paste(c("nextflow", args, "-ansi-log false"), collapse = " ")
-  jobname <- paste0("ribopilot_", wf)
+  jobname <- "ribopilot"
   hdr <- if (is.null(sched)) {
     character(0)
   } else {

@@ -111,6 +111,14 @@ app_server <- function(input, output, session) {
       app_query(
         "SELECT a.assemble_lock, a.assemble_switch, s.ID, s.Taxon, s.sci_name, s.taxid,
            pp.pre_opts, a.assemble_opts, a.blast_opts,
+           -- annotation + curation presets are set here too: one workflow runs
+           -- assembly and annotation, so every option a run consumes belongs on
+           -- the surface the run is launched from. Taken from the sample's first
+           -- unit; opts_apply writes them back across all of the sample's units.
+           (SELECT an.annotate_opts FROM annotate an WHERE an.ID = s.ID
+              ORDER BY an.path, an.scaffold LIMIT 1) AS annotate_opts,
+           (SELECT an.curate_opts FROM annotate an WHERE an.ID = s.ID
+              ORDER BY an.path, an.scaffold LIMIT 1) AS curate_opts,
            a.paths, a.length,
            -- unit counts come from `assemblies` so they stay live as scaffolds
            -- are kept/dropped. a.blast_* is not selected: nothing writes it (the
@@ -141,7 +149,7 @@ app_server <- function(input, output, session) {
         "SELECT an.annotate_lock, an.annotate_switch, s.ID, an.path, an.scaffold, s.Taxon, s.sci_name, s.taxid,
            asm.length, an.n_features, an.missing,
            asm.blast_species, asm.blast_accession, asm.blast_pident,
-           an.n_flags, an.annotate_opts, an.curate_opts, an.reviewed,
+           an.n_flags, an.reviewed,
            an.problematic, an.partial, an.time_stamp,
            'Details' AS details, 'Output' AS output
          FROM annotate an
@@ -571,7 +579,6 @@ app_server <- function(input, output, session) {
   })
 
   # ---- Update modal: run the workflow with live Nextflow progress ----
-  wf_for_mode <- function() if ((input$mode %||% "") == "Annotate") "annotate" else "assemble"
   nf_process <- reactiveVal(NULL)
   prog_header <- reactiveVal(character(0))
   prog_executor <- reactiveVal("")
@@ -579,7 +586,7 @@ app_server <- function(input, output, session) {
   prog_footer <- reactiveVal(character(0))
 
   output$nf_cmd_text <- renderText({
-    args <- nf_command(app_project(), wf_for_mode(), resume = isTRUE(input$nf_resume %||% TRUE))
+    args <- nf_command(app_project(), resume = isTRUE(input$nf_resume %||% TRUE))
     paste(c("nextflow", args), collapse = " ")
   })
 
@@ -589,8 +596,8 @@ app_server <- function(input, output, session) {
     prog_header(character(0)); prog_executor(""); prog_proc(list()); prog_footer(character(0))
     hl <- app_headless()
     sched <- if (hl) detect_scheduler() else NULL
-    script <- if (hl) build_submit_script(app_project(), wf_for_mode(), resume = TRUE, sched = sched) else ""
-    showModal(run_modal(input$mode %||% "Assemble", nf_pending_count(app_project(), wf_for_mode()),
+    script <- if (hl) build_submit_script(app_project(), resume = TRUE, sched = sched) else ""
+    showModal(run_modal(nf_pending_count(app_project()),
       headless = hl, sched = sched, script = script))
   })
 
@@ -598,8 +605,8 @@ app_server <- function(input, output, session) {
   # Nextflow on the login node).
   write_submit_script <- function() {
     script <- input$submit_script_text %||%
-      build_submit_script(app_project(), wf_for_mode(), resume = isTRUE(input$nf_resume %||% TRUE))
-    f <- file.path(app_project(), paste0("submit_", wf_for_mode(), ".sh"))
+      build_submit_script(app_project(), resume = isTRUE(input$nf_resume %||% TRUE))
+    f <- file.path(app_project(), "submit_ribopilot.sh")
     writeLines(script, f)
     try(Sys.chmod(f, "0755"), silent = TRUE)
     f
@@ -694,7 +701,7 @@ app_server <- function(input, output, session) {
     nxf_pin <- nf_pin_version()
     if (!is.na(nxf_pin)) nf_env <- c(nf_env, NXF_VER = nxf_pin)
     p <- processx::process$new("nextflow",
-      args = c(nf_command(app_project(), wf_for_mode(), resume = isTRUE(input$nf_resume %||% TRUE)),
+      args = c(nf_command(app_project(), resume = isTRUE(input$nf_resume %||% TRUE)),
         "-ansi-log"),
       stdout = "|", stderr = "|", wd = app_project(),
       env = nf_env)
@@ -1226,7 +1233,7 @@ app_server <- function(input, output, session) {
     req(id, input$sel_path)
     con <- app_con()
     on.exit(DBI::dbDisconnect(con))
-    # Records the reviewer's choice for display. It does NOT gate WF2, which
+    # Records the reviewer's choice for display. It does NOT gate annotation, which
     # selects units by assemblies.ignore, so nothing is re-queued here: the old
     # sample-wide "UPDATE annotate SET annotate_switch = 1 WHERE ID = ?" also
     # re-queued annotate-locked units the reviewer never touched.

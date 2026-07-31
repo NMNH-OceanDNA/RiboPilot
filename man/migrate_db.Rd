@@ -18,7 +18,7 @@ touching existing data. Safe to call repeatedly. New columns are only ever
 added, never dropped or retyped.
 }
 \details{
-Every pipeline process migrates when it opens the database, and WF2 fans out
+Every pipeline process migrates when it opens the database, and annotation fans out
 to one process per unit, so a pending migration is attempted by a dozen
 processes at once. Each step is guarded by a "does this exist yet" check, but
 the check and the DDL are two statements: without a write lock held across

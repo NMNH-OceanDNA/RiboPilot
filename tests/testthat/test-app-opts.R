@@ -102,3 +102,34 @@ test_that("opts_row still builds the other opts tables", {
   expect_equal(opts_row("co", "c", list(co_ruleset = "strict", co_pid = 0.9,
     co_contam = TRUE), base = list())$check_contaminant, 1L)
 })
+
+test_that("annotation and curation presets are set from the Assemble surface", {
+  # One workflow runs assembly AND annotation, so every option a run consumes
+  # belongs on the surface the run is launched from (doc 15). The Annotate tab
+  # is a review surface now and must not offer them.
+  srv <- paste(deparse(RiboPilot:::app_server), collapse = "\n")
+
+  # the Assemble-mode query supplies both presets...
+  expect_true(grepl("AS annotate_opts", srv, fixed = TRUE))
+  expect_true(grepl("AS curate_opts", srv, fixed = TRUE))
+  # ...and they are still editable cells wired to the opts handlers
+  expect_true(grepl("set_annotate_opts", srv, fixed = TRUE))
+  expect_true(grepl("set_curate_opts", srv, fixed = TRUE))
+
+  # ...and the Annotate-mode query no longer carries them. Anchored on that
+  # query specifically: the Assemble one names the same columns in subselects,
+  # so a whole-file search would pass while the tab still showed them.
+  i <- regexpr("an.annotate_lock, an.annotate_switch", srv, fixed = TRUE)
+  expect_true(i > 0)
+  ann_q <- substr(srv, i, i + 700)
+  expect_false(grepl("annotate_opts", ann_q, fixed = TRUE))
+  expect_false(grepl("curate_opts", ann_q, fixed = TRUE))
+})
+
+test_that("the Annotate tab has no Update button", {
+  ui <- paste(deparse(RiboPilot:::app_ui), collapse = "\n")
+  i <- regexpr("input.mode == 'Annotate'", ui, fixed = TRUE)
+  expect_true(i > 0)
+  block <- substr(ui, i, i + 400)
+  expect_false(grepl("run_btn", block, fixed = TRUE))
+})

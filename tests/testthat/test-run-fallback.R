@@ -75,7 +75,9 @@ test_that("fallback_candidates finds QC-gate failures and missing anchors", {
   expect_length(RiboPilot:::fallback_candidates(con), 0L)
 })
 
-test_that("nf_command no longer offers a fallback workflow", {
-  expect_error(RiboPilot:::nf_command(tempdir(), "fallback"), "arg")
-  expect_false(any(grepl("--method", RiboPilot:::nf_command(tempdir(), "assemble"), fixed = TRUE)))
+test_that("nf_command builds the one workflow, with no fallback options", {
+  args <- RiboPilot:::nf_command(tempdir())
+  expect_false(any(grepl("--method", args, fixed = TRUE)))
+  expect_true(any(grepl("main\\.nf$", args)))
+  expect_false(any(grepl("main_annotate\\.nf", args)))
 })

@@ -33,29 +33,41 @@ process query_samples {
 
 // WF2: assembled samples queued for (re-)annotation, with their annotate_opts
 // compute settings.
-process query_annotate_samples {
+// Units queued for annotation ONLY: a trim, an annotate_opts or curate_opts
+// change, a restored scaffold, an edited sequence. WF2 used to own this; there
+// is one workflow now (dev/design/15_WF2_DECOMMISSION.md).
+//
+// Samples this run is about to assemble are EXCLUDED. Assembly re-seeds a
+// sample's annotate units itself, so without the exclusion a sample queued for
+// both would be annotated twice in one run, racing on the same rows.
+//
+// WF2's assemble_lock = 1 gate is deliberately NOT carried over: it existed so
+// re-annotation could not run before the assembly had been reviewed, and with
+// one workflow a unit is annotate-only work because a user queued it.
+process query_annotate_units {
     cache false
     executor 'local'
     output:
-    path 'samplesheet.tsv'
+    path 'annotate_units.tsv'
     script:
     """
-    printf 'ID\tpath\tscaffold\tcpus\tmem\n' > samplesheet.tsv
+    printf 'ID\tpath\tscaffold\tcpus\tmem\n' > annotate_units.tsv
     sqlite3 -separator '\t' '${params.db}' "
       SELECT an.ID, an.path, an.scaffold, COALESCE(ao.cpus,4) AS cpus, COALESCE(ao.memory,8) AS mem
       FROM annotate an
-      JOIN assemble a ON a.ID = an.ID
       JOIN annotate_opts ao ON an.annotate_opts = ao.annotate_opts
       JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
-      WHERE an.annotate_switch IN (1,4) AND an.annotate_lock = 0 AND a.assemble_lock = 1
-        AND COALESCE(asm.ignore,0) = 0;" >> samplesheet.tsv
+      JOIN assemble a ON a.ID = an.ID
+      WHERE an.annotate_switch IN (1,4) AND an.annotate_lock = 0
+        AND COALESCE(asm.ignore,0) = 0
+        AND NOT (a.assemble_switch IN (1,4) AND COALESCE(a.assemble_lock,0) = 0);" >> annotate_units.tsv
     """
 }
 
 // WF1: the assembly units of ONE sample that has just been assembled, so
 // annotation can run over every scaffold as it is produced rather than waiting
-// for the user to review and lock. Unlike query_annotate_samples this does not
-// gate on assemble_lock or annotate_switch: nothing has been reviewed yet.
+// for the user to review and lock. Unlike query_annotate_units this does not
+// gate on annotate_switch: nothing has been reviewed yet.
 process query_sample_units {
     cache false
     executor 'local'

@@ -256,8 +256,8 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
 #' node): running on the host would burn the login node, so offer an editable
 #' cluster job script to Submit as job / Save instead.
 #' @noRd
-run_modal <- function(mode, n, headless = FALSE, sched = NULL, script = "") {
-  wf <- if (mode == "Annotate") "Annotation (WF2)" else "Assembly (WF1)"
+run_modal <- function(n, headless = FALSE, sched = NULL, script = "") {
+  wf <- "RiboPilot pipeline"
   cluster_section <- if (headless) {
     tagList(
       hr(style = "margin:10px 0;"),

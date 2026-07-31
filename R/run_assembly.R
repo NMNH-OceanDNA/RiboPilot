@@ -43,7 +43,7 @@ config_param <- function(config_lines, key) {
 #' project database, runs fastp + GetOrganelle, then scores and annotates each
 #' assembly and computes the assembly-review aids (reference BLAST + coverage),
 #' writing everything back to the database. Annotation and curation are handled
-#' by the annotation workflow ([run_annotate()], WF2) after you review and lock
+#' by re-running this workflow after you review and lock
 #' the assemblies in the app.
 #'
 #' @param path Project directory (contains `.sqlite` and `.config`).

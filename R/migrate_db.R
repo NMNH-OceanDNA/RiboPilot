@@ -125,7 +125,7 @@ LEGACY_ENTREZ_QUERY <- paste(
 #' touching existing data. Safe to call repeatedly. New columns are only ever
 #' added, never dropped or retyped.
 #'
-#' Every pipeline process migrates when it opens the database, and WF2 fans out
+#' Every pipeline process migrates when it opens the database, and annotation fans out
 #' to one process per unit, so a pending migration is attempted by a dozen
 #' processes at once. Each step is guarded by a "does this exist yet" check, but
 #' the check and the DDL are two statements: without a write lock held across
@@ -380,7 +380,7 @@ migrate_db <- function(con) {
   # machine-made drop is indistinguishable from the curator's. triage carries the
   # decision, triage_reason carries the justification in plain English, and
   # triage_source says who made it so an auto re-run never overwrites a human.
-  # `ignore` stays the single downstream gate (WF2, the app and export all filter
+  # `ignore` stays the single downstream gate (annotation, the app and export all filter
   # on it) and becomes derived from triage rather than hand-written.
   add_col("assemblies", "triage", "TEXT")
   add_col("assemblies", "triage_reason", "TEXT")
