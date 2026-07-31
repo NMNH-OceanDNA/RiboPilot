@@ -19,23 +19,27 @@ rp_is_source_dir <- function(d) {
     file.exists(file.path(d, "DESCRIPTION")) && dir.exists(file.path(d, "R"))
 }
 
+rp_src <- Sys.getenv("RIBOPILOT_SRC")
+# accept either the package root or its inst/ (what system.file() returns)
+rp_cand <- Filter(rp_is_source_dir, c(rp_src, dirname(rp_src)))
+rp_have_pkgload <- requireNamespace("pkgload", quietly = TRUE)
+
 suppressMessages({
-  src <- Sys.getenv("RIBOPILOT_SRC")
-  # accept either the package root or its inst/ (what system.file() returns)
-  cand <- Filter(rp_is_source_dir, c(src, dirname(src)))
-  if (length(cand) > 0 && requireNamespace("pkgload", quietly = TRUE)) {
-    pkgload::load_all(cand[1], quiet = TRUE, attach_testthat = FALSE)
+  if (length(rp_cand) > 0 && rp_have_pkgload) {
+    pkgload::load_all(rp_cand[1], quiet = TRUE, attach_testthat = FALSE)
   } else if (requireNamespace("RiboPilot", quietly = TRUE)) {
-    if (nzchar(src)) {
-      message("RIBOPILOT_SRC='", src, "' is not usable here",
-        if (!dir.exists(src)) " (not visible from this process)" else
-          if (!requireNamespace("pkgload", quietly = TRUE)) " (no pkgload)" else
-            " (not a package source directory)",
-        "; using the installed RiboPilot instead. Uncommitted package edits will",
-        " NOT be in this run -- rebuild the image, or run without a container.")
-    }
     library(RiboPilot)
   } else {
     stop("RiboPilot not installed and RIBOPILOT_SRC not set (or not a package source dir)")
   }
 })
+
+# Outside the suppressMessages() above, or the whole point of saying it is lost.
+if (length(rp_cand) == 0 && nzchar(rp_src)) {
+  message("RIBOPILOT_SRC='", rp_src, "' is not usable here",
+    if (!dir.exists(rp_src)) " (not visible from this process)"
+    else if (!rp_have_pkgload) " (no pkgload)"
+    else " (not a package source directory)",
+    "; using the installed RiboPilot instead. Uncommitted package edits are NOT",
+    " in this run -- rebuild the image, or run without a container.")
+}

@@ -35,3 +35,18 @@ test_that("rp_env.R loads from source when handed either the root or inst/", {
     expect_true(any(grepl("TRUE", out)), info = src)
   }
 })
+
+test_that("rp_env.R says so when it falls back to the installed package", {
+  skip_on_cran()
+  env_r <- system.file("nextflow", "bin", "rp_env.R", package = "RiboPilot")
+  skip_if(!nzchar(env_r), "rp_env.R not found")
+  skip_if_not_installed("RiboPilot")
+
+  # the container case: RIBOPILOT_SRC points somewhere this process cannot see.
+  # The message has to survive rp_env.R's own suppressMessages(), or "my edit
+  # had no effect" looks exactly like a bug in the edit.
+  out <- suppressWarnings(system2("Rscript", c("-e", shQuote(sprintf("source('%s')", env_r))),
+    env = "RIBOPILOT_SRC=/nonexistent/ribopilot", stdout = TRUE, stderr = TRUE))
+  expect_true(any(grepl("not visible from this process", out)))
+  expect_true(any(grepl("installed RiboPilot", out)))
+})
