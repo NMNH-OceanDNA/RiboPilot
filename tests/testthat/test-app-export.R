@@ -17,7 +17,7 @@ mk_export_project <- function(env = parent.frame()) {
     annotate_lock INT, annotate_opts TEXT, curate_opts TEXT, reviewed TEXT, problematic TEXT,
     partial TEXT, n_features INT, missing TEXT, n_flags INT, annotate_notes TEXT, export_group TEXT, time_stamp INT)")
   DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT,
-    start INT, stop INT)")
+    type TEXT, start INT, stop INT)")
   DBI::dbExecute(con, "CREATE TABLE coverage(ID TEXT, path INT, scaffold INT, mean_depth REAL,
     min_depth INT, max_depth INT, depths TEXT)")
   DBI::dbExecute(con, "CREATE TABLE blast_screen(ID TEXT, path INT, scaffold INT, accession TEXT, title TEXT,
@@ -35,8 +35,9 @@ mk_export_project <- function(env = parent.frame()) {
   # annotation-locked, so the unit is exportable
   DBI::dbExecute(con, "INSERT INTO annotate VALUES('S1',1,1,2,1,'default','default','yes','no','no',3,'',0,NULL,NULL,1)")
   for (f in list(c("18S", 10, 200), c("ITS1", 201, 260), c("5.8S", 261, 420))) {
-    DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,1,?,?,?)",
-      params = list(f[1], as.integer(f[2]), as.integer(f[3])))
+    DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,1,?,?,?,?)",
+      params = list(f[1], RiboPilot:::rrna_element_type(f[1]),
+        as.integer(f[2]), as.integer(f[3])))
   }
   DBI::dbExecute(con, "INSERT INTO coverage (ID,path,scaffold,mean_depth) VALUES('S1',1,1,100)")
   RiboPilot::migrate_db(con)
@@ -127,5 +128,40 @@ test_that("editing a box saves into the selected configuration, invalid text doe
     settle(session)
     saved <- RiboPilot:::app_query("SELECT fasta_header FROM export_opts WHERE export_opts = 'batch1'")
     expect_equal(saved$fasta_header, "{seqid} edited {Taxon}")
+  })
+})
+
+test_that("exporting over an existing bundle asks before replacing it", {
+  # the group folder is rebuilt from scratch, so a silent overwrite would take
+  # an earlier bundle with it
+  skip_if_not_installed("withr")
+  dir <- mk_export_project()
+  withr::local_dir(dir)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Export")
+    session$setInputs(export_group_sel = "__all__",
+      fasta_header = RiboPilot:::DEFAULT_FASTA_HEADER,
+      fasta_header_marker = RiboPilot:::DEFAULT_FASTA_HEADER_MARKER,
+      export_markers = FALSE, export_report = FALSE)
+    settle(session)
+
+    # nothing there yet: the export just runs
+    session$setInputs(export_go = 1)
+    settle(session)
+    expect_true(file.exists(file.path(dir, "out", "export", "export", "export.fasta")))
+
+    # a marker of the earlier bundle, to prove the second run did not delete it
+    keep <- file.path(dir, "out", "export", "export", "keep_me.txt")
+    writeLines("mine", keep)
+    session$setInputs(export_go = 2)
+    settle(session)
+    expect_true(file.exists(keep))          # asked, did not act
+
+    # answering the warning does the export, and the folder is rebuilt
+    session$setInputs(export_overwrite_go = 1)
+    settle(session)
+    expect_false(file.exists(keep))
+    expect_true(file.exists(file.path(dir, "out", "export", "export", "export.fasta")))
   })
 })

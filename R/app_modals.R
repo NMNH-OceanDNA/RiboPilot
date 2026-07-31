@@ -100,6 +100,29 @@ multi_path_lock_modal <- function(ids) {
   )
 }
 
+#' Warn that exporting will replace an export folder that already exists
+#'
+#' The group folder is rebuilt from scratch on every export, so a previous
+#' bundle (and anything filed alongside it) is deleted. Cheap to redo, painful
+#' to discover afterwards.
+#' @param dir The folder that would be replaced. @param n Files it holds.
+#' @noRd
+export_overwrite_modal <- function(dir, n) {
+  modalDialog(
+    title = tags$span(style = "color:#a04000;",
+      icon("triangle-exclamation"), " This export already exists"),
+    size = "m", easyClose = FALSE,
+    div(style = "font-size:1.02em; line-height:1.5;",
+      tags$p(sprintf("Exporting replaces this folder and the %d file(s) in it:", n)),
+      div(class = "code-block", style = "white-space:normal; word-break:break-all;", dir),
+      tags$p(style = "color:#666;",
+        "Rename or move it first if you need to keep the earlier bundle.")),
+    footer = tagList(
+      modalButton("Cancel"),
+      actionButton("export_overwrite_go", "Replace it", class = "btn-warning btn-sm"))
+  )
+}
+
 #' One rule's three-way action control
 #'
 #' Off is the disable, so there is no separate tickbox. Drop is offered only on

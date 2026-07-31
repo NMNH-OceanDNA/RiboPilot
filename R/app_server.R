@@ -906,6 +906,22 @@ app_server <- function(input, output, session) {
         text = paste0(bad[[1]], ": ", bad[[2]]), type = "error")
       return()
     }
+    # export_bundle() rebuilds the group folder from scratch, so anything the
+    # curator put there (or an earlier export they have not submitted yet) goes
+    # with it. Say so before it happens, not after.
+    target <- file.path(app_project(), "out", "export", grp %||% "export")
+    if (dir.exists(target)) {
+      showModal(export_overwrite_modal(target,
+        length(list.files(target, recursive = TRUE))))
+      return()
+    }
+    run_export(u, grp)
+  })
+  observeEvent(input$export_overwrite_go, {
+    grp <- export_group_choice()
+    run_export(export_units_df(grp), grp)
+  })
+  run_export <- function(u, grp) {
     gdir <- tryCatch(
       export_bundle(app_project(), units = u, group = grp,
         out_dir = file.path(app_project(), "out"), zip = FALSE,
@@ -917,7 +933,7 @@ app_server <- function(input, output, session) {
         showNotification(paste("Export failed:", conditionMessage(e)), type = "error", duration = 8)
         NULL
       })
-    if (is.null(gdir)) return()
+    if (is.null(gdir)) return(invisible())
     export_done_dir(gdir)
     removeModal()
     showModal(modalDialog(
@@ -928,7 +944,8 @@ app_server <- function(input, output, session) {
         actionButton("open_export_dir", "Open folder", icon = icon("folder-open"), class = "btn-sm"),
         modalButton("Close"))
     ))
-  })
+    invisible()
+  }
   observeEvent(input$open_export_dir, open_path(export_done_dir()))
 
   # ---- Assemble modal ----
