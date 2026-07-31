@@ -72,6 +72,34 @@ assemble_modal <- function(id) {
   )
 }
 
+#' Warn that locking would leave a sample with two locked assembly paths
+#'
+#' A corner-of-the-screen notification was too easy to miss for something that
+#' silently does nothing, so this blocks until the reviewer answers. Locking two
+#' paths is unusual rather than impossible -- alternative resolutions of the same
+#' repeat are normally competing answers, not both right -- so "Lock anyway"
+#' stays available.
+#' @param ids Sample IDs that would end up with more than one locked path.
+#' @noRd
+multi_path_lock_modal <- function(ids) {
+  modalDialog(
+    title = tags$span(style = "color:#a04000;",
+      icon("triangle-exclamation"), " More than one assembly path would be locked"),
+    size = "m", easyClose = FALSE,
+    div(style = "font-size:1.02em; line-height:1.5;",
+      tags$p(paste("Paths are competing reconstructions of the same rDNA repeat, so a",
+        "sample normally carries one locked path. This would leave more than one",
+        "locked for:")),
+      tags$p(style = "font-weight:600; margin:6px 0;", paste(ids, collapse = ", ")),
+      tags$p(style = "color:#666;",
+        paste("Unlock the other path first, or proceed if you mean to keep both",
+          "(both will be annotated and exported)."))),
+    footer = tagList(
+      modalButton("Cancel"),
+      actionButton("lock_anyway", "Lock anyway", class = "btn-warning btn-sm"))
+  )
+}
+
 #' One rule's three-way action control
 #'
 #' Off is the disable, so there is no separate tickbox. Drop is offered only on

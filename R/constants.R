@@ -154,3 +154,8 @@ SCAFFOLD_COL_HELP <- list(
   screen_pident = "How much of the scaffold matched the best GenBank record, as a percentage.",
   triage_reason = "Why triage decided the way it did, or what left it undecided."
 )
+
+#' Toggle the annotation lock on one unit (used by the bulk lock button and by
+#' the "lock anyway" answer to the two-paths warning).
+#' @noRd
+LOCK_UNIT_SQL <- "UPDATE annotate SET annotate_lock = 1 - COALESCE(annotate_lock, 0) WHERE ID = ?"

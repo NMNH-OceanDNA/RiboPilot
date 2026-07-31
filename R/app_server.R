@@ -499,15 +499,18 @@ app_server <- function(input, output, session) {
       viol <- tapply(seq_len(nrow(cur)), cur$ID, function(ix)
         length(unique(cur$path[ix][cur$newlock[ix] == 1L])) > 1)
       if (any(unlist(viol))) {
-        showNotification(paste("That would lock more than one assembly path for a sample.",
-          "Only one path per sample can be locked; unlock the other path first."),
-          type = "error", duration = 8)
+        # asked, not refused: the reviewer answers in the middle of the screen
+        showModal(multi_path_lock_modal(names(viol)[unlist(viol)]))
         return()
       }
-      return(set_unit_flag("UPDATE annotate SET annotate_lock = 1 - COALESCE(annotate_lock, 0) WHERE ID = ?"))
+      return(set_unit_flag(LOCK_UNIT_SQL))
     }
     set_flag(sprintf("UPDATE %s SET %s_lock = 1 - COALESCE(%s_lock, 0) WHERE ID = ?",
       mm$tbl, mm$pfx, mm$pfx))
+  })
+  observeEvent(input$lock_anyway, {
+    removeModal()
+    set_unit_flag(LOCK_UNIT_SQL)
   })
   observeEvent(input$state_btn, {  # open a picker to choose the target state
     ids <- selected_ids()

@@ -479,3 +479,33 @@ test_that("the Annotation Review title always names the unit", {
   expect_match(ttl("S1", 2L, 3L), "path 2 / scaffold 3")
   expect_match(ttl("S1", 1L, 1L), "path 1 / scaffold 1")
 })
+
+test_that("locking two paths asks first, and 'lock anyway' goes through", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Annotate")
+    session$flushReact()
+    d <- samples_data()
+    sel <- c(which(d$path == 1 & d$scaffold == 1)[1],
+             which(d$path == 2 & d$scaffold == 1)[1])
+    session$setInputs(tbl__reactable__selected = sel)
+    session$flushReact()
+
+    # one unit from each path: the click must not write anything on its own
+    session$setInputs(lock_btn = 1)
+    session$flushReact()
+    lk <- RiboPilot:::app_query("SELECT COALESCE(annotate_lock,0) AS lock FROM annotate WHERE ID='S1'")
+    expect_true(all(lk$lock == 0))
+
+    # answering the warning applies exactly the toggle that was asked for
+    session$setInputs(lock_anyway = 1)
+    session$flushReact()
+    lk <- RiboPilot:::app_query(
+      "SELECT path, scaffold, COALESCE(annotate_lock,0) AS lock FROM annotate WHERE ID='S1'
+        ORDER BY path, scaffold")
+    expect_equal(lk$lock, c(1L, 0L, 1L, 0L))
+  })
+})
