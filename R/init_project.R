@@ -18,6 +18,8 @@
 #' @param container Container to use for pipeline execution.
 #' @param custom_seeds_db Path/URL to a custom GetOrganelle nr seeds database.
 #' @param custom_labels_db Path/URL to a custom GetOrganelle nr labels database.
+#' @param ref_dir Folder for built reference databases (default: the
+#'   `RIBOPILOT_REF_DIR` environment variable, else [ribopilot_ref_dir()]).
 #' @param config Optional path to an existing custom Nextflow config file.
 #' @param profile_dir Directory searched for saved cluster profiles.
 #' @param ncbi_api_key Optional NCBI API key (raises request rate limits).
@@ -36,6 +38,7 @@ new_project <- function(
     container = paste0("macguigand/ribopilot:", utils::packageVersion("RiboPilot")),
     custom_seeds_db = NULL,
     custom_labels_db = NULL,
+    ref_dir = NULL,
     config = NULL,
     profile_dir = ribopilot_config_dir(),
     ncbi_api_key = NULL,
@@ -98,6 +101,7 @@ new_project <- function(
     mapping_id = mapping_id,
     seeds_db = custom_seeds_db,
     labels_db = custom_labels_db,
+    ref_dir = ref_dir,
     ...
   )
 

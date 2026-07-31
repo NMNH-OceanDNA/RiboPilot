@@ -5,7 +5,7 @@
 
 #' Current project-DB schema version. Bump when adding a migration step below.
 #' @noRd
-RIBOPILOT_SCHEMA_VERSION <- 18L
+RIBOPILOT_SCHEMA_VERSION <- 19L
 
 #' DDL for blast_hits: the full retained BLAST hit distribution per unit.
 #'
@@ -104,6 +104,42 @@ ASSEMBLY_BACKUP_DDL <- "CREATE TABLE IF NOT EXISTS assembly_backup (
   coverage TEXT,
   time_stamp INTEGER,
   PRIMARY KEY (ID, path, scaffold)
+);"
+
+#' DDL for the reference table (one row per clade reference-database group).
+#' Shared by new_db() and the v19 migration so both agree on the schema.
+#' @noRd
+REFERENCE_DDL <- "CREATE TABLE IF NOT EXISTS reference (
+  ref_id           TEXT NOT NULL,
+  clade_taxid      INTEGER,
+  clade_name       TEXT,
+  clade_rank       TEXT,
+  query            TEXT,
+  n_samples        INTEGER,
+  n_records        INTEGER,
+  reference_switch INTEGER,
+  source           TEXT,
+  seeds_db         TEXT,
+  labels_db        TEXT,
+  log_file         TEXT,
+  pid              INTEGER,
+  fail_reason      TEXT,
+  time_stamp       INTEGER,
+  PRIMARY KEY (ref_id)
+);"
+
+#' DDL for reference_config: one row of project-level reference settings.
+#'
+#' `ref_dir` is the folder built databases are written to and reused from; NULL
+#' means fall back to RIBOPILOT_REF_DIR and then ribopilot_ref_dir(). The record
+#' window bounds the clade suggestion walk.
+#' @noRd
+REFERENCE_CONFIG_DDL <- "CREATE TABLE IF NOT EXISTS reference_config (
+  rowid_key   INTEGER NOT NULL,
+  ref_dir     TEXT,
+  min_records INTEGER,
+  max_records INTEGER,
+  PRIMARY KEY (rowid_key)
 );"
 
 #' The pre-v4 restrictive remote-BLAST entrez_query.
@@ -481,6 +517,18 @@ migrate_db <- function(con) {
   # migration as well as in new_db() is what keeps a migrated database and a
   # fresh one identical.
   if (has_tbl("stitched")) DBI::dbExecute(con, "DROP TABLE stitched;")
+
+  # --- schema v19: in-app reference-database step ---
+  # Clade groups get their own table rather than columns on samples: a group is a
+  # unit of work (built, failed, skipped) that outlives any one sample's membership.
+  DBI::dbExecute(con, REFERENCE_DDL)
+  DBI::dbExecute(con, REFERENCE_CONFIG_DDL)
+  if (DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM reference_config")$n == 0) {
+    DBI::dbExecute(con,
+      "INSERT INTO reference_config (rowid_key, ref_dir, min_records, max_records)
+       VALUES (1, NULL, 1000, 25000)")
+  }
+  add_col("samples", "ref_id", "TEXT")
 
   # user_version is a header field, not table data, so it is set after the
   # transaction commits rather than inside it.

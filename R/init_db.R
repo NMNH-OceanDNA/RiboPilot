@@ -20,6 +20,8 @@
 #' @param max_paths Max assembly paths for a sample to continue (default 10).
 #' @param max_scaffolds Max scaffolds within a path to continue (default 10).
 #' @param min_assembly_length Minimum contig length (bp) to retain (default 500).
+#' @param ref_dir Folder for built reference databases (default: the
+#'   `RIBOPILOT_REF_DIR` environment variable, else [ribopilot_ref_dir()]).
 #' @param ... Reserved for forward compatibility.
 #'
 #' @export
@@ -41,6 +43,7 @@ new_db <- function(
     max_paths = 10,
     max_scaffolds = 10,
     min_assembly_length = 500,
+    ref_dir = NULL,
     ...) {
   # Read mapping file ----
   if (is.null(mapping_fn)) {
@@ -94,6 +97,7 @@ new_db <- function(
       match_type = NA_character_,
       lineage = NA_character_,
       lineage_taxids = NA_character_,
+      ref_id = NA_character_,
       taxonomy_switch = 1L,
       taxonomy_lock = 0L,
       export_group = NA_character_,
@@ -588,6 +592,14 @@ new_db <- function(
       PRIMARY KEY (ID, path)
     );"
   )
+
+  # reference (clade DB groups) + reference_config ----
+  DBI::dbExecute(con, REFERENCE_DDL)
+  DBI::dbExecute(con, REFERENCE_CONFIG_DDL)
+  DBI::dbExecute(con,
+    "INSERT INTO reference_config (rowid_key, ref_dir, min_records, max_records)
+     VALUES (1, ?, 1000, 25000)",
+    params = list(ref_dir %||% NA_character_))
 
   # stamp the current schema version so migrate_db() is a no-op on fresh DBs
   DBI::dbExecute(con, sprintf("PRAGMA user_version = %d", RIBOPILOT_SCHEMA_VERSION))
