@@ -62,15 +62,19 @@ keyed by an opts hash) and replace the mito-specific tables. Proposed tables:
   rDNA-flavored: `length`, `topology` (linear monomer vs circularized repeat
   unit), `paths`, `scaffolds`, `assemble_notes`, `assemble_switch/lock`,
   `assemble_opts`, `blast_opts`, best-hit BLAST columns
-  (`blast_accession/species/pident/qcovs/evalue/lineage`), `time_stamp`.
-- `assemble_opts` - assembler settings. AS BUILT (schema v17, R/init_db.R:210):
+  (`blast_accession/species/pident/qcovs/evalue/lineage`), `time_stamp`. The
+  counts and the length list describe the scaffolds that passed the length
+  filter, not every scaffold stored, so all of them agree about which scaffolds
+  the sample is using.
+- `assemble_opts` - assembler settings. AS BUILT (schema v18, R/init_db.R:210):
   `cpus`, `memory`, `getOrganelle`, `seeds_db`, `labels_db`, `target`
   (`nr` seed set), `max_paths`, `max_scaffolds`, `min_assembly_length`,
   `assembler` (getorganelle | bait | denovo), `bowtie2`, `spades`. The earlier
   draft here named `k_list`, `min_length` and `expected_length`, none of which
   were ever built, and a four-value `assembler` list that was superseded by
-  PR #10. `min_assembly_length` is stored and editable but read by nothing
-  (doc 08 section 1.9).
+  PR #10. All three limits are enforced at load time: `max_paths` and
+  `max_scaffolds` fail the sample, `min_assembly_length` parks the scaffolds
+  under it and lets the sample continue (doc 08 section 1.9).
 - `assemblies` - per path/scaffold sequence rows (like MitoPilot: `ID`, `path`,
   `scaffold`, `sequence`, `length`, `depth`, `gc`, `ignore`, `edited`,
   `edit_positions`, BLAST hit cols). One repeat unit per path.

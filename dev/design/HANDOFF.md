@@ -8,14 +8,19 @@ those still worth keeping is carried below.
 
 ## Read this first
 
-**PR #10 is open and unmerged**: "Fold the assembly fallback into WF1 as a
-per-sample assembler", branch `assembler-swap`. It is verified (1122 tests,
-`check` clean) but has NOT had an end-to-end run complete. Do not start design
-work that assumes it merged, and do not branch new work off `assembler-swap`
-without knowing that.
+**PR #10 (the assembler swap) and PR #11 (the design-doc refresh) are both
+merged.** `main` carries them. The fallback is a per-sample assembler inside WF1
+and `main_fallback.nf` is gone.
 
-`main` is at the merge of PR #9. The branch was cut before that, so it is behind
-by one merge. No conflicts.
+**What has still never happened: a complete end-to-end run since the assembler
+swap.** The test project got through assembly on all three assemblers; its WF1
+tail past remote BLAST has not finished for the fallback samples. Suite green is
+not the same thing, and this project's two worst bugs were both invisible to
+1000+ passing tests.
+
+**Branch `stitch-removal` is open and unmerged**: deletes the stitch machinery
+and enforces `min_assembly_length`. 1140 tests, `check` clean, no run against a
+real project yet.
 
 ## Where the code stands
 
@@ -38,9 +43,9 @@ BLAST has NOT completed for the fallback samples.
 `05_ROADMAP.md` holds the phase plan and the eight project-level open questions.
 `06_TEST_DATA.md` is the test corpus.
 
-`07_SCAFFOLD_SELECTION.md` describes the stitching design that was later dropped;
-it now opens with a status section saying so. **That status section exists only
-on `main`**, not on `assembler-swap`.
+`07_SCAFFOLD_SELECTION.md` describes the stitching design that was later dropped
+and then deleted; it opens with a status section saying so, and the body is kept
+only as the record of why stitching was built and why it went.
 
 `08_MULTIUNIT_UX_AND_CONTAMINATION.md` is the big one (82 KB) and the centre of
 gravity for current design. Section 1 is bugs, 2 quick wins, 3 the contamination
@@ -67,9 +72,12 @@ the code first. Item 7 is still open and cannot be done from this branch.
    knowing: the limit counts scaffolds within one path (the worst path), not the
    sample total.
 2. ~~Doc 08 section 2.3 reasons from "`max_scaffolds` unenforced".~~ Fixed.
-3. ~~`min_assembly_length` unenforced and recorded nowhere.~~ Fixed: it now has
-   its own row in doc 08 section 1.9, directly under the old `max_scaffolds` row.
-   Still dead code; the decision to enforce or delete it has not been made.
+3. ~~`min_assembly_length` unenforced and recorded nowhere.~~ Fixed twice: it
+   got its own row in doc 08 section 1.9, and it is now enforced as a load-time
+   FILTER (branch `stitch-removal`). Short scaffolds are parked rather than
+   discarded and counted out of the gates, so junk fragments cannot fail a good
+   sample; a sample whose every scaffold is short does fail, with the reason in
+   its notes.
 4. ~~Doc 01's `assemble_opts` field list is stale.~~ Fixed: replaced with the
    as-built column list and a note saying which of the old names were never
    built.
@@ -80,25 +88,24 @@ the code first. Item 7 is still open and cannot be done from this branch.
 6. ~~Doc 08 section 4.4 behind the implementation.~~ Fixed: a status block above
    the sketch describes what the modal actually does. Note `set_selected` still
    exists, contrary to that section's instruction to delete it.
-7. **STILL OPEN. Doc 07's sentence about the last stitch caller.** On `main` it
-   says the only remaining stitch caller chain runs through `main_fallback.nf`.
-   PR #10 deletes that file. Fix once #10 merges; it cannot be done from the
-   branch because the text is not on it.
+7. ~~Doc 07's sentence about the last stitch caller.~~ Fixed on branch
+   `stitch-removal`: the whole paragraph is replaced, because the machinery it
+   described no longer exists.
 
 ## Open design questions, and what each actually needs
 
 From doc 08 section 7, with current status:
 
 - **Q1 fallback workflow: ANSWERED** by doc 14 / PR #10.
-- **Q2 does `path_scores` survive: NARROWED, still open.** After PR #10 nothing
-  in any shipped workflow calls the stitch machinery, so the bundle
-  (`stitch_scaffolds`, `stitch_one`, `stitch_selected`,
-  `order_scaffolds_by_content`, `rp_stitch.R`, the `stitch` process, the
-  `stitched` table) is unreferenced rather than half-referenced. It is still not
-  deleted because two of those are exported public API. `path_scores` is NOT part
-  of the bundle: it is written by the live `score` process every run and read by
-  the app. Deciding it is a question about the app's Selected Path and Best Score
-  columns.
+- **Q2 does `path_scores` survive: HALF ANSWERED.** The stitch half is deleted
+  (branch `stitch-removal`, plan `plans/2026-07-31-stitch-removal.md`), including
+  the `stitched` table, which schema v18 drops from fresh and migrated databases
+  alike. `stitch_scaffolds`, `stitch_one` and `annotate_project` were exported,
+  so their removal is a breaking API change, taken knowingly: none was reachable,
+  none was tested, and `annotate_project()` had been broken since schema v7.
+  `path_scores` was deliberately left alone and is the open remainder. It is
+  written by the live `score` process every run and read by the app, so deciding
+  it is a question about the app's Selected Path and Best Score columns.
 - **Q3 how aggressive should auto-triage be by default:** needs a maintainer
   call, informed by doc 13's measurement (zero false positives on 19 clean host
   units, recall 4/4 on catchable spike-ins, fish only).
@@ -141,9 +148,9 @@ clock, not a coding task. Discuss cost with the maintainer first.
 
 ## Unblocked work available now
 
-- Stale-document fix 7 above, once PR #10 merges.
-- Deciding whether `min_assembly_length` joins the assembly gate or leaves the
-  schema and the options modal (stale-document fix 3).
+- **Deciding `path_scores`** (question 2's live remainder). It is now the only
+  piece of the old scoring/stitching model left, and the question is about the
+  app's Selected Path and Best Score columns, not about stitching.
 - **Per-position minor-allele fraction** (doc 08 section 5). A submitted rDNA
   scaffold is a consensus over many non-identical array copies, and that is the
   first question a systematist asks of a genome-skim submission.
@@ -153,7 +160,6 @@ clock, not a coding task. Discuss cost with the maintainer first.
 - **The corpus gaps in doc 13 section 5.1**: three named cases the fixture cannot
   catch. The congener one needs a host unit whose hits are dominated by same-genus
   relatives, which none of the ten existing samples provides.
-- **Deciding the stitch bundle** (Q2). It is now a clean question.
 
 ## A latent defect found while testing, not yet fixed or recorded
 
