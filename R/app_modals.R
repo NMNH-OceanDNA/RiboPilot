@@ -38,16 +38,13 @@ modal_taxon_header <- function(id) {
       tags$span(style = "color:#999;", sprintf(" (input: %s)", s$Taxon[1])))
 }
 
-#' Assemble details modal: pick the selected path; view scores + scaffolds
+#' Assemble details modal: scaffolds, their evidence, and keep/drop
 #' @noRd
 assemble_modal <- function(id) {
   modalDialog(
     title = paste0("Assemble - ", id),
     size = "l", easyClose = TRUE,
-    footer = tagList(
-      actionButton("set_selected", "Set as selected path", class = "btn-primary btn-sm"),
-      modalButton("Close")
-    ),
+    footer = modalButton("Close"),
     modal_taxon_header(id),
     h5("Scaffolds", style = "margin:2px 0 4px;"),
     div(style = "color:#888; font-size:0.82em; margin-bottom:4px;",
@@ -56,6 +53,9 @@ assemble_modal <- function(id) {
         "which is comparable within a path but not across paths.",
         "\"Shares\" is the deepest rank the scaffold's top GenBank hit has in common",
         "with the sample; \"no reference\" is normal for an under-represented taxon.",
+        "\"Path score\" rates the whole candidate path this scaffold came from",
+        "(length, depth, anchor genes, GenBank hit), so it repeats across the",
+        "scaffolds of one path.",
         "Click a scaffold to examine its GenBank evidence and coverage below.")),
     reactable::reactableOutput("assemble_scaffolds"),
     div(style = "margin-top:6px;",
@@ -76,11 +76,7 @@ assemble_modal <- function(id) {
 
     rp_details("Read coverage for the highlighted scaffold", open = FALSE,
       uiOutput("unit_coverage_label"),
-      plotOutput("unit_coverage_plot", height = "140px")),
-
-    rp_details("Candidate paths", open = FALSE,
-      uiOutput("sel_path_ui"),
-      reactable::reactableOutput("assemble_scores"))
+      plotOutput("unit_coverage_plot", height = "140px"))
   )
 }
 

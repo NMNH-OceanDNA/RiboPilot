@@ -28,6 +28,8 @@ mk_app_project <- function(env = parent.frame()) {
     accession TEXT, species TEXT, title TEXT, pident REAL, qcovs REAL, bitscore REAL, evalue REAL)")
   DBI::dbExecute(con, "CREATE TABLE path_scores(ID TEXT, path INT, length INT, depth REAL, anchors TEXT,
     blast_pident REAL, hit_id TEXT, hit_species TEXT, score REAL, rank INT, auto_select INT)")
+  DBI::dbExecute(con, "INSERT INTO path_scores (ID,path,score,rank,auto_select) VALUES('S1',1,0.912,1,1)")
+  DBI::dbExecute(con, "INSERT INTO path_scores (ID,path,score,rank,auto_select) VALUES('S1',2,0.431,2,0)")
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S1','Danio rerio','Danio rerio',7955,'species','exact',NULL,NULL,1,1,NULL,1)")
   DBI::dbExecute(con, "INSERT INTO assemble VALUES('S1',1,2,'default','default',2,4,'100',NULL,1)")
   DBI::dbExecute(con, "INSERT INTO preprocess VALUES('S1','default')")
@@ -113,7 +115,7 @@ test_that("the scaffold table actually shows its evidence columns", {
     vis <- vapply(Filter(function(c) !identical(c$show, FALSE), cols),
       function(c) c$id, character(1))
     for (want in c("unit", "length", "depth", "elements", "screen_species",
-                   "shares", "odd_one_out", "triage")) {
+                   "shares", "odd_one_out", "triage", "path_score")) {
       expect_true(want %in% vis, info = paste("column not visible:", want))
     }
     # the uid must travel to the browser (the click key) but stay out of sight
@@ -409,5 +411,22 @@ test_that("the tick column is headed with the copy icon, and the hits link is go
     expect_match(sel$header, "clipboard")
     # the old per-row link was the only way in and read as an action, not a picker
     expect_length(Filter(function(c) identical(c$id, "hits"), cols), 0)
+  })
+})
+
+test_that("the scaffold table carries each unit's path score", {
+  # the score is computed per candidate path, so every scaffold of a path shows
+  # the same number; it replaced the separate "Candidate paths" panel.
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    sel_id("S1")
+    session$flushReact()
+    d <- scaffold_rows()
+    expect_equal(d$path_score[d$path == 1], c(0.912, 0.912))
+    expect_equal(d$path_score[d$path == 2], c(0.431, 0.431))
   })
 })

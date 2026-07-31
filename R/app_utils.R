@@ -112,6 +112,7 @@ unit_evidence <- function(id) {
        b.rank_distance, b.is_nuclear_rrna,
        sc.screen_verdict, sc.screen_class, sc.screen_confidence, sc.lca_taxon,
        sc.variant_class, sc.variant_group, sc.variant_identity,
+       ROUND(ps.score, 3) AS path_score,
        s.lineage_taxids AS sample_taxids, s.sci_name,
        (SELECT GROUP_CONCAT(n.element) FROM
           (SELECT element FROM annotations WHERE ID = a.ID AND path = a.path
@@ -120,6 +121,8 @@ unit_evidence <- function(id) {
      LEFT JOIN coverage c    ON c.ID = a.ID AND c.path = a.path AND c.scaffold = a.scaffold
      LEFT JOIN blast_screen b ON b.ID = a.ID AND b.path = a.path AND b.scaffold = a.scaffold
      LEFT JOIN screen sc      ON sc.ID = a.ID AND sc.path = a.path AND sc.scaffold = a.scaffold
+     -- scored per path, shown per scaffold: the whole path is the thing scored
+     LEFT JOIN path_scores ps ON ps.ID = a.ID AND ps.path = a.path
      LEFT JOIN samples s      ON s.ID = a.ID
      WHERE a.ID = ? ORDER BY a.path, a.scaffold", params = list(id))
   if (nrow(d) == 0) {

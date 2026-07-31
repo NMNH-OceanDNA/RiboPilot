@@ -831,38 +831,6 @@ app_server <- function(input, output, session) {
   observeEvent(input$open_export_dir, open_path(export_done_dir()))
 
   # ---- Assemble modal ----
-  output$sel_path_ui <- renderUI({
-    id <- sel_id()
-    req(id)
-    d <- app_query("SELECT path, auto_select FROM path_scores WHERE ID = ? ORDER BY path", params = list(id))
-    if (nrow(d) == 0) {
-      return(em("No scored paths."))
-    }
-    radioButtons("sel_path", "Selected path:", choices = d$path,
-      selected = d$path[d$auto_select == 1][1], inline = TRUE)
-  })
-  output$assemble_scores <- reactable::renderReactable({
-    id <- sel_id()
-    req(id)
-    d <- app_query(
-      "SELECT path, length, round(depth,0) AS depth, anchors, blast_pident AS pident,
-         hit_species, hit_id AS accession, round(score,3) AS score, rank, auto_select
-       FROM path_scores WHERE ID = ? ORDER BY rank", params = list(id))
-    reactable::reactable(d, compact = TRUE, resizable = TRUE, defaultPageSize = 10,
-      defaultColDef = reactable::colDef(align = "left"),
-      columns = list(
-        path = reactable::colDef(name = "Path", width = 60),
-        length = reactable::colDef(name = "Length", width = 80),
-        depth = reactable::colDef(name = "Depth", width = 70),
-        anchors = reactable::colDef(name = "Anchors", minWidth = 120),
-        pident = reactable::colDef(name = "BLAST %ID", width = 90),
-        hit_species = reactable::colDef(name = "BLAST Hit", minWidth = 150, html = TRUE, cell = rt_longtext()),
-        accession = reactable::colDef(name = "Accession", minWidth = 110, html = TRUE, cell = rt_ncbi_link()),
-        score = reactable::colDef(name = "Score", width = 80),
-        rank = reactable::colDef(name = "Rank", width = 60),
-        auto_select = reactable::colDef(name = "Auto", width = 60)),
-      rowStyle = function(index) if (isTRUE(d$auto_select[index] == 1)) list(background = "#eafaf0") else NULL)
-  })
   # Single source of truth for the scaffold table AND its click handlers. The
   # handlers used to re-query and index by row position, so any change to the
   # display order silently acted on the wrong scaffold; clicks are now keyed on
@@ -888,7 +856,7 @@ app_server <- function(input, output, session) {
     }
     # reactable renders in data-frame column order, so the row identifier has to
     # lead here; colDef(sticky=) alone does not move it.
-    lead <- c("unit", "triage", "length", "topology", "depth", "depth_track", "elements",
+    lead <- c("unit", "triage", "length", "topology", "path_score", "depth", "depth_track", "elements",
       "screen_verdict", "variant_class")
     d <- d[, c(intersect(lead, names(d)), setdiff(names(d), lead)), drop = FALSE]
     reactable::reactable(d, compact = TRUE, resizable = TRUE, filterable = TRUE,
@@ -909,6 +877,7 @@ app_server <- function(input, output, session) {
         unit = reactable::colDef(name = "Unit", width = 72, show = TRUE, sticky = "left"),
         length = reactable::colDef(name = "Length", width = 80, show = TRUE),
         topology = reactable::colDef(name = "Topology", width = 85, show = TRUE),
+        path_score = reactable::colDef(name = "Path score", width = 90, show = TRUE),
         # The number is this scaffold's absolute median depth; the bar beside it
         # is that value as a fraction of the sample's deepest scaffold. Naming
         # the column "relative" described the bar and misdescribed the number.
@@ -1225,24 +1194,6 @@ app_server <- function(input, output, session) {
     removeModal()
     refresh(refresh() + 1)
     showNotification(sprintf("Triage updated %d scaffold(s) across %d sample(s).", n, length(ids)),
-      type = "message")
-  })
-
-  observeEvent(input$set_selected, {
-    id <- sel_id()
-    req(id, input$sel_path)
-    con <- app_con()
-    on.exit(DBI::dbDisconnect(con))
-    # Records the reviewer's choice for display. It does NOT gate annotation, which
-    # selects units by assemblies.ignore, so nothing is re-queued here: the old
-    # sample-wide "UPDATE annotate SET annotate_switch = 1 WHERE ID = ?" also
-    # re-queued annotate-locked units the reviewer never touched.
-    DBI::dbExecute(con,
-      "UPDATE path_scores SET auto_select = CASE WHEN path = ? THEN 1 ELSE 0 END WHERE ID = ?",
-      params = list(as.integer(input$sel_path), id))
-    refresh(refresh() + 1)
-    showNotification(paste0("Marked path ", input$sel_path,
-      " as the selected path. To annotate only this path, ignore the other paths' scaffolds below."),
       type = "message")
   })
 
