@@ -31,12 +31,35 @@ Each script first builds the R package tarball into this directory
 
 ## Push to Docker Hub
 
+Publishes to `macguigand/ribopilot`.
+
 ```bash
-docker/deploy-dockerhub.sh v0.1.0
+docker/deploy-dockerhub.sh                  # tag = the DESCRIPTION Version
+docker/deploy-dockerhub.sh v0.1.0           # explicit tag
+docker/deploy-dockerhub.sh v0.1.0 --latest  # also push :latest
+docker/deploy-dockerhub.sh --dry-run        # build and test, push nothing
 ```
 
-It prompts for your Docker Hub credentials, then builds, tags
-`<username>/ribopilot:v0.1.0`, and pushes.
+The tag defaults to the DESCRIPTION `Version` on purpose: `new_project()`
+derives its default `container` from the same place, so a tag chosen by hand can
+be a tag no project ever asks for.
+
+Before pushing, the script:
+
+- clears stale tarballs from `docker/` (the Dockerfile COPYs
+  `RiboPilot_*.tar.gz` to one destination, so two of them break the build);
+- builds for `linux/amd64` explicitly, because not every tool in this image has
+  an arm64 conda build and an image that quietly matches the host architecture
+  is an image that fails on someone else's cluster;
+- labels the image with the commit it came from, and warns if the tree is dirty;
+- runs a smoke test in the built image: every tool the pipeline calls must be on
+  `PATH` and the package must load. Several pipeline steps degrade to a SILENT
+  no-op when a tool is missing, so this is worth catching before publishing
+  rather than hours into somebody's run;
+- asks for confirmation before it pushes anything.
+
+Set `DOCKERHUB_TOKEN` to skip the login prompt, or `DOCKERHUB_USER` to publish
+under a different account. Use an access token rather than your password.
 
 ## Use the image in a project
 
