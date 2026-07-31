@@ -470,7 +470,7 @@ rt_scaffold_row_style <- function() {
       var st = {};
       if (rowInfo.row['ignore'] === 1) { st.background = '#f3f3f3'; st.color = '#999'; }
       if (state.meta && state.meta.examined === rowInfo.row['uid']) {
-        st.background = '#eaf1fb';
+        st.background = '#cadff5';
         st.boxShadow = 'inset 3px 0 0 #3c6fb5';
       }
       return st;

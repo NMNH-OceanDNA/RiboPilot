@@ -880,7 +880,7 @@ app_server <- function(input, output, session) {
           html = TRUE, header = rt_help_header("Unit", SCAFFOLD_COL_HELP$unit)),
         length = reactable::colDef(name = "Length", width = 80, show = TRUE,
           html = TRUE, header = rt_help_header("Length", SCAFFOLD_COL_HELP$length)),
-        path_score = reactable::colDef(name = "Path score", width = 90, show = TRUE,
+        path_score = reactable::colDef(name = "Path score", width = 115, show = TRUE,
           html = TRUE, header = rt_help_header("Path score", SCAFFOLD_COL_HELP$path_score)),
         # The number is this scaffold's absolute median depth; the bar beside it
         # is that value as a fraction of the sample's deepest scaffold. Naming

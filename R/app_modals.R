@@ -48,8 +48,7 @@ assemble_modal <- function(id) {
     modal_taxon_header(id),
     h5("Scaffolds", style = "margin:2px 0 4px;"),
     div(style = "color:#888; font-size:0.82em; margin-bottom:4px;",
-      paste("Hover a column's \"?\" to see what it means.",
-        "Click a scaffold to examine its GenBank evidence and coverage below.")),
+      paste("Click on a scaffold row to examine GenBank evidence and coverage below")),
     reactable::reactableOutput("assemble_scaffolds"),
     div(style = "margin-top:6px;",
       actionButton("copy_fasta", "Copy FASTA", icon = icon("clipboard"), class = "btn-sm"),
@@ -154,9 +153,10 @@ rp_details <- function(summary, ..., open = TRUE) {
 }
 
 annotate_modal <- function(id, path = 1L, scaffold = 1L) {
-  n_units <- tryCatch(app_query("SELECT COUNT(*) n FROM annotate WHERE ID = ?", params = list(id))$n[1],
-    error = function(e) 1L)
-  unit_lbl <- if (isTRUE(n_units > 1)) sprintf(" [path %s / scaffold %s]", path, scaffold) else ""
+  # Always name the unit, even when the sample has only one: every edit in here
+  # (features, trim, marks, lock) applies to one (ID, path, scaffold), and the
+  # title is the only thing on screen that says which.
+  unit_lbl <- sprintf(" [path %s / scaffold %s]", path, scaffold)
   # Seed the notes box from the DB. Re-opening the same unit assigns an
   # identical() value to sel_unit, which does not invalidate the reactiveVal, so
   # the server-side reset observer never fires; a value-less textAreaInput then

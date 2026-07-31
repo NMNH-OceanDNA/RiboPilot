@@ -462,3 +462,20 @@ test_that("every visible scaffold column explains itself on hover", {
     }
   })
 })
+
+test_that("the Annotation Review title always names the unit", {
+  # Every edit in that modal applies to one (ID, path, scaffold). The title used
+  # to name the unit only when the sample had more than one, so a single-unit
+  # sample gave no on-screen confirmation of what was being edited.
+  # the modal reads the sample's taxonomy and notes; stub the DB out, the title
+  # is what is under test
+  testthat::local_mocked_bindings(
+    app_query = function(sql, params = NULL) data.frame(),
+    modal_taxon_header = function(id) shiny::div())
+  ttl <- function(...) {
+    m <- RiboPilot:::annotate_modal(...)
+    paste(as.character(m), collapse = " ")
+  }
+  expect_match(ttl("S1", 2L, 3L), "path 2 / scaffold 3")
+  expect_match(ttl("S1", 1L, 1L), "path 1 / scaffold 1")
+})
