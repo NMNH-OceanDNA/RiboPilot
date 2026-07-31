@@ -55,7 +55,7 @@ One row per clade group.
 | `query` | GenBank term, `"<clade_name>"[Organism]` |
 | `n_samples` | project samples covered |
 | `n_records` | GenBank rRNA record count for the clade |
-| `state` | 0 hold, 1 ready, 2 done, 3 failed, 4 building, 5 skipped |
+| `reference_switch` | 0 hold, 1 ready, 2 done, 3 failed, 4 building, 5 skipped (named to match the app's per-mode `<prefix>_switch` state column) |
 | `source` | `built`, `existing`, or `skipped` |
 | `seeds_db`, `labels_db` | absolute paths once available |
 | `log_file`, `pid` | background build tracking |
@@ -97,9 +97,11 @@ pipeline, module, or samplesheet change.
 Input is every sample with a confirmed taxid; samples without one are listed
 as unresolved rather than grouped.
 
-Sample lineages currently store names only. A helper using
-`taxonkit reformat -t` adds the taxid at each rank, giving the
-species/genus/family/order/class/phylum/kingdom ladder the picker needs.
+Sample lineages already carry both names (`samples.lineage`) and rank-aligned
+taxids (`samples.lineage_taxids`, written by the taxonomy step), so the
+kingdom-to-species ladder the picker needs is read straight from the database
+with the existing `parse_rank_names()` / `parse_rank_taxids()` helpers. No new
+taxonkit call is required.
 
 For each distinct lineage:
 
