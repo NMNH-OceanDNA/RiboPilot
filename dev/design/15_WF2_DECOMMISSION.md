@@ -120,7 +120,7 @@ the docs.
 
 ## Status 2026-07-31: BUILT and verified against a real project
 
-Suite 1185 tests, 0 failures. `R CMD check` clean apart from the pre-existing
+Suite 1191 tests, 0 failures. `R CMD check` clean apart from the pre-existing
 unused-Imports NOTE.
 
 **Verified end to end.** On the three-sample baited test project with every

@@ -18,9 +18,19 @@ tail past remote BLAST has not finished for the fallback samples. Suite green is
 not the same thing, and this project's two worst bugs were both invisible to
 1000+ passing tests.
 
-**Branch `stitch-removal` is open and unmerged**: deletes the stitch machinery
-and enforces `min_assembly_length`. 1140 tests, `check` clean, no run against a
-real project yet.
+**`stitch-removal` landed on `main`** (see the note on auto-push below): the
+stitch machinery is gone, `min_assembly_length` is enforced as a load-time
+filter, and both were verified by two full end-to-end runs.
+
+**Branch `wf2-decommission` is open and unmerged**: folds re-annotation into
+WF1 and deletes WF2 (`dev/design/15_WF2_DECOMMISSION.md`). 1191 tests, `check`
+clean, verified by an annotate-only run against a real project.
+
+**Something in this environment pushes on commit.** It is not in `git config`
+and not in the hooks that were checked. A branch whose upstream is `main` will
+land its commits on `main` without a PR; that is how `stitch-removal` got there.
+Set an explicit upstream before committing on a new branch, or check
+`git config --get branch.<name>.merge` after cutting one.
 
 ## Where the code stands
 
@@ -151,6 +161,14 @@ clock, not a coding task. Discuss cost with the maintainer first.
 - **Deciding `path_scores`** (question 2's live remainder). It is now the only
   piece of the old scoring/stitching model left, and the question is about the
   app's Selected Path and Best Score columns, not about stitching.
+- **The one-locked-path invariant is not in `export_bundle()`** (doc 08 section
+  4). It lives only in two Shiny observers, so a programmatic export can still
+  emit two resolutions of one rDNA repeat as independent GenBank records.
+- **`samples.reference_support` still has no reader** (doc 11 sections 3, 10).
+- **Museum DNA damage is undocumented next to the identity floors** (doc 08
+  section 5). Zero mentions of deamination anywhere in `R/`.
+- **WF2 and the export path have never been exercised end to end** since the
+  assembler swap. The annotate-only arm now has, but export has not.
 - **Per-position minor-allele fraction** (doc 08 section 5). A submitted rDNA
   scaffold is a consensus over many non-identical array copies, and that is the
   first question a systematist asks of a genome-skim submission.

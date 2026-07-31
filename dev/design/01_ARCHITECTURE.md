@@ -111,7 +111,12 @@ annotations atomically in one transaction (carry over MitoPilot's
 
 ## Nextflow workflow
 
-`inst/nextflow/main.nf` with modules mirroring MitoPilot's stage split:
+ONE workflow, `inst/nextflow/main.nf`. It takes two kinds of work: samples
+queued for assembly, and units queued for annotation only (a trim, an options
+change, a restored scaffold, an edited sequence). The second kind skips
+preprocess, assembly, scoring, the remote BLAST and coverage. There is no WF2:
+`main_annotate.nf` and `run_annotate()` were deleted, see
+`15_WF2_DECOMMISSION.md`. Modules mirror MitoPilot's stage split:
 
 ```
 preprocess  -> fastp trim, read/depth QC              (reuse MitoPilot module)
