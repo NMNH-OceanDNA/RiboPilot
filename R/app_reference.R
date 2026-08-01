@@ -27,7 +27,7 @@ reference_table <- function(con) {
 #' One rung of the clade ladder, as a radio choice label
 #' @noRd
 rung_label <- function(name, rank, n_samples, n_records, chosen) {
-  recs <- if (is.na(n_records)) "records unknown" else paste0(n_records, " records")
+  recs <- if (is.na(n_records)) "records unknown" else paste0(format(n_records, big.mark = ","), " records")
   sprintf("%s [%s] - %d sample(s), %s%s", name, rank, n_samples, recs,
     if (isTRUE(chosen)) "  (current)" else "")
 }
@@ -94,11 +94,14 @@ reference_existing_modal <- function(manifest, ref_id) {
   listing <- if (nrow(manifest) == 0) {
     shiny::helpText("No databases recorded in this reference folder yet.")
   } else {
+    # %|NA|% is not vectorised (R/utils.R), so a manifest with more than one row
+    # (or an NA record count) needs ifelse() here, not the scalar %|NA|% helper.
+    rank_txt <- ifelse(is.na(manifest$rank), "?", manifest$rank)
+    recs_txt <- ifelse(is.na(manifest$n_records), "records unknown",
+      paste0(format(manifest$n_records, big.mark = ","), " records"))
     shinyWidgets::prettyRadioButtons("ref_existing_pick", "Databases in the reference folder:",
       choices = stats::setNames(as.character(seq_len(nrow(manifest))),
-        sprintf("%s [%s] - %s records, built %s", manifest$clade,
-          manifest$rank %|NA|% "?", manifest$n_records,
-          manifest$built)),
+        sprintf("%s [%s] - %s, built %s", manifest$clade, rank_txt, recs_txt, manifest$built)),
       shape = "round", status = "primary")
   }
   shiny::modalDialog(
@@ -138,48 +141,62 @@ reference_handlers <- function(input, output, session, deps) {
       type = "info", btn_labels = NA, closeOnClickOutside = FALSE)
     later::later(function() {
       shiny::withReactiveDomain(session, {
-        res <- tryCatch(with_con(function(con) {
-          cfg <- ref_config(con)
-          l <- sample_ladders(con)
-          if (nrow(l) == 0) stop("No samples have a resolved lineage yet. Assign taxonomy first.",
-            call. = FALSE)
-          cf <- cached_count_fn(cfg$ref_dir,
-            api_key = Sys.getenv("NCBI_API_KEY", ""), conda_env = NULL)
-          s <- suggest_reference_groups(l, cf, cfg$min_records, cfg$max_records)
-          if (nrow(s$groups) == 0) stop("Could not count GenBank records for any clade (is Entrez Direct on PATH?).",
-            call. = FALSE)
-          write_reference_groups(con, s$groups, s$members)
-          nrow(s$groups)
-        }), error = function(e) e)
-        if (inherits(res, "error")) {
-          shinyWidgets::sendSweetAlert(title = "Suggestion failed",
-            text = conditionMessage(res), type = "error")
-        } else {
+        # bump() and the success alert are INSIDE the tryCatch too: the "Suggesting..."
+        # alert has no dismiss button, so an error raised after the DB write (e.g. from
+        # bump() or the alert call itself) must still reach the "failed" branch, or the
+        # user is stuck looking at a popup they cannot close.
+        outcome <- tryCatch({
+          n <- with_con(function(con) {
+            cfg <- ref_config(con)
+            l <- sample_ladders(con)
+            if (nrow(l) == 0) stop("No samples have a resolved lineage yet. Assign taxonomy first.",
+              call. = FALSE)
+            cf <- cached_count_fn(cfg$ref_dir,
+              api_key = Sys.getenv("NCBI_API_KEY", ""), conda_env = NULL)
+            s <- suggest_reference_groups(l, cf, cfg$min_records, cfg$max_records)
+            if (nrow(s$groups) == 0) stop("Could not count GenBank records for any clade (is Entrez Direct on PATH?).",
+              call. = FALSE)
+            write_reference_groups(con, s$groups, s$members)
+            nrow(s$groups)
+          })
           bump()
           shinyWidgets::sendSweetAlert(title = "Clades suggested",
-            text = sprintf("Proposed %d reference group(s). Review, then build or skip.", res),
+            text = sprintf("Proposed %d reference group(s). Review, then build or skip.", n),
             type = "success")
+          NULL
+        }, error = function(e) e)
+        if (inherits(outcome, "error")) {
+          shinyWidgets::sendSweetAlert(title = "Suggestion failed",
+            text = conditionMessage(outcome), type = "error")
         }
       })
     }, delay = 0.1)
   })
 
   # ---- ladder modal ----
+  # `picked` tracks whichever of the ladder radio or the search-result radio the
+  # user touched LAST; Shiny retains an input's value after its widget is gone
+  # (the search results renderUI clears, the modal closes), so reading either
+  # input directly risks applying a stale search pick over a fresh rung click.
+  shiny::observeEvent(input$ref_rung, ignoreNULL = TRUE, { picked(input$ref_rung) })
+  shiny::observeEvent(input$ref_search_pick, ignoreNULL = TRUE, { picked(input$ref_search_pick) })
+
   open_ladder <- function(ref_id) {
     if (length(ref_id) == 0) { notify("Select a group first.", "warning"); return() }
     ref_id <- ref_id[1]
     picked(NULL)
     ladder_target(ref_id)
-    with_con(function(con) {
+    res <- tryCatch(with_con(function(con) {
       row <- DBI::dbGetQuery(con, "SELECT * FROM reference WHERE ref_id = ?", params = list(ref_id))
-      if (nrow(row) == 0) { notify("Group not found.", "warning"); return() }
+      if (nrow(row) == 0) stop("Group not found.", call. = FALSE)
       ids <- DBI::dbGetQuery(con, "SELECT ID FROM samples WHERE ref_id = ?", params = list(ref_id))$ID
       cfg <- ref_config(con)
       l <- group_ladder(sample_ladders(con), ids,
         count_fn = cached_count_fn(cfg$ref_dir, api_key = Sys.getenv("NCBI_API_KEY", "")))
-      shiny::showModal(reference_ladder_modal(ref_id, row$clade_name[1], l,
-        row$clade_taxid[1], length(ids)))
-    })
+      reference_ladder_modal(ref_id, row$clade_name[1], l, row$clade_taxid[1], length(ids))
+    }), error = function(e) e)
+    if (inherits(res, "error")) { notify(conditionMessage(res), "error"); return() }
+    shiny::showModal(res)
   }
   shiny::observeEvent(input$ref_edit_btn, open_ladder(deps$selected_ids()))
   shiny::observeEvent(input$ref_open_clade, {
@@ -201,15 +218,33 @@ reference_handlers <- function(input, output, session, deps) {
       shape = "round", status = "primary")
   })
 
+  # Slug a leftover group's own clade name into a ref_id that cannot collide
+  # with the group being edited (or any other existing group): the derived
+  # slug for a clade re-used by name, e.g. the parent clade the split group
+  # came from, can otherwise coincide with the literal ref_id string of the
+  # row this same apply just rewrote, silently overwriting it back.
+  unique_split_ref_id <- function(con, name, taxid, avoid) {
+    slug <- ref_id_from_name(name)
+    existing <- tryCatch(DBI::dbGetQuery(con, "SELECT ref_id FROM reference")$ref_id,
+      error = function(e) character(0))
+    if (!(slug %in% existing) && !(slug %in% avoid)) return(slug)
+    paste(slug, taxid, sep = "_")
+  }
+
   shiny::observeEvent(input$ref_clade_apply, {
     ref_id <- ladder_target()
-    tid <- suppressWarnings(as.integer(input$ref_search_pick %||% input$ref_rung %||% NA))
+    tid <- suppressWarnings(as.integer(picked() %||% input$ref_rung %||% NA))
     if (is.na(tid)) { notify("Pick a clade first.", "warning"); return() }
     res <- tryCatch(with_con(function(con) {
       ids <- DBI::dbGetQuery(con, "SELECT ID FROM samples WHERE ref_id = ?",
         params = list(ref_id))$ID
       ladders <- sample_ladders(con)
       covered <- intersect(ladder_coverage(ladders, tid), ids)
+      # a clade that covers none of the group's samples must not be applied to
+      # all of them anyway -- that would silently mis-clade every sample
+      if (length(covered) == 0) {
+        stop("That clade does not cover any sample in this group; pick a shared rung.", call. = FALSE)
+      }
       info <- ladders[ladders$taxid == tid, , drop = FALSE]
       if (nrow(info) == 0) {
         info <- with_taxdump_data(project_taxdump_dir(deps$project()), function(dd) {
@@ -220,16 +255,31 @@ reference_handlers <- function(input, output, session, deps) {
       cfg <- ref_config(con)
       n <- cached_count_fn(cfg$ref_dir, api_key = Sys.getenv("NCBI_API_KEY", ""))(tid, info$name[1])
       set_reference_clade(con, ref_id = ref_id, clade_taxid = tid, clade_name = info$name[1],
-        clade_rank = info$rank[1], n_records = n,
-        member_ids = if (length(covered) > 0) covered else ids)
-      list(name = info$name[1], left = setdiff(ids, covered))
+        clade_rank = info$rank[1], n_records = n, member_ids = covered)
+
+      # samples the chosen clade does not cover are not left inside a clade
+      # that does not contain them: split them into a group of their own,
+      # keyed on their own shared lineage (deepest rung all of them pass through)
+      leftover <- setdiff(ids, covered)
+      left_name <- NULL
+      if (length(leftover) > 0) {
+        gl <- group_ladder(ladders, leftover)
+        if (nrow(gl) > 0) {
+          lg <- gl[order(-gl$level), , drop = FALSE][1, ]
+          left_key <- unique_split_ref_id(con, lg$name, lg$taxid, avoid = ref_id)
+          set_reference_clade(con, ref_id = left_key, clade_taxid = lg$taxid, clade_name = lg$name,
+            clade_rank = lg$rank, n_records = NA_integer_, member_ids = leftover)
+          left_name <- lg$name
+        }
+      }
+      list(name = info$name[1], left_n = length(leftover), left_name = left_name)
     }), error = function(e) e)
     if (inherits(res, "error")) { notify(conditionMessage(res), "error"); return() }
     shiny::removeModal()
     bump()
-    if (length(res$left) > 0) {
-      notify(sprintf("%d sample(s) are not inside %s and were left in their own group; open it to pick a clade.",
-        length(res$left), res$name), "warning")
+    if (!is.null(res$left_name)) {
+      notify(sprintf("%d sample(s) outside %s were split into a new group (%s); open it to pick a clade.",
+        res$left_n, res$name, res$left_name), "warning")
     } else {
       notify(sprintf("Group now uses %s.", res$name))
     }
@@ -239,9 +289,11 @@ reference_handlers <- function(input, output, session, deps) {
   shiny::observeEvent(input$ref_skip_btn, {
     ids <- deps$selected_ids()
     if (length(ids) == 0) { notify("Select a group first.", "warning"); return() }
-    with_con(function(con) for (r in ids) skip_reference_group(con, r))
+    res <- tryCatch(with_con(function(con) { for (r in ids) skip_reference_group(con, r); length(ids) }),
+      error = function(e) e)
+    if (inherits(res, "error")) { notify(conditionMessage(res), "error"); return() }
     bump()
-    notify(sprintf("Skipped %d group(s); their samples keep their current database.", length(ids)))
+    notify(sprintf("Skipped %d group(s); their samples keep their current database.", res))
   })
 
   # ---- use existing ----
@@ -249,9 +301,10 @@ reference_handlers <- function(input, output, session, deps) {
     ids <- deps$selected_ids()
     if (length(ids) != 1) { notify("Select exactly one group.", "warning"); return() }
     existing_target(ids[1])
-    with_con(function(con) {
-      shiny::showModal(reference_existing_modal(read_ref_manifest(ref_config(con)$ref_dir), ids[1]))
-    })
+    res <- tryCatch(with_con(function(con) reference_existing_modal(
+      read_ref_manifest(ref_config(con)$ref_dir), ids[1])), error = function(e) e)
+    if (inherits(res, "error")) { notify(conditionMessage(res), "error"); return() }
+    shiny::showModal(res)
   })
   shiny::observeEvent(input$ref_existing_pick, {
     i <- suppressWarnings(as.integer(input$ref_existing_pick))
@@ -277,7 +330,10 @@ reference_handlers <- function(input, output, session, deps) {
     ids <- deps$selected_ids()
     if (length(ids) == 0) { notify("Select the group(s) to build.", "warning"); return() }
     build_targets(ids)
-    with_con(function(con) shiny::showModal(reference_build_modal(ids, ref_config(con)$ref_dir)))
+    res <- tryCatch(with_con(function(con) reference_build_modal(ids, ref_config(con)$ref_dir)),
+      error = function(e) e)
+    if (inherits(res, "error")) { notify(conditionMessage(res), "error"); return() }
+    shiny::showModal(res)
   })
   shiny::observeEvent(input$ref_build_go, {
     ids <- build_targets()
@@ -313,20 +369,23 @@ reference_handlers <- function(input, output, session, deps) {
 
   # ---- reference folder ----
   shiny::observeEvent(input$ref_dir_btn, {
-    with_con(function(con) {
-      shiny::showModal(shiny::modalDialog(title = "Reference database folder", size = "l",
-        shiny::textInput("ref_dir_path", NULL, width = "100%", value = ref_config(con)$ref_dir),
+    res <- tryCatch(with_con(function(con) {
+      cfg <- ref_config(con)
+      shiny::modalDialog(title = "Reference database folder", size = "l",
+        shiny::textInput("ref_dir_path", NULL, width = "100%", value = cfg$ref_dir),
         opts_help("Databases built here are reused by every project pointed at this ",
           "folder, including a shared drive. Changing it does not move databases ",
           "already built, and groups already wired keep working."),
         shiny::numericInput("ref_min", "Minimum GenBank records for a suggested clade:",
-          value = ref_config(con)$min_records, min = 1, step = 100),
+          value = cfg$min_records, min = 1, step = 100),
         shiny::numericInput("ref_max", "Maximum GenBank records for a suggested clade:",
-          value = ref_config(con)$max_records, min = 1, step = 1000),
+          value = cfg$max_records, min = 1, step = 1000),
         footer = shiny::tagList(
           shiny::actionButton("ref_dir_apply", "Save", class = "btn-primary btn-sm"),
-          shiny::modalButton("Cancel"))))
-    })
+          shiny::modalButton("Cancel")))
+    }), error = function(e) e)
+    if (inherits(res, "error")) { notify(conditionMessage(res), "error"); return() }
+    shiny::showModal(res)
   })
   shiny::observeEvent(input$ref_dir_apply, {
     v <- validate_ref_dir(input$ref_dir_path %||% "")
@@ -338,5 +397,20 @@ reference_handlers <- function(input, output, session, deps) {
   })
 
   list(open_ladder = open_ladder,
-    poll = function() tryCatch(with_con(poll_reference_builds), error = function(e) invisible(0L)))
+    poll = function() {
+      tryCatch(with_con(poll_reference_builds), error = function(e) {
+        # poll_reference_builds() stop()s (e.g. wire_reference_db() finding no
+        # base assemble_opts preset) before it can mark the row it was working
+        # on; left at reference_switch = 4 every later tick hits the same error
+        # and the user watches "running" forever. Fail every currently-running
+        # row with this message instead, so it surfaces and stops spinning.
+        msg <- conditionMessage(e)
+        tryCatch(with_con(function(con) DBI::dbExecute(con,
+          "UPDATE reference SET reference_switch = 3, pid = NULL, fail_reason = ?, time_stamp = ?
+           WHERE reference_switch = 4",
+          params = list(msg, as.integer(Sys.time())))), error = function(e2) NULL)
+        notify(msg, "error")
+        invisible(0L)
+      })
+    })
 }
