@@ -129,9 +129,28 @@ test_that("a failed run still merges whatever counts landed", {
     writeLines("7898\t11750", file.path(out, "7898.count"))
     1L
   }
-  out <- RiboPilot:::run_clade_counts(d, ref,
-    data.frame(ref_id = c("a", "b"), taxid = c(7898L, 6656L),
-      clade_name = c("Actinopterygii", "Arthropoda"), query = c("q1", "q2"),
-      stringsAsFactors = FALSE), runner = runner)
+  out <- NULL
+  expect_warning(
+    out <- RiboPilot:::run_clade_counts(d, ref,
+      data.frame(ref_id = c("a", "b"), taxid = c(7898L, 6656L),
+        clade_name = c("Actinopterygii", "Arthropoda"), query = c("q1", "q2"),
+        stringsAsFactors = FALSE), runner = runner),
+    "status")
   expect_equal(nrow(out), 1L)
+})
+
+test_that("run_clade_counts rejects an unvalidated project before deleting anything", {
+  d <- withr::local_tempdir()
+  ref <- file.path(d, "refs"); dir.create(ref)
+  clades <- data.frame(ref_id = "a", taxid = 7898L, clade_name = "Actinopterygii",
+    query = "q", stringsAsFactors = FALSE)
+  runner <- function(project, args) stop("must not launch")
+
+  expect_error(RiboPilot:::run_clade_counts("", ref, clades, runner = runner))
+  expect_error(RiboPilot:::run_clade_counts(NA_character_, ref, clades, runner = runner))
+  expect_error(RiboPilot:::run_clade_counts(file.path(d, "nope"), ref, clades, runner = runner))
+
+  # nothing under the temp dir was touched
+  expect_false(dir.exists(file.path(d, ".reference")))
+  expect_false(file.exists("/.reference"))
 })

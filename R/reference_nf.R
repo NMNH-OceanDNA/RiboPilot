@@ -107,8 +107,13 @@ nf_run_blocking <- function(project, args) {
 #' @noRd
 run_clade_counts <- function(project, ref_dir, clades, api_key = "", refseq = FALSE,
                              runner = nf_run_blocking) {
+  if (is.null(project) || length(project) != 1 || is.na(project) ||
+      !nzchar(project) || !dir.exists(project)) {
+    stop("run_clade_counts: 'project' must be an existing directory.", call. = FALSE)
+  }
   cache <- read_counts_cache(ref_dir)
   need <- clades[!(as.integer(clades$taxid) %in% cache$taxid), , drop = FALSE]
+  need$taxid <- as.integer(need$taxid)
   need <- need[!duplicated(need$taxid), , drop = FALSE]
   if (nrow(need) == 0) return(cache)
   rundir <- file.path(project, ".reference")
@@ -120,6 +125,10 @@ run_clade_counts <- function(project, ref_dir, clades, api_key = "", refseq = FA
     api_key = api_key, refseq = refseq, resume = FALSE)
   # a non-zero status is not fatal: clades that did report are still worth
   # keeping, and the walk treats a missing count as unknown
-  runner(project, args)
+  status <- runner(project, args)
+  if (!identical(status, 0L) && !identical(status, 0)) {
+    warning("run_clade_counts: Nextflow COUNT run exited with status ", status,
+      call. = FALSE)
+  }
   merge_counts(ref_dir, read_count_files(out))
 }
