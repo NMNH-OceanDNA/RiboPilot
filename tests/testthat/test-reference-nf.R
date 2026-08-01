@@ -82,3 +82,56 @@ test_that("nf_reference_command bind-mounts refDir when the project config has a
   expect_length(idx2, 1L)
   expect_equal(b[idx2 + 1], paste0("--bind ", ref_dir))
 })
+
+test_that("run_clade_counts skips cached clades and merges what the run produced", {
+  d <- withr::local_tempdir()
+  ref <- file.path(d, "refs"); dir.create(ref)
+  utils::write.table(data.frame(taxid = 33208L, n_records = 900000L),
+    file.path(ref, "counts.tsv"), sep = "\t", row.names = FALSE, quote = FALSE)
+  seen <- new.env()
+  runner <- function(project, args) {
+    seen$args <- args
+    out <- args[which(args == "--outDir") + 1]
+    dir.create(out, recursive = TRUE, showWarnings = FALSE)
+    writeLines("7898\t11750", file.path(out, "7898.count"))
+    0L
+  }
+  clades <- data.frame(ref_id = c("metazoa", "actinopterygii"), taxid = c(33208L, 7898L),
+    clade_name = c("Metazoa", "Actinopterygii"),
+    query = c('"Metazoa"[Organism]', '"Actinopterygii"[Organism]'),
+    stringsAsFactors = FALSE)
+  out <- RiboPilot:::run_clade_counts(d, ref, clades, runner = runner)
+  expect_equal(out$n_records[out$taxid == 7898L], 11750L)
+  expect_equal(out$n_records[out$taxid == 33208L], 900000L)
+  # only the uncached clade was sent to the run
+  man <- utils::read.delim(seen$args[which(seen$args == "--clades") + 1], stringsAsFactors = FALSE)
+  expect_equal(man$taxid, 7898L)
+})
+
+test_that("run_clade_counts launches nothing when every clade is cached", {
+  d <- withr::local_tempdir()
+  ref <- file.path(d, "refs"); dir.create(ref)
+  utils::write.table(data.frame(taxid = 7898L, n_records = 11750L),
+    file.path(ref, "counts.tsv"), sep = "\t", row.names = FALSE, quote = FALSE)
+  runner <- function(project, args) stop("must not launch")
+  out <- RiboPilot:::run_clade_counts(d, ref,
+    data.frame(ref_id = "a", taxid = 7898L, clade_name = "Actinopterygii",
+      query = "q", stringsAsFactors = FALSE), runner = runner)
+  expect_equal(out$n_records[out$taxid == 7898L], 11750L)
+})
+
+test_that("a failed run still merges whatever counts landed", {
+  d <- withr::local_tempdir()
+  ref <- file.path(d, "refs"); dir.create(ref)
+  runner <- function(project, args) {
+    out <- args[which(args == "--outDir") + 1]
+    dir.create(out, recursive = TRUE, showWarnings = FALSE)
+    writeLines("7898\t11750", file.path(out, "7898.count"))
+    1L
+  }
+  out <- RiboPilot:::run_clade_counts(d, ref,
+    data.frame(ref_id = c("a", "b"), taxid = c(7898L, 6656L),
+      clade_name = c("Actinopterygii", "Arthropoda"), query = c("q1", "q2"),
+      stringsAsFactors = FALSE), runner = runner)
+  expect_equal(nrow(out), 1L)
+})

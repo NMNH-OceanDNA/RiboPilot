@@ -87,3 +87,39 @@ nf_reference_command <- function(project, entry, manifest, ref_dir, out_dir,
     if (nzchar(api_key %||% "")) c("--ncbi_api_key", api_key),
     ref_bind_option(cfg_lines, ref_dir))
 }
+
+#' Run a Nextflow command to completion, returning its exit status
+#'
+#' Split out so tests can substitute a runner that spawns nothing.
+#' @noRd
+nf_run_blocking <- function(project, args) {
+  if (!nzchar(Sys.which("nextflow"))) {
+    stop("Nextflow not found on PATH.", call. = FALSE)
+  }
+  p <- processx::run("nextflow", args, wd = project, error_on_status = FALSE,
+    stdout = "|", stderr = "2>&1")
+  p$status
+}
+
+#' Count GenBank records for a set of clades, waiting for the run
+#'
+#' Only uncached clades are sent to Nextflow; the walk reads the cache.
+#' @noRd
+run_clade_counts <- function(project, ref_dir, clades, api_key = "", refseq = FALSE,
+                             runner = nf_run_blocking) {
+  cache <- read_counts_cache(ref_dir)
+  need <- clades[!(as.integer(clades$taxid) %in% cache$taxid), , drop = FALSE]
+  need <- need[!duplicated(need$taxid), , drop = FALSE]
+  if (nrow(need) == 0) return(cache)
+  rundir <- file.path(project, ".reference")
+  out <- file.path(rundir, "counts")
+  unlink(out, recursive = TRUE)
+  dir.create(out, recursive = TRUE, showWarnings = FALSE)
+  man <- write_clade_manifest(file.path(rundir, "clades_count.tsv"), need)
+  args <- nf_reference_command(project, "COUNT", man, ref_dir, out,
+    api_key = api_key, refseq = refseq, resume = FALSE)
+  # a non-zero status is not fatal: clades that did report are still worth
+  # keeping, and the walk treats a missing count as unknown
+  runner(project, args)
+  merge_counts(ref_dir, read_count_files(out))
+}
