@@ -95,6 +95,16 @@ read_ref_manifest <- function(dir) {
 #' @noRd
 append_ref_manifest <- function(dir, clade, taxid, rank, query, n_records, seeds, labels) {
   dir.create(path.expand(dir), recursive = TRUE, showWarnings = FALSE)
+  p <- ref_manifest_path(dir)
+  if (file.exists(p)) {
+    raw <- tryCatch(utils::read.delim(p, stringsAsFactors = FALSE, colClasses = "character"),
+      error = function(e) NULL)
+    if (is.null(raw) || !all(REF_MANIFEST_COLS %in% names(raw))) {
+      bak <- paste0(p, ".bak")
+      file.rename(p, bak)
+      warning(sprintf("Could not parse reference manifest %s; preserved as %s", p, bak))
+    }
+  }
   m <- read_ref_manifest(dir)
   m <- m[m$clade != clade, , drop = FALSE]
   m <- rbind(m, data.frame(
@@ -102,7 +112,6 @@ append_ref_manifest <- function(dir, clade, taxid, rank, query, n_records, seeds
     query = query, n_records = as.integer(n_records),
     built = format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
     seeds = seeds, labels = labels, stringsAsFactors = FALSE))
-  p <- ref_manifest_path(dir)
   utils::write.table(m, p, sep = "\t", row.names = FALSE, quote = FALSE, na = "")
   invisible(p)
 }

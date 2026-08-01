@@ -53,6 +53,21 @@ test_that("the manifest round-trips a built database", {
   expect_equal(m$n_records[1], 4102L)
 })
 
+test_that("appending onto a malformed manifest preserves it as a .bak and warns", {
+  d <- withr::local_tempdir()
+  p <- RiboPilot:::ref_manifest_path(d)
+  garbage <- "this is not\ta valid manifest\njust noise"
+  writeLines(garbage, p)
+  expect_warning(
+    RiboPilot:::append_ref_manifest(d, "asteroidea", 7588L, "class", "q", 10L, "s1", "l1"))
+  bak <- paste0(p, ".bak")
+  expect_true(file.exists(bak))
+  expect_equal(readLines(bak), strsplit(garbage, "\n")[[1]])
+  m <- RiboPilot:::read_ref_manifest(d)
+  expect_equal(nrow(m), 1L)
+  expect_equal(m$clade[1], "asteroidea")
+})
+
 test_that("appending twice keeps one row per clade, the newest", {
   d <- withr::local_tempdir()
   RiboPilot:::append_ref_manifest(d, "asteroidea", 7588L, "class", "q", 10L, "s1", "l1")
