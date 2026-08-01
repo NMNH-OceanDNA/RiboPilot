@@ -134,6 +134,14 @@ reference_handlers <- function(input, output, session, deps) {
   bump <- function() deps$refresh(shiny::isolate(deps$refresh()) + 1)
   notify <- function(msg, type = "message") shiny::showNotification(msg, type = type, duration = 8)
 
+  # taxonomy writers store the lineage names only; the rank-aligned taxid path
+  # this tab walks is derived on demand, so back-fill before every read
+  ladders_now <- function(con) {
+    tryCatch(ensure_sample_lineage_taxids(con,
+      taxdump_dir = project_taxdump_dir(deps$project())), error = function(e) NULL)
+    sample_ladders(con)
+  }
+
   # ---- Suggest ----
   shiny::observeEvent(input$ref_suggest_btn, {
     shinyWidgets::sendSweetAlert(title = "Suggesting clades...",
@@ -148,7 +156,7 @@ reference_handlers <- function(input, output, session, deps) {
         outcome <- tryCatch({
           n <- with_con(function(con) {
             cfg <- ref_config(con)
-            l <- sample_ladders(con)
+            l <- ladders_now(con)
             if (nrow(l) == 0) stop("No samples have a resolved lineage yet. Assign taxonomy first.",
               call. = FALSE)
             cf <- cached_count_fn(cfg$ref_dir,
@@ -191,7 +199,7 @@ reference_handlers <- function(input, output, session, deps) {
       if (nrow(row) == 0) stop("Group not found.", call. = FALSE)
       ids <- DBI::dbGetQuery(con, "SELECT ID FROM samples WHERE ref_id = ?", params = list(ref_id))$ID
       cfg <- ref_config(con)
-      l <- group_ladder(sample_ladders(con), ids,
+      l <- group_ladder(ladders_now(con), ids,
         count_fn = cached_count_fn(cfg$ref_dir, api_key = Sys.getenv("NCBI_API_KEY", "")))
       reference_ladder_modal(ref_id, row$clade_name[1], l, row$clade_taxid[1], length(ids))
     }), error = function(e) e)
@@ -219,14 +227,31 @@ reference_handlers <- function(input, output, session, deps) {
   })
 
   shiny::observeEvent(input$ref_clade_apply, {
-    ref_id <- ladder_target()
     tid <- suppressWarnings(as.integer(picked() %||% input$ref_rung %||% NA))
     if (is.na(tid)) { notify("Pick a clade first.", "warning"); return() }
+    # the clade check walks the taxdump and asks GenBank for a record count,
+    # which takes a few seconds; say so rather than leaving the button dead
+    shinyWidgets::sendSweetAlert(title = "Applying clade...",
+      text = "Checking which samples it covers and counting GenBank records.",
+      type = "info", btn_labels = NA, closeOnClickOutside = FALSE)
+    later::later(function() {
+      shiny::withReactiveDomain(session, apply_clade(tid))
+    }, delay = 0.1)
+  })
+
+  apply_clade <- function(tid) {
+    ref_id <- ladder_target()
     res <- tryCatch(with_con(function(con) {
       ids <- DBI::dbGetQuery(con, "SELECT ID FROM samples WHERE ref_id = ?",
         params = list(ref_id))$ID
-      ladders <- sample_ladders(con)
+      ladders <- ladders_now(con)
       covered <- intersect(ladder_coverage(ladders, tid), ids)
+      # ranks outside the seven-rank ladder (superclass, subphylum, ...) are
+      # still valid clades, so fall back to the full ancestor path
+      if (length(covered) == 0) {
+        covered <- intersect(
+          lineage_coverage(con, tid, project_taxdump_dir(deps$project())), ids)
+      }
       # a clade that covers none of the group's samples must not be applied to
       # all of them anyway -- that would silently mis-clade every sample
       if (length(covered) == 0) {
@@ -264,7 +289,13 @@ reference_handlers <- function(input, output, session, deps) {
       }
       list(name = info$name[1], left_n = length(leftover), left_name = left_name)
     }), error = function(e) e)
-    if (inherits(res, "error")) { notify(conditionMessage(res), "error"); return() }
+    # the "Applying..." alert has no dismiss button, so every exit closes it
+    if (inherits(res, "error")) {
+      shinyWidgets::sendSweetAlert(title = "Could not apply that clade",
+        text = conditionMessage(res), type = "error")
+      return(invisible(NULL))
+    }
+    shinyWidgets::closeSweetAlert(session = session)
     shiny::removeModal()
     bump()
     if (!is.null(res$left_name)) {
@@ -273,7 +304,8 @@ reference_handlers <- function(input, output, session, deps) {
     } else {
       notify(sprintf("Group now uses %s.", res$name))
     }
-  })
+    invisible(NULL)
+  }
 
   # ---- skip ----
   shiny::observeEvent(input$ref_skip_btn, {

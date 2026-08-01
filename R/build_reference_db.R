@@ -75,7 +75,7 @@ build_reference_db <- function(query, clade, out_dir = ribopilot_ref_dir(),
     if (isTRUE(refseq)) args <- c(args, "--refseq")
     if (!is.null(api_key) && nzchar(api_key)) args <- c(args, "--api-key", shQuote(api_key))
     args <- c(args, shQuote(query), shQuote(prefix))
-    system2("bash", args)
+    system2("bash", args, stdin = "/dev/null")
     return(invisible(list(seeds = NA_character_, labels = NA_character_)))
   }
 
@@ -98,7 +98,7 @@ build_reference_db <- function(query, clade, out_dir = ribopilot_ref_dir(),
   if (isTRUE(refseq)) args <- c(args, "--refseq")
   if (!is.null(api_key) && nzchar(api_key)) args <- c(args, "--api-key", shQuote(api_key))
   args <- c(args, shQuote(query), shQuote(prefix))
-  status <- system2("bash", args)
+  status <- system2("bash", args, stdin = "/dev/null")
   if (status != 0) {
     stop("Reference-DB build failed (Entrez Direct / biopython on PATH? try conda_env=).",
       call. = FALSE)

@@ -46,7 +46,10 @@ genbank_rrna_count <- function(query, api_key = NULL, refseq = FALSE, conda_env 
   if (isTRUE(refseq)) args <- c(args, "--refseq")
   if (!is.null(api_key) && nzchar(api_key)) args <- c(args, "--api-key", shQuote(api_key))
   args <- c(args, shQuote(query), "count_probe")
-  out <- suppressWarnings(tryCatch(system2("bash", args, stdout = TRUE, stderr = TRUE),
+  # stdin must be detached: Entrez Direct reads stdin when it is open, so an
+  # inherited Shiny socket makes esearch block forever instead of querying
+  out <- suppressWarnings(tryCatch(
+    system2("bash", args, stdout = TRUE, stderr = TRUE, stdin = "/dev/null"),
     error = function(e) character(0)))
   parse_record_count(out)
 }

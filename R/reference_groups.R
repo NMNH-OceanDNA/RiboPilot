@@ -54,6 +54,29 @@ ladder_coverage <- function(ladders, taxid) {
   unique(ladders$ID[ladders$taxid == as.integer(taxid)])
 }
 
+#' Sample IDs descending from a taxid, at any rank
+#'
+#' The ladder holds only the seven main ranks, so a clade picked from the
+#' taxdump search can be a real ancestor of every sample and still miss the
+#' ladder (superclass Actinopterygii, for example). This tests the full path.
+#'
+#' @param con Open project DB connection. @param taxid NCBI taxid.
+#' @param taxdump_dir Directory holding a pinned taxdump.
+#' @noRd
+lineage_coverage <- function(con, taxid, taxdump_dir) {
+  taxid <- suppressWarnings(as.integer(taxid))
+  s <- tryCatch(DBI::dbGetQuery(con,
+    "SELECT ID, taxid FROM samples WHERE taxid IS NOT NULL"), error = function(e) NULL)
+  if (is.na(taxid) || is.null(s) || nrow(s) == 0) return(character(0))
+  paths <- tryCatch(tk_full_lineage_taxids(s$taxid, taxdump_dir), error = function(e) list())
+  if (length(paths) == 0) return(character(0))
+  keep <- vapply(as.character(s$taxid), function(k) {
+    p <- paths[[k]]
+    !is.null(p) && taxid %in% p
+  }, logical(1))
+  unique(s$ID[keep])
+}
+
 #' The lineage shared by a set of samples, with coverage and optional counts
 #'
 #' @param ladders From [sample_ladders()].

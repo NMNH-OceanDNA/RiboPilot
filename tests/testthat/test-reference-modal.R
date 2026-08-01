@@ -162,6 +162,8 @@ test_that("a partial-coverage pick splits the uncovered sample into a new group"
     session$flushReact()
     session$setInputs(ref_clade_apply = 1)
     session$flushReact()
+    # the apply runs on a later() tick so the "Applying..." alert can paint
+    while (!later::loop_empty()) later::run_now()
   })
 
   con <- DBI::dbConnect(RSQLite::SQLite(), dbfile); on.exit(DBI::dbDisconnect(con))
@@ -202,6 +204,8 @@ test_that("a clade covering none of the group's samples is refused, not applied 
     session$flushReact()
     session$setInputs(ref_clade_apply = 1)
     session$flushReact()
+    # the apply runs on a later() tick so the "Applying..." alert can paint
+    while (!later::loop_empty()) later::run_now()
   })
 
   con <- DBI::dbConnect(RSQLite::SQLite(), dbfile); on.exit(DBI::dbDisconnect(con))
