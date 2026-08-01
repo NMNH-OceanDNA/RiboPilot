@@ -108,11 +108,12 @@ test_that("the existing-database modal renders every clade, even with a two-row 
 mk_split_db <- function(dir) {
   ref_dir <- file.path(dir, "refs")
   dir.create(ref_dir, recursive = TRUE, showWarnings = FALSE)
-  # pre-seeded so cached_count_fn() never falls through to genbank_rrna_count():
-  # 33208/7586/7588 are the ranks S1 and S2 still share (queried by open_ladder's
-  # group_ladder()), 41692 is the Forcipulatida rung the tests pick
+  # pre-seeded so no count ever has to be fetched: 33208/7586/7588 are the ranks
+  # S1 and S2 still share, 41692 is the Forcipulatida rung the tests pick, and
+  # 7607/41695/41693 complete every rung at or above family that Suggest asks about
   utils::write.table(
-    data.frame(taxid = c(33208L, 7586L, 7588L, 41692L), n_records = c(900000L, 60000L, 4102L, 900L)),
+    data.frame(taxid = c(33208L, 7586L, 7588L, 41692L, 7607L, 41695L, 41693L),
+      n_records = c(900000L, 60000L, 4102L, 900L, 340L, 700L, 200L)),
     file.path(ref_dir, "counts.tsv"), sep = "\t", row.names = FALSE, quote = FALSE)
   dbfile <- file.path(dir, ".sqlite")
   con <- DBI::dbConnect(RSQLite::SQLite(), dbfile)
@@ -215,4 +216,77 @@ test_that("a clade covering none of the group's samples is refused, not applied 
   expect_equal(ref$clade_name, "Asteroidea")
   expect_equal(ref$clade_taxid, 7588L)
   expect_equal(ref$n_samples, 2L)
+})
+
+test_that("Suggest counts only uncached clades and then walks offline", {
+  skip_if_not_installed("withr")
+  dir <- withr::local_tempdir()
+  dbfile <- mk_split_db(dir)
+  deps <- mk_split_deps(dbfile, dir)
+  calls <- 0L
+  withr::local_options(list(ribopilot.count_runner = function(project, args) {
+    calls <<- calls + 1L; 0L
+  }))
+  shiny::testServer(function(input, output, session) {
+    RiboPilot:::reference_handlers(input, output, session, deps)
+  }, {
+    session$setInputs(ref_suggest_btn = 1)
+    session$flushReact()
+    while (!later::loop_empty()) later::run_now()
+  })
+  con <- DBI::dbConnect(RSQLite::SQLite(), dbfile); on.exit(DBI::dbDisconnect(con))
+  expect_gt(nrow(DBI::dbGetQuery(con, "SELECT * FROM reference")), 0L)
+  expect_equal(calls, 0L)   # every rung was already cached
+})
+
+test_that("Suggest sends the uncached rungs to the runner", {
+  skip_if_not_installed("withr")
+  dir <- withr::local_tempdir()
+  dbfile <- mk_split_db(dir)
+  deps <- mk_split_deps(dbfile, dir)
+  # drop two rungs from the cache so a count run is required
+  cache <- utils::read.delim(file.path(dir, "refs", "counts.tsv"))
+  utils::write.table(cache[!(cache$taxid %in% c(7607L, 41693L)), , drop = FALSE],
+    file.path(dir, "refs", "counts.tsv"), sep = "\t", row.names = FALSE, quote = FALSE)
+  sent <- NULL
+  withr::local_options(list(ribopilot.count_runner = function(project, args) {
+    man <- args[which(args == "--clades") + 1L]
+    sent <<- utils::read.delim(man)
+    0L
+  }))
+  shiny::testServer(function(input, output, session) {
+    RiboPilot:::reference_handlers(input, output, session, deps)
+  }, {
+    session$setInputs(ref_suggest_btn = 1)
+    session$flushReact()
+    while (!later::loop_empty()) later::run_now()
+  })
+  expect_setequal(sent$taxid, c(7607L, 41693L))
+  expect_true(all(grepl("[Organism]", sent$query, fixed = TRUE)))
+})
+
+test_that("apply-clade counts a cached clade without calling the runner", {
+  skip_if_not_installed("withr")
+  dir <- withr::local_tempdir()
+  dbfile <- mk_split_db(dir)
+  deps <- mk_split_deps(dbfile, dir)
+  calls <- 0L
+  withr::local_options(list(ribopilot.count_runner = function(project, args) {
+    calls <<- calls + 1L; 0L
+  }))
+  shiny::testServer(function(input, output, session) {
+    h <- RiboPilot:::reference_handlers(input, output, session, deps)
+    open_ladder <- h$open_ladder
+  }, {
+    open_ladder("asteroidea")
+    session$setInputs(ref_rung = "41692")
+    session$flushReact()
+    session$setInputs(ref_clade_apply = 1)
+    session$flushReact()
+    while (!later::loop_empty()) later::run_now()
+  })
+  expect_equal(calls, 0L)
+  con <- DBI::dbConnect(RSQLite::SQLite(), dbfile); on.exit(DBI::dbDisconnect(con))
+  n <- DBI::dbGetQuery(con, "SELECT n_records FROM reference WHERE ref_id = 'forcipulatida'")
+  expect_equal(n$n_records, 900L)
 })

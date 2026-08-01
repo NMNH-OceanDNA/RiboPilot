@@ -193,3 +193,24 @@ test_that("groups are deduped by clade taxid, and colliding slugs are disambigua
   expect_equal(res$groups$clade_taxid[res$groups$ref_id == a_ref], 111111L)
   expect_equal(res$groups$clade_taxid[res$groups$ref_id == b_ref], 222222L)
 })
+
+test_that("candidate_rungs covers every rung at or above the start rank, once each", {
+  con <- mk_ladder_db(list(F1 = FISH, S1 = STAR, S2 = STAR2))
+  on.exit(DBI::dbDisconnect(con))
+  l <- RiboPilot:::sample_ladders(con)
+  r <- RiboPilot:::candidate_rungs(l, start_rank = "family")
+  expect_true(all(c("ref_id", "taxid", "clade_name", "query") %in% names(r)))
+  expect_false(any(duplicated(r$taxid)))
+  expect_true(all(r$taxid %in% l$taxid[l$rank %in%
+    c("kingdom", "phylum", "class", "order", "family")]))
+  expect_false(any(r$taxid %in% l$taxid[l$rank %in% c("genus", "species")]))
+  expect_true(grepl("[Organism]", r$query[1], fixed = TRUE))
+  expect_equal(r$ref_id[r$taxid == 7588L], "asteroidea")
+})
+
+test_that("candidate_rungs on an empty ladder returns the empty shape", {
+  con <- mk_ladder_db(list()); on.exit(DBI::dbDisconnect(con))
+  r <- RiboPilot:::candidate_rungs(RiboPilot:::sample_ladders(con))
+  expect_equal(nrow(r), 0L)
+  expect_true(all(c("ref_id", "taxid", "clade_name", "query") %in% names(r)))
+})

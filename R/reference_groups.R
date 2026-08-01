@@ -113,6 +113,26 @@ group_ladder <- function(ladders, ids, count_fn = NULL) {
   out[, c("level", "rank", "taxid", "name", "n_samples", "n_records"), drop = FALSE]
 }
 
+#' Every clade the walk could ask about, once each
+#'
+#' The walk starts at `start_rank` and climbs, so anything deeper is never
+#' counted. Counting the whole set up front is what lets the walk itself run
+#' offline against the cache.
+#' @noRd
+candidate_rungs <- function(ladders, start_rank = "family") {
+  top <- match(start_rank, RRNA_LINEAGE_RANKS)
+  l <- ladders[ladders$level <= top, , drop = FALSE]
+  l <- l[!duplicated(l$taxid), , drop = FALSE]
+  if (nrow(l) == 0) {
+    return(data.frame(ref_id = character(0), taxid = integer(0),
+      clade_name = character(0), query = character(0), stringsAsFactors = FALSE))
+  }
+  data.frame(ref_id = vapply(l$name, ref_id_from_name, character(1), USE.NAMES = FALSE),
+    taxid = as.integer(l$taxid), clade_name = l$name,
+    query = vapply(l$name, clade_query, character(1), USE.NAMES = FALSE),
+    stringsAsFactors = FALSE)
+}
+
 #' Walk one sample's ladder up to the first clade clearing the record floor
 #'
 #' Returns the deepest rung at or above `start_rank` whose count reaches

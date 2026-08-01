@@ -132,6 +132,8 @@ reference_handlers <- function(input, output, session, deps) {
     con <- deps$con(); on.exit(DBI::dbDisconnect(con)); fn(con)
   }
   bump <- function() deps$refresh(shiny::isolate(deps$refresh()) + 1)
+  # read fresh each time so tests can substitute a runner that spawns nothing
+  count_runner <- function() getOption("ribopilot.count_runner", nf_run_blocking)
   notify <- function(msg, type = "message") shiny::showNotification(msg, type = type, duration = 8)
 
   # taxonomy writers store the lineage names only; the rank-aligned taxid path
@@ -159,9 +161,10 @@ reference_handlers <- function(input, output, session, deps) {
             l <- ladders_now(con)
             if (nrow(l) == 0) stop("No samples have a resolved lineage yet. Assign taxonomy first.",
               call. = FALSE)
-            cf <- cached_count_fn(cfg$ref_dir,
-              api_key = Sys.getenv("NCBI_API_KEY", ""), conda_env = NULL)
-            s <- suggest_reference_groups(l, cf, cfg$min_records, cfg$max_records)
+            run_clade_counts(deps$project(), cfg$ref_dir, candidate_rungs(l),
+              api_key = Sys.getenv("NCBI_API_KEY", ""), runner = count_runner())
+            s <- suggest_reference_groups(l, cache_count_fn(cfg$ref_dir),
+              cfg$min_records, cfg$max_records)
             if (nrow(s$groups) == 0) stop("Could not count GenBank records for any clade (is Entrez Direct on PATH?).",
               call. = FALSE)
             write_reference_groups(con, s$groups, s$members)
@@ -265,7 +268,12 @@ reference_handlers <- function(input, output, session, deps) {
         })
       }
       cfg <- ref_config(con)
-      n <- cached_count_fn(cfg$ref_dir, api_key = Sys.getenv("NCBI_API_KEY", ""))(tid, info$name[1])
+      run_clade_counts(deps$project(), cfg$ref_dir,
+        data.frame(ref_id = ref_id_from_name(info$name[1]), taxid = as.integer(tid),
+          clade_name = info$name[1], query = clade_query(info$name[1]),
+          stringsAsFactors = FALSE),
+        api_key = Sys.getenv("NCBI_API_KEY", ""), runner = count_runner())
+      n <- cache_count_fn(cfg$ref_dir)(tid, info$name[1])
       # a clade change re-keys the group, so the follow-up work uses the key
       # set_reference_clade() actually wrote, not the one the modal opened on
       new_key <- set_reference_clade(con, ref_id = ref_id, clade_taxid = tid,
