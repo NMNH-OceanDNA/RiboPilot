@@ -77,13 +77,15 @@ test_that("a record-rich family stops the walk at family", {
 
 test_that("the ceiling stops the walk before an over-broad clade", {
   con <- mk_ladder_db(list(F1 = FISH)); on.exit(DBI::dbDisconnect(con))
-  # nothing reaches the floor until kingdom, which is far over the ceiling
-  cf <- counter(list("33208" = 900000, "7711" = 400000))
+  # nothing ever reaches the floor (100000); phylum and kingdom both clear it
+  # by count but are over the ceiling (25000), so neither can be the fallback
+  cf <- counter(list("186623" = 0, "7952" = 0, "1002673" = 0,
+    "7711" = 50000, "33208" = 60000))
   res <- RiboPilot:::suggest_reference_groups(RiboPilot:::sample_ladders(con), cf,
-    min_records = 1000, max_records = 25000)
-  # the walk keeps the best clade it saw rather than one above the ceiling
-  expect_equal(res$groups$clade_rank, "phylum")
-  expect_equal(res$groups$clade_name, "Chordata")
+    min_records = 100000, max_records = 25000)
+  # the walk keeps the deepest clade under the ceiling rather than one above it
+  expect_equal(res$groups$clade_rank, "class")
+  expect_equal(res$groups$clade_name, "Actinopteri")
 })
 
 test_that("a nested group merges into its parent when the parent is under the ceiling", {
@@ -134,4 +136,60 @@ test_that("samples with no usable lineage are reported, not grouped", {
 test_that("ref_id_from_name makes a filename-safe slug", {
   expect_equal(RiboPilot:::ref_id_from_name("Asteroidea"), "asteroidea")
   expect_equal(RiboPilot:::ref_id_from_name("Danio rerio"), "danio_rerio")
+})
+
+test_that("group_ladder returns the empty frame when members share no rung", {
+  # kingdom is unresolved (dropped) for both, and they diverge at phylum, so
+  # nothing survives the unanimity filter
+  gappy_fish <- list(
+    names = "unclassified Metazoa;Chordata;Actinopteri;Cypriniformes;Danionidae;Danio;Danio rerio",
+    taxids = ";7711;186623;7952;1002673;7954;7955")
+  gappy_star <- list(
+    names = "unclassified Metazoa;Echinodermata;Asteroidea;Forcipulatida;Asteriidae;Asterias;Asterias rubens",
+    taxids = ";7586;7588;41692;7607;7608;7610")
+  con <- mk_ladder_db(list(X = gappy_fish, Y = gappy_star)); on.exit(DBI::dbDisconnect(con))
+  l <- RiboPilot:::sample_ladders(con)
+  g <- RiboPilot:::group_ladder(l, c("X", "Y"))
+  expect_equal(nrow(g), 0L)
+  expect_named(g, c("level", "rank", "taxid", "name", "n_samples", "n_records"))
+})
+
+test_that("a chain of merges folds to a fixed point rather than stranding a sample", {
+  # A's own family clears the floor; B's family fails but its order (shared
+  # with A) clears it; C's family and order fail but its class (shared with
+  # both) clears it. A naive single pass leaves A merged into B's order while
+  # B merges past it into C's class, stranding A in a group nobody chose.
+  fish_b <- list(
+    names = "Metazoa;Chordata;Actinopteri;Cypriniformes;FakeCyprinidFamily;FakeGenus;Fake species",
+    taxids = "33208;7711;186623;7952;9001;9002;9003")
+  con <- mk_ladder_db(list(A = FISH, B = fish_b, C = FISH2)); on.exit(DBI::dbDisconnect(con))
+  cf <- counter(list("1002673" = 2000, "9001" = 0, "7952" = 5000,
+    "8168" = 0, "8111" = 0, "186623" = 40000))
+  res <- RiboPilot:::suggest_reference_groups(RiboPilot:::sample_ladders(con), cf,
+    min_records = 1000, max_records = 50000)
+  expect_equal(nrow(res$groups), 1L)
+  expect_equal(res$groups$clade_name, "Actinopteri")
+  expect_equal(res$groups$n_samples, 3L)
+  expect_setequal(res$members$ref_id, "actinopteri")
+})
+
+test_that("groups are deduped by clade taxid, and colliding slugs are disambiguated", {
+  collide1 <- list(
+    names = "Metazoa;Chordata;Actinopteri;Cypriniformes;Foo bar;FooGenus;Foo species",
+    taxids = "33208;7711;186623;7952;111111;111112;111113")
+  collide2 <- list(
+    names = "Metazoa;Chordata;Actinopteri;Cypriniformes;Foo-bar;BarGenus;Bar species",
+    taxids = "33208;7711;186623;7952;222222;222223;222224")
+  con <- mk_ladder_db(list(A = collide1, B = collide2)); on.exit(DBI::dbDisconnect(con))
+  cf <- counter(list("111111" = 2000, "222222" = 2000))
+  res <- RiboPilot:::suggest_reference_groups(RiboPilot:::sample_ladders(con), cf,
+    min_records = 1000, max_records = 25000)
+  expect_equal(nrow(res$groups), 2L)
+  expect_equal(length(unique(res$groups$ref_id)), 2L)
+  expect_setequal(res$groups$clade_taxid, c(111111L, 222222L))
+  a_ref <- res$members$ref_id[res$members$ID == "A"]
+  b_ref <- res$members$ref_id[res$members$ID == "B"]
+  expect_false(identical(a_ref, b_ref))
+  expect_equal(res$groups$clade_taxid[res$groups$ref_id == a_ref], 111111L)
+  expect_equal(res$groups$clade_taxid[res$groups$ref_id == b_ref], 222222L)
 })
