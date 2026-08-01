@@ -1,3 +1,9 @@
+#' State icons for the Reference table (adds "skipped" to the shared vocabulary)
+#' @noRd
+REFERENCE_STATE_ICONS <- c(`0` = "fa fa-hourglass", `1` = "fa fa-person-running",
+  `2` = "fa fa-circle-check", `3` = "fa fa-triangle-exclamation",
+  `4` = "fa fa-circle-half-stroke", `5` = "fa fa-circle-minus")
+
 #' RiboPilot app server
 #' @import shiny
 #' @noRd
@@ -93,6 +99,7 @@ app_server <- function(input, output, session) {
   mode_meta <- function(mode) {
     switch(mode %||% "Assemble",
       Taxonomy = list(tbl = "samples", pfx = "taxonomy"),
+      Reference = list(tbl = "reference", pfx = "reference"),
       Annotate = list(tbl = "annotate", pfx = "annotate"),
       list(tbl = "assemble", pfx = "assemble"))
   }
@@ -107,6 +114,9 @@ app_server <- function(input, output, session) {
         "SELECT s.taxonomy_lock, s.taxonomy_switch, s.ID, s.Taxon,
            s.sci_name, s.taxid, s.rank, s.match_type, s.time_stamp
          FROM samples s")
+    } else if (mode == "Reference") {
+      con <- app_con(); on.exit(DBI::dbDisconnect(con))
+      reference_table(con)
     } else if (mode == "Assemble") {
       app_query(
         "SELECT a.assemble_lock, a.assemble_switch, s.ID, s.Taxon, s.sci_name, s.taxid,
@@ -244,6 +254,20 @@ app_server <- function(input, output, session) {
           `2` = "fa fa-circle-check", `3` = "fa fa-triangle-exclamation",
           `4` = "fa fa-circle-half-stroke")))
     }
+    if (mode == "Reference") {
+      cols[["clade_name"]] <- reactable::colDef(name = "Clade", minWidth = 140, html = TRUE,
+        cell = rt_link("ref_open_clade"))
+      cols[["clade_rank"]] <- reactable::colDef(name = "Rank", width = 90)
+      cols[["n_samples"]] <- reactable::colDef(name = "Samples", width = 90)
+      cols[["n_records"]] <- reactable::colDef(name = "GenBank records", width = 140)
+      cols[["source"]] <- reactable::colDef(name = "Source", width = 90)
+      cols[["database"]] <- reactable::colDef(name = "Database", minWidth = 240, html = TRUE,
+        cell = rt_longtext())
+      cols[["fail_reason"]] <- reactable::colDef(name = "Note", minWidth = 200, html = TRUE,
+        cell = rt_longtext())
+      cols[[state_col]] <- reactable::colDef(name = "", sticky = "left", html = TRUE, width = 32,
+        align = "center", filterable = FALSE, cell = rt_dynamicIcon(REFERENCE_STATE_ICONS))
+    }
     rowclass <- reactable::JS(sprintf(
       "function(rowInfo){ if(!rowInfo||!rowInfo.values) return '';
          return 'rp-lock-'+rowInfo.values['%s']+' rp-state-'+rowInfo.values['%s']; }",
@@ -254,6 +278,7 @@ app_server <- function(input, output, session) {
     # "No rows found" reads like a failed import.
     nodata <- switch(mode,
       Taxonomy = "No samples yet. Create the project with a mapping file (new_project()).",
+      Reference = "No reference groups yet. Press Suggest to propose clades from the assigned taxonomy.",
       Assemble = "No taxonomy-locked samples. Assign and lock taxonomy in Taxonomy mode first.",
       Annotate = "No assembly-locked samples. Review and lock assemblies in Assemble mode first.",
       Export   = "No annotation-locked samples. Review and lock annotations in Annotation Review first.",
@@ -306,6 +331,8 @@ app_server <- function(input, output, session) {
     mode <- input$mode %||% "Assemble"
     if (mode == "Taxonomy") {
       open_taxon_review(id)
+    } else if (mode == "Reference") {
+      ref_h$open_ladder(id)
     } else if (mode == "Assemble") {
       showModal(assemble_modal(id))
     } else if (mode == "Annotate") {
@@ -437,6 +464,18 @@ app_server <- function(input, output, session) {
     }
   ))
   observeEvent(input$edit_taxon_btn, open_taxon_review(selected_ids()))
+
+  # ---- Reference databases (suggest / build / reuse / skip) ----
+  ref_h <- reference_handlers(input, output, session, list(
+    con = app_con, project = app_project, refresh = refresh,
+    selected_ids = selected_ids, table_data = samples_data))
+
+  # A build runs in the background, so the tab has to ask the DB for its state.
+  observe({
+    if ((input$mode %||% "") != "Reference") return()
+    invalidateLater(4000, session)
+    if (isTRUE(ref_h$poll() > 0)) refresh(isolate(refresh()) + 1)
+  })
 
   # ---- bulk lock / state / reviewed actions ----
   # In Annotate mode each row is a (path, scaffold) unit, so the bulk update keys
@@ -596,6 +635,16 @@ app_server <- function(input, output, session) {
   observeEvent(input$run_btn, {
     # Taxonomy runs locally in the app (lightweight taxdump lookup, no Nextflow).
     if ((input$mode %||% "") == "Taxonomy") { run_taxonomy_update(); return() }
+    # warn, never block: a pending group only means those samples keep the
+    # database their options set already names
+    pending <- tryCatch({
+      c1 <- app_con(); on.exit(DBI::dbDisconnect(c1), add = TRUE); reference_pending(c1)
+    }, error = function(e) character(0))
+    if (length(pending) > 0) {
+      showNotification(sprintf(
+        "%d reference group(s) are not built or skipped (%s). Those samples will assemble with the database their options set already has.",
+        length(pending), paste(pending, collapse = ", ")), type = "warning", duration = 12)
+    }
     prog_header(character(0)); prog_executor(""); prog_proc(list()); prog_footer(character(0))
     hl <- app_headless()
     sched <- if (hl) detect_scheduler() else NULL
