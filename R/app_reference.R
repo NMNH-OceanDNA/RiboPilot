@@ -161,11 +161,14 @@ reference_handlers <- function(input, output, session, deps) {
             l <- ladders_now(con)
             if (nrow(l) == 0) stop("No samples have a resolved lineage yet. Assign taxonomy first.",
               call. = FALSE)
-            run_clade_counts(deps$project(), cfg$ref_dir, candidate_rungs(l),
+            # one start rank for both: the walk must only ask about rungs the
+            # count run was told to count, or every answer comes back NA
+            start_rank <- "family"
+            run_clade_counts(deps$project(), cfg$ref_dir, candidate_rungs(l, start_rank),
               api_key = Sys.getenv("NCBI_API_KEY", ""), runner = count_runner())
             s <- suggest_reference_groups(l, cache_count_fn(cfg$ref_dir),
-              cfg$min_records, cfg$max_records)
-            if (nrow(s$groups) == 0) stop("Could not count GenBank records for any clade (is Entrez Direct on PATH?).",
+              cfg$min_records, cfg$max_records, start_rank = start_rank)
+            if (nrow(s$groups) == 0) stop("Could not count GenBank records for any clade (the counting run returned no results; check the Nextflow log).",
               call. = FALSE)
             write_reference_groups(con, s$groups, s$members)
             nrow(s$groups)
@@ -202,8 +205,9 @@ reference_handlers <- function(input, output, session, deps) {
       if (nrow(row) == 0) stop("Group not found.", call. = FALSE)
       ids <- DBI::dbGetQuery(con, "SELECT ID FROM samples WHERE ref_id = ?", params = list(ref_id))$ID
       cfg <- ref_config(con)
-      l <- group_ladder(ladders_now(con), ids,
-        count_fn = cached_count_fn(cfg$ref_dir, api_key = Sys.getenv("NCBI_API_KEY", "")))
+      # cache-only: opening the modal must not shell out. Suggest pre-fills the
+      # cache for these rungs; anything else renders as "records unknown"
+      l <- group_ladder(ladders_now(con), ids, count_fn = cache_count_fn(cfg$ref_dir))
       reference_ladder_modal(ref_id, row$clade_name[1], l, row$clade_taxid[1], length(ids))
     }), error = function(e) e)
     if (inherits(res, "error")) { notify(conditionMessage(res), "error"); return() }

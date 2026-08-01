@@ -235,7 +235,11 @@ test_that("Suggest counts only uncached clades and then walks offline", {
     while (!later::loop_empty()) later::run_now()
   })
   con <- DBI::dbConnect(RSQLite::SQLite(), dbfile); on.exit(DBI::dbDisconnect(con))
-  expect_gt(nrow(DBI::dbGetQuery(con, "SELECT * FROM reference")), 0L)
+  ref <- DBI::dbGetQuery(con, "SELECT ref_id, time_stamp FROM reference")
+  expect_gt(nrow(ref), 0L)
+  # the fixture pre-inserts a row stamped 1; only a real write_reference_groups()
+  # re-stamps it, so this fails if Suggest no-opped or threw into the error alert
+  expect_true(all(ref$time_stamp > 1L))
   expect_equal(calls, 0L)   # every rung was already cached
 })
 
@@ -249,6 +253,12 @@ test_that("Suggest sends the uncached rungs to the runner", {
   utils::write.table(cache[!(cache$taxid %in% c(7607L, 41693L)), , drop = FALSE],
     file.path(dir, "refs", "counts.tsv"), sep = "\t", row.names = FALSE, quote = FALSE)
   sent <- NULL
+  # if the walk ever falls back to the host fetcher this flips, so the test fails
+  # loudly instead of quietly spawning bash
+  fetched <- FALSE
+  testthat::local_mocked_bindings(
+    genbank_rrna_count = function(...) { fetched <<- TRUE; NA_integer_ },
+    .package = "RiboPilot")
   withr::local_options(list(ribopilot.count_runner = function(project, args) {
     man <- args[which(args == "--clades") + 1L]
     sent <<- utils::read.delim(man)
@@ -263,6 +273,38 @@ test_that("Suggest sends the uncached rungs to the runner", {
   })
   expect_setequal(sent$taxid, c(7607L, 41693L))
   expect_true(all(grepl("[Organism]", sent$query, fixed = TRUE)))
+  # the stub runner produced no count files, so the two dropped rungs are still
+  # missing from the cache. cached_count_fn() would have fetched and written them
+  # back; cache_count_fn() cannot, which is what proves the walk stayed offline
+  after <- RiboPilot:::read_counts_cache(file.path(dir, "refs"))
+  expect_false(any(c(7607L, 41693L) %in% after$taxid))
+  expect_false(fetched)
+})
+
+test_that("opening the ladder modal never fetches a count for an uncached rung", {
+  skip_if_not_installed("withr")
+  dir <- withr::local_tempdir()
+  dbfile <- mk_split_db(dir)
+  deps <- mk_split_deps(dbfile, dir)
+  # 7588 (Asteroidea) is a rung the modal's group_ladder() asks about; drop it
+  cache <- utils::read.delim(file.path(dir, "refs", "counts.tsv"))
+  utils::write.table(cache[cache$taxid != 7588L, , drop = FALSE],
+    file.path(dir, "refs", "counts.tsv"), sep = "\t", row.names = FALSE, quote = FALSE)
+  fetched <- FALSE
+  testthat::local_mocked_bindings(
+    genbank_rrna_count = function(...) { fetched <<- TRUE; NA_integer_ },
+    .package = "RiboPilot")
+  shiny::testServer(function(input, output, session) {
+    h <- RiboPilot:::reference_handlers(input, output, session, deps)
+    open_ladder <- h$open_ladder
+  }, {
+    open_ladder("asteroidea")
+    session$flushReact()
+    while (!later::loop_empty()) later::run_now()
+  })
+  expect_false(fetched)
+  after <- RiboPilot:::read_counts_cache(file.path(dir, "refs"))
+  expect_false(7588L %in% after$taxid)
 })
 
 test_that("apply-clade counts a cached clade without calling the runner", {

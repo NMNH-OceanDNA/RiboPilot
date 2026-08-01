@@ -201,8 +201,7 @@ test_that("candidate_rungs covers every rung at or above the start rank, once ea
   r <- RiboPilot:::candidate_rungs(l, start_rank = "family")
   expect_true(all(c("ref_id", "taxid", "clade_name", "query") %in% names(r)))
   expect_false(any(duplicated(r$taxid)))
-  expect_true(all(r$taxid %in% l$taxid[l$rank %in%
-    c("kingdom", "phylum", "class", "order", "family")]))
+  expect_setequal(r$taxid, unique(l$taxid[l$level <= 5]))
   expect_false(any(r$taxid %in% l$taxid[l$rank %in% c("genus", "species")]))
   expect_true(grepl("[Organism]", r$query[1], fixed = TRUE))
   expect_equal(r$ref_id[r$taxid == 7588L], "asteroidea")
