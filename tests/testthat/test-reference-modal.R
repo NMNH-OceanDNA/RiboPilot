@@ -332,3 +332,24 @@ test_that("apply-clade counts a cached clade without calling the runner", {
   n <- DBI::dbGetQuery(con, "SELECT n_records FROM reference WHERE ref_id = 'forcipulatida'")
   expect_equal(n$n_records, 900L)
 })
+
+# ---- reference_run_modal(): the Nextflow-run modal, mirroring run_modal() ----
+
+test_that("the reference run modal carries the command, progress, and controls", {
+  html <- as.character(RiboPilot:::reference_run_modal(2, "/lab/refs"))
+  for (id in c("ref_api_key", "ref_refseq", "ref_nf_resume", "ref_nf_cmd_text",
+               "ref_nf_prog_all", "ref_nf_start", "ref_nf_stop", "ref_nf_close",
+               "ref_gears")) {
+    expect_true(grepl(id, html, fixed = TRUE), info = id)
+  }
+  expect_true(grepl("/lab/refs", html, fixed = TRUE))
+  expect_true(grepl("2", html, fixed = TRUE))
+})
+
+test_that("the headless reference modal offers the job script instead of a local run", {
+  html <- as.character(RiboPilot:::reference_run_modal(1, "/lab/refs", headless = TRUE,
+    sched = list(name = "Slurm", cmd = "sbatch"), script = "#!/bin/bash\nnextflow run"))
+  expect_true(grepl("ref_submit_job", html, fixed = TRUE))
+  expect_true(grepl("ref_save_script", html, fixed = TRUE))
+  expect_false(grepl("ref_nf_start", html, fixed = TRUE))
+})

@@ -321,6 +321,64 @@ run_modal <- function(n, headless = FALSE, sched = NULL, script = "") {
   )
 }
 
+#' Reference build modal: run the reference workflow with live progress
+#'
+#' The same shape as [run_modal()] so a database build looks like any other
+#' RiboPilot run: command preview, progress board, Run / Stop / Close, and the
+#' cluster-submit section when the app is served headless.
+#' @noRd
+reference_run_modal <- function(n, ref_dir, headless = FALSE, sched = NULL, script = "") {
+  cluster_section <- if (headless) {
+    tagList(
+      hr(style = "margin:10px 0;"),
+      h5("Submit to cluster", style = "margin:6px 0 4px;"),
+      div(class = "text-muted", style = "font-size:0.82em; margin-bottom:4px;",
+        if (is.null(sched)) {
+          "No scheduler (sbatch/qsub/bsub) found on PATH. Save the script and submit it yourself; running from the login node is discouraged."
+        } else {
+          sprintf("%s detected. Edit the job script if needed, then Submit as job (or Save script).", sched$name)
+        }),
+      tags$textarea(id = "ref_submit_script_text", rows = 11,
+        style = "width:100%; font-family:monospace; font-size:0.78em;", script))
+  }
+  run_progress <- if (!headless) {
+    shinyjs::hidden(div(id = "ref_nf_progress",
+      hr(style = "margin:12px 0;"), h5("Progress:", style = "margin:0 0 4px;"),
+      div(class = "code-block", style = "max-height:320px; overflow:auto;",
+        tags$pre(style = "margin:0; background:transparent; border:0; color:inherit; white-space:pre-wrap;",
+          textOutput("ref_nf_prog_all", container = tags$code)))))
+  }
+  footer <- if (headless) {
+    tagList(
+      if (!is.null(sched)) actionButton("ref_submit_job", "Submit as job", class = "btn-success btn-sm"),
+      actionButton("ref_save_script", "Save script", class = "btn-sm"),
+      actionButton("ref_nf_close", "Close", class = "btn-sm"))
+  } else {
+    tagList(
+      actionButton("ref_nf_start", "Run from App", class = "btn-success btn-sm"),
+      shinyjs::hidden(actionButton("ref_nf_stop", "Stop / Interrupt", class = "btn-sm")),
+      actionButton("ref_nf_close", "Close", class = "btn-sm"))
+  }
+  modalDialog(
+    title = div(style = "display:flex; justify-content:space-between; align-items:center; height:38px;",
+      span(sprintf("Reference databases - %d clade(s) to build", n)),
+      span(id = "ref_gears", class = "gears paused")),
+    size = "l",
+    div(class = "text-muted", style = "font-size:0.85em; margin-bottom:6px;",
+      sprintf("Databases are written to %s", ref_dir)),
+    textInput("ref_api_key", "NCBI API key (optional):", width = "100%"),
+    shinyWidgets::prettyCheckbox("ref_refseq", "RefSeq records only", value = FALSE,
+      status = "primary", inline = TRUE),
+    shinyWidgets::prettyCheckbox("ref_nf_resume", "Resume previous run?", value = TRUE,
+      status = "primary", inline = TRUE),
+    h5("Nextflow command:", style = "margin:6px 0 4px;"),
+    div(class = "code-block", textOutput("ref_nf_cmd_text")),
+    run_progress,
+    cluster_section,
+    footer = footer
+  )
+}
+
 #' Trim-assembly modal: cut the scaffold to the annotated feature span
 #' or a custom range (shifts annotations + coverage).
 #' @noRd
