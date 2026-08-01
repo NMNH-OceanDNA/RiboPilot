@@ -169,3 +169,77 @@ test_that("reference_pending lists everything not done or skipped", {
   RiboPilot:::skip_reference_group(con, "asteroidea")
   expect_equal(length(RiboPilot:::reference_pending(con)), 0L)
 })
+
+test_that("wire_reference_db errors when no base preset exists, without moving samples", {
+  con <- mk_ref_db(); on.exit(DBI::dbDisconnect(con))
+  RiboPilot:::write_reference_groups(con, grp, mem)
+  DBI::dbExecute(con, "DELETE FROM assemble_opts WHERE assemble_opts = 'default'")
+  expect_error(RiboPilot:::wire_reference_db(con, "asteroidea", "s.fa", "l.fa"))
+  a <- DBI::dbGetQuery(con, "SELECT assemble_opts FROM assemble")
+  expect_setequal(a$assemble_opts, "default")
+  r <- DBI::dbGetQuery(con, "SELECT reference_switch FROM reference")
+  expect_equal(r$reference_switch[1], 1L)
+})
+
+test_that("stale FASTAs predating the launch are not mistaken for a fresh build", {
+  con <- mk_ref_db(); on.exit(DBI::dbDisconnect(con))
+  proj <- withr::local_tempdir()
+  refs <- withr::local_tempdir()
+  RiboPilot:::set_ref_config(con, ref_dir = refs)
+  RiboPilot:::write_reference_groups(con, grp, mem)
+
+  seeds <- file.path(refs, "seeds", "asteroidea_rrna_seeds.fasta")
+  labels <- file.path(refs, "labels", "asteroidea_rrna_labels.fasta")
+  dir.create(dirname(seeds), recursive = TRUE, showWarnings = FALSE)
+  dir.create(dirname(labels), recursive = TRUE, showWarnings = FALSE)
+  writeLines(">old", seeds); writeLines(">old18S", labels)
+  old_time <- Sys.time() - 3600
+  Sys.setFileTime(seeds, old_time); Sys.setFileTime(labels, old_time)
+
+  RiboPilot:::start_reference_build(con, proj, "asteroidea",
+    launcher = function(cmd, args, log) { writeLines("build failed before writing output", log); 99L })
+  n <- RiboPilot:::poll_reference_builds(con, alive_fn = function(pid) FALSE)
+  expect_equal(n, 1L)
+  r <- DBI::dbGetQuery(con, "SELECT * FROM reference")
+  expect_equal(r$reference_switch[1], 3L)
+  expect_true(nzchar(r$fail_reason[1]))
+  expect_setequal(DBI::dbGetQuery(con, "SELECT assemble_opts FROM assemble")$assemble_opts, "default")
+})
+
+test_that("set_reference_clade with no members creates a group that survives the count refresh", {
+  con <- mk_ref_db(); on.exit(DBI::dbDisconnect(con))
+  key <- RiboPilot:::set_reference_clade(con, ref_id = NULL, clade_taxid = 41692L,
+    clade_name = "Forcipulatida", clade_rank = "order", n_records = 900L)
+  expect_equal(key, "forcipulatida")
+  r <- DBI::dbGetQuery(con, "SELECT ref_id, n_samples FROM reference WHERE ref_id = 'forcipulatida'")
+  expect_equal(nrow(r), 1L)
+  expect_equal(r$n_samples[1], 0L)
+})
+
+test_that("use_existing_reference errors when a file is missing", {
+  con <- mk_ref_db(); on.exit(DBI::dbDisconnect(con))
+  RiboPilot:::write_reference_groups(con, grp, mem)
+  tmp <- withr::local_tempdir()
+  seeds <- file.path(tmp, "seeds.fa")
+  writeLines(">x", seeds)
+  labels <- file.path(tmp, "labels.fa")  # not created
+  expect_error(RiboPilot:::use_existing_reference(con, "asteroidea", seeds, labels))
+  expect_setequal(DBI::dbGetQuery(con, "SELECT assemble_opts FROM assemble")$assemble_opts, "default")
+})
+
+test_that("use_existing_reference wires an existing database and leaves a locked sample alone", {
+  con <- mk_ref_db(); on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "UPDATE assemble SET assemble_lock = 1 WHERE ID = 'S2'")
+  RiboPilot:::write_reference_groups(con, grp, mem)
+  tmp <- withr::local_tempdir()
+  seeds <- file.path(tmp, "seeds.fa"); writeLines(">x", seeds)
+  labels <- file.path(tmp, "labels.fa"); writeLines(">18S", labels)
+  n <- RiboPilot:::use_existing_reference(con, "asteroidea", seeds, labels)
+  expect_equal(n, 1L)
+  r <- DBI::dbGetQuery(con, "SELECT source, seeds_db FROM reference")
+  expect_equal(r$source[1], "existing")
+  expect_equal(r$seeds_db[1], seeds)
+  a <- DBI::dbGetQuery(con, "SELECT ID, assemble_opts FROM assemble ORDER BY ID")
+  expect_equal(a$assemble_opts[a$ID == "S1"], "asteroidea")
+  expect_equal(a$assemble_opts[a$ID == "S2"], "default")
+})

@@ -65,12 +65,22 @@ write_reference_groups <- function(con, groups, members) {
 }
 
 #' Recount `reference.n_samples` from current membership, dropping empty groups
+#'
+#' @param protect ref_id(s) to keep even at n_samples = 0 (a group just created
+#'   or targeted by this call, which may not have members yet).
 #' @noRd
-refresh_reference_counts <- function(con) {
+refresh_reference_counts <- function(con, protect = character(0)) {
   DBI::dbExecute(con,
     "UPDATE reference SET n_samples =
        (SELECT COUNT(*) FROM samples s WHERE s.ref_id = reference.ref_id)")
-  DBI::dbExecute(con, "DELETE FROM reference WHERE COALESCE(n_samples, 0) = 0")
+  if (length(protect) > 0) {
+    ph <- paste(rep("?", length(protect)), collapse = ",")
+    DBI::dbExecute(con,
+      sprintf("DELETE FROM reference WHERE COALESCE(n_samples, 0) = 0 AND ref_id NOT IN (%s)", ph),
+      params = as.list(protect))
+  } else {
+    DBI::dbExecute(con, "DELETE FROM reference WHERE COALESCE(n_samples, 0) = 0")
+  }
   invisible(NULL)
 }
 
@@ -110,7 +120,7 @@ set_reference_clade <- function(con, ref_id = NULL, clade_taxid, clade_name, cla
     DBI::dbBind(upd, list(rep(key, length(member_ids)), member_ids))
     DBI::dbClearResult(upd)
   }
-  refresh_reference_counts(con)
+  refresh_reference_counts(con, protect = key)
   invisible(key)
 }
 
@@ -138,24 +148,29 @@ skip_reference_group <- function(con, ref_id) {
 #' @return (invisibly) the number of samples moved.
 #' @noRd
 wire_reference_db <- function(con, ref_id, seeds, labels, source = "built") {
-  ids <- DBI::dbGetQuery(con,
-    "SELECT s.ID FROM samples s JOIN assemble a ON a.ID = s.ID
-     WHERE s.ref_id = ? AND COALESCE(a.assemble_lock, 0) = 0",
-    params = list(ref_id))$ID
+  # resolve the base preset FIRST: without one, there is nothing to point at the
+  # new database, and moving samples or marking the group done would leave them
+  # on a preset with no seeds/labels at all.
   base <- DBI::dbGetQuery(con,
     "SELECT o.* FROM assemble_opts o JOIN assemble a ON a.assemble_opts = o.assemble_opts
      JOIN samples s ON s.ID = a.ID WHERE s.ref_id = ? LIMIT 1", params = list(ref_id))
   if (nrow(base) == 0) {
     base <- DBI::dbGetQuery(con, "SELECT * FROM assemble_opts WHERE assemble_opts = 'default'")
   }
-  if (nrow(base) > 0) {
-    row <- base[1, , drop = FALSE]
-    row$assemble_opts <- ref_id
-    row$seeds_db <- seeds
-    row$labels_db <- labels
-    DBI::dbExecute(con, "DELETE FROM assemble_opts WHERE assemble_opts = ?", params = list(ref_id))
-    DBI::dbAppendTable(con, "assemble_opts", row)
+  if (nrow(base) == 0) {
+    stop("No base assemble_opts preset found for reference group '", ref_id, "'.", call. = FALSE)
   }
+  row <- base[1, , drop = FALSE]
+  row$assemble_opts <- ref_id
+  row$seeds_db <- seeds
+  row$labels_db <- labels
+  DBI::dbExecute(con, "DELETE FROM assemble_opts WHERE assemble_opts = ?", params = list(ref_id))
+  DBI::dbAppendTable(con, "assemble_opts", row)
+
+  ids <- DBI::dbGetQuery(con,
+    "SELECT s.ID FROM samples s JOIN assemble a ON a.ID = s.ID
+     WHERE s.ref_id = ? AND COALESCE(a.assemble_lock, 0) = 0",
+    params = list(ref_id))$ID
   if (length(ids) > 0) {
     ph <- paste(rep("?", length(ids)), collapse = ",")
     DBI::dbExecute(con,
@@ -225,12 +240,17 @@ start_reference_build <- function(con, project, ref_id, api_key = NULL, refseq =
     if (isTRUE(refseq)) "TRUE" else "FALSE",
     if (is.null(conda_env) || !nzchar(conda_env)) "NULL" else deparse(conda_env),
     if (isTRUE(overwrite)) "TRUE" else "FALSE")
+
+  # captured before the launcher runs, so any FASTA this build writes has an
+  # mtime >= launch_time; anything already on disk with an older mtime is a
+  # stale leftover from a previous build, not evidence this one succeeded.
+  launch_time <- as.integer(Sys.time())
   pid <- launcher(file.path(R.home("bin"), "Rscript"), c("-e", call), log)
 
   DBI::dbExecute(con,
     "UPDATE reference SET reference_switch = 4, pid = ?, log_file = ?, fail_reason = NULL,
        time_stamp = ? WHERE ref_id = ?",
-    params = list(as.integer(pid), log, as.integer(Sys.time()), ref_id))
+    params = list(as.integer(pid), log, launch_time, ref_id))
   invisible(log)
 }
 
@@ -260,7 +280,14 @@ poll_reference_builds <- function(con, alive_fn = process_alive) {
     if (isTRUE(alive_fn(running$pid[i]))) next
     ref_id <- running$ref_id[i]
     p <- reference_db_paths(cfg$ref_dir, ref_id)
-    if (file.exists(p$seeds) && file.exists(p$labels)) {
+    launch_time <- suppressWarnings(as.integer(running$time_stamp[i]))
+    fresh <- function(f) {
+      if (!file.exists(f)) return(FALSE)
+      if (is.na(launch_time)) return(TRUE)
+      mt <- suppressWarnings(as.integer(file.info(f)$mtime))
+      !is.na(mt) && mt >= launch_time
+    }
+    if (fresh(p$seeds) && fresh(p$labels)) {
       wire_reference_db(con, ref_id, p$seeds, p$labels, source = "built")
       append_ref_manifest(cfg$ref_dir, clade = ref_id, taxid = running$clade_taxid[i],
         rank = running$clade_rank[i], query = running$query[i],
@@ -269,7 +296,7 @@ poll_reference_builds <- function(con, alive_fn = process_alive) {
       DBI::dbExecute(con,
         "UPDATE reference SET reference_switch = 3, pid = NULL, fail_reason = ?, time_stamp = ?
          WHERE ref_id = ?",
-        params = list(paste0("Build produced no seed/label FASTAs. ",
+        params = list(paste0("Build produced no fresh seed/label FASTAs. ",
           log_tail(running$log_file[i])), as.integer(Sys.time()), ref_id))
     }
     n <- n + 1L
