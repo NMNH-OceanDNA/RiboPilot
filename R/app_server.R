@@ -264,7 +264,7 @@ app_server <- function(input, output, session) {
       cols[["database"]] <- reactable::colDef(name = "Database", minWidth = 240, html = TRUE,
         cell = rt_longtext())
       cols[["fail_reason"]] <- reactable::colDef(name = "Note", minWidth = 200, html = TRUE,
-        cell = rt_longtext())
+        cell = rt_link("ref_open_log"))
       cols[[state_col]] <- reactable::colDef(name = "", sticky = "left", html = TRUE, width = 32,
         align = "center", filterable = FALSE, cell = rt_dynamicIcon(REFERENCE_STATE_ICONS))
     }

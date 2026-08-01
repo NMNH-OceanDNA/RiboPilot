@@ -95,7 +95,7 @@ group_ladder <- function(ladders, ids, count_fn = NULL) {
 #' Returns the deepest rung at or above `start_rank` whose count reaches
 #' `min_records`, and stops there even when that count is over `max_records`:
 #' once a clade has enough evidence, climbing further only makes the seed
-#' database less specific. If no rung ever reaches `min_records`, the deepest
+#' database less specific. If no rung ever reaches `min_records`, the shallowest
 #' rung whose count stays at or under `max_records` is kept instead, so the
 #' fallback never lands on a clade that is far too broad; if every rung is
 #' over the ceiling, the last rung considered is returned anyway.

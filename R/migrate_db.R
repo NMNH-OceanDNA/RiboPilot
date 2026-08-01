@@ -123,6 +123,7 @@ REFERENCE_DDL <- "CREATE TABLE IF NOT EXISTS reference (
   labels_db        TEXT,
   log_file         TEXT,
   pid              INTEGER,
+  preset_name      TEXT,
   fail_reason      TEXT,
   time_stamp       INTEGER,
   PRIMARY KEY (ref_id)
@@ -529,6 +530,8 @@ migrate_db <- function(con) {
        VALUES (1, NULL, 1000, 25000)")
   }
   add_col("samples", "ref_id", "TEXT")
+  # a v19 database predating the named-preset fix has the table but not the column
+  add_col("reference", "preset_name", "TEXT")
 
   # user_version is a header field, not table data, so it is set after the
   # transaction commits rather than inside it.

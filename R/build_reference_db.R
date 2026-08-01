@@ -65,9 +65,10 @@ build_reference_db <- function(query, clade, out_dir = ribopilot_ref_dir(),
   }
 
   out_dir <- path.expand(out_dir)
-  prefix <- paste0(clade, "_rrna")
-  seeds <- file.path(out_dir, "seeds", paste0(prefix, "_seeds.fasta"))
-  labels <- file.path(out_dir, "labels", paste0(prefix, "_labels.fasta"))
+  paths <- reference_db_paths(out_dir, clade)
+  prefix <- paths$prefix
+  seeds <- paths$seeds
+  labels <- paths$labels
 
   if (isTRUE(count_only)) {
     args <- c(shQuote(script), "--count-only")

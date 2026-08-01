@@ -218,19 +218,6 @@ reference_handlers <- function(input, output, session, deps) {
       shape = "round", status = "primary")
   })
 
-  # Slug a leftover group's own clade name into a ref_id that cannot collide
-  # with the group being edited (or any other existing group): the derived
-  # slug for a clade re-used by name, e.g. the parent clade the split group
-  # came from, can otherwise coincide with the literal ref_id string of the
-  # row this same apply just rewrote, silently overwriting it back.
-  unique_split_ref_id <- function(con, name, taxid, avoid) {
-    slug <- ref_id_from_name(name)
-    existing <- tryCatch(DBI::dbGetQuery(con, "SELECT ref_id FROM reference")$ref_id,
-      error = function(e) character(0))
-    if (!(slug %in% existing) && !(slug %in% avoid)) return(slug)
-    paste(slug, taxid, sep = "_")
-  }
-
   shiny::observeEvent(input$ref_clade_apply, {
     ref_id <- ladder_target()
     tid <- suppressWarnings(as.integer(picked() %||% input$ref_rung %||% NA))
@@ -254,8 +241,11 @@ reference_handlers <- function(input, output, session, deps) {
       }
       cfg <- ref_config(con)
       n <- cached_count_fn(cfg$ref_dir, api_key = Sys.getenv("NCBI_API_KEY", ""))(tid, info$name[1])
-      set_reference_clade(con, ref_id = ref_id, clade_taxid = tid, clade_name = info$name[1],
-        clade_rank = info$rank[1], n_records = n, member_ids = covered)
+      # a clade change re-keys the group, so the follow-up work uses the key
+      # set_reference_clade() actually wrote, not the one the modal opened on
+      new_key <- set_reference_clade(con, ref_id = ref_id, clade_taxid = tid,
+        clade_name = info$name[1], clade_rank = info$rank[1], n_records = n,
+        member_ids = covered)
 
       # samples the chosen clade does not cover are not left inside a clade
       # that does not contain them: split them into a group of their own,
@@ -266,7 +256,7 @@ reference_handlers <- function(input, output, session, deps) {
         gl <- group_ladder(ladders, leftover)
         if (nrow(gl) > 0) {
           lg <- gl[order(-gl$level), , drop = FALSE][1, ]
-          left_key <- unique_split_ref_id(con, lg$name, lg$taxid, avoid = ref_id)
+          left_key <- unique_split_ref_id(con, lg$name, lg$taxid, avoid = new_key)
           set_reference_clade(con, ref_id = left_key, clade_taxid = lg$taxid, clade_name = lg$name,
             clade_rank = lg$rank, n_records = NA_integer_, member_ids = leftover)
           left_name <- lg$name

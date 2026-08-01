@@ -196,7 +196,8 @@ test_that("stale FASTAs predating the launch are not mistaken for a fresh build"
   old_time <- Sys.time() - 3600
   Sys.setFileTime(seeds, old_time); Sys.setFileTime(labels, old_time)
 
-  RiboPilot:::start_reference_build(con, proj, "asteroidea",
+  # overwrite: without it the leftovers would (correctly) be reused instead of built
+  RiboPilot:::start_reference_build(con, proj, "asteroidea", overwrite = TRUE,
     launcher = function(cmd, args, log) { writeLines("build failed before writing output", log); 99L })
   n <- RiboPilot:::poll_reference_builds(con, alive_fn = function(pid) FALSE)
   expect_equal(n, 1L)
@@ -214,6 +215,93 @@ test_that("set_reference_clade with no members creates a group that survives the
   r <- DBI::dbGetQuery(con, "SELECT ref_id, n_samples FROM reference WHERE ref_id = 'forcipulatida'")
   expect_equal(nrow(r), 1L)
   expect_equal(r$n_samples[1], 0L)
+})
+
+test_that("an already-built database is reused instead of launched", {
+  con <- mk_ref_db(); on.exit(DBI::dbDisconnect(con))
+  refs <- withr::local_tempdir()
+  RiboPilot:::set_ref_config(con, ref_dir = refs)
+  RiboPilot:::write_reference_groups(con, grp, mem)
+  p <- RiboPilot:::reference_db_paths(refs, "asteroidea")
+  dir.create(dirname(p$seeds), recursive = TRUE, showWarnings = FALSE)
+  dir.create(dirname(p$labels), recursive = TRUE, showWarnings = FALSE)
+  writeLines(">x", p$seeds); writeLines(">18S", p$labels)
+
+  launched <- FALSE
+  RiboPilot:::start_reference_build(con, withr::local_tempdir(), "asteroidea",
+    launcher = function(cmd, args, log) { launched <<- TRUE; 1L })
+  expect_false(launched)
+  r <- DBI::dbGetQuery(con, "SELECT * FROM reference")
+  expect_equal(r$reference_switch[1], 2L)
+  expect_equal(r$source[1], "existing")
+  expect_equal(r$seeds_db[1], p$seeds)
+  expect_setequal(DBI::dbGetQuery(con, "SELECT assemble_opts FROM assemble")$assemble_opts,
+    "asteroidea")
+})
+
+test_that("overwrite launches a build even when the database exists", {
+  con <- mk_ref_db(); on.exit(DBI::dbDisconnect(con))
+  refs <- withr::local_tempdir()
+  RiboPilot:::set_ref_config(con, ref_dir = refs)
+  RiboPilot:::write_reference_groups(con, grp, mem)
+  p <- RiboPilot:::reference_db_paths(refs, "asteroidea")
+  dir.create(dirname(p$seeds), recursive = TRUE, showWarnings = FALSE)
+  dir.create(dirname(p$labels), recursive = TRUE, showWarnings = FALSE)
+  writeLines(">x", p$seeds); writeLines(">18S", p$labels)
+
+  launched <- FALSE
+  RiboPilot:::start_reference_build(con, withr::local_tempdir(), "asteroidea", overwrite = TRUE,
+    launcher = function(cmd, args, log) { launched <<- TRUE; writeLines("go", log); 55L })
+  expect_true(launched)
+  r <- DBI::dbGetQuery(con, "SELECT * FROM reference")
+  expect_equal(r$reference_switch[1], 4L)
+  expect_equal(r$pid[1], 55L)
+})
+
+test_that("changing a group's clade re-keys the group and its samples", {
+  con <- mk_ref_db(); on.exit(DBI::dbDisconnect(con))
+  RiboPilot:::write_reference_groups(con, grp, mem)
+  key <- RiboPilot:::set_reference_clade(con, ref_id = "asteroidea", clade_taxid = 7586L,
+    clade_name = "Echinodermata", clade_rank = "phylum", n_records = 9000L,
+    member_ids = c("S1", "S2"))
+  expect_equal(key, "echinodermata")
+  r <- DBI::dbGetQuery(con, "SELECT * FROM reference")
+  expect_equal(nrow(r), 1L)
+  expect_equal(r$ref_id[1], "echinodermata")
+  expect_equal(r$clade_name[1], "Echinodermata")
+  expect_equal(r$clade_taxid[1], 7586L)
+  expect_setequal(DBI::dbGetQuery(con, "SELECT ref_id FROM samples")$ref_id, "echinodermata")
+
+  # re-applying the same clade keeps the key it already has
+  expect_equal(RiboPilot:::set_reference_clade(con, ref_id = "echinodermata",
+    clade_taxid = 7586L, clade_name = "Echinodermata", clade_rank = "phylum"), "echinodermata")
+})
+
+test_that("wiring never takes over a preset the user already made", {
+  con <- mk_ref_db(); on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "INSERT INTO assemble_opts VALUES('asteroidea',8,32,'--mine','mine_s.fa','mine_l.fa',NULL,10,10,1000,'getorganelle','--local','--isolate')")
+  RiboPilot:::write_reference_groups(con, grp, mem)
+  RiboPilot:::wire_reference_db(con, "asteroidea", "/refs/s.fa", "/refs/l.fa")
+
+  mine <- DBI::dbGetQuery(con, "SELECT * FROM assemble_opts WHERE assemble_opts = 'asteroidea'")
+  expect_equal(mine$seeds_db[1], "mine_s.fa")
+  made <- DBI::dbGetQuery(con, "SELECT * FROM assemble_opts WHERE assemble_opts = 'asteroidea_ref'")
+  expect_equal(nrow(made), 1L)
+  expect_equal(made$seeds_db[1], "/refs/s.fa")
+  expect_setequal(DBI::dbGetQuery(con, "SELECT assemble_opts FROM assemble")$assemble_opts,
+    "asteroidea_ref")
+  expect_equal(DBI::dbGetQuery(con, "SELECT preset_name FROM reference")$preset_name[1],
+    "asteroidea_ref")
+
+  # re-wiring reuses the stored name rather than inventing another one
+  RiboPilot:::wire_reference_db(con, "asteroidea", "/refs/s2.fa", "/refs/l2.fa")
+  names_now <- DBI::dbGetQuery(con, "SELECT assemble_opts FROM assemble_opts")$assemble_opts
+  expect_setequal(names_now, c("default", "asteroidea", "asteroidea_ref"))
+  expect_equal(DBI::dbGetQuery(con,
+    "SELECT seeds_db FROM assemble_opts WHERE assemble_opts = 'asteroidea_ref'")$seeds_db[1],
+    "/refs/s2.fa")
+  expect_equal(DBI::dbGetQuery(con, "SELECT seeds_db FROM assemble_opts WHERE assemble_opts = 'asteroidea'")$seeds_db[1],
+    "mine_s.fa")
 })
 
 test_that("use_existing_reference errors when a file is missing", {

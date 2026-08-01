@@ -7,11 +7,15 @@
 # carries the pid and log path and the finishing logic is a poll, not a callback.
 
 #' Expected seed/label paths for a clade in a reference folder
-#' @return list(seeds, labels).
+#'
+#' The single definition of the naming scheme: the builder writes these paths
+#' and the build poll looks for them, so both must read it from here.
+#' @return list(prefix, seeds, labels).
 #' @noRd
 reference_db_paths <- function(dir, ref_id) {
   prefix <- paste0(ref_id, "_rrna")
   list(
+    prefix = prefix,
     seeds = file.path(path.expand(dir), "seeds", paste0(prefix, "_seeds.fasta")),
     labels = file.path(path.expand(dir), "labels", paste0(prefix, "_labels.fasta")))
 }
@@ -40,9 +44,9 @@ write_reference_groups <- function(con, groups, members) {
     }
     DBI::dbExecute(con,
       "INSERT INTO reference (ref_id, clade_taxid, clade_name, clade_rank, query, n_samples,
-         n_records, reference_switch, source, seeds_db, labels_db, log_file, pid, fail_reason,
-         time_stamp)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+         n_records, reference_switch, source, seeds_db, labels_db, log_file, pid, preset_name,
+         fail_reason, time_stamp)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
       params = list(groups$ref_id[i], as.integer(groups$clade_taxid[i]), groups$clade_name[i],
         groups$clade_rank[i], clade_query(groups$clade_name[i]),
         as.integer(groups$n_samples[i]), as.integer(groups$n_records[i]),
@@ -52,6 +56,7 @@ write_reference_groups <- function(con, groups, members) {
         if (is.null(keep)) NA_character_ else keep$labels_db,
         if (is.null(keep)) NA_character_ else keep$log_file,
         if (is.null(keep)) NA_integer_ else keep$pid,
+        if (is.null(keep)) NA_character_ else keep$preset_name,
         if (is.null(keep)) NA_character_ else keep$fail_reason,
         now))
   }
@@ -84,29 +89,61 @@ refresh_reference_counts <- function(con, protect = character(0)) {
   invisible(NULL)
 }
 
+#' Slug a clade name into a ref_id no existing group is already using
+#'
+#' The derived slug for a clade can coincide with a group that already exists
+#' (or with the very row being rewritten), which would silently merge or
+#' overwrite it; the taxid suffix keeps the key its own.
+#'
+#' @param con Open project DB connection.
+#' @param name,taxid The clade.
+#' @param avoid Extra keys the result must not equal.
+#' @noRd
+unique_split_ref_id <- function(con, name, taxid, avoid = character(0)) {
+  slug <- ref_id_from_name(name)
+  existing <- tryCatch(DBI::dbGetQuery(con, "SELECT ref_id FROM reference")$ref_id,
+    error = function(e) character(0))
+  if (!(slug %in% existing) && !(slug %in% avoid)) return(slug)
+  paste(slug, taxid, sep = "_")
+}
+
 #' Point a set of samples at a chosen clade, creating the group if needed
+#'
+#' The ref_id is the clade's identity everywhere downstream (output file names,
+#' the folder manifest, the preset name), so a group whose clade actually
+#' changes is re-keyed on the new clade and its samples follow.
 #'
 #' @param con Open project DB connection.
 #' @param ref_id Group key, or NULL to derive one from `clade_name`.
 #' @param clade_taxid,clade_name,clade_rank,n_records The chosen NCBI node.
 #' @param member_ids Sample IDs to move into the group.
-#' @return (invisibly) the group key.
+#' @return (invisibly) the group key, which is NOT `ref_id` when the clade changed.
 #' @noRd
 set_reference_clade <- function(con, ref_id = NULL, clade_taxid, clade_name, clade_rank,
                                n_records = NA_integer_, member_ids = character(0)) {
   key <- ref_id %||% ref_id_from_name(clade_name)
-  exists_row <- nrow(DBI::dbGetQuery(con, "SELECT 1 FROM reference WHERE ref_id = ? LIMIT 1",
-    params = list(key))) > 0
+  cur <- DBI::dbGetQuery(con, "SELECT clade_taxid FROM reference WHERE ref_id = ? LIMIT 1",
+    params = list(key))
+  exists_row <- nrow(cur) > 0
   now <- as.integer(Sys.time())
   if (exists_row) {
-    # a clade change invalidates whatever was built for the old one
-    DBI::dbExecute(con,
-      "UPDATE reference SET clade_taxid = ?, clade_name = ?, clade_rank = ?, query = ?,
-         n_records = ?, reference_switch = 1, source = NULL, seeds_db = NULL, labels_db = NULL,
-         fail_reason = NULL, time_stamp = ?
-       WHERE ref_id = ? AND (clade_taxid IS NULL OR clade_taxid != ?)",
-      params = list(as.integer(clade_taxid), clade_name, clade_rank, clade_query(clade_name),
-        as.integer(n_records), now, key, as.integer(clade_taxid)))
+    old_taxid <- suppressWarnings(as.integer(cur$clade_taxid[1]))
+    if (is.na(old_taxid) || old_taxid != as.integer(clade_taxid)) {
+      # a clade change invalidates whatever was built for the old one, and the
+      # key has to move too or the new clade's database would be written under
+      # the old clade's name
+      new_key <- unique_split_ref_id(con, clade_name, as.integer(clade_taxid))
+      DBI::dbExecute(con,
+        "UPDATE reference SET ref_id = ?, clade_taxid = ?, clade_name = ?, clade_rank = ?,
+           query = ?, n_records = ?, reference_switch = 1, source = NULL, seeds_db = NULL,
+           labels_db = NULL, preset_name = NULL, fail_reason = NULL, time_stamp = ?
+         WHERE ref_id = ?",
+        params = list(new_key, as.integer(clade_taxid), clade_name, clade_rank,
+          clade_query(clade_name), as.integer(n_records), now, key))
+      DBI::dbExecute(con, "UPDATE samples SET ref_id = ? WHERE ref_id = ?",
+        params = list(new_key, key))
+      key <- new_key
+    }
   } else {
     DBI::dbExecute(con,
       "INSERT INTO reference (ref_id, clade_taxid, clade_name, clade_rank, query, n_samples,
@@ -134,12 +171,35 @@ skip_reference_group <- function(con, ref_id) {
   invisible(NULL)
 }
 
+#' Name for a group's preset, never taking over one the user already made
+#'
+#' A preset already named after the clade may belong to the user and be used by
+#' samples outside the group, so it is left alone and a distinct name is used.
+#' The choice is stored on the reference row so re-wiring reuses it.
+#' @noRd
+reference_preset_name <- function(con, ref_id) {
+  stored <- tryCatch(DBI::dbGetQuery(con,
+    "SELECT preset_name FROM reference WHERE ref_id = ?", params = list(ref_id))$preset_name,
+    error = function(e) character(0))
+  if (length(stored) > 0 && !is.na(stored[1]) && nzchar(stored[1])) return(stored[1])
+  taken <- tryCatch(DBI::dbGetQuery(con, "SELECT assemble_opts FROM assemble_opts")$assemble_opts,
+    error = function(e) character(0))
+  if (!(ref_id %in% taken)) return(ref_id)
+  cand <- paste0(ref_id, "_ref")
+  i <- 2L
+  while (cand %in% taken) {
+    cand <- paste0(ref_id, "_ref", i)
+    i <- i + 1L
+  }
+  cand
+}
+
 #' Give a group's samples an assemble_opts preset pointing at its database
 #'
-#' The preset is named after the group and copies every other setting from the
-#' preset the group's samples are on, so switching database changes the database
-#' and nothing else. Locked samples keep their preset: their stored results were
-#' produced with the old one.
+#' The preset is named after the group (see [reference_preset_name()]) and
+#' copies every other setting from the preset the group's samples are on, so
+#' switching database changes the database and nothing else. Locked samples keep
+#' their preset: their stored results were produced with the old one.
 #'
 #' @param con Open project DB connection.
 #' @param ref_id Group key.
@@ -160,11 +220,12 @@ wire_reference_db <- function(con, ref_id, seeds, labels, source = "built") {
   if (nrow(base) == 0) {
     stop("No base assemble_opts preset found for reference group '", ref_id, "'.", call. = FALSE)
   }
+  preset <- reference_preset_name(con, ref_id)
   row <- base[1, , drop = FALSE]
-  row$assemble_opts <- ref_id
+  row$assemble_opts <- preset
   row$seeds_db <- seeds
   row$labels_db <- labels
-  DBI::dbExecute(con, "DELETE FROM assemble_opts WHERE assemble_opts = ?", params = list(ref_id))
+  DBI::dbExecute(con, "DELETE FROM assemble_opts WHERE assemble_opts = ?", params = list(preset))
   DBI::dbAppendTable(con, "assemble_opts", row)
 
   ids <- DBI::dbGetQuery(con,
@@ -176,12 +237,12 @@ wire_reference_db <- function(con, ref_id, seeds, labels, source = "built") {
     DBI::dbExecute(con,
       sprintf("UPDATE assemble SET assemble_opts = ?, assemble_switch = 1, time_stamp = ?
                WHERE ID IN (%s)", ph),
-      params = c(list(ref_id, as.integer(Sys.time())), as.list(ids)))
+      params = c(list(preset, as.integer(Sys.time())), as.list(ids)))
   }
   DBI::dbExecute(con,
     "UPDATE reference SET reference_switch = 2, source = ?, seeds_db = ?, labels_db = ?,
-       fail_reason = NULL, pid = NULL, time_stamp = ? WHERE ref_id = ?",
-    params = list(source, seeds, labels, as.integer(Sys.time()), ref_id))
+       preset_name = ?, fail_reason = NULL, pid = NULL, time_stamp = ? WHERE ref_id = ?",
+    params = list(source, seeds, labels, preset, as.integer(Sys.time()), ref_id))
   invisible(length(ids))
 }
 
@@ -220,7 +281,7 @@ process_alive <- function(pid) {
 #' @param ref_id Group key.
 #' @param api_key,refseq,conda_env,overwrite Passed to [build_reference_db()].
 #' @param launcher function(cmd, args, log) -> pid.
-#' @return (invisibly) the log path.
+#' @return (invisibly) the log path, or NULL when an existing database was reused.
 #' @noRd
 start_reference_build <- function(con, project, ref_id, api_key = NULL, refseq = FALSE,
                                   conda_env = NULL, overwrite = FALSE,
@@ -228,6 +289,16 @@ start_reference_build <- function(con, project, ref_id, api_key = NULL, refseq =
   row <- DBI::dbGetQuery(con, "SELECT * FROM reference WHERE ref_id = ?", params = list(ref_id))
   if (nrow(row) == 0) stop("No reference group '", ref_id, "'.", call. = FALSE)
   cfg <- ref_config(con)
+
+  # Without overwrite the builder would exit at once and leave the FASTAs
+  # untouched, which the poll's freshness check reads as a failed build. Wire
+  # the database that is already there instead of launching anything.
+  have <- reference_db_paths(cfg$ref_dir, ref_id)
+  if (!isTRUE(overwrite) && file.exists(have$seeds) && file.exists(have$labels)) {
+    wire_reference_db(con, ref_id, have$seeds, have$labels, source = "existing")
+    return(invisible(NULL))
+  }
+
   logdir <- file.path(project, ".reference")
   dir.create(logdir, recursive = TRUE, showWarnings = FALSE)
   log <- file.path(logdir, paste0(ref_id, ".log"))

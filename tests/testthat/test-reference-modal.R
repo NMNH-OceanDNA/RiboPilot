@@ -166,13 +166,16 @@ test_that("a partial-coverage pick splits the uncovered sample into a new group"
 
   con <- DBI::dbConnect(RSQLite::SQLite(), dbfile); on.exit(DBI::dbDisconnect(con))
   s <- DBI::dbGetQuery(con, "SELECT ID, ref_id FROM samples ORDER BY ID")
-  expect_equal(s$ref_id[s$ID == "S1"], "asteroidea")
+  # the group is re-keyed on the clade it now holds, so nothing is left keyed
+  # on the clade the user moved away from
+  expect_equal(s$ref_id[s$ID == "S1"], "forcipulatida")
   # S2 is no longer inside the Forcipulatida group it does not belong to
-  expect_false(s$ref_id[s$ID == "S2"] == "asteroidea")
+  expect_false(s$ref_id[s$ID == "S2"] == "forcipulatida")
 
   ref <- DBI::dbGetQuery(con, "SELECT ref_id, clade_name, clade_rank, n_samples FROM reference ORDER BY ref_id")
   expect_equal(nrow(ref), 2L)
-  orig <- ref[ref$ref_id == "asteroidea", ]
+  expect_false("asteroidea" %in% ref$ref_id)
+  orig <- ref[ref$ref_id == "forcipulatida", ]
   expect_equal(orig$clade_name, "Forcipulatida")
   expect_equal(orig$n_samples, 1L)
   split_key <- s$ref_id[s$ID == "S2"]
@@ -180,8 +183,8 @@ test_that("a partial-coverage pick splits the uncovered sample into a new group"
   expect_equal(nrow(spl), 1L)
   expect_equal(spl$n_samples, 1L)
   # S2's own group is keyed on ITS shared lineage (deepest = itself), not on
-  # Asteroidea again, which would collide with the ref_id just rewritten above
-  expect_false(spl$ref_id == "asteroidea")
+  # the ref_id the edited group just took
+  expect_false(spl$ref_id == "forcipulatida")
 })
 
 test_that("a clade covering none of the group's samples is refused, not applied to everyone", {

@@ -29,7 +29,7 @@ test_that("migrating a v18 project adds the reference tables and ref_id", {
   expect_true("ref_id" %in% DBI::dbListFields(con, "samples"))
   for (f in c("ref_id", "clade_taxid", "clade_name", "clade_rank", "query", "n_samples",
               "n_records", "reference_switch", "source", "seeds_db", "labels_db",
-              "log_file", "pid", "fail_reason", "time_stamp")) {
+              "log_file", "pid", "preset_name", "fail_reason", "time_stamp")) {
     expect_true(f %in% DBI::dbListFields(con, "reference"), info = f)
   }
 })
