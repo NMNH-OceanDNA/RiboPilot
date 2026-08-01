@@ -43,16 +43,6 @@ test_that("the ladder modal marks the current clade as chosen", {
   expect_true(grepl("current", as.character(m), fixed = TRUE))
 })
 
-test_that("the build modal names the folder it will write to", {
-  m <- RiboPilot:::reference_build_modal(c("asteroidea", "actinopteri"), "/lab/refs")
-  html <- as.character(m)
-  expect_true(grepl("/lab/refs", html, fixed = TRUE))
-  expect_true(grepl("2", html, fixed = TRUE))
-  expect_true(grepl("ref_api_key", html, fixed = TRUE))
-  expect_true(grepl("ref_conda", html, fixed = TRUE))
-  expect_true(grepl("ref_refseq", html, fixed = TRUE))
-})
-
 test_that("the existing-database modal lists manifest entries", {
   man <- data.frame(clade = "gastropoda", taxid = 6448L, rank = "class",
     query = "q", n_records = 5000L, built = "2026-07-01 09:00:00",
@@ -343,7 +333,7 @@ test_that("the reference run modal carries the command, progress, and controls",
     expect_true(grepl(id, html, fixed = TRUE), info = id)
   }
   expect_true(grepl("/lab/refs", html, fixed = TRUE))
-  expect_true(grepl("2", html, fixed = TRUE))
+  expect_true(grepl("2 clade(s) to build", html, fixed = TRUE))
 })
 
 test_that("the headless reference modal offers the job script instead of a local run", {

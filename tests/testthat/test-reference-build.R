@@ -107,6 +107,33 @@ test_that("set_reference_clade splits a subset into its own group", {
   expect_equal(DBI::dbGetQuery(con, "SELECT ref_id FROM samples WHERE ID = 'S1'")$ref_id, "forcipulatida")
 })
 
+test_that("one build run covers every group and shares its pid", {
+  con <- mk_ref_db(); on.exit(DBI::dbDisconnect(con))
+  proj <- withr::local_tempdir()
+  RiboPilot:::set_ref_config(con, ref_dir = withr::local_tempdir())
+  two <- rbind(grp, data.frame(ref_id = "gastropoda", clade_taxid = 6448L,
+    clade_name = "Gastropoda", clade_rank = "class", n_records = 5000L, n_samples = 1L,
+    stringsAsFactors = FALSE))
+  RiboPilot:::write_reference_groups(con, two,
+    data.frame(ID = c("S1", "S2"), ref_id = c("asteroidea", "gastropoda"),
+      stringsAsFactors = FALSE))
+
+  seen <- new.env()
+  launcher <- function(cmd, args, log) { seen$cmd <- cmd; seen$args <- args; 4242L }
+  RiboPilot:::start_reference_build(con, proj, c("asteroidea", "gastropoda"),
+    launcher = launcher)
+  r <- DBI::dbGetQuery(con, "SELECT ref_id, pid, reference_switch, log_file FROM reference ORDER BY ref_id")
+  expect_equal(nrow(r), 2L)
+  expect_true(all(r$pid == 4242L))
+  expect_true(all(r$reference_switch == 4L))
+  expect_equal(length(unique(r$log_file)), 1L)
+  expect_equal(seen$cmd, "nextflow")
+  expect_true("-entry" %in% seen$args)
+  expect_equal(seen$args[which(seen$args == "-entry") + 1], "BUILD")
+  man <- utils::read.delim(seen$args[which(seen$args == "--clades") + 1], stringsAsFactors = FALSE)
+  expect_setequal(man$ref_id, c("asteroidea", "gastropoda"))
+})
+
 test_that("start_reference_build records the job and poll finishes it", {
   con <- mk_ref_db(); on.exit(DBI::dbDisconnect(con))
   proj <- withr::local_tempdir()

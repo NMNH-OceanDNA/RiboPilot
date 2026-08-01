@@ -274,54 +274,67 @@ process_alive <- function(pid) {
   isTRUE(tryCatch(ps::ps_is_running(ps::ps_handle(as.integer(pid))), error = function(e) FALSE))
 }
 
-#' Start a background build for one clade group
+#' Start one background build run covering a set of clade groups
+#'
+#' One Nextflow run handles every group, so all launched rows share the pid, the
+#' log, and the launch time; [poll_reference_builds()] still judges each row on
+#' its own FASTAs.
 #'
 #' @param con Open project DB connection.
 #' @param project Project directory (the log lives in `<project>/.reference`).
-#' @param ref_id Group key.
-#' @param api_key,refseq,conda_env,overwrite Passed to [build_reference_db()].
+#' @param ref_ids Group keys.
+#' @param api_key,refseq,resume Passed to [nf_reference_command()].
+#' @param overwrite Rebuild groups whose database already exists.
 #' @param launcher function(cmd, args, log) -> pid.
-#' @return (invisibly) the log path, or NULL when an existing database was reused.
+#' @return (invisibly) the log path, or NULL when every group was reused.
 #' @noRd
-start_reference_build <- function(con, project, ref_id, api_key = NULL, refseq = FALSE,
-                                  conda_env = NULL, overwrite = FALSE,
+start_reference_build <- function(con, project, ref_ids, api_key = NULL, refseq = FALSE,
+                                  resume = TRUE, overwrite = FALSE,
                                   launcher = processx_launcher) {
-  row <- DBI::dbGetQuery(con, "SELECT * FROM reference WHERE ref_id = ?", params = list(ref_id))
-  if (nrow(row) == 0) stop("No reference group '", ref_id, "'.", call. = FALSE)
+  ref_ids <- unique(as.character(ref_ids))
+  if (length(ref_ids) == 0) return(invisible(NULL))
+  ph <- paste(rep("?", length(ref_ids)), collapse = ",")
+  rows <- DBI::dbGetQuery(con,
+    sprintf("SELECT * FROM reference WHERE ref_id IN (%s)", ph), params = as.list(ref_ids))
+  gone <- setdiff(ref_ids, rows$ref_id)
+  if (length(gone) > 0) stop("No reference group '", gone[1], "'.", call. = FALSE)
   cfg <- ref_config(con)
 
-  # Without overwrite the builder would exit at once and leave the FASTAs
-  # untouched, which the poll's freshness check reads as a failed build. Wire
-  # the database that is already there instead of launching anything.
-  have <- reference_db_paths(cfg$ref_dir, ref_id)
-  if (!isTRUE(overwrite) && file.exists(have$seeds) && file.exists(have$labels)) {
-    wire_reference_db(con, ref_id, have$seeds, have$labels, source = "existing")
-    return(invisible(NULL))
+  # Without overwrite a group whose database is already on disk would be rebuilt
+  # for nothing; wire what is there and keep it out of the run.
+  keep <- rep(TRUE, nrow(rows))
+  for (i in seq_len(nrow(rows))) {
+    have <- reference_db_paths(cfg$ref_dir, rows$ref_id[i])
+    if (!isTRUE(overwrite) && file.exists(have$seeds) && file.exists(have$labels)) {
+      wire_reference_db(con, rows$ref_id[i], have$seeds, have$labels, source = "existing")
+      keep[i] <- FALSE
+    }
   }
+  rows <- rows[keep, , drop = FALSE]
+  if (nrow(rows) == 0) return(invisible(NULL))
 
-  logdir <- file.path(project, ".reference")
-  dir.create(logdir, recursive = TRUE, showWarnings = FALSE)
-  log <- file.path(logdir, paste0(ref_id, ".log"))
+  rundir <- file.path(project, ".reference")
+  dir.create(rundir, recursive = TRUE, showWarnings = FALSE)
+  log <- file.path(rundir, paste0("build_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".log"))
   unlink(log)
 
-  call <- sprintf(
-    "RiboPilot::build_reference_db(query = %s, clade = %s, out_dir = %s, api_key = %s, refseq = %s, conda_env = %s, overwrite = %s)",
-    deparse(row$query[1]), deparse(ref_id), deparse(cfg$ref_dir),
-    if (is.null(api_key) || !nzchar(api_key)) "NULL" else deparse(api_key),
-    if (isTRUE(refseq)) "TRUE" else "FALSE",
-    if (is.null(conda_env) || !nzchar(conda_env)) "NULL" else deparse(conda_env),
-    if (isTRUE(overwrite)) "TRUE" else "FALSE")
+  man <- write_clade_manifest(file.path(rundir, "clades_build.tsv"),
+    data.frame(ref_id = rows$ref_id, taxid = as.integer(rows$clade_taxid),
+      clade_name = rows$clade_name, query = rows$query, stringsAsFactors = FALSE))
+  args <- nf_reference_command(project, "BUILD", man, cfg$ref_dir, cfg$ref_dir,
+    api_key = api_key %||% "", refseq = isTRUE(refseq), resume = isTRUE(resume))
 
   # captured before the launcher runs, so any FASTA this build writes has an
   # mtime >= launch_time; anything already on disk with an older mtime is a
   # stale leftover from a previous build, not evidence this one succeeded.
   launch_time <- as.integer(Sys.time())
-  pid <- launcher(file.path(R.home("bin"), "Rscript"), c("-e", call), log)
+  pid <- launcher("nextflow", args, log)
 
+  ph <- paste(rep("?", nrow(rows)), collapse = ",")
   DBI::dbExecute(con,
-    "UPDATE reference SET reference_switch = 4, pid = ?, log_file = ?, fail_reason = NULL,
-       time_stamp = ? WHERE ref_id = ?",
-    params = list(as.integer(pid), log, launch_time, ref_id))
+    sprintf("UPDATE reference SET reference_switch = 4, pid = ?, log_file = ?, fail_reason = NULL,
+       time_stamp = ? WHERE ref_id IN (%s)", ph),
+    params = c(list(as.integer(pid), log, launch_time), as.list(rows$ref_id)))
   invisible(log)
 }
 

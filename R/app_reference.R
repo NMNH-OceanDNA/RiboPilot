@@ -62,31 +62,6 @@ reference_ladder_modal <- function(ref_id, clade_name, ladder, chosen_taxid, n_g
       shiny::modalButton("Cancel")))
 }
 
-#' Build modal: the options a build run takes
-#' @param ref_ids Groups that will be built. @param ref_dir Destination folder.
-#' @noRd
-reference_build_modal <- function(ref_ids, ref_dir) {
-  shiny::modalDialog(
-    title = sprintf("Build %d reference database(s)", length(ref_ids)), size = "m",
-    shiny::tags$p(class = "text-muted", style = "font-size:12px;",
-      "Downloads GenBank records and writes seed + label FASTAs to:"),
-    shiny::tags$pre(style = "font-size:12px;", ref_dir),
-    shiny::tags$pre(style = "max-height:120px; overflow:auto; font-size:12px;",
-      paste(ref_ids, collapse = "\n")),
-    shiny::textInput("ref_api_key", "NCBI API key (optional):", width = "100%",
-      value = Sys.getenv("NCBI_API_KEY", "")),
-    shiny::textInput("ref_conda", "Conda environment providing Entrez Direct (optional):",
-      width = "100%", value = ""),
-    shinyWidgets::prettyCheckbox("ref_refseq", "RefSeq records only", value = FALSE,
-      status = "primary", shape = "curve"),
-    shinyWidgets::prettyCheckbox("ref_overwrite", "Rebuild even if the database exists",
-      value = FALSE, status = "primary", shape = "curve"),
-    opts_help("Builds run in the background; the tab shows their state and log."),
-    footer = shiny::tagList(
-      shiny::actionButton("ref_build_go", "Start build", class = "btn-primary btn-sm"),
-      shiny::modalButton("Cancel")))
-}
-
 #' Use-an-existing-database modal: manifest entries plus typed paths
 #' @param manifest From [read_ref_manifest()]. @param ref_id Group key.
 #' @noRd
@@ -127,6 +102,8 @@ reference_handlers <- function(input, output, session, deps) {
   existing_target <- shiny::reactiveVal(NULL)
   build_targets <- shiny::reactiveVal(character(0))
   picked <- shiny::reactiveVal(NULL)   # taxid chosen from the search box
+  ref_proc <- shiny::reactiveVal(NULL)
+  ref_state <- shiny::reactiveVal(nf_progress_empty())
 
   with_con <- function(fn) {
     con <- deps$con(); on.exit(DBI::dbDisconnect(con)); fn(con)
@@ -135,6 +112,23 @@ reference_handlers <- function(input, output, session, deps) {
   # read fresh each time so tests can substitute a runner that spawns nothing
   count_runner <- function() getOption("ribopilot.count_runner", nf_run_blocking)
   notify <- function(msg, type = "message") shiny::showNotification(msg, type = type, duration = 8)
+
+  poll_now <- function() {
+    tryCatch(with_con(poll_reference_builds), error = function(e) {
+      # poll_reference_builds() stop()s (e.g. wire_reference_db() finding no
+      # base assemble_opts preset) before it can mark the row it was working
+      # on; left at reference_switch = 4 every later tick hits the same error
+      # and the user watches "running" forever. Fail every currently-running
+      # row with this message instead, so it surfaces and stops spinning.
+      msg <- conditionMessage(e)
+      tryCatch(with_con(function(con) DBI::dbExecute(con,
+        "UPDATE reference SET reference_switch = 3, pid = NULL, fail_reason = ?, time_stamp = ?
+         WHERE reference_switch = 4",
+        params = list(msg, as.integer(Sys.time())))), error = function(e2) NULL)
+      notify(msg, "error")
+      invisible(0L)
+    })
+  }
 
   # taxonomy writers store the lineage names only; the rank-aligned taxid path
   # this tab walks is derived on demand, so back-fill before every read
@@ -359,29 +353,105 @@ reference_handlers <- function(input, output, session, deps) {
     notify(sprintf("Pointed %d sample(s) at the existing database.", res))
   })
 
-  # ---- build ----
+  # ---- build: one Nextflow run for every selected group ----
   shiny::observeEvent(input$ref_build_btn, {
     ids <- deps$selected_ids()
     if (length(ids) == 0) { notify("Select the group(s) to build.", "warning"); return() }
     build_targets(ids)
-    res <- tryCatch(with_con(function(con) reference_build_modal(ids, ref_config(con)$ref_dir)),
+    ref_state(nf_progress_empty())
+    res <- tryCatch(with_con(function(con) reference_run_modal(length(ids), ref_config(con)$ref_dir)),
       error = function(e) e)
     if (inherits(res, "error")) { notify(conditionMessage(res), "error"); return() }
     shiny::showModal(res)
   })
-  shiny::observeEvent(input$ref_build_go, {
+
+  build_args <- function(con) {
+    nf_reference_command(deps$project(), "BUILD",
+      file.path(deps$project(), ".reference", "clades_build.tsv"),
+      ref_config(con)$ref_dir, ref_config(con)$ref_dir,
+      api_key = input$ref_api_key %||% "", refseq = isTRUE(input$ref_refseq),
+      resume = isTRUE(input$ref_nf_resume %||% TRUE))
+  }
+  output$ref_nf_cmd_text <- shiny::renderText({
+    args <- tryCatch(with_con(build_args), error = function(e) NULL)
+    if (is.null(args)) return("")
+    paste(c("nextflow", args), collapse = " ")
+  })
+
+  idle_buttons <- function() {
+    shinyjs::hide("ref_nf_stop"); shinyjs::show("ref_nf_start")
+    shinyjs::addClass(id = "ref_gears", class = "paused")
+  }
+
+  shiny::observeEvent(input$ref_nf_start, {
     ids <- build_targets()
-    res <- tryCatch(with_con(function(con) {
-      for (r in ids) {
-        start_reference_build(con, deps$project(), r,
-          api_key = input$ref_api_key %||% "", refseq = isTRUE(input$ref_refseq),
-          conda_env = input$ref_conda %||% "", overwrite = isTRUE(input$ref_overwrite))
-      }
-      length(ids)
-    }), error = function(e) e)
-    if (inherits(res, "error")) { notify(conditionMessage(res), "error"); return() }
-    shiny::removeModal(); bump()
-    notify(sprintf("Started %d build(s); watch the State column.", res))
+    if (length(ids) == 0) { notify("Select the group(s) to build.", "warning"); return() }
+    ref_state(nf_progress_empty())
+    shinyjs::hide("ref_nf_start"); shinyjs::show("ref_nf_stop"); shinyjs::show("ref_nf_progress")
+    shinyjs::removeClass(id = "ref_gears", class = "paused")
+    # the process object is kept so its output can be streamed; the pid handed
+    # back is what the reference rows store
+    launcher <- function(cmd, args, log) {
+      nf_env <- c("current", COLUMNS = "500", NXF_ANSI_SUMMARY = "true")
+      pin <- nf_pin_version()
+      if (!is.na(pin)) nf_env <- c(nf_env, NXF_VER = pin)
+      p <- processx::process$new(cmd, c(args, "-ansi-log"), stdout = "|", stderr = "|",
+        wd = deps$project(), env = nf_env)
+      ref_proc(p)
+      p$get_pid()
+    }
+    res <- tryCatch(with_con(function(con) start_reference_build(con, deps$project(), ids,
+      api_key = input$ref_api_key %||% "", refseq = isTRUE(input$ref_refseq),
+      resume = isTRUE(input$ref_nf_resume %||% TRUE), launcher = launcher)),
+      error = function(e) e)
+    if (inherits(res, "error")) {
+      idle_buttons(); notify(conditionMessage(res), "error"); return()
+    }
+    bump()
+    if (is.null(res)) {
+      idle_buttons()
+      notify("Every selected group already had a database; nothing to run.")
+    }
+  })
+
+  shiny::observe({
+    shiny::req(ref_proc())
+    shiny::invalidateLater(250)
+    p <- ref_proc()
+    grab <- function() {
+      out <- tryCatch(p$read_output_lines(), error = function(e) character(0))
+      err <- tryCatch(p$read_error_lines(), error = function(e) character(0))
+      if (length(c(out, err))) ref_state(nf_progress_parse(ref_state(), c(out, err)))
+    }
+    if (p$is_alive()) {
+      grab()
+    } else {
+      grab()
+      ref_proc(NULL)
+      idle_buttons()
+      poll_now()
+      bump()
+      notify("Reference build run finished.")
+    }
+  })
+
+  output$ref_nf_prog_all <- shiny::renderText(nf_progress_text(ref_state()))
+
+  kill_ref_nf <- function() {
+    p <- ref_proc()
+    if (!is.null(p) && p$is_alive()) p$kill()
+    ref_proc(NULL)
+  }
+  # don't leave an orphaned Nextflow process if the browser closes mid-run
+  session$onSessionEnded(function() {
+    p <- shiny::isolate(ref_proc())
+    if (!is.null(p) && p$is_alive()) try(p$kill(), silent = TRUE)
+  })
+  shiny::observeEvent(input$ref_nf_stop, {
+    kill_ref_nf(); idle_buttons(); poll_now(); bump()
+  })
+  shiny::observeEvent(input$ref_nf_close, {
+    kill_ref_nf(); shiny::removeModal()
   })
 
   # ---- log tail ----
@@ -430,21 +500,5 @@ reference_handlers <- function(input, output, session, deps) {
     notify(paste("Reference folder set to", v$msg))
   })
 
-  list(open_ladder = open_ladder,
-    poll = function() {
-      tryCatch(with_con(poll_reference_builds), error = function(e) {
-        # poll_reference_builds() stop()s (e.g. wire_reference_db() finding no
-        # base assemble_opts preset) before it can mark the row it was working
-        # on; left at reference_switch = 4 every later tick hits the same error
-        # and the user watches "running" forever. Fail every currently-running
-        # row with this message instead, so it surfaces and stops spinning.
-        msg <- conditionMessage(e)
-        tryCatch(with_con(function(con) DBI::dbExecute(con,
-          "UPDATE reference SET reference_switch = 3, pid = NULL, fail_reason = ?, time_stamp = ?
-           WHERE reference_switch = 4",
-          params = list(msg, as.integer(Sys.time())))), error = function(e2) NULL)
-        notify(msg, "error")
-        invisible(0L)
-      })
-    })
+  list(open_ladder = open_ladder, poll = poll_now)
 }
