@@ -111,7 +111,9 @@ test_that("main.nf includes fallback_assemble and still passes seeds to GetOrgan
 
 test_that("there is ONE workflow: no second file left to drift", {
   nf_dir <- system.file("nextflow", package = "RiboPilot")
-  wf <- setdiff(list.files(nf_dir, pattern = "\\.nf$"), "nextflow.config")
+  # main_reference.nf is the reference-database workflow, not a second WF1
+  wf <- setdiff(list.files(nf_dir, pattern = "\\.nf$"),
+    c("nextflow.config", "main_reference.nf"))
   expect_setequal(wf, "main.nf")
   expect_false(file.exists(file.path(nf_dir, "main_fallback.nf")))
   expect_false(file.exists(file.path(nf_dir, "main_annotate.nf")))
