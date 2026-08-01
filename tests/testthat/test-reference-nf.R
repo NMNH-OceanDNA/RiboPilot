@@ -30,3 +30,37 @@ test_that("merge_counts replaces stale rows and keeps the rest", {
   expect_equal(out$n_records[out$taxid == 33208L], 500L)
   expect_equal(nrow(RiboPilot:::read_counts_cache(d)), 2L)
 })
+
+test_that("nf_reference_command names the entry point and every param", {
+  d <- withr::local_tempdir()
+  writeLines("process { executor = 'local' }", file.path(d, ".config"))
+  a <- RiboPilot:::nf_reference_command(d, "COUNT", file.path(d, "clades.tsv"),
+    "/refs", file.path(d, "out"))
+  expect_equal(a[1], "run")
+  expect_true("-entry" %in% a)
+  expect_equal(a[which(a == "-entry") + 1], "COUNT")
+  expect_equal(a[which(a == "--refDir") + 1], "/refs")
+  expect_true("--clades" %in% a && "--outDir" %in% a)
+})
+
+test_that("the reference folder is bind-mounted for docker and for singularity", {
+  docker <- c("docker {", "  enabled = true", "}")
+  sing <- c("singularity {", "  enabled = true", "}")
+  expect_equal(RiboPilot:::ref_bind_option(docker, "/refs"),
+    c("-process.containerOptions", "-v /refs:/refs"))
+  expect_equal(RiboPilot:::ref_bind_option(sing, "/refs"),
+    c("-process.containerOptions", "--bind /refs"))
+  expect_length(RiboPilot:::ref_bind_option("process { executor = 'local' }", "/refs"), 0L)
+})
+
+test_that("refseq and the api key only appear when asked for", {
+  d <- withr::local_tempdir()
+  writeLines("process { executor = 'local' }", file.path(d, ".config"))
+  plain <- RiboPilot:::nf_reference_command(d, "BUILD", "c.tsv", "/refs", "o")
+  expect_false("--refseq" %in% plain)
+  expect_false("--ncbi_api_key" %in% plain)
+  keyed <- RiboPilot:::nf_reference_command(d, "BUILD", "c.tsv", "/refs", "o",
+    api_key = "abc", refseq = TRUE)
+  expect_equal(keyed[which(keyed == "--ncbi_api_key") + 1], "abc")
+  expect_equal(keyed[which(keyed == "--refseq") + 1], "true")
+})

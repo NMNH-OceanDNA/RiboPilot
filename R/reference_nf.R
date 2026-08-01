@@ -47,3 +47,43 @@ merge_counts <- function(ref_dir, counts) {
     row.names = FALSE, quote = FALSE, na = "")
   cache
 }
+
+#' Container bind option for the reference folder, if the config uses a container
+#'
+#' The folder lives outside the project, so a container task cannot see it. The
+#' mount is added per run rather than written into the project config, so a user
+#' who moves the folder needs no project edits.
+#' @noRd
+ref_bind_option <- function(cfg_lines, ref_dir) {
+  txt <- paste(cfg_lines, collapse = "\n")
+  d <- path.expand(ref_dir)
+  if (grepl("docker\\s*\\{[^}]*enabled\\s*=\\s*true", txt)) {
+    return(c("-process.containerOptions", paste0("-v ", d, ":", d)))
+  }
+  if (grepl("(singularity|apptainer)\\s*\\{[^}]*enabled\\s*=\\s*true", txt)) {
+    return(c("-process.containerOptions", paste0("--bind ", d)))
+  }
+  character(0)
+}
+
+#' Nextflow arguments for the reference workflow
+#' @noRd
+nf_reference_command <- function(project, entry, manifest, ref_dir, out_dir,
+                                 api_key = "", refseq = FALSE, resume = TRUE,
+                                 work = file.path(project, "work_ref")) {
+  entry <- match.arg(entry, c("COUNT", "BUILD"))
+  main_nf <- app_sys("nextflow", "main_reference.nf")
+  cfg <- file.path(project, ".config")
+  cfg_lines <- if (file.exists(cfg)) readLines(cfg) else character(0)
+  c("run", main_nf, "-entry", entry,
+    if (file.exists(cfg)) c("-c", cfg),
+    "-work-dir", work,
+    if (isTRUE(resume)) "-resume",
+    "--clades", path.expand(manifest),
+    "--refDir", path.expand(ref_dir),
+    "--outDir", path.expand(out_dir),
+    "--ribopilot_src", ribopilot_src_default(),
+    if (isTRUE(refseq)) c("--refseq", "true"),
+    if (nzchar(api_key %||% "")) c("--ncbi_api_key", api_key),
+    ref_bind_option(cfg_lines, ref_dir))
+}
