@@ -58,6 +58,29 @@ genbank_rrna_count <- function(query, api_key = NULL, refseq = FALSE, conda_env 
 #' @noRd
 ref_counts_path <- function(dir) file.path(path.expand(dir), "counts.tsv")
 
+#' Read a reference folder's record-count cache
+#' @noRd
+read_counts_cache <- function(dir) {
+  empty <- data.frame(taxid = integer(0), n_records = integer(0), stringsAsFactors = FALSE)
+  p <- ref_counts_path(dir)
+  if (!file.exists(p)) return(empty)
+  d <- tryCatch(utils::read.delim(p, stringsAsFactors = FALSE), error = function(e) NULL)
+  if (is.null(d) || !all(c("taxid", "n_records") %in% names(d))) return(empty)
+  d$taxid <- suppressWarnings(as.integer(d$taxid))
+  d$n_records <- suppressWarnings(as.integer(d$n_records))
+  d[, c("taxid", "n_records"), drop = FALSE]
+}
+
+#' Cache-only count lookup: NA for anything not counted yet
+#' @noRd
+cache_count_fn <- function(dir) {
+  function(taxid, name) {
+    cache <- read_counts_cache(dir)
+    i <- match(suppressWarnings(as.integer(taxid)), cache$taxid)
+    if (is.na(i)) NA_integer_ else cache$n_records[i]
+  }
+}
+
 #' Record-count lookup with an on-disk cache
 #'
 #' Counts change slowly and the walk revisits the same high ranks for every
@@ -73,21 +96,9 @@ ref_counts_path <- function(dir) file.path(path.expand(dir), "counts.tsv")
 cached_count_fn <- function(dir, count_fn = genbank_rrna_count, ...) {
   extra <- list(...)
   p <- ref_counts_path(dir)
-  read_cache <- function() {
-    if (!file.exists(p)) {
-      return(data.frame(taxid = integer(0), n_records = integer(0), stringsAsFactors = FALSE))
-    }
-    d <- tryCatch(utils::read.delim(p, stringsAsFactors = FALSE), error = function(e) NULL)
-    if (is.null(d) || !all(c("taxid", "n_records") %in% names(d))) {
-      return(data.frame(taxid = integer(0), n_records = integer(0), stringsAsFactors = FALSE))
-    }
-    d$taxid <- suppressWarnings(as.integer(d$taxid))
-    d$n_records <- suppressWarnings(as.integer(d$n_records))
-    d
-  }
   function(taxid, name) {
     taxid <- suppressWarnings(as.integer(taxid))
-    cache <- read_cache()
+    cache <- read_counts_cache(dir)
     i <- match(taxid, cache$taxid)
     if (!is.na(i) && !is.na(cache$n_records[i])) return(cache$n_records[i])
     n <- do.call(count_fn, c(list(clade_query(name)), extra))
