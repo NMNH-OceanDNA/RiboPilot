@@ -39,21 +39,23 @@ process build_ref_db {
     cache false
     tag "${ref_id}"
     errorStrategy 'ignore'
-    publishDir "${params.refDir}/seeds", mode: 'copy', pattern: '*_seeds.fasta'
-    publishDir "${params.refDir}/labels", mode: 'copy', pattern: '*_labels.fasta'
+    // the wrapper writes the seeds/ and labels/ layout, so publishing the
+    // relative paths unchanged lands them where reference_db_paths() looks
+    publishDir params.refDir, mode: 'copy', pattern: 'seeds/*_seeds.fasta'
+    publishDir params.refDir, mode: 'copy', pattern: 'labels/*_labels.fasta'
 
     input:
     tuple val(ref_id), val(query)
 
     output:
-    path "*_seeds.fasta", optional: true
-    path "*_labels.fasta", optional: true
+    path "seeds/*_seeds.fasta", optional: true
+    path "labels/*_labels.fasta", optional: true
 
     script:
     """
     export NCBI_API_KEY='${params.ncbi_api_key ?: ""}'
     export RP_REFSEQ='${params.refseq}'
-    RIBOPILOT_SRC='${params.ribopilot_src}' rp_ref_db.R build '${ref_id}_rrna' '${query}' .
+    RIBOPILOT_SRC='${params.ribopilot_src}' rp_ref_db.R build '${ref_id}' '${query}' .
     """
 }
 
