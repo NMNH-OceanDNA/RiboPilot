@@ -6,6 +6,9 @@ test_that("write_clade_manifest writes the four columns Nextflow reads", {
   x <- utils::read.delim(p, stringsAsFactors = FALSE)
   expect_equal(names(x), c("ref_id", "taxid", "clade_name", "query"))
   expect_equal(x$taxid, 186623L)
+  lines <- readLines(p)
+  expect_equal(lines[1], "ref_id\ttaxid\tclade_name\tquery")
+  expect_equal(lines[2], 'actinopteri\t186623\tActinopteri\t"Actinopteri"[Organism]')
 })
 
 test_that("read_count_files reads every count file and skips junk", {
