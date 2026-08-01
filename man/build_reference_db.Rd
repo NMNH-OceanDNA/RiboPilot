@@ -53,4 +53,7 @@ running the pipeline; point every project for that clade at the result.
 \details{
 Requires Entrez Direct + biopython (in the RiboPilot conda env). Pass
 `conda_env` to put them on PATH.
+
+The RiboPilot app's Reference tab calls this in the background and wires the
+result into the project, so calling it directly is for scripted or headless use.
 }

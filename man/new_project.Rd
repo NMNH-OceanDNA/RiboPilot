@@ -15,6 +15,7 @@ new_project(
   container = paste0("macguigand/ribopilot:", utils::packageVersion("RiboPilot")),
   custom_seeds_db = NULL,
   custom_labels_db = NULL,
+  ref_dir = NULL,
   config = NULL,
   profile_dir = ribopilot_config_dir(),
   ncbi_api_key = NULL,
@@ -46,6 +47,9 @@ container, "awsbatch", "slurm", "sge", "pbs", "lsf", "NMNH_Hydra",
 \item{custom_seeds_db}{Path/URL to a custom GetOrganelle nr seeds database.}
 
 \item{custom_labels_db}{Path/URL to a custom GetOrganelle nr labels database.}
+
+\item{ref_dir}{Folder for built reference databases (default: the
+`RIBOPILOT_REF_DIR` environment variable, else [ribopilot_ref_dir()]).}
 
 \item{config}{Optional path to an existing custom Nextflow config file.}
 

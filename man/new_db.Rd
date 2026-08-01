@@ -20,6 +20,7 @@ new_db(
   max_paths = 10,
   max_scaffolds = 10,
   min_assembly_length = 500,
+  ref_dir = NULL,
   ...
 )
 }
@@ -51,6 +52,9 @@ clade, see the reference-DB builder). May be NULL until built.}
 \item{max_scaffolds}{Max scaffolds within a path to continue (default 10).}
 
 \item{min_assembly_length}{Minimum contig length (bp) to retain (default 500).}
+
+\item{ref_dir}{Folder for built reference databases (default: the
+`RIBOPILOT_REF_DIR` environment variable, else [ribopilot_ref_dir()]).}
 
 \item{...}{Reserved for forward compatibility.}
 }

@@ -26,6 +26,9 @@ ribopilot_ref_dir <- function() {
 #' Requires Entrez Direct + biopython (in the RiboPilot conda env). Pass
 #' `conda_env` to put them on PATH.
 #'
+#' The RiboPilot app's Reference tab calls this in the background and wires the
+#' result into the project, so calling it directly is for scripted or headless use.
+#'
 #' @param query Advanced GenBank search term, e.g. `'"Gastropoda"[Organism]'`
 #'   or `'"Percidae"[Organism]'`.
 #' @param clade Short name for the output files, e.g. `"gastropoda"`. Files are
