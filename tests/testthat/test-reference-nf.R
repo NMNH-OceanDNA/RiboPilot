@@ -64,3 +64,21 @@ test_that("refseq and the api key only appear when asked for", {
   expect_equal(keyed[which(keyed == "--ncbi_api_key") + 1], "abc")
   expect_equal(keyed[which(keyed == "--refseq") + 1], "true")
 })
+
+test_that("nf_reference_command bind-mounts refDir when the project config has a real container block", {
+  d <- withr::local_tempdir()
+  ref_dir <- file.path(d, "refs")
+  docker_cfg <- RiboPilot:::container_engine_block("docker")
+  writeLines(docker_cfg, file.path(d, ".config"))
+  a <- RiboPilot:::nf_reference_command(d, "COUNT", "c.tsv", ref_dir, "o")
+  idx <- which(a == "-process.containerOptions")
+  expect_length(idx, 1L)
+  expect_equal(a[idx + 1], paste0("-v ", ref_dir, ":", ref_dir))
+
+  sing_cfg <- RiboPilot:::container_engine_block("singularity")
+  writeLines(sing_cfg, file.path(d, ".config"))
+  b <- RiboPilot:::nf_reference_command(d, "COUNT", "c.tsv", ref_dir, "o")
+  idx2 <- which(b == "-process.containerOptions")
+  expect_length(idx2, 1L)
+  expect_equal(b[idx2 + 1], paste0("--bind ", ref_dir))
+})
