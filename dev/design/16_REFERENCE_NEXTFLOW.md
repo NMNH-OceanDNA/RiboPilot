@@ -79,6 +79,9 @@ keeps the group state machine unchanged.
     read_count_files(dir)                  # <taxid>.count -> data.frame
     merge_counts(ref_dir, counts)          # into counts.tsv
 
+The Build button's modal is `reference_run_modal()` in `app_modals.R`, built
+from the same pieces as `run_modal()` (see Build, below).
+
 ### Suggest
 
 1. Build the ladders (unchanged).
@@ -100,14 +103,34 @@ never produced. It runs COUNT with a single-row work list and waits, behind the
 
 ### Build
 
-`start_reference_build()` writes one work-list TSV covering every selected
-group and launches a single detached BUILD run. Each group row stores that
-run's pid and log path, so several rows share both.
+The Build button opens a run modal mirroring the Assemble tab's Update modal
+(`run_modal()`), so a reference build looks and behaves like any other
+RiboPilot run:
 
-`poll_reference_builds()` is unchanged in shape: when the pid is gone, each
-group is judged on its own by whether its seed and label FASTAs exist and are
-newer than the launch timestamp, then wired or failed individually. One clade
-failing inside a run does not fail the others.
+- Title showing the workflow and how many clades will be built, with the same
+  animated gears that spin only while a run is live.
+- Build settings above the command: NCBI API key and the RefSeq-only checkbox.
+  The conda-environment field is dropped; the container is the environment now.
+- A "Resume previous run?" checkbox and a live `nextflow ...` command preview
+  that updates as those inputs change.
+- A hidden progress pane that appears on Run, fed by the same ANSI progress
+  board parser the Update modal uses.
+- Footer: Run from App, Stop / Interrupt, Close.
+- Headless (served to a remote browser): the same cluster-submit section, with
+  an editable job script and Submit as job / Save script, instead of running
+  Nextflow on the login node.
+
+The ANSI parser and progress state currently live inline in `app_server.R`.
+They move into a small reusable helper so both modals share one implementation
+rather than growing a second copy.
+
+The run is attached to the app the way the Update modal's run is: Stop and
+Close kill it. Group rows still record the run's pid, log path, and launch
+time, so `poll_reference_builds()` remains the thing that decides each group's
+fate: when the pid is gone, each group is judged on its own by whether its seed
+and label FASTAs exist and are newer than the launch time, then wired or failed
+individually. That keeps one clade's failure from failing the others, and keeps
+the tab correct even if the app is closed mid-run.
 
 The existing reuse shortcut stays: a group whose database is already on disk is
 wired without launching anything.
@@ -119,7 +142,8 @@ wired without launching anything.
 | Nextflow not installed | "Nextflow not found" before anything is launched |
 | COUNT run exits non-zero | Merge whatever `.count` files exist; missing counts are `NA` and the walk skips them |
 | No counts at all | Suggest fails with the existing "could not count records" message plus the log tail |
-| BUILD run exits non-zero | Each group with no fresh FASTAs gets `fail_reason` from the log tail; groups that did produce FASTAs are wired normally |
+| BUILD run exits non-zero | Each group with no fresh FASTAs gets `fail_reason` from the log tail; groups that did produce FASTAs are wired normally. The failure is also visible live in the modal's progress pane |
+| Modal closed or Stop pressed mid-build | The run is killed, like the Update modal. Groups with finished FASTAs are still wired by the next poll; the rest go back to pending with the reason recorded |
 | Reference folder not writable | Caught before launch by the existing folder check |
 
 ## Testing
@@ -134,6 +158,11 @@ R-side tests use the existing stub-launcher pattern, so nothing is spawned:
   requests counts only for uncached taxids.
 - A simulated finished BUILD run wires the groups whose FASTAs are fresh and
   fails the rest, with a shared pid across rows.
+- The reference run modal carries the command preview, progress pane, and
+  Run / Stop / Close controls, and swaps in the cluster-submit section when
+  headless, matching the Update modal's existing tests.
+- The extracted ANSI progress parser produces the same output for both modals
+  (moved, not rewritten: the existing parser tests follow it).
 
 The workflow file itself is checked by the existing docker-image smoke test
 rather than by unit tests.
