@@ -187,6 +187,27 @@ test_that("a failed build's fail_reason carries the tail of its log", {
   expect_false(grepl("\033", readLines(r$log_file[1]), fixed = TRUE)[1])
 })
 
+test_that("the fail reason skips the progress board and keeps the error", {
+  con <- mk_ref_db(); on.exit(DBI::dbDisconnect(con))
+  RiboPilot:::set_ref_config(con, ref_dir = withr::local_tempdir())
+  RiboPilot:::write_reference_groups(con, grp, mem)
+  RiboPilot:::start_reference_build(con, withr::local_tempdir(), "asteroidea",
+    launcher = function(cmd, args, log) {
+      RiboPilot:::append_run_log(log, c(
+        "ERROR ~ Error executing process > 'BUILD_DB (asteroidea)'",
+        "Caused by: Missing output file(s) seeds/asteroidea_rrna_seeds.fasta",
+        "executor >  local (2)",
+        "[a1/b2c3d4] process > BUILD_DB (asteroidea) [100%] 1 of 1, failed: 1",
+        "[-        ] process > COLLECT                [  0%] 0 of 1"))
+      21L
+    })
+  RiboPilot:::poll_reference_builds(con, alive_fn = function(pid) FALSE)
+  reason <- DBI::dbGetQuery(con, "SELECT fail_reason FROM reference")$fail_reason[1]
+  expect_true(grepl("Missing output file", reason, fixed = TRUE))
+  expect_false(grepl("[100%]", reason, fixed = TRUE))
+  expect_false(grepl("executor >", reason, fixed = TRUE))
+})
+
 test_that("start_reference_build records the job and poll finishes it", {
   con <- mk_ref_db(); on.exit(DBI::dbDisconnect(con))
   proj <- withr::local_tempdir()

@@ -388,7 +388,12 @@ start_reference_build <- function(con, project, ref_ids, api_key = NULL, refseq 
 log_tail <- function(log, n = 3) {
   if (is.null(log) || is.na(log) || !file.exists(log)) return("")
   x <- tryCatch(readLines(log, warn = FALSE), error = function(e) character(0))
-  x <- trimws(x[nzchar(trimws(x))])
+  x <- trimws(cli::ansi_strip(x))
+  x <- x[nzchar(x)]
+  # an in-app run tees the redrawing progress board into the log; its rows would
+  # otherwise crowd the error that actually ended the run out of the tail
+  board <- grepl(nf_proc_rx, x, perl = TRUE) | grepl("^executor\\s*>", x)
+  if (any(!board)) x <- x[!board]
   if (length(x) == 0) return("")
   paste(utils::tail(x, n), collapse = " | ")
 }

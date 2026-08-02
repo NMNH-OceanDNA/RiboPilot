@@ -377,3 +377,79 @@ test_that("headless Build offers a BUILD job script and saves it, running nothin
   expect_equal(r$reference_switch[1], 1L)
   expect_true(is.na(r$pid[1]))
 })
+
+test_that("the saved job script carries the API key and RefSeq settings typed in the modal", {
+  skip_if_not_installed("withr")
+  dir <- withr::local_tempdir()
+  dbfile <- mk_split_db(dir)
+  deps <- mk_split_deps(dbfile, dir)
+  deps$selected_ids <- function() "asteroidea"
+  withr::local_options(list(RiboPilot.headless = TRUE))
+
+  shiny::testServer(function(input, output, session) {
+    RiboPilot:::reference_handlers(input, output, session, deps)
+  }, {
+    session$setInputs(ref_build_btn = 1)
+    session$flushReact()
+    # a real browser holds the script the modal was rendered with, generated
+    # before the settings inputs existed; that stale copy must not be saved
+    session$setInputs(ref_submit_script_text = RiboPilot:::build_reference_submit_script(
+      dir, RiboPilot:::reference_manifest_path(dir), file.path(dir, "refs"),
+      sched = RiboPilot:::detect_scheduler()))
+    session$setInputs(ref_api_key = "KEY123", ref_refseq = TRUE)
+    session$flushReact()
+    session$setInputs(ref_save_script = 1)
+    session$flushReact()
+    while (!later::loop_empty()) later::run_now()
+  })
+
+  script <- paste(readLines(file.path(dir, "submit_ribopilot_reference.sh")), collapse = "\n")
+  expect_true(grepl("--ncbi_api_key KEY123", script, fixed = TRUE))
+  expect_true(grepl("--refseq true", script, fixed = TRUE))
+})
+
+test_that("an emptied script textarea falls back to a generated script", {
+  skip_if_not_installed("withr")
+  dir <- withr::local_tempdir()
+  dbfile <- mk_split_db(dir)
+  deps <- mk_split_deps(dbfile, dir)
+  deps$selected_ids <- function() "asteroidea"
+  withr::local_options(list(RiboPilot.headless = TRUE))
+
+  shiny::testServer(function(input, output, session) {
+    RiboPilot:::reference_handlers(input, output, session, deps)
+  }, {
+    session$setInputs(ref_build_btn = 1)
+    session$flushReact()
+    session$setInputs(ref_submit_script_text = "")
+    session$setInputs(ref_save_script = 1)
+    session$flushReact()
+    while (!later::loop_empty()) later::run_now()
+  })
+
+  script <- paste(readLines(file.path(dir, "submit_ribopilot_reference.sh")), collapse = "\n")
+  expect_true(grepl("-entry BUILD", script, fixed = TRUE))
+})
+
+test_that("a hand-edited script is written as edited", {
+  skip_if_not_installed("withr")
+  dir <- withr::local_tempdir()
+  dbfile <- mk_split_db(dir)
+  deps <- mk_split_deps(dbfile, dir)
+  deps$selected_ids <- function() "asteroidea"
+  withr::local_options(list(RiboPilot.headless = TRUE))
+
+  shiny::testServer(function(input, output, session) {
+    RiboPilot:::reference_handlers(input, output, session, deps)
+  }, {
+    session$setInputs(ref_build_btn = 1)
+    session$flushReact()
+    session$setInputs(ref_submit_script_text = "#!/bin/bash\n#SBATCH -p bigmem\nnextflow run mine")
+    session$setInputs(ref_save_script = 1)
+    session$flushReact()
+    while (!later::loop_empty()) later::run_now()
+  })
+
+  script <- paste(readLines(file.path(dir, "submit_ribopilot_reference.sh")), collapse = "\n")
+  expect_true(grepl("#SBATCH -p bigmem", script, fixed = TRUE))
+})

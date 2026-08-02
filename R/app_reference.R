@@ -105,6 +105,8 @@ reference_handlers <- function(input, output, session, deps) {
   ref_proc <- shiny::reactiveVal(NULL)
   ref_log <- shiny::reactiveVal("")
   ref_state <- shiny::reactiveVal(nf_progress_empty())
+  headless_open <- shiny::reactiveVal(FALSE)
+  gen_scripts <- shiny::reactiveVal(character(0))   # scripts this session generated
 
   with_con <- function(fn) {
     con <- deps$con(); on.exit(DBI::dbDisconnect(con)); fn(con)
@@ -358,7 +360,7 @@ reference_handlers <- function(input, output, session, deps) {
   # the job script is written now but runs much later, so the manifest it reads
   # has to be on disk before the modal closes
   ref_submit_script <- function() {
-    with_con(function(con) {
+    s <- with_con(function(con) {
       cfg <- ref_config(con)
       ids <- reference_missing_dbs(cfg$ref_dir, build_targets())
       if (length(ids) == 0) return("")
@@ -367,6 +369,8 @@ reference_handlers <- function(input, output, session, deps) {
         api_key = input$ref_api_key %||% "", refseq = isTRUE(input$ref_refseq),
         resume = isTRUE(input$ref_nf_resume %||% TRUE), sched = detect_scheduler())
     })
+    if (nzchar(s)) gen_scripts(unique(c(shiny::isolate(gen_scripts()), s)))
+    s
   }
 
   shiny::observeEvent(input$ref_build_btn, {
@@ -394,9 +398,21 @@ reference_handlers <- function(input, output, session, deps) {
     hl <- app_headless()
     sched <- if (hl) detect_scheduler() else NULL
     script <- if (hl) tryCatch(ref_submit_script(), error = function(e) "") else ""
+    headless_open(hl)
     shiny::showModal(reference_run_modal(length(res$todo), res$ref_dir,
       headless = hl, sched = sched, script = script))
   })
+
+  # the script is built before the modal renders, so its settings inputs are
+  # still NULL; regenerate it whenever one of them changes, or the saved job
+  # would silently ignore the API key and the RefSeq tick
+  shiny::observeEvent(list(input$ref_api_key, input$ref_refseq, input$ref_nf_resume), {
+    if (!isTRUE(headless_open())) return()
+    s <- tryCatch(ref_submit_script(), error = function(e) NULL)
+    if (!is.null(s) && nzchar(s)) {
+      shiny::updateTextAreaInput(session, "ref_submit_script_text", value = s)
+    }
+  }, ignoreInit = TRUE)
 
   build_args <- function(con) {
     nf_reference_command(deps$project(), "BUILD", reference_manifest_path(deps$project()),
@@ -412,7 +428,16 @@ reference_handlers <- function(input, output, session, deps) {
 
   # ---- headless: save / submit the job script instead of running locally ----
   write_ref_script <- function() {
-    script <- input$ref_submit_script_text %||% ref_submit_script()
+    typed <- input$ref_submit_script_text
+    typed <- if (is.null(typed)) "" else paste(typed, collapse = "\n")
+    # an untouched textarea can still hold a script generated from settings the
+    # user has since changed (the regenerated one is echoed back a beat later),
+    # and an emptied one holds nothing worth writing: only a hand-edited script
+    # beats a freshly generated one
+    edited <- nzchar(trimws(typed)) && !(typed %in% shiny::isolate(gen_scripts()))
+    fresh <- ref_submit_script()
+    script <- if (edited) typed else fresh
+    if (!nzchar(trimws(script))) stop("Nothing to build: every selected group already has a database.", call. = FALSE)
     f <- file.path(deps$project(), "submit_ribopilot_reference.sh")
     writeLines(script, f)
     try(Sys.chmod(f, "0755"), silent = TRUE)
@@ -430,6 +455,7 @@ reference_handlers <- function(input, output, session, deps) {
     if (inherits(res, "error")) { notify(conditionMessage(res), "error"); return() }
     out <- tryCatch(system2(sched$cmd, shQuote(res), stdout = TRUE, stderr = TRUE),
       error = function(e) conditionMessage(e))
+    headless_open(FALSE)
     shiny::removeModal()
     notify(paste0("Submitted via ", sched$cmd, ": ", paste(out, collapse = " "),
       ". Run Build again once the job finishes to wire the databases."))
@@ -514,7 +540,7 @@ reference_handlers <- function(input, output, session, deps) {
     kill_ref_nf(); idle_buttons(); poll_now(); bump()
   })
   shiny::observeEvent(input$ref_nf_close, {
-    kill_ref_nf(); shiny::removeModal(); poll_now(); bump()
+    kill_ref_nf(); headless_open(FALSE); shiny::removeModal(); poll_now(); bump()
   })
 
   # ---- log tail ----
