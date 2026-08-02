@@ -18,9 +18,9 @@ from mitochondrial genomes to the nuclear ribosomal repeat unit.
 
 For most projects, the RiboPilot app's **Reference tab** is now the usual way to
 build these databases: it suggests clade groups from the samples' assigned
-taxonomy, runs the download in the background, and wires the result into the
-project automatically. The R and bash paths below remain for scripted or
-headless use.
+taxonomy, runs the download through RiboPilot's Nextflow workflow, and wires
+the result into the project automatically. The R and bash paths below remain
+for scripted or headless use.
 
 ### From R (recommended)
 

@@ -97,10 +97,10 @@ If you do not set a folder, RiboPilot uses a default location on your computer.
 
 # Building from the console
 
-You can also build a reference database directly, without going through the app.
-This is useful for building a database ahead of time, from a script, or on a
-machine without a browser; the app itself builds databases through its own
-Nextflow workflow and does not call this function. Use `build_reference_db()`.
+You can also build a reference database directly, without going through the app,
+using `build_reference_db()`. This is useful for building a database ahead of
+time, from a script, or on a machine without a browser; the app itself builds
+databases through its own Nextflow workflow and does not call this function.
 It takes a standard NCBI
 search (the same kind of query you would type on the
 [NCBI website](https://www.ncbi.nlm.nih.gov/)) and a short label for the group. It
@@ -149,8 +149,9 @@ RiboPilot::new_project(
 
 - **Build once, reuse forever.** If you run `build_reference_db()` again for the
   same group and location, it reuses what you already built instead of
-  re-downloading. To force a fresh rebuild, add `overwrite = TRUE`. The Reference
-  tab's Build button offers the same choice as a checkbox.
+  re-downloading; add `overwrite = TRUE` to force a fresh rebuild. From the
+  Reference tab, a group whose database already exists on disk is simply
+  wired up without starting a new build.
 - **Groups with few sequences.** Some groups have very little published ribosomal
   data. If your search returns only a handful of records (check with
   `count_only = TRUE` first), broaden it to a larger group. For example, search a
