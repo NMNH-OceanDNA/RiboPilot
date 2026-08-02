@@ -1,7 +1,7 @@
 # 16. Reference databases through Nextflow
 
-Status: design, not yet implemented. Supersedes the detached-Rscript build and
-the host-side record counting introduced with the Reference tab.
+Status: implemented. Supersedes the detached-Rscript build and the host-side
+record counting introduced with the Reference tab.
 
 ## Why
 

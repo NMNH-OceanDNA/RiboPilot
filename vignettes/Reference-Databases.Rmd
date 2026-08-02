@@ -43,18 +43,26 @@ database.
 Each row in the tab is one proposed group, showing the clade, how many of your
 samples it covers, and how many GenBank records back it up. From there you can:
 
-- **Build.** Starts the download in the background and writes the reference files
-  to your reference folder (see below). You can keep working in the app while it
-  runs; the row's state updates on its own, and a **Build log** shows progress or,
-  if a build fails, what went wrong. When a build finishes successfully, RiboPilot
-  automatically points that group's samples at the new database. Samples that are
-  already locked in the Assemble tab are left alone, since their results were
-  produced with whatever database they had before.
+- **Build.** Opens a run window, the same kind the Assemble tab uses, showing the
+  command that will run and letting you set an NCBI API key or restrict to
+  RefSeq records first. Press Run and the download happens through RiboPilot's
+  Nextflow workflow, with a live progress board and Stop / Close controls; you
+  can keep working in the app while it runs. If you are using RiboPilot through
+  a remote browser, the window instead offers an editable cluster job script to
+  submit or save. When a build finishes successfully, RiboPilot automatically
+  points that group's samples at the new database and writes the files to your
+  reference folder (see below). Samples that are already locked in the Assemble
+  tab are left alone, since their results were produced with whatever database
+  they had before. A group whose database already exists on disk is wired up
+  immediately, without starting a new build.
 - **Edit Clade.** Opens the group's shared lineage as a ladder, from the broadest
-  rank down to the narrowest, each rung showing how many samples and GenBank
-  records it covers. Pick a different rung to widen or narrow the group, or search
-  for another clade entirely. If the rung you pick does not cover every sample in
-  the group, the leftover samples are split off into a group of their own so
+  rank down to the narrowest, each rung showing how many samples it covers and,
+  for rungs RiboPilot has already counted, how many GenBank records back them
+  up; an uncounted rung shows "records unknown" rather than triggering a new
+  count. Pick a different rung to widen or narrow the group, or search for
+  another clade entirely; picking one runs a quick record count for that clade
+  if it is not already cached. If the rung you pick does not cover every sample
+  in the group, the leftover samples are split off into a group of their own so
   nobody is left under the wrong reference.
 - **Use Existing.** Points the group at a database that was already built, either
   earlier in this project or by someone else sharing the same reference folder.
@@ -91,7 +99,9 @@ If you do not set a folder, RiboPilot uses a default location on your computer.
 
 You can also build a reference database directly, without going through the app.
 This is useful for building a database ahead of time, from a script, or on a
-machine without a browser. Use `build_reference_db()`. It takes a standard NCBI
+machine without a browser; the app itself builds databases through its own
+Nextflow workflow and does not call this function. Use `build_reference_db()`.
+It takes a standard NCBI
 search (the same kind of query you would type on the
 [NCBI website](https://www.ncbi.nlm.nih.gov/)) and a short label for the group. It
 then downloads the relevant 18S, 5.8S, 28S, and ITS sequences and prepares the

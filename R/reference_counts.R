@@ -24,6 +24,8 @@ parse_record_count <- function(lines) {
 #' Runs the shipped builder script in `--count-only` mode, so the count matches
 #' exactly what a build of the same query would fetch. Requires Entrez Direct on
 #' PATH (pass `conda_env` when the app is not running inside that environment).
+#' The app now counts records through its Nextflow workflow instead; this
+#' function is unused by the app and kept only for the CLI path.
 #'
 #' @param query Advanced GenBank search term, e.g. `'"Asteroidea"[Organism]'`.
 #' @param api_key Optional NCBI API key.
