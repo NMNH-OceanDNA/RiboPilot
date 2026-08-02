@@ -107,6 +107,8 @@ reference_handlers <- function(input, output, session, deps) {
   ref_state <- shiny::reactiveVal(nf_progress_empty())
   headless_open <- shiny::reactiveVal(FALSE)
   gen_scripts <- shiny::reactiveVal(character(0))   # scripts this session generated
+  submitted <- shiny::reactiveVal(character(0))     # groups with a cluster job out
+  resubmit_ok <- shiny::reactiveVal(FALSE)
 
   with_con <- function(fn) {
     con <- deps$con(); on.exit(DBI::dbDisconnect(con)); fn(con)
@@ -161,12 +163,20 @@ reference_handlers <- function(input, output, session, deps) {
             # one start rank for both: the walk must only ask about rungs the
             # count run was told to count, or every answer comes back NA
             start_rank <- "family"
-            run_clade_counts(deps$project(), cfg$ref_dir, candidate_rungs(l, start_rank),
+            counts <- run_clade_counts(deps$project(), cfg$ref_dir, candidate_rungs(l, start_rank),
               api_key = Sys.getenv("NCBI_API_KEY", ""), runner = count_runner())
             s <- suggest_reference_groups(l, cache_count_fn(cfg$ref_dir),
               cfg$min_records, cfg$max_records, start_rank = start_rank)
-            if (nrow(s$groups) == 0) stop("Could not count GenBank records for any clade (the counting run returned no results; check the Nextflow log).",
-              call. = FALSE)
+            if (nrow(s$groups) == 0) {
+              # the counting run is the only thing that could have failed here,
+              # so its log is the message, not a pointer to a file
+              log <- attr(counts, "log")
+              tail <- log_tail(log, 5)
+              stop("Could not count GenBank records for any clade (the counting run returned no results).",
+                if (!is.null(log)) paste0(" Log: ", log, ".") else "",
+                if (nzchar(tail)) paste0(" Last lines: ", tail) else "",
+                call. = FALSE)
+            }
             write_reference_groups(con, s$groups, s$members)
             nrow(s$groups)
           })
@@ -386,6 +396,8 @@ reference_handlers <- function(input, output, session, deps) {
       list(todo = todo, ref_dir = cfg$ref_dir)
     }), error = function(e) e)
     if (inherits(res, "error")) { notify(conditionMessage(res), "error"); return() }
+    # a group whose database is now on disk has no job outstanding any more
+    submitted(setdiff(shiny::isolate(submitted()), setdiff(ids, res$todo)))
     if (length(res$todo) == 0) {
       wired <- tryCatch(with_con(function(con) start_reference_build(con, deps$project(), ids)),
         error = function(e) e)
@@ -451,10 +463,21 @@ reference_handlers <- function(input, output, session, deps) {
   shiny::observeEvent(input$ref_submit_job, {
     sched <- detect_scheduler()
     if (is.null(sched)) { notify("No scheduler (sbatch/qsub/bsub) found on PATH.", "warning"); return() }
+    # two BUILD runs copy into the same seed FASTA, so a second job for a group
+    # whose first job is still out can leave a half-written database behind
+    dup <- intersect(build_targets(), shiny::isolate(submitted()))
+    if (length(dup) > 0 && !isTRUE(shiny::isolate(resubmit_ok()))) {
+      resubmit_ok(TRUE)
+      notify(sprintf(paste0("A build job was already submitted for %d of these group(s) this session ",
+        "and may still be queued. Click Submit again to submit anyway."), length(dup)), "warning")
+      return()
+    }
+    resubmit_ok(FALSE)
     res <- tryCatch(write_ref_script(), error = function(e) e)
     if (inherits(res, "error")) { notify(conditionMessage(res), "error"); return() }
     out <- tryCatch(system2(sched$cmd, shQuote(res), stdout = TRUE, stderr = TRUE),
       error = function(e) conditionMessage(e))
+    submitted(unique(c(shiny::isolate(submitted()), build_targets())))
     headless_open(FALSE)
     shiny::removeModal()
     notify(paste0("Submitted via ", sched$cmd, ": ", paste(out, collapse = " "),
@@ -478,8 +501,7 @@ reference_handlers <- function(input, output, session, deps) {
       nf_env <- c("current", COLUMNS = "500", NXF_ANSI_SUMMARY = "true")
       pin <- nf_pin_version()
       if (!is.na(pin)) nf_env <- c(nf_env, NXF_VER = pin)
-      p <- processx::process$new(cmd, c(args, "-ansi-log"), stdout = "|", stderr = "|",
-        wd = deps$project(), env = nf_env)
+      p <- nf_spawn(cmd, c(args, "-ansi-log"), deps$project(), nf_env)
       ref_proc(p); ref_log(log)
       p$get_pid()
     }

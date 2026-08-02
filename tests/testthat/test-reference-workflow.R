@@ -10,14 +10,37 @@ test_that("the reference workflow ships with both entry points", {
   expect_true(grepl("splitCsv(header: true, sep: '\\t')", nf_txt, fixed = TRUE))
 })
 
-test_that("the workflow declares exactly the params the launcher passes", {
+test_that("the launcher passes every param a real container config interpolates", {
+  # the config, not the workflow file, is what a run parses first: a missing
+  # --projectDir / --rawDir makes Nextflow reject the whole config
+  proj <- withr::local_tempdir()
+  for (engine in c("docker", "singularity")) {
+    cfg <- c(RiboPilot:::container_engine_block(engine),
+      "process { executor = 'local' }",
+      "params {", "  rawDir = '/data/raw'", "  minDepth = 0", "}")
+    writeLines(cfg, file.path(proj, ".config"))
+    args <- nf_reference_command(proj, "COUNT", file.path(proj, "clades.tsv"),
+      file.path(proj, "ref"), file.path(proj, "out"))
+    passed <- sub("^--", "", grep("^--", args, value = TRUE))
+    needed <- unique(sub("^.*\\$\\{params\\.([A-Za-z_]+)\\}.*$", "\\1",
+      regmatches(paste(cfg, collapse = "\n"),
+        gregexpr("\\$\\{params\\.[A-Za-z_]+\\}", paste(cfg, collapse = "\n")))[[1]]))
+    expect_gt(length(needed), 0)
+    expect_true(all(needed %in% passed), info = engine)
+    expect_equal(args[which(args == "--rawDir") + 1], "/data/raw")
+    expect_equal(args[which(args == "--projectDir") + 1], path.expand(proj))
+  }
+})
+
+test_that("every param the launcher passes is one the workflow declares or the config needs", {
   proj <- withr::local_tempdir()
   args <- nf_reference_command(proj, "COUNT", file.path(proj, "clades.tsv"),
     file.path(proj, "ref"), file.path(proj, "out"), api_key = "KEY", refseq = TRUE)
   passed <- sub("^--", "", grep("^--", args, value = TRUE))
   declared <- sub("^params\\.([A-Za-z_]+).*$", "\\1",
     grep("^params\\.", strsplit(nf_txt, "\n")[[1]], value = TRUE))
-  expect_setequal(passed, declared)
+  # projectDir/rawDir are consumed by the executor config, not by the workflow
+  expect_setequal(setdiff(passed, c("projectDir", "rawDir")), declared)
 })
 
 test_that("the workflow publishes where reference_db_paths() looks", {
@@ -41,7 +64,10 @@ test_that("the workflow publishes where reference_db_paths() looks", {
 test_that("the task wrapper detaches stdin from Entrez Direct", {
   expect_true(nzchar(wrapper_file))
   # every invocation, in the wrapper and in the builder it delegates to
-  for (src in c(wrapper_file, test_path("..", "..", "R", "build_reference_db.R"))) {
+  builder_src <- test_path("..", "..", "R", "build_reference_db.R")
+  # R CMD check runs against an installed package, where R/ source is absent
+  skip_if_not(file.exists(builder_src))
+  for (src in c(wrapper_file, builder_src)) {
     txt <- readLines(src)
     calls <- sum(grepl("system2(", txt, fixed = TRUE))
     detached <- sum(grepl("stdin = \"/dev/null\"", txt, fixed = TRUE))

@@ -214,7 +214,7 @@ test_that("Suggest counts only uncached clades and then walks offline", {
   dbfile <- mk_split_db(dir)
   deps <- mk_split_deps(dbfile, dir)
   calls <- 0L
-  withr::local_options(list(ribopilot.count_runner = function(project, args) {
+  withr::local_options(list(ribopilot.count_runner = function(project, args, log = NULL) {
     calls <<- calls + 1L; 0L
   }))
   shiny::testServer(function(input, output, session) {
@@ -249,7 +249,7 @@ test_that("Suggest sends the uncached rungs to the runner", {
   testthat::local_mocked_bindings(
     genbank_rrna_count = function(...) { fetched <<- TRUE; NA_integer_ },
     .package = "RiboPilot")
-  withr::local_options(list(ribopilot.count_runner = function(project, args) {
+  withr::local_options(list(ribopilot.count_runner = function(project, args, log = NULL) {
     man <- args[which(args == "--clades") + 1L]
     sent <<- utils::read.delim(man)
     0L
@@ -303,7 +303,7 @@ test_that("apply-clade counts a cached clade without calling the runner", {
   dbfile <- mk_split_db(dir)
   deps <- mk_split_deps(dbfile, dir)
   calls <- 0L
-  withr::local_options(list(ribopilot.count_runner = function(project, args) {
+  withr::local_options(list(ribopilot.count_runner = function(project, args, log = NULL) {
     calls <<- calls + 1L; 0L
   }))
   shiny::testServer(function(input, output, session) {
@@ -429,6 +429,51 @@ test_that("an emptied script textarea falls back to a generated script", {
 
   script <- paste(readLines(file.path(dir, "submit_ribopilot_reference.sh")), collapse = "\n")
   expect_true(grepl("-entry BUILD", script, fixed = TRUE))
+})
+
+test_that("the in-app Build run pins NXF_VER and passes what the project config needs", {
+  skip_if_not_installed("withr")
+  dir <- withr::local_tempdir()
+  dbfile <- mk_split_db(dir)
+  deps <- mk_split_deps(dbfile, dir)
+  deps$selected_ids <- function() "asteroidea"
+  writeLines(c(RiboPilot:::container_engine_block("docker"),
+    "process { executor = 'local' }",
+    "params {", "  rawDir = '/data/raw'", "}"), file.path(dir, ".config"))
+
+  seen <- new.env()
+  # a stand-in for the processx handle: nothing is spawned, and the run reads as
+  # already finished so the streaming observer runs its exit branch too
+  fake <- list(get_pid = function() 424242L, is_alive = function() FALSE,
+    read_output_lines = function() c("executor >  local (1)", "run finished ok"),
+    read_error_lines = function() character(0), kill = function() TRUE)
+  testthat::local_mocked_bindings(
+    nf_pin_version = function(...) "25.10.6",
+    nf_spawn = function(cmd, args, wd, env) {
+      seen$cmd <- cmd; seen$args <- args; seen$env <- env; fake
+    }, .package = "RiboPilot")
+
+  shiny::testServer(function(input, output, session) {
+    RiboPilot:::reference_handlers(input, output, session, deps)
+  }, {
+    session$setInputs(ref_build_btn = 1)
+    session$flushReact()
+    session$setInputs(ref_nf_start = 1)
+    session$flushReact()
+    while (!later::loop_empty()) later::run_now()
+    session$flushReact()
+  })
+
+  expect_equal(seen$cmd, "nextflow")
+  expect_equal(unname(seen$env[["NXF_VER"]]), "25.10.6")
+  expect_equal(seen$args[which(seen$args == "-entry") + 1], "BUILD")
+  expect_equal(seen$args[which(seen$args == "--projectDir") + 1], path.expand(dir))
+  expect_equal(seen$args[which(seen$args == "--rawDir") + 1], "/data/raw")
+
+  con <- DBI::dbConnect(RSQLite::SQLite(), dbfile); on.exit(DBI::dbDisconnect(con))
+  log <- DBI::dbGetQuery(con, "SELECT log_file FROM reference WHERE ref_id = 'asteroidea'")$log_file[1]
+  expect_true(!is.na(log) && file.exists(log))
+  expect_true(any(grepl("run finished ok", readLines(log), fixed = TRUE)))
 })
 
 test_that("a hand-edited script is written as edited", {

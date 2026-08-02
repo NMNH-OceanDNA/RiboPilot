@@ -75,10 +75,18 @@ nf_reference_command <- function(project, entry, manifest, ref_dir, out_dir,
   main_nf <- app_sys("nextflow", "main_reference.nf")
   cfg <- file.path(project, ".config")
   cfg_lines <- if (file.exists(cfg)) readLines(cfg) else character(0)
+  # every container executor template interpolates params.projectDir and
+  # params.rawDir into docker/singularity runOptions, so a run that omits them
+  # cannot even parse the project config (see nf_command())
+  proj_dir <- path.expand(project)
+  raw_dir <- config_param(cfg_lines, "rawDir") %||% ""
+  if (length(raw_dir) == 0 || is.na(raw_dir) || !nzchar(raw_dir)) raw_dir <- proj_dir
   c("run", main_nf, "-entry", entry,
     if (file.exists(cfg)) c("-c", cfg),
     "-work-dir", work,
     if (isTRUE(resume)) "-resume",
+    "--projectDir", proj_dir,
+    "--rawDir", path.expand(raw_dir),
     "--clades", path.expand(manifest),
     "--refDir", path.expand(ref_dir),
     "--outDir", path.expand(out_dir),
@@ -91,13 +99,23 @@ nf_reference_command <- function(project, entry, manifest, ref_dir, out_dir,
 #' Run a Nextflow command to completion, returning its exit status
 #'
 #' Split out so tests can substitute a runner that spawns nothing.
+#' @param log Optional file the run's output is written to, so a failure has a
+#'   diagnostic instead of a discarded stream.
 #' @noRd
-nf_run_blocking <- function(project, args) {
+nf_run_blocking <- function(project, args, log = NULL) {
   if (!nzchar(Sys.which("nextflow"))) {
     stop("Nextflow not found on PATH.", call. = FALSE)
   }
+  # unpinned, a Nextflow 26 install rejects -entry with "not supported with the
+  # strict parser", so every count run fails on an otherwise fine workflow
+  nf_env <- c("current", COLUMNS = "500")
+  pin <- nf_pin_version()
+  if (!is.na(pin)) nf_env <- c(nf_env, NXF_VER = pin)
   p <- processx::run("nextflow", args, wd = project, error_on_status = FALSE,
-    stdout = "|", stderr = "2>&1")
+    env = nf_env, stdout = "|", stderr = "2>&1")
+  if (!is.null(log) && nzchar(log %||% "")) {
+    append_run_log(log, strsplit(p$stdout %||% "", "\n", fixed = TRUE)[[1]])
+  }
   p$status
 }
 
@@ -112,7 +130,10 @@ run_clade_counts <- function(project, ref_dir, clades, api_key = "", refseq = FA
     stop("run_clade_counts: 'project' must be an existing directory.", call. = FALSE)
   }
   cache <- read_counts_cache(ref_dir)
-  need <- clades[!(as.integer(clades$taxid) %in% cache$taxid), , drop = FALSE]
+  # a cached NA is not an answer: keying on presence alone would skip that clade
+  # for good, so only rows with a real count count as cached
+  counted <- cache$taxid[!is.na(cache$taxid) & !is.na(cache$n_records)]
+  need <- clades[!(as.integer(clades$taxid) %in% counted), , drop = FALSE]
   need$taxid <- as.integer(need$taxid)
   need <- need[!duplicated(need$taxid), , drop = FALSE]
   if (nrow(need) == 0) return(cache)
@@ -121,14 +142,19 @@ run_clade_counts <- function(project, ref_dir, clades, api_key = "", refseq = FA
   unlink(out, recursive = TRUE)
   dir.create(out, recursive = TRUE, showWarnings = FALSE)
   man <- write_clade_manifest(file.path(rundir, "clades_count.tsv"), need)
+  log <- file.path(rundir, paste0("count_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".log"))
+  unlink(log); file.create(log)
   args <- nf_reference_command(project, "COUNT", man, ref_dir, out,
     api_key = api_key, refseq = refseq, resume = FALSE)
   # a non-zero status is not fatal: clades that did report are still worth
   # keeping, and the walk treats a missing count as unknown
-  status <- runner(project, args)
+  status <- runner(project, args, log)
   if (!identical(status, 0L) && !identical(status, 0)) {
     warning("run_clade_counts: Nextflow COUNT run exited with status ", status,
       call. = FALSE)
   }
-  merge_counts(ref_dir, read_count_files(out))
+  res <- merge_counts(ref_dir, read_count_files(out))
+  # carried so the caller's failure message can quote the run that produced it
+  attr(res, "log") <- log
+  res
 }

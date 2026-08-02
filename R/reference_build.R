@@ -267,6 +267,16 @@ processx_launcher <- function(cmd, args, log) {
   p$get_pid()
 }
 
+#' Spawn a Nextflow process with piped output
+#'
+#' Indirected so a test can capture the command and environment without any
+#' process being started.
+#' @noRd
+nf_spawn <- function(cmd, args, wd, env) {
+  if (!nzchar(Sys.which(cmd))) stop("Nextflow not found on PATH.", call. = FALSE)
+  processx::process$new(cmd, args, stdout = "|", stderr = "|", wd = wd, env = env)
+}
+
 #' Is a pid still running?
 #' @noRd
 process_alive <- function(pid) {

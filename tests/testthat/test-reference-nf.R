@@ -89,7 +89,7 @@ test_that("run_clade_counts skips cached clades and merges what the run produced
   utils::write.table(data.frame(taxid = 33208L, n_records = 900000L),
     file.path(ref, "counts.tsv"), sep = "\t", row.names = FALSE, quote = FALSE)
   seen <- new.env()
-  runner <- function(project, args) {
+  runner <- function(project, args, log = NULL) {
     seen$args <- args
     out <- args[which(args == "--outDir") + 1]
     dir.create(out, recursive = TRUE, showWarnings = FALSE)
@@ -108,12 +108,45 @@ test_that("run_clade_counts skips cached clades and merges what the run produced
   expect_equal(man$taxid, 7898L)
 })
 
+test_that("a clade cached as NA is counted again, not skipped forever", {
+  d <- withr::local_tempdir()
+  ref <- file.path(d, "refs"); dir.create(ref)
+  # the pre-Nextflow counter wrote NA on a failed fetch; that is not an answer
+  writeLines(c("taxid\tn_records", "7898\tNA"), file.path(ref, "counts.tsv"))
+  runner <- function(project, args, log = NULL) {
+    out <- args[which(args == "--outDir") + 1]
+    dir.create(out, recursive = TRUE, showWarnings = FALSE)
+    writeLines("7898\t11750", file.path(out, "7898.count"))
+    0L
+  }
+  out <- RiboPilot:::run_clade_counts(d, ref,
+    data.frame(ref_id = "a", taxid = 7898L, clade_name = "Actinopterygii",
+      query = "q", stringsAsFactors = FALSE), runner = runner)
+  expect_equal(out$n_records[out$taxid == 7898L], 11750L)
+})
+
+test_that("run_clade_counts writes a log the caller can quote", {
+  d <- withr::local_tempdir()
+  ref <- file.path(d, "refs"); dir.create(ref)
+  runner <- function(project, args, log = NULL) {
+    RiboPilot:::append_run_log(log, "ERROR ~ Unknown config attribute")
+    1L
+  }
+  out <- NULL
+  suppressWarnings(out <- RiboPilot:::run_clade_counts(d, ref,
+    data.frame(ref_id = "a", taxid = 7898L, clade_name = "Actinopterygii",
+      query = "q", stringsAsFactors = FALSE), runner = runner))
+  log <- attr(out, "log")
+  expect_true(file.exists(log))
+  expect_true(grepl("Unknown config attribute", RiboPilot:::log_tail(log, 3), fixed = TRUE))
+})
+
 test_that("run_clade_counts launches nothing when every clade is cached", {
   d <- withr::local_tempdir()
   ref <- file.path(d, "refs"); dir.create(ref)
   utils::write.table(data.frame(taxid = 7898L, n_records = 11750L),
     file.path(ref, "counts.tsv"), sep = "\t", row.names = FALSE, quote = FALSE)
-  runner <- function(project, args) stop("must not launch")
+  runner <- function(project, args, log = NULL) stop("must not launch")
   out <- RiboPilot:::run_clade_counts(d, ref,
     data.frame(ref_id = "a", taxid = 7898L, clade_name = "Actinopterygii",
       query = "q", stringsAsFactors = FALSE), runner = runner)
@@ -123,7 +156,7 @@ test_that("run_clade_counts launches nothing when every clade is cached", {
 test_that("a failed run still merges whatever counts landed", {
   d <- withr::local_tempdir()
   ref <- file.path(d, "refs"); dir.create(ref)
-  runner <- function(project, args) {
+  runner <- function(project, args, log = NULL) {
     out <- args[which(args == "--outDir") + 1]
     dir.create(out, recursive = TRUE, showWarnings = FALSE)
     writeLines("7898\t11750", file.path(out, "7898.count"))
@@ -144,7 +177,7 @@ test_that("run_clade_counts rejects an unvalidated project before deleting anyth
   ref <- file.path(d, "refs"); dir.create(ref)
   clades <- data.frame(ref_id = "a", taxid = 7898L, clade_name = "Actinopterygii",
     query = "q", stringsAsFactors = FALSE)
-  runner <- function(project, args) stop("must not launch")
+  runner <- function(project, args, log = NULL) stop("must not launch")
 
   expect_error(RiboPilot:::run_clade_counts("", ref, clades, runner = runner))
   expect_error(RiboPilot:::run_clade_counts(NA_character_, ref, clades, runner = runner))
