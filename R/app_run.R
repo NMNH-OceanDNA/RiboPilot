@@ -13,33 +13,50 @@ detect_scheduler <- function() {
   NULL
 }
 
-#' Build a cluster job script that runs the Nextflow command for a workflow
+#' Wrap a Nextflow command in a scheduler job script
 #'
-#' Wraps [nf_command()] in a scheduler job script (with a directive header for
-#' the detected scheduler), so a multi-hour run is submitted to the queue rather
-#' than executed on the login node. The script is a starting point the user can
-#' edit in the run modal before saving/submitting.
+#' A multi-hour run belongs in the queue, not on the login node. The script is a
+#' starting point the user can edit in the run modal before saving/submitting.
 #' @noRd
-build_submit_script <- function(project, resume = TRUE, sched = detect_scheduler()) {
-  args <- nf_command(project, resume = resume)
-  cmd <- paste(c("nextflow", args, "-ansi-log false"), collapse = " ")
-  jobname <- "ribopilot"
+job_script <- function(project, cmd, sched, jobname) {
   hdr <- if (is.null(sched)) {
     character(0)
   } else {
     switch(sched$cmd,
       sbatch = c(sprintf("#SBATCH -J %s", jobname), "#SBATCH -c 2",
-        "#SBATCH --mem=8G", "#SBATCH -t 48:00:00", "#SBATCH -o ribopilot_%j.log"),
+        "#SBATCH --mem=8G", "#SBATCH -t 48:00:00", sprintf("#SBATCH -o %s_%%j.log", jobname)),
       qsub = c(sprintf("#$ -N %s", jobname), "#$ -cwd", "#$ -pe mpi 2",
-        "#$ -l h_vmem=8G", "#$ -j y", "#$ -o ribopilot.$JOB_ID.log"),
+        "#$ -l h_vmem=8G", "#$ -j y", sprintf("#$ -o %s.$JOB_ID.log", jobname)),
       bsub = c(sprintf("#BSUB -J %s", jobname), "#BSUB -n 2",
-        "#BSUB -M 8000", "#BSUB -o ribopilot.%J.log"),
+        "#BSUB -M 8000", sprintf("#BSUB -o %s.%%J.log", jobname)),
       character(0))
   }
   pin <- nf_pin_version()
   pin_line <- if (is.na(pin)) character(0) else paste0("export NXF_VER=", pin)
   paste(c("#!/bin/bash", hdr, "", pin_line, sprintf("cd %s", shQuote(project)), cmd, ""),
     collapse = "\n")
+}
+
+#' Cluster job script for the main workflow
+#' @noRd
+build_submit_script <- function(project, resume = TRUE, sched = detect_scheduler()) {
+  cmd <- paste(c("nextflow", nf_command(project, resume = resume), "-ansi-log false"),
+    collapse = " ")
+  job_script(project, cmd, sched, "ribopilot")
+}
+
+#' Cluster job script for a reference BUILD run
+#'
+#' The manifest must already be on disk: the job reads it when it runs, which is
+#' long after the modal that wrote the script has closed.
+#' @noRd
+build_reference_submit_script <- function(project, manifest, ref_dir, api_key = "",
+                                          refseq = FALSE, resume = TRUE,
+                                          sched = detect_scheduler()) {
+  args <- nf_reference_command(project, "BUILD", manifest, ref_dir, ref_dir,
+    api_key = api_key, refseq = refseq, resume = resume)
+  job_script(project, paste(c("nextflow", args, "-ansi-log false"), collapse = " "),
+    sched, "ribopilot_ref")
 }
 
 #' Open the RiboPilot GUI

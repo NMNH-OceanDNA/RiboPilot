@@ -103,6 +103,7 @@ reference_handlers <- function(input, output, session, deps) {
   build_targets <- shiny::reactiveVal(character(0))
   picked <- shiny::reactiveVal(NULL)   # taxid chosen from the search box
   ref_proc <- shiny::reactiveVal(NULL)
+  ref_log <- shiny::reactiveVal("")
   ref_state <- shiny::reactiveVal(nf_progress_empty())
 
   with_con <- function(fn) {
@@ -354,20 +355,51 @@ reference_handlers <- function(input, output, session, deps) {
   })
 
   # ---- build: one Nextflow run for every selected group ----
+  # the job script is written now but runs much later, so the manifest it reads
+  # has to be on disk before the modal closes
+  ref_submit_script <- function() {
+    with_con(function(con) {
+      cfg <- ref_config(con)
+      ids <- reference_missing_dbs(cfg$ref_dir, build_targets())
+      if (length(ids) == 0) return("")
+      man <- write_build_manifest(deps$project(), reference_rows(con, ids))
+      build_reference_submit_script(deps$project(), man, cfg$ref_dir,
+        api_key = input$ref_api_key %||% "", refseq = isTRUE(input$ref_refseq),
+        resume = isTRUE(input$ref_nf_resume %||% TRUE), sched = detect_scheduler())
+    })
+  }
+
   shiny::observeEvent(input$ref_build_btn, {
     ids <- deps$selected_ids()
     if (length(ids) == 0) { notify("Select the group(s) to build.", "warning"); return() }
     build_targets(ids)
     ref_state(nf_progress_empty())
-    res <- tryCatch(with_con(function(con) reference_run_modal(length(ids), ref_config(con)$ref_dir)),
-      error = function(e) e)
+    res <- tryCatch(with_con(function(con) {
+      cfg <- ref_config(con)
+      # count what will actually run: a group whose database is already on disk
+      # is wired from it, never built
+      todo <- reference_missing_dbs(cfg$ref_dir, ids)
+      list(todo = todo, ref_dir = cfg$ref_dir)
+    }), error = function(e) e)
     if (inherits(res, "error")) { notify(conditionMessage(res), "error"); return() }
-    shiny::showModal(res)
+    if (length(res$todo) == 0) {
+      wired <- tryCatch(with_con(function(con) start_reference_build(con, deps$project(), ids)),
+        error = function(e) e)
+      if (inherits(wired, "error")) { notify(conditionMessage(wired), "error"); return() }
+      bump()
+      notify(sprintf("%d group(s) already had a database in the reference folder; wired those.",
+        length(ids)))
+      return()
+    }
+    hl <- app_headless()
+    sched <- if (hl) detect_scheduler() else NULL
+    script <- if (hl) tryCatch(ref_submit_script(), error = function(e) "") else ""
+    shiny::showModal(reference_run_modal(length(res$todo), res$ref_dir,
+      headless = hl, sched = sched, script = script))
   })
 
   build_args <- function(con) {
-    nf_reference_command(deps$project(), "BUILD",
-      file.path(deps$project(), ".reference", "clades_build.tsv"),
+    nf_reference_command(deps$project(), "BUILD", reference_manifest_path(deps$project()),
       ref_config(con)$ref_dir, ref_config(con)$ref_dir,
       api_key = input$ref_api_key %||% "", refseq = isTRUE(input$ref_refseq),
       resume = isTRUE(input$ref_nf_resume %||% TRUE))
@@ -376,6 +408,31 @@ reference_handlers <- function(input, output, session, deps) {
     args <- tryCatch(with_con(build_args), error = function(e) NULL)
     if (is.null(args)) return("")
     paste(c("nextflow", args), collapse = " ")
+  })
+
+  # ---- headless: save / submit the job script instead of running locally ----
+  write_ref_script <- function() {
+    script <- input$ref_submit_script_text %||% ref_submit_script()
+    f <- file.path(deps$project(), "submit_ribopilot_reference.sh")
+    writeLines(script, f)
+    try(Sys.chmod(f, "0755"), silent = TRUE)
+    f
+  }
+  shiny::observeEvent(input$ref_save_script, {
+    res <- tryCatch(write_ref_script(), error = function(e) e)
+    if (inherits(res, "error")) { notify(conditionMessage(res), "error"); return() }
+    notify(paste0("Saved job script to ", res, ". Run Build again once the job finishes to wire the databases."))
+  })
+  shiny::observeEvent(input$ref_submit_job, {
+    sched <- detect_scheduler()
+    if (is.null(sched)) { notify("No scheduler (sbatch/qsub/bsub) found on PATH.", "warning"); return() }
+    res <- tryCatch(write_ref_script(), error = function(e) e)
+    if (inherits(res, "error")) { notify(conditionMessage(res), "error"); return() }
+    out <- tryCatch(system2(sched$cmd, shQuote(res), stdout = TRUE, stderr = TRUE),
+      error = function(e) conditionMessage(e))
+    shiny::removeModal()
+    notify(paste0("Submitted via ", sched$cmd, ": ", paste(out, collapse = " "),
+      ". Run Build again once the job finishes to wire the databases."))
   })
 
   idle_buttons <- function() {
@@ -397,7 +454,7 @@ reference_handlers <- function(input, output, session, deps) {
       if (!is.na(pin)) nf_env <- c(nf_env, NXF_VER = pin)
       p <- processx::process$new(cmd, c(args, "-ansi-log"), stdout = "|", stderr = "|",
         wd = deps$project(), env = nf_env)
-      ref_proc(p)
+      ref_proc(p); ref_log(log)
       p$get_pid()
     }
     res <- tryCatch(with_con(function(con) start_reference_build(con, deps$project(), ids,
@@ -405,7 +462,9 @@ reference_handlers <- function(input, output, session, deps) {
       resume = isTRUE(input$ref_nf_resume %||% TRUE), launcher = launcher)),
       error = function(e) e)
     if (inherits(res, "error")) {
-      idle_buttons(); notify(conditionMessage(res), "error"); return()
+      # the launcher may already have spawned Nextflow; nothing stamped the rows,
+      # so leaving it running would produce results the poll never wires
+      kill_ref_nf(); idle_buttons(); notify(conditionMessage(res), "error"); return()
     }
     bump()
     if (is.null(res)) {
@@ -421,7 +480,11 @@ reference_handlers <- function(input, output, session, deps) {
     grab <- function() {
       out <- tryCatch(p$read_output_lines(), error = function(e) character(0))
       err <- tryCatch(p$read_error_lines(), error = function(e) character(0))
-      if (length(c(out, err))) ref_state(nf_progress_parse(ref_state(), c(out, err)))
+      if (length(c(out, err))) {
+        ref_state(nf_progress_parse(ref_state(), c(out, err)))
+        # the rows record a log path, so the piped stream is teed into it
+        append_run_log(ref_log(), c(out, err))
+      }
     }
     if (p$is_alive()) {
       grab()
@@ -451,7 +514,7 @@ reference_handlers <- function(input, output, session, deps) {
     kill_ref_nf(); idle_buttons(); poll_now(); bump()
   })
   shiny::observeEvent(input$ref_nf_close, {
-    kill_ref_nf(); shiny::removeModal()
+    kill_ref_nf(); shiny::removeModal(); poll_now(); bump()
   })
 
   # ---- log tail ----

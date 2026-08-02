@@ -343,3 +343,37 @@ test_that("the headless reference modal offers the job script instead of a local
   expect_true(grepl("ref_save_script", html, fixed = TRUE))
   expect_false(grepl("ref_nf_start", html, fixed = TRUE))
 })
+
+test_that("headless Build offers a BUILD job script and saves it, running nothing", {
+  skip_if_not_installed("withr")
+  dir <- withr::local_tempdir()
+  dbfile <- mk_split_db(dir)
+  deps <- mk_split_deps(dbfile, dir)
+  deps$selected_ids <- function() "asteroidea"
+  withr::local_options(list(RiboPilot.headless = TRUE))
+
+  shiny::testServer(function(input, output, session) {
+    RiboPilot:::reference_handlers(input, output, session, deps)
+  }, {
+    session$setInputs(ref_build_btn = 1)
+    session$flushReact()
+    session$setInputs(ref_save_script = 1)
+    session$flushReact()
+    while (!later::loop_empty()) later::run_now()
+  })
+
+  f <- file.path(dir, "submit_ribopilot_reference.sh")
+  expect_true(file.exists(f))
+  script <- paste(readLines(f), collapse = "\n")
+  expect_true(grepl("nextflow run", script, fixed = TRUE))
+  expect_true(grepl("-entry BUILD", script, fixed = TRUE))
+  expect_true(grepl("--clades", script, fixed = TRUE))
+  # the job reads the manifest long after the modal closed, so it must be on disk
+  man <- utils::read.delim(RiboPilot:::reference_manifest_path(dir), stringsAsFactors = FALSE)
+  expect_equal(man$ref_id, "asteroidea")
+  # nothing was launched: the group is still pending, with no pid
+  con <- DBI::dbConnect(RSQLite::SQLite(), dbfile); on.exit(DBI::dbDisconnect(con))
+  r <- DBI::dbGetQuery(con, "SELECT reference_switch, pid FROM reference WHERE ref_id = 'asteroidea'")
+  expect_equal(r$reference_switch[1], 1L)
+  expect_true(is.na(r$pid[1]))
+})

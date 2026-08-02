@@ -274,6 +274,56 @@ process_alive <- function(pid) {
   isTRUE(tryCatch(ps::ps_is_running(ps::ps_handle(as.integer(pid))), error = function(e) FALSE))
 }
 
+#' Where a project's BUILD clade manifest lives
+#'
+#' Fixed, so the command shown in the modal is the command that runs.
+#' @noRd
+reference_manifest_path <- function(project) {
+  file.path(project, ".reference", "clades_build.tsv")
+}
+
+#' Reference rows for a set of group keys, erroring on an unknown key
+#' @noRd
+reference_rows <- function(con, ref_ids) {
+  ref_ids <- unique(as.character(ref_ids))
+  ph <- paste(rep("?", length(ref_ids)), collapse = ",")
+  rows <- DBI::dbGetQuery(con,
+    sprintf("SELECT * FROM reference WHERE ref_id IN (%s)", ph), params = as.list(ref_ids))
+  gone <- setdiff(ref_ids, rows$ref_id)
+  if (length(gone) > 0) stop("No reference group '", gone[1], "'.", call. = FALSE)
+  rows
+}
+
+#' Group keys whose seed/label FASTAs are not both on disk yet
+#' @noRd
+reference_missing_dbs <- function(ref_dir, ref_ids) {
+  ref_ids <- unique(as.character(ref_ids))
+  ref_ids[!vapply(ref_ids, function(r) {
+    p <- reference_db_paths(ref_dir, r)
+    file.exists(p$seeds) && file.exists(p$labels)
+  }, logical(1))]
+}
+
+#' Write the BUILD manifest for a set of reference rows
+#' @noRd
+write_build_manifest <- function(project, rows) {
+  write_clade_manifest(reference_manifest_path(project),
+    data.frame(ref_id = rows$ref_id, taxid = as.integer(rows$clade_taxid),
+      clade_name = rows$clade_name, query = rows$query, stringsAsFactors = FALSE))
+}
+
+#' Append run output to the log a build's rows point at
+#'
+#' The in-app run pipes Nextflow's output into R for the progress pane, so the
+#' log the rows record only exists if the stream is teed into it.
+#' @noRd
+append_run_log <- function(log, lines) {
+  if (is.null(log) || length(log) != 1 || is.na(log) || !nzchar(log)) return(invisible(NULL))
+  if (length(lines) == 0) return(invisible(NULL))
+  cat(paste0(cli::ansi_strip(lines), "\n"), file = log, sep = "", append = TRUE)
+  invisible(NULL)
+}
+
 #' Start one background build run covering a set of clade groups
 #'
 #' One Nextflow run handles every group, so all launched rows share the pid, the
@@ -293,11 +343,7 @@ start_reference_build <- function(con, project, ref_ids, api_key = NULL, refseq 
                                   launcher = processx_launcher) {
   ref_ids <- unique(as.character(ref_ids))
   if (length(ref_ids) == 0) return(invisible(NULL))
-  ph <- paste(rep("?", length(ref_ids)), collapse = ",")
-  rows <- DBI::dbGetQuery(con,
-    sprintf("SELECT * FROM reference WHERE ref_id IN (%s)", ph), params = as.list(ref_ids))
-  gone <- setdiff(ref_ids, rows$ref_id)
-  if (length(gone) > 0) stop("No reference group '", gone[1], "'.", call. = FALSE)
+  rows <- reference_rows(con, ref_ids)
   cfg <- ref_config(con)
 
   # Without overwrite a group whose database is already on disk would be rebuilt
@@ -317,10 +363,9 @@ start_reference_build <- function(con, project, ref_ids, api_key = NULL, refseq 
   dir.create(rundir, recursive = TRUE, showWarnings = FALSE)
   log <- file.path(rundir, paste0("build_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".log"))
   unlink(log)
+  file.create(log)
 
-  man <- write_clade_manifest(file.path(rundir, "clades_build.tsv"),
-    data.frame(ref_id = rows$ref_id, taxid = as.integer(rows$clade_taxid),
-      clade_name = rows$clade_name, query = rows$query, stringsAsFactors = FALSE))
+  man <- write_build_manifest(project, rows)
   args <- nf_reference_command(project, "BUILD", man, cfg$ref_dir, cfg$ref_dir,
     api_key = api_key %||% "", refseq = isTRUE(refseq), resume = isTRUE(resume))
 

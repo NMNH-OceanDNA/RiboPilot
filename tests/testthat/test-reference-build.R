@@ -122,16 +122,69 @@ test_that("one build run covers every group and shares its pid", {
   launcher <- function(cmd, args, log) { seen$cmd <- cmd; seen$args <- args; 4242L }
   RiboPilot:::start_reference_build(con, proj, c("asteroidea", "gastropoda"),
     launcher = launcher)
-  r <- DBI::dbGetQuery(con, "SELECT ref_id, pid, reference_switch, log_file FROM reference ORDER BY ref_id")
+  r <- DBI::dbGetQuery(con,
+    "SELECT ref_id, pid, reference_switch, log_file, time_stamp FROM reference ORDER BY ref_id")
   expect_equal(nrow(r), 2L)
   expect_true(all(r$pid == 4242L))
   expect_true(all(r$reference_switch == 4L))
   expect_equal(length(unique(r$log_file)), 1L)
+  expect_equal(length(unique(r$time_stamp)), 1L)
   expect_equal(seen$cmd, "nextflow")
   expect_true("-entry" %in% seen$args)
   expect_equal(seen$args[which(seen$args == "-entry") + 1], "BUILD")
   man <- utils::read.delim(seen$args[which(seen$args == "--clades") + 1], stringsAsFactors = FALSE)
   expect_setequal(man$ref_id, c("asteroidea", "gastropoda"))
+})
+
+test_that("a mixed set reuses what exists and launches only the rest", {
+  con <- mk_ref_db(); on.exit(DBI::dbDisconnect(con))
+  proj <- withr::local_tempdir()
+  refs <- withr::local_tempdir()
+  RiboPilot:::set_ref_config(con, ref_dir = refs)
+  two <- rbind(grp, data.frame(ref_id = "gastropoda", clade_taxid = 6448L,
+    clade_name = "Gastropoda", clade_rank = "class", n_records = 5000L, n_samples = 1L,
+    stringsAsFactors = FALSE))
+  RiboPilot:::write_reference_groups(con, two,
+    data.frame(ID = c("S1", "S2"), ref_id = c("asteroidea", "gastropoda"),
+      stringsAsFactors = FALSE))
+  # asteroidea already has a database on disk; gastropoda does not
+  p <- RiboPilot:::reference_db_paths(refs, "asteroidea")
+  dir.create(dirname(p$seeds), recursive = TRUE, showWarnings = FALSE)
+  dir.create(dirname(p$labels), recursive = TRUE, showWarnings = FALSE)
+  writeLines(">x", p$seeds); writeLines(">18S", p$labels)
+
+  seen <- new.env()
+  RiboPilot:::start_reference_build(con, proj, c("asteroidea", "gastropoda"),
+    launcher = function(cmd, args, log) { seen$args <- args; 77L })
+  r <- DBI::dbGetQuery(con, "SELECT ref_id, reference_switch, source, pid FROM reference ORDER BY ref_id")
+  a <- r[r$ref_id == "asteroidea", ]
+  g <- r[r$ref_id == "gastropoda", ]
+  expect_equal(a$reference_switch, 2L)
+  expect_equal(a$source, "existing")
+  expect_true(is.na(a$pid))
+  expect_equal(g$reference_switch, 4L)
+  expect_equal(g$pid, 77L)
+  man <- utils::read.delim(seen$args[which(seen$args == "--clades") + 1], stringsAsFactors = FALSE)
+  expect_equal(man$ref_id, "gastropoda")
+})
+
+test_that("a failed build's fail_reason carries the tail of its log", {
+  con <- mk_ref_db(); on.exit(DBI::dbDisconnect(con))
+  RiboPilot:::set_ref_config(con, ref_dir = withr::local_tempdir())
+  RiboPilot:::write_reference_groups(con, grp, mem)
+  # the in-app run pipes Nextflow's output into R, so the log only exists if the
+  # stream is teed into it; append_run_log() is what does that
+  RiboPilot:::start_reference_build(con, withr::local_tempdir(), "asteroidea",
+    launcher = function(cmd, args, log) {
+      RiboPilot:::append_run_log(log, c("\033[1mstarting\033[0m", "Missing output file: seeds"))
+      13L
+    })
+  RiboPilot:::poll_reference_builds(con, alive_fn = function(pid) FALSE)
+  r <- DBI::dbGetQuery(con, "SELECT log_file, fail_reason FROM reference")
+  expect_true(file.exists(r$log_file[1]))
+  expect_true(grepl("Missing output file: seeds", r$fail_reason[1], fixed = TRUE))
+  # the ANSI escapes the progress board emits are stripped before the log is written
+  expect_false(grepl("\033", readLines(r$log_file[1]), fixed = TRUE)[1])
 })
 
 test_that("start_reference_build records the job and poll finishes it", {
