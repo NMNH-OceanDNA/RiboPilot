@@ -431,6 +431,16 @@ to triage.
 
 Test suite passes after all five.
 
+## Status
+
+All six items in the attack order below are done, on branch `review-fixes-2026-08`.
+Everything else in this report is still open.
+
+**One follow-up this created.** Projects that already exist hold lineage strings
+in the old collapsed format, and nothing re-resolves them. A stale lineage with a
+missing rank is detectable (fewer than seven `;`-separated fields), so the app
+could warn and offer to re-resolve. Not built.
+
 ## Suggested order of attack
 
 1. `app_con()` calls `open_project_db()`. One line, removes the app half of
