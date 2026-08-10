@@ -13,6 +13,7 @@ run_app(
   host = NULL,
   port = NULL,
   launch.browser = NULL,
+  headless = NULL,
   ...
 )
 }
@@ -22,6 +23,9 @@ run_app(
 \item{onStart, options, enableBookmarking, uiPattern}{Shiny app options.}
 
 \item{host, port, launch.browser}{Shiny server options.}
+
+\item{headless}{Offer a cluster job script instead of a local run. `NULL`
+(default) detects it; see [detect_headless()].}
 
 \item{...}{Passed to golem options.}
 }
