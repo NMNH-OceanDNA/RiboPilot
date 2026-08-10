@@ -106,7 +106,7 @@ test_that("main.nf includes fallback_assemble and still passes seeds to GetOrgan
   go_call <- grep("assemble\\(asm_branched\\.go", main_nf)
   expect_length(go_call, 1)
   block <- paste(main_nf[go_call:(go_call + 1)], collapse = " ")
-  expect_match(block, "tuple\\(id, reads, cpus, mem, go, seeds, labels\\)")
+  expect_match(block, "tuple\\(id, reads, cpus, mem, go, file\\(seeds\\), file\\(labels\\)\\)")
 })
 
 test_that("there is ONE workflow: no second file left to drift", {
@@ -264,7 +264,7 @@ test_that("a config with no container engine gets no mount option", {
   proj <- withr::local_tempdir(); refs <- withr::local_tempdir()
   s <- file.path(refs, "x_seeds.fasta"); l <- file.path(refs, "x_labels.fasta")
   writeLines(">18S", s); writeLines(">18S", l)
-  writeLines(c("process { executor = 'local' }", "params { rawDir = '/data/raw' }"),
+  writeLines(c("process { executor = 'local' }", "params {", "  rawDir = '/data/raw'", "}"),
     file.path(proj, ".config"))
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(proj, ".sqlite"))
   DBI::dbExecute(con, "CREATE TABLE assemble_opts (assemble_opts TEXT, seeds_db TEXT, labels_db TEXT)")
@@ -293,7 +293,7 @@ test_that("directories the config already mounts are not mounted twice", {
   # the mount the config carries names refs explicitly, as new_project() writes it
   writeLines(c("docker {", "  enabled = true",
     sprintf('  runOptions = "-v ${params.projectDir}:${params.projectDir} -v %s:%s"', refs, refs),
-    "}", "params { rawDir = '/data/raw' }"), file.path(proj, ".config"))
+    "}", "params {", "  rawDir = '/data/raw'", "}"), file.path(proj, ".config"))
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(proj, ".sqlite"))
   DBI::dbExecute(con, "CREATE TABLE assemble_opts (assemble_opts TEXT, seeds_db TEXT, labels_db TEXT)")
   DBI::dbExecute(con, "INSERT INTO assemble_opts VALUES ('a', ?, ?)", params = list(s, l))
@@ -369,4 +369,49 @@ test_that("the shipped config sets pipefail and throttles the NCBI processes", {
   expect_match(txt, "pipefail")
   expect_match(txt, "blast_genbank\\|blast_ref_fetch")
   expect_match(txt, "maxForks")
+})
+
+test_that("an out-of-memory kill retries with more memory instead of dropping", {
+  txt <- paste(readLines(system.file("nextflow", "nextflow.config", package = "RiboPilot")),
+    collapse = " ")
+  expect_match(txt, "assemble\\|fallback_assemble\\|preprocess\\|annotate_tools")
+  for (code in c(104, 134, 137, 139, 140, 143, 247)) {
+    expect_match(txt, paste0("\\b", code, "\\b"))
+  }
+  expect_match(txt, "'retry' : 'ignore'", fixed = TRUE)
+  expect_match(txt, "maxRetries = 3", fixed = TRUE)
+  # without task.attempt in the memory closure the retry asks for the same
+  # allocation that just failed. Derive the process list from the selector
+  # rather than hardcoding it, so adding a process to the retry policy cannot
+  # quietly skip this check.
+  nf_dir <- system.file("nextflow", package = "RiboPilot")
+  pipeline_cfg <- readLines(file.path(nf_dir, "nextflow.config"))
+  sel <- sub(".*withName: *'([^']+)'.*", "\\1",
+    grep("withName.*assemble", pipeline_cfg, value = TRUE)[1])
+  procs <- strsplit(sel, "|", fixed = TRUE)[[1]]
+  expect_gt(length(procs), 1)
+  mods <- list.files(file.path(nf_dir, "modules"), pattern = "\\.nf$", full.names = TRUE)
+  for (p in procs) {
+    mem <- NULL
+    for (f in mods) {
+      lines <- readLines(f)
+      s <- grep(paste0("^process\\s+", p, "\\s*\\{"), lines)
+      if (!length(s)) next
+      body <- lines[s:min(length(lines), s + 20)]
+      body <- body[seq_len(which(c(grepl("^\\s*(input|script|output):", body), TRUE))[1] - 1)]
+      mem <- grep("^\\s*memory \\{", body, value = TRUE)
+    }
+    expect_length(mem, 1)
+    expect_match(mem, "mem", info = p)          # DB value is still the starting point
+    expect_match(mem, "task.attempt", fixed = TRUE, info = p)
+  }
+})
+
+test_that("a sample with no seeds database goes to the fallback, not to file('')", {
+  # sqlite3 renders a SQL NULL as '', and file('') throws during channel
+  # construction, killing the run before any task is submitted
+  txt <- paste(main_nf, collapse = "\n")
+  expect_match(txt, "asm_opts = rows.map \\{ r -> tuple\\(r.ID, r.asm_cpus, r.asm_mem, r.getOrganelle, r.seeds_db, r.labels_db, r.assembler\\)")
+  expect_match(txt, "go: it[7] == 'getorganelle' && it[5] && it[6]", fixed = TRUE)
+  expect_match(txt, "fb: true", fixed = TRUE)
 })

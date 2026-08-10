@@ -12,9 +12,13 @@ plugins {
     id 'nf-amazon'
 }
 
+// -u and fixOwnership keep container output owned by you. Without them SQLite
+// creates root-owned .sqlite-wal / .sqlite-shm files next to the project
+// database on the shared filesystem, which the Shiny app then cannot open.
 docker {
     enabled = true
-    runOptions = "-v ${params.projectDir}:${params.projectDir} -v ${params.rawDir}:${params.rawDir}<<EXTRA_MOUNTS>>"
+    fixOwnership = true
+    runOptions = "-u \$(id -u):\$(id -g) -v ${params.projectDir}:${params.projectDir} -v ${params.rawDir}:${params.rawDir}<<EXTRA_MOUNTS>>"
 }
 
 process {

@@ -28,6 +28,54 @@ test_that("config.local needs no generate_config round", {
   expect_equal(RiboPilot:::config_tokens(filled), character(0))
 })
 
+SCHEDULERS <- c("slurm", "sge", "pbs", "lsf")
+
+test_that("walltime is written as a time directive when asked for", {
+  dir <- withr::local_tempdir()
+  for (s in SCHEDULERS) {
+    suppressMessages(generate_config(name = s, scheduler = s, queue = "q",
+      walltime = "24h", profile_dir = dir))
+    out <- readLines(file.path(dir, paste0("config.", s)))
+    expect_true(any(grepl("^\\s*time = '24h'", out)), info = s)
+  }
+})
+
+test_that("an unset walltime leaves neither a directive nor a token", {
+  dir <- withr::local_tempdir()
+  for (s in SCHEDULERS) {
+    suppressMessages(generate_config(name = s, scheduler = s, queue = "q",
+      profile_dir = dir))
+    out <- readLines(file.path(dir, paste0("config.", s)))
+    expect_false(any(grepl("time =", out, fixed = TRUE)), info = s)
+    expect_false(any(grepl("WALLTIME", out, fixed = TRUE)), info = s)
+  }
+})
+
+test_that("every scheduler template leaves only project tokens for new_project", {
+  dir <- withr::local_tempdir()
+  for (s in SCHEDULERS) {
+    suppressMessages(generate_config(name = s, scheduler = s, queue = "q",
+      walltime = "24h", profile_dir = dir))
+    out <- readLines(file.path(dir, paste0("config.", s)))
+    expect_true(all(RiboPilot:::config_tokens(out) %in%
+      paste0("<<", RiboPilot:::PROJECT_CONFIG_TOKENS, ">>")), info = s)
+  }
+})
+
+test_that("docker blocks run as the calling user", {
+  # otherwise SQLite drops root-owned .sqlite-wal / .sqlite-shm files into the
+  # project directory and the Shiny app can no longer open the database
+  for (f in c("config.local", "config.docker", "config.awsbatch")) {
+    txt <- paste(readLines(RiboPilot:::app_sys(f)), collapse = " ")
+    expect_match(txt, "fixOwnership = true", info = f)
+    expect_match(txt, "-u \\$(id -u):\\$(id -g)", fixed = TRUE, info = f)
+  }
+  # saved profiles are generated, not copied, so they need the same treatment
+  blk <- RiboPilot:::container_engine_block("docker")
+  expect_match(blk, "fixOwnership = true")
+  expect_match(blk, "-u \\$(id -u):\\$(id -g)", fixed = TRUE)
+})
+
 test_that("generate_config warns about tokens it cannot fill", {
   dir <- withr::local_tempdir()
   # awsbatch carries region / CLI path / batch queue, which neither

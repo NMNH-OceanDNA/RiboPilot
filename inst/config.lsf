@@ -22,6 +22,7 @@ process {
     executor = 'lsf'
     container = '<<CONTAINER_ID>>'
     queue = '<<QUEUE>>'                          // LSF queue (maps to -q)
+    time = '<<WALLTIME>>'                        // per-job walltime (maps to -W); many sites reject a job without one
     clusterOptions = '<<CLUSTER_OPTIONS>>'       // extra bsub directives, e.g. -P <project> -R ...
     memory = { 16.GB * task.attempt }            // CPUs come from the pipeline; tune memory as needed
 }

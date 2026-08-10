@@ -24,6 +24,7 @@ process {
     container = '<<CONTAINER_ID>>'
     queue = '<<QUEUE>>'                                    // SGE/UGE queue (maps to -q)
     penv = '<<PENV>>'                                      // parallel environment for multi-threaded jobs
+    time = '<<WALLTIME>>'                                  // per-job walltime (maps to -l h_rt); many sites reject a job without one
     clusterOptions = '-S /bin/bash <<CLUSTER_OPTIONS>>'    // extra qsub directives, e.g. -l h_data=...
     memory = { 16.GB * task.attempt }                     // CPUs come from the pipeline; tune memory as needed
 }
