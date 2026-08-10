@@ -26,7 +26,15 @@ process blast_ref_fetch {
         if [ -n "\$have" ]; then continue; fi
         efetch -db nuccore -id "\$acc" -format fasta > "\$acc.fa" 2>/dev/null || true
         efetch -db nuccore -id "\$acc" -format ft    > "\$acc.ft" 2>/dev/null || true
-        if [ ! -s "\$acc.fa" ]; then echo "efetch failed for \$acc"; continue; fi
+        if [ ! -s "\$acc.fa" ]; then echo "efetch failed for \$acc (empty fasta)"; continue; fi
+        # efetch can answer HTTP 200 with an XML error body instead of a record.
+        if grep -q -e '<ERROR>' -e '<eFetchResult>' "\$acc.fa" "\$acc.ft" 2>/dev/null; then
+            echo "efetch returned an error body for \$acc"; continue
+        fi
+        if [ "\$(head -c 1 "\$acc.fa")" != ">" ]; then echo "efetch returned a non-fasta body for \$acc"; continue; fi
+        if [ -s "\$acc.ft" ] && ! head -n 1 "\$acc.ft" | grep -q '^>Feature'; then
+            echo "efetch returned a non-feature-table body for \$acc"; continue
+        fi
         RIBOPILOT_SRC='${params.ribopilot_src}' rp_ref_fetch.R '${params.db}' "\$acc" "\$acc.fa" "\$acc.ft"
     done
     """

@@ -46,12 +46,25 @@ parse_feature_table <- function(ft_lines) {
   df[!duplicated(df$element), , drop = FALSE]
 }
 
+#' TRUE if the file's first non-blank line is a FASTA header
+#' @noRd
+is_fasta_file <- function(path) {
+  if (!file.exists(path) || file.info(path)$size == 0) return(FALSE)
+  ls <- readLines(path, warn = FALSE)
+  ls <- ls[nzchar(trimws(ls))]
+  length(ls) > 0 && grepl("^>", ls[1])
+}
+
 #' Read a single-record FASTA into a bare sequence string
+#'
+#' Strips only whitespace and digits; IUPAC ambiguity codes are kept so the
+#' sequence stays the same length as the GenBank record the feature-table
+#' coordinates refer to.
 #' @noRd
 read_fasta_seq <- function(path) {
-  if (!file.exists(path) || file.info(path)$size == 0) return("")
+  if (!is_fasta_file(path)) return("")
   ls <- readLines(path, warn = FALSE)
-  paste(gsub("[^ACGTNacgtn]", "", ls[!grepl("^>", ls)]), collapse = "")
+  paste(gsub("[[:space:][:digit:]]", "", ls[!grepl("^>", ls)]), collapse = "")
 }
 
 #' Store one fetched NCBI reference (sequence + features) in the project DB
@@ -65,6 +78,8 @@ read_fasta_seq <- function(path) {
 #' @export
 write_blast_ref <- function(con, accession, fasta_file, ft_file, title = NA_character_) {
   ts <- as.integer(Sys.time())
+  # efetch can answer HTTP 200 with an XML error body; that is not a record.
+  if (!is_fasta_file(fasta_file)) return(invisible(0L))
   seq <- read_fasta_seq(fasta_file)
   if (!nzchar(seq)) return(invisible(0L))
   if (is.na(title) && file.exists(fasta_file)) {
