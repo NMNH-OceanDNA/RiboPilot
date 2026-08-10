@@ -70,3 +70,42 @@ keeps `filter_reads.sh`.
   flanking IGS reads) so assembly has enough overhang to resolve boundaries.
 - Target shipped size budget per sample (MitoPilot's mito subsets are ~0.5-1 MB
   each; rDNA subsets will be similar or a bit larger given higher copy number).
+
+## Status (2026-08-10): NOT IMPLEMENTED - future update
+
+The shippable subset above was never built. Current `R/init_test_project.R`
+always downloads the **full** read sets (several GB) and there is no
+`full_size` argument. `inst/test_data/` holds only `mapping_test.csv`.
+
+What the current implementation does have, and what should be kept when the
+small path is added:
+
+- ENA fetch with `curl -f` and a bounded retry count, then an NCBI SRA
+  (`fasterq-dump`) fallback for networks where the ENA fastq mirror is blocked
+  (e.g. Smithsonian). MitoPilot's version has neither, and loops forever on a
+  bad URL.
+- Already-present, gzip-valid read files are skipped, so an interrupted setup
+  resumes cleanly.
+- Sample list has drifted from the table above. Current `mapping_test.csv` is
+  10 fish skims from study SRP313821: SRR22396758, SRR14433904, SRR14163830,
+  SRR14433900, SRR14433901, SRR14433899, SRR14433895, SRR22396893,
+  SRR25465041, SRR33849683. Decide whether to keep these or revert to the
+  proposed 10 before generating subsets.
+
+### Notes for whoever implements it
+
+- **Assembly step is compatible.** `assemble.nf` runs GetOrganelle, which
+  already does seed-based read recruitment internally, so a pre-baited read
+  pool is just a smaller starting pool, not a different kind of input.
+  `preprocess.nf` is plain `fastp` with no depth normalization that would care
+  about missing background reads.
+- **rDNA is high copy**, unlike the mitogenome MitoPilot baits on, so a naive
+  bait will pull far more reads than MitoPilot's ~0.5-1 MB per mate. Expect to
+  need a cap: subsample to a fixed read count, or bait against only the
+  cistron rather than the whole repeat unit.
+- **Package size.** MitoPilot ships 17 MB in `inst/test_data/`, well past the
+  5 MB CRAN limit. If RiboPilot ever targets CRAN, host the filtered reads as
+  a GitHub release asset and download those (~10 MB, seconds, not GB) instead
+  of bundling them.
+- API shape: add `full_size = FALSE` defaulting to the small path, and keep the
+  existing ENA/SRA downloader as the `full_size = TRUE` path.
