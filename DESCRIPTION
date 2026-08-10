@@ -22,9 +22,7 @@ Imports:
     crayon,
     DBI,
     processx,
-    dbplyr,
     dplyr,
-    gggenes,
     ggplot2,
     glue,
     golem,
@@ -40,9 +38,10 @@ Imports:
     shiny,
     shinyjs,
     shinyWidgets,
+    stats,
     stringr,
-    svglite,
     tools,
+    grDevices,
     utils
 Suggests:
     knitr,

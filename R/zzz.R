@@ -30,5 +30,5 @@
 # Column names used non-standardly inside dplyr / ggplot2 aes(); R CMD check
 # cannot see that they are data columns rather than missing globals.
 utils::globalVariables(c(
-  ".data", "ID", "R1", "R2", "depth", "element", "mid", "molecule", "pos", "start"
+  ".data", "ID", "R1", "R2", "depth", "element", "mid", "pos", "start"
 ))
