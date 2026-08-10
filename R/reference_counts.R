@@ -5,9 +5,22 @@
 # makes an unspecific one. The count comes from the same query the builder will
 # run, so the number shown is the number that will be downloaded.
 
-#' GenBank organism term for a clade name
+#' GenBank organism term for a clade
+#'
+#' Prefers the numeric taxid when one is supplied: `txid<ID>[Organism:exp]`
+#' resolves against a stable NCBI node, so a clade renamed since the project's
+#' pinned taxdump still returns its records. Falls back to the name for callers
+#' that only have one.
+#' @param name Clade name.
+#' @param taxid Optional NCBI taxid.
 #' @noRd
-clade_query <- function(name) sprintf("\"%s\"[Organism]", trimws(name))
+clade_query <- function(name, taxid = NULL) {
+  taxid <- suppressWarnings(as.integer(taxid %||% NA_integer_))
+  if (length(taxid) == 1 && !is.na(taxid)) {
+    return(sprintf("txid%d[Organism:exp]", taxid))
+  }
+  sprintf("\"%s\"[Organism]", trimws(name))
+}
 
 #' Pull the record count out of the builder script's output
 #' @param lines Character vector of script stdout.
@@ -103,7 +116,7 @@ cached_count_fn <- function(dir, count_fn = genbank_rrna_count, ...) {
     cache <- read_counts_cache(dir)
     i <- match(taxid, cache$taxid)
     if (!is.na(i) && !is.na(cache$n_records[i])) return(cache$n_records[i])
-    n <- do.call(count_fn, c(list(clade_query(name)), extra))
+    n <- do.call(count_fn, c(list(clade_query(name, taxid)), extra))
     n <- suppressWarnings(as.integer(n))
     if (is.na(n)) return(NA_integer_)
     dir.create(path.expand(dir), recursive = TRUE, showWarnings = FALSE)

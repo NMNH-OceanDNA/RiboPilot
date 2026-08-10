@@ -126,21 +126,46 @@ tk_run <- function(args, input, dir) {
 }
 
 #' Map names -> taxids locally (exact; includes synonyms). First taxid per name.
-#' @return named integer vector (input name -> taxid, NA if unmatched)
+#'
+#' Cross-kingdom homonyms are real (genus *Morus* is both mulberries and
+#' gannets), so every taxid a name matched is kept in the "candidates" attribute
+#' and the caller decides what to do with an ambiguous name.
+#' @return named integer vector (input name -> first taxid, NA if unmatched),
+#'   with attribute `candidates`: named list of all taxids per name.
 #' @noRd
 tk_name2taxid <- function(names, dir) {
   names <- unique(names)
   if (length(names) == 0) {
-    return(integer(0))
+    return(structure(integer(0), candidates = list()))
   }
   out <- tk_run("name2taxid", paste(names, collapse = "\n"), dir)
   res <- stats::setNames(rep(NA_integer_, length(names)), names)
+  cand <- stats::setNames(vector("list", length(names)), names)
   for (p in strsplit(out, "\t")) {
     nm <- p[1]
     tx <- suppressWarnings(as.integer(p[2] %||% NA))
-    if (!is.na(nm) && nm %in% names && !is.na(tx) && is.na(res[[nm]])) res[[nm]] <- tx
+    if (is.na(nm) || !(nm %in% names) || is.na(tx)) next
+    cand[[nm]] <- unique(c(cand[[nm]], tx))
+    if (is.na(res[[nm]])) res[[nm]] <- tx
   }
+  attr(res, "candidates") <- cand
   res
+}
+
+#' Describe homonym candidates for review: "name [taxid] (kingdom)" per taxid
+#' @noRd
+describe_candidates <- function(taxids, dir) {
+  info <- tk_taxid_info(taxids, dir)
+  m <- info[match(taxids, info$taxid), ]
+  kingdom <- vapply(m$lineage, function(l) {
+    if (is.na(l)) {
+      return(NA_character_)
+    }
+    unname(parse_rank_names(l)[["kingdom"]])
+  }, character(1), USE.NAMES = FALSE)
+  lab <- paste0(ifelse(is.na(m$sci_name), "?", m$sci_name), " [", taxids, "]")
+  lab <- ifelse(is.na(kingdom), lab, paste0(lab, " (", kingdom, ")"))
+  paste(lab, collapse = " | ")
 }
 
 #' Local taxid info: sci_name, rank, ranked lineage (batched: two taxonkit calls)
@@ -158,6 +183,8 @@ tk_taxid_info <- function(taxids, dir) {
     return(data.frame(taxid = integer(0), sci_name = character(0), rank = character(0),
       lineage = character(0), lineage_taxids = character(0), stringsAsFactors = FALSE))
   }
+  empty <- data.frame(taxid = integer(0), sci_name = character(0), rank = character(0),
+    lineage = character(0), lineage_taxids = character(0), stringsAsFactors = FALSE)
   ids <- paste(taxids, collapse = "\n")
   nr <- tk_run(c("lineage", "-n", "-r"), ids, dir) # taxid \t lineage \t name \t rank
   nr <- do.call(rbind, lapply(strsplit(nr, "\t"), function(p) {
@@ -166,6 +193,10 @@ tk_taxid_info <- function(taxids, dir) {
     }
     data.frame(taxid = as.integer(p[1]), sci_name = p[length(p) - 1], rank = p[length(p)], stringsAsFactors = FALSE)
   }))
+  if (is.null(nr) || nrow(nr) == 0) {
+    warning("No lineage returned for taxid(s): ", paste(taxids, collapse = ", "), call. = FALSE)
+    return(empty)
+  }
   lin <- tk_run("lineage", ids, dir) # taxid \t lineage
   ref <- tk_run(c("reformat", "-F", "-t", "-f", RRNA_RANK_FORMAT), paste(lin, collapse = "\n"), dir)
   ref <- do.call(rbind, lapply(strsplit(ref, "\t"), function(p) {
@@ -177,7 +208,16 @@ tk_taxid_info <- function(taxids, dir) {
       lineage = trimws(p[n - 1]), lineage_taxids = trimws(p[n]),
       stringsAsFactors = FALSE)
   }))
-  merge(nr, ref, by = "taxid", all.x = TRUE)
+  out <- if (is.null(ref)) {
+    cbind(nr, lineage = NA_character_, lineage_taxids = NA_character_)
+  } else {
+    merge(nr, ref, by = "taxid", all.x = TRUE)
+  }
+  gone <- setdiff(taxids, out$taxid)
+  if (length(gone) > 0) {
+    warning("No lineage returned for taxid(s): ", paste(gone, collapse = ", "), call. = FALSE)
+  }
+  out
 }
 
 #' Local species list under a genus taxid (for fuzzy epithet matching)
@@ -215,6 +255,7 @@ resolve_taxonomy_local <- function(taxa, dir) {
 
   # --- exact pass (one name2taxid + one info call for ALL exact names) ---
   n2t <- tk_name2taxid(clean[ok], dir)
+  cand <- attr(n2t, "candidates")
   exact_tx <- unname(n2t[clean])
   hit <- ok & !is.na(exact_tx)
   if (any(hit)) {
@@ -226,6 +267,14 @@ resolve_taxonomy_local <- function(taxa, dir) {
     res$rank[hit] <- m$rank
     res$lineage[hit] <- m$lineage
     res$lineage_taxids[hit] <- m$lineage_taxids
+    # a homonym is not a confident match: show every candidate and demand review
+    amb <- hit & vapply(clean, function(x) length(cand[[x]] %||% integer(0)) > 1,
+      logical(1), USE.NAMES = FALSE)
+    if (any(amb)) {
+      res$match_type[amb] <- "ambiguous"
+      res$alternatives[amb] <- vapply(clean[amb],
+        function(x) describe_candidates(cand[[x]], dir), character(1), USE.NAMES = FALSE)
+    }
   }
 
   # --- fuzzy pass (genus-anchored) for two-token misses ---
@@ -394,7 +443,7 @@ resolve_taxon_one <- function(taxon) {
 #'   it contains a taxdump, resolution is local; otherwise network `datasets` is
 #'   used.
 #' @return data.frame, one row per unique Taxon: `match_type` in
-#'   "exact"/"fuzzy_species"/"fuzzy_genus"/"unresolved", plus proposed `taxid`,
+#'   "exact"/"ambiguous"/"fuzzy_species"/"fuzzy_genus"/"unresolved", plus `taxid`,
 #'   `sci_name`, `rank`, `lineage`, `alternatives`.
 #' @export
 resolve_taxonomy <- function(taxa, taxdump_dir = NULL) {

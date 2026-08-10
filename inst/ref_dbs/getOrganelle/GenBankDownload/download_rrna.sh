@@ -46,6 +46,9 @@ Arguments:
 
 Options:
   --outdir <dir>   Output directory (default: current directory).
+  --taxid <id>     NCBI taxid for the clade. When given, the organism term is
+                   built as txid<id>[Organism:exp] and the positional query is
+                   ignored, so a clade renamed at NCBI still resolves.
   --api-key <key>  NCBI API key (raises rate limit 3 -> 10 req/s).
   --refseq         Restrict to RefSeq records (NR_*/NG_* etc).
   --count-only     Print the matching record count and exit (no download).
@@ -67,11 +70,14 @@ COMPLETE=0
 REFSEQ=0
 COUNT_ONLY=0
 OUTDIR="."
+TAXID=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help)    print_help; exit 0 ;;
     --refseq)     REFSEQ=1; shift ;;
     --count-only) COUNT_ONLY=1; shift ;;
+    --taxid)      [[ $# -ge 2 ]] || { echo "ERROR: --taxid requires a value" >&2; exit 1; }
+                  TAXID="$2"; shift 2 ;;
     --outdir)     [[ $# -ge 2 ]] || { echo "ERROR: --outdir requires a value" >&2; exit 1; }
                   OUTDIR="$2"; shift 2 ;;
     --api-key)    [[ $# -ge 2 ]] || { echo "ERROR: --api-key requires a value" >&2; exit 1; }
@@ -90,6 +96,11 @@ fi
 
 USER_QUERY="$1"
 PREFIX="$2"
+
+if [[ -n "${TAXID}" ]]; then
+  [[ "${TAXID}" =~ ^[0-9]+$ ]] || { echo "ERROR: --taxid must be a number" >&2; exit 1; }
+  USER_QUERY="txid${TAXID}[Organism:exp]"
+fi
 
 mkdir -p "${OUTDIR}"
 OUTDIR="${OUTDIR%/}"

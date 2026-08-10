@@ -15,6 +15,20 @@ test_that("clade_query quotes the organism term", {
   expect_equal(RiboPilot:::clade_query("Asteroidea"), "\"Asteroidea\"[Organism]")
 })
 
+test_that("clade_query prefers the taxid, which NCBI cannot rename out from under us", {
+  expect_equal(RiboPilot:::clade_query("Asteroidea", 7588L), "txid7588[Organism:exp]")
+  expect_equal(RiboPilot:::clade_query("Asteroidea", NA_integer_), "\"Asteroidea\"[Organism]")
+  expect_equal(RiboPilot:::clade_query("Asteroidea", NULL), "\"Asteroidea\"[Organism]")
+})
+
+test_that("cached counts are queried by taxid when one is known", {
+  d <- withr::local_tempdir()
+  seen <- NULL
+  f <- RiboPilot:::cached_count_fn(d, count_fn = function(query, ...) { seen <<- query; 12L })
+  f(7588L, "Asteroidea")
+  expect_equal(seen, "txid7588[Organism:exp]")
+})
+
 test_that("cached_count_fn calls the network once per taxid", {
   d <- withr::local_tempdir()
   calls <- 0L
