@@ -42,5 +42,4 @@ dependencies:
   # 24.0, not the newest: blast 2.17 depends on entrez-direct >=24.0,<25
   - entrez-direct=24.0
   - biopython=1.88
-  - taxonkit=0.20.0
   - ncbi-datasets-cli=18.34.0

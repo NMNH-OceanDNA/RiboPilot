@@ -1,50 +1,8 @@
-# Cross-kingdom homonyms and failed lineage lookups. taxonkit is mocked: no
-# taxdump, no network. Output shapes match real `taxonkit lineage`/`reformat`.
-
-TK_DB <- list(
-  "3497" = list(name = "Morus", rank = "genus",
-    lin = "Viridiplantae;Streptophyta;Magnoliopsida;Rosales;Moraceae;Morus;",
-    tax = "33090;35493;3398;3744;3487;3497;"),
-  "37577" = list(name = "Morus", rank = "genus",
-    lin = "Metazoa;Chordata;Aves;Suliformes;Sulidae;Morus;",
-    tax = "33208;7711;8782;30410;30446;37577;"),
-  "7955" = list(name = "Danio rerio", rank = "species",
-    lin = "Metazoa;Chordata;Actinopteri;Cypriniformes;Danionidae;Danio;Danio rerio",
-    tax = "33208;7711;186623;7952;2743709;7954;7955")
-)
-
-TK_NAMES <- list(Morus = c(3497L, 37577L), "Danio rerio" = 7955L)
-
-# args/input/dir mirror tk_run(); `drop` lists taxids taxonkit fails to report.
-fake_tk_run <- function(drop = integer(0)) {
-  function(args, input, dir) {
-    lines <- strsplit(input, "\n")[[1]]
-    lines <- lines[nzchar(lines)]
-    if (identical(args[1], "name2taxid")) {
-      out <- character(0)
-      for (nm in lines) {
-        for (tx in TK_NAMES[[nm]] %||% integer(0)) out <- c(out, paste0(nm, "\t", tx))
-      }
-      return(out)
-    }
-    ids <- vapply(strsplit(lines, "\t"), `[`, character(1), 1)
-    ids <- setdiff(ids, as.character(drop))
-    rec <- TK_DB[ids]
-    if (identical(args[1], "reformat")) {
-      return(paste(ids, "full", vapply(rec, `[[`, character(1), "lin"),
-        vapply(rec, `[[`, character(1), "tax"), sep = "\t"))
-    }
-    if (length(args) > 1) { # lineage -n -r
-      return(paste(ids, "full", vapply(rec, `[[`, character(1), "name"),
-        vapply(rec, `[[`, character(1), "rank"), sep = "\t"))
-    }
-    paste(ids, "full", sep = "\t")
-  }
-}
+# Cross-kingdom homonyms and failed lineage lookups, against a real (tiny)
+# taxdump built by helper-taxdump.R. No network, no external binaries.
 
 test_that("a cross-kingdom homonym is flagged, not silently resolved", {
-  testthat::local_mocked_bindings(tk_run = fake_tk_run(), .package = "RiboPilot")
-  res <- RiboPilot:::resolve_taxonomy_local("Morus", "dir")
+  res <- RiboPilot:::resolve_taxonomy("Morus", local_taxdump())
   expect_equal(res$match_type, "ambiguous")
   expect_false(is.na(res$alternatives))
   expect_true(grepl("3497", res$alternatives, fixed = TRUE))
@@ -55,33 +13,83 @@ test_that("a cross-kingdom homonym is flagged, not silently resolved", {
 })
 
 test_that("an unambiguous name is still an exact match", {
-  testthat::local_mocked_bindings(tk_run = fake_tk_run(), .package = "RiboPilot")
-  res <- RiboPilot:::resolve_taxonomy_local("Danio rerio", "dir")
+  res <- RiboPilot:::resolve_taxonomy("Danio rerio", local_taxdump())
   expect_equal(res$match_type, "exact")
   expect_equal(res$taxid, 7955L)
   expect_true(is.na(res$alternatives))
+  expect_equal(res$lineage, "Metazoa;Chordata;Actinopteri;Cypriniformes;Danionidae;Danio;Danio rerio")
+  expect_equal(res$lineage_taxids, "33208;7711;186623;7952;2743709;7954;7955")
 })
 
 test_that("tk_name2taxid keeps every candidate taxid for a name", {
-  testthat::local_mocked_bindings(tk_run = fake_tk_run(), .package = "RiboPilot")
-  n2t <- RiboPilot:::tk_name2taxid(c("Morus", "Danio rerio"), "dir")
+  dir <- local_taxdump()
+  n2t <- RiboPilot:::with_tax_index(dir, function(con)
+    RiboPilot:::tk_name2taxid(c("Morus", "Danio rerio"), con))
   expect_equal(unname(n2t[["Morus"]]), 3497L)
   expect_equal(attr(n2t, "candidates")$Morus, c(3497L, 37577L))
   expect_equal(attr(n2t, "candidates")[["Danio rerio"]], 7955L)
 })
 
+test_that("synonyms and common names resolve, case-insensitively", {
+  dir <- local_taxdump()
+  res <- RiboPilot:::resolve_taxonomy(c("Brachydanio rerio", "danio rerio"), dir)
+  expect_equal(res$taxid, c(7955L, 7955L))
+  expect_equal(res$match_type, c("exact", "exact"))
+})
+
 test_that("a taxid that falls out of a batch is reported, not dropped in silence", {
-  testthat::local_mocked_bindings(tk_run = fake_tk_run(drop = 37577L), .package = "RiboPilot")
+  dir <- local_taxdump()
   expect_warning(
-    info <- RiboPilot:::tk_taxid_info(c(3497L, 37577L), "dir"),
-    "37577")
+    info <- RiboPilot:::tk_taxid_info(c(3497L, 999999L), dir),
+    "999999")
   expect_equal(info$taxid, 3497L)
 })
 
 test_that("a batch that returns nothing warns and yields an empty frame", {
-  testthat::local_mocked_bindings(tk_run = fake_tk_run(drop = c(3497L, 37577L)),
-    .package = "RiboPilot")
-  expect_warning(info <- RiboPilot:::tk_taxid_info(c(3497L, 37577L), "dir"), "3497")
+  dir <- local_taxdump()
+  expect_warning(info <- RiboPilot:::tk_taxid_info(c(999998L, 999999L), dir), "99999")
   expect_equal(nrow(info), 0L)
   expect_equal(names(info), c("taxid", "sci_name", "rank", "lineage", "lineage_taxids"))
+})
+
+test_that("a retired taxid resolves through merged.dmp", {
+  info <- RiboPilot:::tk_taxid_info(29144L, local_taxdump())
+  expect_equal(info$sci_name, "Danio rerio")
+})
+
+test_that("a missing rank is filled, keeping the seven slots aligned", {
+  # a genus has no species rank: the slot must be filled, not collapsed away
+  info <- RiboPilot:::tk_taxid_info(7954L, local_taxdump())
+  expect_equal(RiboPilot:::parse_rank_names(info$lineage)[["genus"]], "Danio")
+  expect_true(is.na(RiboPilot:::parse_rank_names(info$lineage)[["species"]]))
+  expect_true(is.na(RiboPilot:::parse_rank_taxids(info$lineage_taxids)[["species"]]))
+  expect_equal(length(strsplit(info$lineage, ";")[[1]]), 7L)
+})
+
+test_that("a mistyped epithet falls back to a fuzzy species match", {
+  res <- RiboPilot:::resolve_taxonomy("Danio rerlo", local_taxdump())
+  expect_equal(res$match_type, "fuzzy_species")
+  expect_equal(res$taxid, 7955L)
+})
+
+test_that("an unrecognisable name stays unresolved", {
+  res <- RiboPilot:::resolve_taxonomy("Zzzzyx qqqqq", local_taxdump())
+  expect_equal(res$match_type, "unresolved")
+  expect_true(is.na(res$taxid))
+})
+
+test_that("the rank-aligned lineage and full ancestor path agree", {
+  dir <- local_taxdump()
+  lin <- RiboPilot:::tk_ranked_lineage(7955L, dir)
+  expect_equal(lin$lineage_taxids, "33208;7711;186623;7952;2743709;7954;7955")
+  path <- RiboPilot:::tk_full_lineage_taxids(7955L, dir)
+  expect_equal(path[["7955"]], c(1L, 131567L, 2759L, 33208L, 7711L, 186623L, 7952L,
+    2743709L, 7954L, 7955L))
+})
+
+test_that("the name search index finds a genus and its species", {
+  r <- RiboPilot:::tax_search(local_taxdump(), "Danio", 10)
+  expect_true("Danio" %in% r$name)
+  expect_true("Danio rerio" %in% r$name)
+  expect_equal(r$rank[r$name == "Danio"], "genus")
 })

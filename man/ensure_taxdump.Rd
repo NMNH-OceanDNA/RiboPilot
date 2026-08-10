@@ -16,6 +16,6 @@ ensure_taxdump(dir, force = FALSE)
 }
 \description{
 Stores only the ~72 MB compressed tarball plus a provenance file. The dmp
-files are extracted to a temp location at resolution time (see
-[extract_taxdump()]), not persisted in the project.
+files are extracted to a temp location once, when the project's taxonomy
+index is built (see [build_tax_index()]), and are not persisted.
 }

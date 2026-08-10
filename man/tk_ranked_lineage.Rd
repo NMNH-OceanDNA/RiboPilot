@@ -15,7 +15,7 @@ tk_ranked_lineage(taxids, dir)
 data.frame(taxid, lineage, lineage_taxids).
 }
 \description{
-One batched taxonkit call. Missing ranks are filled (`-F`) so the seven rank
-slots always line up positionally, and the parallel taxid string (`-t`) marks
-a filled rank with an empty taxid.
+One batched index query. Missing ranks are filled so the seven rank slots
+always line up positionally, and the parallel taxid string marks a filled
+rank with an empty taxid (see [td_rank_align()]).
 }

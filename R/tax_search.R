@@ -1,64 +1,7 @@
 # Offline organism-name search over a project's pinned NCBI taxdump, powering the
-# in-app taxonomy review. A one-time cached SQLite index of scientific names
-# (taxid, name, rank) is built from names.dmp / nodes.dmp; searches are indexed
-# LIKE prefix lookups, so the app's searchable box stays responsive without any
-# network calls.
-
-#' Path to a taxdump's cached name-search index
-#' @noRd
-tax_index_path <- function(taxdump_dir) file.path(taxdump_dir, "tax_index.sqlite")
-
-#' Build (once) a cached scientific-name search index for a taxdump
-#'
-#' @param taxdump_dir Directory with a pinned taxdump (tarball or extracted dmps).
-#' @param rebuild Rebuild even if an index already exists.
-#' @return Path to the SQLite index, or `NULL` if no taxdump / awk is available.
-#' @noRd
-build_tax_index <- function(taxdump_dir, rebuild = FALSE) {
-  if (is.null(taxdump_dir) || !have_taxdump(taxdump_dir)) return(NULL)
-  taxdump_dir <- path.expand(taxdump_dir)
-  idx <- tax_index_path(taxdump_dir)
-  if (file.exists(idx) && !rebuild) return(idx)
-  awk <- Sys.which("awk")
-  if (!nzchar(awk)) {
-    warning("awk not found; cannot build the taxonomy search index.", call. = FALSE)
-    return(NULL)
-  }
-  # extracted dmps (unpack the pinned tarball to a temp dir if needed)
-  if (file.exists(file.path(taxdump_dir, "names.dmp"))) {
-    data_dir <- taxdump_dir
-  } else {
-    data_dir <- extract_taxdump(taxdump_dir)
-    on.exit(unlink(data_dir, recursive = TRUE), add = TRUE)
-  }
-  ranks_tsv <- tempfile(fileext = ".tsv"); sci_tsv <- tempfile(fileext = ".tsv")
-  on.exit(unlink(c(ranks_tsv, sci_tsv)), add = TRUE)
-  # dmp fields are separated by "\t|\t"; each line ends with "\t|". system2 runs
-  # via a shell when redirecting stdout, so shQuote the args; the FS uses a [|]
-  # character class for a literal pipe ("\|" would be read as regex alternation).
-  system2(awk, c("-F", shQuote("\\t[|]\\t"), shQuote('{print $1"\\t"$3}'),
-    shQuote(file.path(data_dir, "nodes.dmp"))), stdout = ranks_tsv)
-  system2(awk, c("-F", shQuote("\\t[|]\\t"), shQuote('$4 ~ /scientific name/{print $1"\\t"$2}'),
-    shQuote(file.path(data_dir, "names.dmp"))), stdout = sci_tsv)
-
-  tmp <- paste0(idx, ".tmp"); unlink(tmp)
-  con <- DBI::dbConnect(RSQLite::SQLite(), tmp)
-  ok <- tryCatch({
-    ranks <- readr::read_tsv(ranks_tsv, col_names = c("taxid", "rank"),
-      col_types = "cc", quote = "", progress = FALSE)
-    sci <- readr::read_tsv(sci_tsv, col_names = c("taxid", "name"),
-      col_types = "cc", quote = "", progress = FALSE)
-    if (nrow(sci) == 0) stop("no scientific names parsed from names.dmp")
-    sci$rank <- ranks$rank[match(sci$taxid, ranks$taxid)]
-    DBI::dbWriteTable(con, "tax_names", as.data.frame(sci), overwrite = TRUE)
-    DBI::dbExecute(con, "CREATE INDEX i_tax_name ON tax_names(name COLLATE NOCASE)")
-    TRUE
-  }, error = function(e) { warning(conditionMessage(e), call. = FALSE); FALSE })
-  DBI::dbDisconnect(con)
-  if (!ok) { unlink(tmp); return(NULL) }
-  file.rename(tmp, idx)
-  idx
-}
+# in-app taxonomy review. Searches are indexed LIKE lookups against the project's
+# cached taxonomy index (see R/tax_index.R), so the app's searchable box stays
+# responsive without any network calls.
 
 #' Search organism scientific names in a taxdump's cached index
 #'
@@ -82,11 +25,11 @@ tax_search <- function(taxdump_dir, query, limit = 25) {
   esc <- function(s) gsub("([%_])", "\\\\\\1", s)  # escape LIKE wildcards
   q <- esc(query)
   res <- DBI::dbGetQuery(con,
-    "SELECT taxid, name, rank,
-       CASE WHEN name LIKE ? ESCAPE '\\' THEN 0 ELSE 1 END AS pref
-     FROM tax_names
-     WHERE name LIKE ? ESCAPE '\\'
-     ORDER BY pref, length(name), name
+    "SELECT n.taxid AS taxid, n.name AS name, t.rank AS rank,
+       CASE WHEN n.name LIKE ? ESCAPE '\\' THEN 0 ELSE 1 END AS pref
+     FROM tax_names n JOIN tax_nodes t ON t.taxid = n.taxid
+     WHERE n.sci = 1 AND n.name LIKE ? ESCAPE '\\'
+     ORDER BY pref, length(n.name), n.name
      LIMIT ?",
     params = list(paste0(q, "%"), paste0("%", q, "%"), as.integer(limit)))
   res$pref <- NULL
@@ -98,18 +41,6 @@ tax_search <- function(taxdump_dir, query, limit = 25) {
 #' @noRd
 ncbi_taxonomy_url <- function(taxid) {
   sprintf("https://www.ncbi.nlm.nih.gov/datasets/taxonomy/%s/", taxid)
-}
-
-#' Run a function with an extracted-dmp taxdump directory
-#' @noRd
-with_taxdump_data <- function(taxdump_dir, fn) {
-  taxdump_dir <- path.expand(taxdump_dir)
-  if (file.exists(file.path(taxdump_dir, "names.dmp"))) {
-    return(fn(taxdump_dir))
-  }
-  dd <- extract_taxdump(taxdump_dir)
-  on.exit(unlink(dd, recursive = TRUE))
-  fn(dd)
 }
 
 #' Auto-assign taxonomy to samples from their `Taxon` string (local, no Nextflow)
@@ -147,7 +78,7 @@ resolve_samples_taxonomy <- function(con, ids, taxdump_dir) {
 #' @noRd
 assign_samples_taxid <- function(con, ids, taxid, taxdump_dir) {
   if (length(ids) == 0 || is.na(taxid)) return(invisible(0L))
-  info <- with_taxdump_data(taxdump_dir, function(dd) tk_taxid_info(as.integer(taxid), dd))
+  info <- tk_taxid_info(as.integer(taxid), taxdump_dir)
   if (nrow(info) == 0) stop("Could not resolve taxid ", taxid, call. = FALSE)
   m <- info[1, ]
   for (id in ids) {

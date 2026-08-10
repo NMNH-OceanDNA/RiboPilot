@@ -1,14 +1,15 @@
 #!/usr/bin/env Rscript
 # Quick smoke test for RiboPilot taxonomy resolution + scaffold/path scoring.
 #
-# Run from the RiboPilot repo root, with the `ribopilot` conda env active
-# (needs taxonkit; Part C also needs barrnap + blastn):
+# Run from the RiboPilot repo root (Part C needs barrnap + blastn, so activate
+# the `ribopilot` conda env for it):
 #
 #   conda activate ribopilot
 #   Rscript dev/test_scoring.R
 #
 # Part A (scoring math) needs no external tools and always runs.
-# Part B (taxonomy) downloads a ~72 MB NCBI taxdump on first run (cached).
+# Part B (taxonomy) downloads a ~72 MB NCBI taxdump on first run and indexes
+# it (both cached).
 # Part C (live assembly) only runs if an assembly output dir is present.
 
 suppressMessages(pkgload::load_all(".", quiet = TRUE))
@@ -47,9 +48,7 @@ cat("\n-> path 3 is a 99%-identity FUNGAL contaminant and is correctly ranked la
 cat("\n===========================================================\n")
 cat("PART B  -  typo-tolerant taxonomy resolution\n")
 cat("===========================================================\n")
-if (!nzchar(unname(Sys.which("taxonkit")))) {
-  cat("SKIPPED: taxonkit not on PATH (activate the ribopilot conda env).\n")
-} else {
+{
   ensure_taxdump(TAXDUMP)
   taxa <- c("Upeneus parvus", "Upeneus parvis", "Psychrolutes paradoxis", "Notarealfish madeuppus")
   r <- resolve_taxonomy(taxa, taxdump_dir = TAXDUMP)

@@ -109,7 +109,7 @@ SCREEN_KINGDOM_TAXIDS <- c(
 
 #' Off-target subclass from the LCA's rank-aligned taxid path and its taxon label
 #'
-#' Matches the WHOLE path rather than a single rank slot: whether taxonkit's
+#' Matches the WHOLE path rather than a single rank slot: whether the taxdump's
 #' `{K}` emits superkingdom or kingdom decides whether Bacteria/Archaea or
 #' Fungi/Viridiplantae/Metazoa lands in slot 1, and this codebase disagrees
 #' with itself about which (doc 08 line 510 vs taxonomy_ranks.R:24). Matching
@@ -199,7 +199,7 @@ screen_channel_taxonomy <- function(hits, sample_taxids,
   hits <- screen_one_vote_per_subject(hits)
 
   # uncultured/environmental records carry their junk label at the deepest
-  # FILLED rank (taxonkit still writes it into the species slot), which every
+  # FILLED rank (a placeholder still sits in the species slot), which every
   # rank rule would otherwise read as a real species; a merely blank rank
   # (nothing filled in yet) is normal and must not be excluded on that basis
   # alone, so the check looks at the deepest non-empty raw field, not at

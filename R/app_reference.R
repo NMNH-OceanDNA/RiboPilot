@@ -283,10 +283,8 @@ reference_handlers <- function(input, output, session, deps) {
       }
       info <- ladders[ladders$taxid == tid, , drop = FALSE]
       if (nrow(info) == 0) {
-        info <- with_taxdump_data(project_taxdump_dir(deps$project()), function(dd) {
-          i <- tk_taxid_info(tid, dd)
-          data.frame(name = i$sci_name[1], rank = i$rank[1], stringsAsFactors = FALSE)
-        })
+        i <- tk_taxid_info(tid, project_taxdump_dir(deps$project()))
+        info <- data.frame(name = i$sci_name[1], rank = i$rank[1], stringsAsFactors = FALSE)
       }
       cfg <- ref_config(con)
       run_clade_counts(deps$project(), cfg$ref_dir,

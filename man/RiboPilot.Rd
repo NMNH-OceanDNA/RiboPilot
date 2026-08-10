@@ -9,6 +9,7 @@ RiboPilot(
   host = NULL,
   port = NULL,
   launch.browser = NULL,
+  headless = NULL,
   ...
 )
 }
@@ -16,6 +17,10 @@ RiboPilot(
 \item{project}{Path to the project directory (default: current dir).}
 
 \item{host, port, launch.browser}{Passed to Shiny (see [run_app()]).}
+
+\item{headless}{Offer a cluster job script instead of running Nextflow where
+the app is served. Detected automatically (RStudio Server or a batch
+scheduler on PATH means yes); pass `TRUE`/`FALSE` to override.}
 
 \item{...}{Additional arguments passed to `run_app()`.}
 }

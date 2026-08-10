@@ -3,6 +3,23 @@
 #' @noRd
 app_headless <- function() isTRUE(getOption("RiboPilot.headless", FALSE))
 
+#' Should the app treat this session as a remote/cluster one?
+#'
+#' Headless decides whether the run modal offers a cluster job script or a local
+#' "Run from App" button. It used to be `!interactive()`, which is wrong exactly
+#' where it matters most: an RStudio Server session on a login node IS
+#' interactive, so the app called itself a desktop and hid the submit-to-cluster
+#' UI from the only users who need it. RStudio Server and the presence of a batch
+#' scheduler are the two signals that this R session is on a cluster.
+#' @param launch_browser Whether Shiny will open a local browser.
+#' @noRd
+detect_headless <- function(launch_browser) {
+  if (!isTRUE(launch_browser)) {
+    return(TRUE)
+  }
+  identical(Sys.getenv("RSTUDIO_PROGRAM_MODE"), "server") || !is.null(detect_scheduler())
+}
+
 #' Detect a batch-scheduler submit command on PATH (sbatch/qsub/bsub).
 #' @return list(cmd, name) or NULL.
 #' @noRd
@@ -68,10 +85,15 @@ build_reference_submit_script <- function(project, manifest, ref_dir, api_key = 
 #'
 #' @param project Path to the project directory (default: current dir).
 #' @param host,port,launch.browser Passed to Shiny (see [run_app()]).
+#' @param headless Offer a cluster job script instead of running Nextflow where
+#'   the app is served. Detected automatically (RStudio Server or a batch
+#'   scheduler on PATH means yes); pass `TRUE`/`FALSE` to override.
 #' @param ... Additional arguments passed to `run_app()`.
 #' @export
-RiboPilot <- function(project = getwd(), host = NULL, port = NULL, launch.browser = NULL, ...) {
-  run_app(project = project, host = host, port = port, launch.browser = launch.browser, ...)
+RiboPilot <- function(project = getwd(), host = NULL, port = NULL, launch.browser = NULL,
+                      headless = NULL, ...) {
+  run_app(project = project, host = host, port = port, launch.browser = launch.browser,
+    headless = headless, ...)
 }
 
 #' Run the RiboPilot Shiny application
@@ -79,12 +101,15 @@ RiboPilot <- function(project = getwd(), host = NULL, port = NULL, launch.browse
 #' @param project Project directory containing `.sqlite`.
 #' @param onStart,options,enableBookmarking,uiPattern Shiny app options.
 #' @param host,port,launch.browser Shiny server options.
+#' @param headless Offer a cluster job script instead of a local run. `NULL`
+#'   (default) detects it; see [detect_headless()].
 #' @param ... Passed to golem options.
 #' @export
 #' @importFrom shiny shinyApp
 run_app <- function(project = getwd(), onStart = NULL, options = list(),
                     enableBookmarking = NULL, uiPattern = "/",
-                    host = NULL, port = NULL, launch.browser = NULL, ...) {
+                    host = NULL, port = NULL, launch.browser = NULL,
+                    headless = NULL, ...) {
   project <- normalizePath(project, mustWork = TRUE)
   if (!file.exists(file.path(project, ".sqlite"))) {
     stop("No RiboPilot project (.sqlite) found in: ", project, call. = FALSE)
@@ -93,12 +118,15 @@ run_app <- function(project = getwd(), onStart = NULL, options = list(),
   migrate_project(project)
   check_nextflow_version("RiboPilot app")
   if (is.null(launch.browser)) launch.browser <- interactive()
-  # Headless = launched without a local browser, i.e. served on a remote host
-  # (typically an SSH-tunneled cluster login node). In that case the run modal
-  # submits to the scheduler instead of running Nextflow on the login node.
-  headless <- !isTRUE(launch.browser)
+  # Headless = this R session is on a remote host (RStudio Server on a login
+  # node, or a tunneled session). The run modal then offers a cluster job script
+  # instead of running Nextflow where the app is served.
+  if (is.null(headless)) headless <- detect_headless(launch.browser)
+  headless <- isTRUE(headless)
   options(RiboPilot.headless = headless)
-  if (headless && !is.null(port)) {
+  # only a session with no browser of its own needs tunnel instructions;
+  # RStudio Server is headless but serves the app through its own proxy
+  if (!isTRUE(launch.browser) && !is.null(port)) {
     message("RiboPilot is headless. Tunnel it from your machine, then open http://localhost:",
       port, " :\n  ssh -N -L ", port, ":localhost:", port, " <user>@<this-host>")
   }
