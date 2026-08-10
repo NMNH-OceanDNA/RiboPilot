@@ -280,6 +280,37 @@ ensure_sample_lineage_taxids <- function(con, ids = NULL, taxdump_dir = NULL) {
   invisible(sum(ok))
 }
 
+#' Complete ancestor taxid paths for a set of taxids
+#'
+#' The rank-aligned path only carries the seven main ranks, so a clade at any
+#' other rank (superclass, subphylum, clade) is invisible to it. This keeps the
+#' whole path, root first, for membership tests that must accept those ranks.
+#'
+#' @param taxids Integer vector of NCBI taxids.
+#' @param dir Directory holding a pinned taxdump.
+#' @return Named list: taxid (as character) -> integer vector of ancestor taxids.
+#' @noRd
+tk_full_lineage_taxids <- function(taxids, dir) {
+  taxids <- unique(stats::na.omit(suppressWarnings(as.integer(taxids))))
+  if (length(taxids) == 0) {
+    return(list())
+  }
+  dd <- taxdump_session(dir)
+  if (is.null(dd)) {
+    return(list())
+  }
+  out <- tk_run(c("lineage", "-t"), paste(taxids, collapse = "\n"), dd)
+  res <- list()
+  for (p in strsplit(out, "\t")) {
+    if (length(p) < 3) next
+    path <- suppressWarnings(as.integer(strsplit(p[length(p)], ";")[[1]]))
+    path <- path[!is.na(path)]
+    if (length(path) == 0) next
+    res[[p[1]]] <- path
+  }
+  res
+}
+
 #' Rank-aligned lineages (names + taxids) for a set of taxids
 #'
 #' One batched taxonkit call. Missing ranks are filled (`-F`) so the seven rank

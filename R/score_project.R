@@ -55,7 +55,7 @@ score_project <- function(path = ".", out_dir = file.path(path, "out"),
   td <- if (have_taxdump(taxdump_dir)) taxdump_dir else NULL
 
   info <- DBI::dbGetQuery(con, "
-    SELECT a.ID, s.lineage, ao.seeds_db
+    SELECT a.ID, s.lineage, s.lineage_taxids, ao.seeds_db
     FROM assemble a
     JOIN samples s        ON a.ID = s.ID
     JOIN assemble_opts ao ON a.assemble_opts = ao.assemble_opts
@@ -89,6 +89,7 @@ score_project <- function(path = ".", out_dir = file.path(path, "out"),
       path_fastas = fastas,
       gfa_path = if (length(gfa) > 0) gfa[1] else NA_character_,
       sample_lineage = info$lineage[i] %||% NA_character_,
+      sample_taxids = info$lineage_taxids[i] %||% NA_character_,
       blast_db = get_db(info$seeds_db[i]),
       taxdump_dir = td,
       with_staxids = FALSE

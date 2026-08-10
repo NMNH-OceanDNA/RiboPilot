@@ -45,7 +45,7 @@
   if (!nzchar(fqd) || !file.exists(fqd)) return(FALSE)
   dir.create(scratch, showWarnings = FALSE, recursive = TRUE)
   try(system2(fqd, c("--split-files", "-e", "4", "-O", shQuote(dir),
-    "-t", shQuote(scratch), acc), stdout = FALSE, stderr = FALSE), silent = TRUE)
+    "-t", shQuote(scratch), shQuote(acc)), stdout = FALSE, stderr = FALSE), silent = TRUE)
   f1 <- file.path(dir, paste0(acc, "_1.fastq"))
   f2 <- file.path(dir, paste0(acc, "_2.fastq"))
   if (!file.exists(f1) || !file.exists(f2)) return(FALSE)

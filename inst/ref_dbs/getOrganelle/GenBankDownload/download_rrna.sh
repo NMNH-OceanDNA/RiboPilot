@@ -46,6 +46,9 @@ Arguments:
 
 Options:
   --outdir <dir>   Output directory (default: current directory).
+  --taxid <id>     NCBI taxid for the clade. When given, the organism term is
+                   built as txid<id>[Organism:exp] and the positional query is
+                   ignored, so a clade renamed at NCBI still resolves.
   --api-key <key>  NCBI API key (raises rate limit 3 -> 10 req/s).
   --refseq         Restrict to RefSeq records (NR_*/NG_* etc).
   --count-only     Print the matching record count and exit (no download).
@@ -67,11 +70,14 @@ COMPLETE=0
 REFSEQ=0
 COUNT_ONLY=0
 OUTDIR="."
+TAXID=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help)    print_help; exit 0 ;;
     --refseq)     REFSEQ=1; shift ;;
     --count-only) COUNT_ONLY=1; shift ;;
+    --taxid)      [[ $# -ge 2 ]] || { echo "ERROR: --taxid requires a value" >&2; exit 1; }
+                  TAXID="$2"; shift 2 ;;
     --outdir)     [[ $# -ge 2 ]] || { echo "ERROR: --outdir requires a value" >&2; exit 1; }
                   OUTDIR="$2"; shift 2 ;;
     --api-key)    [[ $# -ge 2 ]] || { echo "ERROR: --api-key requires a value" >&2; exit 1; }
@@ -91,6 +97,11 @@ fi
 USER_QUERY="$1"
 PREFIX="$2"
 
+if [[ -n "${TAXID}" ]]; then
+  [[ "${TAXID}" =~ ^[0-9]+$ ]] || { echo "ERROR: --taxid must be a number" >&2; exit 1; }
+  USER_QUERY="txid${TAXID}[Organism:exp]"
+fi
+
 mkdir -p "${OUTDIR}"
 OUTDIR="${OUTDIR%/}"
 FULL_PREFIX="${OUTDIR}/${PREFIX}"
@@ -108,13 +119,29 @@ if [[ -n "${NCBI_API_KEY:-}" ]]; then
 fi
 echo ""
 
-N_REC=$( esearch -db nuccore -query "${QUERY}" \
-  | efilter -molecule genomic \
-  | grep "Count" | head -1 | cut -f2 -d">" | cut -f1 -d"<" )
+# A clade GenBank has nothing for is an answer, not a failure: esearch returns
+# "Empty result", efilter then exits non-zero, and pipefail would abort the run.
+# Only that specific case becomes 0; anything else still fails loudly.
+SEARCH_OUT=$( { esearch -db nuccore -query "${QUERY}" \
+  | efilter -molecule genomic; } 2>&1 || true )
+N_REC=$( printf '%s\n' "${SEARCH_OUT}" | grep "Count" | head -1 | cut -f2 -d">" | cut -f1 -d"<" || true )
+if [[ -z "${N_REC}" ]]; then
+  if printf '%s\n' "${SEARCH_OUT}" | grep -q "Empty result"; then
+    N_REC=0
+  else
+    printf '%s\n' "${SEARCH_OUT}" >&2
+    echo "GenBank search failed for: ${QUERY}" >&2
+    exit 1
+  fi
+fi
 
 echo "Found ${N_REC} matching nuclear rRNA record(s)."
 if [[ "${COUNT_ONLY}" -eq 1 ]]; then
   exit 0
+fi
+if [[ "${N_REC}" -eq 0 ]]; then
+  echo "No records to build from for: ${QUERY}" >&2
+  exit 1
 fi
 echo "Downloading (fasta)..."
 echo ""

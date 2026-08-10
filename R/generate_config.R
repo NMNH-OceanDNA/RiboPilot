@@ -27,9 +27,13 @@ container_engine_block <- function(engine, cache = NULL, run_options = NULL) {
   # <<EXTRA_MOUNTS>> is filled by new_project() with mounts for any local
   # reference-database directories (empty otherwise).
   if (engine == "docker") {
-    binds <- "-v ${params.projectDir}:${params.projectDir} -v ${params.rawDir}:${params.rawDir}<<EXTRA_MOUNTS>>"
+    # -u / fixOwnership stop SQLite leaving root-owned .sqlite-wal / .sqlite-shm
+    # files in the project directory, which the Shiny app then cannot open.
+    binds <- paste0(
+      "-u \\$(id -u):\\$(id -g) ",
+      "-v ${params.projectDir}:${params.projectDir} -v ${params.rawDir}:${params.rawDir}<<EXTRA_MOUNTS>>")
     ro <- trimws(paste(binds, extra))
-    return(paste0("docker {\n  enabled = true\n  runOptions = \"", ro, "\"\n}"))
+    return(paste0("docker {\n  enabled = true\n  fixOwnership = true\n  runOptions = \"", ro, "\"\n}"))
   }
   binds <- "-B ${params.projectDir} -B ${params.rawDir}<<EXTRA_MOUNTS>>"
   ro <- trimws(paste(binds, extra))
@@ -49,6 +53,17 @@ container_engine_block <- function(engine, cache = NULL, run_options = NULL) {
 #' @param lines Character vector of config file lines.
 #' @param replacements Named list; name `FOO` replaces token `<<FOO>>`.
 #' @noRd
+#' Config tokens filled later, by new_project() rather than generate_config()
+#' @noRd
+PROJECT_CONFIG_TOKENS <- c("CONTAINER_ID", "RAW_DIR", "ASMB_DIR", "MIN_DEPTH",
+                           "GENETIC_CODE", "NCBI_API_KEY", "EXTRA_MOUNTS")
+
+#' Placeholder tokens still present in config lines
+#' @noRd
+config_tokens <- function(lines) {
+  unique(unlist(regmatches(lines, gregexpr("<<[A-Z_]+>>", lines))))
+}
+
 fill_config <- function(lines, replacements) {
   for (nm in names(replacements)) {
     val <- replacements[[nm]]
@@ -138,6 +153,10 @@ list_configs <- function(profile_dir = ribopilot_config_dir()) {
 #' @param container_cache Optional cacheDir for singularity/apptainer.
 #' @param container_run_options Optional runOptions for singularity/apptainer.
 #' @param queue Partition / queue name. If `NULL`, the directive is omitted.
+#' @param walltime Per-job walltime, in a form your scheduler accepts (e.g.
+#'   "24h", "48:00:00"). Many SLURM and PBS sites reject a job that requests no
+#'   walltime instead of applying a default. If `NULL`, the directive is
+#'   omitted and the site default applies.
 #' @param account Optional accounting string, folded into clusterOptions.
 #' @param cluster_options Optional raw clusterOptions string appended verbatim.
 #' @param penv SGE parallel environment (default "mthread").
@@ -154,6 +173,7 @@ generate_config <- function(
     container_cache = NULL,
     container_run_options = NULL,
     queue = NULL,
+    walltime = NULL,
     account = NULL,
     cluster_options = NULL,
     penv = "mthread",
@@ -180,6 +200,7 @@ generate_config <- function(
     }
     if (scheduler %nin% c("local", "awsbatch")) {
       queue <- prompt_if_null(queue, "Queue / partition (blank = cluster default): ")
+      walltime <- prompt_if_null(walltime, "Walltime per job, e.g. 24h (blank = site default): ")
       account <- prompt_if_null(account, "Account / project (blank = none): ")
       cluster_options <- prompt_if_null(cluster_options, "Extra clusterOptions (blank = none): ")
     }
@@ -206,13 +227,26 @@ generate_config <- function(
   if (is.null(queue) || !nzchar(queue)) {
     lines <- lines[!grepl("<<QUEUE>>", lines, fixed = TRUE)]
   }
+  if (is.null(walltime) || !nzchar(walltime)) {
+    lines <- lines[!grepl("<<WALLTIME>>", lines, fixed = TRUE)]
+  }
 
   lines <- fill_config(lines, list(
     CONTAINER_ENGINE = container_engine_block(container_engine, container_cache, container_run_options),
     QUEUE = queue,
+    WALLTIME = walltime,
     CLUSTER_OPTIONS = cluster_options,
     PENV = if (scheduler == "sge") penv else NULL
   ))
+
+  # awsbatch carries region / CLI path / batch queue tokens that neither this
+  # function nor new_project() fills; say so now rather than at run time.
+  manual <- setdiff(config_tokens(lines), paste0("<<", PROJECT_CONFIG_TOKENS, ">>"))
+  if (length(manual)) {
+    warning(glue::glue(
+      "Profile '{name}' still needs these filled in by hand before new_project(): ",
+      "{paste(manual, collapse = ', ')}."), call. = FALSE)
+  }
 
   if (!dir.exists(profile_dir)) {
     dir.create(profile_dir, recursive = TRUE)

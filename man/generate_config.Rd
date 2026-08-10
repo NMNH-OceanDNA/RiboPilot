@@ -11,6 +11,7 @@ generate_config(
   container_cache = NULL,
   container_run_options = NULL,
   queue = NULL,
+  walltime = NULL,
   account = NULL,
   cluster_options = NULL,
   penv = "mthread",
@@ -33,6 +34,11 @@ singularity for HPC schedulers; or "singularity"/"apptainer"/"docker".}
 \item{container_run_options}{Optional runOptions for singularity/apptainer.}
 
 \item{queue}{Partition / queue name. If `NULL`, the directive is omitted.}
+
+\item{walltime}{Per-job walltime, in a form your scheduler accepts (e.g.
+"24h", "48:00:00"). Many SLURM and PBS sites reject a job that requests no
+walltime instead of applying a default. If `NULL`, the directive is
+omitted and the site default applies.}
 
 \item{account}{Optional accounting string, folded into clusterOptions.}
 

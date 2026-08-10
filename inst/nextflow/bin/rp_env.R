@@ -12,6 +12,18 @@
 # It IS worth saying out loud, because "my edit had no effect" is otherwise
 # indistinguishable from a bug in the edit.
 
+# Positional Rscript arguments: a missing one is NA, NA flows into a query that
+# matches nothing, and the script still exits 0, so Nextflow reads a no-op as
+# success. Require the mandatory count before any work starts.
+rp_args <- function(a, n, usage) {
+  ok <- length(a) >= n && !anyNA(a[seq_len(n)]) && all(nzchar(a[seq_len(n)]))
+  if (!ok) {
+    stop("usage: ", usage, "\n  need ", n, " argument(s), got ", length(a),
+      call. = FALSE)
+  }
+  invisible(a)
+}
+
 # A package source checkout, not an installed library directory. Installed
 # packages also carry a DESCRIPTION, and pkgload cannot load one.
 rp_is_source_dir <- function(d) {

@@ -135,6 +135,63 @@ test_that("n_variants counts comparable units, not every screen row", {
   expect_true(is.na(smry$variant_class[smry$scaffold == 2]))
 })
 
+test_that("bundle file contents are exactly as specified", {
+  dir <- mk_project()
+  g <- bundle(dir, ids = "S2", label = "exact")
+  seq <- paste0(strrep("A", 200), strrep("C", 200))
+  expect_equal(readLines(file.path(g, "samples", "S2.fasta")),
+    c(paste(">S2 [organism=Genus speciesB] [moltype=genomic DNA] Genus speciesB",
+        "18S ribosomal RNA gene and 28S ribosomal RNA gene, partial sequence."), seq))
+  expect_equal(readLines(file.path(g, "samples", "S2.tbl")),
+    c(">Feature S2", "<1\t200\trRNA", "\t\t\tproduct\t18S ribosomal RNA",
+      "201\t>400\trRNA", "\t\t\tproduct\t28S ribosomal RNA"))
+  expect_equal(readLines(file.path(g, "exact.fasta")),
+    readLines(file.path(g, "samples", "S2.fasta")))
+  expect_equal(readLines(file.path(g, "exact_summary.csv")),
+    c(paste0("\"seqid\",\"ID\",\"path\",\"scaffold\",\"organism\",\"length\",\"n_features\",",
+        "\"missing\",\"reviewed\",\"partial\",\"problematic\",\"variant_class\",",
+        "\"variant_group\",\"variant_identity\",\"n_variants\",\"submission_risk\""),
+      "\"S2\",\"S2\",1,1,\"Genus speciesB\",400,2,\"\",\"yes\",\"no\",\"no\",NA,NA,NA,NA,\"\""))
+})
+
+test_that("an empty Taxon is flagged, and never rendered as the word NA", {
+  dir <- mk_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE samples SET Taxon = NULL WHERE ID = 'S2'")
+  DBI::dbExecute(con, "UPDATE samples SET Taxon = '  ' WHERE ID = 'S1'")
+  DBI::dbDisconnect(con)
+
+  expect_warning(g <- suppressMessages(export_bundle(dir, out_dir = file.path(dir, "out"),
+    markers = TRUE, report = FALSE, zip = FALSE, label = "notax")), "missing_organism")
+  # glue renders an NA field as the characters "NA", which reads like a real
+  # organism name. The header template cannot drop a field, so the value is
+  # blanked and the unit is flagged instead.
+  fsa <- readLines(file.path(g, "samples", "S2.fasta"))
+  expect_match(fsa[1], "[organism=]", fixed = TRUE)
+  expect_false(any(grepl("organism=NA", readLines(file.path(g, "notax.fasta")), fixed = TRUE)))
+  expect_false(any(grepl("organism=NA",
+    readLines(Sys.glob(file.path(g, "markers", "18S", "S2_18S.fasta"))), fixed = TRUE)))
+
+  smry <- utils::read.csv(file.path(g, "notax_summary.csv"), stringsAsFactors = FALSE)
+  expect_true(all(grepl("missing_organism", smry$submission_risk)))
+})
+
+test_that("set_export_group is atomic", {
+  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "CREATE TABLE annotate(ID TEXT, path INT, scaffold INT, export_group TEXT,
+                       CHECK (ID <> 'BAD' OR export_group IS NULL))")
+  DBI::dbExecute(con, "INSERT INTO annotate VALUES('OK',1,1,NULL)")
+  DBI::dbExecute(con, "INSERT INTO annotate VALUES('BAD',1,1,NULL)")
+  expect_error(RiboPilot:::set_export_group(con, c("OK", "BAD"), "g1"))
+  # the first unit's assignment must not survive the second one's failure
+  got <- DBI::dbGetQuery(con, "SELECT ID, export_group FROM annotate ORDER BY ID")
+  expect_true(all(is.na(got$export_group)))
+
+  RiboPilot:::set_export_group(con, c("OK"), "g1")
+  expect_equal(DBI::dbGetQuery(con, "SELECT export_group FROM annotate WHERE ID='OK'")$export_group, "g1")
+})
+
 test_that("a project with no screen table still exports, with NA variant columns", {
   dir <- mk_project()
   g <- bundle(dir, ids = "S2", label = "noscreen")

@@ -27,12 +27,12 @@ process blast_genbank {
     script:
     """
     # Skip samples with run_blast = 0
-    RB=\$(sqlite3 '${params.db}' "SELECT b.run_blast FROM assemble a JOIN blast_opts b ON a.blast_opts = b.blast_opts WHERE a.ID = '${id}';")
+    RB=\$(sqlite3 -cmd '.timeout 10000' '${params.db}' "SELECT b.run_blast FROM assemble a JOIN blast_opts b ON a.blast_opts = b.blast_opts WHERE a.ID = '${id}';")
     if [ "\${RB:-1}" != "1" ]; then echo "blast disabled for ${id}"; exit 0; fi
 
-    EQ=\$(sqlite3 '${params.db}' "SELECT COALESCE(b.entrez_query,'') FROM assemble a JOIN blast_opts b ON a.blast_opts = b.blast_opts WHERE a.ID = '${id}';")
-    XO=\$(sqlite3 '${params.db}' "SELECT COALESCE(b.extra_opts,'') FROM assemble a JOIN blast_opts b ON a.blast_opts = b.blast_opts WHERE a.ID = '${id}';")
-    MTS=\$(sqlite3 '${params.db}' "SELECT COALESCE(b.max_target_seqs,50) FROM assemble a JOIN blast_opts b ON a.blast_opts = b.blast_opts WHERE a.ID = '${id}';")
+    EQ=\$(sqlite3 -cmd '.timeout 10000' '${params.db}' "SELECT COALESCE(b.entrez_query,'') FROM assemble a JOIN blast_opts b ON a.blast_opts = b.blast_opts WHERE a.ID = '${id}';")
+    XO=\$(sqlite3 -cmd '.timeout 10000' '${params.db}' "SELECT COALESCE(b.extra_opts,'') FROM assemble a JOIN blast_opts b ON a.blast_opts = b.blast_opts WHERE a.ID = '${id}';")
+    MTS=\$(sqlite3 -cmd '.timeout 10000' '${params.db}' "SELECT COALESCE(b.max_target_seqs,50) FROM assemble a JOIN blast_opts b ON a.blast_opts = b.blast_opts WHERE a.ID = '${id}';")
     EQ_OPT=""
     if [ -n "\${EQ}" ]; then EQ_OPT="-entrez_query"; fi
 
@@ -42,18 +42,20 @@ process blast_genbank {
 
     # BLAST each non-ignored scaffold (unit) separately -> per-unit candidates.
     # `for` (not a pipe) so a blastn failure can `exit 1` and trigger a retry.
-    UNITS=\$(sqlite3 -separator '.' '${params.db}' "SELECT path||'.'||scaffold FROM assemblies WHERE ID='${id}' AND COALESCE(ignore,0)=0;")
+    UNITS=\$(sqlite3 -cmd '.timeout 10000' -separator '.' '${params.db}' "SELECT path||'.'||scaffold FROM assemblies WHERE ID='${id}' AND COALESCE(ignore,0)=0;")
     for U in \$UNITS; do
         P=\${U%.*}; S=\${U#*.}
         # Already screened on an earlier attempt: do not re-submit to NCBI. The
         # loop exits 1 on any unit's failure under a shared retry budget, so
         # without this a 30-unit sample re-runs every completed search.
-        DONE=\$(sqlite3 '${params.db}' "SELECT COUNT(*) FROM blast_hits WHERE ID='${id}' AND path=\$P AND scaffold=\$S;" 2>/dev/null || echo 0)
+        DONE=\$(sqlite3 -cmd '.timeout 10000' '${params.db}' "SELECT COUNT(*) FROM blast_hits WHERE ID='${id}' AND path=\$P AND scaffold=\$S;" 2>/dev/null || echo 0)
         if [ "\${DONE:-0}" -gt 0 ]; then continue; fi
 
-        sqlite3 '${params.db}' "SELECT '>'||ID||'.'||path||'.'||scaffold||char(10)||sequence FROM assemblies WHERE ID='${id}' AND path=\$P AND scaffold=\$S;" > query.fa
+        sqlite3 -cmd '.timeout 10000' '${params.db}' "SELECT '>'||ID||'.'||path||'.'||scaffold||char(10)||sequence FROM assemblies WHERE ID='${id}' AND path=\$P AND scaffold=\$S;" > query.fa
         [ -s query.fa ] || continue
 
+        # \${XO} carries the significance and identity floors (blast_opts.extra_opts,
+        # "Extra blastn options" in the app); blastn's own defaults keep chance hits.
         # Keep the hit distribution, not just one row per subject: bitscore (the
         # statistic that actually orders alignments), alignment length, and the
         # query coordinates that make a chimera visible as two disjoint HSP sets

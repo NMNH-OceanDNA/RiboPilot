@@ -143,3 +143,67 @@ test_that("the mode picker shows Annotation Review but keys on Annotate", {
   srv <- paste(deparse(RiboPilot:::app_server), collapse = " ")
   expect_true(grepl('mode == "Annotate"', srv, fixed = TRUE))
 })
+
+# ---- the assembly modal exposes the reference database ----
+
+test_that("the assembly modal shows the preset's seed and label databases", {
+  cur <- list(assemble_opts = "actinopterygii", cpus = 4, memory = 16,
+    getOrganelle = "", assembler = "getorganelle", bowtie2 = "--local",
+    spades = "--isolate", min_assembly_length = 0, max_paths = 0, max_scaffolds = 0,
+    seeds_db = "/refs/seeds/actinopterygii_rrna_seeds.fasta",
+    labels_db = "/refs/labels/actinopterygii_rrna_labels.fasta",
+    clade_name = "Actinopterygii")
+  html <- shiny::withReactiveDomain(shiny::MockShinySession$new(),
+    as.character(RiboPilot:::assemble_opts_modal(cur, "actinopterygii", 10)))
+  expect_true(grepl("ao_seeds", html, fixed = TRUE))
+  expect_true(grepl("ao_labels", html, fixed = TRUE))
+  expect_true(grepl("/refs/seeds/actinopterygii_rrna_seeds.fasta", html, fixed = TRUE))
+  expect_true(grepl("/refs/labels/actinopterygii_rrna_labels.fasta", html, fixed = TRUE))
+  # says where the paths came from
+  expect_true(grepl("Reference tab for clade Actinopterygii", html, fixed = TRUE))
+  # the stale claim that databases are set at project creation is gone
+  expect_false(grepl("databases are set at project creation", html, fixed = TRUE))
+})
+
+test_that("a preset no reference group owns does not claim the Reference tab set it", {
+  cur <- list(assemble_opts = "default", cpus = 4, memory = 16, getOrganelle = "",
+    assembler = "getorganelle", bowtie2 = "--local", spades = "--isolate",
+    min_assembly_length = 0, max_paths = 0, max_scaffolds = 0,
+    seeds_db = NA_character_, labels_db = NA_character_)
+  html <- shiny::withReactiveDomain(shiny::MockShinySession$new(),
+    as.character(RiboPilot:::assemble_opts_modal(cur, "default", 1)))
+  expect_false(grepl("Reference tab for clade", html, fixed = TRUE))
+  expect_true(grepl("Set at project creation", html, fixed = TRUE))
+})
+
+test_that("opts_row takes the databases from the inputs, not the base row", {
+  base <- list(seeds_db = "/old/seeds.fasta", labels_db = "/old/labels.fasta",
+    target = NA_character_)
+  input <- list(ao_cpus = 4, ao_mem = 16, ao_getorg = "", ao_assembler = "getorganelle",
+    ao_bt2 = "--local", ao_spades = "--isolate", ao_minlen = 0, ao_maxpaths = 0,
+    ao_maxscaf = 0, ao_seeds = "/new/seeds.fasta", ao_labels = "/new/labels.fasta")
+  row <- RiboPilot:::opts_row("ao", "actinopterygii", input, base)
+  expect_equal(row$seeds_db, "/new/seeds.fasta")
+  expect_equal(row$labels_db, "/new/labels.fasta")
+  # an emptied box clears the path rather than storing ""
+  input$ao_seeds <- "  "
+  expect_true(is.na(RiboPilot:::opts_row("ao", "x", input, base)$seeds_db))
+})
+
+test_that("saving a database that is missing or empty warns, naming the file", {
+  d <- withr::local_tempdir()
+  good <- file.path(d, "good.fasta"); writeLines(c(">18S", "ACGT"), good)
+  empty <- file.path(d, "empty.fasta"); file.create(empty)
+  w <- RiboPilot:::unusable_db_warnings(
+    data.frame(seeds_db = file.path(d, "gone.fasta"), labels_db = empty,
+      stringsAsFactors = FALSE))
+  expect_length(w, 2L)
+  expect_true(any(grepl("gone.fasta", w, fixed = TRUE)))
+  expect_true(any(grepl("Label database", w, fixed = TRUE)))
+  expect_length(RiboPilot:::unusable_db_warnings(
+    data.frame(seeds_db = good, labels_db = good, stringsAsFactors = FALSE)), 0L)
+  # nothing set is not a complaint
+  expect_length(RiboPilot:::unusable_db_warnings(
+    data.frame(seeds_db = NA_character_, labels_db = NA_character_,
+      stringsAsFactors = FALSE)), 0L)
+})

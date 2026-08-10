@@ -47,25 +47,31 @@ workflow {
     pre_in = rows.map { r -> tuple(r.ID, file(params.rawDir + '/' + r.R1), file(params.rawDir + '/' + r.R2), r.pre_cpus, r.pre_mem, r.fastp) }
     preprocess(pre_in)
 
-    asm_opts = rows.map { r -> tuple(r.ID, r.asm_cpus, r.asm_mem, r.getOrganelle, file(r.seeds_db), file(r.labels_db), r.assembler) }
+    // Seeds / labels stay strings here. sqlite3 renders a SQL NULL as '', and
+    // assemble_opts.seeds_db is nullable, so file('') would throw for EVERY row
+    // -- including fallback rows that never use seeds -- before a task is
+    // submitted. Only the getOrganelle arm below turns them into files.
+    asm_opts = rows.map { r -> tuple(r.ID, r.asm_cpus, r.asm_mem, r.getOrganelle, r.seeds_db, r.labels_db, r.assembler) }
     asm_in = preprocess.out.reads
         .filter { id, reads, after -> (after as Integer) >= (params.minDepth as Integer) }
         .map { id, reads, after -> tuple(id, reads) }
         .join(asm_opts)
-        .map { id, reads, cpus, mem, go, seeds, labels, asm -> tuple(id, reads, cpus, mem, go, seeds, labels, asm) }
 
     // Per-sample assembler. The fallback arm is `true` rather than an equality
     // test on purpose: branch DROPS an item matching no condition, silently, so
     // an unrecognised assembler value would vanish from the run instead of
     // assembling. Defaulting the unknown case to the fallback keeps the sample.
+    // A sample with no seeds/labels database cannot run GetOrganelle, so it
+    // takes the same fallback arm rather than being dropped.
     asm_branched = asm_in.branch {
-        go: it[7] == 'getorganelle'
+        go: it[7] == 'getorganelle' && it[5] && it[6]
         fb: true
     }
     assemble(asm_branched.go.map { id, reads, cpus, mem, go, seeds, labels, _asm ->
-        tuple(id, reads, cpus, mem, go, seeds, labels) })
+        tuple(id, reads, cpus, mem, go, file(seeds), file(labels)) })
     fallback_assemble(asm_branched.fb.map { id, reads, cpus, mem, _go, _seeds, _labels, asm ->
-        tuple(id, reads, cpus, mem, asm) })
+        // a seedless getorganelle sample lands here; give it a real fallback method
+        tuple(id, reads, cpus, mem, asm == 'getorganelle' ? 'bait' : asm) })
 
     // Load assemblies + score paths (also seeds one annotate unit per scaffold).
     // Both assemblers emit the same fasta contract, so they merge here and

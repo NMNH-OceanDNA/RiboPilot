@@ -9,6 +9,8 @@ new_db(
   mapping_fn = NULL,
   mapping_id = "ID",
   mapping_taxon = "Taxon",
+  data_path = NULL,
+  check_reads = TRUE,
   assemble_cpus = 6,
   assemble_memory = 24,
   seeds_db =
@@ -20,6 +22,7 @@ new_db(
   max_paths = 10,
   max_scaffolds = 10,
   min_assembly_length = 500,
+  ref_dir = NULL,
   ...
 )
 }
@@ -31,6 +34,14 @@ new_db(
 \item{mapping_id}{Column name to use as the primary key (default "ID").}
 
 \item{mapping_taxon}{Column name with a taxonomic identifier (default "Taxon").}
+
+\item{data_path}{Directory holding the raw read files named in the mapping
+file. Read files are resolved as `<data_path>/<R1>`, the same way the
+Nextflow pipeline does it. When NULL, read files cannot be located and
+only the paired-end check is applied.}
+
+\item{check_reads}{(logical) Check that the read files named in the mapping
+file exist (default TRUE). Set FALSE when the data will be staged later.}
 
 \item{assemble_cpus}{Default number of CPUs for assembly.}
 
@@ -51,6 +62,9 @@ clade, see the reference-DB builder). May be NULL until built.}
 \item{max_scaffolds}{Max scaffolds within a path to continue (default 10).}
 
 \item{min_assembly_length}{Minimum contig length (bp) to retain (default 500).}
+
+\item{ref_dir}{Folder for built reference databases (default: the
+`RIBOPILOT_REF_DIR` environment variable, else [ribopilot_ref_dir()]).}
 
 \item{...}{Reserved for forward compatibility.}
 }

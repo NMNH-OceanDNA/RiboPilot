@@ -22,6 +22,7 @@ process {
     executor = 'pbspro'                          // use 'pbs' for Torque / OpenPBS
     container = '<<CONTAINER_ID>>'
     queue = '<<QUEUE>>'                          // PBS queue (maps to -q)
+    time = '<<WALLTIME>>'                        // per-job walltime (maps to -l walltime); many sites reject a job without one
     clusterOptions = '<<CLUSTER_OPTIONS>>'       // extra qsub directives, e.g. -A <account> -l ...
     memory = { 16.GB * task.attempt }            // CPUs come from the pipeline; tune memory as needed
 }

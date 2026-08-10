@@ -8,9 +8,13 @@
 // the directories holding any local seed/label reference databases (the
 // <<EXTRA_MOUNTS>> slot); add more -v mounts here if you need them.
 
+// -u and fixOwnership keep container output owned by you. Without them SQLite
+// creates root-owned .sqlite-wal / .sqlite-shm files next to the project
+// database, which the Shiny app then cannot open and you cannot delete.
 docker {
     enabled = true
-    runOptions = "-v ${params.projectDir}:${params.projectDir} -v ${params.rawDir}:${params.rawDir}<<EXTRA_MOUNTS>>"
+    fixOwnership = true
+    runOptions = "-u \$(id -u):\$(id -g) -v ${params.projectDir}:${params.projectDir} -v ${params.rawDir}:${params.rawDir}<<EXTRA_MOUNTS>>"
 }
 
 process {
