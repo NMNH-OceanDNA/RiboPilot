@@ -3,18 +3,24 @@
 # Writes <id>_assembly_<n>.fasta into cwd (published by the process).
 # Args: <db> <id> <r1> <r2> <method> <threads>
 a <- commandArgs(trailingOnly = TRUE)
-source(file.path(dirname(sub("--file=", "", grep("--file=", commandArgs(FALSE), value = TRUE))), "rp_env.R"))
-con <- open_project_db(a[1]); on.exit(DBI::dbDisconnect(con))
-# this reads columns added after some projects were created, and unlike the
-# other steps it queries before any step function has migrated
-migrate_db(con)
-opt <- DBI::dbGetQuery(con,
-  "SELECT ao.seeds_db, ao.labels_db,
-          COALESCE(ao.bowtie2, '--local') AS bowtie2,
-          COALESCE(ao.spades, '--isolate') AS spades
-     FROM assemble a
-     JOIN assemble_opts ao ON a.assemble_opts = ao.assemble_opts WHERE a.ID = ?",
-  params = list(a[2]))
+rp_file <- sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE))
+if (length(rp_file) != 1) stop("run with Rscript: cannot locate rp_env.R", call. = FALSE)
+source(file.path(dirname(rp_file), "rp_env.R"))
+rp_args(a, 6, "rp_fallback.R <db> <id> <r1> <r2> <method> <threads>")
+opt <- local({
+  con <- open_project_db(a[1])
+  on.exit(DBI::dbDisconnect(con))
+  # this reads columns added after some projects were created, and unlike the
+  # other steps it queries before any step function has migrated
+  migrate_db(con)
+  DBI::dbGetQuery(con,
+    "SELECT ao.seeds_db, ao.labels_db,
+            COALESCE(ao.bowtie2, '--local') AS bowtie2,
+            COALESCE(ao.spades, '--isolate') AS spades
+       FROM assemble a
+       JOIN assemble_opts ao ON a.assemble_opts = ao.assemble_opts WHERE a.ID = ?",
+    params = list(a[2]))
+})
 fallback_assemble_one(a[2], a[3], a[4],
   reference = opt$seeds_db[1], labels_db = opt$labels_db[1],
   out_dir = ".", method = a[5], threads = as.integer(a[6]),

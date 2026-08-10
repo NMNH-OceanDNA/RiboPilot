@@ -26,6 +26,11 @@ ribopilot_ref_dir <- function() {
 #' Requires Entrez Direct + biopython (in the RiboPilot conda env). Pass
 #' `conda_env` to put them on PATH.
 #'
+#' This is the CLI entry point for building a database outside the app. The
+#' RiboPilot app's Reference tab builds databases through its own Nextflow
+#' workflow instead and does not call this function; use it directly for
+#' scripted or headless use, or to build a database ahead of time.
+#'
 #' @param query Advanced GenBank search term, e.g. `'"Gastropoda"[Organism]'`
 #'   or `'"Percidae"[Organism]'`.
 #' @param clade Short name for the output files, e.g. `"gastropoda"`. Files are
@@ -62,16 +67,17 @@ build_reference_db <- function(query, clade, out_dir = ribopilot_ref_dir(),
   }
 
   out_dir <- path.expand(out_dir)
-  prefix <- paste0(clade, "_rrna")
-  seeds <- file.path(out_dir, "seeds", paste0(prefix, "_seeds.fasta"))
-  labels <- file.path(out_dir, "labels", paste0(prefix, "_labels.fasta"))
+  paths <- reference_db_paths(out_dir, clade)
+  prefix <- paths$prefix
+  seeds <- paths$seeds
+  labels <- paths$labels
 
   if (isTRUE(count_only)) {
     args <- c(shQuote(script), "--count-only")
     if (isTRUE(refseq)) args <- c(args, "--refseq")
     if (!is.null(api_key) && nzchar(api_key)) args <- c(args, "--api-key", shQuote(api_key))
     args <- c(args, shQuote(query), shQuote(prefix))
-    system2("bash", args)
+    system2("bash", args, stdin = "/dev/null")
     return(invisible(list(seeds = NA_character_, labels = NA_character_)))
   }
 
@@ -94,7 +100,7 @@ build_reference_db <- function(query, clade, out_dir = ribopilot_ref_dir(),
   if (isTRUE(refseq)) args <- c(args, "--refseq")
   if (!is.null(api_key) && nzchar(api_key)) args <- c(args, "--api-key", shQuote(api_key))
   args <- c(args, shQuote(query), shQuote(prefix))
-  status <- system2("bash", args)
+  status <- system2("bash", args, stdin = "/dev/null")
   if (status != 0) {
     stop("Reference-DB build failed (Entrez Direct / biopython on PATH? try conda_env=).",
       call. = FALSE)

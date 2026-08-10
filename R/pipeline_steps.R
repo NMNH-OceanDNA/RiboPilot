@@ -27,12 +27,14 @@ score_one <- function(con, id, out_dir, taxdump_dir = NULL) {
     return(invisible(NULL))
   }
   gfa <- Sys.glob(file.path(adir, "*.gfa"))
-  lineage <- DBI::dbGetQuery(con, "SELECT lineage FROM samples WHERE ID = ?", params = list(id))$lineage[1]
+  tax <- DBI::dbGetQuery(con,
+    "SELECT lineage, lineage_taxids FROM samples WHERE ID = ?", params = list(id))
 
   scored <- score_assembly(
     path_fastas = fastas,
     gfa_path = if (length(gfa) > 0) gfa[1] else NA_character_,
-    sample_lineage = lineage %||% NA_character_,
+    sample_lineage = tax$lineage[1] %||% NA_character_,
+    sample_taxids = tax$lineage_taxids[1] %||% NA_character_,
     blast_db = blast_db, taxdump_dir = td, with_staxids = FALSE)
   write_path_scores(con, id, scored)
   tryCatch(blast_scaffolds_local(con, id, blast_db), error = function(e) NULL)
@@ -95,15 +97,19 @@ reconcile_one <- function(con, id, path = 1L, scaffold = 1L, gff = NULL, positio
   chimeric <- as.integer(itsx_is_chimeric(pos_lines))
   ts <- as.integer(Sys.time())
 
-  DBI::dbExecute(con, "DELETE FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?",
-    params = list(id, path, scaffold))
-  if (nrow(feat) > 0) {
-    df <- data.frame(ID = id, path = path, scaffold = scaffold, element = feat$element, type = feat$type,
-      start = feat$start, stop = feat$stop, length = feat$length, strand = feat$strand,
-      model_coverage = feat$model_cov %||% NA_real_,
-      tool = feat$tool, edited = 0L, notes = NA_character_, time_stamp = ts, stringsAsFactors = FALSE)
-    DBI::dbAppendTable(con, "annotations", df)
-  }
+  # one transaction: a failed append after a committed delete would leave the
+  # unit with no annotations at all
+  DBI::dbWithTransaction(con, {
+    DBI::dbExecute(con, "DELETE FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = list(id, path, scaffold))
+    if (nrow(feat) > 0) {
+      df <- data.frame(ID = id, path = path, scaffold = scaffold, element = feat$element, type = feat$type,
+        start = feat$start, stop = feat$stop, length = feat$length, strand = feat$strand,
+        model_coverage = feat$model_cov %||% NA_real_,
+        tool = feat$tool, edited = 0L, notes = NA_character_, time_stamp = ts, stringsAsFactors = FALSE)
+      DBI::dbAppendTable(con, "annotations", df)
+    }
+  })
   missing <- setdiff(c(RRNA_GENES, RRNA_SPACERS), feat$element)
   DBI::dbExecute(con,
     "UPDATE annotate SET n_features = ?, missing = ?, chimeric = ?, annotate_switch = 2, time_stamp = ?
@@ -131,6 +137,11 @@ filesystem_type <- function(path) {
   if (tolower(fs[1]) %in% NETWORK_FS) "network" else "local"
 }
 
+#' Cache of filesystem type by directory, so the app does not fork `stat` on
+#' every query (it opens a fresh connection per query).
+#' @noRd
+.fs_cache <- new.env(parent = emptyenv())
+
 #' Journal mode for a project DB
 #'
 #' WAL coordinates readers/writers through an mmap'd `-shm` file and requires
@@ -141,7 +152,13 @@ filesystem_type <- function(path) {
 sqlite_journal_mode <- function(db) {
   ov <- tolower(trimws(Sys.getenv("RIBOPILOT_SQLITE_JOURNAL", "")))
   if (nzchar(ov)) return(ov)
-  if (identical(filesystem_type(dirname(db)), "network")) "delete" else "wal"
+  dir <- dirname(db)
+  fs <- .fs_cache[[dir]]
+  if (is.null(fs)) {
+    fs <- filesystem_type(dir)
+    assign(dir, fs, envir = .fs_cache)
+  }
+  if (identical(fs, "network")) "delete" else "wal"
 }
 
 #' Open a project DB connection with a busy timeout and a filesystem-appropriate
@@ -226,21 +243,42 @@ load_assemblies <- function(con, out_dir, ID) {
   }
 
   rows <- list()
+  n_bad <- 0L
   for (fa in fas) {
     seqs <- Biostrings::readDNAStringSet(fa)
     for (i in seq_along(seqs)) {
       hdr <- names(seqs)[i]
       parts <- strsplit(hdr, "\\s+")[[1]]
-      idpath <- strsplit(parts[1], "\\.")[[1]] # ID, path, scaffold
+      # path and scaffold are the LAST two dot-separated fields: the ID may
+      # itself contain dots, and a positional read would take them for the keys
+      idpath <- strsplit(parts[1], "\\.")[[1]]
+      np <- length(idpath)
+      pth <- if (np >= 3) suppressWarnings(as.integer(idpath[np - 1])) else NA_integer_
+      scf <- if (np >= 3) suppressWarnings(as.integer(idpath[np])) else NA_integer_
+      if (is.na(pth) || is.na(scf)) {
+        n_bad <- n_bad + 1L
+        next
+      }
       topo <- if (length(parts) > 1) parts[2] else NA_character_
       s <- as.character(seqs[[i]])
       rows[[length(rows) + 1]] <- data.frame(
-        ID = ID, path = as.integer(idpath[2]), scaffold = as.integer(idpath[3]),
+        ID = ID, path = pth, scaffold = scf,
         topology = topo, length = nchar(s), length_raw = nchar(s),
         sequence = s, ignore = 0L, edited = 0L, time_stamp = ts,
         stringsAsFactors = FALSE
       )
     }
+  }
+  if (n_bad > 0) {
+    warning(sprintf("%s: skipped %d assembly record(s) with an unparsable header", ID, n_bad),
+      call. = FALSE)
+  }
+  if (length(rows) == 0) {
+    DBI::dbExecute(con,
+      "UPDATE assemble SET paths=NULL, scaffolds=NULL, length=NULL, topology=NULL,
+       assemble_switch=3, assemble_notes='failed assembly', time_stamp=? WHERE ID=?",
+      params = list(ts, ID))
+    return(invisible(0L))
   }
   df <- do.call(rbind, rows)
 
@@ -292,16 +330,20 @@ load_assemblies <- function(con, out_dir, ID) {
     # ignore = 1 is what actually stops the work -- every downstream selection
     # (remote BLAST, coverage, the annotate unit query, export) filters on it.
     df$ignore <- 1L
-    DBI::dbExecute(con, "DELETE FROM assemblies WHERE ID = ?", params = list(ID))
-    DBI::dbAppendTable(con, "assemblies", df)
-    DBI::dbExecute(con, "UPDATE annotate SET annotate_switch = 0 WHERE ID = ?", params = list(ID))
-    DBI::dbExecute(con,
-      "UPDATE assemble SET paths=?, scaffolds=?, length=?, topology=?,
-       assemble_switch=3, assemble_notes=?, time_stamp=? WHERE ID=?",
-      params = list(length(unique(df$path)), nrow(df),
-        paste(sort(unique(df$length), decreasing = TRUE), collapse = ";"),
-        paste(sort(unique(stats::na.omit(df$topology))), collapse = ";"),
-        paste(gate, collapse = "; "), ts, ID))
+    # one transaction: a failed append after a committed delete would destroy the
+    # sample's assemblies with nothing to put back
+    DBI::dbWithTransaction(con, {
+      DBI::dbExecute(con, "DELETE FROM assemblies WHERE ID = ?", params = list(ID))
+      DBI::dbAppendTable(con, "assemblies", df)
+      DBI::dbExecute(con, "UPDATE annotate SET annotate_switch = 0 WHERE ID = ?", params = list(ID))
+      DBI::dbExecute(con,
+        "UPDATE assemble SET paths=?, scaffolds=?, length=?, topology=?,
+         assemble_switch=3, assemble_notes=?, time_stamp=? WHERE ID=?",
+        params = list(length(unique(df$path)), nrow(df),
+          paste(sort(unique(df$length), decreasing = TRUE), collapse = ";"),
+          paste(sort(unique(stats::na.omit(df$topology))), collapse = ";"),
+          paste(gate, collapse = "; "), ts, ID))
+    })
     return(invisible(nrow(df)))
   }
 
@@ -331,9 +373,12 @@ load_assemblies <- function(con, out_dir, ID) {
     df$ignore <- ifelse(is.na(i), 0L, as.integer(prev$ignore[i]))
   }
 
-  # replace this sample's assemblies
-  DBI::dbExecute(con, "DELETE FROM assemblies WHERE ID = ?", params = list(ID))
-  DBI::dbAppendTable(con, "assemblies", df)
+  # replace this sample's assemblies, in one transaction: a failed append after a
+  # committed delete would destroy them with nothing to put back
+  DBI::dbWithTransaction(con, {
+    DBI::dbExecute(con, "DELETE FROM assemblies WHERE ID = ?", params = list(ID))
+    DBI::dbAppendTable(con, "assemblies", df)
+  })
 
   # Per-sample summary, described over the scaffolds that passed the length
   # filter. One basis for every column, or the row contradicts itself: a path of
@@ -459,14 +504,31 @@ trim_assembly <- function(con, id, path = 1L, scaffold = 1L, from, to) {
 
   cov <- DBI::dbGetQuery(con, "SELECT depths FROM coverage WHERE ID = ? AND path = ? AND scaffold = ?",
     params = list(id, path, scaffold))
-  if (nrow(cov) > 0 && !is.na(cov$depths[1]) && nzchar(cov$depths[1])) {
-    dep <- as.numeric(strsplit(cov$depths[1], ",")[[1]])
-    dep <- dep[from:min(length(dep), to)]
-    DBI::dbExecute(con,
-      "UPDATE coverage SET depths = ?, mean_depth = ?, min_depth = ?, max_depth = ? WHERE ID = ? AND path = ? AND scaffold = ?",
-      params = list(paste(dep, collapse = ","), mean(dep), min(dep), max(dep), id, path, scaffold))
+  dep <- if (nrow(cov) > 0) parse_depths(cov$depths) else numeric(0)
+  # `from` is clamped to the sequence, which can outrun a shorter depth track
+  # (truncated `samtools depth -a`, or a re-assembly coverage never re-ran on)
+  if (length(dep) > 0 && from <= length(dep)) {
+    write_coverage_summary(con, id, path, scaffold, dep[seq(from, min(length(dep), to))])
   }
   invisible(new_len)
+}
+
+#' Rewrite one unit's coverage row from a depth track
+#'
+#' median_depth is what the scaffold table and triage read, so it has to move
+#' with the track, not just mean/min/max.
+#' @param con Open DBI connection. @param id,path,scaffold Assembly unit.
+#' @param dep Numeric depths in position order.
+#' @noRd
+write_coverage_summary <- function(con, id, path, scaffold, dep) {
+  if (length(dep) == 0) return(invisible(FALSE))
+  DBI::dbExecute(con,
+    "UPDATE coverage SET depths = ?, mean_depth = ?, median_depth = ?, min_depth = ?, max_depth = ?
+     WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(paste(dep, collapse = ","), round(mean(dep), 2),
+      round(stats::median(dep), 2), as.integer(min(dep)), as.integer(max(dep)),
+      id, path, scaffold))
+  invisible(TRUE)
 }
 
 #' Ensure the assembly_backup table exists (idempotent).
@@ -548,21 +610,20 @@ restore_assembly <- function(con, id, path = 1L, scaffold = 1L) {
   DBI::dbExecute(con, "UPDATE assemblies SET sequence = ?, length = ?, edited = 1 WHERE ID = ? AND path = ? AND scaffold = ?",
     params = list(bak$sequence[1], bak$length[1], id, path, scaffold))
 
-  DBI::dbExecute(con, "DELETE FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?",
-    params = list(id, path, scaffold))
-  if (!is.na(bak$annotations[1]) && nzchar(bak$annotations[1])) {
-    ann <- jsonlite::fromJSON(bak$annotations[1])
-    if (is.data.frame(ann) && nrow(ann) > 0) {
-      ann$ID <- id; ann$path <- path; ann$scaffold <- scaffold
-      DBI::dbAppendTable(con, "annotations", ann)
+  # one transaction: a failed restore after a committed delete would leave the
+  # unit with neither the trimmed annotations nor the snapshot ones
+  DBI::dbWithTransaction(con, {
+    DBI::dbExecute(con, "DELETE FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = list(id, path, scaffold))
+    if (!is.na(bak$annotations[1]) && nzchar(bak$annotations[1])) {
+      ann <- jsonlite::fromJSON(bak$annotations[1])
+      if (is.data.frame(ann) && nrow(ann) > 0) {
+        ann$ID <- id; ann$path <- path; ann$scaffold <- scaffold
+        DBI::dbAppendTable(con, "annotations", ann)
+      }
     }
-  }
+  })
 
-  if (!is.na(bak$coverage[1]) && nzchar(bak$coverage[1])) {
-    dep <- as.numeric(strsplit(bak$coverage[1], ",")[[1]])
-    DBI::dbExecute(con,
-      "UPDATE coverage SET depths = ?, mean_depth = ?, min_depth = ?, max_depth = ? WHERE ID = ? AND path = ? AND scaffold = ?",
-      params = list(bak$coverage[1], mean(dep), min(dep), max(dep), id, path, scaffold))
-  }
+  write_coverage_summary(con, id, path, scaffold, parse_depths(bak$coverage))
   invisible(bak$length[1])
 }

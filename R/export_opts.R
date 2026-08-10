@@ -157,7 +157,14 @@ export_header_data <- function(con, units) {
     cbind(smp[, !(names(smp) %in% names(extra)), drop = FALSE], extra)
   })
   cols <- Reduce(intersect, lapply(rows, names))
-  do.call(rbind, lapply(rows, function(r) r[, cols, drop = FALSE]))
+  out <- do.call(rbind, lapply(rows, function(r) r[, cols, drop = FALSE]))
+  # glue renders an NA field as the four characters "NA", so a sample with no
+  # Taxon would ship "[organism=NA]", which reads like a real organism name.
+  # Blank them instead; export_summary_df flags the unit as missing_organism.
+  for (nm in names(out)) {
+    if (is.character(out[[nm]])) out[[nm]][is.na(out[[nm]])] <- ""
+  }
+  out
 }
 
 #' First unmatched brace in a template, or NULL

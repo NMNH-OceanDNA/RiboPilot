@@ -509,3 +509,35 @@ test_that("locking two paths asks first, and 'lock anyway' goes through", {
     expect_equal(lk$lock, c(1L, 0L, 1L, 0L))
   })
 })
+
+test_that("a cleared script textarea falls back to a generated submit script", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  writeLines(c("params {", "  rawDir = '/data/raw'", "}"), file.path(dir, ".config"))
+  withr::local_dir(dir)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    # the user selected the text and deleted it: an empty string, not NULL
+    session$setInputs(submit_script_text = "   ")
+    session$setInputs(save_script = 1)
+    session$flushReact()
+  })
+
+  script <- readLines(file.path(dir, "submit_ribopilot.sh"))
+  expect_true(any(grepl("nextflow", script, fixed = TRUE)))
+})
+
+test_that("a typed script is saved as typed", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  writeLines(c("params {", "  rawDir = '/data/raw'", "}"), file.path(dir, ".config"))
+  withr::local_dir(dir)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(submit_script_text = "#!/bin/bash\n#SBATCH -p bigmem\nnextflow run mine")
+    session$setInputs(save_script = 1)
+    session$flushReact()
+  })
+
+  expect_true(any(grepl("bigmem", readLines(file.path(dir, "submit_ribopilot.sh")), fixed = TRUE)))
+})

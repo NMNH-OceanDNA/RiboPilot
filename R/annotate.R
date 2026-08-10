@@ -180,16 +180,78 @@ reconcile_features <- function(bar, its) {
   out
 }
 
+#' Translate a kingdom to the vocabulary of the tool that will receive it
+#'
+#' The two callers do not share a kingdom vocabulary: pybarrnap takes
+#' bac/arc/euk/all, while the bioconda Perl barrnap fork takes bac/arc/fun,
+#' where "fun" selects its eukaryote Rfam covariance models and is NOT a
+#' fungi-only mode (dev/design/03_ANNOTATION_CURATION.md). This is the single
+#' place that mapping lives on the R side; the shell branch of
+#' inst/nextflow/modules/pipeline_r.nf mirrors the same rule.
+#' @param kingdom Stored kingdom (annotate_opts.rrna_kingdom), e.g. "euk".
+#' @param tool "barrnap" or "pybarrnap".
+#' @return The kingdom string to pass to `tool`.
+#' @noRd
+rrna_kingdom_for <- function(kingdom, tool) {
+  k <- if (length(kingdom) != 1 || is.na(kingdom) || !nzchar(kingdom)) "euk" else tolower(kingdom)
+  if (identical(tool, "barrnap")) {
+    if (k %in% c("euk", "all")) "fun" else k
+  } else {
+    if (identical(k, "fun")) "euk" else k
+  }
+}
+
+#' Locate the rRNA anchor caller: pybarrnap preferred, Perl barrnap fallback
+#' @return list(tool, bin) or NULL when neither is installed.
+#' @noRd
+rrna_caller <- function() {
+  py <- unname(Sys.which("pybarrnap"))
+  if (nzchar(py)) {
+    return(list(tool = "pybarrnap", bin = py))
+  }
+  bar <- unname(Sys.which("barrnap"))
+  if (nzchar(bar)) {
+    return(list(tool = "barrnap", bin = bar))
+  }
+  NULL
+}
+
+#' Run an rRNA caller and return its GFF3 lines
+#'
+#' stderr is captured rather than discarded: a wrong kingdom makes the tool exit
+#' non-zero, and silently dropping that turned a hard failure into "no anchors
+#' found". Reported as a warning, not an error, because annotation is
+#' best-effort per unit.
+#' @noRd
+run_rrna_tool <- function(bin, tool, fasta, kingdom, cpu = NULL) {
+  args <- if (identical(tool, "barrnap")) {
+    c("--kingdom", kingdom, "--quiet", shQuote(fasta))
+  } else {
+    c("-k", kingdom, if (!is.null(cpu)) c("-t", cpu), "-q", shQuote(fasta))
+  }
+  err <- tempfile("rp_rrna_err_")
+  on.exit(unlink(err), add = TRUE)
+  gff <- suppressWarnings(system2(bin, args, stdout = TRUE, stderr = err))
+  status <- attr(gff, "status")
+  failed <- !is.null(status) && !identical(as.integer(status), 0L)
+  if (failed || length(gff[!startsWith(gff, "#")]) == 0) {
+    msg <- tryCatch(paste(utils::tail(readLines(err, warn = FALSE), 3L), collapse = " | "),
+      error = function(e) "")
+    warning(sprintf("%s (kingdom '%s') %s on %s%s", tool, kingdom,
+      if (failed) "failed" else "found no rRNA records", basename(fasta),
+      if (nzchar(msg)) paste0(": ", msg) else ""), call. = FALSE)
+  }
+  gff
+}
+
 #' Run barrnap (Rfam eukaryote models) on a fasta and parse rRNA features
 #' @noRd
-run_barrnap <- function(fasta, kingdom = "fun") {
+run_barrnap <- function(fasta, kingdom = "euk") {
   bin <- unname(Sys.which("barrnap"))
   if (!nzchar(bin)) {
     return(data.frame())
   }
-  gff <- suppressWarnings(system2(bin, c("--kingdom", kingdom, "--quiet", shQuote(fasta)),
-    stdout = TRUE, stderr = FALSE))
-  parse_barrnap(gff)
+  parse_barrnap(run_rrna_tool(bin, "barrnap", fasta, rrna_kingdom_for(kingdom, "barrnap")))
 }
 
 #' Run ITSx on a fasta and parse region positions
@@ -221,8 +283,8 @@ run_itsx <- function(fasta, cpu = 2) {
 call_rrna_anchors <- function(fasta, kingdom = "euk") {
   py <- unname(Sys.which("pybarrnap"))
   if (nzchar(py)) {
-    gff <- tryCatch(suppressWarnings(system2(py, c("-k", kingdom, "-q", shQuote(fasta)),
-      stdout = TRUE, stderr = FALSE)), error = function(e) character(0))
+    gff <- tryCatch(run_rrna_tool(py, "pybarrnap", fasta,
+      rrna_kingdom_for(kingdom, "pybarrnap")), error = function(e) character(0))
     out <- parse_barrnap(gff)
     if (!is.null(out) && nrow(out) > 0) return(out)
   }

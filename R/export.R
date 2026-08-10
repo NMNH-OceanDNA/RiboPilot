@@ -44,14 +44,22 @@ clear_export_group <- function(path, units) {
 #' @noRd
 set_export_group <- function(con, units, group) {
   g <- if (length(group) == 0 || is.na(group)) NA_character_ else group
+  n <- if (is.data.frame(units)) nrow(units) else length(units)
+  if (n == 0) return(invisible())
+  # all-or-nothing: a partial group assignment is worse than none
+  DBI::dbBegin(con)
+  done <- FALSE
+  on.exit(if (!done) DBI::dbRollback(con))
   if (is.data.frame(units)) {
-    for (i in seq_len(nrow(units))) {
-      DBI::dbExecute(con, "UPDATE annotate SET export_group = ? WHERE ID = ? AND path = ? AND scaffold = ?",
-        params = list(g, units$ID[i], as.integer(units$path[i]), as.integer(units$scaffold[i])))
-    }
+    DBI::dbExecute(con, "UPDATE annotate SET export_group = ? WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = list(rep(g, n), as.character(units$ID), as.integer(units$path), as.integer(units$scaffold)))
   } else {
-    for (id in units) DBI::dbExecute(con, "UPDATE annotate SET export_group = ? WHERE ID = ?", params = list(g, id))
+    DBI::dbExecute(con, "UPDATE annotate SET export_group = ? WHERE ID = ?",
+      params = list(rep(g, n), as.character(units)))
   }
+  DBI::dbCommit(con)
+  done <- TRUE
+  invisible()
 }
 
 # Valid INSDC source modifiers that may be emitted as `[key=value]` deflines.
@@ -148,7 +156,7 @@ feature_table_text_con <- function(con, id, path = 1L, scaffold = 1L, seqid = id
         paste0(feats$start[i], "\t", feats$stop[i], "\tassembly_gap"),
         paste0("\t\t\testimated_length\t", feats$stop[i] - feats$start[i] + 1),
         "\t\t\tgap_type\twithin scaffold",
-        "\t\t\tlinkage_evidence\talign_genus")
+        "\t\t\tlinkage_evidence\talign genus")
       next
     }
     s <- if (i == first_rna && (feats$start[i] <= 1 || isTRUE(force_partial))) {
@@ -180,19 +188,32 @@ feature_table_text_con <- function(con, id, path = 1L, scaffold = 1L, seqid = id
 #'   `;`-joined string of the flags that fired ("" when clean).
 #' @noRd
 submission_risks <- function(con, id, path = 1L, scaffold = 1L) {
-  chim <- isTRUE(DBI::dbGetQuery(con,
+  chim <- DBI::dbGetQuery(con,
     "SELECT chimeric FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?",
-    params = list(id, path, scaffold))$chimeric[1] == 1L)
+    params = list(id, path, scaffold))$chimeric[1]
   ann <- DBI::dbGetQuery(con,
     "SELECT element, start, stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
     params = list(id, path, scaffold))
-  gap_in_rdna <- FALSE
-  misassembly <- FALSE
+  seq <- NA_character_
   if (nrow(ann) > 0) {
     st <- DBI::dbGetQuery(con, "SELECT sequence FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
       params = list(id, path, scaffold))
-    seq <- if (nrow(st)) st$sequence[1] else NA_character_
-    gaps <- find_n_runs(seq)
+    if (nrow(st)) seq <- st$sequence[1]
+  }
+  risk_flags(chim, ann, seq)
+}
+
+#' The risk computation of [submission_risks()] over already-fetched facts
+#'
+#' `ann` is that unit's annotations ordered by start (or NULL/0 rows), `seq` its
+#' assembled sequence (length 1, may be NA).
+#' @noRd
+risk_flags <- function(chimeric, ann, seq) {
+  chim <- isTRUE(chimeric[1] == 1L)
+  gap_in_rdna <- FALSE
+  misassembly <- FALSE
+  if (!is.null(ann) && nrow(ann) > 0) {
+    gaps <- find_n_runs(if (length(seq)) seq[1] else NA_character_)
     if (nrow(gaps) > 0) {
       # an assembly gap inside the transcribed span is NCBI's "gap between ITS regions"
       gap_in_rdna <- any(gaps$stop >= min(ann$start) & gaps$start <= max(ann$stop))
@@ -262,32 +283,68 @@ submission_readme <- function(label) {
 #' surface portal-parity risk flags.
 #' @noRd
 export_summary_df <- function(con, units) {
-  do.call(rbind, lapply(seq_len(nrow(units)), function(i) {
-    u <- units[i, ]
-    m <- DBI::dbGetQuery(con,
-      "SELECT s.Taxon AS organism, asm.length, an.n_features, an.missing, an.reviewed,
-         an.partial, an.problematic
-       FROM samples s
-       JOIN annotate an ON an.ID = s.ID AND an.path = ? AND an.scaffold = ?
-       JOIN assemblies asm ON asm.ID = s.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
-       WHERE s.ID = ?", params = list(u$path, u$scaffold, u$ID))
-    v <- unit_variant_facts(con, u$ID, u$path, u$scaffold)
-    data.frame(seqid = u$seqid, ID = u$ID, path = u$path, scaffold = u$scaffold,
-      organism = if (nrow(m)) m$organism[1] else NA_character_,
-      length = if (nrow(m)) m$length[1] else NA_integer_,
-      n_features = if (nrow(m)) m$n_features[1] else NA_integer_,
-      missing = if (nrow(m)) m$missing[1] else NA_character_,
-      reviewed = if (nrow(m)) m$reviewed[1] else NA_character_,
-      partial = if (nrow(m)) m$partial[1] else NA_character_,
-      problematic = if (nrow(m)) m$problematic[1] else NA_character_,
-      variant_class = v$variant_class, variant_group = v$variant_group,
-      variant_identity = v$variant_identity, n_variants = v$n_variants,
-      submission_risk = submission_risks(con, u$ID, u$path, u$scaffold)$note,
-      stringsAsFactors = FALSE)
-  }))
+  if (nrow(units) == 0) return(NULL)
+  n <- nrow(units)
+  ids <- unique(as.character(units$ID))
+  qs <- paste(rep("?", length(ids)), collapse = ",")
+  # one query per fact table for the whole unit set, joined in R
+  fetch <- function(sql) tryCatch(DBI::dbGetQuery(con, sprintf(sql, qs), params = as.list(ids)),
+    error = function(e) data.frame())
+  m <- fetch(
+    "SELECT s.ID, an.path, an.scaffold, s.Taxon AS organism, asm.length, an.n_features,
+       an.missing, an.reviewed, an.partial, an.problematic
+     FROM samples s
+     JOIN annotate an ON an.ID = s.ID
+     JOIN assemblies asm ON asm.ID = s.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
+     WHERE s.ID IN (%s)")
+  chi <- fetch("SELECT ID, path, scaffold, chimeric FROM annotate WHERE ID IN (%s)")
+  ann <- fetch("SELECT ID, path, scaffold, element, start, stop FROM annotations
+                WHERE ID IN (%s) ORDER BY ID, path, scaffold, start")
+  asm <- fetch("SELECT ID, path, scaffold, sequence FROM assemblies WHERE ID IN (%s)")
+  scr <- fetch("SELECT ID, path, scaffold, variant_class, variant_group, variant_identity
+                FROM screen WHERE ID IN (%s)")
+
+  ukey <- unit_key(units$ID, units$path, units$scaffold)
+  mi <- if (nrow(m)) match(ukey, unit_key(m$ID, m$path, m$scaffold)) else rep(NA_integer_, n)
+  pick <- function(d, nm, na) {
+    if (is.null(d[[nm]]) || length(d[[nm]]) == 0) rep(na, n) else d[[nm]][mi]
+  }
+  anni <- if (nrow(ann)) split(seq_len(nrow(ann)), unit_key(ann$ID, ann$path, ann$scaffold)) else list()
+  seqv <- if (nrow(asm)) asm$sequence[match(ukey, unit_key(asm$ID, asm$path, asm$scaffold))] else rep(NA_character_, n)
+  chiv <- if (nrow(chi)) chi$chimeric[match(ukey, unit_key(chi$ID, chi$path, chi$scaffold))] else rep(NA_integer_, n)
+  v <- unit_variant_facts_df(scr, units)
+
+  organism <- pick(m, "organism", NA_character_)
+  risk <- vapply(seq_len(n), function(i) {
+    note <- risk_flags(chiv[i], ann[anni[ukey[i]][[1]], , drop = FALSE], seqv[i])$note
+    # NCBI rejects a record with no [organism=]; flag it rather than drop the record
+    if (is.na(organism[i]) || !nzchar(trimws(organism[i]))) {
+      note <- paste(c(if (nzchar(note)) note, "missing_organism"), collapse = ";")
+    }
+    note
+  }, character(1))
+
+  data.frame(seqid = units$seqid, ID = units$ID, path = units$path, scaffold = units$scaffold,
+    organism = organism,
+    length = pick(m, "length", NA_integer_),
+    n_features = pick(m, "n_features", NA_integer_),
+    missing = pick(m, "missing", NA_character_),
+    reviewed = pick(m, "reviewed", NA_character_),
+    partial = pick(m, "partial", NA_character_),
+    problematic = pick(m, "problematic", NA_character_),
+    variant_class = v$variant_class, variant_group = v$variant_group,
+    variant_identity = v$variant_identity, n_variants = v$n_variants,
+    submission_risk = risk,
+    stringsAsFactors = FALSE)
 }
 
-#' The intragenomic variant fact for one exported unit
+#' Join key for an assembly unit
+#' @noRd
+unit_key <- function(id, path, scaffold) {
+  paste(as.character(id), as.integer(path), as.integer(scaffold), sep = "\r")
+}
+
+#' The intragenomic variant facts for a set of exported units
 #'
 #' Records that a unit is one of N intragenomic variants detected in its sample
 #' and the anchor identity between them. It answers doc 08's open question 7
@@ -298,21 +355,24 @@ export_summary_df <- function(con, units) {
 #'
 #' `n_variants` counts the sample's COMPARABLE on-target units, so it agrees with
 #' what the grouping actually measured rather than with how many units exist.
+#'
+#' `scr` is the `screen` rows for the units' samples (0 rows when the project has
+#' no screen table).
 #' @noRd
-unit_variant_facts <- function(con, id, path = 1L, scaffold = 1L) {
-  out <- list(variant_class = NA_character_, variant_group = NA_character_,
-    variant_identity = NA_real_, n_variants = NA_integer_)
-  d <- tryCatch(DBI::dbGetQuery(con,
-    "SELECT path, scaffold, variant_class, variant_group, variant_identity
-       FROM screen WHERE ID = ?", params = list(id)),
-    error = function(e) data.frame())
-  if (nrow(d) == 0) return(out)
-  i <- which(d$path == as.integer(path) & d$scaffold == as.integer(scaffold))
-  if (!length(i)) return(out)
-  out$variant_class <- d$variant_class[i[1]]
-  out$variant_group <- d$variant_group[i[1]]
-  out$variant_identity <- d$variant_identity[i[1]]
-  out$n_variants <- sum(!is.na(d$variant_class))
+unit_variant_facts_df <- function(scr, units) {
+  n <- nrow(units)
+  out <- list(variant_class = rep(NA_character_, n), variant_group = rep(NA_character_, n),
+    variant_identity = rep(NA_real_, n), n_variants = rep(NA_integer_, n))
+  if (is.null(scr) || nrow(scr) == 0) return(out)
+  i <- match(unit_key(units$ID, units$path, units$scaffold),
+    unit_key(scr$ID, scr$path, scr$scaffold))
+  hit <- !is.na(i)
+  if (!any(hit)) return(out)
+  out$variant_class[hit] <- as.character(scr$variant_class[i[hit]])
+  out$variant_group[hit] <- as.character(scr$variant_group[i[hit]])
+  out$variant_identity[hit] <- as.numeric(scr$variant_identity[i[hit]])
+  cnt <- tapply(!is.na(scr$variant_class), as.character(scr$ID), sum)
+  out$n_variants[hit] <- as.integer(cnt[as.character(units$ID)[hit]])
   out
 }
 
@@ -324,28 +384,75 @@ feature_map_svg <- function(con, id, path = 1L, scaffold = 1L, seqid = id) {
   if (nrow(d) == 0) {
     return("<em>no annotations</em>")
   }
-  d$molecule <- seqid
-  p <- ggplot2::ggplot(d, ggplot2::aes(xmin = start, xmax = stop, y = molecule, fill = element, label = element)) +
-    gggenes::geom_gene_arrow(arrowhead_height = grid::unit(5, "mm"), arrow_body_height = grid::unit(4.5, "mm")) +
-    gggenes::geom_gene_label(align = "centre", grow = FALSE) +
-    ggplot2::scale_fill_manual(values = RRNA_ELEMENT_COLORS, guide = "none") +
-    ggplot2::labs(x = NULL, y = NULL) +
-    ggplot2::theme_minimal(base_size = 11) +
-    ggplot2::theme(panel.grid.major.y = ggplot2::element_blank(),
-      axis.text.y = ggplot2::element_blank())
-  tf <- tempfile(fileext = ".svg")
-  ggplot2::ggsave(tf, p, device = svglite::svglite, width = 9, height = 1.1)
-  svg <- paste(readLines(tf, warn = FALSE), collapse = "\n")
-  unlink(tf)
-  sub("(?s).*?(<svg)", "\\1", svg, perl = TRUE) # strip XML/doctype header
+  feature_map_svg_text(d)
+}
+
+#' @noRd
+xml_escape <- function(x) {
+  x <- gsub("&", "&amp;", x, fixed = TRUE)
+  x <- gsub("<", "&lt;", x, fixed = TRUE)
+  gsub(">", "&gt;", x, fixed = TRUE)
+}
+
+#' Hand-written SVG for the five-box rRNA feature diagram
+#'
+#' Right-pointing gene arrows on one row, filled from [RRNA_ELEMENT_COLORS],
+#' with centred element labels and a bp axis. Written by hand rather than
+#' rendered: the HTML report embeds one of these for every exported unit.
+#'
+#' `d` is that unit's annotations (element, start, stop) ordered by start.
+#' @noRd
+feature_map_svg_text <- function(d, width = 900, height = 110) {
+  x0 <- min(d$start, na.rm = TRUE)
+  x1 <- max(d$stop, na.rm = TRUE)
+  span <- max(x1 - x0, 1)
+  pad <- 26
+  inner <- width - 2 * pad
+  sx <- function(v) pad + (v - x0) / span * inner
+  ytop <- 18
+  hbody <- 34
+  ybot <- ytop + hbody
+  ymid <- ytop + hbody / 2
+  axis_y <- ybot + 22
+
+  ticks <- pretty(c(x0, x1), n = 5)
+  ticks <- ticks[ticks >= x0 & ticks <= x1]
+  grid <- vapply(ticks, function(t) sprintf(
+    "<line x1='%.1f' y1='%d' x2='%.1f' y2='%d' stroke='#EBEBEB' stroke-width='1'/>",
+    sx(t), ytop - 8, sx(t), ybot + 8), character(1))
+  axis <- vapply(ticks, function(t) sprintf(
+    "<text x='%.1f' y='%d' text-anchor='middle' font-size='10' fill='#4D4D4D'>%s</text>",
+    sx(t), axis_y, format(t, scientific = FALSE, trim = TRUE)), character(1))
+
+  feats <- vapply(seq_len(nrow(d)), function(i) {
+    xs <- sx(d$start[i])
+    xe <- sx(d$stop[i])
+    head <- min(10, max(0, (xe - xs) * 0.35))
+    fill <- unname(RRNA_ELEMENT_COLORS[d$element[i]])
+    if (is.na(fill)) fill <- "#BBBBBB"
+    # gene arrow: body, then a head standing slightly proud of it
+    pts <- sprintf("%.1f,%d %.1f,%d %.1f,%d %.1f,%.1f %.1f,%d %.1f,%d %.1f,%d",
+      xs, ytop, xe - head, ytop, xe - head, ytop - 2, xe, ymid,
+      xe - head, ybot + 2, xe - head, ybot, xs, ybot)
+    lab <- xml_escape(d$element[i])
+    paste0(
+      sprintf("<polygon points='%s' fill='%s' stroke='#333333' stroke-width='1'/>", pts, fill),
+      sprintf("<text x='%.1f' y='%.1f' text-anchor='middle' dominant-baseline='central' font-size='11' fill='#000000'>%s</text>",
+        (xs + xe - head) / 2, ymid, lab))
+  }, character(1))
+
+  paste0(sprintf("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 %d %d' width='%d' height='%d'>",
+    width, height, width, height),
+    paste(grid, collapse = ""), paste(feats, collapse = ""), paste(axis, collapse = ""),
+    "</svg>")
 }
 
 #' Write a self-contained HTML report for an export group / selection
 #'
 #' `units` is a data.frame(ID, path, scaffold, seqid) - one row per exported unit.
+#' `smry` is the already-computed [export_summary_df()] for those units.
 #' @noRd
-export_report_html <- function(con, units, out_html, label) {
-  smry <- export_summary_df(con, units)
+export_report_html <- function(con, units, out_html, label, smry = export_summary_df(con, units)) {
   hdr <- c("seqid", "ID", "organism", "length", "n_features", "missing", "reviewed", "submission_risk")
   rows <- apply(smry[, intersect(hdr, names(smry)), drop = FALSE], 1, function(r) {
     paste0("<tr>", paste0("<td>", ifelse(is.na(r), "", r), "</td>", collapse = ""), "</tr>")
@@ -353,7 +460,7 @@ export_report_html <- function(con, units, out_html, label) {
   maps <- vapply(seq_len(nrow(units)), function(i) {
     u <- units[i, ]
     paste0("<div class='sample'><h3>", u$seqid, " <small>",
-      smry$organism[i] %||% "", "</small></h3>",
+      (smry$organism[i] %||% NA) %|NA|% "", "</small></h3>",
       feature_map_svg(con, u$ID, u$path, u$scaffold, u$seqid), "</div>")
   }, character(1))
   html <- paste0(
@@ -392,7 +499,7 @@ export_report_html <- function(con, units, out_html, label) {
 #' @param zip Also write `<out_dir>/<label>.zip`.
 #' @param export_opts Name of the saved FASTA-header configuration to use.
 #' @param fasta_header,fasta_header_marker Optional header templates
-#'   (`{token}` glue syntax) overriding the saved configuration.
+#'   (\code{\{token\}} glue syntax) overriding the saved configuration.
 #' @return (invisibly) the group output directory.
 #' @export
 export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,

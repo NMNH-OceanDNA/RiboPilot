@@ -91,6 +91,8 @@ apply_project_taxonomy <- function(path = ".",
   on.exit(DBI::dbDisconnect(con), add = TRUE)
 
   upd <- DBI::dbSendStatement(con, "UPDATE samples SET taxid = ?, lineage = ? WHERE Taxon = ?")
+  # before the dbDisconnect() registered above, hence after = FALSE
+  on.exit(DBI::dbClearResult(upd), add = TRUE, after = FALSE)
   for (i in seq_len(nrow(review))) {
     DBI::dbBind(upd, list(
       review$confirmed_taxid[i],
@@ -98,7 +100,6 @@ apply_project_taxonomy <- function(path = ".",
       review$Taxon[i]
     ))
   }
-  DBI::dbClearResult(upd)
 
   n_ok <- sum(!is.na(review$confirmed_taxid))
   message("Froze taxid + lineage for ", n_ok, "/", nrow(review),
@@ -125,7 +126,11 @@ write_path_scores <- function(con, ID, scored) {
   for (c in cols) df[[c]] <- if (!is.null(scored[[c]])) scored[[c]] else NA
   df$auto_select <- as.integer(df$auto_select)
   df$time_stamp <- as.integer(Sys.time())
-  DBI::dbExecute(con, "DELETE FROM path_scores WHERE ID = ?", params = list(ID))
-  DBI::dbAppendTable(con, "path_scores", df)
+  # one transaction: a failed append after a committed delete would leave the
+  # sample with no path scores at all
+  DBI::dbWithTransaction(con, {
+    DBI::dbExecute(con, "DELETE FROM path_scores WHERE ID = ?", params = list(ID))
+    DBI::dbAppendTable(con, "path_scores", df)
+  })
   invisible()
 }

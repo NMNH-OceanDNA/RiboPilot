@@ -8,6 +8,7 @@ score_assembly(
   path_fastas,
   gfa_path = NA_character_,
   sample_lineage = NA_character_,
+  sample_taxids = NA_character_,
   blast_db = NULL,
   taxdump_dir = NULL,
   with_staxids = FALSE,
@@ -20,7 +21,10 @@ score_assembly(
 
 \item{gfa_path}{The assembly graph `.gfa` (for depth). May be NA.}
 
-\item{sample_lineage}{The sample's resolved "; " ranked lineage.}
+\item{sample_lineage}{The sample's resolved rank-aligned lineage.}
+
+\item{sample_taxids}{The sample's rank-aligned lineage taxids. Preferred over
+the names when present: taxids carry no homonyms.}
 
 \item{blast_db}{BLAST nucleotide db prefix (e.g. the Actinopterygii seeds db,
 or an nt-style db).}

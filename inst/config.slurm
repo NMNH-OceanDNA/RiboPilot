@@ -22,6 +22,7 @@ process {
     executor = 'slurm'
     container = '<<CONTAINER_ID>>'
     queue = '<<QUEUE>>'                         // SLURM partition (maps to -p)
+    time = '<<WALLTIME>>'                       // per-job walltime (maps to -t); many sites reject a job without one
     clusterOptions = '<<CLUSTER_OPTIONS>>'      // extra sbatch directives, e.g. --account=...
     memory = { 16.GB * task.attempt }           // CPUs come from the pipeline; tune memory as needed
 }

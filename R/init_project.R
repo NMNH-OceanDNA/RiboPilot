@@ -11,16 +11,24 @@
 #' @param mapping_id Column in the mapping file with unique ids (default "ID").
 #' @param data_path Directory where the raw read data is located.
 #' @param min_depth Minimum trimmed paired reads to proceed with assembly.
-#' @param executor Executor for the Nextflow pipeline: a built-in template
-#'   ("conda" (default) for a local conda env, "docker"/"local" for the RiboPilot
-#'   container, "awsbatch", "slurm", "sge", "pbs", "lsf", "NMNH_Hydra",
-#'   "NOAA_SEDNA") or a saved profile from [generate_config()].
+#' @param executor Executor for the Nextflow pipeline. Ready to use as-is:
+#'   "conda" (default) for a local conda env, and "docker"/"local" for the
+#'   RiboPilot container. Every scheduler ("slurm", "sge", "pbs", "lsf",
+#'   "awsbatch", "NMNH_Hydra", "NOAA_SEDNA") is a template, not a usable
+#'   executor: it needs a queue and cluster options that only [generate_config()]
+#'   supplies, so build a profile there first and pass its name here. Passing a
+#'   bare scheduler name is an error rather than a config Nextflow cannot parse.
 #' @param container Container to use for pipeline execution.
 #' @param custom_seeds_db Path/URL to a custom GetOrganelle nr seeds database.
 #' @param custom_labels_db Path/URL to a custom GetOrganelle nr labels database.
+#' @param ref_dir Folder for built reference databases (default: the
+#'   `RIBOPILOT_REF_DIR` environment variable, else [ribopilot_ref_dir()]).
 #' @param config Optional path to an existing custom Nextflow config file.
 #' @param profile_dir Directory searched for saved cluster profiles.
 #' @param ncbi_api_key Optional NCBI API key (raises request rate limits).
+#' @param check_reads (logical) Check that the read files named in the mapping
+#'   file exist under `data_path` (default TRUE). Set FALSE when the data will
+#'   be staged later.
 #' @param Rproj (logical) Initialize/open an RStudio project (default TRUE).
 #' @param force (logical) Recreate an existing project database (default FALSE).
 #' @param ... Additional default processing parameters passed to [new_db()].
@@ -36,9 +44,11 @@ new_project <- function(
     container = paste0("macguigand/ribopilot:", utils::packageVersion("RiboPilot")),
     custom_seeds_db = NULL,
     custom_labels_db = NULL,
+    ref_dir = NULL,
     config = NULL,
     profile_dir = ribopilot_config_dir(),
     ncbi_api_key = NULL,
+    check_reads = TRUE,
     Rproj = TRUE,
     force = FALSE,
     ...) {
@@ -96,8 +106,11 @@ new_project <- function(
     db_path = db,
     mapping_fn = mapping_out,
     mapping_id = mapping_id,
+    data_path = data_path,
+    check_reads = check_reads,
     seeds_db = custom_seeds_db,
     labels_db = custom_labels_db,
+    ref_dir = ref_dir,
     ...
   )
 
@@ -111,13 +124,7 @@ new_project <- function(
   # seed/label reference DBs so Nextflow's staged symlinks resolve inside the
   # container (the project + raw dirs are already mounted).
   extra_mounts <- ""
-  engine <- if (any(grepl("singularity\\s*\\{|apptainer\\s*\\{", cfg_lines))) {
-    "singularity"
-  } else if (any(grepl("docker\\s*\\{", cfg_lines))) {
-    "docker"
-  } else {
-    NA_character_
-  }
+  engine <- config_container_engine(cfg_lines)
   if (!is.na(engine)) {
     local_ref_dir <- function(p) {
       if (!is.null(p) && length(p) == 1 && nzchar(p) &&
@@ -139,7 +146,7 @@ new_project <- function(
       extra_mounts <- paste0(" ", paste(mounts, collapse = " "))
     }
   }
-  cfg_lines |>
+  out_lines <- cfg_lines |>
     fill_config(list(
       CONTAINER_ID = container,
       RAW_DIR = data_path,
@@ -148,8 +155,21 @@ new_project <- function(
       GENETIC_CODE = "1",
       NCBI_API_KEY = ncbi_api_key %||% "",
       EXTRA_MOUNTS = extra_mounts
-    )) |>
-    writeLines(file.path(path, ".config"))
+    ))
+  # Scheduler templates carry tokens only generate_config() fills (queue,
+  # cluster options, container engine). Writing them through produces a config
+  # Nextflow cannot parse, so fail here instead of at run time.
+  left <- config_tokens(out_lines)
+  if (length(left)) {
+    stop(glue::glue(
+      "Config template '{basename(config)}' still has unfilled placeholders: ",
+      "{paste(left, collapse = ', ')}. Build a profile with generate_config() ",
+      "first, then pass its name as `executor`."), call. = FALSE)
+  }
+  config_out <- file.path(path, ".config")
+  writeLines(out_lines, config_out)
+  # the config carries the NCBI API key, so keep it owner-only
+  Sys.chmod(config_out, "0600")
 
   message("Project initialized successfully.")
   message("Please open and review the .config file to ensure all required options are specified.")

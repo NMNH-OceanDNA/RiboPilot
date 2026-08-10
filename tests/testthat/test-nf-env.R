@@ -12,6 +12,7 @@ test_that("the pipeline is pointed at a package source root, not inst/", {
 
   dir <- withr::local_tempdir()
   file.create(file.path(dir, ".sqlite"))
+  writeLines(c("params {", "  rawDir = '/data/raw'", "}"), file.path(dir, ".config"))
   args <- RiboPilot:::nf_command(dir, "assemble")
   passed <- args[which(args == "--ribopilot_src") + 1]
   expect_length(passed, 1)

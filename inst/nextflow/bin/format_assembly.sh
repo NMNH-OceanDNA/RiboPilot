@@ -3,11 +3,21 @@
 # ">id.<path>.<scaffold> <topology> <original_header>". The original GetOrganelle
 # header (scaffold_N--<edge ids>) is kept so downstream scoring can look up
 # per-contig graph depth; loaders parse only the leading id.path.scaffold token.
+#
+# n is a primary key: the curator's keep/drop decisions are stored against it,
+# so it must come from the graph/path numbers GetOrganelle puts in the filename
+# (...graph<G>.<P>.path_sequence.fasta), not from glob order, which reorders
+# once G or P reaches 10 (graph1.10 sorts before graph1.2).
 set -euo pipefail
 id=$1
 godir=$2
 shopt -s nullglob
-files=("$godir"/*path_sequence.fasta)
+mapfile -t files < <(
+    for f in "$godir"/*path_sequence.fasta; do
+        key=$(sed -n 's/.*graph\([0-9][0-9]*\)\.\([0-9][0-9]*\)\.path_sequence\.fasta$/\1 \2/p' <<< "${f##*/}")
+        printf '%s %s\n' "${key:-999999 999999}" "$f"
+    done | sort -k1,1n -k2,2n -k3 | cut -d' ' -f3-
+)
 if [ ${#files[@]} -eq 0 ]; then
     echo ">No assembly found" > "${id}_assembly_0.fasta"
     exit 0

@@ -106,12 +106,14 @@ test_that("main.nf includes fallback_assemble and still passes seeds to GetOrgan
   go_call <- grep("assemble\\(asm_branched\\.go", main_nf)
   expect_length(go_call, 1)
   block <- paste(main_nf[go_call:(go_call + 1)], collapse = " ")
-  expect_match(block, "tuple\\(id, reads, cpus, mem, go, seeds, labels\\)")
+  expect_match(block, "tuple\\(id, reads, cpus, mem, go, file\\(seeds\\), file\\(labels\\)\\)")
 })
 
 test_that("there is ONE workflow: no second file left to drift", {
   nf_dir <- system.file("nextflow", package = "RiboPilot")
-  wf <- setdiff(list.files(nf_dir, pattern = "\\.nf$"), "nextflow.config")
+  # main_reference.nf is the reference-database workflow, not a second WF1
+  wf <- setdiff(list.files(nf_dir, pattern = "\\.nf$"),
+    c("nextflow.config", "main_reference.nf"))
   expect_setequal(wf, "main.nf")
   expect_false(file.exists(file.path(nf_dir, "main_fallback.nf")))
   expect_false(file.exists(file.path(nf_dir, "main_annotate.nf")))
@@ -216,4 +218,214 @@ test_that("query_annotate_units does not require a locked assembly", {
   con <- mk_units_db(); on.exit(DBI::dbDisconnect(con))
   add_unit(con, "UNREVIEWED", asm_sw = 2, asm_lock = 0)
   expect_equal(DBI::dbGetQuery(con, annotate_units_sql())$ID, "UNREVIEWED")
+})
+
+# ---- reference databases are mounted into the container ----
+
+mk_mount_project <- function(dir, seeds, labels, engine = "docker") {
+  writeLines(c(RiboPilot:::container_engine_block(engine),
+    "params {", "  rawDir = '/data/raw'", "}"), file.path(dir, ".config"))
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "CREATE TABLE assemble_opts (assemble_opts TEXT, seeds_db TEXT, labels_db TEXT)")
+  DBI::dbExecute(con, "INSERT INTO assemble_opts VALUES ('actinopterygii', ?, ?)",
+    params = list(seeds, labels))
+  DBI::dbDisconnect(con)
+  dir
+}
+
+test_that("a database outside the project is bind-mounted for the pipeline run", {
+  skip_if_not_installed("withr")
+  proj <- withr::local_tempdir(); refs <- withr::local_tempdir()
+  dir.create(file.path(refs, "seeds")); dir.create(file.path(refs, "labels"))
+  s <- file.path(refs, "seeds", "x_seeds.fasta"); l <- file.path(refs, "labels", "x_labels.fasta")
+  writeLines(">18S", s); writeLines(">18S", l)
+  mk_mount_project(proj, s, l)
+  a <- RiboPilot:::nf_command(proj, resume = FALSE)
+  i <- which(a == "-process.containerOptions")
+  expect_length(i, 1L)
+  expect_true(grepl(file.path(refs, "seeds"), a[i + 1], fixed = TRUE))
+  expect_true(grepl(file.path(refs, "labels"), a[i + 1], fixed = TRUE))
+})
+
+test_that("a database inside the project needs no extra mount", {
+  skip_if_not_installed("withr")
+  proj <- withr::local_tempdir()
+  dir.create(file.path(proj, "refs"))
+  s <- file.path(proj, "refs", "x_seeds.fasta"); l <- file.path(proj, "refs", "x_labels.fasta")
+  writeLines(">18S", s); writeLines(">18S", l)
+  mk_mount_project(proj, s, l)
+  a <- RiboPilot:::nf_command(proj, resume = FALSE)
+  expect_false(any(grepl(normalizePath(proj), a[which(a == "-process.containerOptions") + 1] %||% "",
+    fixed = TRUE)))
+})
+
+test_that("a config with no container engine gets no mount option", {
+  skip_if_not_installed("withr")
+  proj <- withr::local_tempdir(); refs <- withr::local_tempdir()
+  s <- file.path(refs, "x_seeds.fasta"); l <- file.path(refs, "x_labels.fasta")
+  writeLines(">18S", s); writeLines(">18S", l)
+  writeLines(c("process { executor = 'local' }", "params {", "  rawDir = '/data/raw'", "}"),
+    file.path(proj, ".config"))
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(proj, ".sqlite"))
+  DBI::dbExecute(con, "CREATE TABLE assemble_opts (assemble_opts TEXT, seeds_db TEXT, labels_db TEXT)")
+  DBI::dbExecute(con, "INSERT INTO assemble_opts VALUES ('a', ?, ?)", params = list(s, l))
+  DBI::dbDisconnect(con)
+  expect_false("-process.containerOptions" %in% RiboPilot:::nf_command(proj, resume = FALSE))
+})
+
+test_that("singularity gets --bind, not -v", {
+  skip_if_not_installed("withr")
+  proj <- withr::local_tempdir(); refs <- withr::local_tempdir()
+  s <- file.path(refs, "x_seeds.fasta"); l <- file.path(refs, "x_labels.fasta")
+  writeLines(">18S", s); writeLines(">18S", l)
+  mk_mount_project(proj, s, l, engine = "singularity")
+  a <- RiboPilot:::nf_command(proj, resume = FALSE)
+  v <- a[which(a == "-process.containerOptions") + 1]
+  expect_true(grepl("--bind", v, fixed = TRUE))
+  expect_false(grepl("-v ", v, fixed = TRUE))
+})
+
+test_that("directories the config already mounts are not mounted twice", {
+  skip_if_not_installed("withr")
+  proj <- withr::local_tempdir(); refs <- withr::local_tempdir()
+  s <- file.path(refs, "x_seeds.fasta"); l <- file.path(refs, "x_labels.fasta")
+  writeLines(">18S", s); writeLines(">18S", l)
+  # the mount the config carries names refs explicitly, as new_project() writes it
+  writeLines(c("docker {", "  enabled = true",
+    sprintf('  runOptions = "-v ${params.projectDir}:${params.projectDir} -v %s:%s"', refs, refs),
+    "}", "params {", "  rawDir = '/data/raw'", "}"), file.path(proj, ".config"))
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(proj, ".sqlite"))
+  DBI::dbExecute(con, "CREATE TABLE assemble_opts (assemble_opts TEXT, seeds_db TEXT, labels_db TEXT)")
+  DBI::dbExecute(con, "INSERT INTO assemble_opts VALUES ('a', ?, ?)", params = list(s, l))
+  DBI::dbDisconnect(con)
+  expect_false("-process.containerOptions" %in% RiboPilot:::nf_command(proj, resume = FALSE))
+})
+
+test_that("a config mount is parsed whole, not truncated at a letter s", {
+  # the default regex engine reads [^\\s:] as "not backslash, s or colon", which
+  # silently cut /home/u/Documents/... down to /home/u/Document
+  cfg <- c("docker {", "  enabled = true",
+    '  runOptions = "-v /home/u/Documents/refs:/home/u/Documents/refs"', "}")
+  expect_equal(RiboPilot:::config_mounted_dirs(cfg), "/home/u/Documents/refs")
+})
+
+test_that("seed and label subfolders are each mounted, and neither is dropped", {
+  skip_if_not_installed("withr")
+  proj <- withr::local_tempdir(); refs <- withr::local_tempdir()
+  dir.create(file.path(refs, "seeds")); dir.create(file.path(refs, "labels"))
+  s <- file.path(refs, "seeds", "x_seeds.fasta"); l <- file.path(refs, "labels", "x_labels.fasta")
+  writeLines(">18S", s); writeLines(">18S", l)
+  mk_mount_project(proj, s, l)
+  v <- RiboPilot:::nf_command(proj, resume = FALSE)
+  v <- v[which(v == "-process.containerOptions") + 1]
+  expect_true(grepl(file.path(refs, "seeds"), v, fixed = TRUE))
+  expect_true(grepl(file.path(refs, "labels"), v, fixed = TRUE))
+  expect_equal(lengths(regmatches(v, gregexpr("-v ", v, fixed = TRUE))), 2L)
+})
+
+test_that("a folder collapses its own subfolders when both are named", {
+  skip_if_not_installed("withr")
+  d <- withr::local_tempdir()
+  dir.create(file.path(d, "seeds"))
+  expect_equal(RiboPilot:::drop_covered(c(d, file.path(d, "seeds")), c(d, file.path(d, "seeds"))), d)
+})
+
+# Failure handling. A pipeline that reports success while quietly dropping work
+# is worse than one that stops, so pin the three guarantees that prevent it.
+
+test_that("every DB-touching process states an error strategy", {
+  nf_dir <- system.file("nextflow", package = "RiboPilot")
+  mods <- list.files(file.path(nf_dir, "modules"), pattern = "\\.nf$", full.names = TRUE)
+  for (f in c(mods, file.path(nf_dir, "main_reference.nf"))) {
+    lines <- readLines(f)
+    starts <- grep("^process\\s+\\S+\\s*\\{", lines)
+    for (s in starts) {
+      nm <- sub("^process\\s+(\\S+)\\s*\\{.*$", "\\1", lines[s])
+      body <- lines[s:min(length(lines), s + 20)]
+      body <- body[seq_len(which(c(grepl("^\\s*(input|script|output):", body), TRUE))[1] - 1)]
+      expect_true(any(grepl("errorStrategy", body)),
+        info = paste("process", nm, "in", basename(f), "has no errorStrategy"))
+    }
+  }
+})
+
+test_that("sqlite3 CLI calls set a busy timeout", {
+  nf_dir <- system.file("nextflow", package = "RiboPilot")
+  mods <- list.files(file.path(nf_dir, "modules"), pattern = "\\.nf$", full.names = TRUE)
+  for (f in mods) {
+    lines <- readLines(f)
+    calls <- grep("sqlite3\\s+(-|')", lines[!grepl("^\\s*(//|#)", lines)], value = TRUE)
+    for (cl in calls) {
+      # the CLI default busy timeout is 0, so a lock race fails the task outright
+      expect_match(cl, "sqlite3 -cmd '\\.timeout", info = paste(basename(f), cl))
+    }
+  }
+})
+
+test_that("the shipped config sets pipefail and throttles the NCBI processes", {
+  cfg <- readLines(system.file("nextflow", "nextflow.config", package = "RiboPilot"))
+  txt <- paste(cfg, collapse = " ")
+  # without pipefail, `bowtie2 | samtools sort` reports samtools' exit status
+  expect_match(txt, "pipefail")
+  expect_match(txt, "blast_genbank\\|blast_ref_fetch")
+  expect_match(txt, "maxForks")
+})
+
+test_that("an out-of-memory kill retries with more memory instead of dropping", {
+  txt <- paste(readLines(system.file("nextflow", "nextflow.config", package = "RiboPilot")),
+    collapse = " ")
+  expect_match(txt, "assemble\\|fallback_assemble\\|preprocess\\|annotate_tools")
+  for (code in c(104, 134, 137, 139, 140, 143, 247)) {
+    expect_match(txt, paste0("\\b", code, "\\b"))
+  }
+  expect_match(txt, "'retry' : 'ignore'", fixed = TRUE)
+  expect_match(txt, "maxRetries = 3", fixed = TRUE)
+  # without task.attempt in the memory closure the retry asks for the same
+  # allocation that just failed. Derive the process list from the selector
+  # rather than hardcoding it, so adding a process to the retry policy cannot
+  # quietly skip this check.
+  nf_dir <- system.file("nextflow", package = "RiboPilot")
+  pipeline_cfg <- readLines(file.path(nf_dir, "nextflow.config"))
+  sel <- sub(".*withName: *'([^']+)'.*", "\\1",
+    grep("withName.*assemble", pipeline_cfg, value = TRUE)[1])
+  procs <- strsplit(sel, "|", fixed = TRUE)[[1]]
+  expect_gt(length(procs), 1)
+  mods <- list.files(file.path(nf_dir, "modules"), pattern = "\\.nf$", full.names = TRUE)
+  for (p in procs) {
+    mem <- NULL
+    for (f in mods) {
+      lines <- readLines(f)
+      s <- grep(paste0("^process\\s+", p, "\\s*\\{"), lines)
+      if (!length(s)) next
+      body <- lines[s:min(length(lines), s + 20)]
+      body <- body[seq_len(which(c(grepl("^\\s*(input|script|output):", body), TRUE))[1] - 1)]
+      mem <- grep("^\\s*memory \\{", body, value = TRUE)
+    }
+    expect_length(mem, 1)
+    expect_match(mem, "mem", info = p)          # DB value is still the starting point
+    expect_match(mem, "task.attempt", fixed = TRUE, info = p)
+  }
+})
+
+test_that("a sample with no seeds database goes to the fallback, not to file('')", {
+  # sqlite3 renders a SQL NULL as '', and file('') throws during channel
+  # construction, killing the run before any task is submitted
+  txt <- paste(main_nf, collapse = "\n")
+  expect_match(txt, "asm_opts = rows.map \\{ r -> tuple\\(r.ID, r.asm_cpus, r.asm_mem, r.getOrganelle, r.seeds_db, r.labels_db, r.assembler\\)")
+  expect_match(txt, "go: it[7] == 'getorganelle' && it[5] && it[6]", fixed = TRUE)
+  expect_match(txt, "fb: true", fixed = TRUE)
+})
+
+test_that("the Nextflow version probe runs once per session", {
+  # a cold launcher downloads its dependencies before answering, so attaching
+  # the package must not pay for the probe more than once
+  rm(list = ls(RiboPilot:::.nf_probe_cache), envir = RiboPilot:::.nf_probe_cache)
+  on.exit(rm(list = ls(RiboPilot:::.nf_probe_cache), envir = RiboPilot:::.nf_probe_cache))
+  calls <- 0L
+  local_mocked_bindings(
+    nf_installed_version = function(...) { calls <<- calls + 1L; NA_character_ },
+    .package = "RiboPilot")
+  expect_true(is.na(RiboPilot:::nf_version_session()))
+  expect_true(is.na(RiboPilot:::nf_version_session()))
+  expect_equal(calls, 1L)
 })

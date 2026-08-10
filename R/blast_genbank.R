@@ -14,6 +14,16 @@ is_nuclear_rrna_title <- function(title) {
   classify_hit_title(title) == "rdna"
 }
 
+#' Floors a subject must clear to become a reference the sample is aligned to.
+#'
+#' Applied to the reference panel only, never to the search or to the screen's
+#' hit distribution. rDNA anchors are conserved well above 85 percent within a
+#' phylum, and a subject covering under half the query is a fragment rather than
+#' a comparable record.
+#' @noRd
+REF_CANDIDATE_MIN_PIDENT <- 85
+REF_CANDIDATE_MIN_QCOVS <- 50
+
 #' Parse remote blastn hits into ranked reference candidates + a contamination
 #' screen
 #'
@@ -42,15 +52,20 @@ parse_blast_candidates <- function(con, id, path = 1L, scaffold = 1L, hits_file,
   path <- as.integer(path); scaffold <- as.integer(scaffold)
   # rp_blast.R runs against the project DB directly, so guarantee the v9 schema
   # here rather than assuming the user migrated; idempotent, as in curate_one().
-  tryCatch(migrate_db(con), error = function(e) NULL)
-  for (tbl in c("blast_hits", "blast_ref_candidates", "blast_screen")) {
-    DBI::dbExecute(con,
-      sprintf("DELETE FROM %s WHERE ID = ? AND path = ? AND scaffold = ?", tbl),
-      params = list(id, path, scaffold))
+  # NOT swallowed: writing against an unmigrated schema fails later as an
+  # unrelated "no such column" with the real cause gone.
+  migrate_db(con)
+  clear_unit <- function() {
+    for (tbl in c("blast_hits", "blast_ref_candidates", "blast_screen")) {
+      DBI::dbExecute(con,
+        sprintf("DELETE FROM %s WHERE ID = ? AND path = ? AND scaffold = ?", tbl),
+        params = list(id, path, scaffold))
+    }
   }
 
   h <- parse_blast_hits_file(hits_file)
   if (nrow(h) == 0) {
+    DBI::dbWithTransaction(con, clear_unit())
     return(invisible(data.frame()))
   }
   h$species <- extract_species(h$title)
@@ -103,36 +118,49 @@ parse_blast_candidates <- function(con, id, path = 1L, scaffold = 1L, hits_file,
     aln_len = h$aln_len, qstart = h$qstart, qend = h$qend, sstart = h$sstart,
     send = h$send, is_nuclear_rrna = h$is_nuclear_rrna, hit_class = h$hit_class,
     time_stamp = ts, stringsAsFactors = FALSE)
-  DBI::dbAppendTable(con, "blast_hits", hits)
-
   # one row per subject, best HSP first, for the two derived tables
   subj <- h[!duplicated(h$hit_rank), , drop = FALSE]
-
-  # --- contamination screen: top subject over everything, before any filtering ---
-  write_blast_screen(con, id, path, scaffold, subj[1, ], hits = h, ts = ts)
 
   # --- reference panel: nuclear rDNA only ---
   # equivalent to the old is_nuclear_rrna filter, since that predicate now
   # delegates to the same classifier. Written against hit_class directly so the
   # intent stays explicit and survives if the legacy wrapper is retired.
-  ref <- subj[subj$hit_class == "rdna", , drop = FALSE]
-  if (nrow(ref) == 0) {
+  # Identity/coverage floor belongs HERE, not on the search: blast_screen above
+  # is written from the unfiltered distribution, so flooring the search would
+  # blind the contamination screen to the distant hits it exists to catch. A
+  # reference the sample is aligned against, by contrast, has to be a real match.
+  ref <- subj[subj$hit_class == "rdna" &
+    !is.na(subj$pident) & subj$pident >= REF_CANDIDATE_MIN_PIDENT &
+    !is.na(subj$qcovs) & subj$qcovs >= REF_CANDIDATE_MIN_QCOVS, , drop = FALSE]
+  df <- NULL
+  if (nrow(ref) > 0) {
+    ref$rank <- seq_len(nrow(ref))
+    df <- data.frame(ID = id, path = path, scaffold = scaffold, rank = ref$rank, accession = ref$accession,
+      species = ref$species, title = ref$title, pident = ref$pident,
+      qcovs = ref$qcovs, evalue = ref$evalue, bitscore = ref$bitscore, time_stamp = ts,
+      stringsAsFactors = FALSE)
+  }
+
+  # one transaction, and the delete moved in with it: this unit's stored hits are
+  # replaced wholesale, and a failure partway would leave it with none
+  DBI::dbWithTransaction(con, {
+    clear_unit()
+    DBI::dbAppendTable(con, "blast_hits", hits)
+    # --- contamination screen: top subject over everything, before any filtering ---
+    write_blast_screen(con, id, path, scaffold, subj[1, ], hits = h, ts = ts)
+    if (!is.null(df)) {
+      DBI::dbAppendTable(con, "blast_ref_candidates", df)
+      top <- ref[1, ]
+      DBI::dbExecute(con,
+        "UPDATE assemblies SET blast_accession = ?, blast_species = ?, blast_pident = ?, blast_qcovs = ?,
+           blast_evalue = ?, blast_source = 'core_nt'
+         WHERE ID = ? AND path = ? AND scaffold = ?",
+        params = list(top$accession, top$species, top$pident, top$qcovs, top$evalue, id, path, scaffold))
+    }
+  })
+  if (is.null(df)) {
     return(invisible(data.frame()))
   }
-  ref$rank <- seq_len(nrow(ref))
-
-  df <- data.frame(ID = id, path = path, scaffold = scaffold, rank = ref$rank, accession = ref$accession,
-    species = ref$species, title = ref$title, pident = ref$pident,
-    qcovs = ref$qcovs, evalue = ref$evalue, bitscore = ref$bitscore, time_stamp = ts,
-    stringsAsFactors = FALSE)
-  DBI::dbAppendTable(con, "blast_ref_candidates", df)
-
-  top <- ref[1, ]
-  DBI::dbExecute(con,
-    "UPDATE assemblies SET blast_accession = ?, blast_species = ?, blast_pident = ?, blast_qcovs = ?,
-       blast_evalue = ?, blast_source = 'core_nt'
-     WHERE ID = ? AND path = ? AND scaffold = ?",
-    params = list(top$accession, top$species, top$pident, top$qcovs, top$evalue, id, path, scaffold))
   invisible(df)
 }
 

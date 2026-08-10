@@ -9,6 +9,12 @@
 #' @param mapping_fn Path to the mapping CSV (columns ID, Taxon, R1, R2).
 #' @param mapping_id Column name to use as the primary key (default "ID").
 #' @param mapping_taxon Column name with a taxonomic identifier (default "Taxon").
+#' @param data_path Directory holding the raw read files named in the mapping
+#'   file. Read files are resolved as `<data_path>/<R1>`, the same way the
+#'   Nextflow pipeline does it. When NULL, read files cannot be located and
+#'   only the paired-end check is applied.
+#' @param check_reads (logical) Check that the read files named in the mapping
+#'   file exist (default TRUE). Set FALSE when the data will be staged later.
 #' @param assemble_cpus Default number of CPUs for assembly.
 #' @param assemble_memory Default memory (GB) for assembly.
 #' @param seeds_db Path/URL to the GetOrganelle nr seeds database (built per
@@ -20,6 +26,8 @@
 #' @param max_paths Max assembly paths for a sample to continue (default 10).
 #' @param max_scaffolds Max scaffolds within a path to continue (default 10).
 #' @param min_assembly_length Minimum contig length (bp) to retain (default 500).
+#' @param ref_dir Folder for built reference databases (default: the
+#'   `RIBOPILOT_REF_DIR` environment variable, else [ribopilot_ref_dir()]).
 #' @param ... Reserved for forward compatibility.
 #'
 #' @export
@@ -28,6 +36,8 @@ new_db <- function(
     mapping_fn = NULL,
     mapping_id = "ID",
     mapping_taxon = "Taxon",
+    data_path = NULL,
+    check_reads = TRUE,
     assemble_cpus = 6,
     assemble_memory = 24,
     seeds_db = "https://raw.githubusercontent.com/dmacguigan/RiboPilot/main/ref_dbs/getOrganelle/seeds/actinopterygii_rrna_seeds.fasta",
@@ -41,6 +51,7 @@ new_db <- function(
     max_paths = 10,
     max_scaffolds = 10,
     min_assembly_length = 500,
+    ref_dir = NULL,
     ...) {
   # Read mapping file ----
   if (is.null(mapping_fn)) {
@@ -69,6 +80,12 @@ new_db <- function(
     stop("IDs must contain only alphanumeric characters, dashes, underscores, and colons")
   }
 
+  # Validate read files ----
+  # Fail here, not per-task inside a work/ directory as an opaque fastp error.
+  if (isTRUE(check_reads)) {
+    check_mapping_reads(mapping, mapping_id, data_path)
+  }
+
   # Default GetOrganelle nr databases (broad Actinopterygii) when unset ----
   seeds_db <- seeds_db %||% DEFAULT_SEEDS_DB
   labels_db <- labels_db %||% DEFAULT_LABELS_DB
@@ -80,6 +97,9 @@ new_db <- function(
   check_reference_db(labels_db, "labels")
 
   # Connect ----
+  # dbplyr is never called by name but is required: dplyr::tbl() on a DBI
+  # connection loads it to translate, so dropping it from Imports breaks every
+  # table write below on a machine that does not happen to have it installed.
   con <- DBI::dbConnect(RSQLite::SQLite(), dbname = db_path)
   on.exit(DBI::dbDisconnect(con))
 
@@ -94,6 +114,7 @@ new_db <- function(
       match_type = NA_character_,
       lineage = NA_character_,
       lineage_taxids = NA_character_,
+      ref_id = NA_character_,
       taxonomy_switch = 1L,
       taxonomy_lock = 0L,
       export_group = NA_character_,
@@ -154,7 +175,13 @@ new_db <- function(
         pre_opts = "default",
         cpus = 4,
         memory = 16,
-        fastp = "--trim_poly_g --correction --detect_adapter_for_pe --dont_eval_duplication"
+        # Adapter handling plus 3' quality trimming and a length floor. Without
+        # --cut_tail, degraded read ends reach GetOrganelle / SPAdes and, at rDNA
+        # copy number, become spurious variant groups in screen_variants().
+        # --dont_eval_duplication stays: for rDNA, duplicate reads are real copy
+        # number, so they are never deduplicated.
+        fastp = paste("--trim_poly_g --correction --detect_adapter_for_pe",
+          "--dont_eval_duplication --cut_tail --cut_mean_quality 20 -l 50")
       ),
       in_place = TRUE, copy = TRUE, by = "pre_opts"
     )
@@ -270,7 +297,14 @@ new_db <- function(
         # parse_blast_candidates() instead. Setting this blinds the
         # contamination screen to anything outside the query.
         entrez_query = "",
-        extra_opts = "",
+        # Significance floor for the remote search, shown and editable as "Extra
+        # blastn options". blastn's own default (-evalue 10) keeps hits expected
+        # by chance. Deliberately NO -perc_identity: this one search feeds both
+        # the reference panel and the contamination screen, and the screen exists
+        # to see the distant cross-kingdom hits an identity floor would remove.
+        # The reference panel gets its own floor in parse_blast_candidates(),
+        # after the screen has been written.
+        extra_opts = "-evalue 1e-20",
         # Needs enough depth that real nuclear rDNA references still make the
         # panel after the client-side filter drops non-rDNA hits.
         max_target_seqs = 50L
@@ -589,6 +623,14 @@ new_db <- function(
     );"
   )
 
+  # reference (clade DB groups) + reference_config ----
+  DBI::dbExecute(con, REFERENCE_DDL)
+  DBI::dbExecute(con, REFERENCE_CONFIG_DDL)
+  DBI::dbExecute(con,
+    "INSERT INTO reference_config (rowid_key, ref_dir, min_records, max_records)
+     VALUES (1, ?, 1000, 25000)",
+    params = list(ref_dir %||% NA_character_))
+
   # export_opts (named FASTA-header configurations) ----
   ensure_export_opts(con)
 
@@ -596,4 +638,53 @@ new_db <- function(
   DBI::dbExecute(con, sprintf("PRAGMA user_version = %d", RIBOPILOT_SCHEMA_VERSION))
 
   invisible(return())
+}
+
+#' Check that the read files named in a mapping table exist
+#'
+#' @param mapping Mapping data frame (needs `R1` and `R2` columns).
+#' @param mapping_id Column name holding the sample ids.
+#' @param data_path Raw data directory the read names are relative to. When
+#'   NULL, only the paired-end check runs.
+#' @noRd
+check_mapping_reads <- function(mapping, mapping_id = "ID", data_path = NULL) {
+  if (!all(c("R1", "R2") %in% colnames(mapping))) {
+    stop("Mapping file must have R1 and R2 columns naming the paired read files")
+  }
+  ids <- as.character(mapping[[mapping_id]])
+  blank <- function(x) is.na(x) | !nzchar(trimws(as.character(x)))
+
+  unpaired <- blank(mapping$R1) | blank(mapping$R2)
+  if (any(unpaired)) {
+    stop(
+      "Every sample needs both an R1 and an R2 read file, but these are missing one:\n",
+      paste(truncate_ids(ids[unpaired]), collapse = "\n"),
+      "\nSingle-end reads are not supported by the RiboPilot pipeline."
+    )
+  }
+
+  if (length(data_path) != 1 || is.na(data_path) || !nzchar(data_path)) {
+    return(invisible())
+  }
+  reads <- data.frame(
+    ID = rep(ids, each = 2),
+    path = file.path(data_path, as.vector(rbind(mapping$R1, mapping$R2)))
+  )
+  bad <- reads[!file.exists(reads$path), , drop = FALSE]
+  if (nrow(bad)) {
+    stop(
+      "Read files named in the mapping file were not found in ", data_path, ":\n",
+      paste(truncate_ids(paste0(bad$ID, ": ", bad$path)), collapse = "\n")
+    )
+  }
+  invisible()
+}
+
+#' Trim a list of problem entries to a readable length
+#' @noRd
+truncate_ids <- function(x, n = 10) {
+  if (length(x) <= n) {
+    return(x)
+  }
+  c(x[seq_len(n)], sprintf("... and %d more", length(x) - n))
 }

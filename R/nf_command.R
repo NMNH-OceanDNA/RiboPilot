@@ -19,10 +19,20 @@ nf_command <- function(path, resume = TRUE,
   main_nf <- app_sys("nextflow", "main.nf")
   cfg <- file.path(path, ".config")
   cfg_lines <- if (file.exists(cfg)) readLines(cfg) else character(0)
-  raw_dir <- config_param(cfg_lines, "rawDir") %||% ""
-  min_depth <- config_param(cfg_lines, "minDepth") %||% "0"
-  api_key <- config_param(cfg_lines, "ncbi_api_key") %||% ""
-  if (length(api_key) == 0 || is.na(api_key) || api_key %in% c("NA", "NULL")) api_key <- ""
+  # an absent key comes back as NA, and an unfilled config token lands as the
+  # literal string "NA"; either would be passed to Nextflow verbatim
+  cfg_val <- function(key, default) {
+    v <- config_param(cfg_lines, key) %||% NA_character_ %|NA|% default
+    if (v %in% c("NA", "NULL")) default else v
+  }
+  raw_dir <- cfg_val("rawDir", "")
+  min_depth <- cfg_val("minDepth", "0")
+  api_key <- cfg_val("ncbi_api_key", "")
+  if (!nzchar(raw_dir)) {
+    stop("No rawDir set in ", cfg, ".\n",
+      "Without it the pipeline has nowhere to look for reads and every sample ",
+      "fails. Set params.rawDir in the project config.", call. = FALSE)
+  }
   src <- ribopilot_src %||% ribopilot_src_default()
   taxdump <- file.path(path, ".taxonomy")
 
@@ -34,7 +44,12 @@ nf_command <- function(path, resume = TRUE,
     "--minDepth", min_depth,
     "--ribopilot_src", src,
     "--taxdump_dir", taxdump,
-    if (nzchar(api_key)) c("--ncbi_api_key", api_key))
+    if (nzchar(api_key)) c("--ncbi_api_key", api_key),
+    # the config only mounts what project creation knew about; a database the
+    # Reference tab wired later lives wherever the user put it, and the
+    # assembler cannot read a staged symlink whose target is unmounted
+    container_bind_opts(cfg_lines,
+      reference_mount_dirs(path, c(path, raw_dir, config_mounted_dirs(cfg_lines)))))
 }
 
 #' Where the pipeline's R processes should load RiboPilot from

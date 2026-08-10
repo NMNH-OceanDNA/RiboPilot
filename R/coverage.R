@@ -1,11 +1,13 @@
 # Coverage: parse `samtools depth -a` output (reads mapped back to one assembly
-# unit's scaffold sequence) into a per-unit coverage row.
+# unit's scaffold sequence) into a per-unit coverage row. The pipeline maps with
+# a MAPQ >= 10 filter, so reads that map equally well to several of the sample's
+# scaffolds are excluded and a depth reflects reads placed on that scaffold
+# specifically. Conserved-core stretches can therefore read as low or zero depth.
 #
 # Both a mean and a MEDIAN per-position depth are stored. Coverage along an rDNA
-# scaffold is not uniform: the conserved 18S/28S cores recruit multi-mapping
-# reads from every copy of the array (and from any other organism's rDNA in the
-# sample) while the spacers do not, so a mean is pulled up by those regions --
-# and pulled up unevenly, because how much a scaffold is inflated depends on how
+# scaffold is not uniform: the conserved 18S/28S cores and the spacers do not
+# behave the same way, so a mean is skewed by those regions -- and skewed
+# unevenly, because how far a scaffold is off depends on how
 # much conserved core it happens to contain. That biases exactly the comparison
 # the app makes with it (this scaffold's depth against its siblings'), which is
 # supposed to reflect abundance rather than element composition. On real
@@ -94,17 +96,25 @@ downsample_depths <- function(x, n = 100) {
   x[unique(round(seq(1, length(x), length.out = n)))]
 }
 
+#' Parse a stored `coverage.depths` blob into a numeric vector
+#' @param depths_blob The stored `coverage.depths` value.
+#' @return Numeric vector in position order, empty when there is no usable track.
+#' @noRd
+parse_depths <- function(depths_blob) {
+  if (length(depths_blob) == 0 || is.na(depths_blob[1]) || !nzchar(depths_blob[1])) {
+    return(numeric(0))
+  }
+  v <- suppressWarnings(as.numeric(strsplit(depths_blob[1], "[,;[:space:]]+")[[1]]))
+  v[!is.na(v)]
+}
+
 #' Downsampled depth track as a comma-separated string for a table cell
 #' @param depths_blob The stored `coverage.depths` value.
 #' @param n Maximum points to keep.
 #' @return Comma-separated string, or NA when there is no usable track.
 #' @noRd
 depth_track_string <- function(depths_blob, n = 100) {
-  if (length(depths_blob) == 0 || is.na(depths_blob[1]) || !nzchar(depths_blob[1])) {
-    return(NA_character_)
-  }
-  v <- suppressWarnings(as.numeric(strsplit(depths_blob[1], "[,;[:space:]]+")[[1]]))
-  v <- v[!is.na(v)]
+  v <- parse_depths(depths_blob)
   if (length(v) == 0) return(NA_character_)
   paste(round(downsample_depths(v, n), 1), collapse = ",")
 }

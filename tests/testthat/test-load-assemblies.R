@@ -305,6 +305,61 @@ test_that("a sample whose every scaffold is too short fails", {
   expect_match(st$assemble_notes, "min_assembly_length")
 })
 
+# --- header parsing ------------------------------------------------------------
+# `>ID.path.scaffold` is read from the right: an ID with a dot in it would
+# otherwise shift the keys, and a non-numeric field would key rows on NA, which
+# every downstream join silently misses.
+
+test_that("a dot in the sample ID does not shift the path and scaffold", {
+  dir <- withr::local_tempdir()
+  con <- mk_asm_db(dir); on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "UPDATE assemble SET ID = 'SRR123.1'")
+  ad <- file.path(dir, "SRR123.1", "assemble")
+  dir.create(ad, recursive = TRUE, showWarnings = FALSE)
+  writeLines(c(">SRR123.1.2.3 linear scaffold_1", strrep("ACGT", 100)),
+    file.path(ad, "SRR123.1_assembly_1.fasta"))
+
+  RiboPilot:::load_assemblies(con, dir, "SRR123.1")
+
+  a <- DBI::dbGetQuery(con, "SELECT ID, path, scaffold FROM assemblies")
+  expect_equal(a$ID, "SRR123.1")
+  expect_equal(a$path, 2L)
+  expect_equal(a$scaffold, 3L)
+})
+
+test_that("a header with a non-numeric path or scaffold is skipped with a warning", {
+  dir <- withr::local_tempdir()
+  con <- mk_asm_db(dir); on.exit(DBI::dbDisconnect(con))
+  ad <- file.path(dir, "S1", "assemble")
+  dir.create(ad, recursive = TRUE, showWarnings = FALSE)
+  writeLines(c(
+    ">S1.v2.1 linear scaffold_bad", strrep("ACGT", 100),
+    ">S1.1.x linear scaffold_bad", strrep("ACGT", 100),
+    ">S1.1.1 linear scaffold_ok", strrep("ACGT", 100)),
+    file.path(ad, "S1_assembly_1.fasta"))
+
+  expect_warning(RiboPilot:::load_assemblies(con, dir, "S1"), "skipped 2")
+
+  a <- DBI::dbGetQuery(con, "SELECT path, scaffold FROM assemblies")
+  expect_equal(nrow(a), 1L)
+  expect_equal(a$path, 1L)
+  expect_equal(a$scaffold, 1L)
+})
+
+test_that("a fasta of nothing but unparsable headers fails the sample", {
+  dir <- withr::local_tempdir()
+  con <- mk_asm_db(dir); on.exit(DBI::dbDisconnect(con))
+  ad <- file.path(dir, "S1", "assemble")
+  dir.create(ad, recursive = TRUE, showWarnings = FALSE)
+  writeLines(c(">S1 linear scaffold_1", strrep("ACGT", 100)),
+    file.path(ad, "S1_assembly_1.fasta"))
+
+  expect_warning(RiboPilot:::load_assemblies(con, dir, "S1"), "skipped 1")
+
+  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM assemblies")$n, 0)
+  expect_equal(gate_state(con)$assemble_switch, 3L)
+})
+
 test_that("the length filter wins over the previous run's ignore flags", {
   dir <- withr::local_tempdir()
   con <- mk_asm_db(dir); on.exit(DBI::dbDisconnect(con))

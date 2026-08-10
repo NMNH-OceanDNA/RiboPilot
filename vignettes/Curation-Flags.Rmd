@@ -92,9 +92,10 @@ Rule 6 is a separate check from the rest of the table: it asks whether the
 scaffold's GenBank hits agree on a taxon, and whether that taxon sits on your
 sample's own lineage. This is the check that catches a fungal, bacterial or
 plant contaminant riding along with a metazoan sample. It compares only
-against your sample's own lineage, so it cannot separate two metazoans from
-each other - a copepod and a fish both sit under Metazoa, and rule 6 has no
-way to prefer one over the other. A `no_reference` result is a normal state
+against your sample's own lineage, at phylum rank, so it cannot separate two
+metazoans in the same phylum - a human on a fish sample passes, because both
+are Chordata, while a copepod on that same sample is caught. A `no_reference`
+result is a normal state
 for an offline project or a sparse clade, not a problem in itself: it means
 the screen had nothing usable to compare against, not that something is
 wrong. The verdict is also shown as a Screen column in the Assemble tab's

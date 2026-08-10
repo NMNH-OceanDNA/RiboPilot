@@ -2,7 +2,8 @@ process assemble {
 
     tag "${id}"
     cpus { nthreads as int }
-    memory { "${mem} GB" }
+    // scales on retry; see the OOM retry policy in nextflow.config
+    memory { "${(mem as int) * task.attempt} GB" }
     publishDir { "${launchDir}/${params.publishDir}/${id}/assemble" }, overwrite: true, mode: 'copy'
     errorStrategy 'ignore'
 

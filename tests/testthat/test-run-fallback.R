@@ -76,7 +76,9 @@ test_that("fallback_candidates finds QC-gate failures and missing anchors", {
 })
 
 test_that("nf_command builds the one workflow, with no fallback options", {
-  args <- RiboPilot:::nf_command(tempdir())
+  dir <- withr::local_tempdir()
+  writeLines(c("params {", "  rawDir = '/data/raw'", "}"), file.path(dir, ".config"))
+  args <- RiboPilot:::nf_command(dir)
   expect_false(any(grepl("--method", args, fixed = TRUE)))
   expect_true(any(grepl("main\\.nf$", args)))
   expect_false(any(grepl("main_annotate\\.nf", args)))

@@ -7,6 +7,9 @@
 process query_samples {
     cache false
     executor 'local'
+    // A read that loses a lock race must not terminate the run.
+    errorStrategy { task.attempt <= 3 ? 'retry' : 'terminate' }
+    maxRetries 3
     output:
     path 'samplesheet.tsv'
     script:
@@ -15,7 +18,7 @@ process query_samples {
     # splitCsv(header:true) then fails); an empty result becomes a header-only
     # file so the workflow simply does nothing instead of crashing.
     printf 'ID\tR1\tR2\tpre_cpus\tpre_mem\tasm_cpus\tasm_mem\tfastp\tgetOrganelle\tseeds_db\tlabels_db\tassembler\n' > samplesheet.tsv
-    sqlite3 -separator '\t' '${params.db}' "
+    sqlite3 -cmd '.timeout 10000' -separator '\t' '${params.db}' "
       SELECT p.ID, p.R1, p.R2,
              COALESCE(po.cpus,4) AS pre_cpus, COALESCE(po.memory,8) AS pre_mem,
              COALESCE(ao.cpus,4) AS asm_cpus, COALESCE(ao.memory,16) AS asm_mem,
@@ -47,12 +50,15 @@ process query_samples {
 process query_annotate_units {
     cache false
     executor 'local'
+    // A read that loses a lock race must not terminate the run.
+    errorStrategy { task.attempt <= 3 ? 'retry' : 'terminate' }
+    maxRetries 3
     output:
     path 'annotate_units.tsv'
     script:
     """
     printf 'ID\tpath\tscaffold\tcpus\tmem\n' > annotate_units.tsv
-    sqlite3 -separator '\t' '${params.db}' "
+    sqlite3 -cmd '.timeout 10000' -separator '\t' '${params.db}' "
       SELECT an.ID, an.path, an.scaffold, COALESCE(ao.cpus,4) AS cpus, COALESCE(ao.memory,8) AS mem
       FROM annotate an
       JOIN annotate_opts ao ON an.annotate_opts = ao.annotate_opts
@@ -71,6 +77,9 @@ process query_annotate_units {
 process query_sample_units {
     cache false
     executor 'local'
+    // A read that loses a lock race must not terminate the run.
+    errorStrategy { task.attempt <= 3 ? 'retry' : 'terminate' }
+    maxRetries 3
     tag "${id}"
     input:
     val id
@@ -79,7 +88,7 @@ process query_sample_units {
     script:
     """
     printf 'ID\tpath\tscaffold\tcpus\tmem\n' > units.tsv
-    sqlite3 -separator '\t' '${params.db}' "
+    sqlite3 -cmd '.timeout 10000' -separator '\t' '${params.db}' "
       SELECT an.ID, an.path, an.scaffold, COALESCE(ao.cpus,4) AS cpus, COALESCE(ao.memory,8) AS mem
       FROM annotate an
       JOIN annotate_opts ao ON an.annotate_opts = ao.annotate_opts
@@ -94,6 +103,10 @@ process query_sample_units {
 process score {
     cache false
     tag "${id}"
+    // Retry first: the failure this is most likely to hit is DB lock contention
+    // with another task, which clears on its own.
+    errorStrategy { task.attempt <= 2 ? 'retry' : 'ignore' }
+    maxRetries 2
     input:
     tuple val(id), path(fastas)
     output:
@@ -115,7 +128,8 @@ process annotate_tools {
     // now annotates every unit, including short fragments and contaminants.
     errorStrategy 'ignore'
     cpus { nthreads as int }
-    memory { "${mem} GB" }
+    // scales on retry; see the OOM retry policy in nextflow.config
+    memory { "${(mem as int) * task.attempt} GB" }
     input:
     tuple val(id), val(upath), val(uscaf), val(nthreads), val(mem)
     output:
@@ -123,20 +137,26 @@ process annotate_tools {
     script:
     """
     # write this unit's scaffold sequence to a fasta straight from the DB
-    sqlite3 '${params.db}' \
+    sqlite3 -cmd '.timeout 10000' '${params.db}' \
       "SELECT '>'||ID||'.'||path||'.'||scaffold||char(10)||sequence FROM assemblies
        WHERE ID='${id}' AND path=${upath} AND scaffold=${uscaf};" > unit.fasta
 
-    read TOOL KINGDOM ITSXT ITSXO <<< "\$(sqlite3 -separator ' ' '${params.db}' "
+    read TOOL KINGDOM ITSXT ITSXO <<< "\$(sqlite3 -cmd '.timeout 10000' -separator ' ' '${params.db}' "
       SELECT COALESCE(ao.rrna_tool,'pybarrnap'), COALESCE(ao.rrna_kingdom,'euk'),
              COALESCE(ao.itsx_taxon,'all'), COALESCE(ao.itsx_opts,'')
       FROM annotate an JOIN annotate_opts ao ON an.annotate_opts = ao.annotate_opts
       WHERE an.ID = '${id}' AND an.path = ${upath} AND an.scaffold = ${uscaf};")"
     TOOL="\${TOOL:-pybarrnap}"; KINGDOM="\${KINGDOM:-euk}"; ITSXT="\${ITSXT:-all}"
 
+    # Same kingdom translation as R's rrna_kingdom_for(): the Perl barrnap fork
+    # calls its eukaryote Rfam models "fun" and has no euk/all; pybarrnap has no
+    # "fun". Passing the stored kingdom through untranslated makes the tool exit
+    # non-zero and the unit gets no anchors at all.
     if [ "\$TOOL" = "barrnap" ]; then
+        case "\$KINGDOM" in euk|all) KINGDOM=fun ;; esac
         barrnap --kingdom "\$KINGDOM" --quiet unit.fasta > unit.barrnap.gff
     else
+        case "\$KINGDOM" in fun) KINGDOM=euk ;; esac
         pybarrnap -k "\$KINGDOM" -t ${task.cpus} -q unit.fasta > unit.barrnap.gff
     fi
 
@@ -150,6 +170,8 @@ process annotate_tools {
 process reconcile {
     cache false
     tag "${id}.${upath}.${uscaf}"
+    // One unit's malformed GFF must not terminate the run, same as annotate_tools.
+    errorStrategy 'ignore'
     input:
     tuple val(id), val(upath), val(uscaf), path(gff), path(pos)
     output:
@@ -198,6 +220,7 @@ process screen {
 process curate {
     cache false
     tag "${id}.${upath}.${uscaf}"
+    errorStrategy 'ignore'
     input:
     tuple val(id), val(upath), val(uscaf)
     output:

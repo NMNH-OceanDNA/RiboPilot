@@ -83,9 +83,11 @@ test_that("chimeric flag is surfaced", {
 
 test_that("lineages_conflict and lineage_known behave", {
   expect_true(RiboPilot:::lineages_conflict("Metazoa; Cnidaria", "Bacteria; Escherichia"))
-  expect_false(RiboPilot:::lineages_conflict("Metazoa; Cnidaria", "Metazoa; Chordata"))
+  # two animals in different phyla: the case the shared-token test could not fire on
+  expect_true(RiboPilot:::lineages_conflict("Metazoa; Cnidaria", "Metazoa; Chordata"))
   expect_false(RiboPilot:::lineages_conflict("Metazoa", NA))       # unknown -> no conflict
   expect_true(RiboPilot:::lineage_known("Metazoa; Cnidaria"))
+  expect_false(RiboPilot:::lineage_known("Metazoa"))               # nothing below kingdom
   expect_false(RiboPilot:::lineage_known(NA))
   expect_false(RiboPilot:::lineage_known(""))
 })

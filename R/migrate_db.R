@@ -106,6 +106,43 @@ ASSEMBLY_BACKUP_DDL <- "CREATE TABLE IF NOT EXISTS assembly_backup (
   PRIMARY KEY (ID, path, scaffold)
 );"
 
+#' DDL for the reference table (one row per clade reference-database group).
+#' Shared by new_db() and the v19 migration so both agree on the schema.
+#' @noRd
+REFERENCE_DDL <- "CREATE TABLE IF NOT EXISTS reference (
+  ref_id           TEXT NOT NULL,
+  clade_taxid      INTEGER,
+  clade_name       TEXT,
+  clade_rank       TEXT,
+  query            TEXT,
+  n_samples        INTEGER,
+  n_records        INTEGER,
+  reference_switch INTEGER,
+  source           TEXT,
+  seeds_db         TEXT,
+  labels_db        TEXT,
+  log_file         TEXT,
+  pid              INTEGER,
+  preset_name      TEXT,
+  fail_reason      TEXT,
+  time_stamp       INTEGER,
+  PRIMARY KEY (ref_id)
+);"
+
+#' DDL for reference_config: one row of project-level reference settings.
+#'
+#' `ref_dir` is the folder built databases are written to and reused from; NULL
+#' means fall back to RIBOPILOT_REF_DIR and then ribopilot_ref_dir(). The record
+#' window bounds the clade suggestion walk.
+#' @noRd
+REFERENCE_CONFIG_DDL <- "CREATE TABLE IF NOT EXISTS reference_config (
+  rowid_key   INTEGER NOT NULL,
+  ref_dir     TEXT,
+  min_records INTEGER,
+  max_records INTEGER,
+  PRIMARY KEY (rowid_key)
+);"
+
 #' The pre-v4 restrictive remote-BLAST entrez_query.
 #'
 #' Retired because it restricted the search space, not just the ranking, so the
@@ -118,6 +155,49 @@ LEGACY_ENTREZ_QUERY <- paste(
   "OR small subunit ribosomal RNA[Title]",
   "OR large subunit ribosomal RNA[Title])",
   "NOT (mitochondrion[Title] OR chloroplast[Title] OR plastid[Title])")
+
+#' Floor for the connection's busy timeout during a migration, in ms.
+#'
+#' Matches open_project_db(), but is applied by migrate_db() itself: most
+#' callers open their own connection, and a bare dbConnect() has a timeout of 0.
+#' @noRd
+MIGRATE_BUSY_TIMEOUT_MS <- 10000L
+
+#' Is this connection already inside a transaction?
+#'
+#' `BEGIN DEFERRED` acquires no locks, so it cannot fail with SQLITE_BUSY; the
+#' only thing that makes it fail is a transaction already being open. That is
+#' what separates "the caller owns a transaction" from "another process holds
+#' the write lock", two cases `BEGIN IMMEDIATE` reports identically.
+#' @noRd
+db_in_transaction <- function(con) {
+  err <- tryCatch({ DBI::dbExecute(con, "BEGIN DEFERRED"); NULL },
+    error = function(e) conditionMessage(e))
+  if (is.null(err)) {
+    tryCatch(DBI::dbExecute(con, "ROLLBACK"), error = function(e) NULL)
+    return(FALSE)
+  }
+  if (!grepl("within a transaction", err, fixed = TRUE)) stop(err, call. = FALSE)
+  TRUE
+}
+
+#' Take the migration's write lock, retrying a busy database
+#'
+#' A contended `BEGIN IMMEDIATE` is retried with backoff and, if it still will
+#' not take, raises. Continuing without the lock is never an option: the guards
+#' below are a check and a DDL statement apart, so unserialized they race.
+#' @noRd
+begin_migration_txn <- function(con, tries = 4L) {
+  for (i in seq_len(tries)) {
+    err <- tryCatch({ DBI::dbExecute(con, "BEGIN IMMEDIATE"); NULL },
+      error = function(e) conditionMessage(e))
+    if (is.null(err)) return(invisible(TRUE))
+    if (i == tries || !grepl("lock|busy", err, ignore.case = TRUE)) {
+      stop("Could not lock the project database to migrate it: ", err, call. = FALSE)
+    }
+    Sys.sleep(stats::runif(1, 0.1, 0.4) * i)
+  }
+}
 
 #' Bring a project database up to the current schema (idempotent, additive)
 #'
@@ -138,34 +218,66 @@ LEGACY_ENTREZ_QUERY <- paste(
 #' @return (invisibly) the schema version after migration.
 #' @export
 migrate_db <- function(con) {
+  # Set here, not left to the caller: most callers open a plain connection.
+  cur_timeout <- tryCatch(DBI::dbGetQuery(con, "PRAGMA busy_timeout")[[1]],
+    error = function(e) 0)
+  if (!isTRUE(cur_timeout >= MIGRATE_BUSY_TIMEOUT_MS)) {
+    tryCatch(DBI::dbGetQuery(con,
+      sprintf("PRAGMA busy_timeout = %d", MIGRATE_BUSY_TIMEOUT_MS)),
+      error = function(e) NULL)
+  }
+
   # A caller already inside a transaction keeps its own; nesting would error.
-  owns_txn <- tryCatch({ DBI::dbExecute(con, "BEGIN IMMEDIATE"); TRUE },
-    error = function(e) FALSE)
+  owns_txn <- !db_in_transaction(con)
   if (owns_txn) {
+    begin_migration_txn(con)
     done <- FALSE
     on.exit(tryCatch(DBI::dbExecute(con, if (done) "COMMIT" else "ROLLBACK"),
       error = function(e) NULL), add = TRUE)
   }
 
   ver <- tryCatch(DBI::dbGetQuery(con, "PRAGMA user_version")[[1]], error = function(e) 0L)
-  has_tbl <- function(tbl) tbl %in% DBI::dbListTables(con)
-  has_col <- function(tbl, col) has_tbl(tbl) && col %in% DBI::dbListFields(con, tbl)
+  # One catalogue snapshot answers every guard below; ~40 guards otherwise cost
+  # ~100 round trips per call, and this is called once per unit. Every statement
+  # that creates, drops or renames a table, or adds a column, must go through
+  # the helpers so the snapshot stays in step with the database.
+  tbls <- DBI::dbListTables(con)
+  cols <- stats::setNames(lapply(tbls, function(t) DBI::dbListFields(con, t)), tbls)
+  has_tbl <- function(tbl) tbl %in% tbls
+  has_col <- function(tbl, col) col %in% cols[[tbl]]
+  note_tbl <- function(tbl) {
+    tbls <<- union(tbls, tbl)
+    cols[[tbl]] <<- DBI::dbListFields(con, tbl)
+  }
+  forget_tbl <- function(tbl) {
+    tbls <<- setdiff(tbls, tbl)
+    cols[[tbl]] <<- NULL
+  }
+  ddl <- function(sql, tbl) {
+    DBI::dbExecute(con, sql)
+    note_tbl(tbl)
+  }
+  drop_tbl <- function(tbl) {
+    DBI::dbExecute(con, sprintf("DROP TABLE %s;", tbl))
+    forget_tbl(tbl)
+  }
   add_col <- function(tbl, col, decl) {
     if (has_tbl(tbl) && !has_col(tbl, col)) {
       DBI::dbExecute(con, sprintf("ALTER TABLE %s ADD COLUMN %s %s", tbl, col, decl))
+      cols[[tbl]] <<- c(cols[[tbl]], col)
     }
   }
 
   # --- schema v1: reference-guided curation (curate_opts + status/flags) ---
   if (!has_tbl("curate_opts")) {
-    DBI::dbExecute(con,
+    ddl(
       "CREATE TABLE curate_opts (
         curate_opts TEXT NOT NULL,
         ruleset TEXT,
         min_anchor_pid REAL,
         check_contaminant INTEGER,
         PRIMARY KEY (curate_opts)
-      );")
+      );", "curate_opts")
   }
   if (DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM curate_opts")$n == 0) {
     DBI::dbExecute(con,
@@ -179,7 +291,7 @@ migrate_db <- function(con) {
 
   # --- schema v2: editable annotation options (annotate_opts) ---
   if (!has_tbl("annotate_opts")) {
-    DBI::dbExecute(con,
+    ddl(
       "CREATE TABLE annotate_opts (
         annotate_opts TEXT NOT NULL,
         cpus INTEGER,
@@ -189,7 +301,7 @@ migrate_db <- function(con) {
         itsx_taxon TEXT,
         itsx_opts TEXT,
         PRIMARY KEY (annotate_opts)
-      );")
+      );", "annotate_opts")
   }
   if (DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM annotate_opts")$n == 0) {
     DBI::dbExecute(con,
@@ -214,7 +326,7 @@ migrate_db <- function(con) {
 
   # --- schema v4: contamination screen over the unrestricted remote BLAST ---
   if (!has_tbl("blast_screen")) {
-    DBI::dbExecute(con,
+    ddl(
       "CREATE TABLE blast_screen (
         ID TEXT NOT NULL,
         accession TEXT,
@@ -228,7 +340,7 @@ migrate_db <- function(con) {
         is_nuclear_rrna INTEGER,
         time_stamp INTEGER,
         PRIMARY KEY (ID)
-      );")
+      );", "blast_screen")
   }
   # ITSx chimera flag surfaced through curation.
   add_col("annotate", "chimeric", "INTEGER")
@@ -254,7 +366,7 @@ migrate_db <- function(con) {
   add_col("samples", "time_stamp", "INTEGER")
 
   # --- schema v6: assembly_backup (original pre-trim state, for restore) ---
-  if (!has_tbl("assembly_backup")) DBI::dbExecute(con, ASSEMBLY_BACKUP_DDL)
+  if (!has_tbl("assembly_backup")) ddl(ASSEMBLY_BACKUP_DDL, "assembly_backup")
 
   # --- schema v7: per-(ID,path,scaffold) assembly units (drop the stitch model) ---
   # annotate/annotations/coverage move from per-sample to per-unit. Existing
@@ -262,12 +374,13 @@ migrate_db <- function(con) {
   # (their coords are on the stitched sequence, not a single scaffold), so they
   # are cleared and annotation is re-queued (annotate_switch = 1).
   if (has_tbl("annotate") && !has_col("annotate", "path")) {
-    DBI::dbExecute(con, "CREATE TABLE annotate_new (
+    ddl("CREATE TABLE annotate_new (
         ID TEXT NOT NULL, path INTEGER NOT NULL DEFAULT 1, scaffold INTEGER NOT NULL DEFAULT 1,
         annotate_switch INTEGER, annotate_lock INTEGER, n_features INTEGER, missing TEXT,
         chimeric INTEGER, annotate_opts TEXT, curate_opts TEXT, n_flags INTEGER,
         annotate_notes TEXT, reviewed TEXT, problematic TEXT, partial TEXT,
-        export_group TEXT, time_stamp INTEGER, PRIMARY KEY (ID, path, scaffold));")
+        export_group TEXT, time_stamp INTEGER, PRIMARY KEY (ID, path, scaffold));",
+      "annotate_new")
     if (has_tbl("assemblies")) {
       DBI::dbExecute(con,
         "INSERT OR IGNORE INTO annotate_new
@@ -291,16 +404,18 @@ migrate_db <- function(con) {
          WHERE EXISTS (SELECT 1 FROM samples s WHERE s.ID = annotate_new.ID
                        AND TRIM(COALESCE(s.export_group,'')) != '');")
     }
-    DBI::dbExecute(con, "DROP TABLE annotate;")
+    drop_tbl("annotate")
     DBI::dbExecute(con, "ALTER TABLE annotate_new RENAME TO annotate;")
+    forget_tbl("annotate_new")
+    note_tbl("annotate")
   }
   if (has_tbl("annotations") && !has_col("annotations", "path")) {
-    DBI::dbExecute(con, "DROP TABLE annotations;")
-    DBI::dbExecute(con, "CREATE TABLE annotations (
+    drop_tbl("annotations")
+    ddl("CREATE TABLE annotations (
         ID TEXT NOT NULL, path INTEGER NOT NULL DEFAULT 1, scaffold INTEGER NOT NULL DEFAULT 1,
         element TEXT NOT NULL, type TEXT, start INTEGER, stop INTEGER, length INTEGER, strand TEXT,
         model_coverage REAL, tool TEXT, status TEXT, flags TEXT, edited INTEGER, notes TEXT,
-        time_stamp INTEGER, PRIMARY KEY (ID, path, scaffold, element));")
+        time_stamp INTEGER, PRIMARY KEY (ID, path, scaffold, element));", "annotations")
     if (has_tbl("annotate")) DBI::dbExecute(con, "UPDATE annotate SET annotate_switch = 1;")
     # The GenBank screen + reference alignment were computed on the (now invalid)
     # stitched sequence and keyed per sample; clear them so curation does not
@@ -311,47 +426,49 @@ migrate_db <- function(con) {
     }
   }
   if (has_tbl("coverage") && !has_col("coverage", "path")) {
-    DBI::dbExecute(con, "DROP TABLE coverage;")
-    DBI::dbExecute(con, "CREATE TABLE coverage (
+    drop_tbl("coverage")
+    ddl("CREATE TABLE coverage (
         ID TEXT NOT NULL, path INTEGER NOT NULL DEFAULT 1, scaffold INTEGER NOT NULL DEFAULT 1,
         mean_depth REAL, min_depth INTEGER, max_depth INTEGER, depths TEXT, time_stamp INTEGER,
-        PRIMARY KEY (ID, path, scaffold));")
+        PRIMARY KEY (ID, path, scaffold));", "coverage")
   }
   # assembly_backup (trim undo state) becomes per-unit; it is transient, so just
   # rebuild it empty when it predates the unit key.
   if (has_tbl("assembly_backup") && !has_col("assembly_backup", "path")) {
-    DBI::dbExecute(con, "DROP TABLE assembly_backup;")
-    DBI::dbExecute(con, ASSEMBLY_BACKUP_DDL)
+    drop_tbl("assembly_backup")
+    ddl(ASSEMBLY_BACKUP_DDL, "assembly_backup")
   }
 
   # --- schema v8: per-unit GenBank BLAST reference tables (rebuild empty) ---
   # blast_ref_candidates / blast_screen / blast_ref_alignment move to
   # per-(ID,path,scaffold). v7 already cleared them, so recreate with the new keys.
   if (has_tbl("blast_ref_candidates") && !has_col("blast_ref_candidates", "path")) {
-    DBI::dbExecute(con, "DROP TABLE blast_ref_candidates;")
-    DBI::dbExecute(con, "CREATE TABLE blast_ref_candidates (
+    drop_tbl("blast_ref_candidates")
+    ddl("CREATE TABLE blast_ref_candidates (
         ID TEXT NOT NULL, path INTEGER NOT NULL DEFAULT 1, scaffold INTEGER NOT NULL DEFAULT 1,
         rank INTEGER NOT NULL, accession TEXT, species TEXT, title TEXT, pident REAL, qcovs REAL,
-        evalue REAL, time_stamp INTEGER, PRIMARY KEY (ID, path, scaffold, rank));")
+        evalue REAL, time_stamp INTEGER, PRIMARY KEY (ID, path, scaffold, rank));",
+      "blast_ref_candidates")
   }
   if (has_tbl("blast_screen") && !has_col("blast_screen", "path")) {
-    DBI::dbExecute(con, "DROP TABLE blast_screen;")
-    DBI::dbExecute(con, "CREATE TABLE blast_screen (
+    drop_tbl("blast_screen")
+    ddl("CREATE TABLE blast_screen (
         ID TEXT NOT NULL, path INTEGER NOT NULL DEFAULT 1, scaffold INTEGER NOT NULL DEFAULT 1,
         accession TEXT, title TEXT, species TEXT, staxid INTEGER, lineage TEXT, pident REAL, qcovs REAL,
-        evalue REAL, is_nuclear_rrna INTEGER, time_stamp INTEGER, PRIMARY KEY (ID, path, scaffold));")
+        evalue REAL, is_nuclear_rrna INTEGER, time_stamp INTEGER, PRIMARY KEY (ID, path, scaffold));",
+      "blast_screen")
   }
   if (has_tbl("blast_ref_alignment") && !has_col("blast_ref_alignment", "path")) {
-    DBI::dbExecute(con, "DROP TABLE blast_ref_alignment;")
-    DBI::dbExecute(con, "CREATE TABLE blast_ref_alignment (
+    drop_tbl("blast_ref_alignment")
+    ddl("CREATE TABLE blast_ref_alignment (
         ID TEXT NOT NULL, path INTEGER NOT NULL DEFAULT 1, scaffold INTEGER NOT NULL DEFAULT 1,
         accession TEXT NOT NULL, element TEXT NOT NULL, pid REAL, aln_cov REAL, aln_len INTEGER,
         sample_aln TEXT, ref_aln TEXT, time_stamp INTEGER,
-        PRIMARY KEY (ID, path, scaffold, accession, element));")
+        PRIMARY KEY (ID, path, scaffold, accession, element));", "blast_ref_alignment")
   }
 
   # --- schema v9: retained BLAST hit distribution + rank-aligned lineages ---
-  DBI::dbExecute(con, BLAST_HITS_DDL)
+  if (!has_tbl("blast_hits")) ddl(BLAST_HITS_DDL, "blast_hits")
   # Which search wrote assemblies.blast_*: the local clade seed DB (host-clade
   # by construction, so its identity carries no contamination signal) or the
   # unrestricted remote core_nt search. Previously indistinguishable.
@@ -387,7 +504,7 @@ migrate_db <- function(con) {
   add_col("assemblies", "triage_source", "TEXT")
   # Existing projects: an ignored scaffold was a deliberate human decision, so
   # adopt it as such rather than leaving it undecided and re-triaging over it.
-  if (ver < 11L && has_col("assemblies", "triage")) {
+  if (ver < 11L && has_col("assemblies", "triage") && has_col("assemblies", "ignore")) {
     DBI::dbExecute(con,
       "UPDATE assemblies SET triage = 'drop', triage_source = 'user',
          triage_reason = 'dropped before triage was recorded'
@@ -399,7 +516,7 @@ migrate_db <- function(con) {
   # WF1 triage process and the app could not be made to agree on anything the
   # curator changed. triage_opts holds one action per rule; triage_rule records
   # which rule produced a unit's current verdict.
-  if (!has_tbl("triage_opts")) DBI::dbExecute(con, TRIAGE_OPTS_DDL)
+  if (!has_tbl("triage_opts")) ddl(TRIAGE_OPTS_DDL, "triage_opts")
   if (DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM triage_opts")$n == 0) {
     DBI::dbExecute(con, TRIAGE_OPTS_SEED)
   }
@@ -422,14 +539,16 @@ migrate_db <- function(con) {
   # calls migrate_db() once per unit, so an ungated backfill would rescan the
   # whole project on every unit, O(units^2) across the run this repair exists to
   # avoid repeating. Rows written after v13 get their class from the parse path.
-  if (ver < 13L && has_tbl("blast_hits")) backfill_hit_class(con, in_txn = owns_txn)
+  # in_txn is unconditional: by here there is always a transaction, ours or the
+  # caller's, and dbWithTransaction inside either one would error.
+  if (ver < 13L && has_tbl("blast_hits")) backfill_hit_class(con, in_txn = TRUE)
 
   # --- schema v14: the screen verdict layer ---
   # The machine's opinion about a scaffold lived only as a substring inside
   # annotate_notes, which curate_one() overwrites wholesale and the modal
   # textarea also writes to. Created empty on purpose: scoring needs a resolved
   # sample lineage and a taxdump, which a migration cannot assume.
-  if (!has_tbl("screen")) DBI::dbExecute(con, SCREEN_DDL)
+  if (!has_tbl("screen")) ddl(SCREEN_DDL, "screen")
   add_col("samples", "reference_support", "INTEGER")
   add_col("triage_opts", "rule_screen_off_target", "TEXT")
   if (ver < 14L && has_col("triage_opts", "rule_screen_off_target")) {
@@ -464,7 +583,7 @@ migrate_db <- function(con) {
   # to query_samples (IN (1,4)) and to nf_pending_count(). Deleting the query
   # that recognised 5 would strand them permanently, so they return to the
   # ordinary queue.
-  if (has_col("assemble", "assemble_switch")) {
+  if (ver < 16L && has_col("assemble", "assemble_switch")) {
     DBI::dbExecute(con, "UPDATE assemble SET assemble_switch = 1 WHERE assemble_switch = 5")
   }
 
@@ -480,20 +599,36 @@ migrate_db <- function(con) {
   # since then nothing has written or read this table. Dropping it in the
   # migration as well as in new_db() is what keeps a migrated database and a
   # fresh one identical.
-  if (has_tbl("stitched")) DBI::dbExecute(con, "DROP TABLE stitched;")
+  if (has_tbl("stitched")) drop_tbl("stitched")
+
+  # --- schema v19: in-app reference-database step ---
+  # Clade groups get their own table rather than columns on samples: a group is a
+  # unit of work (built, failed, skipped) that outlives any one sample's membership.
+  if (!has_tbl("reference")) ddl(REFERENCE_DDL, "reference")
+  if (!has_tbl("reference_config")) ddl(REFERENCE_CONFIG_DDL, "reference_config")
+  if (DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM reference_config")$n == 0) {
+    DBI::dbExecute(con,
+      "INSERT INTO reference_config (rowid_key, ref_dir, min_records, max_records)
+       VALUES (1, NULL, 1000, 25000)")
+  }
+  add_col("samples", "ref_id", "TEXT")
+  # a v19 database predating the named-preset fix has the table but not the column
+  add_col("reference", "preset_name", "TEXT")
 
   # --- schema v19: saved FASTA-header configurations for export ---
   ensure_export_opts(con)
+  note_tbl("export_opts")
 
-  # user_version is a header field, not table data, so it is set after the
-  # transaction commits rather than inside it.
+  # Stamped inside the transaction: PRAGMA user_version is transactional, and a
+  # crash between COMMIT and the stamp would leave a migrated schema marked at the
+  # old version, so the next run would re-apply every step (v9 drops blast_hits).
+  if (ver < RIBOPILOT_SCHEMA_VERSION) {
+    DBI::dbExecute(con, sprintf("PRAGMA user_version = %d", RIBOPILOT_SCHEMA_VERSION))
+  }
   if (owns_txn) {
     done <- TRUE
     DBI::dbExecute(con, "COMMIT")
     on.exit()
-  }
-  if (ver < RIBOPILOT_SCHEMA_VERSION) {
-    DBI::dbExecute(con, sprintf("PRAGMA user_version = %d", RIBOPILOT_SCHEMA_VERSION))
   }
   invisible(RIBOPILOT_SCHEMA_VERSION)
 }
@@ -590,17 +725,31 @@ backfill_hit_class <- function(con, in_txn = FALSE) {
 
 #' Copy a project's `.sqlite` into `<path>/.old_sqlite_dbs/` before an upgrade
 #'
-#' Migrations `ALTER` tables in place, which makes the DB unopenable by an older
-#' RiboPilot the user may still have on a cluster; keep a copy to fall back to.
+#' Migrations `ALTER` tables in place and a few steps drop data outright, so the
+#' copy is the only way back. Taken through SQLite's own backup API rather than
+#' file.copy(): in WAL mode the `.sqlite` file alone omits every transaction
+#' since the last checkpoint, so a plain copy is a backup that is not one.
+#' Returns NULL, with a warning, when no backup was made.
 #' @noRd
 backup_project_db <- function(path) {
   db <- file.path(path, ".sqlite")
   if (!file.exists(db)) return(invisible(NULL))
   bdir <- file.path(path, ".old_sqlite_dbs")
   dir.create(bdir, showWarnings = FALSE)
-  dest <- file.path(bdir, sprintf("sqlite.%d", as.integer(Sys.time())))
-  tryCatch(file.copy(db, dest, overwrite = FALSE),
-    error = function(e) warning("Could not back up project DB: ", conditionMessage(e)))
+  # tempfile(), not a seconds stamp: two migrations in the same second must not
+  # collide and silently leave one of them unbacked.
+  dest <- tempfile(pattern = format(Sys.time(), "sqlite.%Y%m%d%H%M%S."), tmpdir = bdir)
+  err <- tryCatch({
+    src <- DBI::dbConnect(RSQLite::SQLite(), db)
+    on.exit(DBI::dbDisconnect(src), add = TRUE)
+    RSQLite::sqliteCopyDatabase(src, dest)
+    NULL
+  }, error = function(e) conditionMessage(e))
+  if (!is.null(err) || !file.exists(dest) || file.size(dest) == 0) {
+    warning("Could not back up project DB to ", dest,
+      if (!is.null(err)) paste0(": ", err), call. = FALSE)
+    return(invisible(NULL))
+  }
   invisible(dest)
 }
 

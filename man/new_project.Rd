@@ -15,9 +15,11 @@ new_project(
   container = paste0("macguigand/ribopilot:", utils::packageVersion("RiboPilot")),
   custom_seeds_db = NULL,
   custom_labels_db = NULL,
+  ref_dir = NULL,
   config = NULL,
   profile_dir = ribopilot_config_dir(),
   ncbi_api_key = NULL,
+  check_reads = TRUE,
   Rproj = TRUE,
   force = FALSE,
   ...
@@ -36,10 +38,13 @@ inputs. Extra metadata columns are preserved.}
 
 \item{min_depth}{Minimum trimmed paired reads to proceed with assembly.}
 
-\item{executor}{Executor for the Nextflow pipeline: a built-in template
-("conda" (default) for a local conda env, "docker"/"local" for the RiboPilot
-container, "awsbatch", "slurm", "sge", "pbs", "lsf", "NMNH_Hydra",
-"NOAA_SEDNA") or a saved profile from [generate_config()].}
+\item{executor}{Executor for the Nextflow pipeline. Ready to use as-is:
+"conda" (default) for a local conda env, and "docker"/"local" for the
+RiboPilot container. Every scheduler ("slurm", "sge", "pbs", "lsf",
+"awsbatch", "NMNH_Hydra", "NOAA_SEDNA") is a template, not a usable
+executor: it needs a queue and cluster options that only [generate_config()]
+supplies, so build a profile there first and pass its name here. Passing a
+bare scheduler name is an error rather than a config Nextflow cannot parse.}
 
 \item{container}{Container to use for pipeline execution.}
 
@@ -47,11 +52,18 @@ container, "awsbatch", "slurm", "sge", "pbs", "lsf", "NMNH_Hydra",
 
 \item{custom_labels_db}{Path/URL to a custom GetOrganelle nr labels database.}
 
+\item{ref_dir}{Folder for built reference databases (default: the
+`RIBOPILOT_REF_DIR` environment variable, else [ribopilot_ref_dir()]).}
+
 \item{config}{Optional path to an existing custom Nextflow config file.}
 
 \item{profile_dir}{Directory searched for saved cluster profiles.}
 
 \item{ncbi_api_key}{Optional NCBI API key (raises request rate limits).}
+
+\item{check_reads}{(logical) Check that the read files named in the mapping
+file exist under `data_path` (default TRUE). Set FALSE when the data will
+be staged later.}
 
 \item{Rproj}{(logical) Initialize/open an RStudio project (default TRUE).}
 
