@@ -498,3 +498,27 @@ test_that("a hand-edited script is written as edited", {
   script <- paste(readLines(file.path(dir, "submit_ribopilot_reference.sh")), collapse = "\n")
   expect_true(grepl("#SBATCH -p bigmem", script, fixed = TRUE))
 })
+
+test_that("the deferred apply runs with a session but no reactive context", {
+  # The app defers apply_clade through later(); withReactiveDomain() restores
+  # the session but NOT a reactive context, so any reactiveVal read inside it
+  # throws "operation not allowed without an active reactive context".
+  # testServer() evaluates its expression inside isolate(), which hides that,
+  # so the call below deliberately happens outside one.
+  skip_if_not_installed("withr")
+  dir <- withr::local_tempdir()
+  dbfile <- mk_split_db(dir)
+  deps <- mk_split_deps(dbfile, dir)
+  handlers <- NULL; sess <- NULL
+  shiny::testServer(function(input, output, session) {
+    handlers <<- RiboPilot:::reference_handlers(input, output, session, deps)
+    sess <<- session
+  }, { session$flushReact() })
+
+  expect_no_error(
+    shiny::withReactiveDomain(sess, handlers$apply_clade(7588L, "asteroidea")))
+
+  con <- DBI::dbConnect(RSQLite::SQLite(), dbfile); on.exit(DBI::dbDisconnect(con))
+  expect_equal(DBI::dbGetQuery(con, "SELECT clade_name FROM reference")$clade_name,
+    "Asteroidea")
+})

@@ -38,8 +38,11 @@ rung_label <- function(name, rank, n_samples, n_records, chosen) {
 #' @param ladder data.frame from [group_ladder()].
 #' @param chosen_taxid The group's current clade taxid.
 #' @param n_group Samples in the group.
+#' @param index_ready Is the taxdump name-search index already built? When it is
+#'   not, the first search pays for building it, which is worth saying up front.
 #' @noRd
-reference_ladder_modal <- function(ref_id, clade_name, ladder, chosen_taxid, n_group) {
+reference_ladder_modal <- function(ref_id, clade_name, ladder, chosen_taxid, n_group,
+                                   index_ready = TRUE) {
   ladder <- ladder[order(-ladder$level), , drop = FALSE]
   choices <- stats::setNames(as.character(ladder$taxid),
     vapply(seq_len(nrow(ladder)), function(i) rung_label(ladder$name[i], ladder$rank[i],
@@ -56,6 +59,10 @@ reference_ladder_modal <- function(ref_id, clade_name, ladder, chosen_taxid, n_g
       "group's samples offers to split the rest into their own group."),
     shiny::textInput("ref_search", "Or search NCBI for another clade:", width = "100%",
       placeholder = "e.g. Echinodermata"),
+    if (!isTRUE(index_ready)) {
+      opts_help("The first search builds a searchable copy of the local NCBI ",
+        "taxonomy, which takes a minute or two. Every search after that is instant.")
+    },
     shiny::uiOutput("ref_search_results"),
     footer = shiny::tagList(
       shiny::actionButton("ref_clade_apply", "Use this clade", class = "btn-primary btn-sm"),
@@ -215,7 +222,8 @@ reference_handlers <- function(input, output, session, deps) {
       # cache-only: opening the modal must not shell out. Suggest pre-fills the
       # cache for these rungs; anything else renders as "records unknown"
       l <- group_ladder(ladders_now(con), ids, count_fn = cache_count_fn(cfg$ref_dir))
-      reference_ladder_modal(ref_id, row$clade_name[1], l, row$clade_taxid[1], length(ids))
+      reference_ladder_modal(ref_id, row$clade_name[1], l, row$clade_taxid[1], length(ids),
+        index_ready = file.exists(tax_index_path(project_taxdump_dir(deps$project()))))
     }), error = function(e) e)
     if (inherits(res, "error")) { notify(conditionMessage(res), "error"); return() }
     shiny::showModal(res)
@@ -248,13 +256,15 @@ reference_handlers <- function(input, output, session, deps) {
     shinyWidgets::sendSweetAlert(title = "Applying clade...",
       text = "Checking which samples it covers and counting GenBank records.",
       type = "info", btn_labels = NA, closeOnClickOutside = FALSE)
+    # read the target HERE: withReactiveDomain sets a session, not a reactive
+    # context, so a reactiveVal read inside the later() callback would error
+    target <- ladder_target()
     later::later(function() {
-      shiny::withReactiveDomain(session, apply_clade(tid))
+      shiny::withReactiveDomain(session, apply_clade(tid, target))
     }, delay = 0.1)
   })
 
-  apply_clade <- function(tid) {
-    ref_id <- ladder_target()
+  apply_clade <- function(tid, ref_id) {
     res <- tryCatch(with_con(function(con) {
       ids <- DBI::dbGetQuery(con, "SELECT ID FROM samples WHERE ref_id = ?",
         params = list(ref_id))$ID
@@ -611,5 +621,7 @@ reference_handlers <- function(input, output, session, deps) {
     notify(paste("Reference folder set to", v$msg))
   })
 
-  list(open_ladder = open_ladder, poll = poll_now)
+  # apply_clade is exposed so a test can run it the way later() does: session
+  # domain, no reactive context
+  list(open_ladder = open_ladder, apply_clade = apply_clade, poll = poll_now)
 }

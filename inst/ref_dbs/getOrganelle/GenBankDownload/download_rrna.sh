@@ -108,13 +108,29 @@ if [[ -n "${NCBI_API_KEY:-}" ]]; then
 fi
 echo ""
 
-N_REC=$( esearch -db nuccore -query "${QUERY}" \
-  | efilter -molecule genomic \
-  | grep "Count" | head -1 | cut -f2 -d">" | cut -f1 -d"<" )
+# A clade GenBank has nothing for is an answer, not a failure: esearch returns
+# "Empty result", efilter then exits non-zero, and pipefail would abort the run.
+# Only that specific case becomes 0; anything else still fails loudly.
+SEARCH_OUT=$( { esearch -db nuccore -query "${QUERY}" \
+  | efilter -molecule genomic; } 2>&1 || true )
+N_REC=$( printf '%s\n' "${SEARCH_OUT}" | grep "Count" | head -1 | cut -f2 -d">" | cut -f1 -d"<" || true )
+if [[ -z "${N_REC}" ]]; then
+  if printf '%s\n' "${SEARCH_OUT}" | grep -q "Empty result"; then
+    N_REC=0
+  else
+    printf '%s\n' "${SEARCH_OUT}" >&2
+    echo "GenBank search failed for: ${QUERY}" >&2
+    exit 1
+  fi
+fi
 
 echo "Found ${N_REC} matching nuclear rRNA record(s)."
 if [[ "${COUNT_ONLY}" -eq 1 ]]; then
   exit 0
+fi
+if [[ "${N_REC}" -eq 0 ]]; then
+  echo "No records to build from for: ${QUERY}" >&2
+  exit 1
 fi
 echo "Downloading (fasta)..."
 echo ""
