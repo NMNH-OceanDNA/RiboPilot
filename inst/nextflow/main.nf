@@ -52,7 +52,6 @@ workflow {
         .filter { id, reads, after -> (after as Integer) >= (params.minDepth as Integer) }
         .map { id, reads, after -> tuple(id, reads) }
         .join(asm_opts)
-        .map { id, reads, cpus, mem, go, seeds, labels, asm -> tuple(id, reads, cpus, mem, go, seeds, labels, asm) }
 
     // Per-sample assembler. The fallback arm is `true` rather than an equality
     // test on purpose: branch DROPS an item matching no condition, silently, so

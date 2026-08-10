@@ -85,8 +85,7 @@ container_bind_opts <- function(cfg_lines, dirs) {
 #' @noRd
 config_mounted_dirs <- function(cfg_lines) {
   txt <- paste(cfg_lines, collapse = "\n")
-  # perl = TRUE throughout: the default engine treats \\s inside a bracket
-  # expression as a literal backslash and 's', which silently truncates paths
+  # perl = TRUE throughout: TRE mishandles \\s inside a bracket expression
   ro <- regmatches(txt, gregexpr('runOptions\\s*=\\s*"[^"]*"', txt, perl = TRUE))[[1]]
   if (length(ro) == 0) return(character(0))
   v <- unlist(regmatches(ro, gregexpr("-v\\s+[^\\s:]+", ro, perl = TRUE)))

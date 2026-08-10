@@ -140,7 +140,7 @@ feature_table_text_con <- function(con, id, path = 1L, scaffold = 1L, seqid = id
         paste0(feats$start[i], "\t", feats$stop[i], "\tassembly_gap"),
         paste0("\t\t\testimated_length\t", feats$stop[i] - feats$start[i] + 1),
         "\t\t\tgap_type\twithin scaffold",
-        "\t\t\tlinkage_evidence\talign_genus")
+        "\t\t\tlinkage_evidence\talign genus")
       next
     }
     s <- if (i == first_rna && (feats$start[i] <= 1 || isTRUE(force_partial))) {

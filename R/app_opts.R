@@ -17,8 +17,6 @@ opts_name_row <- function(name_id, edit_id, choices, selected) {
       shinyWidgets::prettyCheckbox(edit_id, "Edit", value = FALSE, status = "primary")))
 }
 
-`%|NA|%` <- function(x, y) if (is.null(x) || length(x) == 0 || is.na(x)) y else x
-
 # assembler values written to assemble_opts.assembler; main.nf routes anything
 # that is not "getorganelle" to the fallback assembler
 ASSEMBLER_CHOICES <- c(
