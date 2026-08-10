@@ -239,21 +239,42 @@ load_assemblies <- function(con, out_dir, ID) {
   }
 
   rows <- list()
+  n_bad <- 0L
   for (fa in fas) {
     seqs <- Biostrings::readDNAStringSet(fa)
     for (i in seq_along(seqs)) {
       hdr <- names(seqs)[i]
       parts <- strsplit(hdr, "\\s+")[[1]]
-      idpath <- strsplit(parts[1], "\\.")[[1]] # ID, path, scaffold
+      # path and scaffold are the LAST two dot-separated fields: the ID may
+      # itself contain dots, and a positional read would take them for the keys
+      idpath <- strsplit(parts[1], "\\.")[[1]]
+      np <- length(idpath)
+      pth <- if (np >= 3) suppressWarnings(as.integer(idpath[np - 1])) else NA_integer_
+      scf <- if (np >= 3) suppressWarnings(as.integer(idpath[np])) else NA_integer_
+      if (is.na(pth) || is.na(scf)) {
+        n_bad <- n_bad + 1L
+        next
+      }
       topo <- if (length(parts) > 1) parts[2] else NA_character_
       s <- as.character(seqs[[i]])
       rows[[length(rows) + 1]] <- data.frame(
-        ID = ID, path = as.integer(idpath[2]), scaffold = as.integer(idpath[3]),
+        ID = ID, path = pth, scaffold = scf,
         topology = topo, length = nchar(s), length_raw = nchar(s),
         sequence = s, ignore = 0L, edited = 0L, time_stamp = ts,
         stringsAsFactors = FALSE
       )
     }
+  }
+  if (n_bad > 0) {
+    warning(sprintf("%s: skipped %d assembly record(s) with an unparsable header", ID, n_bad),
+      call. = FALSE)
+  }
+  if (length(rows) == 0) {
+    DBI::dbExecute(con,
+      "UPDATE assemble SET paths=NULL, scaffolds=NULL, length=NULL, topology=NULL,
+       assemble_switch=3, assemble_notes='failed assembly', time_stamp=? WHERE ID=?",
+      params = list(ts, ID))
+    return(invisible(0L))
   }
   df <- do.call(rbind, rows)
 
@@ -472,14 +493,31 @@ trim_assembly <- function(con, id, path = 1L, scaffold = 1L, from, to) {
 
   cov <- DBI::dbGetQuery(con, "SELECT depths FROM coverage WHERE ID = ? AND path = ? AND scaffold = ?",
     params = list(id, path, scaffold))
-  if (nrow(cov) > 0 && !is.na(cov$depths[1]) && nzchar(cov$depths[1])) {
-    dep <- as.numeric(strsplit(cov$depths[1], ",")[[1]])
-    dep <- dep[from:min(length(dep), to)]
-    DBI::dbExecute(con,
-      "UPDATE coverage SET depths = ?, mean_depth = ?, min_depth = ?, max_depth = ? WHERE ID = ? AND path = ? AND scaffold = ?",
-      params = list(paste(dep, collapse = ","), mean(dep), min(dep), max(dep), id, path, scaffold))
+  dep <- if (nrow(cov) > 0) parse_depths(cov$depths) else numeric(0)
+  # `from` is clamped to the sequence, which can outrun a shorter depth track
+  # (truncated `samtools depth -a`, or a re-assembly coverage never re-ran on)
+  if (length(dep) > 0 && from <= length(dep)) {
+    write_coverage_summary(con, id, path, scaffold, dep[seq(from, min(length(dep), to))])
   }
   invisible(new_len)
+}
+
+#' Rewrite one unit's coverage row from a depth track
+#'
+#' median_depth is what the scaffold table and triage read, so it has to move
+#' with the track, not just mean/min/max.
+#' @param con Open DBI connection. @param id,path,scaffold Assembly unit.
+#' @param dep Numeric depths in position order.
+#' @noRd
+write_coverage_summary <- function(con, id, path, scaffold, dep) {
+  if (length(dep) == 0) return(invisible(FALSE))
+  DBI::dbExecute(con,
+    "UPDATE coverage SET depths = ?, mean_depth = ?, median_depth = ?, min_depth = ?, max_depth = ?
+     WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(paste(dep, collapse = ","), round(mean(dep), 2),
+      round(stats::median(dep), 2), as.integer(min(dep)), as.integer(max(dep)),
+      id, path, scaffold))
+  invisible(TRUE)
 }
 
 #' Ensure the assembly_backup table exists (idempotent).
@@ -571,11 +609,6 @@ restore_assembly <- function(con, id, path = 1L, scaffold = 1L) {
     }
   }
 
-  if (!is.na(bak$coverage[1]) && nzchar(bak$coverage[1])) {
-    dep <- as.numeric(strsplit(bak$coverage[1], ",")[[1]])
-    DBI::dbExecute(con,
-      "UPDATE coverage SET depths = ?, mean_depth = ?, min_depth = ?, max_depth = ? WHERE ID = ? AND path = ? AND scaffold = ?",
-      params = list(bak$coverage[1], mean(dep), min(dep), max(dep), id, path, scaffold))
-  }
+  write_coverage_summary(con, id, path, scaffold, parse_depths(bak$coverage))
   invisible(bak$length[1])
 }

@@ -5,28 +5,29 @@
 # completeness (barrnap/Rfam), and the top BLAST hit + its resolved lineage.
 # Then calls score_candidates().
 
-#' Distinct rRNA anchors (18S/5.8S/28S) present in a fasta, via barrnap
+#' Distinct rRNA anchors (18S/5.8S/28S) present in a fasta
 #'
-#' Uses the bioconda barrnap fork's eukaryote Rfam models (`--kingdom fun`;
-#' SSU/LSU/5_8S covariance models). Returns the distinct anchor names found.
+#' Uses the same caller and kingdom translation as the annotation path
+#' ([rrna_caller()], [rrna_kingdom_for()]) so the two cannot disagree: the
+#' `anchors` term carries a fifth of the composite path score, so a caller that
+#' silently finds nothing zeroes it for every candidate.
 #'
 #' @param fasta Path to a nucleotide fasta.
-#' @param kingdom barrnap kingdom (default "fun" = eukaryote Rfam models here).
+#' @param kingdom Stored kingdom, translated per tool (default "euk").
 #' @return character vector subset of RRNA_GENES.
 #' @noRd
-assembly_anchors <- function(fasta, kingdom = "fun") {
-  bin <- unname(Sys.which("barrnap"))
-  if (!nzchar(bin)) {
+assembly_anchors <- function(fasta, kingdom = "euk") {
+  caller <- rrna_caller()
+  if (is.null(caller)) {
     return(character(0))
   }
-  gff <- suppressWarnings(system2(bin, c("--kingdom", kingdom, "--quiet", shQuote(fasta)),
-    stdout = TRUE, stderr = FALSE))
-  gff <- gff[!startsWith(gff, "#")]
-  names <- unique(sub(".*Name=([^;]+).*", "\\1", gff[grepl("Name=", gff)]))
-  # barrnap names like "18S_rRNA", "28S_rRNA", "5_8S_rRNA"
-  map <- c("18S_rRNA" = "18S", "5_8S_rRNA" = "5.8S", "5.8S_rRNA" = "5.8S", "28S_rRNA" = "28S")
-  out <- unname(map[names])
-  intersect(RRNA_GENES, stats::na.omit(out))
+  gff <- tryCatch(run_rrna_tool(caller$bin, caller$tool, fasta,
+    rrna_kingdom_for(kingdom, caller$tool)), error = function(e) character(0))
+  feat <- parse_barrnap(gff)
+  if (nrow(feat) == 0) {
+    return(character(0))
+  }
+  intersect(RRNA_GENES, unique(feat$element))
 }
 
 #' Best BLAST hit per query against a nucleotide db

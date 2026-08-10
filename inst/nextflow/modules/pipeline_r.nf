@@ -128,7 +128,8 @@ process annotate_tools {
     // now annotates every unit, including short fragments and contaminants.
     errorStrategy 'ignore'
     cpus { nthreads as int }
-    memory { "${mem} GB" }
+    // scales on retry; see the OOM retry policy in nextflow.config
+    memory { "${(mem as int) * task.attempt} GB" }
     input:
     tuple val(id), val(upath), val(uscaf), val(nthreads), val(mem)
     output:
@@ -147,9 +148,15 @@ process annotate_tools {
       WHERE an.ID = '${id}' AND an.path = ${upath} AND an.scaffold = ${uscaf};")"
     TOOL="\${TOOL:-pybarrnap}"; KINGDOM="\${KINGDOM:-euk}"; ITSXT="\${ITSXT:-all}"
 
+    # Same kingdom translation as R's rrna_kingdom_for(): the Perl barrnap fork
+    # calls its eukaryote Rfam models "fun" and has no euk/all; pybarrnap has no
+    # "fun". Passing the stored kingdom through untranslated makes the tool exit
+    # non-zero and the unit gets no anchors at all.
     if [ "\$TOOL" = "barrnap" ]; then
+        case "\$KINGDOM" in euk|all) KINGDOM=fun ;; esac
         barrnap --kingdom "\$KINGDOM" --quiet unit.fasta > unit.barrnap.gff
     else
+        case "\$KINGDOM" in fun) KINGDOM=euk ;; esac
         pybarrnap -k "\$KINGDOM" -t ${task.cpus} -q unit.fasta > unit.barrnap.gff
     fi
 

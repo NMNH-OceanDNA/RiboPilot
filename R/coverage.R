@@ -94,17 +94,25 @@ downsample_depths <- function(x, n = 100) {
   x[unique(round(seq(1, length(x), length.out = n)))]
 }
 
+#' Parse a stored `coverage.depths` blob into a numeric vector
+#' @param depths_blob The stored `coverage.depths` value.
+#' @return Numeric vector in position order, empty when there is no usable track.
+#' @noRd
+parse_depths <- function(depths_blob) {
+  if (length(depths_blob) == 0 || is.na(depths_blob[1]) || !nzchar(depths_blob[1])) {
+    return(numeric(0))
+  }
+  v <- suppressWarnings(as.numeric(strsplit(depths_blob[1], "[,;[:space:]]+")[[1]]))
+  v[!is.na(v)]
+}
+
 #' Downsampled depth track as a comma-separated string for a table cell
 #' @param depths_blob The stored `coverage.depths` value.
 #' @param n Maximum points to keep.
 #' @return Comma-separated string, or NA when there is no usable track.
 #' @noRd
 depth_track_string <- function(depths_blob, n = 100) {
-  if (length(depths_blob) == 0 || is.na(depths_blob[1]) || !nzchar(depths_blob[1])) {
-    return(NA_character_)
-  }
-  v <- suppressWarnings(as.numeric(strsplit(depths_blob[1], "[,;[:space:]]+")[[1]]))
-  v <- v[!is.na(v)]
+  v <- parse_depths(depths_blob)
   if (length(v) == 0) return(NA_character_)
   paste(round(downsample_depths(v, n), 1), collapse = ",")
 }
