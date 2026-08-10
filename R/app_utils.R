@@ -29,11 +29,13 @@ find_workdirs <- function(project_dir, sample_id) {
   th <- grep("Task completed > TaskHandler\\[", lines, value = TRUE)
   if (length(th) == 0) return(empty)
 
-  grab1 <- function(x, pat) vapply(regmatches(x, regexec(pat, x)),
+  # perl = TRUE: TRE reads \s inside a bracket expression as a literal backslash
+  # and 's', so [^]\s] silently truncated every path at its first "s".
+  grab1 <- function(x, pat) vapply(regmatches(x, regexec(pat, x, perl = TRUE)),
     function(v) if (length(v) >= 2) v[2] else NA_character_, character(1))
   name <- grab1(th, "name:\\s*(.*?);")
   exit <- grab1(th, "exit:\\s*(.*?);")
-  workdir <- grab1(th, "workDir:\\s*([^]\\s]+)")
+  workdir <- grab1(th, "workDir:\\s*([^\\]\\s]+)")
   pt <- regmatches(name, regexec("([^:[:space:]]+)\\s*\\(([^)]+)\\)\\s*$", name))
   process <- vapply(pt, function(v) if (length(v) >= 3) v[2] else NA_character_, character(1))
   sample <- sub("\\.[0-9]+$", "", vapply(pt, function(v) if (length(v) >= 3) v[3] else NA_character_, character(1)))
@@ -43,7 +45,9 @@ find_workdirs <- function(project_dir, sample_id) {
   out <- data.frame(process = process[keep], exit = exit[keep],
     workdir = trimws(workdir[keep]), stringsAsFactors = FALSE)
   out <- out[!duplicated(out$workdir), , drop = FALSE]
-  out$status <- ifelse(out$exit == "0", "success", "failed")
+  ex <- trimws(out$exit)
+  out$status <- ifelse(is.na(ex) | !nzchar(ex), "unknown",
+    ifelse(ex == "0", "success", "failed"))
   out$exists <- dir.exists(out$workdir)
   mt <- file.info(out$workdir)$mtime
   out$modified <- ifelse(is.na(mt), "-", format(mt, "%Y-%m-%d %H:%M"))
@@ -53,7 +57,7 @@ find_workdirs <- function(project_dir, sample_id) {
 #' Open a path in the OS file manager (best-effort)
 #' @noRd
 open_path <- function(path) {
-  if (is.null(path) || !nzchar(path)) return(invisible())
+  if (length(path) != 1 || is.na(path) || !nzchar(path)) return(invisible())
   cmd <- if (Sys.info()[["sysname"]] == "Darwin") "open" else
     if (.Platform$OS.type == "windows") "explorer" else "xdg-open"
   try(system2(cmd, shQuote(path), stdout = FALSE, stderr = FALSE, wait = FALSE), silent = TRUE)

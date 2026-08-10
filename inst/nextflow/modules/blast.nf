@@ -54,6 +54,8 @@ process blast_genbank {
         sqlite3 -cmd '.timeout 10000' '${params.db}' "SELECT '>'||ID||'.'||path||'.'||scaffold||char(10)||sequence FROM assemblies WHERE ID='${id}' AND path=\$P AND scaffold=\$S;" > query.fa
         [ -s query.fa ] || continue
 
+        # \${XO} carries the significance and identity floors (blast_opts.extra_opts,
+        # "Extra blastn options" in the app); blastn's own defaults keep chance hits.
         # Keep the hit distribution, not just one row per subject: bitscore (the
         # statistic that actually orders alignments), alignment length, and the
         # query coordinates that make a chimera visible as two disjoint HSP sets
