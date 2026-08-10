@@ -7,6 +7,7 @@
 score_candidates(
   candidates,
   sample_lineage = NA_character_,
+  sample_taxids = NA_character_,
   expected_length = c(4000, 12000),
   weights = DEFAULT_SCORE_WEIGHTS
 )
@@ -14,10 +15,15 @@ score_candidates(
 \arguments{
 \item{candidates}{data.frame, one row per candidate path, with columns:
 `path`, `depth` (mean graph depth), `blast_pident` (0-100), `blast_lineage`
-("; " ranked lineage of the top hit), `anchors` (comma list of distinct
-anchors found among 18S/5.8S/28S), `length` (total bp).}
+(rank-aligned lineage of the top hit), `anchors` (comma list of distinct
+anchors found among 18S/5.8S/28S), `length` (total bp), and optionally
+`blast_lineage_taxids`.}
 
-\item{sample_lineage}{The sample's resolved "; " ranked lineage.}
+\item{sample_lineage}{The sample's resolved rank-aligned lineage.}
+
+\item{sample_taxids}{The sample's rank-aligned lineage taxids. When both this
+and `candidates$blast_lineage_taxids` are present the taxonomy term is
+scored on taxids instead of names.}
 
 \item{expected_length}{Numeric length-2 c(min, max) plausible rDNA repeat unit length
 for the clade (default c(4000, 12000)).}

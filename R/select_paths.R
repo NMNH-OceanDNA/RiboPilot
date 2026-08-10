@@ -83,7 +83,9 @@ sseqid_species <- function(sseqid) {
 #'
 #' @param path_fastas Character vector of per-path fasta files.
 #' @param gfa_path The assembly graph `.gfa` (for depth). May be NA.
-#' @param sample_lineage The sample's resolved "; " ranked lineage.
+#' @param sample_lineage The sample's resolved rank-aligned lineage.
+#' @param sample_taxids The sample's rank-aligned lineage taxids. Preferred over
+#'   the names when present: taxids carry no homonyms.
 #' @param blast_db BLAST nucleotide db prefix (e.g. the Actinopterygii seeds db,
 #'   or an nt-style db).
 #' @param taxdump_dir Pinned taxdump dir (for resolving hit lineages).
@@ -95,6 +97,7 @@ sseqid_species <- function(sseqid) {
 score_assembly <- function(path_fastas,
                            gfa_path = NA_character_,
                            sample_lineage = NA_character_,
+                           sample_taxids = NA_character_,
                            blast_db = NULL,
                            taxdump_dir = NULL,
                            with_staxids = FALSE,
@@ -131,15 +134,20 @@ score_assembly <- function(path_fastas,
 
   # resolve top-hit lineages
   cand$blast_lineage <- NA_character_
+  cand$blast_lineage_taxids <- NA_character_
   if (with_staxids && have_taxdump(taxdump_dir) && any(!is.na(cand$hit_staxid))) {
     info <- tk_taxid_info(as.integer(stats::na.omit(cand$hit_staxid)),
       if (file.exists(file.path(taxdump_dir, "names.dmp"))) taxdump_dir else extract_taxdump(taxdump_dir))
-    cand$blast_lineage <- info$lineage[match(cand$hit_staxid, info$taxid)]
+    i <- match(cand$hit_staxid, info$taxid)
+    cand$blast_lineage <- info$lineage[i]
+    cand$blast_lineage_taxids <- info$lineage_taxids[i]
   } else if (!with_staxids && have_taxdump(taxdump_dir) && any(!is.na(cand$hit_species))) {
     lin <- resolve_taxonomy(stats::na.omit(unique(cand$hit_species)), taxdump_dir = taxdump_dir)
-    cand$blast_lineage <- lin$lineage[match(cand$hit_species, lin$Taxon)]
+    i <- match(cand$hit_species, lin$Taxon)
+    cand$blast_lineage <- lin$lineage[i]
+    cand$blast_lineage_taxids <- lin$lineage_taxids[i]
   }
 
-  score_candidates(cand, sample_lineage = sample_lineage,
+  score_candidates(cand, sample_lineage = sample_lineage, sample_taxids = sample_taxids,
     expected_length = expected_length, weights = weights)
 }

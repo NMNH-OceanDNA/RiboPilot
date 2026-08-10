@@ -27,12 +27,14 @@ score_one <- function(con, id, out_dir, taxdump_dir = NULL) {
     return(invisible(NULL))
   }
   gfa <- Sys.glob(file.path(adir, "*.gfa"))
-  lineage <- DBI::dbGetQuery(con, "SELECT lineage FROM samples WHERE ID = ?", params = list(id))$lineage[1]
+  tax <- DBI::dbGetQuery(con,
+    "SELECT lineage, lineage_taxids FROM samples WHERE ID = ?", params = list(id))
 
   scored <- score_assembly(
     path_fastas = fastas,
     gfa_path = if (length(gfa) > 0) gfa[1] else NA_character_,
-    sample_lineage = lineage %||% NA_character_,
+    sample_lineage = tax$lineage[1] %||% NA_character_,
+    sample_taxids = tax$lineage_taxids[1] %||% NA_character_,
     blast_db = blast_db, taxdump_dir = td, with_staxids = FALSE)
   write_path_scores(con, id, scored)
   tryCatch(blast_scaffolds_local(con, id, blast_db), error = function(e) NULL)
