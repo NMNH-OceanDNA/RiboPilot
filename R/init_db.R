@@ -172,7 +172,13 @@ new_db <- function(
         pre_opts = "default",
         cpus = 4,
         memory = 16,
-        fastp = "--trim_poly_g --correction --detect_adapter_for_pe --dont_eval_duplication"
+        # Adapter handling plus 3' quality trimming and a length floor. Without
+        # --cut_tail, degraded read ends reach GetOrganelle / SPAdes and, at rDNA
+        # copy number, become spurious variant groups in screen_variants().
+        # --dont_eval_duplication stays: for rDNA, duplicate reads are real copy
+        # number, so they are never deduplicated.
+        fastp = paste("--trim_poly_g --correction --detect_adapter_for_pe",
+          "--dont_eval_duplication --cut_tail --cut_mean_quality 20 -l 50")
       ),
       in_place = TRUE, copy = TRUE, by = "pre_opts"
     )
@@ -288,7 +294,14 @@ new_db <- function(
         # parse_blast_candidates() instead. Setting this blinds the
         # contamination screen to anything outside the query.
         entrez_query = "",
-        extra_opts = "",
+        # Significance floor for the remote search, shown and editable as "Extra
+        # blastn options". blastn's own default (-evalue 10) keeps hits expected
+        # by chance. Deliberately NO -perc_identity: this one search feeds both
+        # the reference panel and the contamination screen, and the screen exists
+        # to see the distant cross-kingdom hits an identity floor would remove.
+        # The reference panel gets its own floor in parse_blast_candidates(),
+        # after the screen has been written.
+        extra_opts = "-evalue 1e-20",
         # Needs enough depth that real nuclear rDNA references still make the
         # panel after the client-side filter drops non-rDNA hits.
         max_target_seqs = 50L

@@ -1,11 +1,13 @@
 # Coverage: parse `samtools depth -a` output (reads mapped back to one assembly
-# unit's scaffold sequence) into a per-unit coverage row.
+# unit's scaffold sequence) into a per-unit coverage row. The pipeline maps with
+# a MAPQ >= 10 filter, so reads that map equally well to several of the sample's
+# scaffolds are excluded and a depth reflects reads placed on that scaffold
+# specifically. Conserved-core stretches can therefore read as low or zero depth.
 #
 # Both a mean and a MEDIAN per-position depth are stored. Coverage along an rDNA
-# scaffold is not uniform: the conserved 18S/28S cores recruit multi-mapping
-# reads from every copy of the array (and from any other organism's rDNA in the
-# sample) while the spacers do not, so a mean is pulled up by those regions --
-# and pulled up unevenly, because how much a scaffold is inflated depends on how
+# scaffold is not uniform: the conserved 18S/28S cores and the spacers do not
+# behave the same way, so a mean is skewed by those regions -- and skewed
+# unevenly, because how far a scaffold is off depends on how
 # much conserved core it happens to contain. That biases exactly the comparison
 # the app makes with it (this scaffold's depth against its siblings'), which is
 # supposed to reflect abundance rather than element composition. On real
