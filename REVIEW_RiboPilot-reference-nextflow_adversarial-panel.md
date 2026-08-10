@@ -433,13 +433,31 @@ Test suite passes after all five.
 
 ## Status
 
-All six items in the attack order below are done, on branch `review-fixes-2026-08`.
-Everything else in this report is still open.
+Branch `review-fixes-2026-08`. Suite: 2028 passing, 0 failures.
 
-**One follow-up this created.** Projects that already exist hold lineage strings
-in the old collapsed format, and nothing re-resolves them. A stale lineage with a
-missing rank is detectable (fewer than seven `;`-separated fields), so the app
-could warn and offer to re-resolve. Not built.
+**Done:** all six attack-order items below, plus every HIGH finding except the
+three listed as still open. Read-file validation at project init was added on
+top (not a review finding; requested separately).
+
+**Still open, deliberately:**
+
+- Export does not refuse an off-target unit. It flags through `submission_risks()`
+  instead. Making export block is a policy call, not a bug fix.
+- No rule's default action changed. A bacterial contaminant now reaches
+  `off_target` and feeds triage rule 6, which still ships as Flag. Auto-drop
+  wants a bigger labelled corpus than the one bacterial unit in the fixtures.
+- The scale findings (the `collect()` barrier, `pkgload::load_all()` per task,
+  the single-page HTML report) are architectural and untouched.
+- `config.NMNH_Hydra` and `config.NOAA_SEDNA` still set no walltime. They bypass
+  `generate_config()`, so they need a hardcoded site value someone who knows
+  those queues has to choose.
+
+**Two follow-ups this work created:**
+
+- Projects that already exist hold lineage strings in the old collapsed format,
+  and nothing re-resolves them. Detectable (fewer than seven `;` fields). The
+  user has said not to fix this.
+- `SCREEN_VERSION` went 4 -> 5, so stored screen rows recompute on next run.
 
 ## Suggested order of attack
 
