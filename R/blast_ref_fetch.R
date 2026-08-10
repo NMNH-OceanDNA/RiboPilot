@@ -88,17 +88,20 @@ write_blast_ref <- function(con, accession, fasta_file, ft_file, title = NA_char
   }
   species <- extract_species(title)
 
-  DBI::dbExecute(con, "DELETE FROM blast_ref_sequences WHERE accession = ?", params = list(accession))
-  DBI::dbAppendTable(con, "blast_ref_sequences", data.frame(accession = accession,
-    species = species, title = title, taxid = NA_character_, lineage = NA_character_,
-    sequence = seq, length = nchar(seq), time_stamp = ts, stringsAsFactors = FALSE))
-
   ft <- if (file.exists(ft_file)) parse_feature_table(readLines(ft_file, warn = FALSE)) else data.frame()
-  DBI::dbExecute(con, "DELETE FROM blast_ref_annotations WHERE accession = ?", params = list(accession))
-  if (nrow(ft) > 0) {
-    DBI::dbAppendTable(con, "blast_ref_annotations", data.frame(accession = accession,
-      element = ft$element, type = ft$type, start = ft$start, stop = ft$stop,
-      strand = ft$strand, time_stamp = ts, stringsAsFactors = FALSE))
-  }
+  # one transaction: a failed append after a committed delete would drop the
+  # stored record and its features with nothing to put back
+  DBI::dbWithTransaction(con, {
+    DBI::dbExecute(con, "DELETE FROM blast_ref_sequences WHERE accession = ?", params = list(accession))
+    DBI::dbAppendTable(con, "blast_ref_sequences", data.frame(accession = accession,
+      species = species, title = title, taxid = NA_character_, lineage = NA_character_,
+      sequence = seq, length = nchar(seq), time_stamp = ts, stringsAsFactors = FALSE))
+    DBI::dbExecute(con, "DELETE FROM blast_ref_annotations WHERE accession = ?", params = list(accession))
+    if (nrow(ft) > 0) {
+      DBI::dbAppendTable(con, "blast_ref_annotations", data.frame(accession = accession,
+        element = ft$element, type = ft$type, start = ft$start, stop = ft$stop,
+        strand = ft$strand, time_stamp = ts, stringsAsFactors = FALSE))
+    }
+  })
   invisible(nchar(seq))
 }

@@ -33,40 +33,52 @@ reference_db_paths <- function(dir, ref_id) {
 #' @noRd
 write_reference_groups <- function(con, groups, members) {
   old <- tryCatch(DBI::dbGetQuery(con, "SELECT * FROM reference"), error = function(e) NULL)
-  DBI::dbExecute(con, "DELETE FROM reference")
   now <- as.integer(Sys.time())
-  for (i in seq_len(nrow(groups))) {
-    keep <- NULL
-    if (!is.null(old) && nrow(old) > 0) {
-      j <- which(old$ref_id == groups$ref_id[i] &
-          !is.na(old$clade_taxid) & old$clade_taxid == groups$clade_taxid[i])
-      if (length(j) > 0) keep <- old[j[1], ]
+  # one transaction: a failure partway would commit the wholesale delete and lose
+  # every group's built-database association, ten minutes per clade to rebuild
+  DBI::dbWithTransaction(con, {
+    DBI::dbExecute(con, "DELETE FROM reference")
+    for (i in seq_len(nrow(groups))) {
+      keep <- NULL
+      if (!is.null(old) && nrow(old) > 0) {
+        j <- which(old$ref_id == groups$ref_id[i] &
+            !is.na(old$clade_taxid) & old$clade_taxid == groups$clade_taxid[i])
+        if (length(j) > 0) keep <- old[j[1], ]
+      }
+      DBI::dbExecute(con,
+        "INSERT INTO reference (ref_id, clade_taxid, clade_name, clade_rank, query, n_samples,
+           n_records, reference_switch, source, seeds_db, labels_db, log_file, pid, preset_name,
+           fail_reason, time_stamp)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        params = list(groups$ref_id[i], as.integer(groups$clade_taxid[i]), groups$clade_name[i],
+          groups$clade_rank[i], clade_query(groups$clade_name[i]),
+          as.integer(groups$n_samples[i]), as.integer(groups$n_records[i]),
+          if (is.null(keep)) 1L else as.integer(keep$reference_switch),
+          if (is.null(keep)) NA_character_ else keep$source,
+          if (is.null(keep)) NA_character_ else keep$seeds_db,
+          if (is.null(keep)) NA_character_ else keep$labels_db,
+          if (is.null(keep)) NA_character_ else keep$log_file,
+          if (is.null(keep)) NA_integer_ else keep$pid,
+          if (is.null(keep)) NA_character_ else keep$preset_name,
+          if (is.null(keep)) NA_character_ else keep$fail_reason,
+          now))
     }
-    DBI::dbExecute(con,
-      "INSERT INTO reference (ref_id, clade_taxid, clade_name, clade_rank, query, n_samples,
-         n_records, reference_switch, source, seeds_db, labels_db, log_file, pid, preset_name,
-         fail_reason, time_stamp)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-      params = list(groups$ref_id[i], as.integer(groups$clade_taxid[i]), groups$clade_name[i],
-        groups$clade_rank[i], clade_query(groups$clade_name[i]),
-        as.integer(groups$n_samples[i]), as.integer(groups$n_records[i]),
-        if (is.null(keep)) 1L else as.integer(keep$reference_switch),
-        if (is.null(keep)) NA_character_ else keep$source,
-        if (is.null(keep)) NA_character_ else keep$seeds_db,
-        if (is.null(keep)) NA_character_ else keep$labels_db,
-        if (is.null(keep)) NA_character_ else keep$log_file,
-        if (is.null(keep)) NA_integer_ else keep$pid,
-        if (is.null(keep)) NA_character_ else keep$preset_name,
-        if (is.null(keep)) NA_character_ else keep$fail_reason,
-        now))
-  }
-  DBI::dbExecute(con, "UPDATE samples SET ref_id = NULL")
-  if (nrow(members) > 0) {
-    upd <- DBI::dbSendStatement(con, "UPDATE samples SET ref_id = ? WHERE ID = ?")
-    on.exit(DBI::dbClearResult(upd), add = TRUE)
-    DBI::dbBind(upd, list(members$ref_id, members$ID))
-  }
+    DBI::dbExecute(con, "UPDATE samples SET ref_id = NULL")
+    if (nrow(members) > 0) bind_sample_ref(con, members$ref_id, members$ID)
+  })
   invisible(nrow(groups))
+}
+
+#' Point samples at reference groups with one prepared statement
+#'
+#' Its own function so `dbClearResult()` is on `on.exit` and the statement is
+#' finalised even when the bind errors partway.
+#' @noRd
+bind_sample_ref <- function(con, ref_ids, ids) {
+  upd <- DBI::dbSendStatement(con, "UPDATE samples SET ref_id = ? WHERE ID = ?")
+  on.exit(DBI::dbClearResult(upd), add = TRUE)
+  DBI::dbBind(upd, list(ref_ids, ids))
+  invisible(NULL)
 }
 
 #' Recount `reference.n_samples` from current membership, dropping empty groups
@@ -153,9 +165,7 @@ set_reference_clade <- function(con, ref_id = NULL, clade_taxid, clade_name, cla
         clade_query(clade_name), as.integer(n_records), now))
   }
   if (length(member_ids) > 0) {
-    upd <- DBI::dbSendStatement(con, "UPDATE samples SET ref_id = ? WHERE ID = ?")
-    DBI::dbBind(upd, list(rep(key, length(member_ids)), member_ids))
-    DBI::dbClearResult(upd)
+    bind_sample_ref(con, rep(key, length(member_ids)), member_ids)
   }
   refresh_reference_counts(con, protect = key)
   invisible(key)
@@ -225,24 +235,27 @@ wire_reference_db <- function(con, ref_id, seeds, labels, source = "built") {
   row$assemble_opts <- preset
   row$seeds_db <- seeds
   row$labels_db <- labels
-  DBI::dbExecute(con, "DELETE FROM assemble_opts WHERE assemble_opts = ?", params = list(preset))
-  DBI::dbAppendTable(con, "assemble_opts", row)
-
   ids <- DBI::dbGetQuery(con,
     "SELECT s.ID FROM samples s JOIN assemble a ON a.ID = s.ID
      WHERE s.ref_id = ? AND COALESCE(a.assemble_lock, 0) = 0",
     params = list(ref_id))$ID
-  if (length(ids) > 0) {
-    ph <- paste(rep("?", length(ids)), collapse = ",")
+  # one transaction: a failure between the preset delete and its rewrite would
+  # leave the group's samples pointing at a preset that no longer exists
+  DBI::dbWithTransaction(con, {
+    DBI::dbExecute(con, "DELETE FROM assemble_opts WHERE assemble_opts = ?", params = list(preset))
+    DBI::dbAppendTable(con, "assemble_opts", row)
+    if (length(ids) > 0) {
+      ph <- paste(rep("?", length(ids)), collapse = ",")
+      DBI::dbExecute(con,
+        sprintf("UPDATE assemble SET assemble_opts = ?, assemble_switch = 1, time_stamp = ?
+                 WHERE ID IN (%s)", ph),
+        params = c(list(preset, as.integer(Sys.time())), as.list(ids)))
+    }
     DBI::dbExecute(con,
-      sprintf("UPDATE assemble SET assemble_opts = ?, assemble_switch = 1, time_stamp = ?
-               WHERE ID IN (%s)", ph),
-      params = c(list(preset, as.integer(Sys.time())), as.list(ids)))
-  }
-  DBI::dbExecute(con,
-    "UPDATE reference SET reference_switch = 2, source = ?, seeds_db = ?, labels_db = ?,
-       preset_name = ?, fail_reason = NULL, pid = NULL, time_stamp = ? WHERE ref_id = ?",
-    params = list(source, seeds, labels, preset, as.integer(Sys.time()), ref_id))
+      "UPDATE reference SET reference_switch = 2, source = ?, seeds_db = ?, labels_db = ?,
+         preset_name = ?, fail_reason = NULL, pid = NULL, time_stamp = ? WHERE ref_id = ?",
+      params = list(source, seeds, labels, preset, as.integer(Sys.time()), ref_id))
+  })
   invisible(length(ids))
 }
 

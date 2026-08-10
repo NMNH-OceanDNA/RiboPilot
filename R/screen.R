@@ -339,17 +339,21 @@ screen_one <- function(con, id, path = 1L, scaffold = 1L, force = FALSE) {
     "SELECT lineage_taxids t FROM samples WHERE ID = ?", params = list(id))$t[1],
     error = function(e) NA_character_)
   r <- screen_channel_taxonomy(hits, samp, params = screen_params(con, id))
-  DBI::dbExecute(con,
-    "DELETE FROM screen WHERE ID = ? AND path = ? AND scaffold = ?",
-    params = list(id, path, scaffold))
-  DBI::dbAppendTable(con, "screen", data.frame(
-    ID = id, path = path, scaffold = scaffold,
-    screen_verdict = r$verdict, screen_class = r$class,
-    screen_confidence = r$confidence, screen_reason = r$reason,
-    screen_version = SCREEN_VERSION, lca_taxid = r$lca_taxid,
-    lca_taxon = r$lca_taxon, lca_rank = r$lca_rank, lca_n_hits = r$lca_n_hits,
-    host_concordant = r$host_concordant, margin = r$margin,
-    time_stamp = as.integer(Sys.time()), stringsAsFactors = FALSE))
+  # one transaction: a failed append after a committed delete would leave the
+  # unit with no verdict at all
+  DBI::dbWithTransaction(con, {
+    DBI::dbExecute(con,
+      "DELETE FROM screen WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = list(id, path, scaffold))
+    DBI::dbAppendTable(con, "screen", data.frame(
+      ID = id, path = path, scaffold = scaffold,
+      screen_verdict = r$verdict, screen_class = r$class,
+      screen_confidence = r$confidence, screen_reason = r$reason,
+      screen_version = SCREEN_VERSION, lca_taxid = r$lca_taxid,
+      lca_taxon = r$lca_taxon, lca_rank = r$lca_rank, lca_n_hits = r$lca_n_hits,
+      host_concordant = r$host_concordant, margin = r$margin,
+      time_stamp = as.integer(Sys.time()), stringsAsFactors = FALSE))
+  })
   invisible(r$verdict)
 }
 
