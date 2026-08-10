@@ -62,7 +62,7 @@ app_ui <- function(request) {
               bttn("ref_dir_btn", "Folder", "folder-open"))),
           shiny::conditionalPanel("input.mode == 'Assemble'",
             ctrls(bttn("state_btn", "State"), bttn("lock_btn", "Lock"),
-              bttn("triage_btn", "Triage", "filter"),
+              bttn("triage_btn", "Triage", "traffic-light"),
               bttn("run_btn", "Update", "circle-play"))),
           # No Update button here: one workflow, launched from Assemble. This tab
           # is a review surface -- edit the feature model, trim, mark, lock.
