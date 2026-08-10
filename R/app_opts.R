@@ -49,6 +49,23 @@ opts_modal_shell <- function(title, n, name_row, ..., update_id) {
       shiny::modalButton("Cancel")))
 }
 
+#' Where a preset's reference database came from, for the modal's help line
+#' @param cur One assemble_opts row (may carry a `clade_name` column).
+#' @noRd
+ref_db_origin <- function(cur) {
+  clade <- cur$clade_name %||% NA_character_
+  if (length(clade) != 1 || is.na(clade) || !nzchar(trimws(clade))) {
+    return("Set at project creation, or by hand.")
+  }
+  sprintf("Set by the Reference tab for clade %s.", clade)
+}
+
+#' "" -> NA, so an emptied path is stored as absent rather than as an empty path
+#' @noRd
+blank_to_na <- function(x) {
+  if (length(x) != 1 || is.na(x) || !nzchar(trimws(x))) NA_character_ else trimws(x)
+}
+
 # ---- the five modals ----
 
 pre_opts_modal <- function(cur, choices, n) {
@@ -94,8 +111,8 @@ assemble_opts_modal <- function(cur, choices, n) {
         shinyjs::disabled(shiny::textInput("ao_getorg",
           shiny::tagList("GetOrganelle options", tool_help_icon("getOrganelle")),
           value = cur$getOrganelle %|NA|% "", width = "100%")),
-        opts_help("Command-line flags for GetOrganelle (nrDNA assembly). Seed/label ",
-          "databases are set at project creation.",
+        opts_help("Command-line flags for GetOrganelle (nrDNA assembly). The seed ",
+          "and label databases are set below.",
           href = "https://github.com/Kinggerm/GetOrganelle",
           id = "help_ao_getorg", nested = TRUE)),
       shiny::tagAppendChild(
@@ -114,6 +131,18 @@ assemble_opts_modal <- function(cur, choices, n) {
           "the run is retried once with no extra flags.",
           href = "https://ablab.github.io/spades/",
           id = "help_ao_spades", nested = TRUE))),
+    # the Reference tab writes these two paths when it wires a clade database;
+    # showing them here is the only place a preset's database is visible
+    shiny::div(style = paste("border:1px solid #ddd; border-radius:6px;",
+        "padding:12px 14px 4px; margin:8px 0 14px;"),
+      shiny::div(style = "font-weight:bold; margin-bottom:8px;", "Reference database"),
+      shinyjs::disabled(shiny::textInput("ao_seeds", "Seed database:",
+        value = cur$seeds_db %|NA|% "", width = "100%")),
+      shinyjs::disabled(shiny::textInput("ao_labels", "Label database:",
+        value = cur$labels_db %|NA|% "", width = "100%")),
+      opts_help(ref_db_origin(cur), " Editing these points this parameter set at a ",
+        "different database; the Reference tab overwrites them the next time it ",
+        "builds or reuses one for this group.", id = "help_ao_refdb")),
     shiny::div(style = "display:flex; gap:2em;",
       shiny::div(style = "flex:1", shinyjs::disabled(shiny::numericInput("ao_minlen",
         "Min assembly length (bp):", value = cur$min_assembly_length %|NA|% 0, min = 0, width = "100%"))),
@@ -270,6 +299,13 @@ opts_handlers <- function(input, output, session, deps) {
     if (is.null(cur) || nrow(cur) == 0) {
       cur <- DBI::dbGetQuery(con, sprintf("SELECT * FROM %s WHERE %s = 'default'", sp$table, sp$key))
     }
+    # the Reference tab names the preset it wires, so the modal can say which
+    # clade a database came from
+    if (pfx == "ao" && nrow(cur) > 0) {
+      cur$clade_name <- tryCatch(DBI::dbGetQuery(con,
+        "SELECT clade_name FROM reference WHERE preset_name = ? LIMIT 1",
+        params = list(cur[[sp$key]][1]))$clade_name[1], error = function(e) NA_character_)
+    }
     cur_row(cur)
     choices <- DBI::dbGetQuery(con, sprintf("SELECT %s FROM %s ORDER BY %s", sp$key, sp$table, sp$key))[[1]]
     shiny::showModal(sp$modal(as.list(cur), choices, length(ids)))
@@ -282,7 +318,7 @@ opts_handlers <- function(input, output, session, deps) {
   field_ids <- list(
     po = c("po_cpus", "po_mem", "po_fastp"),
     ao = c("ao_cpus", "ao_mem", "ao_getorg", "ao_minlen", "ao_maxpaths", "ao_maxscaf",
-           "ao_assembler", "ao_bt2", "ao_spades"),
+           "ao_assembler", "ao_bt2", "ao_spades", "ao_seeds", "ao_labels"),
     bo = c("bo_run", "bo_entrez", "bo_extra", "bo_mts"),
     no = c("no_cpus", "no_mem", "no_tool", "no_kingdom", "no_itsxtaxon", "no_itsxopts"),
     co = c("co_ruleset", "co_pid", "co_contam")
@@ -388,7 +424,8 @@ opts_row <- function(pfx, nm, input, base) {
       stringsAsFactors = FALSE),
     ao = data.frame(assemble_opts = nm, cpus = as.integer(input$ao_cpus),
       memory = as.integer(input$ao_mem), getOrganelle = input$ao_getorg %||% "",
-      seeds_db = base$seeds_db %||% NA_character_, labels_db = base$labels_db %||% NA_character_,
+      seeds_db = blank_to_na(input$ao_seeds %||% base$seeds_db),
+      labels_db = blank_to_na(input$ao_labels %||% base$labels_db),
       target = base$target %||% NA_character_, max_paths = as.integer(input$ao_maxpaths),
       max_scaffolds = as.integer(input$ao_maxscaf),
       min_assembly_length = as.integer(input$ao_minlen),
@@ -408,6 +445,26 @@ opts_row <- function(pfx, nm, input, base) {
   )
 }
 
+#' Warnings for reference-database paths a saved preset cannot use
+#' @param row One assemble_opts row (other opts tables have no database columns).
+#' @return character vector of messages, empty when everything is usable.
+#' @noRd
+unusable_db_warnings <- function(row) {
+  out <- character(0)
+  for (f in c(seeds_db = "Seed", labels_db = "Label")) {
+    col <- names(which(c(seeds_db = "Seed", labels_db = "Label") == f))
+    if (!(col %in% names(row))) next
+    p <- row[[col]][1]
+    if (is.na(p) || !nzchar(trimws(p))) next
+    if (!usable_fasta(p)) {
+      out <- c(out, sprintf(
+        "%s database not found or empty: %s. Assembly will fail for samples on this set until it exists.",
+        f, p))
+    }
+  }
+  out
+}
+
 # build the full opts row (edited fields overriding the base) and upsert it,
 # then assign the set to the target samples and re-queue the step.
 opts_apply <- function(pfx, sp, input, deps, ids, cur) {
@@ -421,6 +478,10 @@ opts_apply <- function(pfx, sp, input, deps, ids, cur) {
   if (editing) {
     row <- opts_row(pfx, nm, input, base)
     dplyr::rows_upsert(dplyr::tbl(con, sp$table), row, by = sp$key, in_place = TRUE, copy = TRUE)
+    # a database that is not there yet is saved anyway (it may live on a share
+    # that is not mounted, or be built later), but it is said out loud now
+    # rather than surfacing as a failed assembly
+    for (w in unusable_db_warnings(row)) shiny::showNotification(w, type = "warning", duration = 12)
   }
 
   for (id in ids) {
