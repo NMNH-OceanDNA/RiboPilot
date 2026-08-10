@@ -76,7 +76,7 @@ Behind the scenes RiboPilot uses established bioinformatics tools
 stitches them together for you. You do not need to learn or run any of
 them yourself.
 
-# Which organisms it works with
+# Taxonomic scope
 
 RiboPilot was first built for ray-finned fishes and comes ready to use
 for them out of the box. For any other group of organisms, it can build
