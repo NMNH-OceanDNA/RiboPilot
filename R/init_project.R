@@ -11,10 +11,13 @@
 #' @param mapping_id Column in the mapping file with unique ids (default "ID").
 #' @param data_path Directory where the raw read data is located.
 #' @param min_depth Minimum trimmed paired reads to proceed with assembly.
-#' @param executor Executor for the Nextflow pipeline: a built-in template
-#'   ("conda" (default) for a local conda env, "docker"/"local" for the RiboPilot
-#'   container, "awsbatch", "slurm", "sge", "pbs", "lsf", "NMNH_Hydra",
-#'   "NOAA_SEDNA") or a saved profile from [generate_config()].
+#' @param executor Executor for the Nextflow pipeline. Ready to use as-is:
+#'   "conda" (default) for a local conda env, and "docker"/"local" for the
+#'   RiboPilot container. Every scheduler ("slurm", "sge", "pbs", "lsf",
+#'   "awsbatch", "NMNH_Hydra", "NOAA_SEDNA") is a template, not a usable
+#'   executor: it needs a queue and cluster options that only [generate_config()]
+#'   supplies, so build a profile there first and pass its name here. Passing a
+#'   bare scheduler name is an error rather than a config Nextflow cannot parse.
 #' @param container Container to use for pipeline execution.
 #' @param custom_seeds_db Path/URL to a custom GetOrganelle nr seeds database.
 #' @param custom_labels_db Path/URL to a custom GetOrganelle nr labels database.
@@ -143,7 +146,7 @@ new_project <- function(
       extra_mounts <- paste0(" ", paste(mounts, collapse = " "))
     }
   }
-  cfg_lines |>
+  out_lines <- cfg_lines |>
     fill_config(list(
       CONTAINER_ID = container,
       RAW_DIR = data_path,
@@ -152,8 +155,18 @@ new_project <- function(
       GENETIC_CODE = "1",
       NCBI_API_KEY = ncbi_api_key %||% "",
       EXTRA_MOUNTS = extra_mounts
-    )) |>
-    writeLines(file.path(path, ".config"))
+    ))
+  # Scheduler templates carry tokens only generate_config() fills (queue,
+  # cluster options, container engine). Writing them through produces a config
+  # Nextflow cannot parse, so fail here instead of at run time.
+  left <- config_tokens(out_lines)
+  if (length(left)) {
+    stop(glue::glue(
+      "Config template '{basename(config)}' still has unfilled placeholders: ",
+      "{paste(left, collapse = ', ')}. Build a profile with generate_config() ",
+      "first, then pass its name as `executor`."), call. = FALSE)
+  }
+  writeLines(out_lines, file.path(path, ".config"))
 
   message("Project initialized successfully.")
   message("Please open and review the .config file to ensure all required options are specified.")

@@ -49,6 +49,17 @@ container_engine_block <- function(engine, cache = NULL, run_options = NULL) {
 #' @param lines Character vector of config file lines.
 #' @param replacements Named list; name `FOO` replaces token `<<FOO>>`.
 #' @noRd
+#' Config tokens filled later, by new_project() rather than generate_config()
+#' @noRd
+PROJECT_CONFIG_TOKENS <- c("CONTAINER_ID", "RAW_DIR", "ASMB_DIR", "MIN_DEPTH",
+                           "GENETIC_CODE", "NCBI_API_KEY", "EXTRA_MOUNTS")
+
+#' Placeholder tokens still present in config lines
+#' @noRd
+config_tokens <- function(lines) {
+  unique(unlist(regmatches(lines, gregexpr("<<[A-Z_]+>>", lines))))
+}
+
 fill_config <- function(lines, replacements) {
   for (nm in names(replacements)) {
     val <- replacements[[nm]]
@@ -213,6 +224,15 @@ generate_config <- function(
     CLUSTER_OPTIONS = cluster_options,
     PENV = if (scheduler == "sge") penv else NULL
   ))
+
+  # awsbatch carries region / CLI path / batch queue tokens that neither this
+  # function nor new_project() fills; say so now rather than at run time.
+  manual <- setdiff(config_tokens(lines), paste0("<<", PROJECT_CONFIG_TOKENS, ">>"))
+  if (length(manual)) {
+    warning(glue::glue(
+      "Profile '{name}' still needs these filled in by hand before new_project(): ",
+      "{paste(manual, collapse = ', ')}."), call. = FALSE)
+  }
 
   if (!dir.exists(profile_dir)) {
     dir.create(profile_dir, recursive = TRUE)

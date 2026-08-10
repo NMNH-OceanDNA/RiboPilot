@@ -37,10 +37,13 @@ inputs. Extra metadata columns are preserved.}
 
 \item{min_depth}{Minimum trimmed paired reads to proceed with assembly.}
 
-\item{executor}{Executor for the Nextflow pipeline: a built-in template
-("conda" (default) for a local conda env, "docker"/"local" for the RiboPilot
-container, "awsbatch", "slurm", "sge", "pbs", "lsf", "NMNH_Hydra",
-"NOAA_SEDNA") or a saved profile from [generate_config()].}
+\item{executor}{Executor for the Nextflow pipeline. Ready to use as-is:
+"conda" (default) for a local conda env, and "docker"/"local" for the
+RiboPilot container. Every scheduler ("slurm", "sge", "pbs", "lsf",
+"awsbatch", "NMNH_Hydra", "NOAA_SEDNA") is a template, not a usable
+executor: it needs a queue and cluster options that only [generate_config()]
+supplies, so build a profile there first and pass its name here. Passing a
+bare scheduler name is an error rather than a config Nextflow cannot parse.}
 
 \item{container}{Container to use for pipeline execution.}
 
