@@ -80,9 +80,7 @@ apply_project_taxonomy <- function(path = ".",
     (is.na(review$proposed_taxid) | review$confirmed_taxid != review$proposed_taxid)
   review$final_lineage <- review$lineage
   if (any(changed) && have_taxdump(taxdump_dir)) {
-    dd <- if (file.exists(file.path(taxdump_dir, "names.dmp"))) taxdump_dir else extract_taxdump(taxdump_dir)
-    if (!identical(dd, taxdump_dir)) on.exit(unlink(dd, recursive = TRUE), add = TRUE)
-    info <- tk_taxid_info(review$confirmed_taxid[changed], dd)
+    info <- tk_taxid_info(review$confirmed_taxid[changed], taxdump_dir)
     review$final_lineage[changed] <- info$lineage[match(review$confirmed_taxid[changed], info$taxid)]
   }
 

@@ -97,7 +97,7 @@ docker run --rm --platform linux/amd64 "${LOCAL}" bash -lc '
   set -e
   for t in fastp get_organelle_from_reads.py spades.py blastn makeblastdb \
            bowtie2 bowtie2-build samtools seqkit barrnap ITSx hmmscan \
-           efetch taxonkit sqlite3 Rscript; do
+           efetch sqlite3 Rscript; do
     command -v "$t" >/dev/null || { echo "MISSING TOOL: $t" >&2; exit 1; }
   done
   Rscript -e "suppressMessages(library(RiboPilot)); cat(\"RiboPilot\", as.character(packageVersion(\"RiboPilot\")), \"loads OK\n\")"

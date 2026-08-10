@@ -44,7 +44,6 @@ RUN mamba install -y \
         'hmmer' \
         'entrez-direct' \
         'biopython' \
-        'taxonkit' \
         'ncbi-datasets-cli' && \
     mamba clean -a -y
 

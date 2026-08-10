@@ -54,7 +54,10 @@ Starting from raw sequencing reads, RiboPilot:
     it in the app** before anything else runs. This is a dedicated first
     stage (the **Taxonomy** tab): samples must be reviewed and locked
     here before they move on to assembly, so the taxonomy that guides
-    scoring and curation is one you have signed off on.
+    scoring and curation is one you have signed off on. The taxonomy
+    snapshot (~72 MB) downloads once per project and is indexed the first
+    time it is used, which takes about a minute and needs no software
+    beyond the R package.
 2.  **Assembles** the ribosomal repeat for each sample, cleaning up the
     reads and piecing the region back together, then picking the best
     reconstruction automatically.

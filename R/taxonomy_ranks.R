@@ -7,24 +7,17 @@
 # under-described taxa RiboPilot exists to serve, i.e. exactly backwards.
 #
 # Here a lineage is always SEVEN rank-aligned fields, carried as both names and
-# taxids (`taxonkit reformat -F -t`). Missing ranks are filled with an
+# taxids (see [td_rank_align()]). Missing ranks are filled with an
 # "unclassified <parent>" placeholder name and an EMPTY taxid, so "this rank is
 # not real" is unambiguous. Distances are computed on the taxids, which are
 # immune to synonyms, homonyms and defline formatting; names are for display.
 #
-# The core is pure and DB-free (mirroring curate_rrna_core); the taxonkit calls
-# live in the thin wrappers at the bottom.
+# The core is pure and DB-free (mirroring curate_rrna_core); the taxdump index
+# queries live in the thin wrappers at the bottom.
 
 #' The seven ranks carried by a RiboPilot lineage, root -> tip.
 #' @noRd
 RRNA_LINEAGE_RANKS <- c("kingdom", "phylum", "class", "order", "family", "genus", "species")
-
-#' taxonkit reformat format string producing [RRNA_LINEAGE_RANKS].
-#'
-#' `{K}` is kingdom (Metazoa / Fungi / Viridiplantae) on a current NCBI taxdump,
-#' where the old superkingdom rank has been renamed to domain (`{d}`).
-#' @noRd
-RRNA_RANK_FORMAT <- "{K};{p};{c};{o};{f};{g};{s}"
 
 #' Rank-distance label for a distance returned by [rank_distance()].
 #' Index i holds the label for distance i - 1.
@@ -35,8 +28,8 @@ RRNA_RANK_DISTANCE_LABELS <- c(RRNA_LINEAGE_RANKS[7:1], "none")
 #'
 #' `uncultured`/`environmental` records dominate core_nt 18S and resolve to a
 #' kingdom-only lineage, which every rank rule would otherwise read as maximum
-#' taxonomic distance. `unclassified` is what `taxonkit reformat -F` writes into
-#' a rank it had to fill.
+#' taxonomic distance. `unclassified` is what [td_rank_align()] writes into a
+#' rank it had to fill.
 #' @param x Character vector of taxon names.
 #' @return logical vector.
 #' @noRd
@@ -47,7 +40,7 @@ is_placeholder_taxon <- function(x) {
 }
 
 #' Split a 7-field rank-aligned taxid string into an integer vector
-#' @param x A ";"-joined taxid string from `taxonkit reformat -t`.
+#' @param x A ";"-joined taxid string from [td_rank_align()].
 #' @return integer vector of length 7; NA where the rank is absent or filled.
 #' @noRd
 parse_rank_taxids <- function(x) {
@@ -204,39 +197,7 @@ bitscore_weighted_lca <- function(taxid_paths, bitscores, names_paths = NULL,
   list(taxid = unname(mat[p, 1]), taxon = nm, rank = RRNA_LINEAGE_RANKS[p], n_hits = length(sel))
 }
 
-# ---- taxonkit-backed resolution ---------------------------------------------
-
-#' Per-process taxdump extraction cache
-#'
-#' `write_blast_screen()` used to call [extract_taxdump()] per unit, so a
-#' 30-unit sample serially unpacked ~500 MB thirty times. Extractions are cached
-#' by source directory for the life of the R process and removed at exit.
-#' @noRd
-.taxdump_cache <- new.env(parent = emptyenv())
-
-#' Extracted taxdump directory for `dir`, unpacking at most once per process
-#' @param dir Directory holding a pinned taxdump (tarball or extracted dmps).
-#' @return Path to a directory containing names.dmp / nodes.dmp, or NULL.
-#' @noRd
-taxdump_session <- function(dir) {
-  if (!have_taxdump(dir)) {
-    return(NULL)
-  }
-  if (file.exists(file.path(dir, "names.dmp"))) {
-    return(dir)
-  }
-  key <- normalizePath(dir, mustWork = FALSE)
-  hit <- .taxdump_cache[[key]]
-  if (!is.null(hit) && dir.exists(hit)) {
-    return(hit)
-  }
-  ex <- extract_taxdump(dir)
-  assign(key, ex, envir = .taxdump_cache)
-  reg.finalizer(.taxdump_cache, function(e) {
-    for (p in ls(e)) unlink(get(p, envir = e), recursive = TRUE)
-  }, onexit = TRUE)
-  ex
-}
+# ---- taxdump-backed resolution ----------------------------------------------
 
 #' Back-fill `samples.lineage_taxids` from `samples.taxid` where missing
 #'
@@ -295,27 +256,16 @@ tk_full_lineage_taxids <- function(taxids, dir) {
   if (length(taxids) == 0) {
     return(list())
   }
-  dd <- taxdump_session(dir)
-  if (is.null(dd)) {
-    return(list())
-  }
-  out <- tk_run(c("lineage", "-t"), paste(taxids, collapse = "\n"), dd)
-  res <- list()
-  for (p in strsplit(out, "\t")) {
-    if (length(p) < 3) next
-    path <- suppressWarnings(as.integer(strsplit(p[length(p)], ";")[[1]]))
-    path <- path[!is.na(path)]
-    if (length(path) == 0) next
-    res[[p[1]]] <- path
-  }
-  res
+  with_tax_index(dir, function(con) {
+    lapply(td_paths(con, taxids), function(p) p$taxid)
+  }, default = list())
 }
 
 #' Rank-aligned lineages (names + taxids) for a set of taxids
 #'
-#' One batched taxonkit call. Missing ranks are filled (`-F`) so the seven rank
-#' slots always line up positionally, and the parallel taxid string (`-t`) marks
-#' a filled rank with an empty taxid.
+#' One batched index query. Missing ranks are filled so the seven rank slots
+#' always line up positionally, and the parallel taxid string marks a filled
+#' rank with an empty taxid (see [td_rank_align()]).
 #'
 #' @param taxids Integer vector of NCBI taxids.
 #' @param dir Directory holding a pinned taxdump.
@@ -328,29 +278,16 @@ tk_ranked_lineage <- function(taxids, dir) {
   if (length(taxids) == 0) {
     return(empty)
   }
-  dd <- taxdump_session(dir)
-  if (is.null(dd)) {
-    return(empty)
-  }
-  ids <- paste(taxids, collapse = "\n")
-  lin <- tk_run("lineage", ids, dd)
-  if (length(lin) == 0) {
-    return(empty)
-  }
-  out <- tk_run(c("reformat", "-F", "-t", "-f", RRNA_RANK_FORMAT), paste(lin, collapse = "\n"), dd)
-  rows <- lapply(strsplit(out, "\t"), function(p) {
-    if (length(p) < 4) {
-      return(NULL)
+  with_tax_index(dir, function(con) {
+    paths <- td_paths(con, taxids)
+    if (length(paths) == 0) {
+      return(empty)
     }
-    n <- length(p)
-    data.frame(taxid = suppressWarnings(as.integer(p[1])),
-      lineage = trimws(p[n - 1]), lineage_taxids = trimws(p[n]),
-      stringsAsFactors = FALSE)
-  })
-  rows <- Filter(Negate(is.null), rows)
-  if (length(rows) == 0) {
-    return(empty)
-  }
-  d <- do.call(rbind, rows)
-  d[!is.na(d$taxid), , drop = FALSE]
+    rows <- lapply(names(paths), function(k) {
+      al <- td_rank_align(paths[[k]])
+      data.frame(taxid = as.integer(k), lineage = al$names,
+        lineage_taxids = al$taxids, stringsAsFactors = FALSE)
+    })
+    do.call(rbind, rows)
+  }, default = empty)
 }
