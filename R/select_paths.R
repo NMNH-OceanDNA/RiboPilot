@@ -49,6 +49,12 @@ blast_best_hits <- function(query_fasta, db, with_staxids = FALSE) {
     "-query", shQuote(query_fasta), "-db", shQuote(db),
     "-max_target_seqs", "5", "-evalue", "1e-10", "-outfmt", shQuote(fmt)
   ), stdout = TRUE, stderr = FALSE))
+  parse_blast_best(out, with_staxids)
+}
+
+#' Parse blastn tabular output down to the best hit per query
+#' @noRd
+parse_blast_best <- function(out, with_staxids = FALSE) {
   if (length(out) == 0) {
     return(data.frame())
   }
