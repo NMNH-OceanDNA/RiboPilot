@@ -329,3 +329,44 @@ test_that("a folder collapses its own subfolders when both are named", {
   dir.create(file.path(d, "seeds"))
   expect_equal(RiboPilot:::drop_covered(c(d, file.path(d, "seeds")), c(d, file.path(d, "seeds"))), d)
 })
+
+# Failure handling. A pipeline that reports success while quietly dropping work
+# is worse than one that stops, so pin the three guarantees that prevent it.
+
+test_that("every DB-touching process states an error strategy", {
+  nf_dir <- system.file("nextflow", package = "RiboPilot")
+  mods <- list.files(file.path(nf_dir, "modules"), pattern = "\\.nf$", full.names = TRUE)
+  for (f in c(mods, file.path(nf_dir, "main_reference.nf"))) {
+    lines <- readLines(f)
+    starts <- grep("^process\\s+\\S+\\s*\\{", lines)
+    for (s in starts) {
+      nm <- sub("^process\\s+(\\S+)\\s*\\{.*$", "\\1", lines[s])
+      body <- lines[s:min(length(lines), s + 20)]
+      body <- body[seq_len(which(c(grepl("^\\s*(input|script|output):", body), TRUE))[1] - 1)]
+      expect_true(any(grepl("errorStrategy", body)),
+        info = paste("process", nm, "in", basename(f), "has no errorStrategy"))
+    }
+  }
+})
+
+test_that("sqlite3 CLI calls set a busy timeout", {
+  nf_dir <- system.file("nextflow", package = "RiboPilot")
+  mods <- list.files(file.path(nf_dir, "modules"), pattern = "\\.nf$", full.names = TRUE)
+  for (f in mods) {
+    lines <- readLines(f)
+    calls <- grep("sqlite3\\s+(-|')", lines[!grepl("^\\s*(//|#)", lines)], value = TRUE)
+    for (cl in calls) {
+      # the CLI default busy timeout is 0, so a lock race fails the task outright
+      expect_match(cl, "sqlite3 -cmd '\\.timeout", info = paste(basename(f), cl))
+    }
+  }
+})
+
+test_that("the shipped config sets pipefail and throttles the NCBI processes", {
+  cfg <- readLines(system.file("nextflow", "nextflow.config", package = "RiboPilot"))
+  txt <- paste(cfg, collapse = " ")
+  # without pipefail, `bowtie2 | samtools sort` reports samtools' exit status
+  expect_match(txt, "pipefail")
+  expect_match(txt, "blast_genbank\\|blast_ref_fetch")
+  expect_match(txt, "maxForks")
+})

@@ -20,7 +20,7 @@ process coverage {
     script:
     """
     # build a fasta of this sample's non-ignored scaffolds (headers = path.scaffold)
-    sqlite3 '${params.db}' \
+    sqlite3 -cmd '.timeout 10000' '${params.db}' \
       "SELECT '>'||path||'.'||scaffold||char(10)||sequence FROM assemblies
        WHERE ID='${id}' AND COALESCE(ignore,0)=0;" > scaffolds.fa
 

@@ -17,12 +17,12 @@ process blast_ref_fetch {
 
     script:
     """
-    ACCS=\$(sqlite3 '${params.db}' "SELECT DISTINCT accession FROM blast_ref_candidates WHERE ID = '${id}';")
+    ACCS=\$(sqlite3 -cmd '.timeout 10000' '${params.db}' "SELECT DISTINCT accession FROM blast_ref_candidates WHERE ID = '${id}';")
     if [ -z "\$ACCS" ]; then echo "no candidates for ${id}"; exit 0; fi
     if [ "${task.attempt}" -gt 1 ]; then sleep \$(( (${task.attempt} - 1) * 30 )); fi
     export NCBI_API_KEY='${params.ncbi_api_key ?: ""}'
     for acc in \$ACCS; do
-        have=\$(sqlite3 '${params.db}' "SELECT 1 FROM blast_ref_sequences WHERE accession = '\$acc';")
+        have=\$(sqlite3 -cmd '.timeout 10000' '${params.db}' "SELECT 1 FROM blast_ref_sequences WHERE accession = '\$acc';")
         if [ -n "\$have" ]; then continue; fi
         efetch -db nuccore -id "\$acc" -format fasta > "\$acc.fa" 2>/dev/null || true
         efetch -db nuccore -id "\$acc" -format ft    > "\$acc.ft" 2>/dev/null || true
