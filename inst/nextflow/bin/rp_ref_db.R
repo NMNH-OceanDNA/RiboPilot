@@ -2,7 +2,14 @@
 # Run the bundled GenBank rRNA script for one clade.
 # Args: count <taxid> <query> <outfile> | build <ref_id> <query> <outdir>
 a <- commandArgs(trailingOnly = TRUE)
-source(file.path(dirname(sub("--file=", "", grep("--file=", commandArgs(FALSE), value = TRUE))), "rp_env.R"))
+rp_file <- sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE))
+if (length(rp_file) != 1) stop("run with Rscript: cannot locate rp_env.R", call. = FALSE)
+source(file.path(dirname(rp_file), "rp_env.R"))
+rp_args(a, 4,
+  "rp_ref_db.R count <taxid> <query> <outfile> | build <ref_id> <query> <outdir>")
+if (!a[1] %in% c("count", "build")) {
+  stop("unknown mode '", a[1], "': expected 'count' or 'build'", call. = FALSE)
+}
 
 api_key <- Sys.getenv("NCBI_API_KEY", "")
 refseq <- identical(Sys.getenv("RP_REFSEQ", ""), "true")
