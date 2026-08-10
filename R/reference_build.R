@@ -253,6 +253,9 @@ use_existing_reference <- function(con, ref_id, seeds, labels) {
   seeds <- path.expand(seeds); labels <- path.expand(labels)
   for (f in c(seeds, labels)) {
     if (!file.exists(f)) stop("Reference file not found: ", f, call. = FALSE)
+    if (!usable_fasta(f)) {
+      stop("Reference file is empty or not a FASTA: ", f, call. = FALSE)
+    }
   }
   wire_reference_db(con, ref_id, seeds, labels, source = "existing")
 }
@@ -304,13 +307,27 @@ reference_rows <- function(con, ref_ids) {
   rows
 }
 
-#' Group keys whose seed/label FASTAs are not both on disk yet
+#' Is a built FASTA actually usable?
+#'
+#' Existence is not enough: a build that dies partway leaves the empty files it
+#' created behind, and treating those as a database wires a preset that recruits
+#' no reads and reports success while doing it.
+#' @noRd
+usable_fasta <- function(f) {
+  if (!file.exists(f)) return(FALSE)
+  sz <- suppressWarnings(file.info(f)$size)
+  if (is.na(sz) || sz <= 0) return(FALSE)
+  first <- tryCatch(readLines(f, n = 1, warn = FALSE), error = function(e) character(0))
+  length(first) > 0 && startsWith(trimws(first[1]), ">")
+}
+
+#' Group keys whose seed/label FASTAs are not both usable yet
 #' @noRd
 reference_missing_dbs <- function(ref_dir, ref_ids) {
   ref_ids <- unique(as.character(ref_ids))
   ref_ids[!vapply(ref_ids, function(r) {
     p <- reference_db_paths(ref_dir, r)
-    file.exists(p$seeds) && file.exists(p$labels)
+    usable_fasta(p$seeds) && usable_fasta(p$labels)
   }, logical(1))]
 }
 
@@ -361,7 +378,7 @@ start_reference_build <- function(con, project, ref_ids, api_key = NULL, refseq 
   keep <- rep(TRUE, nrow(rows))
   for (i in seq_len(nrow(rows))) {
     have <- reference_db_paths(cfg$ref_dir, rows$ref_id[i])
-    if (!isTRUE(overwrite) && file.exists(have$seeds) && file.exists(have$labels)) {
+    if (!isTRUE(overwrite) && usable_fasta(have$seeds) && usable_fasta(have$labels)) {
       wire_reference_db(con, rows$ref_id[i], have$seeds, have$labels, source = "existing")
       keep[i] <- FALSE
     }
@@ -426,7 +443,7 @@ poll_reference_builds <- function(con, alive_fn = process_alive) {
     p <- reference_db_paths(cfg$ref_dir, ref_id)
     launch_time <- suppressWarnings(as.integer(running$time_stamp[i]))
     fresh <- function(f) {
-      if (!file.exists(f)) return(FALSE)
+      if (!usable_fasta(f)) return(FALSE)
       if (is.na(launch_time)) return(TRUE)
       mt <- suppressWarnings(as.integer(file.info(f)$mtime))
       !is.na(mt) && mt >= launch_time

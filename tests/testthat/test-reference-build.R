@@ -432,3 +432,31 @@ test_that("use_existing_reference wires an existing database and leaves a locked
   expect_equal(a$assemble_opts[a$ID == "S1"], "asteroidea")
   expect_equal(a$assemble_opts[a$ID == "S2"], "default")
 })
+
+test_that("an empty leftover FASTA is not treated as an existing database", {
+  # A build that dies partway leaves the empty files it created behind. Wiring
+  # those recruits no reads while reporting success, so they must read as absent.
+  dir <- withr::local_tempdir()
+  p <- RiboPilot:::reference_db_paths(dir, "asteroidea")
+  dir.create(dirname(p$seeds), recursive = TRUE); dir.create(dirname(p$labels), recursive = TRUE)
+  file.create(p$seeds); file.create(p$labels)
+  expect_equal(RiboPilot:::reference_missing_dbs(dir, "asteroidea"), "asteroidea")
+  expect_false(RiboPilot:::usable_fasta(p$seeds))
+
+  writeLines(c(">A1_Genus_species", "ACGT"), p$seeds)
+  writeLines(c(">18S", "ACGT"), p$labels)
+  expect_length(RiboPilot:::reference_missing_dbs(dir, "asteroidea"), 0L)
+  expect_true(RiboPilot:::usable_fasta(p$seeds))
+
+  # a file with content but no FASTA header is junk too
+  writeLines(c("QUERY FAILURE"), p$seeds)
+  expect_equal(RiboPilot:::reference_missing_dbs(dir, "asteroidea"), "asteroidea")
+})
+
+test_that("use_existing_reference refuses an empty FASTA", {
+  con <- mk_ref_db(); on.exit(DBI::dbDisconnect(con))
+  dir <- withr::local_tempdir()
+  s <- file.path(dir, "s.fasta"); l <- file.path(dir, "l.fasta")
+  file.create(s); writeLines(c(">18S", "ACGT"), l)
+  expect_error(RiboPilot:::use_existing_reference(con, "asteroidea", s, l), "empty")
+})
