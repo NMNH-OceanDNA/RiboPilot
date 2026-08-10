@@ -9,6 +9,12 @@
 #' @param mapping_fn Path to the mapping CSV (columns ID, Taxon, R1, R2).
 #' @param mapping_id Column name to use as the primary key (default "ID").
 #' @param mapping_taxon Column name with a taxonomic identifier (default "Taxon").
+#' @param data_path Directory holding the raw read files named in the mapping
+#'   file. Read files are resolved as `<data_path>/<R1>`, the same way the
+#'   Nextflow pipeline does it. When NULL, read files cannot be located and
+#'   only the paired-end check is applied.
+#' @param check_reads (logical) Check that the read files named in the mapping
+#'   file exist (default TRUE). Set FALSE when the data will be staged later.
 #' @param assemble_cpus Default number of CPUs for assembly.
 #' @param assemble_memory Default memory (GB) for assembly.
 #' @param seeds_db Path/URL to the GetOrganelle nr seeds database (built per
@@ -30,6 +36,8 @@ new_db <- function(
     mapping_fn = NULL,
     mapping_id = "ID",
     mapping_taxon = "Taxon",
+    data_path = NULL,
+    check_reads = TRUE,
     assemble_cpus = 6,
     assemble_memory = 24,
     seeds_db = "https://raw.githubusercontent.com/dmacguigan/RiboPilot/main/ref_dbs/getOrganelle/seeds/actinopterygii_rrna_seeds.fasta",
@@ -70,6 +78,12 @@ new_db <- function(
     bad <- mapping[[mapping_id]][!grepl("^[a-zA-Z0-9_:-]+$", mapping[[mapping_id]])]
     message("problematic IDs:\n", paste(bad, collapse = ", "))
     stop("IDs must contain only alphanumeric characters, dashes, underscores, and colons")
+  }
+
+  # Validate read files ----
+  # Fail here, not per-task inside a work/ directory as an opaque fastp error.
+  if (isTRUE(check_reads)) {
+    check_mapping_reads(mapping, mapping_id, data_path)
   }
 
   # Default GetOrganelle nr databases (broad Actinopterygii) when unset ----
@@ -605,4 +619,53 @@ new_db <- function(
   DBI::dbExecute(con, sprintf("PRAGMA user_version = %d", RIBOPILOT_SCHEMA_VERSION))
 
   invisible(return())
+}
+
+#' Check that the read files named in a mapping table exist
+#'
+#' @param mapping Mapping data frame (needs `R1` and `R2` columns).
+#' @param mapping_id Column name holding the sample ids.
+#' @param data_path Raw data directory the read names are relative to. When
+#'   NULL, only the paired-end check runs.
+#' @noRd
+check_mapping_reads <- function(mapping, mapping_id = "ID", data_path = NULL) {
+  if (!all(c("R1", "R2") %in% colnames(mapping))) {
+    stop("Mapping file must have R1 and R2 columns naming the paired read files")
+  }
+  ids <- as.character(mapping[[mapping_id]])
+  blank <- function(x) is.na(x) | !nzchar(trimws(as.character(x)))
+
+  unpaired <- blank(mapping$R1) | blank(mapping$R2)
+  if (any(unpaired)) {
+    stop(
+      "Every sample needs both an R1 and an R2 read file, but these are missing one:\n",
+      paste(truncate_ids(ids[unpaired]), collapse = "\n"),
+      "\nSingle-end reads are not supported by the RiboPilot pipeline."
+    )
+  }
+
+  if (length(data_path) != 1 || is.na(data_path) || !nzchar(data_path)) {
+    return(invisible())
+  }
+  reads <- data.frame(
+    ID = rep(ids, each = 2),
+    path = file.path(data_path, as.vector(rbind(mapping$R1, mapping$R2)))
+  )
+  bad <- reads[!file.exists(reads$path), , drop = FALSE]
+  if (nrow(bad)) {
+    stop(
+      "Read files named in the mapping file were not found in ", data_path, ":\n",
+      paste(truncate_ids(paste0(bad$ID, ": ", bad$path)), collapse = "\n")
+    )
+  }
+  invisible()
+}
+
+#' Trim a list of problem entries to a readable length
+#' @noRd
+truncate_ids <- function(x, n = 10) {
+  if (length(x) <= n) {
+    return(x)
+  }
+  c(x[seq_len(n)], sprintf("... and %d more", length(x) - n))
 }

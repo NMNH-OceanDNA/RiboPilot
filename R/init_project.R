@@ -26,6 +26,9 @@
 #' @param config Optional path to an existing custom Nextflow config file.
 #' @param profile_dir Directory searched for saved cluster profiles.
 #' @param ncbi_api_key Optional NCBI API key (raises request rate limits).
+#' @param check_reads (logical) Check that the read files named in the mapping
+#'   file exist under `data_path` (default TRUE). Set FALSE when the data will
+#'   be staged later.
 #' @param Rproj (logical) Initialize/open an RStudio project (default TRUE).
 #' @param force (logical) Recreate an existing project database (default FALSE).
 #' @param ... Additional default processing parameters passed to [new_db()].
@@ -45,6 +48,7 @@ new_project <- function(
     config = NULL,
     profile_dir = ribopilot_config_dir(),
     ncbi_api_key = NULL,
+    check_reads = TRUE,
     Rproj = TRUE,
     force = FALSE,
     ...) {
@@ -102,6 +106,8 @@ new_project <- function(
     db_path = db,
     mapping_fn = mapping_out,
     mapping_id = mapping_id,
+    data_path = data_path,
+    check_reads = check_reads,
     seeds_db = custom_seeds_db,
     labels_db = custom_labels_db,
     ref_dir = ref_dir,
@@ -166,7 +172,10 @@ new_project <- function(
       "{paste(left, collapse = ', ')}. Build a profile with generate_config() ",
       "first, then pass its name as `executor`."), call. = FALSE)
   }
-  writeLines(out_lines, file.path(path, ".config"))
+  config_out <- file.path(path, ".config")
+  writeLines(out_lines, config_out)
+  # the config carries the NCBI API key, so keep it owner-only
+  Sys.chmod(config_out, "0600")
 
   message("Project initialized successfully.")
   message("Please open and review the .config file to ensure all required options are specified.")

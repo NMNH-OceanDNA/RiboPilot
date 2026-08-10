@@ -19,6 +19,7 @@ new_project(
   config = NULL,
   profile_dir = ribopilot_config_dir(),
   ncbi_api_key = NULL,
+  check_reads = TRUE,
   Rproj = TRUE,
   force = FALSE,
   ...
@@ -59,6 +60,10 @@ bare scheduler name is an error rather than a config Nextflow cannot parse.}
 \item{profile_dir}{Directory searched for saved cluster profiles.}
 
 \item{ncbi_api_key}{Optional NCBI API key (raises request rate limits).}
+
+\item{check_reads}{(logical) Check that the read files named in the mapping
+file exist under `data_path` (default TRUE). Set FALSE when the data will
+be staged later.}
 
 \item{Rproj}{(logical) Initialize/open an RStudio project (default TRUE).}
 
