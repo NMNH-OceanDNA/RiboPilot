@@ -26,6 +26,9 @@
 #'   *all* of core_nt (`blast_screen.lineage`), not the nuclear-rDNA reference
 #'   panel. An unknown lineage on either side raises `contaminant_unchecked`
 #'   rather than passing silently.
+#' @param sample_taxids,hit_taxids Optional rank-aligned taxid strings matching
+#'   those lineages (`samples.lineage_taxids`, `blast_screen.lineage_taxids`).
+#'   The comparison prefers them and falls back to the names when absent.
 #' @param hit_is_nuclear_rrna Optional 0/1 (`blast_screen.is_nuclear_rrna`):
 #'   whether that top hit is a nuclear rDNA record at all. 0 raises
 #'   `not_nuclear_rdna`.
@@ -38,7 +41,9 @@
 curate_rrna_core <- function(features, params = rrna_params(),
                              ref_pid = NULL, ref_cov = NULL,
                              sample_lineage = NA, hit_lineage = NA,
-                             hit_is_nuclear_rrna = NA, chimeric = NA) {
+                             hit_is_nuclear_rrna = NA, chimeric = NA,
+                             sample_taxids = NA_character_,
+                             hit_taxids = NA_character_) {
   sample_flags <- character(0)
   feat_flags <- list()
   add_feat_flag <- function(el, code) feat_flags[[el]] <<- c(feat_flags[[el]], code)
@@ -122,7 +127,7 @@ curate_rrna_core <- function(features, params = rrna_params(),
   # not the nuclear-rDNA reference panel. That is the point: only an unfiltered
   # hit can say "this is a symbiont" or "this is not rDNA at all".
   if (isTRUE(params$check_contaminant)) {
-    if (lineages_conflict(sample_lineage, hit_lineage)) {
+    if (lineages_conflict(sample_lineage, hit_lineage, sample_taxids, hit_taxids)) {
       sample_flags <- c(sample_flags, "contaminant")
     } else if (!lineage_known(sample_lineage) || !lineage_known(hit_lineage)) {
       # Not "clean" -- unknown. Absence of evidence must not read as evidence of
@@ -173,27 +178,66 @@ curate_actinopterygii_rrna <- function(features, ref_pid = NULL, ref_cov = NULL,
     chimeric = chimeric)
 }
 
-#' Is a lineage string usable for the contaminant comparison?
+#' Is a lineage string present at all (before any placeholder test)?
 #' @noRd
-lineage_known <- function(x) {
+lineage_present <- function(x) {
   length(x) > 0 && !is.na(x[1]) && nzchar(trimws(x[1]))
 }
 
-#' Do two lineage strings share no taxon in common (gross contaminant)?
-#' Conservative: only TRUE when both are present and, after dropping ubiquitous
-#' high-rank tokens, they share zero taxa. Catches wrong-kingdom hits (e.g. a
-#' fungal hit on a fish) without flagging same-clade samples.
+#' Is a lineage string usable for the contaminant comparison?
+#'
+#' Usable means resolved BELOW the shallowest rank at least once. A lineage that
+#' is only "Metazoa", or whose every rank is an `unclassified`/`uncultured`
+#' placeholder, has nothing to compare at phylum or deeper, and reading that as
+#' agreement would let an unresolved sample look verified.
 #' @noRd
-LINEAGE_STOPWORDS <- c("cellular organisms", "eukaryota", "opisthokonta")
-lineages_conflict <- function(a, b) {
-  toks <- function(x) {
-    if (length(x) == 0 || is.na(x) || !nzchar(x)) return(character(0))
-    t <- tolower(trimws(unlist(strsplit(x, "[;,]"))))
-    unique(setdiff(t[nchar(t) > 3], LINEAGE_STOPWORDS))
+lineage_known <- function(x) {
+  if (!lineage_present(x)) return(FALSE)
+  any(!is.na(parse_rank_names(x)[-1]))
+}
+
+#' Rank-aligned comparison codes for two lineages
+#'
+#' Taxids when both sides carry them, since taxids are immune to synonyms and
+#' defline formatting; otherwise integer codes over the rank-aligned NAMES, so
+#' the comparison still runs slot by slot. A placeholder rank is NA on both
+#' sides and can never agree with anything.
+#' @noRd
+lineage_rank_codes <- function(a, b, a_taxids = NA_character_, b_taxids = NA_character_) {
+  na <- parse_rank_names(a)
+  nb <- parse_rank_names(b)
+  ta <- parse_rank_taxids(a_taxids)
+  tb <- parse_rank_taxids(b_taxids)
+  if (lineage_present(a)) ta[is.na(na)] <- NA_integer_
+  if (lineage_present(b)) tb[is.na(nb)] <- NA_integer_
+  if (any(!is.na(ta)) && any(!is.na(tb))) return(list(a = ta, b = tb))
+  lev <- unique(tolower(c(na, nb)))
+  lev <- lev[!is.na(lev)]
+  code <- function(x) {
+    i <- match(tolower(x), lev)
+    i[is.na(x)] <- NA_integer_
+    stats::setNames(i, RRNA_LINEAGE_RANKS)
   }
-  ta <- toks(a); tb <- toks(b)
-  if (length(ta) == 0 || length(tb) == 0) return(FALSE)
-  length(intersect(ta, tb)) == 0
+  list(a = code(na), b = code(nb))
+}
+
+#' Do two lineages share nothing at phylum rank or deeper (gross contaminant)?
+#'
+#' Rank-aligned and taxid-based, the same machinery and the same threshold the
+#' GenBank screen's concordance test uses, so the two contamination detectors
+#' cannot disagree. The old shared-token test could not fire between two animals
+#' at all, because every metazoan lineage contains "Metazoa".
+#'
+#' Phylum is the conservative threshold: a hit at class, order or family
+#' distance is the normal state for the under-represented invertebrates this
+#' tool serves and must not flag, while a different phylum is a genuinely
+#' distant organism. An unusable lineage on either side is unknown, not a
+#' conflict, and the caller raises `contaminant_unchecked` for it.
+#' @noRd
+lineages_conflict <- function(a, b, a_taxids = NA_character_, b_taxids = NA_character_) {
+  if (!lineage_known(a) || !lineage_known(b)) return(FALSE)
+  p <- lineage_rank_codes(a, b, a_taxids, b_taxids)
+  !rank_at_least(rank_distance(p$a, p$b), "phylum")
 }
 
 #' Ensure the curation columns/tables exist (idempotent)
@@ -266,6 +310,10 @@ curate_one <- function(con, id, path = 1L, scaffold = 1L, ruleset = NULL) {
 
   sample_lineage <- DBI::dbGetQuery(con, "SELECT lineage FROM samples WHERE ID = ?",
     params = list(id))$lineage[1]
+  # pre-v9 projects have no taxid column; the comparison falls back to names
+  sample_taxids <- tryCatch(DBI::dbGetQuery(con,
+    "SELECT lineage_taxids t FROM samples WHERE ID = ?", params = list(id))$t[1],
+    error = function(e) NA_character_)
 
   rs <- resolve_ruleset(con, id, path, scaffold, ruleset)
   ruleset <- rs$ruleset
@@ -292,6 +340,9 @@ curate_one <- function(con, id, path = 1L, scaffold = 1L, ruleset = NULL) {
     params = list(id, path, scaffold)), error = function(e) data.frame())
   hit_lineage <- if (nrow(scr) > 0) scr$lineage[1] else NA_character_
   hit_is_nuc <- if (nrow(scr) > 0) as.integer(scr$is_nuclear_rrna[1]) else NA_integer_
+  hit_taxids <- tryCatch(DBI::dbGetQuery(con,
+    "SELECT lineage_taxids t FROM blast_screen WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(id, path, scaffold))$t[1], error = function(e) NA_character_)
 
   chimeric <- tryCatch(DBI::dbGetQuery(con,
     "SELECT chimeric FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?",
@@ -300,7 +351,8 @@ curate_one <- function(con, id, path = 1L, scaffold = 1L, ruleset = NULL) {
 
   res <- curate_rrna_core(feats, params, ref_pid = ref_pid, ref_cov = ref_cov,
     sample_lineage = sample_lineage, hit_lineage = hit_lineage,
-    hit_is_nuclear_rrna = hit_is_nuc, chimeric = chimeric)
+    hit_is_nuclear_rrna = hit_is_nuc, chimeric = chimeric,
+    sample_taxids = sample_taxids, hit_taxids = hit_taxids)
 
   if (!is.na(ruleset_note)) {
     res$flags <- unique(c(res$flags, ruleset_note))

@@ -96,15 +96,20 @@ test_that("each cross-kingdom spike is caught with its own subclass", {
   }
 })
 
-test_that("a bacterial contaminant is no_reference, which is a boundary not a miss", {
-  # doc 10 classifies a 16S title with no eukaryotic marker as `other` BY DESIGN,
-  # so the taxonomy channel has no rdna rows to vote and correctly declines. A
-  # bacterial contaminant is caught by the is_nuclear_rrna triage rules instead.
-  # Asserted so that a future change making this off_target is noticed, and so
-  # nobody reads the no_reference as the screen failing.
+test_that("a bacterial contaminant is caught, not reported as unjudged", {
+  # doc 10 classifies a 16S title with no eukaryotic marker as `other` BY DESIGN.
+  # That class is real evidence about what the scaffold is, so it votes: the unit
+  # used to have zero rows left and came back no_reference, i.e. UNJUDGED.
   x <- fx_units()[["bacterial_on_fish"]]
-  expect_equal(fx_score(x)$verdict, "no_reference")
+  r <- fx_score(x)
   expect_true(all(x$hits$hit_class == "other"))
+  expect_equal(r$verdict, "off_target")
+  expect_equal(r$host_concordant, 0L)
+  expect_equal(r$hit_class, "other")
+  expect_match(r$reason, "non-rDNA records", fixed = TRUE)
+  # NCBI's 2024 reclassification puts a bacterial kingdom (Pseudomonadati) in the
+  # kingdom slot rather than taxid 2, so both generations must classify.
+  expect_equal(r$class, "bacterial")
 })
 
 test_that("the same human distribution is missed on a fish host, caught on an invertebrate", {

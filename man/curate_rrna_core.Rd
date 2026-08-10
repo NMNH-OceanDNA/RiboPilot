@@ -12,7 +12,9 @@ curate_rrna_core(
   sample_lineage = NA,
   hit_lineage = NA,
   hit_is_nuclear_rrna = NA,
-  chimeric = NA
+  chimeric = NA,
+  sample_taxids = NA_character_,
+  hit_taxids = NA_character_
 )
 }
 \arguments{
@@ -42,6 +44,10 @@ whether that top hit is a nuclear rDNA record at all. 0 raises
 
 \item{chimeric}{Optional 0/1/logical (`annotate.chimeric`): whether ITSx
 flagged the sequence as chimeric. TRUE raises `chimeric`.}
+
+\item{sample_taxids, hit_taxids}{Optional rank-aligned taxid strings matching
+those lineages (`samples.lineage_taxids`, `blast_screen.lineage_taxids`).
+The comparison prefers them and falls back to the names when absent.}
 }
 \value{
 list(features, flags, n_flags, notes) where `features` gains `status`

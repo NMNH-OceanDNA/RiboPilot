@@ -7,13 +7,14 @@
 # acting there, and genuine host 18S reaches 99.6 percent at class distance, so
 # no ceiling can sit below that without flagging real host data.
 #
-# What this cannot do: separate two metazoans. A copepod and a fish both sit
-# under Metazoa, so concordance against the sample's path says nothing. Doc 08
-# section 3.5 puts those cases in the depth and cross-sample channels.
+# What this cannot do: separate two metazoans within the same phylum. Concordance
+# is tested at phylum rank, so a copepod on a fish is caught (Arthropoda vs
+# Chordata) but a human on a fish is not (both Chordata). Doc 08 section 3.5 puts
+# those cases in the depth and cross-sample channels.
 
 #' Scoring version. Bump to force a recompute of stored rows.
 #' @noRd
-SCREEN_VERSION <- 4L
+SCREEN_VERSION <- 5L
 
 #' @noRd
 SCREEN_VERDICTS <- c("on_target", "off_target", "no_reference", "uncertain")
@@ -93,7 +94,17 @@ screen_confidence_terms <- function(lca_n_hits, lca_rank, margin, top_bitscore,
 #' taxids are immune to synonyms, homonyms and defline formatting, exactly the
 #' reason [rank_distance()] compares taxids and treats names as display-only.
 #' @noRd
-SCREEN_KINGDOM_TAXIDS <- c("2" = "bacterial", "2157" = "archaeal",
+#' NCBI's 2024 prokaryote reclassification put a kingdom rank under Bacteria and
+#' Archaea, so `{K}` resolves to one of these rather than to 2 / 2157 and a
+#' bacterial contaminant would otherwise fall through to "other_euk". Both the
+#' domains and their kingdoms are listed, so either taxdump generation classifies.
+#' @noRd
+SCREEN_BACTERIAL_TAXIDS <- c("2", "1783272", "3379134", "3384189", "3384194")
+SCREEN_ARCHAEAL_TAXIDS <- c("2157", "1783275", "1783276", "1935183", "3366610")
+
+SCREEN_KINGDOM_TAXIDS <- c(
+  stats::setNames(rep("bacterial", length(SCREEN_BACTERIAL_TAXIDS)), SCREEN_BACTERIAL_TAXIDS),
+  stats::setNames(rep("archaeal", length(SCREEN_ARCHAEAL_TAXIDS)), SCREEN_ARCHAEAL_TAXIDS),
   "4751" = "fungal", "33090" = "algal_plant", "33208" = "metazoan_other")
 
 #' Off-target subclass from the LCA's rank-aligned taxid path and its taxon label
@@ -114,7 +125,7 @@ screen_class_for <- function(lca_taxids, lca_taxon) {
   if (!length(p)) return(NA_character_)
   # most specific first: a metazoan path also contains Eukaryota, and slot 1
   # may be superkingdom or kingdom depending on the taxdump
-  for (k in c("4751", "33090", "33208", "2", "2157")) {
+  for (k in c("4751", "33090", "33208", SCREEN_BACTERIAL_TAXIDS, SCREEN_ARCHAEAL_TAXIDS)) {
     if (as.integer(k) %in% p) return(unname(SCREEN_KINGDOM_TAXIDS[k]))
   }
   "other_euk"
@@ -156,7 +167,8 @@ screen_max <- function(x) {
 #' @param sample_taxids The sample's rank-aligned taxid path.
 #' @param params The `screen` sublist of a ruleset (see [rrna_params()]).
 #' @return list(verdict, class, confidence, reason, reason_code, terms,
-#'   lca_taxid, lca_taxon, lca_rank, lca_n_hits, host_concordant, margin).
+#'   lca_taxid, lca_taxon, lca_rank, lca_n_hits, host_concordant, margin,
+#'   hit_class).
 #' @noRd
 screen_channel_taxonomy <- function(hits, sample_taxids,
                                     params = SCREEN_PARAMS_DEFAULT) {
@@ -165,7 +177,8 @@ screen_channel_taxonomy <- function(hits, sample_taxids,
     reason = NA_character_, reason_code = "no_hits",
     terms = list(support = 0, resolution = 0, separation = 0),
     lca_taxid = NA_integer_, lca_taxon = NA_character_, lca_rank = NA_character_,
-    lca_n_hits = 0L, host_concordant = NA_integer_, margin = NA_real_)
+    lca_n_hits = 0L, host_concordant = NA_integer_, margin = NA_real_,
+    hit_class = NA_character_)
 
   samp <- parse_rank_taxids(sample_taxids %||% NA_character_)
   # concordance is tested at phylum rank or deeper, so a path resolved only at
@@ -196,13 +209,26 @@ screen_channel_taxonomy <- function(hits, sample_taxids,
     f <- f[nzchar(f)]
     if (length(f) == 0) NA_character_ else f[length(f)]
   }, character(1), USE.NAMES = FALSE)
-  keep <- hits$hit_class %in% "rdna" & !is.na(deepest_raw) & !is_placeholder_taxon(deepest_raw)
+  # `other` votes alongside `rdna`: a bacterial 16S operon or an organellar
+  # rRNA contig is POSITIVE evidence about what the scaffold is, and excluding
+  # it left the unit with no hits at all, i.e. reported as unjudged rather than
+  # as off-target. `uninformative` stays out, which is what that class is for:
+  # a chromosome-level record says nothing about the aligned region, so a unit
+  # whose only hits are assembly records is still genuinely unscreened.
+  keep <- hits$hit_class %in% c("rdna", "other") &
+    !is.na(deepest_raw) & !is_placeholder_taxon(deepest_raw)
   h <- hits[keep, , drop = FALSE]
   if (nrow(h) == 0) {
     out$reason_code <- "unresolved_hit_lineages"
     out$reason <- "no hit resolved to a usable lineage"
     return(out)
   }
+  # which kind of record carried the verdict, so a curator can see whether it
+  # rested on nuclear rDNA or on something else entirely
+  hbs <- h$bitscore
+  hbs[is.na(hbs)] <- 0
+  out$hit_class <- if (sum(hbs[h$hit_class %in% "other"]) >
+                       sum(hbs[h$hit_class %in% "rdna"])) "other" else "rdna"
 
   lca <- bitscore_weighted_lca(h$lineage_taxids, h$bitscore, h$lineage)
   if (is.na(lca$taxid)) {
@@ -270,8 +296,9 @@ screen_channel_taxonomy <- function(hits, sample_taxids,
     out$class <- screen_class_for(h$lineage_taxids[which.max(bs)], lca$taxon)
   }
   out$reason <- sprintf(
-    "hits agree on %s (%s, %d voting); %s the sample's lineage. support %.2f w %.2f, resolution %.2f w %.2f, separation %.2f w %.2f -> confidence %.2f",
+    "hits agree on %s (%s, %d voting, mostly %s records); %s the sample's lineage. support %.2f w %.2f, resolution %.2f w %.2f, separation %.2f w %.2f -> confidence %.2f",
     lca$taxon %|NA|% "an unnamed taxon", lca$rank, lca$n_hits,
+    if (identical(out$hit_class, "other")) "non-rDNA" else "nuclear rDNA",
     if (identical(out$host_concordant, 1L)) "on" else "NOT on",
     tm$support, params$support, tm$resolution, params$resolution,
     tm$separation, params$separation, tm$confidence)
