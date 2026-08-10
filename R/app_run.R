@@ -40,8 +40,9 @@ job_script <- function(project, cmd, sched, jobname) {
 #' Cluster job script for the main workflow
 #' @noRd
 build_submit_script <- function(project, resume = TRUE, sched = detect_scheduler()) {
-  cmd <- paste(c("nextflow", nf_command(project, resume = resume), "-ansi-log false"),
-    collapse = " ")
+  # one arg (the container bind options) contains spaces, so quote per argument
+  args <- c(nf_command(project, resume = resume), "-ansi-log", "false")
+  cmd <- paste(c(shQuote("nextflow"), shQuote(args)), collapse = " ")
   job_script(project, cmd, sched, "ribopilot")
 }
 
@@ -55,7 +56,8 @@ build_reference_submit_script <- function(project, manifest, ref_dir, api_key = 
                                           sched = detect_scheduler()) {
   args <- nf_reference_command(project, "BUILD", manifest, ref_dir, ref_dir,
     api_key = api_key, refseq = refseq, resume = resume)
-  job_script(project, paste(c("nextflow", args, "-ansi-log false"), collapse = " "),
+  args <- c(args, "-ansi-log", "false")
+  job_script(project, paste(c(shQuote("nextflow"), shQuote(args)), collapse = " "),
     sched, "ribopilot_ref")
 }
 

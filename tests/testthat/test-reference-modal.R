@@ -365,8 +365,8 @@ test_that("headless Build offers a BUILD job script and saves it, running nothin
   f <- file.path(dir, "submit_ribopilot_reference.sh")
   expect_true(file.exists(f))
   script <- paste(readLines(f), collapse = "\n")
-  expect_true(grepl("nextflow run", script, fixed = TRUE))
-  expect_true(grepl("-entry BUILD", script, fixed = TRUE))
+  expect_match(script, "'nextflow' 'run'", fixed = TRUE)
+  expect_match(script, "'-entry' 'BUILD'", fixed = TRUE)
   expect_true(grepl("--clades", script, fixed = TRUE))
   # the job reads the manifest long after the modal closed, so it must be on disk
   man <- utils::read.delim(RiboPilot:::reference_manifest_path(dir), stringsAsFactors = FALSE)
@@ -404,8 +404,8 @@ test_that("the saved job script carries the API key and RefSeq settings typed in
   })
 
   script <- paste(readLines(file.path(dir, "submit_ribopilot_reference.sh")), collapse = "\n")
-  expect_true(grepl("--ncbi_api_key KEY123", script, fixed = TRUE))
-  expect_true(grepl("--refseq true", script, fixed = TRUE))
+  expect_match(script, "'--ncbi_api_key' 'KEY123'", fixed = TRUE)
+  expect_match(script, "'--refseq' 'true'", fixed = TRUE)
 })
 
 test_that("an emptied script textarea falls back to a generated script", {
@@ -428,7 +428,7 @@ test_that("an emptied script textarea falls back to a generated script", {
   })
 
   script <- paste(readLines(file.path(dir, "submit_ribopilot_reference.sh")), collapse = "\n")
-  expect_true(grepl("-entry BUILD", script, fixed = TRUE))
+  expect_match(script, "'-entry' 'BUILD'", fixed = TRUE)
 })
 
 test_that("the in-app Build run pins NXF_VER and passes what the project config needs", {
