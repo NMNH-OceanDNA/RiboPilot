@@ -473,3 +473,273 @@ test_that("v18 drops the stitched table, in a migrated and a fresh database", {
   on.exit(DBI::dbDisconnect(fresh), add = TRUE)
   expect_false("stitched" %in% DBI::dbListTables(fresh))
 })
+
+# --- serialization: busy is not the same thing as already-in-a-transaction ---
+
+# A file DB is required for any of this: two connections to ":memory:" are two
+# different databases, so they can never contend.
+mk_locked_db <- function(env = parent.frame()) {
+  db <- file.path(withr::local_tempdir(.local_envir = env), "lock.sqlite")
+  seed <- DBI::dbConnect(RSQLite::SQLite(), db)
+  DBI::dbExecute(seed, "CREATE TABLE assemble(ID TEXT PRIMARY KEY, assemble_switch INT,
+    assemble_lock INT, assemble_opts TEXT, blast_opts TEXT)")
+  DBI::dbExecute(seed, "PRAGMA user_version = 15")
+  DBI::dbDisconnect(seed)
+  db
+}
+
+test_that("db_in_transaction tells an open transaction from a busy database", {
+  # The whole point of the guard: a write lock held by ANOTHER process must not
+  # read as "the caller already gave me a transaction", or migrate_db() would
+  # run every guarded ALTER in autocommit, unserialized.
+  db <- mk_locked_db()
+  holder <- DBI::dbConnect(RSQLite::SQLite(), db)
+  on.exit(DBI::dbDisconnect(holder), add = TRUE)
+  DBI::dbExecute(holder, "BEGIN IMMEDIATE")
+  DBI::dbExecute(holder, "CREATE TABLE lock_probe(x)")
+
+  con <- DBI::dbConnect(RSQLite::SQLite(), db)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  DBI::dbExecute(con, "PRAGMA busy_timeout = 50;")
+  expect_false(RiboPilot:::db_in_transaction(con))   # busy, not transacting
+
+  DBI::dbExecute(con, "BEGIN DEFERRED")
+  expect_true(RiboPilot:::db_in_transaction(con))
+  DBI::dbExecute(con, "ROLLBACK")
+  DBI::dbExecute(holder, "ROLLBACK")
+  expect_false(RiboPilot:::db_in_transaction(con))
+})
+
+test_that("a lock that will not clear fails loudly instead of migrating unlocked", {
+  db <- mk_locked_db()
+  holder <- DBI::dbConnect(RSQLite::SQLite(), db)
+  on.exit(DBI::dbDisconnect(holder), add = TRUE)
+  DBI::dbExecute(holder, "BEGIN IMMEDIATE")
+  DBI::dbExecute(holder, "CREATE TABLE lock_probe(x)")
+
+  con <- DBI::dbConnect(RSQLite::SQLite(), db)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  DBI::dbExecute(con, "PRAGMA busy_timeout = 50;")
+  expect_error(RiboPilot:::begin_migration_txn(con, tries = 2L), "Could not lock")
+  # and it leaves no half-open transaction behind
+  expect_false(RiboPilot:::db_in_transaction(con))
+  DBI::dbExecute(holder, "ROLLBACK")
+})
+
+test_that("migrate_db waits for a concurrent write lock rather than working without it", {
+  skip_on_os("windows")
+  skip_on_cran()
+  skip_if_not_installed("parallel")
+  db <- mk_locked_db()
+  # A sentinel written just before the lock is released, rather than an elapsed
+  # time: the holder's head start is not synchronised, so a wall-clock margin
+  # fails under load on a busy machine while proving nothing extra.
+  released <- file.path(dirname(db), "released")
+  holder <- parallel::mcparallel({
+    h <- DBI::dbConnect(RSQLite::SQLite(), db)
+    DBI::dbExecute(h, "BEGIN IMMEDIATE")
+    DBI::dbExecute(h, "CREATE TABLE lock_probe(x)")
+    Sys.sleep(2)
+    file.create(released)
+    DBI::dbExecute(h, "ROLLBACK")
+    DBI::dbDisconnect(h)
+    TRUE
+  })
+  Sys.sleep(0.5)   # let the lock be taken before we try
+
+  con <- DBI::dbConnect(RSQLite::SQLite(), db)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  migrate_db(con)
+  # the lock cannot have been taken before the holder let go, so a migration
+  # that returned without seeing the sentinel ran unserialized
+  expect_true(file.exists(released))
+  parallel::mccollect(holder)
+  expect_true("triage_opts" %in% DBI::dbListTables(con))
+  expect_equal(DBI::dbGetQuery(con, "PRAGMA user_version")[[1]],
+    RiboPilot:::RIBOPILOT_SCHEMA_VERSION)
+})
+
+test_that("migrate_db sets its own busy timeout and never lowers the caller's", {
+  # correctness must not depend on the caller having used open_project_db()
+  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:"); on.exit(DBI::dbDisconnect(con))
+  expect_equal(DBI::dbGetQuery(con, "PRAGMA busy_timeout")[[1]], 0)
+  migrate_db(con)
+  expect_gte(DBI::dbGetQuery(con, "PRAGMA busy_timeout")[[1]],
+    RiboPilot:::MIGRATE_BUSY_TIMEOUT_MS)
+
+  other <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+  on.exit(DBI::dbDisconnect(other), add = TRUE)
+  DBI::dbExecute(other, "PRAGMA busy_timeout = 60000;")
+  migrate_db(other)
+  expect_equal(DBI::dbGetQuery(other, "PRAGMA busy_timeout")[[1]], 60000)
+})
+
+test_that("migrate_db keeps a caller's own transaction and does not commit it", {
+  con <- mk_v8_db(); on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "BEGIN IMMEDIATE")
+  migrate_db(con)
+  expect_true(RiboPilot:::db_in_transaction(con))   # still the caller's to end
+  DBI::dbExecute(con, "ROLLBACK")
+  # rolled back with the caller's transaction, schema stamp included
+  expect_equal(DBI::dbGetQuery(con, "PRAGMA user_version")[[1]], 8)
+  expect_false("blast_hits" %in% DBI::dbListTables(con))
+})
+
+test_that("the v13 backfill runs inside a caller's transaction without nesting", {
+  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:"); on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "CREATE TABLE blast_hits(ID TEXT, path INT, scaffold INT,
+    hit_rank INT, title TEXT, bitscore REAL, hit_class TEXT)")
+  DBI::dbExecute(con, "CREATE TABLE blast_screen(ID TEXT, path INT, scaffold INT,
+    is_nuclear_rrna INT)")
+  DBI::dbExecute(con, "INSERT INTO blast_hits VALUES('S1',1,1,1,
+    'Danio rerio 18S ribosomal RNA gene, complete sequence', 900, NULL)")
+  DBI::dbExecute(con, "INSERT INTO blast_screen VALUES('S1',1,1,0)")
+  DBI::dbExecute(con, "PRAGMA user_version = 12")
+
+  DBI::dbExecute(con, "BEGIN IMMEDIATE")
+  expect_silent(migrate_db(con))
+  DBI::dbExecute(con, "COMMIT")
+
+  expect_equal(DBI::dbGetQuery(con, "SELECT hit_class FROM blast_hits")$hit_class, "rdna")
+})
+
+# --- value rewrites are gated on the version, like every other one ---
+
+test_that("the assemble_switch = 5 rewrite does not run on a current database", {
+  # It is a one-off v16 repair, but it ran on every call, i.e. once per unit of
+  # a fanned-out run. A state 5 written after v16 means something else entirely.
+  con <- mk_v8_db(); on.exit(DBI::dbDisconnect(con))
+  mk_v15_assemble_opts(con)
+  DBI::dbExecute(con, "INSERT INTO assemble VALUES('S5',5,0,'default','default')")
+  DBI::dbExecute(con, sprintf("PRAGMA user_version = %d",
+    RiboPilot:::RIBOPILOT_SCHEMA_VERSION))
+
+  migrate_db(con)
+
+  expect_equal(DBI::dbGetQuery(con,
+    "SELECT assemble_switch s FROM assemble WHERE ID='S5'")$s, 5L)
+})
+
+# --- the catalogue snapshot ---
+
+test_that("the catalogue snapshot sees tables and columns created in the same call", {
+  # migrate_db() answers ~40 guards from one snapshot of the catalogue. A stale
+  # snapshot is silent: a table created at v12 and guarded at v14 would look
+  # absent, and the v14 column would never be added.
+  con <- mk_v8_db(); on.exit(DBI::dbDisconnect(con))
+  expect_false("triage_opts" %in% DBI::dbListTables(con))
+  expect_false("reference" %in% DBI::dbListTables(con))
+
+  migrate_db(con)
+
+  # created at v12, then guarded at v14
+  expect_true("rule_screen_off_target" %in% DBI::dbListFields(con, "triage_opts"))
+  expect_equal(DBI::dbGetQuery(con,
+    "SELECT rule_screen_off_target v FROM triage_opts")$v, "flag")
+  # created at v19, then guarded two lines later
+  expect_true("preset_name" %in% DBI::dbListFields(con, "reference"))
+  # created at v9, then read by the v9 cleanup
+  expect_true("blast_hits" %in% DBI::dbListTables(con))
+  # a column added at v11 and read by the v11 rewrite in the same call
+  expect_true(all(c("triage", "triage_reason", "triage_source") %in%
+    DBI::dbListFields(con, "assemblies")))
+})
+
+test_that("the snapshot tracks a table that is dropped and rebuilt mid-migration", {
+  # v7 rebuilds annotate/annotations/coverage under the per-unit key by
+  # DROP + CREATE (annotate via a rename), so the snapshot has to follow both.
+  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:"); on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT PRIMARY KEY, taxid INT, lineage TEXT)")
+  DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, sequence TEXT,
+    ignore INT, PRIMARY KEY (ID, path, scaffold))")
+  DBI::dbExecute(con, "CREATE TABLE annotate(ID TEXT PRIMARY KEY, annotate_switch INT,
+    annotate_lock INT, reviewed TEXT)")
+  DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, element TEXT, start INT, stop INT)")
+  DBI::dbExecute(con, "CREATE TABLE coverage(ID TEXT, mean_depth REAL)")
+  DBI::dbExecute(con, "CREATE TABLE stitched(ID TEXT PRIMARY KEY, sequence TEXT)")
+  DBI::dbExecute(con, "INSERT INTO samples VALUES('S1', 7955, 'Metazoa')")
+  DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',1,1,'ACGT',0)")
+  DBI::dbExecute(con, "INSERT INTO annotate VALUES('S1',2,0,'yes')")
+  DBI::dbExecute(con, "PRAGMA user_version = 6")
+
+  migrate_db(con)
+
+  # annotate came back under its new name with the v1/v2/v12 columns intact
+  expect_true(all(c("path", "scaffold", "annotate_opts", "curate_opts", "n_flags") %in%
+    DBI::dbListFields(con, "annotate")))
+  expect_false("annotate_new" %in% DBI::dbListTables(con))
+  expect_true("path" %in% DBI::dbListFields(con, "annotations"))
+  # coverage is rebuilt at v7 and then gains median_depth at v10 and depths at v12
+  expect_true(all(c("path", "median_depth", "depths") %in% DBI::dbListFields(con, "coverage")))
+  # dropped tables leave the snapshot too
+  expect_false("stitched" %in% DBI::dbListTables(con))
+  expect_equal(DBI::dbGetQuery(con, "PRAGMA user_version")[[1]],
+    RiboPilot:::RIBOPILOT_SCHEMA_VERSION)
+
+  expect_silent(migrate_db(con))
+})
+
+test_that("a second migrate_db changes nothing at all", {
+  con <- mk_v8_db(); on.exit(DBI::dbDisconnect(con))
+  mk_v15_assemble_opts(con)
+  migrate_db(con)
+  schema_of <- function(con) {
+    DBI::dbGetQuery(con, "SELECT type, name, sql FROM sqlite_master ORDER BY type, name")
+  }
+  before <- schema_of(con)
+  rows <- lapply(c("samples", "assemblies", "assemble", "triage_opts", "curate_opts",
+                   "annotate_opts", "assemble_opts", "reference_config"),
+    function(t) DBI::dbGetQuery(con, sprintf("SELECT * FROM %s", t)))
+
+  expect_silent(migrate_db(con))
+
+  expect_equal(schema_of(con), before)
+  for (i in seq_along(rows)) {
+    expect_equal(DBI::dbGetQuery(con, sprintf("SELECT * FROM %s",
+      c("samples", "assemblies", "assemble", "triage_opts", "curate_opts",
+        "annotate_opts", "assemble_opts", "reference_config")[i])), rows[[i]])
+  }
+})
+
+# --- the pre-migration backup ---
+
+test_that("the pre-migration backup is a real copy, WAL content included", {
+  dir <- withr::local_tempdir()
+  db <- file.path(dir, ".sqlite")
+  con <- DBI::dbConnect(RSQLite::SQLite(), db)
+  DBI::dbExecute(con, "PRAGMA journal_mode = wal;")
+  DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT PRIMARY KEY)")
+  DBI::dbExecute(con, "INSERT INTO samples VALUES('S1')")
+  DBI::dbExecute(con, "PRAGMA user_version = 15")
+  DBI::dbDisconnect(con)
+
+  b1 <- RiboPilot:::backup_project_db(dir)
+  expect_true(file.exists(b1))
+  # file.copy() of the .sqlite alone would miss everything still in the -wal
+  bcon <- DBI::dbConnect(RSQLite::SQLite(), b1); on.exit(DBI::dbDisconnect(bcon))
+  expect_equal(DBI::dbGetQuery(bcon, "SELECT ID FROM samples")$ID, "S1")
+  expect_equal(DBI::dbGetQuery(bcon, "PRAGMA user_version")[[1]], 15)
+
+  # two backups in the same second must both exist
+  b2 <- RiboPilot:::backup_project_db(dir)
+  expect_true(file.exists(b2))
+  expect_false(identical(b1, b2))
+})
+
+test_that("backup_project_db says so when it cannot write a backup", {
+  skip_on_os("windows")
+  skip_if(as.integer(Sys.getenv("EUID", "1")) == 0 || unname(Sys.info()["user"]) == "root",
+    "root ignores directory permissions")
+  dir <- withr::local_tempdir()
+  db <- file.path(dir, ".sqlite")
+  con <- DBI::dbConnect(RSQLite::SQLite(), db)
+  DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT PRIMARY KEY)")
+  DBI::dbDisconnect(con)
+  bdir <- file.path(dir, ".old_sqlite_dbs")
+  dir.create(bdir)
+  Sys.chmod(bdir, "500")
+  on.exit(Sys.chmod(bdir, "700"), add = TRUE)
+
+  expect_warning(res <- RiboPilot:::backup_project_db(dir), "Could not back up")
+  expect_null(res)
+})
