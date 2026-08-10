@@ -1,0 +1,90 @@
+---
+title: "`r paste(params$label, 'export review')`"
+params:
+  db_path: ""
+  label: "export"
+  units_rds: ""
+  alignments: true
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    self_contained: true
+    theme: flatly
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+# Reach the package internals the same way whether RiboPilot is installed or
+# loaded with devtools::load_all().
+rp <- asNamespace("RiboPilot")
+con <- DBI::dbConnect(RSQLite::SQLite(), params$db_path)
+units <- readRDS(params$units_rds)
+smry <- rp$export_summary_df(con, units)
+```
+
+```{css, echo=FALSE}
+svg { max-width: 100%; height: auto; }
+.feature-map { border-top: 1px solid #eee; padding-top: 0.4em; margin: 1.2em 0; }
+```
+
+Group **`r params$label`** &middot; `r nrow(units)` unit(s) &middot; generated
+`r format(Sys.time(), "%Y-%m-%d %H:%M")`.
+
+## Summary
+
+```{r summary-table}
+cols <- intersect(c("seqid", "ID", "organism", "length", "n_features", "missing",
+  "reviewed", "partial", "variant_class", "submission_risk"), names(smry))
+knitr::kable(smry[, cols, drop = FALSE], row.names = FALSE)
+```
+
+## Per-sample feature maps
+
+```{r feature-maps, results='asis'}
+maps <- lapply(seq_len(nrow(units)), function(i) {
+  htmltools::HTML(rp$feature_map_svg(con, units$ID[i], units$path[i],
+    units$scaffold[i], units$seqid[i]))
+})
+src <- unlist(lapply(seq_len(nrow(units)), function(i) {
+  org <- smry$organism[i]
+  c(sprintf("### %s", units$seqid[i]), "",
+    if (!is.na(org) && nzchar(org)) c(sprintf("*%s*", org), ""),
+    sprintf("```{r fmap-%d, echo=FALSE}\nmaps[[%d]]\n```", i, i), "")
+}))
+cat(knitr::knit_child(text = src, quiet = TRUE), sep = "\n")
+```
+
+```{r alignments, results='asis', eval=isTRUE(params$alignments)}
+cat("## Feature alignments\n\n")
+elements <- rp$report_elements(con, units)
+alns <- list()
+src <- character(0)
+for (el in elements) {
+  seqs <- rp$gather_feature_seqs(con, units, el)
+  res <- rp$feature_alignment(seqs)
+  src <- c(src, sprintf("### %s", el), "")
+  if (is.null(res)) {
+    src <- c(src, sprintf("*Annotated in %d unit(s); at least 2 are needed to align.*",
+      length(seqs)), "")
+    next
+  }
+  alns[[el]] <- msaR::msaR(res$alignment, menu = FALSE, overviewbox = FALSE,
+    seqlogo = FALSE, labelNameLength = 160)
+  pid <- if (is.na(res$mean_identity)) "n/a" else sprintf("%.1f%%", res$mean_identity)
+  len <- if (res$min_len == res$max_len) {
+    sprintf("%d bp", res$min_len)
+  } else {
+    sprintf("%d-%d bp", res$min_len, res$max_len)
+  }
+  src <- c(src, sprintf("%d units aligned, %s, mean identity %s.", res$n, len, pid), "",
+    sprintf("```{r aln-%s, echo=FALSE}\nalns[[%s]]\n```",
+      gsub("[^A-Za-z0-9]", "", el), deparse(el)), "")
+}
+if (length(elements) == 0) src <- c(src, "*No annotated features in this group.*", "")
+cat(knitr::knit_child(text = src, quiet = TRUE), sep = "\n")
+```
+
+```{r teardown, include=FALSE}
+DBI::dbDisconnect(con)
+```

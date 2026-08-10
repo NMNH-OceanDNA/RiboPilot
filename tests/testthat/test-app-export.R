@@ -1,0 +1,167 @@
+# The export dialog's header editor: templates are checked live and saved into
+# the selected configuration name.
+
+mk_export_project <- function(env = parent.frame()) {
+  dir <- withr::local_tempdir(.local_envir = env)
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT, Taxon TEXT, sci_name TEXT, taxid INT, rank TEXT,
+    match_type TEXT, lineage TEXT, lineage_taxids TEXT, taxonomy_switch INT, taxonomy_lock INT,
+    export_group TEXT, time_stamp INT)")
+  DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, assemble_lock INT, assemble_switch INT,
+    assemble_opts TEXT, blast_opts TEXT, paths INT, scaffolds INT, length TEXT, assemble_notes TEXT, time_stamp INT)")
+  DBI::dbExecute(con, "CREATE TABLE preprocess(ID TEXT, pre_opts TEXT)")
+  DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, topology TEXT, length INT,
+    sequence TEXT, ignore INT, blast_species TEXT, blast_accession TEXT, blast_pident REAL,
+    blast_qcovs REAL, blast_source TEXT)")
+  DBI::dbExecute(con, "CREATE TABLE annotate(ID TEXT, path INT, scaffold INT, annotate_switch INT,
+    annotate_lock INT, annotate_opts TEXT, curate_opts TEXT, reviewed TEXT, problematic TEXT,
+    partial TEXT, n_features INT, missing TEXT, n_flags INT, annotate_notes TEXT, export_group TEXT, time_stamp INT)")
+  DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT,
+    type TEXT, start INT, stop INT)")
+  DBI::dbExecute(con, "CREATE TABLE coverage(ID TEXT, path INT, scaffold INT, mean_depth REAL,
+    min_depth INT, max_depth INT, depths TEXT)")
+  DBI::dbExecute(con, "CREATE TABLE blast_screen(ID TEXT, path INT, scaffold INT, accession TEXT, title TEXT,
+    species TEXT, staxid INT, lineage TEXT, lineage_taxids TEXT, rank_distance INT, pident REAL,
+    qcovs REAL, evalue REAL, bitscore REAL, is_nuclear_rrna INT)")
+  DBI::dbExecute(con, "CREATE TABLE blast_ref_candidates(ID TEXT, path INT, scaffold INT, rank INT,
+    accession TEXT, species TEXT, title TEXT, pident REAL, qcovs REAL, bitscore REAL, evalue REAL)")
+  DBI::dbExecute(con, "CREATE TABLE path_scores(ID TEXT, path INT, length INT, depth REAL, anchors TEXT,
+    blast_pident REAL, hit_id TEXT, hit_species TEXT, score REAL, rank INT, auto_select INT)")
+  DBI::dbExecute(con, "INSERT INTO samples VALUES('S1','Danio rerio','Danio rerio',7955,'species','exact',NULL,NULL,1,1,NULL,1)")
+  DBI::dbExecute(con, "INSERT INTO assemble VALUES('S1',1,2,'default','default',1,1,'600',NULL,1)")
+  DBI::dbExecute(con, "INSERT INTO preprocess VALUES('S1','default')")
+  DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',1,1,'linear',600,?,0,'Danio rerio','A1',99,88,'core_nt')",
+    params = list(paste(rep("ACGT", 150), collapse = "")))
+  # annotation-locked, so the unit is exportable
+  DBI::dbExecute(con, "INSERT INTO annotate VALUES('S1',1,1,2,1,'default','default','yes','no','no',3,'',0,NULL,NULL,1)")
+  for (f in list(c("18S", 10, 200), c("ITS1", 201, 260), c("5.8S", 261, 420))) {
+    DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,1,?,?,?,?)",
+      params = list(f[1], RiboPilot:::rrna_element_type(f[1]),
+        as.integer(f[2]), as.integer(f[3])))
+  }
+  DBI::dbExecute(con, "INSERT INTO coverage (ID,path,scaffold,mean_depth) VALUES('S1',1,1,100)")
+  RiboPilot::migrate_db(con)
+  DBI::dbDisconnect(con)
+  dir
+}
+
+# the debounced boxes only settle once the mock clock has moved past the delay
+settle <- function(session) {
+  session$flushReact()
+  session$elapse(600)
+  session$flushReact()
+}
+
+test_that("the header status lines pass the defaults and fail an unknown column", {
+  skip_if_not_installed("withr")
+  dir <- mk_export_project()
+  withr::local_dir(dir)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Annotate")
+    session$setInputs(export_btn = 1)
+    session$setInputs(
+      fasta_header = RiboPilot:::DEFAULT_FASTA_HEADER,
+      fasta_header_marker = RiboPilot:::DEFAULT_FASTA_HEADER_MARKER)
+    settle(session)
+
+    expect_equal(hdr_rec_chk()$level, "ok")
+    expect_equal(hdr_mrk_chk()$level, "ok")
+    expect_match(output$export_hdr_status$html, "circle-check")
+
+    session$setInputs(fasta_header = "{seqid} {not_a_column}")
+    settle(session)
+    expect_equal(hdr_rec_chk()$level, "error")
+    expect_match(hdr_rec_chk()$message, "not_a_column")
+    expect_match(output$export_hdr_status$html, "circle-xmark")
+  })
+})
+
+test_that("typing a new configuration name creates it from the current boxes", {
+  skip_if_not_installed("withr")
+  dir <- mk_export_project()
+  withr::local_dir(dir)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Annotate")
+    session$setInputs(export_btn = 1)
+    session$setInputs(
+      fasta_header = "{seqid} {Taxon} custom",
+      fasta_header_marker = "{seqid}_{element}")
+    settle(session)
+    session$setInputs(export_template = "mine")
+    settle(session)
+
+    expect_equal(export_template(), "mine")
+    row <- RiboPilot:::app_query("SELECT * FROM export_opts WHERE export_opts = 'mine'")
+    expect_equal(nrow(row), 1L)
+    expect_equal(row$fasta_header, "{seqid} {Taxon} custom")
+    expect_equal(row$fasta_header_marker, "{seqid}_{element}")
+    # the new name is a second configuration, not a rename of the old one
+    expect_true(all(c("default", "mine") %in%
+      RiboPilot:::app_query("SELECT export_opts FROM export_opts")$export_opts))
+  })
+})
+
+test_that("editing a box saves into the selected configuration, invalid text does not", {
+  skip_if_not_installed("withr")
+  dir <- mk_export_project()
+  withr::local_dir(dir)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Annotate")
+    session$setInputs(export_btn = 1)
+    session$setInputs(
+      fasta_header = RiboPilot:::DEFAULT_FASTA_HEADER,
+      fasta_header_marker = RiboPilot:::DEFAULT_FASTA_HEADER_MARKER)
+    settle(session)
+    session$setInputs(export_template = "batch1")
+    settle(session)
+
+    session$setInputs(fasta_header = "{seqid} edited {Taxon}")
+    settle(session)
+    saved <- RiboPilot:::app_query("SELECT fasta_header FROM export_opts WHERE export_opts = 'batch1'")
+    expect_equal(saved$fasta_header, "{seqid} edited {Taxon}")
+
+    # a template naming a column that does not exist is never written
+    session$setInputs(fasta_header = "{seqid} {nope}")
+    settle(session)
+    saved <- RiboPilot:::app_query("SELECT fasta_header FROM export_opts WHERE export_opts = 'batch1'")
+    expect_equal(saved$fasta_header, "{seqid} edited {Taxon}")
+  })
+})
+
+test_that("exporting over an existing bundle asks before replacing it", {
+  # the group folder is rebuilt from scratch, so a silent overwrite would take
+  # an earlier bundle with it
+  skip_if_not_installed("withr")
+  dir <- mk_export_project()
+  withr::local_dir(dir)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Export")
+    session$setInputs(export_group_sel = "__all__",
+      fasta_header = RiboPilot:::DEFAULT_FASTA_HEADER,
+      fasta_header_marker = RiboPilot:::DEFAULT_FASTA_HEADER_MARKER,
+      export_markers = FALSE, export_report = FALSE)
+    settle(session)
+
+    # nothing there yet: the export just runs
+    session$setInputs(export_go = 1)
+    settle(session)
+    expect_true(file.exists(file.path(dir, "out", "export", "export", "export.fasta")))
+
+    # a marker of the earlier bundle, to prove the second run did not delete it
+    keep <- file.path(dir, "out", "export", "export", "keep_me.txt")
+    writeLines("mine", keep)
+    session$setInputs(export_go = 2)
+    settle(session)
+    expect_true(file.exists(keep))          # asked, did not act
+
+    # answering the warning does the export, and the folder is rebuilt
+    session$setInputs(export_overwrite_go = 1)
+    settle(session)
+    expect_false(file.exists(keep))
+    expect_true(file.exists(file.path(dir, "out", "export", "export", "export.fasta")))
+  })
+})

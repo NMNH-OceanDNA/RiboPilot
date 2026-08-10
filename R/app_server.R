@@ -808,17 +808,102 @@ app_server <- function(input, output, session) {
     if (is.null(u) || nrow(u) == 0) return(locked)
     locked[key(locked) %in% key(u), , drop = FALSE]
   }
+  export_group_choice <- function() {
+    g <- input$export_group_sel %||% "__all__"
+    if (identical(g, "__all__") || !nzchar(g)) NULL else g
+  }
+  # SeqIDs are counted over ALL exportable units of a sample, not this bundle's
+  # subset, so the header preview matches what export_bundle() will write.
+  app_export_seqids <- function(con, u) {
+    all_ids <- DBI::dbGetQuery(con,
+      "SELECT an.ID FROM annotate an
+       JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
+       WHERE an.annotate_lock = 1 AND COALESCE(asm.ignore,0) = 0
+         AND COALESCE(an.problematic,'') != 'yes'")$ID
+    k <- as.integer(table(all_ids)[u$ID])
+    ifelse(!is.na(k) & k > 1,
+      sprintf("%s_p%s_s%s", u$ID, u$path, u$scaffold), u$ID)
+  }
+  # Token data the header templates are checked and resolved against.
+  export_hdr_data <- reactive({
+    refresh()
+    u <- export_units_df(export_group_choice())
+    if (nrow(u) == 0) return(NULL)
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    u$seqid <- app_export_seqids(con, u)
+    tryCatch(export_header_data(con, u), error = function(e) NULL)
+  })
+
+  # Marker templates also resolve {element} / {product}, which belong to a
+  # feature rather than to the record; a representative pair is enough to check
+  # the template.
+  export_hdr_data_marker <- reactive({
+    d <- export_hdr_data()
+    if (is.null(d)) return(NULL)
+    el <- app_query("SELECT element FROM annotations LIMIT 1")$element
+    el <- if (length(el)) el[1] else "18S"
+    d$element <- el
+    d$product <- rrna_element_product(el)
+    d
+  })
+
+  # ---- header templates ----
+  export_template <- reactiveVal("default")
+
   # "Export Data" opens a modal to pick a group (or all locked) before export.
   observeEvent(input$export_btn, {
     groups <- app_query(
       "SELECT DISTINCT export_group FROM annotate
        WHERE export_group IS NOT NULL AND export_group != '' ORDER BY export_group")$export_group
-    showModal(export_modal(groups, nrow(export_units_df())))
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    ensure_export_opts(con)
+    tmpls <- list_export_templates(con)
+    nm <- if (export_template() %in% tmpls) export_template() else "default"
+    export_template(nm)
+    o <- get_export_opts(con, nm)
+    cols <- names(export_hdr_data_marker()) %||% character(0)
+    showModal(export_modal(groups, nrow(export_units_df()), tmpls, nm,
+      o$fasta_header, o$fasta_header_marker, sort(cols)))
   })
-  export_group_choice <- function() {
-    g <- input$export_group_sel %||% "__all__"
-    if (identical(g, "__all__") || !nzchar(g)) NULL else g
-  }
+
+  # Picking a saved name refills the boxes; a name that does not exist yet is
+  # created from whatever is in the boxes, provided both are usable.
+  observeEvent(input$export_template, ignoreInit = TRUE, {
+    nm <- trimws(input$export_template %||% "")
+    req(nzchar(nm))
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    if (nm %in% list_export_templates(con)) {
+      o <- get_export_opts(con, nm)
+      updateTextAreaInput(session, "fasta_header", value = o$fasta_header)
+      updateTextAreaInput(session, "fasta_header_marker", value = o$fasta_header_marker)
+    } else {
+      if (isTRUE(validate_fasta_header(input$fasta_header, export_hdr_data())$ok) &&
+          isTRUE(validate_fasta_header(input$fasta_header_marker, export_hdr_data_marker())$ok)) {
+        set_export_opts(con, input$fasta_header, input$fasta_header_marker, nm)
+      }
+    }
+    export_template(nm)
+  })
+
+  hdr_rec <- debounce(reactive(input$fasta_header), 400)
+  hdr_mrk <- debounce(reactive(input$fasta_header_marker), 400)
+  # Both boxes demand {seqid}: without it the per-marker files of different
+  # records would collide, and the record deflines would disagree with the
+  # feature table.
+  hdr_rec_chk <- reactive(validate_fasta_header(hdr_rec(), export_hdr_data(), require_seqid = TRUE))
+  hdr_mrk_chk <- reactive(validate_fasta_header(hdr_mrk(), export_hdr_data_marker(), require_seqid = TRUE))
+  output$export_hdr_status <- renderUI(header_status_ui(hdr_rec_chk()))
+  output$export_hdr_marker_status <- renderUI(header_status_ui(hdr_mrk_chk()))
+
+  # Auto-save edits into the selected name, but never a template that would fail
+  # at write time.
+  observeEvent(list(hdr_rec(), hdr_mrk()), ignoreInit = TRUE, {
+    nm <- trimws(export_template() %||% "")
+    req(nzchar(nm))
+    req(isTRUE(hdr_rec_chk()$ok), isTRUE(hdr_mrk_chk()$ok))
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    set_export_opts(con, hdr_rec(), hdr_mrk(), nm)
+  })
   # Write the bundle into the project's out/export folder (no zip download,
   # mirroring MitoPilot), then show where it landed with an "Open folder" button.
   export_done_dir <- reactiveVal(NULL)
@@ -830,14 +915,43 @@ app_server <- function(input, output, session) {
         type = "warning", duration = 6)
       return()
     }
+    rc <- validate_fasta_header(input$fasta_header, export_hdr_data(), require_seqid = TRUE)
+    mc <- validate_fasta_header(input$fasta_header_marker, export_hdr_data_marker(), require_seqid = TRUE)
+    bad <- if (identical(rc$level, "error")) list("Record FASTA header", rc$message)
+      else if (identical(mc$level, "error")) list("Per-marker FASTA header", mc$message)
+    if (!is.null(bad)) {
+      shinyWidgets::sendSweetAlert(session, title = "Header cannot be used",
+        text = paste0(bad[[1]], ": ", bad[[2]]), type = "error")
+      return()
+    }
+    # export_bundle() rebuilds the group folder from scratch, so anything the
+    # curator put there (or an earlier export they have not submitted yet) goes
+    # with it. Say so before it happens, not after.
+    target <- file.path(app_project(), "out", "export", grp %||% "export")
+    if (dir.exists(target)) {
+      showModal(export_overwrite_modal(target,
+        length(list.files(target, recursive = TRUE))))
+      return()
+    }
+    run_export(u, grp)
+  })
+  observeEvent(input$export_overwrite_go, {
+    grp <- export_group_choice()
+    run_export(export_units_df(grp), grp)
+  })
+  run_export <- function(u, grp) {
     gdir <- tryCatch(
       export_bundle(app_project(), units = u, group = grp,
-        out_dir = file.path(app_project(), "out"), zip = FALSE),
+        out_dir = file.path(app_project(), "out"), zip = FALSE,
+        fasta_header = input$fasta_header,
+        fasta_header_marker = input$fasta_header_marker,
+        markers = isTRUE(input$export_markers),
+        report = isTRUE(input$export_report)),
       error = function(e) {
         showNotification(paste("Export failed:", conditionMessage(e)), type = "error", duration = 8)
         NULL
       })
-    if (is.null(gdir)) return()
+    if (is.null(gdir)) return(invisible())
     export_done_dir(gdir)
     removeModal()
     showModal(modalDialog(
@@ -848,7 +962,8 @@ app_server <- function(input, output, session) {
         actionButton("open_export_dir", "Open folder", icon = icon("folder-open"), class = "btn-sm"),
         modalButton("Close"))
     ))
-  })
+    invisible()
+  }
   observeEvent(input$open_export_dir, open_path(export_done_dir()))
 
   # ---- Assemble modal ----

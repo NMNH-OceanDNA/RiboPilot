@@ -615,6 +615,10 @@ migrate_db <- function(con) {
   # a v19 database predating the named-preset fix has the table but not the column
   add_col("reference", "preset_name", "TEXT")
 
+  # --- schema v19: saved FASTA-header configurations for export ---
+  ensure_export_opts(con)
+  note_tbl("export_opts")
+
   # Stamped inside the transaction: PRAGMA user_version is transactional, and a
   # crash between COMMIT and the stamp would leave a migrated schema marked at the
   # old version, so the next run would re-apply every step (v9 drops blast_hits).

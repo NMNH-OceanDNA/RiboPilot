@@ -7,14 +7,14 @@ mk_project <- function() {
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
   on.exit(DBI::dbDisconnect(con))
   DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT, Taxon TEXT, sci_name TEXT, taxid INT)")
-  DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, sequence TEXT, length INT, ignore INT)")
+  DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, sequence TEXT, length INT, topology TEXT, ignore INT)")
   DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT, type TEXT, start INT, stop INT)")
   DBI::dbExecute(con, "CREATE TABLE annotate(ID TEXT, path INT, scaffold INT, annotate_lock INT,
                        problematic TEXT, partial TEXT, reviewed TEXT, chimeric INT,
                        n_features INT, missing TEXT, export_group TEXT)")
   seq <- paste0(strrep("A", 200), strrep("C", 200))
   for (u in list(c("S1", 1, 1), c("S1", 1, 2), c("S2", 1, 1))) {
-    DBI::dbExecute(con, "INSERT INTO assemblies VALUES(?,?,?,?,?,0)",
+    DBI::dbExecute(con, "INSERT INTO assemblies VALUES(?,?,?,?,?,'linear',0)",
       params = list(u[1], as.integer(u[2]), as.integer(u[3]), seq, nchar(seq)))
     DBI::dbExecute(con, "INSERT INTO annotate VALUES(?,?,?,1,'no','no','yes',0,2,'',NULL)",
       params = list(u[1], as.integer(u[2]), as.integer(u[3])))
@@ -37,13 +37,13 @@ test_that("export_bundle honours a per-unit selection", {
   dir <- mk_project()
   # one scaffold of a two-scaffold sample: the sibling must not come along
   g <- bundle(dir, units = data.frame(ID = "S1", path = 1L, scaffold = 2L))
-  fsa <- basename(Sys.glob(file.path(g, "*.fsa")))
-  expect_equal(fsa, "S1_p1_s2.fsa")
+  fsa <- basename(Sys.glob(file.path(g, "samples", "*.fasta")))
+  expect_equal(fsa, "S1_p1_s2.fasta")
 
   # sample-grain ids still export every unit of the sample
   g2 <- bundle(dir, ids = "S1", label = "byid")
-  expect_setequal(basename(Sys.glob(file.path(g2, "*.fsa"))),
-    c("S1_p1_s1.fsa", "S1_p1_s2.fsa"))
+  expect_setequal(basename(Sys.glob(file.path(g2, "samples", "*.fasta"))),
+    c("S1_p1_s1.fasta", "S1_p1_s2.fasta"))
 })
 
 test_that("SeqIDs are stable between a partial and a whole-project export", {
@@ -52,10 +52,10 @@ test_that("SeqIDs are stable between a partial and a whole-project export", {
   all <- bundle(dir, label = "all")
   # S1 has two exportable units in the DB, so it is suffixed in BOTH bundles.
   # Counting within the filtered subset instead would emit a bare "S1" here.
-  expect_true(file.exists(file.path(one, "S1_p1_s1.fsa")))
-  expect_true(file.exists(file.path(all, "S1_p1_s1.fsa")))
+  expect_true(file.exists(file.path(one, "samples", "S1_p1_s1.fasta")))
+  expect_true(file.exists(file.path(all, "samples", "S1_p1_s1.fasta")))
   # S2 has a single unit, so it keeps its bare ID
-  expect_true(file.exists(file.path(all, "S2.fsa")))
+  expect_true(file.exists(file.path(all, "samples", "S2.fasta")))
 })
 
 test_that("ignored and problematic units are excluded from the bundle", {
@@ -65,7 +65,7 @@ test_that("ignored and problematic units are excluded from the bundle", {
   DBI::dbDisconnect(con)
   g <- bundle(dir, label = "kept")
   # S1 now has one exportable unit, so it loses the suffix too
-  expect_setequal(basename(Sys.glob(file.path(g, "*.fsa"))), c("S1.fsa", "S2.fsa"))
+  expect_setequal(basename(Sys.glob(file.path(g, "samples", "*.fasta"))), c("S1.fasta", "S2.fasta"))
 })
 
 # Add a screen table carrying a paralog pair for S1, as screen_sample() would.
@@ -106,8 +106,8 @@ test_that("export records the variant fact for a paralog and does NOT gate", {
   expect_setequal(smry$variant_group, c("g1", "g2"))
   expect_equal(unique(smry$n_variants), 2L)
   # both units are still in the bundle
-  expect_setequal(basename(Sys.glob(file.path(g, "*.fsa"))),
-    c("S1_p1_s1.fsa", "S1_p1_s2.fsa"))
+  expect_setequal(basename(Sys.glob(file.path(g, "samples", "*.fasta"))),
+    c("S1_p1_s1.fasta", "S1_p1_s2.fasta"))
   # and the variant fact never leaks into the submission-risk gate
   # (read.csv turns the empty risk string into NA)
   risk <- as.character(smry$submission_risk)
@@ -139,12 +139,14 @@ test_that("bundle file contents are exactly as specified", {
   dir <- mk_project()
   g <- bundle(dir, ids = "S2", label = "exact")
   seq <- paste0(strrep("A", 200), strrep("C", 200))
-  expect_equal(readLines(file.path(g, "S2.fsa")),
-    c(">S2 [organism=Genus speciesB] [moltype=genomic DNA]", seq))
-  expect_equal(readLines(file.path(g, "S2.tbl")),
+  expect_equal(readLines(file.path(g, "samples", "S2.fasta")),
+    c(paste(">S2 [organism=Genus speciesB] [moltype=genomic DNA] Genus speciesB",
+        "18S ribosomal RNA gene and 28S ribosomal RNA gene, partial sequence."), seq))
+  expect_equal(readLines(file.path(g, "samples", "S2.tbl")),
     c(">Feature S2", "<1\t200\trRNA", "\t\t\tproduct\t18S ribosomal RNA",
       "201\t>400\trRNA", "\t\t\tproduct\t28S ribosomal RNA"))
-  expect_equal(readLines(file.path(g, "exact.fasta")), readLines(file.path(g, "S2.fsa")))
+  expect_equal(readLines(file.path(g, "exact.fasta")),
+    readLines(file.path(g, "samples", "S2.fasta")))
   expect_equal(readLines(file.path(g, "exact_summary.csv")),
     c(paste0("\"seqid\",\"ID\",\"path\",\"scaffold\",\"organism\",\"length\",\"n_features\",",
         "\"missing\",\"reviewed\",\"partial\",\"problematic\",\"variant_class\",",
@@ -152,7 +154,7 @@ test_that("bundle file contents are exactly as specified", {
       "\"S2\",\"S2\",1,1,\"Genus speciesB\",400,2,\"\",\"yes\",\"no\",\"no\",NA,NA,NA,NA,\"\""))
 })
 
-test_that("an empty Taxon is flagged, not written as [organism=NA]", {
+test_that("an empty Taxon is flagged, and never rendered as the word NA", {
   dir <- mk_project()
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
   DBI::dbExecute(con, "UPDATE samples SET Taxon = NULL WHERE ID = 'S2'")
@@ -161,10 +163,14 @@ test_that("an empty Taxon is flagged, not written as [organism=NA]", {
 
   expect_warning(g <- suppressMessages(export_bundle(dir, out_dir = file.path(dir, "out"),
     markers = TRUE, report = FALSE, zip = FALSE, label = "notax")), "missing_organism")
-  fsa <- readLines(file.path(g, "S2.fsa"))
-  expect_equal(fsa[1], ">S2 [moltype=genomic DNA]")
-  expect_false(any(grepl("organism", readLines(file.path(g, "notax.fasta")))))
-  expect_equal(readLines(Sys.glob(file.path(g, "markers", "18S", "S2_18S.fasta")))[1], ">S2_18S")
+  # glue renders an NA field as the characters "NA", which reads like a real
+  # organism name. The header template cannot drop a field, so the value is
+  # blanked and the unit is flagged instead.
+  fsa <- readLines(file.path(g, "samples", "S2.fasta"))
+  expect_match(fsa[1], "[organism=]", fixed = TRUE)
+  expect_false(any(grepl("organism=NA", readLines(file.path(g, "notax.fasta")), fixed = TRUE)))
+  expect_false(any(grepl("organism=NA",
+    readLines(Sys.glob(file.path(g, "markers", "18S", "S2_18S.fasta"))), fixed = TRUE)))
 
   smry <- utils::read.csv(file.path(g, "notax_summary.csv"), stringsAsFactors = FALSE)
   expect_true(all(grepl("missing_organism", smry$submission_risk)))

@@ -628,6 +628,9 @@ new_db <- function(
      VALUES (1, ?, 1000, 25000)",
     params = list(ref_dir %||% NA_character_))
 
+  # export_opts (named FASTA-header configurations) ----
+  ensure_export_opts(con)
+
   # stamp the current schema version so migrate_db() is a no-op on fresh DBs
   DBI::dbExecute(con, sprintf("PRAGMA user_version = %d", RIBOPILOT_SCHEMA_VERSION))
 

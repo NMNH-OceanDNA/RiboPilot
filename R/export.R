@@ -1,10 +1,18 @@
 # GenBank submission bundle export (mirrors MitoPilot's group-based export).
 #
 # Units are organized into export groups (annotate.export_group). Each group /
-# selection is exported as a combined <label>.fasta (source-modifier deflines) +
-# <label>.tbl (concatenated 5-column feature tables), per-sample .fsa/.tbl,
-# per-marker fastas (18S/28S/ITS...), a per-sample summary CSV, and a
-# self-contained HTML report. table2asn is run if available.
+# selection is written to <out_dir>/export/<label>/:
+#
+#   <label>.fasta          combined records, deflines from the header template
+#   <label>.tbl            concatenated 5-column feature tables
+#   <label>_summary.csv    one row per exported unit
+#   <label>_report.html    self-contained HTML report
+#   README.txt             how the bundle maps onto NCBI's submission routes
+#   samples/               <seqid>.fasta and <seqid>.tbl, one pair per unit
+#   markers/<ELEMENT>/     <seqid>_<ELEMENT>.fasta and all_<ELEMENT>.fasta
+#
+# Deflines come from the named header configurations in export_opts.R.
+# table2asn is run per sample file if available.
 
 #' Assign selected units to an export group (export_group is per unit now)
 #'
@@ -247,6 +255,15 @@ submission_readme <- function(label) {
     "The .tbl / .sbt / table2asn output are for the alternate table2asn / BankIt",
     "route only, where a feature table IS accepted.",
     "",
+    "WHAT IS IN THIS FOLDER",
+    "----------------------",
+    paste0("  ", label, ".fasta          every exported record, one FASTA file"),
+    paste0("  ", label, ".tbl            every feature table, concatenated"),
+    paste0("  ", label, "_summary.csv    one row per exported record"),
+    paste0("  ", label, "_report.html    HTML report (feature maps and alignments)"),
+    "  samples/             <seqid>.fasta and <seqid>.tbl, one pair per record",
+    "  markers/<ELEMENT>/   one FASTA per record per element, plus all_<ELEMENT>.fasta",
+    "",
     "SUBMISSION-RISK CHECKS",
     "----------------------",
     "NCBI's ITSx evaluation may silently remove sequences it judges chimeric,",
@@ -480,12 +497,17 @@ export_report_html <- function(con, units, out_html, label, smry = export_summar
 #'   copied into the bundle as `<label>.sbt` so table2asn picks it up.
 #' @param run_table2asn Run table2asn if on PATH.
 #' @param zip Also write `<out_dir>/<label>.zip`.
+#' @param export_opts Name of the saved FASTA-header configuration to use.
+#' @param fasta_header,fasta_header_marker Optional header templates
+#'   (`{token}` glue syntax) overriding the saved configuration.
 #' @return (invisibly) the group output directory.
 #' @export
 export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
                           out_dir = file.path(path, "out"),
                           label = NULL, markers = TRUE, report = TRUE, template = NULL,
-                          run_table2asn = FALSE, zip = TRUE) {
+                          run_table2asn = FALSE, zip = TRUE,
+                          export_opts = "default", fasta_header = NULL,
+                          fasta_header_marker = NULL) {
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(path, ".sqlite"))
   on.exit(DBI::dbDisconnect(con), add = TRUE)
 
@@ -520,9 +542,48 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
     sprintf("%s_p%s_s%s", units$ID, units$path, units$scaffold), units$ID)
   label <- label %||% group %||% "export"
 
+  # Headers are resolved and checked before anything is written: a bad template
+  # or a header that repeats across records is a rejected submission, not a
+  # cosmetic problem, and a half-written bundle would hide it.
+  opts <- get_export_opts(con, export_opts)
+  tpl_record <- fasta_header %||% opts$fasta_header
+  tpl_marker <- fasta_header_marker %||% opts$fasta_header_marker
+  hdata <- export_header_data(con, units)
+  marker_data <- function(i, element) {
+    r <- hdata[i, , drop = FALSE]
+    r$element <- element
+    r$product <- if (identical(element, "ITS")) {
+      paste("internal transcribed spacer 1, 5.8S ribosomal RNA gene,",
+        "and internal transcribed spacer 2")
+    } else {
+      rrna_element_product(element)
+    }
+    r
+  }
+  first_el <- vapply(strsplit(hdata$elements %||% "", "-"),
+    function(x) if (length(x)) x[1] else "18S", character(1))
+  for (chk in list(
+    list(what = "FASTA header", res = validate_fasta_header(tpl_record, hdata)),
+    list(what = "marker FASTA header",
+      res = validate_fasta_header(tpl_marker,
+        do.call(rbind, lapply(seq_len(nrow(hdata)), function(i) marker_data(i, first_el[i]))))))) {
+    if (identical(chk$res$level, "error")) {
+      stop("The ", chk$what, " template cannot be used: ", chk$res$message, call. = FALSE)
+    }
+  }
+  headers <- render_fasta_headers(tpl_record, hdata)
+  dup <- unique(headers[duplicated(headers)])
+  if (length(dup) > 0) {
+    stop("The FASTA header template gives ", length(dup),
+      " duplicated header(s); add {seqid} so every record is named once: ",
+      paste(dup, collapse = "; "), call. = FALSE)
+  }
+
   gdir <- file.path(out_dir, "export", label)
   unlink(gdir, recursive = TRUE)
   dir.create(gdir, recursive = TRUE, showWarnings = FALSE)
+  sdir <- file.path(gdir, "samples")
+  dir.create(sdir, showWarnings = FALSE)
   if (markers) dir.create(file.path(gdir, "markers"), showWarnings = FALSE)
 
   group_fsa <- character(0)
@@ -535,23 +596,13 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
       "SELECT asm.sequence AS seq, s.* FROM assemblies asm JOIN samples s ON asm.ID = s.ID
        WHERE asm.ID = ? AND asm.path = ? AND asm.scaffold = ?", params = list(id, upath, uscaf))
     seq <- row$seq[1]
-    taxon <- row$Taxon[1]
-    # an empty Taxon must not become the literal "[organism=NA]"; the unit is
-    # still exported and flagged (missing_organism) in the summary CSV
-    org <- if (length(taxon) == 1 && !is.na(taxon) && nzchar(trimws(taxon))) {
-      sprintf(" [organism=%s]", taxon)
-    } else {
-      ""
-    }
-    defline <- paste(c(
-      sprintf(">%s%s [moltype=genomic DNA]", seqid, org),
-      source_modifiers(row)), collapse = " ")
-    writeLines(c(defline, seq), file.path(gdir, paste0(seqid, ".fsa")))
+    defline <- paste(c(paste0(">", headers[ui]), source_modifiers(row)), collapse = " ")
+    writeLines(c(defline, seq), file.path(sdir, paste0(seqid, ".fasta")))
     is_partial <- identical(DBI::dbGetQuery(con,
       "SELECT partial FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?",
       params = list(id, upath, uscaf))$partial[1], "yes")
     tbl <- feature_table_text_con(con, id, upath, uscaf, seqid = seqid, force_partial = is_partial)
-    writeLines(tbl, file.path(gdir, paste0(seqid, ".tbl")))
+    writeLines(tbl, file.path(sdir, paste0(seqid, ".tbl")))
     group_fsa <- c(group_fsa, defline, seq)
     group_tbl <- c(group_tbl, tbl)
 
@@ -565,7 +616,8 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
         el_clean <- gsub("[^A-Za-z0-9]", "", el)
         el_dir <- file.path(gdir, "markers", el_clean)
         dir.create(el_dir, recursive = TRUE, showWarnings = FALSE)
-        rec <- c(sprintf(">%s_%s%s", seqid, el, org), substr(seq, s, e))
+        rec <- c(paste0(">", render_fasta_headers(tpl_marker, marker_data(ui, el))),
+          substr(seq, s, e))
         writeLines(rec, file.path(el_dir, paste0(seqid, "_", el_clean, ".fasta")))
         marker_pool[[el]] <<- c(marker_pool[[el]], rec)
       }
@@ -596,10 +648,12 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
       call. = FALSE)
   }
   utils::write.csv(smry, file.path(gdir, paste0(label, "_summary.csv")), row.names = FALSE)
-  writeLines(submission_readme(label), file.path(gdir, "README_SUBMISSION.txt"))
+  writeLines(submission_readme(label), file.path(gdir, "README.txt"))
   # HTML report
   if (isTRUE(report)) {
-    tryCatch(export_report_html(con, units, file.path(gdir, paste0(label, "_report.html")), label, smry),
+    tryCatch(export_report(con, units,
+      out_file = file.path(gdir, paste0(label, "_report.html")),
+      label = label, alignments = TRUE),
       error = function(e) message("Report generation skipped: ", conditionMessage(e)))
   }
   # submission template (.sbt): copy in so table2asn (-t) picks it up
@@ -611,17 +665,21 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
     }
   }
 
-  # optional table2asn
+  # optional table2asn, per file: its -indir mode only picks up .fsa
   if (isTRUE(run_table2asn) && nzchar(unname(Sys.which("table2asn")))) {
     sbt <- Sys.glob(file.path(gdir, "*.sbt"))
-    args <- c("-indir", shQuote(gdir), "-a", "s")
-    if (length(sbt) > 0) args <- c(args, "-t", shQuote(sbt[1]))
-    system2("table2asn", args, stdout = TRUE, stderr = TRUE)
+    for (f in Sys.glob(file.path(sdir, "*.fasta"))) {
+      args <- c("-i", shQuote(f), "-a", "s")
+      if (length(sbt) > 0) args <- c(args, "-t", shQuote(sbt[1]))
+      tryCatch(system2("table2asn", args, stdout = TRUE, stderr = TRUE),
+        error = function(e) message("table2asn skipped for ", basename(f), ": ",
+          conditionMessage(e)))
+    }
   }
 
   message("Exported ", nrow(units), " unit(s) to ", gdir,
     "\n  GenBank Portal takes FASTA only: upload ", label,
-    ".fasta; NCBI auto-annotates the rRNA-ITS region (see README_SUBMISSION.txt).")
+    ".fasta; NCBI auto-annotates the rRNA-ITS region (see README.txt).")
   if (isTRUE(zip)) {
     zf <- paste0(gdir, ".zip")
     old <- setwd(dirname(gdir))
