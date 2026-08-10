@@ -533,15 +533,16 @@ migrate_db <- function(con) {
   # a v19 database predating the named-preset fix has the table but not the column
   add_col("reference", "preset_name", "TEXT")
 
-  # user_version is a header field, not table data, so it is set after the
-  # transaction commits rather than inside it.
+  # Stamped inside the transaction: PRAGMA user_version is transactional, and a
+  # crash between COMMIT and the stamp would leave a migrated schema marked at the
+  # old version, so the next run would re-apply every step (v9 drops blast_hits).
+  if (ver < RIBOPILOT_SCHEMA_VERSION) {
+    DBI::dbExecute(con, sprintf("PRAGMA user_version = %d", RIBOPILOT_SCHEMA_VERSION))
+  }
   if (owns_txn) {
     done <- TRUE
     DBI::dbExecute(con, "COMMIT")
     on.exit()
-  }
-  if (ver < RIBOPILOT_SCHEMA_VERSION) {
-    DBI::dbExecute(con, sprintf("PRAGMA user_version = %d", RIBOPILOT_SCHEMA_VERSION))
   }
   invisible(RIBOPILOT_SCHEMA_VERSION)
 }

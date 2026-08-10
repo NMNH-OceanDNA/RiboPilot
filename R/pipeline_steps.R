@@ -131,6 +131,11 @@ filesystem_type <- function(path) {
   if (tolower(fs[1]) %in% NETWORK_FS) "network" else "local"
 }
 
+#' Cache of filesystem type by directory, so the app does not fork `stat` on
+#' every query (it opens a fresh connection per query).
+#' @noRd
+.fs_cache <- new.env(parent = emptyenv())
+
 #' Journal mode for a project DB
 #'
 #' WAL coordinates readers/writers through an mmap'd `-shm` file and requires
@@ -141,7 +146,13 @@ filesystem_type <- function(path) {
 sqlite_journal_mode <- function(db) {
   ov <- tolower(trimws(Sys.getenv("RIBOPILOT_SQLITE_JOURNAL", "")))
   if (nzchar(ov)) return(ov)
-  if (identical(filesystem_type(dirname(db)), "network")) "delete" else "wal"
+  dir <- dirname(db)
+  fs <- .fs_cache[[dir]]
+  if (is.null(fs)) {
+    fs <- filesystem_type(dir)
+    assign(dir, fs, envir = .fs_cache)
+  }
+  if (identical(fs, "network")) "delete" else "wal"
 }
 
 #' Open a project DB connection with a busy timeout and a filesystem-appropriate

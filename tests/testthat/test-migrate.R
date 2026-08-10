@@ -2,6 +2,19 @@
 # v10 = median per-position depth.
 # Migrations must be additive and idempotent, and must not disturb existing rows.
 
+test_that("the schema version stamp is transactional", {
+  # migrate_db() stamps user_version inside its transaction. That is only safe
+  # because the PRAGMA rolls back with the transaction rather than being written
+  # straight to the file header.
+  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "PRAGMA user_version = 7")
+  DBI::dbExecute(con, "BEGIN IMMEDIATE")
+  DBI::dbExecute(con, "PRAGMA user_version = 99")
+  DBI::dbExecute(con, "ROLLBACK")
+  expect_equal(DBI::dbGetQuery(con, "PRAGMA user_version")[[1]], 7)
+})
+
 # A minimal v8-shaped project DB, as a project created by the previous release
 # would look.
 mk_v8_db <- function() {

@@ -67,9 +67,13 @@ app_project <- function() {
 }
 
 #' Open a connection to the project database
+#'
+#' Goes through [open_project_db()] so app connections get the same busy timeout
+#' and journal mode as the pipeline's: the app reads and writes the same file
+#' while Nextflow tasks are running, and a bare dbConnect has a busy timeout of 0.
 #' @noRd
 app_con <- function() {
-  DBI::dbConnect(RSQLite::SQLite(), file.path(app_project(), ".sqlite"))
+  open_project_db(file.path(app_project(), ".sqlite"))
 }
 
 #' Query the project database and disconnect
