@@ -41,7 +41,7 @@ The three ribosomal genes (18S, 5.8S, 28S) are highly conserved and act as ancho
 
 Starting from raw sequencing reads, RiboPilot:
 
-1. **Confirms each sample's organism.** RiboPilot resolves the `Taxon` label you provide to an NCBI taxon (taxid + full lineage) using a local copy of the NCBI taxonomy, then lets you **verify or correct it in the app** before anything else runs. This is a dedicated first stage (the **Taxonomy** tab): samples must be reviewed and locked here before they move on to assembly, so the taxonomy that guides scoring and curation is one you have signed off on.
+1. **Confirms each sample's organism.** RiboPilot resolves the `Taxon` label you provide to an NCBI taxon (taxid + full lineage) using a local copy of the NCBI taxonomy, then lets you **verify or correct it in the app** before anything else runs. This is a dedicated first stage (the **Taxonomy** tab): samples must be reviewed and locked here before they move on to assembly, so the taxonomy that guides scoring and curation is one you have signed off on. The taxonomy snapshot (~72 MB) downloads once per project and is indexed the first time it is used, which takes about a minute and needs no software beyond the R package.
 2. **Assembles** the ribosomal repeat for each sample, cleaning up the reads and piecing the region back together, then picking the best reconstruction automatically.
 3. **Annotates** it by locating the boundaries of all five features (18S, ITS1, 5.8S, ITS2, 28S).
 4. **Checks (curates)** each result against a reference and flags anything that looks off, such as a missing gene, an unusual length, or a possible contaminant, so you can focus your attention where it is needed.
@@ -88,6 +88,14 @@ RiboPilot::new_test_project(path = "~/ribopilot_test", executor = "conda")
 ```
 
 From there, the [Get started guide](https://dmacguigan.github.io/RiboPilot/articles/RiboPilot.html) walks you through assembling the samples, reviewing and cleaning them up in the app, and exporting the results.
+
+## On the NMNH Hydra cluster
+
+RStudio Server sessions on Hydra start without the grid engine or Java on `PATH`, so Nextflow cannot find `qsub` and every job fails at submission. Run this once per session, before launching the app:
+
+``` r
+RiboPilot::hydra_setup()
+```
 
 # Getting help
 

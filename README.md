@@ -151,6 +151,16 @@ guide](https://dmacguigan.github.io/RiboPilot/articles/RiboPilot.html)
 walks you through assembling the samples, reviewing and cleaning them up
 in the app, and exporting the results.
 
+## On the NMNH Hydra cluster
+
+RStudio Server sessions on Hydra start without the grid engine or Java on
+`PATH`, so Nextflow cannot find `qsub` and every job fails at submission.
+Run this once per session, before launching the app:
+
+``` r
+RiboPilot::hydra_setup()
+```
+
 # Getting help
 
   - Full documentation: <https://dmacguigan.github.io/RiboPilot/>

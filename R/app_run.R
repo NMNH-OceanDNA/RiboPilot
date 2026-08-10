@@ -117,6 +117,7 @@ run_app <- function(project = getwd(), onStart = NULL, options = list(),
   # upgrade older project DBs to the current schema before the app opens
   migrate_project(project)
   check_nextflow_version("RiboPilot app")
+  warn_if_hydra_unconfigured()
   if (is.null(launch.browser)) launch.browser <- interactive()
   # Headless = this R session is on a remote host (RStudio Server on a login
   # node, or a tunneled session). The run modal then offers a cluster job script
