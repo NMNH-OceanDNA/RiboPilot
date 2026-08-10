@@ -415,3 +415,17 @@ test_that("a sample with no seeds database goes to the fallback, not to file('')
   expect_match(txt, "go: it[7] == 'getorganelle' && it[5] && it[6]", fixed = TRUE)
   expect_match(txt, "fb: true", fixed = TRUE)
 })
+
+test_that("the Nextflow version probe runs once per session", {
+  # a cold launcher downloads its dependencies before answering, so attaching
+  # the package must not pay for the probe more than once
+  rm(list = ls(RiboPilot:::.nf_probe_cache), envir = RiboPilot:::.nf_probe_cache)
+  on.exit(rm(list = ls(RiboPilot:::.nf_probe_cache), envir = RiboPilot:::.nf_probe_cache))
+  calls <- 0L
+  local_mocked_bindings(
+    nf_installed_version = function(...) { calls <<- calls + 1L; NA_character_ },
+    .package = "RiboPilot")
+  expect_true(is.na(RiboPilot:::nf_version_session()))
+  expect_true(is.na(RiboPilot:::nf_version_session()))
+  expect_equal(calls, 1L)
+})

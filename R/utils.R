@@ -14,6 +14,21 @@
 #' @noRd
 `%nin%` <- Negate(`%in%`)
 
+#' Container engine a Nextflow config actually turns on
+#'
+#' A config can declare both a `docker {}` and a `singularity {}` block with only
+#' one `enabled = true`, so the block's presence says nothing; the flag does.
+#' (`container_bind_opts()` in reference_nf.R applies the same test inline.)
+#' @param cfg_lines Lines of a Nextflow config.
+#' @return "docker", "singularity", or `NA_character_`.
+#' @noRd
+config_container_engine <- function(cfg_lines) {
+  txt <- paste(cfg_lines, collapse = "\n")
+  if (grepl("docker\\s*\\{[^}]*enabled\\s*=\\s*true", txt)) return("docker")
+  if (grepl("(singularity|apptainer)\\s*\\{[^}]*enabled\\s*=\\s*true", txt)) return("singularity")
+  NA_character_
+}
+
 #' Classify a URL as "ok", "missing" (definitively absent), or "unknown"
 #'
 #' "unknown" covers the offline / transient-failure case, which must not be
@@ -35,7 +50,9 @@ url_status <- function(u) {
     FALSE
   })
   if (isTRUE(ok)) return("ok")
-  if (!is.null(msg) && grepl("404|not found|403|forbidden", msg, ignore.case = TRUE)) {
+  # only a reported HTTP status counts: a proxy or DNS message mentioning "404"
+  # is a transient failure, not an absent file
+  if (!is.null(msg) && grepl("HTTP status was '40[34]\\b", msg)) {
     return("missing")
   }
   "unknown"

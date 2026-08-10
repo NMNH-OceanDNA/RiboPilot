@@ -124,13 +124,7 @@ new_project <- function(
   # seed/label reference DBs so Nextflow's staged symlinks resolve inside the
   # container (the project + raw dirs are already mounted).
   extra_mounts <- ""
-  engine <- if (any(grepl("singularity\\s*\\{|apptainer\\s*\\{", cfg_lines))) {
-    "singularity"
-  } else if (any(grepl("docker\\s*\\{", cfg_lines))) {
-    "docker"
-  } else {
-    NA_character_
-  }
+  engine <- config_container_engine(cfg_lines)
   if (!is.na(engine)) {
     local_ref_dir <- function(p) {
       if (!is.null(p) && length(p) == 1 && nzchar(p) &&

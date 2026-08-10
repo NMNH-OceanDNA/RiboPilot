@@ -1,5 +1,21 @@
+#' Session cache for the Nextflow version probe
+#' @noRd
+.nf_probe_cache <- new.env(parent = emptyenv())
+
+#' Installed Nextflow version, probed at most once per R session
+#'
+#' A cold Nextflow launcher downloads its dependencies before printing a
+#' banner, so probing on every attach can block for tens of seconds.
+#' @noRd
+nf_version_session <- function() {
+  if (!exists("version", envir = .nf_probe_cache, inherits = FALSE)) {
+    assign("version", nf_installed_version(), envir = .nf_probe_cache)
+  }
+  get("version", envir = .nf_probe_cache, inherits = FALSE)
+}
+
 .onAttach <- function(libname, pkgname) {
-  version <- nf_installed_version()
+  version <- nf_version_session()
   status <- nf_version_status(version)
   # Refuse to load on an unsupported-old Nextflow, but never during package
   # build/check/dev-load (that final load-test would fail on CI/install).

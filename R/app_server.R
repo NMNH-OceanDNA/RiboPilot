@@ -653,7 +653,8 @@ app_server <- function(input, output, session) {
   # Headless run modal: save / submit the cluster job script (instead of running
   # Nextflow on the login node).
   write_submit_script <- function() {
-    script <- input$submit_script_text %||%
+    typed <- input$submit_script_text %||% ""
+    script <- if (nzchar(trimws(typed))) typed else
       build_submit_script(app_project(), resume = isTRUE(input$nf_resume %||% TRUE))
     f <- file.path(app_project(), "submit_ribopilot.sh")
     writeLines(script, f)

@@ -15,7 +15,7 @@ used.}
 }
 \value{
 data.frame, one row per unique Taxon: `match_type` in
-  "exact"/"fuzzy_species"/"fuzzy_genus"/"unresolved", plus proposed `taxid`,
+  "exact"/"ambiguous"/"fuzzy_species"/"fuzzy_genus"/"unresolved", plus `taxid`,
   `sci_name`, `rank`, `lineage`, `alternatives`.
 }
 \description{

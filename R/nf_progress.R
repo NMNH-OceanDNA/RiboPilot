@@ -5,6 +5,11 @@
 
 nf_proc_rx <- "^\\[(?:[0-9a-f]{2}/[0-9a-f]+|-\\s*)\\]\\s+(\\S+).*$"
 
+#' Most footer lines kept; only the tail is ever rendered, and a long run would
+#' otherwise accumulate every warning line for its whole life.
+#' @noRd
+NF_FOOTER_MAX <- 200L
+
 #' An empty Nextflow progress state
 #' @noRd
 nf_progress_empty <- function() {
@@ -26,7 +31,7 @@ nf_progress_parse <- function(state, lines) {
     } else if (length(state$proc) == 0 && !nzchar(state$executor)) {
       state$header <- unique(c(state$header, ln))
     } else {
-      state$footer <- c(state$footer, ln)
+      state$footer <- utils::tail(c(state$footer, ln), NF_FOOTER_MAX)
     }
   }
   state

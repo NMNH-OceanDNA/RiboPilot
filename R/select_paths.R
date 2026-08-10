@@ -138,7 +138,7 @@ score_assembly <- function(path_fastas,
   cand$blast_lineage_taxids <- NA_character_
   if (with_staxids && have_taxdump(taxdump_dir) && any(!is.na(cand$hit_staxid))) {
     info <- tk_taxid_info(as.integer(stats::na.omit(cand$hit_staxid)),
-      if (file.exists(file.path(taxdump_dir, "names.dmp"))) taxdump_dir else extract_taxdump(taxdump_dir))
+      taxdump_session(taxdump_dir))
     i <- match(cand$hit_staxid, info$taxid)
     cand$blast_lineage <- info$lineage[i]
     cand$blast_lineage_taxids <- info$lineage_taxids[i]

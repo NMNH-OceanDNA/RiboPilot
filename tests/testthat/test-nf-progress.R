@@ -92,3 +92,17 @@ test_that("the footer keeps only the most recent lines", {
   expect_true(grepl("note 11\n", txt, fixed = TRUE))
   expect_true(grepl("note 50", txt, fixed = TRUE))
 })
+
+test_that("the footer stops growing once it is past the cap", {
+  n <- RiboPilot:::NF_FOOTER_MAX
+  s <- RiboPilot:::nf_progress_parse(RiboPilot:::nf_progress_empty(),
+    c("[a1/b2c3] build_ref_db (x) | 1 of 1", paste0("note ", seq_len(n + 500))))
+  expect_equal(length(s$footer), n)
+  expect_equal(utils::tail(s$footer, 1), paste0("note ", n + 500))
+  # a long run appends line by line, not in one block
+  s2 <- RiboPilot:::nf_progress_parse(RiboPilot:::nf_progress_empty(),
+    "[a1/b2c3] build_ref_db (x) | 1 of 1")
+  for (i in seq_len(n + 10)) s2 <- RiboPilot:::nf_progress_parse(s2, paste0("warn ", i))
+  expect_equal(length(s2$footer), n)
+  expect_true(grepl(paste0("warn ", n + 10), RiboPilot:::nf_progress_text(s2), fixed = TRUE))
+})

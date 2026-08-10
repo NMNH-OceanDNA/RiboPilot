@@ -67,15 +67,12 @@ ref_bind_option <- function(cfg_lines, ref_dir) {
 container_bind_opts <- function(cfg_lines, dirs) {
   dirs <- unique(path.expand(dirs[!is.na(dirs) & nzchar(dirs)]))
   if (length(dirs) == 0) return(character(0))
-  txt <- paste(cfg_lines, collapse = "\n")
-  if (grepl("docker\\s*\\{[^}]*enabled\\s*=\\s*true", txt)) {
-    return(c("-process.containerOptions",
-      paste(paste0("-v ", dirs, ":", dirs), collapse = " ")))
-  }
-  if (grepl("(singularity|apptainer)\\s*\\{[^}]*enabled\\s*=\\s*true", txt)) {
-    return(c("-process.containerOptions", paste(paste0("--bind ", dirs), collapse = " ")))
-  }
-  character(0)
+  switch(config_container_engine(cfg_lines) %|NA|% "",
+    docker = c("-process.containerOptions",
+      paste(paste0("-v ", dirs, ":", dirs), collapse = " ")),
+    singularity = c("-process.containerOptions",
+      paste(paste0("--bind ", dirs), collapse = " ")),
+    character(0))
 }
 
 #' Directories the project config's own runOptions already bind-mount

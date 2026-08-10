@@ -151,7 +151,8 @@ SCAFFOLD_COL_HELP <- list(
   odd_one_out = paste("Marks a scaffold whose best GenBank match disagrees with the rest of the",
     "sample's scaffolds, which is the usual signature of contamination."),
   screen_accession = "GenBank accession of the best match. Click it to open the record at NCBI.",
-  screen_pident = "How much of the scaffold matched the best GenBank record, as a percentage.",
+  screen_pident = paste("How closely the matched stretch resembles the best GenBank record,",
+    "as a percentage of identical bases."),
   triage_reason = "Why triage decided the way it did, or what left it undecided."
 )
 
