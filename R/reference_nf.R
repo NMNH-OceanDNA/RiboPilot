@@ -55,15 +55,90 @@ merge_counts <- function(ref_dir, counts) {
 #' who moves the folder needs no project edits.
 #' @noRd
 ref_bind_option <- function(cfg_lines, ref_dir) {
+  container_bind_opts(cfg_lines, ref_dir)
+}
+
+#' Bind options mounting each directory into the container the config uses
+#'
+#' @param cfg_lines Lines of the project `.config`.
+#' @param dirs Directories the tasks must be able to read.
+#' @return character(0), or c("-process.containerOptions", "<value>").
+#' @noRd
+container_bind_opts <- function(cfg_lines, dirs) {
+  dirs <- unique(path.expand(dirs[!is.na(dirs) & nzchar(dirs)]))
+  if (length(dirs) == 0) return(character(0))
   txt <- paste(cfg_lines, collapse = "\n")
-  d <- path.expand(ref_dir)
   if (grepl("docker\\s*\\{[^}]*enabled\\s*=\\s*true", txt)) {
-    return(c("-process.containerOptions", paste0("-v ", d, ":", d)))
+    return(c("-process.containerOptions",
+      paste(paste0("-v ", dirs, ":", dirs), collapse = " ")))
   }
   if (grepl("(singularity|apptainer)\\s*\\{[^}]*enabled\\s*=\\s*true", txt)) {
-    return(c("-process.containerOptions", paste0("--bind ", d)))
+    return(c("-process.containerOptions", paste(paste0("--bind ", dirs), collapse = " ")))
   }
   character(0)
+}
+
+#' Directories the project config's own runOptions already bind-mount
+#'
+#' Mounting them again would be harmless but noisy, and hides what this run
+#' actually had to add.
+#' @noRd
+config_mounted_dirs <- function(cfg_lines) {
+  txt <- paste(cfg_lines, collapse = "\n")
+  # perl = TRUE throughout: the default engine treats \\s inside a bracket
+  # expression as a literal backslash and 's', which silently truncates paths
+  ro <- regmatches(txt, gregexpr('runOptions\\s*=\\s*"[^"]*"', txt, perl = TRUE))[[1]]
+  if (length(ro) == 0) return(character(0))
+  v <- unlist(regmatches(ro, gregexpr("-v\\s+[^\\s:]+", ro, perl = TRUE)))
+  b <- unlist(regmatches(ro, gregexpr("(?:-B|--bind)\\s+[^\\s,]+", ro, perl = TRUE)))
+  d <- c(sub("^-v\\s+", "", v, perl = TRUE), sub("^(?:-B|--bind)\\s+", "", b, perl = TRUE))
+  d <- d[!grepl("${", d, fixed = TRUE)]   # ${params.projectDir} is passed separately
+  unique(path.expand(d))
+}
+
+#' Directories holding the reference databases a project's presets point at
+#'
+#' The Reference tab writes absolute paths that can live anywhere, and the
+#' project config only mounts what was known at project creation, so the
+#' pipeline has to mount them itself or the assembler cannot read its seeds.
+#'
+#' @param project Project directory.
+#' @param mounted Directories the config already mounts; anything inside one of
+#'   them is dropped.
+#' @return character vector of directories, possibly empty.
+#' @noRd
+reference_mount_dirs <- function(project, mounted = character(0)) {
+  con <- tryCatch(DBI::dbConnect(RSQLite::SQLite(), file.path(project, ".sqlite")),
+    error = function(e) NULL)
+  if (is.null(con)) return(character(0))
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  dbs <- tryCatch(DBI::dbGetQuery(con,
+    "SELECT seeds_db, labels_db FROM assemble_opts"), error = function(e) NULL)
+  paths <- if (is.null(dbs)) character(0) else c(dbs$seeds_db, dbs$labels_db)
+  paths <- paths[!is.na(paths) & nzchar(paths)]
+  # only what a preset actually names: the configured reference folder may hold
+  # databases this project never uses, and mounting it would say otherwise
+  dirs <- unique(dirname(path.expand(paths)))
+  dirs <- dirs[dir.exists(dirs)]
+  dirs <- drop_covered(dirs, path.expand(mounted[nzchar(mounted %||% "")]))
+  # a folder and its own seeds/ and labels/ subfolders would be three mounts of
+  # the same tree; the parent covers them
+  unname(drop_covered(dirs, dirs))
+}
+
+#' Drop directories already covered by one of `by` (a parent, or the same path)
+#'
+#' A directory is never treated as covering itself, so passing the same vector
+#' as both arguments collapses children into their parent.
+#' @noRd
+drop_covered <- function(dirs, by) {
+  if (length(dirs) == 0 || length(by) == 0) return(dirs)
+  inside <- function(d, m) !identical(d, m) && startsWith(paste0(d, "/"), paste0(m, "/"))
+  keep <- vapply(dirs, function(d) {
+    !any(vapply(by, function(m) identical(d, m) && !identical(dirs, by) || inside(d, m),
+      logical(1)))
+  }, logical(1))
+  unname(dirs[keep])
 }
 
 #' Nextflow arguments for the reference workflow

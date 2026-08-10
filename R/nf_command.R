@@ -34,7 +34,12 @@ nf_command <- function(path, resume = TRUE,
     "--minDepth", min_depth,
     "--ribopilot_src", src,
     "--taxdump_dir", taxdump,
-    if (nzchar(api_key)) c("--ncbi_api_key", api_key))
+    if (nzchar(api_key)) c("--ncbi_api_key", api_key),
+    # the config only mounts what project creation knew about; a database the
+    # Reference tab wired later lives wherever the user put it, and the
+    # assembler cannot read a staged symlink whose target is unmounted
+    container_bind_opts(cfg_lines,
+      reference_mount_dirs(path, c(path, raw_dir, config_mounted_dirs(cfg_lines)))))
 }
 
 #' Where the pipeline's R processes should load RiboPilot from

@@ -219,3 +219,113 @@ test_that("query_annotate_units does not require a locked assembly", {
   add_unit(con, "UNREVIEWED", asm_sw = 2, asm_lock = 0)
   expect_equal(DBI::dbGetQuery(con, annotate_units_sql())$ID, "UNREVIEWED")
 })
+
+# ---- reference databases are mounted into the container ----
+
+mk_mount_project <- function(dir, seeds, labels, engine = "docker") {
+  writeLines(c(RiboPilot:::container_engine_block(engine),
+    "params {", "  rawDir = '/data/raw'", "}"), file.path(dir, ".config"))
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "CREATE TABLE assemble_opts (assemble_opts TEXT, seeds_db TEXT, labels_db TEXT)")
+  DBI::dbExecute(con, "INSERT INTO assemble_opts VALUES ('actinopterygii', ?, ?)",
+    params = list(seeds, labels))
+  DBI::dbDisconnect(con)
+  dir
+}
+
+test_that("a database outside the project is bind-mounted for the pipeline run", {
+  skip_if_not_installed("withr")
+  proj <- withr::local_tempdir(); refs <- withr::local_tempdir()
+  dir.create(file.path(refs, "seeds")); dir.create(file.path(refs, "labels"))
+  s <- file.path(refs, "seeds", "x_seeds.fasta"); l <- file.path(refs, "labels", "x_labels.fasta")
+  writeLines(">18S", s); writeLines(">18S", l)
+  mk_mount_project(proj, s, l)
+  a <- RiboPilot:::nf_command(proj, resume = FALSE)
+  i <- which(a == "-process.containerOptions")
+  expect_length(i, 1L)
+  expect_true(grepl(file.path(refs, "seeds"), a[i + 1], fixed = TRUE))
+  expect_true(grepl(file.path(refs, "labels"), a[i + 1], fixed = TRUE))
+})
+
+test_that("a database inside the project needs no extra mount", {
+  skip_if_not_installed("withr")
+  proj <- withr::local_tempdir()
+  dir.create(file.path(proj, "refs"))
+  s <- file.path(proj, "refs", "x_seeds.fasta"); l <- file.path(proj, "refs", "x_labels.fasta")
+  writeLines(">18S", s); writeLines(">18S", l)
+  mk_mount_project(proj, s, l)
+  a <- RiboPilot:::nf_command(proj, resume = FALSE)
+  expect_false(any(grepl(normalizePath(proj), a[which(a == "-process.containerOptions") + 1] %||% "",
+    fixed = TRUE)))
+})
+
+test_that("a config with no container engine gets no mount option", {
+  skip_if_not_installed("withr")
+  proj <- withr::local_tempdir(); refs <- withr::local_tempdir()
+  s <- file.path(refs, "x_seeds.fasta"); l <- file.path(refs, "x_labels.fasta")
+  writeLines(">18S", s); writeLines(">18S", l)
+  writeLines(c("process { executor = 'local' }", "params { rawDir = '/data/raw' }"),
+    file.path(proj, ".config"))
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(proj, ".sqlite"))
+  DBI::dbExecute(con, "CREATE TABLE assemble_opts (assemble_opts TEXT, seeds_db TEXT, labels_db TEXT)")
+  DBI::dbExecute(con, "INSERT INTO assemble_opts VALUES ('a', ?, ?)", params = list(s, l))
+  DBI::dbDisconnect(con)
+  expect_false("-process.containerOptions" %in% RiboPilot:::nf_command(proj, resume = FALSE))
+})
+
+test_that("singularity gets --bind, not -v", {
+  skip_if_not_installed("withr")
+  proj <- withr::local_tempdir(); refs <- withr::local_tempdir()
+  s <- file.path(refs, "x_seeds.fasta"); l <- file.path(refs, "x_labels.fasta")
+  writeLines(">18S", s); writeLines(">18S", l)
+  mk_mount_project(proj, s, l, engine = "singularity")
+  a <- RiboPilot:::nf_command(proj, resume = FALSE)
+  v <- a[which(a == "-process.containerOptions") + 1]
+  expect_true(grepl("--bind", v, fixed = TRUE))
+  expect_false(grepl("-v ", v, fixed = TRUE))
+})
+
+test_that("directories the config already mounts are not mounted twice", {
+  skip_if_not_installed("withr")
+  proj <- withr::local_tempdir(); refs <- withr::local_tempdir()
+  s <- file.path(refs, "x_seeds.fasta"); l <- file.path(refs, "x_labels.fasta")
+  writeLines(">18S", s); writeLines(">18S", l)
+  # the mount the config carries names refs explicitly, as new_project() writes it
+  writeLines(c("docker {", "  enabled = true",
+    sprintf('  runOptions = "-v ${params.projectDir}:${params.projectDir} -v %s:%s"', refs, refs),
+    "}", "params { rawDir = '/data/raw' }"), file.path(proj, ".config"))
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(proj, ".sqlite"))
+  DBI::dbExecute(con, "CREATE TABLE assemble_opts (assemble_opts TEXT, seeds_db TEXT, labels_db TEXT)")
+  DBI::dbExecute(con, "INSERT INTO assemble_opts VALUES ('a', ?, ?)", params = list(s, l))
+  DBI::dbDisconnect(con)
+  expect_false("-process.containerOptions" %in% RiboPilot:::nf_command(proj, resume = FALSE))
+})
+
+test_that("a config mount is parsed whole, not truncated at a letter s", {
+  # the default regex engine reads [^\\s:] as "not backslash, s or colon", which
+  # silently cut /home/u/Documents/... down to /home/u/Document
+  cfg <- c("docker {", "  enabled = true",
+    '  runOptions = "-v /home/u/Documents/refs:/home/u/Documents/refs"', "}")
+  expect_equal(RiboPilot:::config_mounted_dirs(cfg), "/home/u/Documents/refs")
+})
+
+test_that("seed and label subfolders are each mounted, and neither is dropped", {
+  skip_if_not_installed("withr")
+  proj <- withr::local_tempdir(); refs <- withr::local_tempdir()
+  dir.create(file.path(refs, "seeds")); dir.create(file.path(refs, "labels"))
+  s <- file.path(refs, "seeds", "x_seeds.fasta"); l <- file.path(refs, "labels", "x_labels.fasta")
+  writeLines(">18S", s); writeLines(">18S", l)
+  mk_mount_project(proj, s, l)
+  v <- RiboPilot:::nf_command(proj, resume = FALSE)
+  v <- v[which(v == "-process.containerOptions") + 1]
+  expect_true(grepl(file.path(refs, "seeds"), v, fixed = TRUE))
+  expect_true(grepl(file.path(refs, "labels"), v, fixed = TRUE))
+  expect_equal(lengths(regmatches(v, gregexpr("-v ", v, fixed = TRUE))), 2L)
+})
+
+test_that("a folder collapses its own subfolders when both are named", {
+  skip_if_not_installed("withr")
+  d <- withr::local_tempdir()
+  dir.create(file.path(d, "seeds"))
+  expect_equal(RiboPilot:::drop_covered(c(d, file.path(d, "seeds")), c(d, file.path(d, "seeds"))), d)
+})
