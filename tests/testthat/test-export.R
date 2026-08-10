@@ -97,6 +97,35 @@ test_that("submission_risks flags chimeric, in-span gaps, and misassembly", {
   expect_true(RiboPilot:::submission_risks(con, "BAD")$misassembly)
 })
 
+test_that("feature_map_svg_text draws one arrow per element, in order, in palette colours", {
+  d <- data.frame(
+    element = c("18S", "ITS1", "5.8S", "ITS2", "28S"),
+    start = c(1L, 201L, 241L, 261L, 301L),
+    stop = c(200L, 240L, 260L, 300L, 400L), stringsAsFactors = FALSE)
+  svg <- RiboPilot:::feature_map_svg_text(d)
+  expect_match(svg, "^<svg xmlns='http://www.w3.org/2000/svg'")
+  expect_match(svg, "</svg>$")
+  expect_equal(lengths(regmatches(svg, gregexpr("<polygon", svg, fixed = TRUE))), 5L)
+  # labels in 5'->3' order
+  labs <- regmatches(svg, gregexpr("(?<=font-size='11' fill='#000000'>)[^<]+", svg, perl = TRUE))[[1]]
+  expect_equal(labs, d$element)
+  # element fills come from the shared palette
+  fills <- regmatches(svg, gregexpr("(?<=fill=')#[0-9A-F]{6}(?=' stroke='#333333')", svg, perl = TRUE))[[1]]
+  expect_equal(fills, unname(RiboPilot:::RRNA_ELEMENT_COLORS[d$element]))
+  # left-to-right layout matches the coordinate order
+  x <- as.numeric(regmatches(svg, gregexpr("(?<=<polygon points=')[0-9.]+", svg, perl = TRUE))[[1]])
+  expect_false(is.unsorted(x))
+  # bp axis labels
+  expect_match(svg, ">400</text>")
+})
+
+test_that("feature_map_svg falls back to a note when a unit has no annotations", {
+  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT, start INT, stop INT)")
+  expect_equal(RiboPilot:::feature_map_svg(con, "S1"), "<em>no annotations</em>")
+})
+
 test_that("is_nuclear_rrna_title splits nuclear rDNA from organellar/other", {
   f <- RiboPilot:::is_nuclear_rrna_title
   expect_true(f("Symbiodinium sp. 18S ribosomal RNA gene, partial"))
