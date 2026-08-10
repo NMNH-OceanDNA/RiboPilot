@@ -522,3 +522,10 @@ test_that("the deferred apply runs with a session but no reactive context", {
   expect_equal(DBI::dbGetQuery(con, "SELECT clade_name FROM reference")$clade_name,
     "Asteroidea")
 })
+
+test_that("the run modal prefills the key it is given, not the environment", {
+  withr::local_envvar(c(NCBI_API_KEY = "from_env"))
+  html <- as.character(RiboPilot:::reference_run_modal(1, "/lab/refs", api_key = "from_project"))
+  expect_true(grepl("from_project", html, fixed = TRUE))
+  expect_false(grepl("from_env", html, fixed = TRUE))
+})

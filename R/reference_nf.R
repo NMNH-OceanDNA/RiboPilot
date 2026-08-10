@@ -96,6 +96,24 @@ nf_reference_command <- function(project, entry, manifest, ref_dir, out_dir,
     ref_bind_option(cfg_lines, ref_dir))
 }
 
+#' The NCBI API key a project should use
+#'
+#' new_project() stores the key in the project config, so the tab should not
+#' make the user type it again; the environment variable is the fallback.
+#' @noRd
+project_ncbi_key <- function(project) {
+  cfg <- file.path(project %||% "", ".config")
+  v <- if (file.exists(cfg)) {
+    config_param(readLines(cfg, warn = FALSE), "ncbi_api_key")
+  } else {
+    NA_character_
+  }
+  if (length(v) == 0 || is.na(v) || v %in% c("NA", "NULL") || !nzchar(trimws(v))) {
+    return(Sys.getenv("NCBI_API_KEY", ""))
+  }
+  trimws(v)
+}
+
 #' Run a Nextflow command to completion, returning its exit status
 #'
 #' Split out so tests can substitute a runner that spawns nothing.

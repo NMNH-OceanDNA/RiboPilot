@@ -187,3 +187,20 @@ test_that("run_clade_counts rejects an unvalidated project before deleting anyth
   expect_false(dir.exists(file.path(d, ".reference")))
   expect_false(file.exists("/.reference"))
 })
+
+test_that("the project's config key wins over the environment variable", {
+  d <- withr::local_tempdir()
+  withr::local_envvar(c(NCBI_API_KEY = "from_env"))
+  expect_equal(RiboPilot:::project_ncbi_key(d), "from_env")  # no config yet
+  writeLines(c("params {", "  ncbi_api_key = 'from_project'", "}"), file.path(d, ".config"))
+  expect_equal(RiboPilot:::project_ncbi_key(d), "from_project")
+})
+
+test_that("an unset or placeholder config key falls back to the environment", {
+  d <- withr::local_tempdir()
+  withr::local_envvar(c(NCBI_API_KEY = "from_env"))
+  writeLines(c("params {", "  ncbi_api_key = ''", "}"), file.path(d, ".config"))
+  expect_equal(RiboPilot:::project_ncbi_key(d), "from_env")
+  writeLines(c("params {", "  ncbi_api_key = 'NA'", "}"), file.path(d, ".config"))
+  expect_equal(RiboPilot:::project_ncbi_key(d), "from_env")
+})

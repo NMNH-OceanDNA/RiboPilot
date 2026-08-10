@@ -171,7 +171,7 @@ reference_handlers <- function(input, output, session, deps) {
             # count run was told to count, or every answer comes back NA
             start_rank <- "family"
             counts <- run_clade_counts(deps$project(), cfg$ref_dir, candidate_rungs(l, start_rank),
-              api_key = Sys.getenv("NCBI_API_KEY", ""), runner = count_runner())
+              api_key = project_ncbi_key(deps$project()), runner = count_runner())
             s <- suggest_reference_groups(l, cache_count_fn(cfg$ref_dir),
               cfg$min_records, cfg$max_records, start_rank = start_rank)
             if (nrow(s$groups) == 0) {
@@ -293,7 +293,7 @@ reference_handlers <- function(input, output, session, deps) {
         data.frame(ref_id = ref_id_from_name(info$name[1]), taxid = as.integer(tid),
           clade_name = info$name[1], query = clade_query(info$name[1]),
           stringsAsFactors = FALSE),
-        api_key = Sys.getenv("NCBI_API_KEY", ""), runner = count_runner())
+        api_key = project_ncbi_key(deps$project()), runner = count_runner())
       n <- cache_count_fn(cfg$ref_dir)(tid, info$name[1])
       # a clade change re-keys the group, so the follow-up work uses the key
       # set_reference_clade() actually wrote, not the one the modal opened on
@@ -422,7 +422,8 @@ reference_handlers <- function(input, output, session, deps) {
     script <- if (hl) tryCatch(ref_submit_script(), error = function(e) "") else ""
     headless_open(hl)
     shiny::showModal(reference_run_modal(length(res$todo), res$ref_dir,
-      headless = hl, sched = sched, script = script))
+      headless = hl, sched = sched, script = script,
+      api_key = project_ncbi_key(deps$project())))
   })
 
   # the script is built before the modal renders, so its settings inputs are

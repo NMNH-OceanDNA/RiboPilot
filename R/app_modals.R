@@ -326,8 +326,10 @@ run_modal <- function(n, headless = FALSE, sched = NULL, script = "") {
 #' The same shape as [run_modal()] so a database build looks like any other
 #' RiboPilot run: command preview, progress board, Run / Stop / Close, and the
 #' cluster-submit section when the app is served headless.
+#' @param api_key Key to prefill; the project's own key, not just the env var.
 #' @noRd
-reference_run_modal <- function(n, ref_dir, headless = FALSE, sched = NULL, script = "") {
+reference_run_modal <- function(n, ref_dir, headless = FALSE, sched = NULL, script = "",
+                                api_key = Sys.getenv("NCBI_API_KEY", "")) {
   cluster_section <- if (headless) {
     tagList(
       hr(style = "margin:10px 0;"),
@@ -367,7 +369,7 @@ reference_run_modal <- function(n, ref_dir, headless = FALSE, sched = NULL, scri
     div(class = "text-muted", style = "font-size:0.85em; margin-bottom:6px;",
       sprintf("Databases are written to %s", ref_dir)),
     textInput("ref_api_key", "NCBI API key (optional):", width = "100%",
-      value = Sys.getenv("NCBI_API_KEY", "")),
+      value = api_key),
     shinyWidgets::prettyCheckbox("ref_refseq", "RefSeq records only", value = FALSE,
       status = "primary", inline = TRUE),
     shinyWidgets::prettyCheckbox("ref_nf_resume", "Resume previous run?", value = TRUE,
