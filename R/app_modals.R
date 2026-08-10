@@ -649,6 +649,6 @@ plot_trim <- function(id, path = 1L, scaffold = 1L, from = NA, to = NA) {
   g
 }
 
-#' gggenes synteny map: the sample's annotations over its BLAST reference's
+#' Synteny map: the sample's annotations over its BLAST reference's
 #' (when the reference has been fetched + annotated), aligned by element color.
 #' @noRd

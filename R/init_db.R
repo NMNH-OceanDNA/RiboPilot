@@ -97,6 +97,9 @@ new_db <- function(
   check_reference_db(labels_db, "labels")
 
   # Connect ----
+  # dbplyr is never called by name but is required: dplyr::tbl() on a DBI
+  # connection loads it to translate, so dropping it from Imports breaks every
+  # table write below on a machine that does not happen to have it installed.
   con <- DBI::dbConnect(RSQLite::SQLite(), dbname = db_path)
   on.exit(DBI::dbDisconnect(con))
 

@@ -1,4 +1,13 @@
 #' Session cache for the Nextflow version probe
+#'
+#' The crayon import is declared here because the startup banner calls
+#' `crayon::` from inside glue template strings, which R CMD check's static
+#' analysis cannot see; without it the package looks unused.
+#' dbplyr is likewise never called by name: dplyr::tbl() on a DBI connection
+#' loads it to translate, so it is a real runtime dependency that static
+#' analysis cannot see either.
+#' @importFrom crayon bold
+#' @importFrom dbplyr sql
 #' @noRd
 .nf_probe_cache <- new.env(parent = emptyenv())
 

@@ -50,7 +50,7 @@ copied into the bundle as `<label>.sbt` so table2asn picks it up.}
 \item{export_opts}{Name of the saved FASTA-header configuration to use.}
 
 \item{fasta_header, fasta_header_marker}{Optional header templates
-(`{token}` glue syntax) overriding the saved configuration.}
+(\code{\{token\}} glue syntax) overriding the saved configuration.}
 }
 \value{
 (invisibly) the group output directory.

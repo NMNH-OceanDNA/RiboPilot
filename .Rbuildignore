@@ -19,3 +19,4 @@
 ^RiboPilot_test\.R$
 ^\.nextflow$
 ^work$
+^tests/testthat/\.sqlite$

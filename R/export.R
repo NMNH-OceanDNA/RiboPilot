@@ -499,7 +499,7 @@ export_report_html <- function(con, units, out_html, label, smry = export_summar
 #' @param zip Also write `<out_dir>/<label>.zip`.
 #' @param export_opts Name of the saved FASTA-header configuration to use.
 #' @param fasta_header,fasta_header_marker Optional header templates
-#'   (`{token}` glue syntax) overriding the saved configuration.
+#'   (\code{\{token\}} glue syntax) overriding the saved configuration.
 #' @return (invisibly) the group output directory.
 #' @export
 export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
