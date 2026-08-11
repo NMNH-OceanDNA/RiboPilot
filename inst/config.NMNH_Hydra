@@ -20,18 +20,40 @@ singularity {
     runOptions = "-B ${params.projectDir} -B ${params.rawDir} -B /scratch02/<<EXTRA_MOUNTS>>"
 }
 
+// Hydra has no h_rss or mem_free resources, and Nextflow adds
+// "-l h_rss=...,mem_free=..." to every job that carries a memory directive, so
+// qsub rejects it. Memory is left unset here and requested through Hydra's own
+// mres/h_data/h_vmem instead. The withName blocks below also clear the memory
+// directives the pipeline itself declares (a selector outranks the process).
 process {
     executor = 'sge'
     container = '<<CONTAINER_ID>>'
     penv = 'mthread'
-    memory = { 16.GB * task.attempt }   // CPUs come from the pipeline; tune memory as needed
+    memory = null
     // Request himem when a job needs more than 8 GB RAM per CPU.
     clusterOptions = {
-        def mem = task.memory ? task.memory.toGiga() : 16
-        def cpu = task.cpus ?: 1
-        def perCpu = mem / cpu
-        def himem = perCpu > 8 ? ',himem' : ''
-        "-l mres=${mem}G,h_data=${perCpu}G,h_vmem=${perCpu}G${himem} -S /bin/bash"
+        def mem = 16 * task.attempt
+        def perCpu = mem / (task.cpus ?: 1)
+        "-l mres=${mem}G,h_data=${perCpu}G,h_vmem=${perCpu}G${perCpu > 8 ? ',himem' : ''} -S /bin/bash"
+    }
+
+    // memory per sample comes from the project database
+    withName: 'preprocess|assemble|fallback_assemble|annotate_tools' {
+        memory = null
+        clusterOptions = {
+            def m = (mem as int) * task.attempt
+            def perCpu = m / (task.cpus ?: 1)
+            "-l mres=${m}G,h_data=${perCpu}G,h_vmem=${perCpu}G${perCpu > 8 ? ',himem' : ''} -S /bin/bash"
+        }
+    }
+
+    withName: 'coverage' {
+        memory = null
+        clusterOptions = {
+            def m = 8 * task.attempt
+            def perCpu = m / (task.cpus ?: 1)
+            "-l mres=${m}G,h_data=${perCpu}G,h_vmem=${perCpu}G${perCpu > 8 ? ',himem' : ''} -S /bin/bash"
+        }
     }
 }
 
