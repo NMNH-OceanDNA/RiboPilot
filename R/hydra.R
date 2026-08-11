@@ -62,18 +62,47 @@ hydra_setup <- function() {
   invisible(TRUE)
 }
 
-#' Warn when a Hydra session has not been set up
+#' Apply the Hydra environment when the session has not been set up
 #'
 #' The failure this prevents is silent and expensive: Nextflow submits nothing,
 #' retries three times per task, gives up under `errorStrategy 'ignore'`, and the
 #' app reports an empty result instead of a missing `qsub`.
 #' @noRd
-warn_if_hydra_unconfigured <- function() {
+ensure_hydra_setup <- function() {
   if (!is_hydra_cluster() || !is.null(detect_scheduler())) {
     return(invisible(FALSE))
   }
-  message("This looks like NMNH Hydra, but no scheduler (qsub) is on PATH, so ",
-    "Nextflow job submission will fail.\n  Run RiboPilot::hydra_setup() before ",
-    "launching the app.")
-  invisible(TRUE)
+  hydra_setup()
+}
+
+#' Head-job script for the NMNH Hydra cluster
+#'
+#' The Nextflow driver is long-lived and near-idle, so it belongs in Hydra's
+#' workflow-manager queue (`lTWFM.sq` plus the `wfmq` resource) with a single
+#' slot. Worker jobs get their real CPU and memory from the project `.config`
+#' (see `inst/config.NMNH_Hydra`), not from here.
+#' @noRd
+hydra_job_script <- function(project, cmd, jobname) {
+  pin <- nf_pin_version()
+  paste(c(
+    "#!/bin/sh",
+    sprintf("#$ -N %s", jobname),
+    # absolute: the submitting session's cwd is not necessarily the project dir
+    sprintf("#$ -o %s", file.path(project, paste0(jobname, ".$JOB_ID.log"))),
+    "#$ -cwd -j y",
+    "#$ -q lTWFM.sq",
+    "#$ -l wfmq",
+    "#$ -l mres=24G,h_data=24G,h_vmem=64G",
+    "#$ -pe mthread 1",
+    "#$ -S /bin/sh",
+    "",
+    "source ~/.bashrc",
+    "module load tools/java/21.0.2",
+    # keep the JVM under the 24G reservation
+    'export NXF_OPTS="-Xms512m -Xmx20g -XX:MaxMetaspaceSize=512m -Xss256k"',
+    if (is.na(pin)) NULL else paste0("export NXF_VER=", pin),
+    sprintf("cd %s", shQuote(project)),
+    cmd,
+    ""
+  ), collapse = "\n")
 }

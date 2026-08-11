@@ -36,14 +36,18 @@ detect_scheduler <- function() {
 #' starting point the user can edit in the run modal before saving/submitting.
 #' @noRd
 job_script <- function(project, cmd, sched, jobname) {
+  if (is_hydra_cluster()) {
+    return(hydra_job_script(project, cmd, jobname))
+  }
   hdr <- if (is.null(sched)) {
     character(0)
   } else {
     switch(sched$cmd,
       sbatch = c(sprintf("#SBATCH -J %s", jobname), "#SBATCH -c 2",
         "#SBATCH --mem=8G", "#SBATCH -t 48:00:00", sprintf("#SBATCH -o %s_%%j.log", jobname)),
-      qsub = c(sprintf("#$ -N %s", jobname), "#$ -cwd", "#$ -pe mpi 2",
-        "#$ -l h_vmem=8G", "#$ -j y", sprintf("#$ -o %s.$JOB_ID.log", jobname)),
+      qsub = c(sprintf("#$ -N %s", jobname), "#$ -cwd", "#$ -pe mthread 2",
+        "#$ -l h_vmem=8G", "#$ -j y", "#$ -S /bin/bash",
+        sprintf("#$ -o %s.$JOB_ID.log", jobname)),
       bsub = c(sprintf("#BSUB -J %s", jobname), "#BSUB -n 2",
         "#BSUB -M 8000", sprintf("#BSUB -o %s.%%J.log", jobname)),
       character(0))
@@ -115,7 +119,7 @@ run_app <- function(project = getwd(), onStart = NULL, options = list(),
     stop("No RiboPilot project (.sqlite) found in: ", project, call. = FALSE)
   }
   check_nextflow_version("RiboPilot app")
-  warn_if_hydra_unconfigured()
+  ensure_hydra_setup()
   if (is.null(launch.browser)) launch.browser <- interactive()
   # Headless = this R session is on a remote host (RStudio Server on a login
   # node, or a tunneled session). The run modal then offers a cluster job script
