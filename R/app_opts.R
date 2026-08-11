@@ -326,12 +326,12 @@ opts_handlers <- function(input, output, session, deps) {
     shiny::observeEvent(input[[paste0("set_", sp$table)]], {
       ids <- click_ids(input[[paste0("set_", sp$table)]])
       if (length(ids) == 0) {
-        shiny::showNotification("No sample selected.", type = "warning"); return()
+        rp_alert("No sample selected.", "warning", session = session); return()
       }
       locked <- locked_ids(ids, sp$lock, sp$queue_tbl)
       if (length(locked) == length(ids)) {
-        shiny::showNotification("Selected sample(s) are locked; unlock to change options.",
-          type = "warning"); return()
+        rp_alert("Selected sample(s) are locked; unlock to change options.",
+          "warning", session = session); return()
       }
       targets(setdiff(ids, locked))
       open_modal(p)
@@ -354,7 +354,7 @@ opts_handlers <- function(input, output, session, deps) {
       nm <- trimws(input[[paste0(p, "_name")]] %||% "")
       chk <- opts_edit_check(sp, nm, targets(), isTRUE(input[[paste0(p, "_edit")]]), deps)
       if (identical(chk$action, "refuse")) {
-        shiny::showNotification(chk$msg, type = "error", duration = 10)
+        rp_alert(chk$msg, "error", session = session)
         return()
       }
       if (identical(chk$action, "confirm")) {
@@ -468,18 +468,19 @@ unusable_db_warnings <- function(row) {
 opts_apply <- function(pfx, sp, input, deps, ids, cur) {
   if (length(ids) == 0) { shiny::removeModal(); return() }
   nm <- trimws(input[[paste0(pfx, "_name")]] %||% "")
-  if (!nzchar(nm)) { shiny::showNotification("Give the parameter set a name.", type = "warning"); return() }
+  if (!nzchar(nm)) { rp_alert("Give the parameter set a name.", "warning"); return() }
   editing <- isTRUE(input[[paste0(pfx, "_edit")]])
   base <- if (!is.null(cur) && nrow(cur)) as.list(cur) else list()
 
   con <- deps$con(); on.exit(DBI::dbDisconnect(con))
+  warns <- character(0)
   if (editing) {
     row <- opts_row(pfx, nm, input, base)
     dplyr::rows_upsert(dplyr::tbl(con, sp$table), row, by = sp$key, in_place = TRUE, copy = TRUE)
     # a database that is not there yet is saved anyway (it may live on a share
     # that is not mounted, or be built later), but it is said out loud now
     # rather than surfacing as a failed assembly
-    for (w in unusable_db_warnings(row)) shiny::showNotification(w, type = "warning", duration = 12)
+    warns <- unusable_db_warnings(row)
   }
 
   for (id in ids) {
@@ -492,6 +493,11 @@ opts_apply <- function(pfx, sp, input, deps, ids, cur) {
   }
   deps$refresh(deps$refresh() + 1)
   shiny::removeModal()
-  shiny::showNotification(sprintf("Applied '%s' to %d sample(s); queued to (re)run.", nm, length(ids)),
-    type = "message")
+  msg <- sprintf("Applied '%s' to %d sample(s); queued to (re)run.", nm, length(ids))
+  # one alert, not one per warning: a second sweet alert replaces the first
+  if (length(warns)) {
+    rp_alert(shiny::tagList(shiny::tags$p(msg), lapply(warns, shiny::tags$p)), "warning")
+  } else {
+    rp_alert(msg)
+  }
 }

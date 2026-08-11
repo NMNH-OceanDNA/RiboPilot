@@ -134,7 +134,7 @@ taxonomy_handlers <- function(input, output, session, deps) {
   shiny::observeEvent(input$tax_apply, {
     tid <- suppressWarnings(as.integer(input$tax_pick %||% NA))
     if (is.na(tid)) {
-      shiny::showNotification("Pick an organism from the results first.", type = "warning")
+      rp_alert("Pick an organism from the results first.", "warning", session = session)
       return()
     }
     ids <- targets()
@@ -166,7 +166,7 @@ taxonomy_handlers <- function(input, output, session, deps) {
 
   function(ids) {
     if (length(ids) == 0) {
-      shiny::showNotification("No samples selected.", type = "warning"); return()
+      rp_alert("No samples selected.", "warning", session = session); return()
     }
     targets(ids)
     shiny::showModal(taxon_review_modal(deps$samples_for(ids), length(ids)))
