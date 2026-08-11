@@ -40,7 +40,7 @@ mk_export_project <- function(env = parent.frame()) {
         as.integer(f[2]), as.integer(f[3])))
   }
   DBI::dbExecute(con, "INSERT INTO coverage (ID,path,scaffold,mean_depth) VALUES('S1',1,1,100)")
-  RiboPilot::migrate_db(con)
+  fixture_fill_schema(con)
   DBI::dbDisconnect(con)
   dir
 }

@@ -42,10 +42,7 @@ mk_app_project <- function(env = parent.frame()) {
     DBI::dbExecute(con, "INSERT INTO coverage (ID,path,scaffold,mean_depth) VALUES('S1',?,?,100)",
       params = list(u[1], u[2]))
   }
-  # Bring the fixture up to the current schema rather than hand-listing every
-  # column: run_app() migrates on open, so this is what the app actually sees,
-  # and the fixture then tracks future migrations for free.
-  RiboPilot::migrate_db(con)
+  fixture_fill_schema(con)
   DBI::dbDisconnect(con)
   dir
 }

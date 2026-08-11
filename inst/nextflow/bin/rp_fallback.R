@@ -10,9 +10,6 @@ rp_args(a, 6, "rp_fallback.R <db> <id> <r1> <r2> <method> <threads>")
 opt <- local({
   con <- open_project_db(a[1])
   on.exit(DBI::dbDisconnect(con))
-  # this reads columns added after some projects were created, and unlike the
-  # other steps it queries before any step function has migrated
-  migrate_db(con)
   DBI::dbGetQuery(con,
     "SELECT ao.seeds_db, ao.labels_db,
             COALESCE(ao.bowtie2, '--local') AS bowtie2,

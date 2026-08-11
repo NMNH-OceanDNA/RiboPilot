@@ -18,7 +18,6 @@
 #'
 #' A config can declare both a `docker {}` and a `singularity {}` block with only
 #' one `enabled = true`, so the block's presence says nothing; the flag does.
-#' (`container_bind_opts()` in reference_nf.R applies the same test inline.)
 #' @param cfg_lines Lines of a Nextflow config.
 #' @return "docker", "singularity", or `NA_character_`.
 #' @noRd

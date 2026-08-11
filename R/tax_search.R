@@ -37,12 +37,6 @@ tax_search <- function(taxdump_dir, query, limit = 25) {
   res
 }
 
-#' NCBI Datasets taxonomy page URL for a taxid
-#' @noRd
-ncbi_taxonomy_url <- function(taxid) {
-  sprintf("https://www.ncbi.nlm.nih.gov/datasets/taxonomy/%s/", taxid)
-}
-
 #' Auto-assign taxonomy to samples from their `Taxon` string (local, no Nextflow)
 #'
 #' Resolves each sample's `Taxon` against the local taxdump and writes

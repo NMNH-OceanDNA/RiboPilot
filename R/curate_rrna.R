@@ -168,7 +168,7 @@ curate_rrna_core <- function(features, params = rrna_params(),
 #' @param features,ref_pid,ref_cov,sample_lineage,hit_lineage,hit_is_nuclear_rrna,chimeric see
 #'   [curate_rrna_core()].
 #' @return see [curate_rrna_core()].
-#' @export
+#' @noRd
 curate_actinopterygii_rrna <- function(features, ref_pid = NULL, ref_cov = NULL,
                                        sample_lineage = NA, hit_lineage = NA,
                                        hit_is_nuclear_rrna = NA, chimeric = NA) {
@@ -240,17 +240,6 @@ lineages_conflict <- function(a, b, a_taxids = NA_character_, b_taxids = NA_char
   !rank_at_least(rank_distance(p$a, p$b), "phylum")
 }
 
-#' Ensure the curation columns/tables exist (idempotent)
-#'
-#' Thin wrapper over [migrate_db()], kept for call sites that only need the
-#' curation schema (e.g. [curate_one()]). New projects get these in [new_db()].
-#' @param con Open DBI connection.
-#' @export
-ensure_curate_schema <- function(con) {
-  migrate_db(con)
-  invisible()
-}
-
 #' Resolve which clade ruleset governs a unit
 #'
 #' Precedence: explicit argument > the unit's `curate_opts` row. When that is
@@ -300,7 +289,6 @@ resolve_ruleset <- function(con, id, path = 1L, scaffold = 1L, ruleset = NULL) {
 #' @return (invisibly) the curate_rrna_core() result.
 #' @export
 curate_one <- function(con, id, path = 1L, scaffold = 1L, ruleset = NULL) {
-  ensure_curate_schema(con)
   path <- as.integer(path); scaffold <- as.integer(scaffold)
 
   feats <- DBI::dbGetQuery(con,

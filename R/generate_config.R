@@ -6,7 +6,7 @@
 #' convention.
 #'
 #' @return Path to the RiboPilot config directory (not guaranteed to exist).
-#' @export
+#' @noRd
 ribopilot_config_dir <- function() {
   tools::R_user_dir("RiboPilot", which = "config")
 }
@@ -108,7 +108,7 @@ resolve_config <- function(executor, profile_dir = ribopilot_config_dir()) {
 #'
 #' @return A data.frame with columns `name`, `type` ("builtin" or "saved"),
 #'   and `path`.
-#' @export
+#' @noRd
 list_configs <- function(profile_dir = ribopilot_config_dir()) {
   builtin_files <- Sys.glob(file.path(app_sys(), "config.*"))
   saved_files <- if (dir.exists(profile_dir)) {

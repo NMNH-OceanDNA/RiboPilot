@@ -50,11 +50,6 @@ REF_CANDIDATE_MIN_QCOVS <- 50
 parse_blast_candidates <- function(con, id, path = 1L, scaffold = 1L, hits_file, taxdump_dir = NULL) {
   ts <- as.integer(Sys.time())
   path <- as.integer(path); scaffold <- as.integer(scaffold)
-  # rp_blast.R runs against the project DB directly, so guarantee the v9 schema
-  # here rather than assuming the user migrated; idempotent, as in curate_one().
-  # NOT swallowed: writing against an unmigrated schema fails later as an
-  # unrelated "no such column" with the real cause gone.
-  migrate_db(con)
   clear_unit <- function() {
     for (tbl in c("blast_hits", "blast_ref_candidates", "blast_screen")) {
       DBI::dbExecute(con,

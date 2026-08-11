@@ -21,7 +21,7 @@ rt_dynamicIcon <- function(icons = NULL) {
   if (length(icons) == 0) {
     return(htmlwidgets::JS("function(cellInfo) {return cellInfo.value}"))
   }
-  key <- purrr::imap_chr(icons, ~ paste0(.y, ": '", .x, "'")) |> unname() |> paste(collapse = ", ")
+  key <- paste(paste0(names(icons), ": '", icons, "'"), collapse = ", ")
   sprintf(
     "function(cellInfo){
        var { value } = cellInfo;
@@ -129,32 +129,6 @@ rt_link <- function(InputId) {
         (cellInfo.value ? cellInfo.value : '') +
         `</a>`;
     }", InputId
-  ) |> htmlwidgets::JS()
-}
-
-#' Clickable cell keyed on the row's own `uid`, not its position
-#'
-#' [rt_link()] sends `cellInfo.index + 1`, so every handler has to re-query and
-#' index back into the result: if the two orderings ever disagree the click acts
-#' on the WRONG row, and on this table that means deleting another scaffold's
-#' curation. The uid (`ID|path|scaffold`) is carried in the row itself, so
-#' sorting, filtering and paging cannot desynchronise it. IDs are constrained to
-#' `^[a-zA-Z0-9_:-]+$` at project creation, so `|` cannot occur inside one.
-#' @param InputId shiny input id to set on click.
-#' @param suffix Optional string appended after a second `|` (e.g. an action).
-#' @noRd
-rt_unit_link <- function(InputId, suffix = NULL) {
-  sprintf(
-    "function(cellInfo) {
-      var clickid = '%s';
-      var uid = cellInfo.row['uid'];
-      if (uid === null || uid === undefined) return cellInfo.value ? cellInfo.value : '';
-      var payload = uid%s;
-      return `<a href='#' class='grow' ` +
-        `onclick='event.stopPropagation(); Shiny.setInputValue(&#39;${clickid}&#39;, ` +
-        `&#39;${payload}&#39;, {priority: &#39;event&#39;})'>` +
-        (cellInfo.value ? cellInfo.value : '') + `</a>`;
-    }", InputId, if (is.null(suffix)) "" else sprintf(" + '|%s'", suffix)
   ) |> htmlwidgets::JS()
 }
 
@@ -399,16 +373,6 @@ rt_icon_link <- function(InputId, icon, title = "") {
         `onclick='event.stopPropagation(); Shiny.setInputValue(&#39;${clickid}&#39;, this.id, {priority: &#39;event&#39;})'>` +
         `<i class='%s'></i></a>`;
     }", InputId, title, icon
-  ) |> htmlwidgets::JS()
-}
-
-#' Cell: a greyed, non-clickable Font Awesome icon (a disabled button).
-#' @noRd
-rt_icon_disabled <- function(icon, title = "") {
-  sprintf(
-    "function(cellInfo) {
-      return `<span title='%s' style='color:#bbb; cursor:not-allowed;'><i class='%s'></i></span>`;
-    }", title, icon
   ) |> htmlwidgets::JS()
 }
 

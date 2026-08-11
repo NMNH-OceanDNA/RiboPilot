@@ -24,11 +24,14 @@ rp_args <- function(a, n, usage) {
   invisible(a)
 }
 
-# A package source checkout, not an installed library directory. Installed
-# packages also carry a DESCRIPTION, and pkgload cannot load one.
+# A package source checkout, not an installed library directory. An installed
+# package carries a DESCRIPTION and an R/ directory too, but that R/ holds the
+# lazy-load database rather than sources, so the .R files are what tell them
+# apart. Loading an installed directory as source leaves an empty namespace and
+# every process dies on "could not find function".
 rp_is_source_dir <- function(d) {
-  nzchar(d) && dir.exists(d) &&
-    file.exists(file.path(d, "DESCRIPTION")) && dir.exists(file.path(d, "R"))
+  nzchar(d) && dir.exists(d) && file.exists(file.path(d, "DESCRIPTION")) &&
+    length(list.files(file.path(d, "R"), pattern = "\\.[Rr]$")) > 0
 }
 
 rp_src <- Sys.getenv("RIBOPILOT_SRC")

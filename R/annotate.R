@@ -335,7 +335,7 @@ orient_rrna_sense <- function(seq, kingdom = "euk") {
 #' @param fasta Path to a single-sequence fasta (e.g. a stitched path).
 #' @param cpu CPUs for ITSx.
 #' @return data.frame(element, type, start, stop, length, strand, tool).
-#' @export
+#' @noRd
 annotate_seq <- function(fasta, cpu = 2) {
   reconcile_features(run_barrnap(fasta), run_itsx(fasta, cpu = cpu))
 }

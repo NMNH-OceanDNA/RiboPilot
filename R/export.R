@@ -20,7 +20,7 @@
 #' @param units data.frame(ID, path, scaffold) OR a character vector of sample
 #'   IDs (assigns all of each sample's units).
 #' @param group Group name.
-#' @export
+#' @noRd
 assign_export_group <- function(path, units, group) {
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(path, ".sqlite"))
   on.exit(DBI::dbDisconnect(con))
@@ -31,7 +31,7 @@ assign_export_group <- function(path, units, group) {
 #' Clear the export group of selected units
 #' @param path Project dir.
 #' @param units data.frame(ID, path, scaffold) or a character vector of IDs.
-#' @export
+#' @noRd
 clear_export_group <- function(path, units) {
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(path, ".sqlite"))
   on.exit(DBI::dbDisconnect(con))

@@ -92,9 +92,8 @@ test_that("the existing-database modal renders every clade, even with a two-row 
 #
 # reference_handlers() is not yet mounted by app_server() (Task 7), so it is
 # driven directly with shiny::testServer() and a stand-in `deps`. The chosen
-# taxid's record count is pre-seeded into the reference folder's cache so
-# cached_count_fn() never falls through to genbank_rrna_count(), which would
-# spawn a process.
+# taxid's record count is pre-seeded into the reference folder's cache, so the
+# cache-only lookup always answers.
 mk_split_db <- function(dir) {
   ref_dir <- file.path(dir, "refs")
   dir.create(ref_dir, recursive = TRUE, showWarnings = FALSE)
@@ -243,12 +242,6 @@ test_that("Suggest sends the uncached rungs to the runner", {
   utils::write.table(cache[!(cache$taxid %in% c(7607L, 41693L)), , drop = FALSE],
     file.path(dir, "refs", "counts.tsv"), sep = "\t", row.names = FALSE, quote = FALSE)
   sent <- NULL
-  # if the walk ever falls back to the host fetcher this flips, so the test fails
-  # loudly instead of quietly spawning bash
-  fetched <- FALSE
-  testthat::local_mocked_bindings(
-    genbank_rrna_count = function(...) { fetched <<- TRUE; NA_integer_ },
-    .package = "RiboPilot")
   withr::local_options(list(ribopilot.count_runner = function(project, args, log = NULL) {
     man <- args[which(args == "--clades") + 1L]
     sent <<- utils::read.delim(man)
@@ -264,11 +257,9 @@ test_that("Suggest sends the uncached rungs to the runner", {
   expect_setequal(sent$taxid, c(7607L, 41693L))
   expect_true(all(grepl("[Organism]", sent$query, fixed = TRUE)))
   # the stub runner produced no count files, so the two dropped rungs are still
-  # missing from the cache. cached_count_fn() would have fetched and written them
-  # back; cache_count_fn() cannot, which is what proves the walk stayed offline
+  # missing from the cache, which is what proves the walk stayed offline
   after <- RiboPilot:::read_counts_cache(file.path(dir, "refs"))
   expect_false(any(c(7607L, 41693L) %in% after$taxid))
-  expect_false(fetched)
 })
 
 test_that("opening the ladder modal never fetches a count for an uncached rung", {
@@ -280,10 +271,6 @@ test_that("opening the ladder modal never fetches a count for an uncached rung",
   cache <- utils::read.delim(file.path(dir, "refs", "counts.tsv"))
   utils::write.table(cache[cache$taxid != 7588L, , drop = FALSE],
     file.path(dir, "refs", "counts.tsv"), sep = "\t", row.names = FALSE, quote = FALSE)
-  fetched <- FALSE
-  testthat::local_mocked_bindings(
-    genbank_rrna_count = function(...) { fetched <<- TRUE; NA_integer_ },
-    .package = "RiboPilot")
   shiny::testServer(function(input, output, session) {
     h <- RiboPilot:::reference_handlers(input, output, session, deps)
     open_ladder <- h$open_ladder
@@ -292,7 +279,6 @@ test_that("opening the ladder modal never fetches a count for an uncached rung",
     session$flushReact()
     while (!later::loop_empty()) later::run_now()
   })
-  expect_false(fetched)
   after <- RiboPilot:::read_counts_cache(file.path(dir, "refs"))
   expect_false(7588L %in% after$taxid)
 })

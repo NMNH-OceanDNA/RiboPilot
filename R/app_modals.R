@@ -535,29 +535,6 @@ state_modal <- function(mode, current = NULL) {
   )
 }
 
-#' Render a per-feature nucleotide alignment as highlighted monospace HTML
-#' (mismatches in red), wrapped at 80 columns.
-#' @noRd
-render_alignment_html <- function(sample_aln, ref_aln) {
-  sa <- strsplit(sample_aln, "")[[1]]
-  ra <- strsplit(ref_aln, "")[[1]]
-  n <- max(length(sa), length(ra))
-  length(sa) <- n; length(ra) <- n
-  sa[is.na(sa)] <- "-"; ra[is.na(ra)] <- "-"
-  hl <- function(ch, mm) ifelse(mm, sprintf("<span style='color:#d00;font-weight:bold'>%s</span>", ch), ch)
-  width <- 80
-  blocks <- vapply(seq(1, n, by = width), function(start) {
-    idx <- start:min(start + width - 1, n)
-    mm <- sa[idx] != ra[idx]
-    paste0(
-      "sample  ", paste(hl(sa[idx], mm), collapse = ""), "\n",
-      "        ", paste(ifelse(mm, " ", "|"), collapse = ""), "\n",
-      "ref     ", paste(hl(ra[idx], mm), collapse = ""), "\n")
-  }, character(1))
-  shiny::HTML(paste0("<pre style='margin:0; font-size:0.8em;'>",
-    paste(blocks, collapse = "\n"), "</pre>"))
-}
-
 #' Element colors shared by the app feature map
 #' @noRd
 # Colorblind-friendly (Okabe-Ito) palette, chosen to keep the 5 features
