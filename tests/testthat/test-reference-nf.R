@@ -43,16 +43,6 @@ test_that("nf_reference_command names the entry point and every param", {
   expect_true("--clades" %in% a && "--outDir" %in% a)
 })
 
-test_that("the reference folder is bind-mounted for docker and for singularity", {
-  docker <- c("docker {", "  enabled = true", "}")
-  sing <- c("singularity {", "  enabled = true", "}")
-  expect_equal(RiboPilot:::ref_bind_option(docker, "/refs"),
-    c("-process.containerOptions", "-v /refs:/refs"))
-  expect_equal(RiboPilot:::ref_bind_option(sing, "/refs"),
-    c("-process.containerOptions", "--bind /refs"))
-  expect_length(RiboPilot:::ref_bind_option("process { executor = 'local' }", "/refs"), 0L)
-})
-
 test_that("refseq and the api key only appear when asked for", {
   d <- withr::local_tempdir()
   writeLines("process { executor = 'local' }", file.path(d, ".config"))
@@ -65,22 +55,40 @@ test_that("refseq and the api key only appear when asked for", {
   expect_equal(keyed[which(keyed == "--refseq") + 1], "true")
 })
 
-test_that("nf_reference_command bind-mounts refDir when the project config has a real container block", {
+test_that("refDir is never bind-mounted, so a folder that does not exist yet cannot fail the run", {
   d <- withr::local_tempdir()
-  ref_dir <- file.path(d, "refs")
-  docker_cfg <- RiboPilot:::container_engine_block("docker")
-  writeLines(docker_cfg, file.path(d, ".config"))
-  a <- RiboPilot:::nf_reference_command(d, "COUNT", "c.tsv", ref_dir, "o")
-  idx <- which(a == "-process.containerOptions")
-  expect_length(idx, 1L)
-  expect_equal(a[idx + 1], paste0("-v ", ref_dir, ":", ref_dir))
+  ref_dir <- file.path(d, "refs")   # deliberately not created
+  for (engine in c("docker", "singularity")) {
+    writeLines(RiboPilot:::container_engine_block(engine), file.path(d, ".config"))
+    a <- RiboPilot:::nf_reference_command(d, "COUNT", "c.tsv", ref_dir, "o")
+    expect_false("-process.containerOptions" %in% a)
+    expect_equal(a[which(a == "--refDir") + 1], ref_dir)
+  }
+})
 
-  sing_cfg <- RiboPilot:::container_engine_block("singularity")
-  writeLines(sing_cfg, file.path(d, ".config"))
-  b <- RiboPilot:::nf_reference_command(d, "COUNT", "c.tsv", ref_dir, "o")
-  idx2 <- which(b == "-process.containerOptions")
-  expect_length(idx2, 1L)
-  expect_equal(b[idx2 + 1], paste0("--bind ", ref_dir))
+test_that("failed_task_errors reports the stderr of a task the run ignored", {
+  d <- withr::local_tempdir()
+  work <- file.path(d, "work_ref")
+  task <- file.path(work, "aa", "474b0c1122")
+  dir.create(task, recursive = TRUE)
+  writeLines(c("WARNING: skipping mount of /nope",
+    "FATAL:   container creation failed: mount source /nope doesn't exist"),
+    file.path(task, ".command.err"))
+  log <- file.path(d, "count.log")
+  writeLines(c("executor >  sge (1)",
+    "[aa/474b0c] NOTE: Process `COUNT:count_clade (Mullidae)` terminated with an error exit status (255) -- Error is ignored"),
+    log)
+  errs <- RiboPilot:::failed_task_errors(log, work)
+  expect_length(errs, 1L)
+  expect_true(grepl("container creation failed", errs))
+})
+
+test_that("failed_task_errors is quiet when nothing failed", {
+  d <- withr::local_tempdir()
+  log <- file.path(d, "count.log")
+  writeLines(c("executor >  local (1)", "[97/e0f118] COUNT:count_clade (X) | 1 of 1"), log)
+  expect_length(RiboPilot:::failed_task_errors(log, file.path(d, "work_ref")), 0L)
+  expect_length(RiboPilot:::failed_task_errors(file.path(d, "missing.log"), d), 0L)
 })
 
 test_that("run_clade_counts skips cached clades and merges what the run produced", {
