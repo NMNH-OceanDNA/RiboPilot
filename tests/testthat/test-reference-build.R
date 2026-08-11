@@ -460,3 +460,51 @@ test_that("use_existing_reference refuses an empty FASTA", {
   file.create(s); writeLines(c(">18S", "ACGT"), l)
   expect_error(RiboPilot:::use_existing_reference(con, "asteroidea", s, l), "empty")
 })
+
+# ---- builds handed to a batch scheduler --------------------------------------
+# No pid to watch, so the group waits for its FASTAs instead of being failed the
+# moment the poller sees no live process.
+
+test_that("a submitted build is recorded as running with no pid", {
+  con <- mk_ref_db(); on.exit(DBI::dbDisconnect(con))
+  RiboPilot:::set_ref_config(con, ref_dir = withr::local_tempdir())
+  RiboPilot:::write_reference_groups(con, grp, mem)
+  RiboPilot:::mark_reference_submitted(con, "asteroidea")
+  r <- DBI::dbGetQuery(con, "SELECT * FROM reference")
+  expect_equal(r$reference_switch[1], 4L)
+  expect_true(is.na(r$pid[1]))
+  expect_false(is.na(r$time_stamp[1]))
+})
+
+test_that("a queued job with no output yet keeps waiting, it is not failed", {
+  con <- mk_ref_db(); on.exit(DBI::dbDisconnect(con))
+  RiboPilot:::set_ref_config(con, ref_dir = withr::local_tempdir())
+  RiboPilot:::write_reference_groups(con, grp, mem)
+  RiboPilot:::mark_reference_submitted(con, "asteroidea")
+  n <- RiboPilot:::poll_reference_builds(con, alive_fn = function(pid) FALSE)
+  expect_equal(n, 0L)
+  r <- DBI::dbGetQuery(con, "SELECT * FROM reference")
+  expect_equal(r$reference_switch[1], 4L)
+  expect_true(is.na(r$fail_reason[1]))
+})
+
+test_that("a submitted build wires itself once the job writes its FASTAs", {
+  con <- mk_ref_db(); on.exit(DBI::dbDisconnect(con))
+  refs <- withr::local_tempdir()
+  RiboPilot:::set_ref_config(con, ref_dir = refs)
+  RiboPilot:::write_reference_groups(con, grp, mem)
+  RiboPilot:::mark_reference_submitted(con, "asteroidea")
+
+  p <- RiboPilot:::reference_db_paths(refs, "asteroidea")
+  dir.create(dirname(p$seeds), recursive = TRUE, showWarnings = FALSE)
+  dir.create(dirname(p$labels), recursive = TRUE, showWarnings = FALSE)
+  writeLines(">x", p$seeds); writeLines(">18S", p$labels)
+
+  n <- RiboPilot:::poll_reference_builds(con, alive_fn = function(pid) FALSE)
+  expect_equal(n, 1L)
+  r <- DBI::dbGetQuery(con, "SELECT * FROM reference")
+  expect_equal(r$reference_switch[1], 2L)
+  expect_equal(r$source[1], "built")
+  expect_equal(DBI::dbGetQuery(con, "SELECT assemble_opts FROM assemble WHERE ID='S1'")$assemble_opts,
+    "asteroidea")
+})

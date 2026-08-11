@@ -438,6 +438,28 @@ log_tail <- function(log, n = 3) {
   paste(utils::tail(x, n), collapse = " | ")
 }
 
+#' Mark groups as building after their job went to a batch scheduler
+#'
+#' Deliberately no pid: the job belongs to the scheduler, not to this session.
+#' Without this the submit path touched the database not at all, so the app had
+#' no idea a build was out and nothing wired it when the job finished; the user
+#' had to press Build a second time to get the databases picked up off disk.
+#' @param con Open project DB connection.
+#' @param ref_ids Groups whose build was submitted.
+#' @return (invisibly) the number of rows changed.
+#' @noRd
+mark_reference_submitted <- function(con, ref_ids) {
+  ref_ids <- unique(as.character(ref_ids))
+  if (length(ref_ids) == 0) return(invisible(0L))
+  ph <- paste(rep("?", length(ref_ids)), collapse = ",")
+  # time_stamp is the freshness cutoff: only FASTAs written after the job was
+  # submitted count as this build's output
+  DBI::dbExecute(con, sprintf(
+    "UPDATE reference SET reference_switch = 4, pid = NULL, log_file = NULL,
+       fail_reason = NULL, time_stamp = ? WHERE ref_id IN (%s)", ph),
+    params = c(list(as.integer(Sys.time())), as.list(ref_ids)))
+}
+
 #' Finish any background build whose process has exited
 #'
 #' @param con Open project DB connection.
@@ -466,6 +488,10 @@ poll_reference_builds <- function(con, alive_fn = process_alive) {
       append_ref_manifest(cfg$ref_dir, clade = ref_id, taxid = running$clade_taxid[i],
         rank = running$clade_rank[i], query = running$query[i],
         n_records = running$n_records[i], seeds = p$seeds, labels = p$labels)
+    } else if (is.na(running$pid[i])) {
+      # a scheduler job: there is no pid to watch, so "no output yet" means it is
+      # still queued or running, not that it failed
+      next
     } else {
       DBI::dbExecute(con,
         "UPDATE reference SET reference_switch = 3, pid = NULL, fail_reason = ?, time_stamp = ?

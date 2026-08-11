@@ -35,27 +35,43 @@ detect_scheduler <- function() {
 #' A multi-hour run belongs in the queue, not on the login node. The script is a
 #' starting point the user can edit in the run modal before saving/submitting.
 #' @noRd
+#' Closing lines of every job script
+#'
+#' With `-ansi-log false` Nextflow's completion summary never reaches the job's
+#' output file: the log just stops after the last "Submitted process" line, so a
+#' run that succeeded reads exactly like one that was killed. Say how it ended,
+#' and hand the status back to the scheduler.
+#' @noRd
+NF_EXIT_TRAILER <- c(
+  "status=$?",
+  'echo "[RiboPilot] nextflow exited with status $status"',
+  "exit $status")
+
 job_script <- function(project, cmd, sched, jobname) {
   if (is_hydra_cluster()) {
     return(hydra_job_script(project, cmd, jobname))
   }
+  # log paths are absolute: the app submits from wherever its R session happens
+  # to be, which is not the project, so a relative -o lands somewhere arbitrary
+  log <- function(suffix) file.path(project, paste0(jobname, suffix))
   hdr <- if (is.null(sched)) {
     character(0)
   } else {
     switch(sched$cmd,
       sbatch = c(sprintf("#SBATCH -J %s", jobname), "#SBATCH -c 2",
-        "#SBATCH --mem=8G", "#SBATCH -t 48:00:00", sprintf("#SBATCH -o %s_%%j.log", jobname)),
-      qsub = c(sprintf("#$ -N %s", jobname), "#$ -cwd", "#$ -pe mthread 2",
+        "#SBATCH --mem=8G", "#SBATCH -t 48:00:00",
+        sprintf("#SBATCH -o %s", log("_%%j.log"))),
+      qsub = c(sprintf("#$ -N %s", jobname), "#$ -pe mthread 2",
         "#$ -l h_vmem=8G", "#$ -j y", "#$ -S /bin/bash",
-        sprintf("#$ -o %s.$JOB_ID.log", jobname)),
+        sprintf("#$ -o %s", log(".$JOB_ID.log"))),
       bsub = c(sprintf("#BSUB -J %s", jobname), "#BSUB -n 2",
-        "#BSUB -M 8000", sprintf("#BSUB -o %s.%%J.log", jobname)),
+        "#BSUB -M 8000", sprintf("#BSUB -o %s", log(".%%J.log"))),
       character(0))
   }
   pin <- nf_pin_version()
   pin_line <- if (is.na(pin)) character(0) else paste0("export NXF_VER=", pin)
-  paste(c("#!/bin/bash", hdr, "", pin_line, sprintf("cd %s", shQuote(project)), cmd, ""),
-    collapse = "\n")
+  paste(c("#!/bin/bash", hdr, "", pin_line, sprintf("cd %s", shQuote(project)), cmd,
+    NF_EXIT_TRAILER, ""), collapse = "\n")
 }
 
 #' Cluster job script for the main workflow

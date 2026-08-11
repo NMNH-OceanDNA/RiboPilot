@@ -470,9 +470,11 @@ app_server <- function(input, output, session) {
     con = app_con, project = app_project, refresh = refresh,
     selected_ids = selected_ids, table_data = samples_data))
 
-  # A build runs in the background, so the tab has to ask the DB for its state.
+  # A build runs in the background, so the app has to ask the DB for its state.
+  # Not gated on the Reference tab being open: a cluster build finishes on its
+  # own schedule, and making the user sit on one tab to have it picked up is the
+  # kind of thing nobody discovers until their database is silently unwired.
   observe({
-    if ((input$mode %||% "") != "Reference") return()
     invalidateLater(4000, session)
     if (isTRUE(ref_h$poll() > 0)) refresh(isolate(refresh()) + 1)
   })
