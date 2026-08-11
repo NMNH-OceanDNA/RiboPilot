@@ -48,16 +48,6 @@ merge_counts <- function(ref_dir, counts) {
   cache
 }
 
-#' Container bind option for the reference folder, if the config uses a container
-#'
-#' The folder lives outside the project, so a container task cannot see it. The
-#' mount is added per run rather than written into the project config, so a user
-#' who moves the folder needs no project edits.
-#' @noRd
-ref_bind_option <- function(cfg_lines, ref_dir) {
-  container_bind_opts(cfg_lines, ref_dir)
-}
-
 #' Bind options mounting each directory into the container the config uses
 #'
 #' @param cfg_lines Lines of the project `.config`.
@@ -152,6 +142,9 @@ nf_reference_command <- function(project, entry, manifest, ref_dir, out_dir,
   proj_dir <- path.expand(project)
   raw_dir <- config_param(cfg_lines, "rawDir") %||% ""
   if (length(raw_dir) == 0 || is.na(raw_dir) || !nzchar(raw_dir)) raw_dir <- proj_dir
+  # ref_dir is deliberately not bind-mounted: the tasks write into their own
+  # work directory and Nextflow publishes to the folder from the host, so the
+  # mount only gave Singularity a missing path to refuse
   c("run", main_nf, "-entry", entry,
     if (file.exists(cfg)) c("-c", cfg),
     "-work-dir", work,
@@ -163,8 +156,7 @@ nf_reference_command <- function(project, entry, manifest, ref_dir, out_dir,
     "--outDir", path.expand(out_dir),
     "--ribopilot_src", ribopilot_src_default(),
     if (isTRUE(refseq)) c("--refseq", "true"),
-    if (nzchar(api_key %||% "")) c("--ncbi_api_key", api_key),
-    ref_bind_option(cfg_lines, ref_dir))
+    if (nzchar(api_key %||% "")) c("--ncbi_api_key", api_key))
 }
 
 #' The NCBI API key a project should use
@@ -208,6 +200,39 @@ nf_run_blocking <- function(project, args, log = NULL) {
   p$status
 }
 
+#' Stderr from the tasks that failed during a run
+#'
+#' An ignored failure leaves only a NOTE in the run log, so the reason the task
+#' died stays in its work directory and never reaches the user. The task hash in
+#' the NOTE is what connects the two.
+#'
+#' @param log The run log written by [nf_run_blocking()].
+#' @param work The run's work directory.
+#' @param n Lines kept from the end of each task's stderr.
+#' @return Unique error strings, newest run only; character(0) when none failed.
+#' @noRd
+failed_task_errors <- function(log, work, n = 2L) {
+  if (is.null(log) || !nzchar(log %||% "") || !file.exists(log)) return(character(0))
+  x <- readLines(log, warn = FALSE)
+  x <- x[grepl("terminated with an error", x, fixed = TRUE)]
+  rx <- "\\[([0-9a-f]{2}/[0-9a-f]{6,})\\]"
+  x <- x[grepl(rx, x)]
+  if (length(x) == 0) return(character(0))
+  hashes <- unique(sub(paste0("^.*", rx, ".*$"), "\\1", x))
+  errs <- vapply(hashes, function(h) {
+    p <- strsplit(h, "/", fixed = TRUE)[[1]]
+    d <- list.dirs(file.path(work, p[1]), recursive = FALSE, full.names = TRUE)
+    d <- d[startsWith(basename(d), p[2])]
+    if (length(d) == 0) return("")
+    f <- file.path(d[1], ".command.err")
+    if (!file.exists(f)) return("")
+    y <- trimws(readLines(f, warn = FALSE))
+    y <- y[nzchar(y)]
+    if (length(y) == 0) "" else paste(utils::tail(y, n), collapse = " ")
+  }, character(1), USE.NAMES = FALSE)
+  unique(errs[nzchar(errs)])
+}
+
 #' Count GenBank records for a set of clades, waiting for the run
 #'
 #' Only uncached clades are sent to Nextflow; the walk reads the cache.
@@ -233,17 +258,22 @@ run_clade_counts <- function(project, ref_dir, clades, api_key = "", refseq = FA
   man <- write_clade_manifest(file.path(rundir, "clades_count.tsv"), need)
   log <- file.path(rundir, paste0("count_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".log"))
   unlink(log); file.create(log)
+  work <- file.path(project, "work_ref")
   args <- nf_reference_command(project, "COUNT", man, ref_dir, out,
-    api_key = api_key, refseq = refseq, resume = FALSE)
+    api_key = api_key, refseq = refseq, resume = FALSE, work = work)
   # a non-zero status is not fatal: clades that did report are still worth
   # keeping, and the walk treats a missing count as unknown
   status <- runner(project, args, log)
+  # ignored failures leave the run status at 0, so the errors are collected
+  # whatever the status says
+  errs <- tryCatch(failed_task_errors(log, work), error = function(e) character(0))
   if (!identical(status, 0L) && !identical(status, 0)) {
     warning("run_clade_counts: Nextflow COUNT run exited with status ", status,
-      call. = FALSE)
+      if (length(errs) > 0) paste0(": ", errs[1]), call. = FALSE)
   }
   res <- merge_counts(ref_dir, read_count_files(out))
   # carried so the caller's failure message can quote the run that produced it
   attr(res, "log") <- log
+  attr(res, "errors") <- errs
   res
 }

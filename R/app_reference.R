@@ -176,10 +176,14 @@ reference_handlers <- function(input, output, session, deps) {
               cfg$min_records, cfg$max_records, start_rank = start_rank)
             if (nrow(s$groups) == 0) {
               # the counting run is the only thing that could have failed here,
-              # so its log is the message, not a pointer to a file
+              # so its log is the message, not a pointer to a file. A task that
+              # failed and was ignored says why only in its own stderr, and that
+              # is nearly always the real answer, so it leads.
               log <- attr(counts, "log")
+              errs <- attr(counts, "errors") %||% character(0)
               tail <- log_tail(log, 5)
               stop("Could not count GenBank records for any clade (the counting run returned no results).",
+                if (length(errs) > 0) paste0(" Task error: ", errs[1]) else "",
                 if (!is.null(log)) paste0(" Log: ", log, ".") else "",
                 if (nzchar(tail)) paste0(" Last lines: ", tail) else "",
                 call. = FALSE)
