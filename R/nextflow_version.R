@@ -43,21 +43,25 @@ nf_on_path <- function(nextflow = "nextflow") {
   nzchar(Sys.which(nextflow))
 }
 
-#' Parse the installed Nextflow version
+#' Raw output of `nextflow -version`
 #'
-#' Runs `nextflow -version` and extracts the `X.Y.Z` version, dropping any
-#' `-edge` / build suffix. stderr is merged and the exit status ignored: a fresh
-#' launcher prints "Downloading nextflow dependencies..." (and may exit non-zero)
-#' before the banner, and some builds print the banner on stderr.
+#' stderr is merged and the exit status ignored: a fresh launcher prints
+#' "Downloading nextflow dependencies..." (and may exit non-zero) before the
+#' banner, and some builds print the banner on stderr.
 #' @param nextflow The nextflow binary name/path.
-#' @return A version string like "25.10.6", or `NA_character_` if not found /
-#'   not parseable.
 #' @noRd
-nf_installed_version <- function(nextflow = "nextflow") {
-  out <- suppressWarnings(tryCatch(
+nf_version_output <- function(nextflow = "nextflow") {
+  suppressWarnings(tryCatch(
     system2(nextflow, args = "-version", stdout = TRUE, stderr = TRUE),
     error = function(e) character(0)
   ))
+}
+
+#' Extract the `X.Y.Z` version from `nextflow -version` output, dropping any
+#' `-edge` / build suffix.
+#' @return A version string like "25.10.6", or `NA_character_` if not parseable.
+#' @noRd
+nf_parse_version <- function(out) {
   if (length(out) == 0) {
     return(NA_character_)
   }
@@ -66,19 +70,22 @@ nf_installed_version <- function(nextflow = "nextflow") {
   if (length(v) == 0) NA_character_ else v[1]
 }
 
+#' Parse the installed Nextflow version
+#' @param nextflow The nextflow binary name/path.
+#' @noRd
+nf_installed_version <- function(nextflow = "nextflow") {
+  nf_parse_version(nf_version_output(nextflow))
+}
+
 #' Concise error output from a failed `nextflow -version`
 #'
 #' Surfaced in the "found but no version" message so the real cause (most often
 #' "Cannot find Java or it's a wrong version") is visible. Keeps the informative
 #' lines (ERROR / NOTE / Java), trimmed short.
-#' @param nextflow The nextflow binary name/path.
+#' @param out Output lines from [nf_version_output()].
 #' @return A short string, or "" if nothing useful was captured.
 #' @noRd
-nf_probe_error <- function(nextflow = "nextflow") {
-  out <- suppressWarnings(tryCatch(
-    system2(nextflow, args = "-version", stdout = TRUE, stderr = TRUE),
-    error = function(e) character(0)
-  ))
+nf_probe_error <- function(out) {
   if (length(out) == 0) {
     return("")
   }
@@ -182,14 +189,15 @@ in_r_build_context <- function() {
 check_nextflow_version <- function(context = NULL, nextflow = "nextflow",
                                    on_too_old = c("stop", "warn")) {
   on_too_old <- match.arg(on_too_old)
-  version <- nf_installed_version(nextflow)
+  probe <- nf_version_output(nextflow)
+  version <- nf_parse_version(probe)
   status <- nf_version_status(version)
   ctx <- if (is.null(context)) "" else paste0(" (", context, ")")
 
   switch(status,
     missing = warning(
       if (nf_on_path(nextflow)) {
-        err <- nf_probe_error(nextflow)
+        err <- nf_probe_error(probe)
         glue::glue(
           "A 'nextflow' executable was found but 'nextflow -version' did not ",
           "report a version{ctx}.",

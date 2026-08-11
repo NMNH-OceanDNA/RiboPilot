@@ -85,10 +85,6 @@ blast_scaffolds_local <- function(con, id, blast_db) {
 #' @return (invisibly) the feature data.frame.
 #' @export
 reconcile_one <- function(con, id, path = 1L, scaffold = 1L, gff = NULL, positions = NULL) {
-  # Ensure any columns added after this project was created exist before writing
-  # (e.g. annotations.model_coverage); reconcile runs before curate, which also
-  # migrates, so an older project would otherwise fail here on its first run.
-  ensure_curate_schema(con)
   path <- as.integer(path); scaffold <- as.integer(scaffold)
   bar <- if (!is.null(gff) && file.exists(gff)) parse_barrnap(readLines(gff, warn = FALSE)) else data.frame()
   pos_lines <- if (!is.null(positions) && file.exists(positions)) readLines(positions, warn = FALSE) else character(0)

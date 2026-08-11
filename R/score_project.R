@@ -44,7 +44,7 @@ make_blast_db <- function(fasta) {
 #'   headers).
 #' @param con Optional open DBI connection (else opened from `<path>/.sqlite`).
 #' @return (invisibly) NULL.
-#' @export
+#' @noRd
 score_project <- function(path = ".", out_dir = file.path(path, "out"),
                           taxdump_dir = file.path(path, ".taxonomy"),
                           blast_db = NULL, con = NULL) {

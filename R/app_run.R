@@ -114,8 +114,6 @@ run_app <- function(project = getwd(), onStart = NULL, options = list(),
   if (!file.exists(file.path(project, ".sqlite"))) {
     stop("No RiboPilot project (.sqlite) found in: ", project, call. = FALSE)
   }
-  # upgrade older project DBs to the current schema before the app opens
-  migrate_project(project)
   check_nextflow_version("RiboPilot app")
   warn_if_hydra_unconfigured()
   if (is.null(launch.browser)) launch.browser <- interactive()

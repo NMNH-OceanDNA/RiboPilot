@@ -40,7 +40,7 @@ VARIANT_REASON_SEP <- " | variant: "
 #'
 #' `cov_a`/`cov_b` are the fraction of EACH input the alignment actually covered.
 #' Identity alone is not enough: `pairwise_nt(type = "overlap")` allows free end
-#' gaps and [pwalign_pid()] divides matches by the aligned length, so a fragment
+#' gaps and pwalign::pid() divides matches by the aligned length, so a fragment
 #' matching a substring of a longer string scores 100 while covering half of it.
 #' @return list(pid, cov_a, cov_b), any of which may be NA.
 #' @noRd
@@ -52,9 +52,9 @@ screen_anchor_pid <- function(a, b) {
   aln <- tryCatch(pairwise_nt(a[1], b[1], type = "overlap"), error = function(e) NULL)
   if (is.null(aln)) return(out)
   tryCatch({
-    out$pid <- as.numeric(pwalign_pid(aln))
-    out$cov_a <- alignment_coverage(as.character(pwalign_pattern(aln)), nchar(a[1]))
-    out$cov_b <- alignment_coverage(as.character(pwalign_subject(aln)), nchar(b[1]))
+    out$pid <- as.numeric(pwalign::pid(aln))
+    out$cov_a <- alignment_coverage(as.character(pwalign::pattern(aln)), nchar(a[1]))
+    out$cov_b <- alignment_coverage(as.character(pwalign::subject(aln)), nchar(b[1]))
   }, error = function(e) NULL)
   out
 }

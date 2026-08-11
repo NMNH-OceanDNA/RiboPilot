@@ -37,7 +37,7 @@ compute_feature_msa <- function(con, id, path = 1L, scaffold = 1L, element, max_
   tryCatch(DECIPHER::AlignSeqs(dna, verbose = FALSE), error = function(e) NULL)
 }
 
-#' Pairwise nucleotide alignment wrapper (pwalign, fallback Biostrings)
+#' Pairwise nucleotide alignment wrapper
 #'
 #' Uses `type = "overlap"` (ends-free): terminal gaps are not penalized, so a
 #' full-length sample element aligned against a partial reference fragment scores
@@ -46,12 +46,8 @@ compute_feature_msa <- function(con, id, path = 1L, scaffold = 1L, element, max_
 #' reference records typical of sparse clades).
 #' @noRd
 pairwise_nt <- function(a, b, type = "overlap") {
-  fn <- if (requireNamespace("pwalign", quietly = TRUE)) {
-    pwalign::pairwiseAlignment
-  } else {
-    getExportedValue("Biostrings", "pairwiseAlignment")
-  }
-  fn(Biostrings::DNAString(a), Biostrings::DNAString(b), type = type)
+  pwalign::pairwiseAlignment(Biostrings::DNAString(a), Biostrings::DNAString(b),
+    type = type)
 }
 
 #' Fraction of the sample element covered by an alignment (non-gap sample bases
@@ -112,9 +108,9 @@ compute_ref_alignment <- function(con, id, path = 1L, scaffold = 1L) {
     if (!nzchar(s_sub) || !nzchar(r_sub)) next
     aln <- tryCatch(pairwise_nt(s_sub, r_sub), error = function(e) NULL)
     if (is.null(aln)) next
-    s_aln <- as.character(pwalign_pattern(aln))
-    r_aln <- as.character(pwalign_subject(aln))
-    pid <- pwalign_pid(aln)
+    s_aln <- as.character(pwalign::pattern(aln))
+    r_aln <- as.character(pwalign::subject(aln))
+    pid <- pwalign::pid(aln)
     aln_cov <- alignment_coverage(s_aln, nchar(s_sub))
     DBI::dbAppendTable(con, "blast_ref_alignment", data.frame(ID = id, path = path, scaffold = scaffold,
       accession = acc, element = el, pid = round(pid, 1), aln_cov = round(aln_cov, 3), aln_len = nchar(s_aln),
@@ -122,23 +118,6 @@ compute_ref_alignment <- function(con, id, path = 1L, scaffold = 1L) {
     n <- n + 1L
   }
   invisible(n)
-}
-
-# Accessors that work whether pairwiseAlignment came from pwalign or Biostrings.
-#' @noRd
-pwalign_pattern <- function(aln) {
-  fn <- if (requireNamespace("pwalign", quietly = TRUE)) pwalign::pattern else getExportedValue("Biostrings", "pattern")
-  fn(aln)
-}
-#' @noRd
-pwalign_subject <- function(aln) {
-  fn <- if (requireNamespace("pwalign", quietly = TRUE)) pwalign::subject else getExportedValue("Biostrings", "subject")
-  fn(aln)
-}
-#' @noRd
-pwalign_pid <- function(aln) {
-  fn <- if (requireNamespace("pwalign", quietly = TRUE)) pwalign::pid else getExportedValue("Biostrings", "pid")
-  fn(aln)
 }
 
 #' Query helper bound to an existing connection (parameterized)

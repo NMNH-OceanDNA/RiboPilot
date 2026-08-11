@@ -18,7 +18,7 @@ ref_product_to_element <- function(product, key) {
 #'
 #' @param ft_lines Character vector (lines of the feature-table file).
 #' @return data.frame(element, type, start, stop, strand); rRNA/ITS rows only.
-#' @export
+#' @noRd
 parse_feature_table <- function(ft_lines) {
   feats <- list()
   for (ln in ft_lines) {

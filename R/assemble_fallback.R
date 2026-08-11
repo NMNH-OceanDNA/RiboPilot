@@ -104,7 +104,7 @@ run_spades <- function(r1, r2, out_dir, threads = 4, opts = "") {
 #' @param min_contig Minimum contig length to consider.
 #' @param min_pident,max_evalue BLAST thresholds to call a contig rDNA.
 #' @return Number of contigs kept (0 if none).
-#' @export
+#' @noRd
 extract_rdna_contigs <- function(contigs_fa, labels_db, id, out_fa,
                                  min_contig = 300, min_pident = 70, max_evalue = 1e-10) {
   if (is.na(contigs_fa) || !file.exists(contigs_fa)) {

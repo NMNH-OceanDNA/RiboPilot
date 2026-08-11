@@ -17,7 +17,7 @@
 #' @param taxdump_dir Taxdump location (default `<path>/.taxonomy`).
 #' @param force_taxdump Re-download the taxdump even if present.
 #' @return (invisibly) the review data.frame.
-#' @export
+#' @noRd
 resolve_project_taxonomy <- function(path = ".",
                                      taxdump_dir = file.path(path, ".taxonomy"),
                                      force_taxdump = FALSE) {
@@ -65,7 +65,7 @@ resolve_project_taxonomy <- function(path = ".",
 #' @param path Project directory.
 #' @param taxdump_dir Taxdump location (default `<path>/.taxonomy`).
 #' @return (invisibly) the frozen per-Taxon data.frame.
-#' @export
+#' @noRd
 apply_project_taxonomy <- function(path = ".",
                                    taxdump_dir = file.path(path, ".taxonomy")) {
   csv <- file.path(path, "taxonomy_review.csv")

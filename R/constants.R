@@ -10,18 +10,10 @@ RRNA_GENES <- c("18S", "5.8S", "28S")
 #' @noRd
 RRNA_SPACERS <- c("ITS1", "ITS2")
 
-#' Optional external spacers (usually not recovered/curated by default)
-#' @noRd
-RRNA_EXTRA <- c("ETS", "IGS")
-
 #' Canonical 5'->3' order of elements in the rDNA repeat unit. Used to order features
 #' and derive spacers by subtraction between conserved anchors.
 #' @noRd
 RRNA_ELEMENT_ORDER <- c("ETS", "18S", "ITS1", "5.8S", "ITS2", "28S", "IGS")
-
-#' Flat list of element names for use as selectInput choices.
-#' @noRd
-RRNA_ELEMENT_CHOICES <- c(RRNA_GENES, RRNA_SPACERS, RRNA_EXTRA)
 
 #' Default GetOrganelle nrDNA reference databases (broad Actinopterygii).
 #'

@@ -80,7 +80,7 @@ extract_taxdump <- function(dir) {
 #' @param dir Destination directory (e.g. `<project>/.taxonomy`).
 #' @param force Re-download even if a tarball already exists.
 #' @return `dir`.
-#' @export
+#' @noRd
 ensure_taxdump <- function(dir, force = FALSE) {
   if (file.exists(taxdump_tarball(dir)) && !force) {
     return(dir)

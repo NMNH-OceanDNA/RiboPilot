@@ -17,6 +17,9 @@
 ^ref_dbs$
 ^\.taxonomy$
 ^RiboPilot_test\.R$
+^RiboPilot_test_hydra\.R$
+^tools$
+^REVIEW_.*\.md$
 ^\.nextflow$
 ^work$
 ^tests/testthat/\.sqlite$
