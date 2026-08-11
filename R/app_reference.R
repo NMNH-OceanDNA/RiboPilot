@@ -123,7 +123,7 @@ reference_handlers <- function(input, output, session, deps) {
   bump <- function() deps$refresh(shiny::isolate(deps$refresh()) + 1)
   # read fresh each time so tests can substitute a runner that spawns nothing
   count_runner <- function() getOption("ribopilot.count_runner", nf_run_blocking)
-  notify <- function(msg, type = "message") shiny::showNotification(msg, type = type, duration = 8)
+  notify <- function(msg, type = "message") rp_alert(msg, type, session = session)
 
   poll_now <- function() {
     tryCatch(with_con(poll_reference_builds), error = function(e) {

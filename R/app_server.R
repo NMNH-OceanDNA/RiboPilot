@@ -74,7 +74,7 @@ app_server <- function(input, output, session) {
     d <- wd_rows()
     req(!is.na(i), i >= 1, i <= nrow(d))
     if (!isTRUE(d$exists[i])) {
-      showNotification("Work directory not found on this host.", type = "warning")
+      rp_alert("Work directory not found on this host.", type = "warning")
       return()
     }
     open_path(d$workdir[i])
@@ -338,8 +338,8 @@ app_server <- function(input, output, session) {
     } else if (mode == "Annotate") {
       locked <- app_query("SELECT assemble_lock FROM assemble WHERE ID = ?", params = list(id))$assemble_lock
       if (!isTRUE(locked[1] == 1)) {
-        showNotification("Lock the assembly (Assemble mode) before annotating this sample.",
-          type = "warning", duration = 6)
+        rp_alert("Lock the assembly (Assemble mode) before annotating this sample.",
+          type = "warning")
         return()
       }
       u <- row_unit(i); sel_unit(u)
@@ -487,7 +487,7 @@ app_server <- function(input, output, session) {
     if (identical(input$mode %||% "Assemble", "Annotate")) return(set_unit_flag(sql))
     ids <- selected_ids()
     if (length(ids) == 0) {
-      showNotification("No samples selected.", type = "warning")
+      rp_alert("No samples selected.", type = "warning")
       return()
     }
     con <- app_con()
@@ -500,12 +500,12 @@ app_server <- function(input, output, session) {
       idx <- which(isolate(samples_data())$ID %in% ids)
       if (length(idx) > 0) reactable::updateReactable("tbl", selected = idx)
     }, once = TRUE)
-    showNotification(paste("Updated", length(ids), "sample(s)."), type = "message")
+    rp_alert(paste("Updated", length(ids), "sample(s)."), type = "message")
   }
   set_unit_flag <- function(sql) {
     u <- selected_units()
     if (is.null(u) || nrow(u) == 0) {
-      showNotification("No units selected.", type = "warning"); return()
+      rp_alert("No units selected.", type = "warning"); return()
     }
     usql <- sub("WHERE ID = \\?", "WHERE ID = ? AND path = ? AND scaffold = ?", sql)
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
@@ -518,7 +518,7 @@ app_server <- function(input, output, session) {
       idx <- which(paste(d$ID, pp, ss) %in% paste(u$ID, u$path, u$scaffold))
       if (length(idx) > 0) reactable::updateReactable("tbl", selected = idx)
     }, once = TRUE)
-    showNotification(paste("Updated", nrow(u), "unit(s)."), type = "message")
+    rp_alert(paste("Updated", nrow(u), "unit(s)."), type = "message")
   }
   observeEvent(input$lock_btn, {  # toggle lock on selected
     mm <- mode_meta(input$mode)
@@ -527,7 +527,7 @@ app_server <- function(input, output, session) {
     # Guard the bulk toggle against locking a second path.
     if (identical(input$mode %||% "Assemble", "Annotate")) {
       u <- selected_units()
-      if (is.null(u) || nrow(u) == 0) { showNotification("No units selected.", type = "warning"); return() }
+      if (is.null(u) || nrow(u) == 0) { rp_alert("No units selected.", type = "warning"); return() }
       con <- app_con(); on.exit(DBI::dbDisconnect(con))
       ids <- unique(u$ID)
       ph <- paste(rep("?", length(ids)), collapse = ",")
@@ -556,7 +556,7 @@ app_server <- function(input, output, session) {
   observeEvent(input$state_btn, {  # open a picker to choose the target state
     ids <- selected_ids()
     if (length(ids) == 0) {
-      showNotification("No samples selected.", type = "warning"); return()
+      rp_alert("No samples selected.", type = "warning"); return()
     }
     mm <- mode_meta(input$mode)
     cur <- app_query(sprintf("SELECT %s_switch AS s FROM %s WHERE ID = ?", mm$pfx, mm$tbl),
@@ -578,7 +578,7 @@ app_server <- function(input, output, session) {
   # ---- Export group actions ----
   observeEvent(input$assign_group_btn, {
     if (length(selected_ids()) == 0) {
-      showNotification("No samples selected.", type = "warning"); return()
+      rp_alert("No samples selected.", type = "warning"); return()
     }
     showModal(group_modal())
   })
@@ -590,16 +590,16 @@ app_server <- function(input, output, session) {
     }
     assign_export_group(app_project(), u, grp)
     removeModal(); refresh(refresh() + 1)
-    showNotification(paste0("Assigned ", nrow(u), " unit(s) to group '", grp, "'."), type = "message")
+    rp_alert(paste0("Assigned ", nrow(u), " unit(s) to group '", grp, "'."), type = "message")
   })
   observeEvent(input$clear_group_btn, {
     u <- selected_units()
     if (is.null(u) || nrow(u) == 0) {
-      showNotification("No units selected.", type = "warning"); return()
+      rp_alert("No units selected.", type = "warning"); return()
     }
     clear_export_group(app_project(), u)
     refresh(refresh() + 1)
-    showNotification(paste("Cleared group for", nrow(u), "unit(s)."), type = "message")
+    rp_alert(paste("Cleared group for", nrow(u), "unit(s)."), type = "message")
   })
 
   # ---- lock / state row filters (hide via CSS on rp-lock-/rp-state- classes) ----
@@ -640,9 +640,9 @@ app_server <- function(input, output, session) {
       c1 <- app_con(); on.exit(DBI::dbDisconnect(c1), add = TRUE); reference_pending(c1)
     }, error = function(e) character(0))
     if (length(pending) > 0) {
-      showNotification(sprintf(
+      rp_alert(sprintf(
         "%d reference group(s) are not built or skipped (%s). Those samples will assemble with the database their options set already has.",
-        length(pending), paste(pending, collapse = ", ")), type = "warning", duration = 12)
+        length(pending), paste(pending, collapse = ", ")), type = "warning")
     }
     nf_state(nf_progress_empty())
     hl <- app_headless()
@@ -665,18 +665,18 @@ app_server <- function(input, output, session) {
   }
   observeEvent(input$save_script, {
     f <- write_submit_script()
-    showNotification(paste0("Saved job script to ", f), type = "message", duration = 10)
+    rp_alert(paste0("Saved job script to ", f), type = "message")
   })
   observeEvent(input$submit_job, {
     sched <- detect_scheduler()
     if (is.null(sched)) {
-      showNotification("No scheduler (sbatch/qsub/bsub) found on PATH.", type = "warning"); return()
+      rp_alert("No scheduler (sbatch/qsub/bsub) found on PATH.", type = "warning"); return()
     }
     f <- write_submit_script()
     out <- tryCatch(system2(sched$cmd, shQuote(f), stdout = TRUE, stderr = TRUE),
       error = function(e) conditionMessage(e))
-    showNotification(paste0("Submitted via ", sched$cmd, ": ", paste(out, collapse = " ")),
-      type = "message", duration = 12)
+    rp_alert(paste0("Submitted via ", sched$cmd, ": ", paste(out, collapse = " ")),
+      type = "message")
     removeModal()
   })
 
@@ -688,7 +688,7 @@ app_server <- function(input, output, session) {
     ids <- DBI::dbGetQuery(con,
       "SELECT ID FROM samples WHERE taxonomy_lock = 0 AND taxonomy_switch IN (1,4)")$ID
     if (length(ids) == 0) {
-      showNotification("No unlocked samples are queued for taxonomy assignment.",
+      rp_alert("No unlocked samples are queued for taxonomy assignment.",
         type = "warning"); return()
     }
     shinyWidgets::sendSweetAlert(
@@ -758,7 +758,7 @@ app_server <- function(input, output, session) {
       shinyjs::hide("nf_stop"); shinyjs::show("nf_start")
       shinyjs::addClass(id = "rp_gears", class = "paused")
       refresh(refresh() + 1)
-      showNotification("Workflow run finished.", type = "message")
+      rp_alert("Workflow run finished.", type = "message")
     }
   })
 
@@ -913,8 +913,8 @@ app_server <- function(input, output, session) {
     grp <- export_group_choice()
     u <- export_units_df(grp)
     if (nrow(u) == 0) {
-      showNotification("No annotation-locked units to export. Lock annotations first.",
-        type = "warning", duration = 6)
+      rp_alert("No annotation-locked units to export. Lock annotations first.",
+        type = "warning")
       return()
     }
     rc <- validate_fasta_header(input$fasta_header, export_hdr_data(), require_seqid = TRUE)
@@ -950,7 +950,7 @@ app_server <- function(input, output, session) {
         markers = isTRUE(input$export_markers),
         report = isTRUE(input$export_report)),
       error = function(e) {
-        showNotification(paste("Export failed:", conditionMessage(e)), type = "error", duration = 8)
+        rp_alert(paste("Export failed:", conditionMessage(e)), type = "error")
         NULL
       })
     if (is.null(gdir)) return(invisible())
@@ -1074,15 +1074,15 @@ app_server <- function(input, output, session) {
     sel <- reactable::getReactableState("assemble_scaffolds", "selected")
     sel <- sel[!is.na(sel) & sel >= 1 & sel <= nrow(d)]
     if (length(sel) == 0) {
-      showNotification("Tick one or more scaffolds first.", type = "warning"); return()
+      rp_alert("Tick one or more scaffolds first.", type = "warning"); return()
     }
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
     txt <- unit_fasta_text(con, sel_id(), d[sel, c("path", "scaffold"), drop = FALSE])
     if (length(txt) == 0) {
-      showNotification("Those scaffolds have no stored sequence.", type = "warning"); return()
+      rp_alert("Those scaffolds have no stored sequence.", type = "warning"); return()
     }
     copy_to_clipboard(paste(txt, collapse = "\n"))
-    showNotification(sprintf("Copied %d scaffold(s) as FASTA.", length(sel)), type = "message")
+    rp_toast(sprintf("Copied %d scaffold(s) as FASTA.", length(sel)), type = "message")
   })
 
   # ---- per-unit BLAST evidence: the unfiltered screen vs the rDNA panel ----
@@ -1194,7 +1194,7 @@ app_server <- function(input, output, session) {
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
     set_unit_triage(con, id, p, s, verdict, reason = NA_character_, source = "user")
     refresh(refresh() + 1)
-    showNotification(sprintf("Scaffold %s.%s marked %s.", p, s,
+    rp_toast(sprintf("Scaffold %s.%s marked %s.", p, s,
       if (is.na(verdict)) "undecided" else switch(verdict, keep = "keep", drop = "drop", verdict)),
       type = "message")
   }
@@ -1216,9 +1216,9 @@ app_server <- function(input, output, session) {
         "SELECT annotate_lock, reviewed, export_group FROM annotate
          WHERE ID = ? AND path = ? AND scaffold = ?", params = list(id, p, s))
       if (nrow(st) && isTRUE(as.integer(st$annotate_lock[1]) == 1L)) {
-        showNotification(sprintf(
+        rp_alert(sprintf(
           "Scaffold %s.%s is annotation-locked. Unlock that unit in Annotation Review first.", p, s),
-          type = "error", duration = 8)
+          type = "error")
         return()
       }
       if (nrow(st) && (identical(st$reviewed[1], "yes") ||
@@ -1347,7 +1347,7 @@ app_server <- function(input, output, session) {
     }
     removeModal()
     refresh(refresh() + 1)
-    showNotification(sprintf("Triage updated %d scaffold(s) across %d sample(s).", n, length(ids)),
+    rp_alert(sprintf("Triage updated %d scaffold(s) across %d sample(s).", n, length(ids)),
       type = "message")
   })
 
@@ -1554,13 +1554,13 @@ app_server <- function(input, output, session) {
     tryCatch(curate_one(con, u$ID, u$path, u$scaffold), error = function(e) NULL)  # refresh flags after edits
     edit_backup(NULL); edit_dirty(FALSE)
     edit_tick(edit_tick() + 1); refresh(refresh() + 1)
-    showNotification("Boundary edits saved.", type = "message")
+    rp_toast("Boundary edits saved.", type = "message")
   }
   observeEvent(input$feat_edit, ignoreInit = TRUE, {
     if (isTRUE(input$feat_edit)) {
       if (is.null(active_feature())) {
         shinyWidgets::updatePrettyCheckbox(session, "feat_edit", value = FALSE)
-        showNotification("Select a feature first.", type = "warning"); return()
+        rp_toast("Select a feature first.", type = "warning"); return()
       }
       edit_backup(app_query("SELECT element, start, stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs()))
       edit_active(TRUE); edit_dirty(FALSE)
@@ -1584,7 +1584,7 @@ app_server <- function(input, output, session) {
       save_edits()
     } else {
       restore_edit_backup(); edit_backup(NULL); edit_dirty(FALSE); edit_tick(edit_tick() + 1)
-      showNotification("Boundary edits discarded.", type = "message")
+      rp_toast("Boundary edits discarded.", type = "message")
     }
   }, ignoreNULL = TRUE)
   observeEvent(input$feat_save, {
@@ -1594,7 +1594,7 @@ app_server <- function(input, output, session) {
   observeEvent(input$feat_reset, {
     restore_edit_backup(); edit_dirty(FALSE); edit_tick(edit_tick() + 1)
     shinyWidgets::updatePrettyCheckbox(session, "feat_edit", value = FALSE)
-    showNotification("Boundary edits discarded.", type = "message")
+    rp_toast("Boundary edits discarded.", type = "message")
   })
 
   # helper: (re)open the annotate details modal on the current unit
@@ -1607,7 +1607,7 @@ app_server <- function(input, output, session) {
     u <- sel_unit(); req(u)
     s <- app_query("SELECT length FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())
     if (nrow(s) == 0 || is.na(s$length[1])) {
-      showNotification("No unit sequence to trim.", type = "warning"); return()
+      rp_alert("No unit sequence to trim.", type = "warning"); return()
     }
     span <- app_query("SELECT MIN(start) AS a, MAX(stop) AS b FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())
     a_from <- if (nrow(span) && !is.na(span$a[1])) span$a[1] else 1L
@@ -1655,17 +1655,17 @@ app_server <- function(input, output, session) {
       from <- suppressWarnings(as.integer(input$trim_from)); to <- suppressWarnings(as.integer(input$trim_to))
     }
     if (is.na(from) || is.na(to) || from > to) {
-      showNotification("Invalid trim range.", type = "error"); return()
+      rp_alert("Invalid trim range.", type = "error"); return()
     }
     ok <- tryCatch({
       trim_assembly(con, u$ID, u$path, u$scaffold, from, to)
       tryCatch(curate_one(con, u$ID, u$path, u$scaffold), error = function(e) NULL)  # re-curate after the shift
       TRUE
-    }, error = function(e) { showNotification(conditionMessage(e), type = "error"); FALSE })
+    }, error = function(e) { rp_alert(conditionMessage(e), type = "error"); FALSE })
     if (isTRUE(ok)) {
       edit_tick(edit_tick() + 1); refresh(refresh() + 1)
       show_annotate_unit()  # back to the details modal, now showing trimmed coords
-      showNotification("Unit trimmed; feature coordinates + coverage shifted.", type = "message")
+      rp_alert("Unit trimmed; feature coordinates + coverage shifted.", type = "message")
     }
   })
 
@@ -1680,11 +1680,11 @@ app_server <- function(input, output, session) {
       len <- restore_assembly(con, u$ID, u$path, u$scaffold)
       tryCatch(curate_one(con, u$ID, u$path, u$scaffold), error = function(e) NULL)  # recompute flags for the full unit
       len
-    }, error = function(e) { showNotification(conditionMessage(e), type = "warning"); NULL })
+    }, error = function(e) { rp_alert(conditionMessage(e), type = "warning"); NULL })
     if (!is.null(ok)) {
       edit_tick(edit_tick() + 1); refresh(refresh() + 1)
       show_annotate_unit()
-      showNotification(paste0("Unit restored to original length (", ok, " bp)."), type = "message")
+      rp_alert(paste0("Unit restored to original length (", ok, " bp)."), type = "message")
     }
   })
 
@@ -1709,12 +1709,12 @@ app_server <- function(input, output, session) {
     DBI::dbExecute(con, "UPDATE annotate SET annotate_notes = NULL WHERE ID = ? AND path = ? AND scaffold = ?",
       params = uargs())
     updateTextAreaInput(session, "annotate_notes", value = "")
-    showNotification("Notes cleared.", type = "message")
+    rp_toast("Notes cleared.", type = "message")
   })
 
   # nudge one boundary by the chosen step (1-50), clamp to sequence, persist
   nudge_boundary <- function(end, dir) {
-    if (!isTRUE(edit_active())) { showNotification("Check Edit before adjusting boundaries.", type = "warning"); return() }
+    if (!isTRUE(edit_active())) { rp_toast("Check Edit before adjusting boundaries.", type = "warning"); return() }
     cx <- nudge_ctx(); req(cx)
     step <- suppressWarnings(as.integer(input$feat_step %||% 1))
     if (is.na(step)) step <- 1
@@ -1723,7 +1723,7 @@ app_server <- function(input, output, session) {
     if (end == "5") start <- start + if (dir == "out") -step else step
     else stop <- stop + if (dir == "out") step else -step
     start <- max(1, start); stop <- min(if (n > 0) n else stop, stop)
-    if (start > stop) { showNotification("Boundaries would cross; nudge ignored.", type = "warning"); return() }
+    if (start > stop) { rp_toast("Boundaries would cross; nudge ignored.", type = "warning"); return() }
     u <- sel_unit()
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
     DBI::dbExecute(con,
@@ -1744,7 +1744,7 @@ app_server <- function(input, output, session) {
       "UPDATE annotate SET %s = CASE WHEN %s = 'yes' THEN 'no' ELSE 'yes' END WHERE ID = ? AND path = ? AND scaffold = ?",
       col, col), params = uargs())
     refresh(refresh() + 1)
-    showNotification(paste0("Toggled ", label, "."), type = "message")
+    rp_toast(paste0("Toggled ", label, "."), type = "message")
   }
   observeEvent(input$mark_reviewed, {
     u <- sel_unit(); req(u)
@@ -1752,7 +1752,7 @@ app_server <- function(input, output, session) {
     on.exit(DBI::dbDisconnect(con))
     DBI::dbExecute(con, "UPDATE annotate SET reviewed = 'yes' WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())
     refresh(refresh() + 1)
-    showNotification("Marked reviewed.", type = "message")
+    rp_toast("Marked reviewed.", type = "message")
   })
   observeEvent(input$mark_problematic, modal_flag_toggle("problematic", "problematic"))
   observeEvent(input$mark_partial, modal_flag_toggle("partial", "partial"))
@@ -1766,9 +1766,9 @@ app_server <- function(input, output, session) {
       "SELECT DISTINCT path FROM annotate WHERE ID = ? AND annotate_lock = 1 AND path != ?",
       params = list(u$ID, u$path))
     if (nrow(other) > 0) {
-      showNotification(sprintf(
+      rp_alert(sprintf(
         "Path %s is already locked for %s. Only one assembly path can be locked per sample; unlock it first.",
-        other$path[1], u$ID), type = "error", duration = 8)
+        other$path[1], u$ID), type = "error")
       return()
     }
     DBI::dbExecute(con,
@@ -1776,6 +1776,6 @@ app_server <- function(input, output, session) {
       params = uargs())
     refresh(refresh() + 1)
     removeModal()
-    showNotification("Locked annotation unit.", type = "message")
+    rp_toast("Locked annotation unit.", type = "message")
   })
 }
