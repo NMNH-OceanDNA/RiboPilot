@@ -90,3 +90,32 @@ test_that("off Hydra the generic SGE header is used", {
   expect_match(s, "#\\$ -pe mthread 2")
   expect_match(s, "#\\$ -S /bin/bash")
 })
+
+test_that("job scripts report how nextflow exited", {
+  testthat::local_mocked_bindings(
+    is_hydra_cluster = function() TRUE,
+    nf_pin_version = function(...) NA_character_,
+    .package = "RiboPilot")
+  s <- RiboPilot:::job_script("/scratch/me/proj", "nextflow run x", NULL, "ribopilot")
+  # nextflow's own summary never reaches the job log under -ansi-log false, so a
+  # finished run must still leave a definitive last line
+  expect_match(s, "nextflow exited with status", fixed = TRUE)
+  expect_match(s, "exit $status", fixed = TRUE)
+  # -cwd would resolve to whatever directory the app was in, not the project
+  expect_false(grepl("-cwd", s, fixed = TRUE))
+})
+
+test_that("generic job scripts write their log inside the project", {
+  testthat::local_mocked_bindings(
+    is_hydra_cluster = function() FALSE,
+    nf_pin_version = function(...) NA_character_,
+    .package = "RiboPilot")
+  for (s in list(list(cmd = "qsub"), list(cmd = "sbatch"), list(cmd = "bsub"))) {
+    txt <- RiboPilot:::job_script("/tmp/proj", "nextflow run x", s, "ribopilot")
+    expect_match(txt, "-o /tmp/proj/ribopilot", fixed = TRUE)
+    expect_match(txt, "nextflow exited with status", fixed = TRUE)
+  }
+  expect_false(grepl("-cwd",
+    RiboPilot:::job_script("/tmp/proj", "nextflow run x", list(cmd = "qsub"), "ribopilot"),
+    fixed = TRUE))
+})

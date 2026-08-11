@@ -89,7 +89,9 @@ hydra_job_script <- function(project, cmd, jobname) {
     sprintf("#$ -N %s", jobname),
     # absolute: the submitting session's cwd is not necessarily the project dir
     sprintf("#$ -o %s", file.path(project, paste0(jobname, ".$JOB_ID.log"))),
-    "#$ -cwd -j y",
+    # no -cwd: it resolves to whatever directory the app happened to be in, which
+    # is not the project. The script cds there itself.
+    "#$ -j y",
     "#$ -q lTWFM.sq",
     "#$ -l wfmq",
     "#$ -l mres=24G,h_data=24G,h_vmem=64G",
@@ -103,6 +105,7 @@ hydra_job_script <- function(project, cmd, jobname) {
     if (is.na(pin)) NULL else paste0("export NXF_VER=", pin),
     sprintf("cd %s", shQuote(project)),
     cmd,
+    NF_EXIT_TRAILER,
     ""
   ), collapse = "\n")
 }

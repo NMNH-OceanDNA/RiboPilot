@@ -491,10 +491,16 @@ reference_handlers <- function(input, output, session, deps) {
     out <- tryCatch(system2(sched$cmd, shQuote(res), stdout = TRUE, stderr = TRUE),
       error = function(e) conditionMessage(e))
     submitted(unique(c(shiny::isolate(submitted()), build_targets())))
+    # record the build so the poller wires it when the job's FASTAs appear
+    try(with_con(function(con) {
+      mark_reference_submitted(con,
+        reference_missing_dbs(ref_config(con)$ref_dir, shiny::isolate(build_targets())))
+    }), silent = TRUE)
     headless_open(FALSE)
     shiny::removeModal()
+    bump()
     notify(paste0("Submitted via ", sched$cmd, ": ", paste(out, collapse = " "),
-      ". Run Build again once the job finishes to wire the databases."))
+      ". The database(s) will be wired automatically once the job finishes."))
   })
 
   idle_buttons <- function() {
