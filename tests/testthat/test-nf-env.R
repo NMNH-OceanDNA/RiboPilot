@@ -5,10 +5,19 @@
 # mismatch. It never fired. nf_command() passed `<root>/inst`, which has no
 # DESCRIPTION, so the source branch was skipped and every pipeline R process
 # quietly used the installed package instead.
+#
+# Under R CMD check the tests run against the INSTALLED package, so there is no
+# source checkout to find and the source-loading path cannot be exercised at
+# all. Those tests skip rather than assert something only true in a dev session.
+
+is_source_checkout <- function(d) {
+  file.exists(file.path(d, "DESCRIPTION")) &&
+    length(list.files(file.path(d, "R"), pattern = "\\.[Rr]$")) > 0
+}
 
 test_that("the pipeline is pointed at a package source root, not inst/", {
   src <- RiboPilot:::ribopilot_src_default()
-  expect_true(file.exists(file.path(src, "DESCRIPTION")))
+  skip_if(!is_source_checkout(src), "installed package, not a source checkout")
 
   dir <- withr::local_tempdir()
   file.create(file.path(dir, ".sqlite"))
@@ -40,7 +49,10 @@ test_that("an installed library directory is not mistaken for a source checkout"
     if (exists("rp_is_source_dir", envir = env, inherits = FALSE)) break
   }
   expect_false(env$rp_is_source_dir(lib))
-  expect_true(env$rp_is_source_dir(RiboPilot:::ribopilot_src_default()))
+
+  # and it still recognises a real checkout, when this session has one
+  src <- RiboPilot:::ribopilot_src_default()
+  if (is_source_checkout(src)) expect_true(env$rp_is_source_dir(src))
 })
 
 test_that("rp_env.R loads from source when handed either the root or inst/", {
@@ -49,7 +61,7 @@ test_that("rp_env.R loads from source when handed either the root or inst/", {
   env_r <- system.file("nextflow", "bin", "rp_env.R", package = "RiboPilot")
   skip_if(!nzchar(env_r), "rp_env.R not found")
   root <- RiboPilot:::ribopilot_src_default()
-  skip_if(!file.exists(file.path(root, "DESCRIPTION")), "not a source checkout")
+  skip_if(!is_source_checkout(root), "installed package, not a source checkout")
 
   for (src in c(root, file.path(root, "inst"))) {
     out <- suppressWarnings(system2("Rscript", c("-e",
