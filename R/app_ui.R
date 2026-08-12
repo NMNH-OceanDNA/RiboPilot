@@ -53,8 +53,8 @@ app_ui <- function(request) {
           bttn("refresh", NULL, "sync"),
           shiny::conditionalPanel("input.mode == 'Taxonomy'",
             ctrls(bttn("state_btn", "State"), bttn("lock_btn", "Lock"),
-              bttn("edit_taxon_btn", "Edit Taxon"),
-              bttn("run_btn", "Update", "circle-play"))),
+              bttn("run_btn", "Assign Taxonomy", "circle-play"),
+              bttn("edit_taxon_btn", "Edit Taxonomy", "pen-to-square"))),
           # Only the two controls that act on the whole tab live here. Everything
           # that acts on ONE group is in that group's own row (see app_reference.R).
           shiny::conditionalPanel("input.mode == 'Reference'",
