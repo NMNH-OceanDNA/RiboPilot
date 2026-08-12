@@ -29,3 +29,6 @@ out/
 
 # subagent-driven-development scratch workspace
 /.superpowers/
+
+# Claude Code local config (hooks, worktrees)
+/.claude/
