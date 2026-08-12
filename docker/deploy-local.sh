@@ -1,10 +1,14 @@
 #!/bin/bash
 # Build the RiboPilot Docker image locally. Usage: docker/deploy-local.sh [tag]
 # Run from the repository root. Use docker/deploy-dockerhub.sh to publish.
+#
+# The tag defaults to the DESCRIPTION Version rather than "latest": a floating
+# tag makes "which code is in this image" unanswerable, and it is the question
+# you ask first when a run misbehaves.
 
 set -euo pipefail
 
-tag="${1:-latest}"
+tag="${1:-$(awk '/^Version:/{print $2}' DESCRIPTION)}"
 repo="ribopilot"
 
 if [ ! -f DESCRIPTION ] || [ ! -f docker/Dockerfile ]; then

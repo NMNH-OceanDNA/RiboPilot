@@ -19,6 +19,26 @@ test_that("reference_table exposes ref_id as ID and the seed path as database", 
   expect_equal(d$clade_name[1], "Asteroidea")
   expect_equal(d$database[1], "/refs/a_seeds.fa")
   expect_true("reference_switch" %in% names(d))
+  # the state and the row's verb are rendered as words, not as icons the user
+  # has to decode; `source` was never explained anywhere, so it is gone
+  expect_equal(d$status[1], "Ready")
+  expect_equal(d$action[1], "Change")
+  expect_false("source" %in% names(d))
+})
+
+test_that("each reference state gets its own wording", {
+  con <- mk_tab_db(); on.exit(DBI::dbDisconnect(con))
+  for (s in c(1L, 3L, 4L, 5L)) {
+    DBI::dbExecute(con, "UPDATE reference SET reference_switch = ?", params = list(s))
+    d <- RiboPilot:::reference_table(con)
+    expect_equal(d$status[1], c(`1` = "Needs a database", `3` = "Build failed",
+      `4` = "Building", `5` = "Left on current database")[[as.character(s)]])
+  }
+  # a skipped group is still changeable, and a failed one says so
+  DBI::dbExecute(con, "UPDATE reference SET reference_switch = 3")
+  expect_equal(RiboPilot:::reference_table(con)$action[1], "Try again")
+  DBI::dbExecute(con, "UPDATE reference SET reference_switch = 1")
+  expect_equal(RiboPilot:::reference_table(con)$action[1], "Set up database")
 })
 
 test_that("the ladder modal shows every rung with coverage and counts", {
@@ -309,6 +329,68 @@ test_that("apply-clade counts a cached clade without calling the runner", {
   expect_equal(n$n_records, 900L)
 })
 
+# ---- the row action: which groups a click acts on ----
+#
+# The action cell replaced a bar of verbs, so the rule that decides its scope is
+# the whole point: a click on a row inside the current selection acts on the
+# selection, a click anywhere else acts on that row alone. Neither case may be
+# refused after the click, which is what the old "select exactly one" bar
+# buttons did.
+mk_two_group_deps <- function(dbfile, dir, selected) {
+  con <- DBI::dbConnect(RSQLite::SQLite(), dbfile)
+  DBI::dbExecute(con, "INSERT INTO reference (ref_id, clade_taxid, clade_name, clade_rank,
+    query, n_samples, n_records, reference_switch, time_stamp)
+    VALUES ('echinoidea', 7625, 'Echinoidea', 'class', '\"Echinoidea\"[Organism]', 0, 3110, 1, 1)")
+  tbl <- RiboPilot:::reference_table(con)
+  DBI::dbDisconnect(con)
+  deps <- mk_split_deps(dbfile, dir)
+  deps$table_data <- shiny::reactive(tbl)
+  deps$selected_ids <- function() selected
+  deps
+}
+
+skipped_ids <- function(dbfile) {
+  con <- DBI::dbConnect(RSQLite::SQLite(), dbfile); on.exit(DBI::dbDisconnect(con))
+  DBI::dbGetQuery(con, "SELECT ref_id FROM reference WHERE reference_switch = 5 ORDER BY ref_id")$ref_id
+}
+
+test_that("clicking a row inside the selection acts on the whole selection", {
+  skip_if_not_installed("withr")
+  dir <- withr::local_tempdir()
+  dbfile <- mk_split_db(dir)
+  deps <- mk_two_group_deps(dbfile, dir, selected = c("asteroidea", "echinoidea"))
+
+  shiny::testServer(function(input, output, session) {
+    RiboPilot:::reference_handlers(input, output, session, deps)
+  }, {
+    session$setInputs(ref_row_action = "1")   # row 1 = asteroidea, and it is ticked
+    session$flushReact()
+    session$setInputs(ref_act_skip = 1)
+    session$flushReact()
+  })
+
+  expect_equal(skipped_ids(dbfile), c("asteroidea", "echinoidea"))
+})
+
+test_that("clicking a row outside the selection acts on that row alone", {
+  skip_if_not_installed("withr")
+  dir <- withr::local_tempdir()
+  dbfile <- mk_split_db(dir)
+  deps <- mk_two_group_deps(dbfile, dir, selected = "echinoidea")
+
+  shiny::testServer(function(input, output, session) {
+    RiboPilot:::reference_handlers(input, output, session, deps)
+  }, {
+    session$setInputs(ref_row_action = "1")   # row 1 = asteroidea, NOT ticked
+    session$flushReact()
+    session$setInputs(ref_act_skip = 1)
+    session$flushReact()
+  })
+
+  # the ticked-but-unclicked group is left alone rather than swept in
+  expect_equal(skipped_ids(dbfile), "asteroidea")
+})
+
 # ---- reference_run_modal(): the Nextflow-run modal, mirroring run_modal() ----
 
 test_that("the reference run modal carries the command, progress, and controls", {
@@ -339,9 +421,10 @@ test_that("headless Build offers a BUILD job script and saves it, running nothin
   withr::local_options(list(RiboPilot.headless = TRUE))
 
   shiny::testServer(function(input, output, session) {
-    RiboPilot:::reference_handlers(input, output, session, deps)
+    h <- RiboPilot:::reference_handlers(input, output, session, deps)
+    do_build <- h$do_build
   }, {
-    session$setInputs(ref_build_btn = 1)
+    do_build("asteroidea")
     session$flushReact()
     session$setInputs(ref_save_script = 1)
     session$flushReact()
@@ -379,9 +462,10 @@ test_that("the saved job script carries the API key and RefSeq settings typed in
     job_basename = function(...) "ribopilot_ref_2026-08-12_09-45-03", .package = "RiboPilot")
 
   shiny::testServer(function(input, output, session) {
-    RiboPilot:::reference_handlers(input, output, session, deps)
+    h <- RiboPilot:::reference_handlers(input, output, session, deps)
+    do_build <- h$do_build
   }, {
-    session$setInputs(ref_build_btn = 1)
+    do_build("asteroidea")
     session$flushReact()
     # a real browser holds the script the modal was rendered with, generated
     # before the settings inputs existed; that stale copy must not be saved
@@ -409,9 +493,10 @@ test_that("an emptied script textarea falls back to a generated script", {
   withr::local_options(list(RiboPilot.headless = TRUE))
 
   shiny::testServer(function(input, output, session) {
-    RiboPilot:::reference_handlers(input, output, session, deps)
+    h <- RiboPilot:::reference_handlers(input, output, session, deps)
+    do_build <- h$do_build
   }, {
-    session$setInputs(ref_build_btn = 1)
+    do_build("asteroidea")
     session$flushReact()
     session$setInputs(ref_submit_script_text = "")
     session$setInputs(ref_save_script = 1)
@@ -446,9 +531,10 @@ test_that("the in-app Build run pins NXF_VER and passes what the project config 
     }, .package = "RiboPilot")
 
   shiny::testServer(function(input, output, session) {
-    RiboPilot:::reference_handlers(input, output, session, deps)
+    h <- RiboPilot:::reference_handlers(input, output, session, deps)
+    do_build <- h$do_build
   }, {
-    session$setInputs(ref_build_btn = 1)
+    do_build("asteroidea")
     session$flushReact()
     session$setInputs(ref_nf_start = 1)
     session$flushReact()
@@ -477,9 +563,10 @@ test_that("a hand-edited script is written as edited", {
   withr::local_options(list(RiboPilot.headless = TRUE))
 
   shiny::testServer(function(input, output, session) {
-    RiboPilot:::reference_handlers(input, output, session, deps)
+    h <- RiboPilot:::reference_handlers(input, output, session, deps)
+    do_build <- h$do_build
   }, {
-    session$setInputs(ref_build_btn = 1)
+    do_build("asteroidea")
     session$flushReact()
     session$setInputs(ref_submit_script_text = "#!/bin/bash\n#SBATCH -p bigmem\nnextflow run mine")
     session$setInputs(ref_save_script = 1)
@@ -541,9 +628,10 @@ test_that("headless Build defers the submit so the wait popup paints first", {
   skip_if(is.null(RiboPilot:::detect_scheduler()), "no scheduler on PATH")
 
   shiny::testServer(function(input, output, session) {
-    RiboPilot:::reference_handlers(input, output, session, deps)
+    h <- RiboPilot:::reference_handlers(input, output, session, deps)
+    do_build <- h$do_build
   }, {
-    session$setInputs(ref_build_btn = 1)
+    do_build("asteroidea")
     session$flushReact()
     session$setInputs(ref_submit_job = 1)
     session$flushReact()
