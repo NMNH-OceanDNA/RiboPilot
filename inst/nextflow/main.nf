@@ -40,6 +40,16 @@ params.ribopilot_src = ''
 params.taxdump_dir = ''
 params.ncbi_api_key = ''
 
+// A seeds/labels path stored in the database can point into a reference folder
+// that has since been deleted. file() on a dead path stages a DANGLING SYMLINK
+// rather than failing, and GetOrganelle exits 0 after "seeds not found", so the
+// sample would report success having assembled nothing. Blanking the dead path
+// sends the sample down the fallback arm instead. A URL is left alone: Nextflow
+// fetches it at stage time, and probing it here would be a network call per row.
+def live_db(p) {
+    (p && (p ==~ '^https?://.*' || file(p).exists())) ? p : ''
+}
+
 workflow {
     // samples straight from the DB (tab-separated, with header)
     rows = query_samples().splitCsv(header: true, sep: '\t')
@@ -51,7 +61,7 @@ workflow {
     // assemble_opts.seeds_db is nullable, so file('') would throw for EVERY row
     // -- including fallback rows that never use seeds -- before a task is
     // submitted. Only the getOrganelle arm below turns them into files.
-    asm_opts = rows.map { r -> tuple(r.ID, r.asm_cpus, r.asm_mem, r.getOrganelle, r.seeds_db, r.labels_db, r.assembler) }
+    asm_opts = rows.map { r -> tuple(r.ID, r.asm_cpus, r.asm_mem, r.getOrganelle, live_db(r.seeds_db), live_db(r.labels_db), r.assembler) }
     asm_in = preprocess.out.reads
         .filter { id, reads, after -> (after as Integer) >= (params.minDepth as Integer) }
         .map { id, reads, after -> tuple(id, reads) }
@@ -62,7 +72,8 @@ workflow {
     // an unrecognised assembler value would vanish from the run instead of
     // assembling. Defaulting the unknown case to the fallback keeps the sample.
     // A sample with no seeds/labels database cannot run GetOrganelle, so it
-    // takes the same fallback arm rather than being dropped.
+    // takes the same fallback arm rather than being dropped. live_db() above
+    // blanks a path whose file is gone, so those land here too.
     asm_branched = asm_in.branch {
         go: it[7] == 'getorganelle' && it[5] && it[6]
         fb: true

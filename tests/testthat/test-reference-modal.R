@@ -1,6 +1,14 @@
 # The reference tab's table shape and modal content.
 
-mk_tab_db <- function() {
+# The wired paths are real files: a "Ready" row is only Ready while its FASTAs
+# are on disk, so a fixture pointing at made-up paths would read as broken.
+tab_db_paths <- function(dir = tempdir()) {
+  p <- list(seeds = file.path(dir, "a_seeds.fa"), labels = file.path(dir, "a_labels.fa"))
+  for (f in p) writeLines(c(">x", "ACGT"), f)
+  p
+}
+
+mk_tab_db <- function(paths = tab_db_paths()) {
   con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
   DBI::dbExecute(con, RiboPilot:::REFERENCE_DDL)
   DBI::dbExecute(con, RiboPilot:::REFERENCE_CONFIG_DDL)
@@ -8,16 +16,17 @@ mk_tab_db <- function() {
   DBI::dbExecute(con, "INSERT INTO reference (ref_id, clade_taxid, clade_name, clade_rank,
     query, n_samples, n_records, reference_switch, source, seeds_db, labels_db, time_stamp)
     VALUES ('asteroidea', 7588, 'Asteroidea', 'class', '\"Asteroidea\"[Organism]', 4, 4102,
-      2, 'built', '/refs/a_seeds.fa', '/refs/a_labels.fa', 1)")
+      2, 'built', ?, ?, 1)", params = list(paths$seeds, paths$labels))
   con
 }
 
 test_that("reference_table exposes ref_id as ID and the seed path as database", {
-  con <- mk_tab_db(); on.exit(DBI::dbDisconnect(con))
+  p <- tab_db_paths()
+  con <- mk_tab_db(p); on.exit(DBI::dbDisconnect(con))
   d <- RiboPilot:::reference_table(con)
   expect_equal(d$ID[1], "asteroidea")
   expect_equal(d$clade_name[1], "Asteroidea")
-  expect_equal(d$database[1], "/refs/a_seeds.fa")
+  expect_equal(d$database[1], p$seeds)
   expect_true("reference_switch" %in% names(d))
   # the state and the row's verb are rendered as words, not as icons the user
   # has to decode; `source` was never explained anywhere, so it is gone
@@ -39,6 +48,27 @@ test_that("each reference state gets its own wording", {
   expect_equal(RiboPilot:::reference_table(con)$action[1], "Try again")
   DBI::dbExecute(con, "UPDATE reference SET reference_switch = 1")
   expect_equal(RiboPilot:::reference_table(con)$action[1], "Set up database")
+})
+
+# The reference folder is shared and can be deleted long after a group was wired
+# to it. The row used to keep reading "Ready" with a dead path, offering only
+# "Change", and the pipeline then assembled nothing while reporting success.
+test_that("a Ready group whose FASTAs are gone reads as missing, not Ready", {
+  skip_if_not_installed("withr")
+  dir <- withr::local_tempdir()
+  p <- tab_db_paths(dir)
+  con <- mk_tab_db(p); on.exit(DBI::dbDisconnect(con))
+  expect_equal(RiboPilot:::reference_table(con)$status[1], "Ready")
+  unlink(p$seeds)
+  d <- RiboPilot:::reference_table(con)
+  expect_equal(d$status[1], "Database missing")
+  expect_equal(d$action[1], "Set up database")
+  expect_match(d$fail_reason[1], "no longer")
+  # the labels FASTA counts too, and an empty file is as dead as a missing one
+  writeLines(c(">x", "ACGT"), p$seeds); unlink(p$labels); file.create(p$labels)
+  expect_equal(RiboPilot:::reference_table(con)$status[1], "Database missing")
+  # the labels path never reaches the table: only the seed path is shown
+  expect_false("labels_db" %in% names(RiboPilot:::reference_table(con)))
 })
 
 test_that("the ladder modal shows every rung with coverage and counts", {
