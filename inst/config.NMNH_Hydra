@@ -25,6 +25,15 @@ singularity {
 // qsub rejects it. Memory is left unset here and requested through Hydra's own
 // mres/h_data/h_vmem instead. The withName blocks below also clear the memory
 // directives the pipeline itself declares (a selector outranks the process).
+//
+// h_vmem is NOT the real-memory request: UGE enforces it as a hard per-process
+// address-space cap. R (OpenBLAS) and Python (numpy) reserve one buffer per core
+// the node reports, which on Hydra's big nodes is tens of GB of address space
+// against a few hundred MB of resident memory, and SPAdes/bowtie2 reserve
+// similarly. Tying h_vmem to the real-memory number killed every one of those
+// jobs seconds after start ("OpenBLAS error: Memory allocation still failed").
+// Real memory is limited by h_data; h_vmem stays a loose runaway guard, the same
+// 64G the driver job in R/hydra.R already uses.
 process {
     executor = 'sge'
     container = '<<CONTAINER_ID>>'
@@ -34,7 +43,7 @@ process {
     clusterOptions = {
         def mem = 16 * task.attempt
         def perCpu = mem / (task.cpus ?: 1)
-        "-l mres=${mem}G,h_data=${perCpu}G,h_vmem=${perCpu}G${perCpu > 8 ? ',himem' : ''} -S /bin/bash"
+        "-l mres=${mem}G,h_data=${perCpu}G,h_vmem=64G${perCpu > 8 ? ',himem' : ''} -S /bin/bash"
     }
 
     // memory per sample comes from the project database
@@ -43,7 +52,7 @@ process {
         clusterOptions = {
             def m = (mem as int) * task.attempt
             def perCpu = m / (task.cpus ?: 1)
-            "-l mres=${m}G,h_data=${perCpu}G,h_vmem=${perCpu}G${perCpu > 8 ? ',himem' : ''} -S /bin/bash"
+            "-l mres=${m}G,h_data=${perCpu}G,h_vmem=64G${perCpu > 8 ? ',himem' : ''} -S /bin/bash"
         }
     }
 
@@ -52,7 +61,7 @@ process {
         clusterOptions = {
             def m = 8 * task.attempt
             def perCpu = m / (task.cpus ?: 1)
-            "-l mres=${m}G,h_data=${perCpu}G,h_vmem=${perCpu}G${perCpu > 8 ? ',himem' : ''} -S /bin/bash"
+            "-l mres=${m}G,h_data=${perCpu}G,h_vmem=64G${perCpu > 8 ? ',himem' : ''} -S /bin/bash"
         }
     }
 }
