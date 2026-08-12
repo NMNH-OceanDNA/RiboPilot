@@ -163,3 +163,17 @@ details[open] summary {
 .mp-table-resize > div > .reactable {
   height: 100% !important;
 }
+
+/* Empty-table message. reactable ships `.rt-no-data { line-height: 0 }`, which
+   only holds for its own one-word default ("No rows found"); every mode here
+   explains what to do next instead, and at zero line-height a message that
+   wraps draws each line on top of the last. Restore a real line-height and give
+   it a width to wrap inside, since it is absolutely positioned and would
+   otherwise run past the table on a narrow window. */
+.rt-no-data {
+  line-height: 1.45;
+  max-width: min(46em, 90%);
+  padding: 0 1em;
+  text-align: center;
+  white-space: normal;
+}
