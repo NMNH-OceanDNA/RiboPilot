@@ -1,6 +1,10 @@
 # The Reference tab: one row per clade group, a ladder to change the clade, and
 # the build / reuse / skip actions.
 #
+# Every verb lives in the row, not in the control bar: each group is at its own
+# point of the lifecycle and admits one sensible action, so a bar of verbs meant
+# the user had to guess which rows a click would touch and how many were allowed.
+#
 # The table's key column is named ID so the app's shared selection, CSV export
 # and click handlers work on it unchanged; the value is the group key, not a
 # sample.
@@ -11,15 +15,22 @@
 #' @noRd
 reference_table <- function(con) {
   d <- tryCatch(DBI::dbGetQuery(con,
-    "SELECT reference_switch, ref_id AS ID, clade_name, clade_rank, n_samples, n_records,
-       COALESCE(source, '') AS source, COALESCE(seeds_db, '') AS database,
-       COALESCE(fail_reason, '') AS fail_reason, time_stamp
+    "SELECT reference_switch,
+       CASE COALESCE(reference_switch, 1)
+         WHEN 2 THEN 'Ready' WHEN 3 THEN 'Build failed' WHEN 4 THEN 'Building'
+         WHEN 5 THEN 'Left on current database' ELSE 'Needs a database' END AS status,
+       ref_id AS ID, clade_name, clade_rank, n_samples, n_records,
+       COALESCE(seeds_db, '') AS database,
+       COALESCE(fail_reason, '') AS fail_reason, time_stamp,
+       CASE COALESCE(reference_switch, 1)
+         WHEN 3 THEN 'Try again' WHEN 2 THEN 'Change' WHEN 4 THEN 'Change'
+         WHEN 5 THEN 'Change' ELSE 'Set up database' END AS action
      FROM reference ORDER BY ref_id"), error = function(e) NULL)
   if (is.null(d)) {
-    d <- data.frame(reference_switch = integer(0), ID = character(0), clade_name = character(0),
-      clade_rank = character(0), n_samples = integer(0), n_records = integer(0),
-      source = character(0), database = character(0), fail_reason = character(0),
-      time_stamp = integer(0), stringsAsFactors = FALSE)
+    d <- data.frame(reference_switch = integer(0), status = character(0), ID = character(0),
+      clade_name = character(0), clade_rank = character(0), n_samples = integer(0),
+      n_records = integer(0), database = character(0), fail_reason = character(0),
+      time_stamp = integer(0), action = character(0), stringsAsFactors = FALSE)
   }
   d
 }
@@ -70,9 +81,12 @@ reference_ladder_modal <- function(ref_id, clade_name, ladder, chosen_taxid, n_g
 }
 
 #' Use-an-existing-database modal: manifest entries plus typed paths
-#' @param manifest From [read_ref_manifest()]. @param ref_id Group key.
+#' @param manifest From [read_ref_manifest()].
+#' @param label What to call the target in the title: the clade name for one
+#'   group, "N selected groups" for several. Never the raw group key, which the
+#'   table no longer shows.
 #' @noRd
-reference_existing_modal <- function(manifest, ref_id) {
+reference_existing_modal <- function(manifest, label) {
   listing <- if (nrow(manifest) == 0) {
     shiny::helpText("No databases recorded in this reference folder yet.")
   } else {
@@ -87,7 +101,7 @@ reference_existing_modal <- function(manifest, ref_id) {
       shape = "round", status = "primary")
   }
   shiny::modalDialog(
-    title = sprintf("Use an existing database for '%s'", ref_id), size = "l",
+    title = sprintf("Use an existing database for %s", label), size = "l",
     listing,
     shiny::textInput("ref_existing_seeds", "Seed FASTA path:", width = "100%"),
     shiny::textInput("ref_existing_labels", "Label FASTA path:", width = "100%"),
@@ -98,16 +112,56 @@ reference_existing_modal <- function(manifest, ref_id) {
       shiny::modalButton("Cancel")))
 }
 
+#' Row action modal: everything that can be done to a reference group
+#'
+#' The table's action cell is the only door onto these, so each choice is a full
+#' sentence naming its consequence. "Leave these samples..." is the only place in
+#' the app that says what skipping actually costs, which is why it is spelled out
+#' rather than labelled "Skip".
+#'
+#' @param ids Group keys the action will apply to.
+#' @param label Display name for the title (clade name, or "N selected groups").
+#' @noRd
+reference_action_modal <- function(ids, label) {
+  choice <- function(id, text, help, primary = FALSE) {
+    shiny::div(style = "margin-bottom:0.9em;",
+      shiny::actionButton(id, text, width = "100%",
+        class = if (primary) "btn-primary btn-sm" else "btn-sm"),
+      opts_help(help))
+  }
+  shiny::modalDialog(
+    title = sprintf("Reference database for %s", label), size = "l",
+    choice("ref_act_build", "Download sequences from GenBank",
+      paste("Builds a seed database for this clade from GenBank.",
+        "This is the normal choice."), primary = TRUE),
+    choice("ref_act_existing", "Use a database I already have",
+      paste("Point these samples at seed and label FASTA files already on disk,",
+        "for example one a colleague built.")),
+    # the ladder walks one group's shared lineage, so it has no meaning across a
+    # multi-group selection
+    if (length(ids) == 1) {
+      choice("ref_act_clade", "Change which clade this group uses",
+        "Widen or narrow the group, or pick a different clade entirely.")
+    },
+    choice("ref_act_skip", "Leave these samples on the built-in fish database",
+      paste("Nothing is built. These samples assemble against RiboPilot's",
+        "ray-finned fish reference, which is usually wrong outside fish.")),
+    footer = shiny::modalButton("Cancel"))
+}
+
 #' Wire the Reference tab
 #'
 #' @param deps list(con = fn -> DBI con, project = fn -> chr, refresh = reactiveVal,
 #'   selected_ids = fn -> chr, table_data = reactive -> data.frame).
-#' @return list(open_ladder = function(ref_id), poll = function()).
+#' @return list(open_ladder, apply_clade, poll, do_build, do_skip, open_existing),
+#'   each taking the group key(s) it acts on.
 #' @noRd
 reference_handlers <- function(input, output, session, deps) {
   ladder_target <- shiny::reactiveVal(NULL)
   existing_target <- shiny::reactiveVal(NULL)
   build_targets <- shiny::reactiveVal(character(0))
+  action_target <- shiny::reactiveVal(character(0))  # groups the row action applies to
+  action_label <- shiny::reactiveVal(NULL)           # what to call them in a title
   picked <- shiny::reactiveVal(NULL)   # taxid chosen from the search box
   ref_proc <- shiny::reactiveVal(NULL)
   ref_log <- shiny::reactiveVal("")
@@ -194,7 +248,8 @@ reference_handlers <- function(input, output, session, deps) {
           })
           bump()
           shinyWidgets::sendSweetAlert(title = "Clades suggested",
-            text = sprintf("Proposed %d reference group(s). Review, then build or skip.", n),
+            text = sprintf(paste("Proposed %d reference group(s). Use the link at the end of",
+              "each row to give that group a database."), n),
             type = "success")
           NULL
         }, error = function(e) e)
@@ -233,7 +288,6 @@ reference_handlers <- function(input, output, session, deps) {
     if (inherits(res, "error")) { notify(conditionMessage(res), "error"); return() }
     shiny::showModal(res)
   }
-  shiny::observeEvent(input$ref_edit_btn, open_ladder(deps$selected_ids()))
   shiny::observeEvent(input$ref_open_clade, {
     i <- suppressWarnings(as.integer(input$ref_open_clade))
     d <- deps$table_data()
@@ -340,26 +394,25 @@ reference_handlers <- function(input, output, session, deps) {
   }
 
   # ---- skip ----
-  shiny::observeEvent(input$ref_skip_btn, {
-    ids <- deps$selected_ids()
+  do_skip <- function(ids) {
     if (length(ids) == 0) { notify("Select a group first.", "warning"); return() }
     res <- tryCatch(with_con(function(con) { for (r in ids) skip_reference_group(con, r); length(ids) }),
       error = function(e) e)
     if (inherits(res, "error")) { notify(conditionMessage(res), "error"); return() }
     bump()
-    notify(sprintf("Skipped %d group(s); their samples keep their current database.", res))
-  })
+    notify(sprintf("Left %d group(s) on the built-in fish database.", res))
+  }
 
   # ---- use existing ----
-  shiny::observeEvent(input$ref_existing_btn, {
-    ids <- deps$selected_ids()
-    if (length(ids) != 1) { notify("Select exactly one group.", "warning"); return() }
-    existing_target(ids[1])
+  open_existing <- function(ids, label = NULL) {
+    if (length(ids) == 0) { notify("Select a group first.", "warning"); return() }
+    existing_target(ids)
     res <- tryCatch(with_con(function(con) reference_existing_modal(
-      read_ref_manifest(ref_config(con)$ref_dir), ids[1])), error = function(e) e)
+      read_ref_manifest(ref_config(con)$ref_dir),
+      label %||% sprintf("%d selected groups", length(ids)))), error = function(e) e)
     if (inherits(res, "error")) { notify(conditionMessage(res), "error"); return() }
     shiny::showModal(res)
-  })
+  }
   shiny::observeEvent(input$ref_existing_pick, {
     i <- suppressWarnings(as.integer(input$ref_existing_pick))
     with_con(function(con) {
@@ -371,9 +424,14 @@ reference_handlers <- function(input, output, session, deps) {
     })
   })
   shiny::observeEvent(input$ref_existing_apply, {
-    res <- tryCatch(with_con(function(con) use_existing_reference(con, existing_target(),
-      input$ref_existing_seeds %||% "", input$ref_existing_labels %||% "")),
-      error = function(e) e)
+    res <- tryCatch(with_con(function(con) {
+      n <- 0L
+      for (r in existing_target()) {
+        n <- n + use_existing_reference(con, r,
+          input$ref_existing_seeds %||% "", input$ref_existing_labels %||% "")
+      }
+      n
+    }), error = function(e) e)
     if (inherits(res, "error")) { notify(conditionMessage(res), "error"); return() }
     shiny::removeModal(); bump()
     notify(sprintf("Pointed %d sample(s) at the existing database.", res))
@@ -401,8 +459,7 @@ reference_handlers <- function(input, output, session, deps) {
     s
   }
 
-  shiny::observeEvent(input$ref_build_btn, {
-    ids <- deps$selected_ids()
+  do_build <- function(ids) {
     if (length(ids) == 0) { notify("Select the group(s) to build.", "warning"); return() }
     build_targets(ids)
     ref_state(nf_progress_empty())
@@ -434,7 +491,28 @@ reference_handlers <- function(input, output, session, deps) {
     shiny::showModal(reference_run_modal(length(res$todo), res$ref_dir,
       headless = hl, sched = sched, script = script,
       api_key = project_ncbi_key(deps$project())))
+  }
+
+  # ---- row action: one door onto build / reuse / re-clade / skip ----
+  # The clicked row folds into the current selection when it is part of it, so a
+  # bulk action is still one click and no action is ever refused after the click.
+  shiny::observeEvent(input$ref_row_action, {
+    i <- suppressWarnings(as.integer(input$ref_row_action))
+    d <- deps$table_data()
+    if (is.na(i) || i < 1 || i > nrow(d)) return()
+    sel <- deps$selected_ids()
+    ids <- if (d$ID[i] %in% sel) sel else d$ID[i]
+    lbl <- if (length(ids) == 1) d$clade_name[i] else sprintf("%d selected groups", length(ids))
+    action_label(lbl)
+    action_target(ids)
+    shiny::showModal(reference_action_modal(ids, lbl))
   })
+  shiny::observeEvent(input$ref_act_build, { shiny::removeModal(); do_build(action_target()) })
+  shiny::observeEvent(input$ref_act_existing, {
+    shiny::removeModal(); open_existing(action_target(), action_label())
+  })
+  shiny::observeEvent(input$ref_act_clade, { shiny::removeModal(); open_ladder(action_target()) })
+  shiny::observeEvent(input$ref_act_skip, { shiny::removeModal(); do_skip(action_target()) })
 
   # the script is built before the modal renders, so its settings inputs are
   # still NULL; regenerate it whenever one of them changes, or the saved job
@@ -654,6 +732,8 @@ reference_handlers <- function(input, output, session, deps) {
   })
 
   # apply_clade is exposed so a test can run it the way later() does: session
-  # domain, no reactive context
-  list(open_ladder = open_ladder, apply_clade = apply_clade, poll = poll_now)
+  # domain, no reactive context; the row actions are exposed so tests can drive
+  # them without a button id, which is what the UI does now too
+  list(open_ladder = open_ladder, apply_clade = apply_clade, poll = poll_now,
+    do_build = do_build, do_skip = do_skip, open_existing = open_existing)
 }
