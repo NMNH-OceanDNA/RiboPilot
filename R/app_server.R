@@ -77,7 +77,10 @@ app_server <- function(input, output, session) {
       rp_alert("Work directory not found on this host.", type = "warning")
       return()
     }
-    open_path(d$workdir[i])
+    if (!open_path(d$workdir[i])) {
+      rp_alert(paste0("This session has no file browser to open. The work directory is: ",
+        d$workdir[i]), type = "warning")
+    }
   })
 
   # selection count (feedback before a bulk action) + CSV export of the table
@@ -986,7 +989,15 @@ app_server <- function(input, output, session) {
     ))
     invisible()
   }
-  observeEvent(input$open_export_dir, open_path(export_done_dir()))
+  observeEvent(input$open_export_dir, {
+    d <- export_done_dir()
+    # a remote session with no RStudio Files pane can show the user nothing;
+    # saying where the export is beats a button that appears to do nothing
+    if (!open_path(d)) {
+      rp_alert(paste0("This session has no file browser to open. The export is at: ", d),
+        type = "warning")
+    }
+  })
 
   # ---- Assemble modal ----
   # Single source of truth for the scaffold table AND its click handlers. The

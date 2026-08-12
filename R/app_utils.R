@@ -54,14 +54,48 @@ find_workdirs <- function(project_dir, sample_id) {
   out[, c("process", "status", "modified", "workdir", "exists")]
 }
 
-#' Open a path in the OS file manager (best-effort)
+#' Show a directory to the user, by whatever means this session actually has
+#'
+#' Two different situations, and the desktop assumption is wrong in one of them.
+#' On a desktop session the R process and the user are on the same machine, so
+#' the platform's file manager is the right answer. In an RStudio Server session
+#' (a cluster login node) the R process is on a host the user has no desktop on:
+#' `xdg-open` there reaches nothing, and RStudio Server intercepts it and serves
+#' a URL that 404s. The Files pane is the only file browser that session has in
+#' front of the user, so navigate that instead.
+#'
+#' @return invisibly `TRUE` if a browser was opened, `FALSE` if this session has
+#'   no way to show a directory (the caller then has to say where it is).
 #' @noRd
 open_path <- function(path) {
-  if (length(path) != 1 || is.na(path) || !nzchar(path)) return(invisible())
+  if (length(path) != 1 || is.na(path) || !nzchar(path)) return(invisible(FALSE))
+  if (app_headless()) {
+    return(invisible(rstudio_show_dir(path)))
+  }
   cmd <- if (Sys.info()[["sysname"]] == "Darwin") "open" else
     if (.Platform$OS.type == "windows") "explorer" else "xdg-open"
   try(system2(cmd, shQuote(path), stdout = FALSE, stderr = FALSE, wait = FALSE), silent = TRUE)
-  invisible()
+  invisible(TRUE)
+}
+
+#' Point the RStudio Files pane at a directory
+#'
+#' Guarded on every step: rstudioapi is a Suggests, `isAvailable()` is FALSE when
+#' the app was launched from a plain R session, and `filesPaneNavigate()` is not
+#' in older RStudio. A remote session without RStudio has no file browser at all,
+#' which is a real answer rather than an error.
+#' @return `TRUE` if the pane was navigated.
+#' @noRd
+rstudio_show_dir <- function(path) {
+  if (!requireNamespace("rstudioapi", quietly = TRUE)) return(FALSE)
+  ok <- tryCatch(
+    rstudioapi::isAvailable() && rstudioapi::hasFun("filesPaneNavigate"),
+    error = function(e) FALSE)
+  if (!isTRUE(ok)) return(FALSE)
+  tryCatch({
+    rstudioapi::filesPaneNavigate(path)
+    TRUE
+  }, error = function(e) FALSE)
 }
 
 #' Active project directory (from golem options, else cwd)
