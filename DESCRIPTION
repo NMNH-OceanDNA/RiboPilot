@@ -1,6 +1,6 @@
 Package: RiboPilot
 Title: Nuclear ribosomal repeat assembly, annotation, and curation
-Version: 0.0.0.9004
+Version: 0.0.0.9005
 Authors@R: c(
     person("Dan", "MacGuigan", , "macguigand@si.edu", role = c("aut", "cre"))
   )
