@@ -34,6 +34,22 @@ test_that("the empty-table message stays readable and clear of the header", {
   expect_match(rule, "position:\\s*static")
 })
 
+test_that("the settings modal groups the folder and the record window", {
+  html <- as.character(RiboPilot:::reference_settings_modal(
+    list(ref_dir = "/lab/refs", min_records = 1000L, max_records = 25000L)))
+  expect_true(grepl("Reference settings", html, fixed = TRUE))
+  expect_true(grepl("Reference database folder", html, fixed = TRUE))
+  expect_true(grepl("/lab/refs", html, fixed = TRUE))
+  for (id in c("ref_dir_path", "ref_min", "ref_max", "ref_dir_apply")) {
+    expect_true(grepl(id, html, fixed = TRUE), info = id)
+  }
+  # the measure is named once, in the heading, so the two fields can be one word
+  # each instead of repeating "GenBank records for a suggested clade" twice
+  expect_true(grepl("GenBank records per suggested clade", html, fixed = TRUE))
+  expect_false(grepl("Minimum GenBank records", html, fixed = TRUE))
+  expect_false(grepl("Maximum GenBank records", html, fixed = TRUE))
+})
+
 test_that("the row action modal names what skipping actually costs", {
   html <- as.character(RiboPilot:::reference_action_modal("asteroidea", "Asteroidea"))
   for (id in c("ref_act_build", "ref_act_existing", "ref_act_clade", "ref_act_skip")) {

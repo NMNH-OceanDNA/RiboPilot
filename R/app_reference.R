@@ -112,6 +112,40 @@ reference_existing_modal <- function(manifest, label) {
       shiny::modalButton("Cancel")))
 }
 
+# Section headings in the settings modal. Bootstrap's h5 is lighter than a
+# .control-label, so a bare h5 above the Minimum/Maximum labels reads as the
+# smaller of the two; 600 puts the heading back on top.
+SETTINGS_HEAD <- "font-weight:600; margin:2px 0 6px;"
+
+#' Settings modal: the reference folder, and the record window Propose groups uses
+#'
+#' @param cfg From [ref_config()].
+#' @noRd
+reference_settings_modal <- function(cfg) {
+  shiny::modalDialog(
+    title = "Reference settings", size = "l",
+    shiny::h5("Reference database folder", style = SETTINGS_HEAD),
+    shiny::textInput("ref_dir_path", NULL, width = "100%", value = cfg$ref_dir),
+    opts_help("Databases built here are reused by every project pointed at this ",
+      "folder, including a shared drive. Changing it does not move databases ",
+      "already built, and groups already wired keep working."),
+    shiny::h5("GenBank records per suggested clade", style = paste0(SETTINGS_HEAD, " margin-top:18px;")),
+    # these two are read as a pair, so they sit side by side; naming the measure
+    # once in the heading is what lets the labels be one word each
+    shiny::div(style = "display:flex; gap:1.25em;",
+      shiny::numericInput("ref_min", "Minimum", value = cfg$min_records,
+        min = 1, step = 100, width = "150px"),
+      shiny::numericInput("ref_max", "Maximum", value = cfg$max_records,
+        min = 1, step = 1000, width = "150px")),
+    opts_help("Propose groups climbs each sample's lineage and stops at the first ",
+      "clade holding at least the minimum. Below that there is too little published ",
+      "sequence to seed an assembly; past the maximum a clade is so broad that its ",
+      "seeds stop being specific to your organism."),
+    footer = shiny::tagList(
+      shiny::actionButton("ref_dir_apply", "Save", class = "btn-primary btn-sm"),
+      shiny::modalButton("Cancel")))
+}
+
 #' Row action modal: everything that can be done to a reference group
 #'
 #' The table's action cell is the only door onto these, so each choice is a full
@@ -702,23 +736,10 @@ reference_handlers <- function(input, output, session, deps) {
       footer = shiny::modalButton("Close")))
   })
 
-  # ---- reference folder ----
+  # ---- settings ----
   shiny::observeEvent(input$ref_dir_btn, {
-    res <- tryCatch(with_con(function(con) {
-      cfg <- ref_config(con)
-      shiny::modalDialog(title = "Reference database folder", size = "l",
-        shiny::textInput("ref_dir_path", NULL, width = "100%", value = cfg$ref_dir),
-        opts_help("Databases built here are reused by every project pointed at this ",
-          "folder, including a shared drive. Changing it does not move databases ",
-          "already built, and groups already wired keep working."),
-        shiny::numericInput("ref_min", "Minimum GenBank records for a suggested clade:",
-          value = cfg$min_records, min = 1, step = 100),
-        shiny::numericInput("ref_max", "Maximum GenBank records for a suggested clade:",
-          value = cfg$max_records, min = 1, step = 1000),
-        footer = shiny::tagList(
-          shiny::actionButton("ref_dir_apply", "Save", class = "btn-primary btn-sm"),
-          shiny::modalButton("Cancel")))
-    }), error = function(e) e)
+    res <- tryCatch(with_con(function(con) reference_settings_modal(ref_config(con))),
+      error = function(e) e)
     if (inherits(res, "error")) { notify(conditionMessage(res), "error"); return() }
     shiny::showModal(res)
   })
