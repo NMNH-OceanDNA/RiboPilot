@@ -672,12 +672,25 @@ app_server <- function(input, output, session) {
     if (is.null(sched)) {
       rp_alert("No scheduler (sbatch/qsub/bsub) found on PATH.", type = "warning"); return()
     }
+    # write the script HERE: it reads input$submit_script_text, and the later()
+    # callback below has a session but no reactive context
     f <- write_submit_script()
-    out <- tryCatch(system2(sched$cmd, shQuote(f), stdout = TRUE, stderr = TRUE),
-      error = function(e) conditionMessage(e))
-    rp_alert(paste0("Submitted via ", sched$cmd, ": ", paste(out, collapse = " ")),
-      type = "message")
-    removeModal()
+    # a busy scheduler can sit on the submit for several seconds, and a dead
+    # button reads as a missed click. The popup has no dismiss and covers the
+    # modal, so the second click that would submit the job twice cannot land.
+    shinyWidgets::sendSweetAlert(title = "Submitting...",
+      text = paste0("Handing the job script to ", sched$cmd,
+        ". Hold tight, a busy cluster can take a few seconds to answer."),
+      type = "info", btn_labels = NA, closeOnClickOutside = FALSE)
+    later::later(function() {
+      shiny::withReactiveDomain(session, {
+        out <- tryCatch(system2(sched$cmd, shQuote(f), stdout = TRUE, stderr = TRUE),
+          error = function(e) conditionMessage(e))
+        rp_alert(paste0("Submitted via ", sched$cmd, ": ", paste(out, collapse = " ")),
+          type = "message")
+        removeModal()
+      })
+    }, delay = 0.1)
   })
 
   # Local (in-app) taxonomy auto-assignment for the ready, unlocked samples.

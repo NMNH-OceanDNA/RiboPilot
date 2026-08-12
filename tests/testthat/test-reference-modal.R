@@ -515,3 +515,43 @@ test_that("the run modal prefills the key it is given, not the environment", {
   expect_true(grepl("from_project", html, fixed = TRUE))
   expect_false(grepl("from_env", html, fixed = TRUE))
 })
+
+test_that("headless Build defers the submit so the wait popup paints first", {
+  skip_if_not_installed("withr")
+  skip_on_os("windows")
+  dir <- withr::local_tempdir()
+  dbfile <- mk_split_db(dir)
+  deps <- mk_split_deps(dbfile, dir)
+  deps$selected_ids <- function() "asteroidea"
+  withr::local_options(list(RiboPilot.headless = TRUE))
+
+  # a fake scheduler that records every call, so one click cannot submit twice
+  bin <- withr::local_tempdir()
+  calls <- file.path(bin, "calls.txt")
+  writeLines(c("#!/bin/sh", sprintf('echo "$@" >> %s', shQuote(calls)),
+    'echo "Your job 12345 has been submitted"'), file.path(bin, "qsub"))
+  Sys.chmod(file.path(bin, "qsub"), "0755")
+  withr::local_path(bin, action = "prefix")
+  skip_if(is.null(RiboPilot:::detect_scheduler()), "no scheduler on PATH")
+
+  shiny::testServer(function(input, output, session) {
+    RiboPilot:::reference_handlers(input, output, session, deps)
+  }, {
+    session$setInputs(ref_build_btn = 1)
+    session$flushReact()
+    session$setInputs(ref_submit_job = 1)
+    session$flushReact()
+    # the submit is queued behind the "Submitting..." popup, not run inline: a
+    # blocking qsub here is what left the button looking dead and got it clicked
+    # a second time
+    expect_false(file.exists(calls))
+    while (!later::loop_empty()) later::run_now()
+  })
+
+  expect_true(file.exists(calls))
+  expect_length(readLines(calls), 1L)
+  con <- DBI::dbConnect(RSQLite::SQLite(), dbfile); on.exit(DBI::dbDisconnect(con))
+  # the side effects that used to run inline still run after the deferral
+  expect_equal(DBI::dbGetQuery(con,
+    "SELECT reference_switch FROM reference WHERE ref_id = 'asteroidea'")$reference_switch, 4)
+})

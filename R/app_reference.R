@@ -488,19 +488,33 @@ reference_handlers <- function(input, output, session, deps) {
     resubmit_ok(FALSE)
     res <- tryCatch(write_ref_script(), error = function(e) e)
     if (inherits(res, "error")) { notify(conditionMessage(res), "error"); return() }
-    out <- tryCatch(system2(sched$cmd, shQuote(res), stdout = TRUE, stderr = TRUE),
-      error = function(e) conditionMessage(e))
-    submitted(unique(c(shiny::isolate(submitted()), build_targets())))
-    # record the build so the poller wires it when the job's FASTAs appear
-    try(with_con(function(con) {
-      mark_reference_submitted(con,
-        reference_missing_dbs(ref_config(con)$ref_dir, shiny::isolate(build_targets())))
-    }), silent = TRUE)
-    headless_open(FALSE)
-    shiny::removeModal()
-    bump()
-    notify(paste0("Submitted via ", sched$cmd, ": ", paste(out, collapse = " "),
-      ". The database(s) will be wired automatically once the job finishes."))
+    # read the targets HERE, same reason as the clade apply above: the later()
+    # callback gets a session, not a reactive context
+    targets <- build_targets()
+    # a busy scheduler can sit on the submit for several seconds, and a dead
+    # button reads as a missed click. The popup has no dismiss and covers the
+    # modal, so the second click that would submit the build twice cannot land.
+    shinyWidgets::sendSweetAlert(title = "Submitting...",
+      text = paste0("Handing the job script to ", sched$cmd,
+        ". Hold tight, a busy cluster can take a few seconds to answer."),
+      type = "info", btn_labels = NA, closeOnClickOutside = FALSE)
+    later::later(function() {
+      shiny::withReactiveDomain(session, {
+        out <- tryCatch(system2(sched$cmd, shQuote(res), stdout = TRUE, stderr = TRUE),
+          error = function(e) conditionMessage(e))
+        submitted(unique(c(shiny::isolate(submitted()), targets)))
+        # record the build so the poller wires it when the job's FASTAs appear
+        try(with_con(function(con) {
+          mark_reference_submitted(con,
+            reference_missing_dbs(ref_config(con)$ref_dir, targets))
+        }), silent = TRUE)
+        headless_open(FALSE)
+        shiny::removeModal()
+        bump()
+        notify(paste0("Submitted via ", sched$cmd, ": ", paste(out, collapse = " "),
+          ". The database(s) will be wired automatically once the job finishes."))
+      })
+    }, delay = 0.1)
   })
 
   idle_buttons <- function() {
