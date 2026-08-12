@@ -141,6 +141,14 @@ details[open] summary {
   max-width: 50%;
 }
 
+/* Opt out of the 600px floor above. For a dialog that is just a stack of short
+   buttons, that floor is dead space: it stretches every label across the width
+   and leaves the hint lines short and stranded. */
+.modal-dialog.rp-modal-narrow {
+  min-width: 0;
+  max-width: 440px;
+}
+
 .rt-tr-striped:not(.rt-tr-selected) {
   background-color: #ebebeb !important;
 }

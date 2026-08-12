@@ -57,6 +57,11 @@ test_that("the row action modal names what skipping actually costs", {
   }
   expect_true(grepl("Asteroidea", html, fixed = TRUE))
   expect_true(grepl("fish", html, fixed = TRUE))
+  # a stack of short buttons opts out of the app's 600px modal floor
+  expect_true(grepl("rp-modal-narrow", html, fixed = TRUE))
+  # the hint sits under a bare button, which has no bottom margin for
+  # opts_help()'s default negative top margin to absorb
+  expect_false(grepl("margin-top: -", html, fixed = TRUE))
 })
 
 test_that("the clade option is dropped for a multi-group selection", {

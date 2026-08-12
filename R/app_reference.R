@@ -161,19 +161,24 @@ reference_action_modal <- function(ids, label) {
     shiny::div(style = "margin-bottom:0.9em;",
       shiny::actionButton(id, text, width = "100%",
         class = if (primary) "btn-primary btn-sm" else "btn-sm"),
-      opts_help(help))
+      # nested: opts_help's default -6px top margin is tuned to pull the hint up
+      # under a form field's own bottom margin. A bare button has none, so the
+      # default drags the text into the button.
+      opts_help(help, nested = TRUE))
   }
-  shiny::modalDialog(
-    title = sprintf("Reference database for %s", label), size = "l",
+  one <- length(ids) == 1
+  m <- shiny::modalDialog(
+    title = sprintf("Reference database for %s", label),
     choice("ref_act_build", "Download sequences from GenBank",
-      paste("Builds a seed database for this clade from GenBank.",
+      paste(if (one) "Builds a seed database for this clade from GenBank."
+        else "Builds a seed database for each of these clades from GenBank.",
         "This is the normal choice."), primary = TRUE),
     choice("ref_act_existing", "Use a database I already have",
       paste("Point these samples at seed and label FASTA files already on disk,",
         "for example one a colleague built.")),
     # the ladder walks one group's shared lineage, so it has no meaning across a
     # multi-group selection
-    if (length(ids) == 1) {
+    if (one) {
       choice("ref_act_clade", "Change which clade this group uses",
         "Widen or narrow the group, or pick a different clade entirely.")
     },
@@ -181,6 +186,10 @@ reference_action_modal <- function(ids, label) {
       paste("Nothing is built. These samples assemble against RiboPilot's",
         "ray-finned fish reference, which is usually wrong outside fish.")),
     footer = shiny::modalButton("Cancel"))
+  # This dialog is a short stack of buttons, so the app's 600px modal floor is
+  # dead space that stretches every label across it. Narrow it and let the hints
+  # wrap. modalDialog() takes no class argument, hence the tag surgery.
+  htmltools::tagQuery(m)$find(".modal-dialog")$addClass("rp-modal-narrow")$allTags()
 }
 
 #' Wire the Reference tab
