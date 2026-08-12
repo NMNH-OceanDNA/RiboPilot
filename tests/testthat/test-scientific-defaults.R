@@ -102,10 +102,36 @@ test_that("coverage drops multi-mapping reads before depth is counted", {
   expect_true(!is.na(q) && q >= 10)
   # the filter has to sit inside the bowtie2 -> sort pipe, not after it
   expect_match(txt, "bowtie2 -x ref(?s).*\\|\\s*samtools view[^|]*\\|\\s*samtools sort", perl = TRUE)
-  # existing guarantees the added pipe stage must not break
-  expect_match(txt, "if [ -s scaffolds.fa ]", fixed = TRUE)
   expect_match(txt, "errorStrategy 'ignore'", fixed = TRUE)
   expect_match(txt, "sqlite3 -cmd '.timeout", fixed = TRUE)
+})
+
+test_that("coverage maps one path at a time, so the MAPQ filter cannot empty the sample", {
+  body <- nf_process_body("coverage.nf", "coverage")
+  txt <- paste(body, collapse = "\n")
+  # Paths are alternative resolutions of one molecule. Indexed together every
+  # read is a multi-mapper, the MAPQ filter discards the lot, and the sample
+  # ends up with no depth at all: measured at 2 surviving alignments out of
+  # 1.65M read pairs on a 10-path sample.
+  expect_match(txt, "SELECT DISTINCT path FROM assemblies", fixed = TRUE)
+  expect_match(txt, "for P in \\$PATHS", fixed = TRUE)
+  # the index must be built from ONE path's scaffolds, never the whole sample
+  expect_match(txt, "AND path=\\$P", fixed = TRUE)
+  expect_match(txt, "bowtie2-build --quiet path.fa ref", fixed = TRUE)
+  # every path's depth accumulates into the one file the R step reads
+  expect_match(txt, ">> depth.txt", fixed = TRUE)
+  expect_false(grepl("bowtie2-build --quiet scaffolds.fa", txt, fixed = TRUE))
+})
+
+test_that("coverage records uncovered scaffolds as zero rather than omitting them", {
+  body <- nf_process_body("coverage.nf", "coverage")
+  txt <- paste(body, collapse = "\n")
+  # `samtools depth -a` leaves out reference sequences with no alignments
+  # entirely, so an emptied scaffold produced no depth rows, and
+  # write_coverage_units() then wrote no coverage row for it at all. In the app
+  # "covered by nothing" and "never measured" both render blank.
+  expect_match(txt, "samtools depth -aa", fixed = TRUE)
+  expect_false(grepl("samtools depth -a ", txt, fixed = TRUE))
 })
 
 test_that("an empty depth file still writes no coverage rows rather than erroring", {
