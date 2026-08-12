@@ -4,8 +4,11 @@
 #
 #   docker/deploy-dockerhub.sh                 # tag = DESCRIPTION Version
 #   docker/deploy-dockerhub.sh v0.1.0          # explicit tag
-#   docker/deploy-dockerhub.sh v0.1.0 --latest # also push :latest
 #   docker/deploy-dockerhub.sh --dry-run       # build + test, push nothing
+#
+# There is deliberately no :latest. A floating tag means two machines can run
+# different code while naming the same image, and every project pins an exact
+# version anyway (new_project() reads it from DESCRIPTION).
 #
 # Environment:
 #   DOCKERHUB_USER   push under a different account (default macguigand)
@@ -20,12 +23,10 @@ set -euo pipefail
 NAMESPACE="${DOCKERHUB_USER:-macguigand}"
 REPO='ribopilot'
 TAG=''
-ALSO_LATEST=0
 DRY_RUN=0
 
 for arg in "$@"; do
   case "$arg" in
-    --latest)  ALSO_LATEST=1 ;;
     --dry-run) DRY_RUN=1 ;;
     -*)        echo "Unknown option: $arg" >&2; exit 2 ;;
     *)         TAG="$arg" ;;
@@ -56,7 +57,6 @@ fi
 
 echo "Image:  ${REMOTE}"
 echo "Commit: ${GIT_SHA}"
-[ "$ALSO_LATEST" -eq 1 ] && echo "Also:   ${NAMESPACE}/${REPO}:latest"
 [ "$DRY_RUN" -eq 1 ] && echo "Mode:   dry run, nothing will be pushed"
 
 # --- package tarball -------------------------------------------------------
@@ -132,12 +132,6 @@ esac
 docker tag "${LOCAL}" "${REMOTE}"
 docker push "${REMOTE}"
 echo "Pushed ${REMOTE}"
-
-if [ "$ALSO_LATEST" -eq 1 ]; then
-  docker tag "${LOCAL}" "${NAMESPACE}/${REPO}:latest"
-  docker push "${NAMESPACE}/${REPO}:latest"
-  echo "Pushed ${NAMESPACE}/${REPO}:latest"
-fi
 
 echo
 echo "Projects can use it with:"

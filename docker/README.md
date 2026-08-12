@@ -21,7 +21,7 @@ pipeline calls each tool directly rather than through `conda run -n <env>`.
 From the repository root:
 
 ```bash
-docker/deploy-local.sh            # tags ribopilot:latest
+docker/deploy-local.sh            # tags ribopilot:<DESCRIPTION Version>
 docker/deploy-local.sh v0.1.0     # tags ribopilot:v0.1.0
 ```
 
@@ -36,13 +36,16 @@ Publishes to `macguigand/ribopilot`.
 ```bash
 docker/deploy-dockerhub.sh                  # tag = the DESCRIPTION Version
 docker/deploy-dockerhub.sh v0.1.0           # explicit tag
-docker/deploy-dockerhub.sh v0.1.0 --latest  # also push :latest
 docker/deploy-dockerhub.sh --dry-run        # build and test, push nothing
 ```
 
 The tag defaults to the DESCRIPTION `Version` on purpose: `new_project()`
 derives its default `container` from the same place, so a tag chosen by hand can
 be a tag no project ever asks for.
+
+There is no `:latest`, and the scripts cannot publish one. A floating tag lets
+two machines run different code while naming the same image, which is exactly
+the ambiguity a pinned version removes.
 
 Before pushing, the script:
 
@@ -72,7 +75,7 @@ RiboPilot::new_project(
   mapping_fn = "~/my_samples.csv",
   data_path  = "~/my_reads",
   executor   = "docker",
-  container  = "macguigand/ribopilot:v0.1.0"   # or a local tag, e.g. "ribopilot:latest"
+  container  = "macguigand/ribopilot:v0.1.0"   # or a local tag, e.g. "ribopilot:0.0.0.9004"
 )
 ```
 

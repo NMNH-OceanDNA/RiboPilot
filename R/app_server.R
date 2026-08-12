@@ -1,9 +1,3 @@
-#' State icons for the Reference table (adds "skipped" to the shared vocabulary)
-#' @noRd
-REFERENCE_STATE_ICONS <- c(`0` = "fa fa-hourglass", `1` = "fa fa-person-running",
-  `2` = "fa fa-circle-check", `3` = "fa fa-triangle-exclamation",
-  `4` = "fa fa-circle-half-stroke", `5` = "fa fa-circle-minus")
-
 #' RiboPilot app server
 #' @import shiny
 #' @noRd
@@ -86,14 +80,16 @@ app_server <- function(input, output, session) {
   # selection count (feedback before a bulk action) + CSV export of the table
   output$n_selected <- renderText({
     n <- length(selected_ids())
-    if (n == 0) "" else paste(n, "selected")
+    # Reference rows are clade groups, not samples, so say which
+    unit <- if (identical(input$mode, "Reference")) "group(s) selected" else "selected"
+    if (n == 0) "" else paste(n, unit)
   })
   output$table_csv <- downloadHandler(
     filename = function() paste0(basename(app_project()), "_",
       tolower(input$mode %||% "table"), ".csv"),
     content = function(file) {
       d <- samples_data()
-      d <- d[, setdiff(names(d), c("details", "output")), drop = FALSE]
+      d <- d[, setdiff(names(d), c("details", "output", "action")), drop = FALSE]
       utils::write.csv(d, file, row.names = FALSE)
     }
   )
@@ -258,18 +254,26 @@ app_server <- function(input, output, session) {
           `4` = "fa fa-circle-half-stroke")))
     }
     if (mode == "Reference") {
-      cols[["clade_name"]] <- reactable::colDef(name = "Clade", minWidth = 140, html = TRUE,
-        cell = rt_link("ref_open_clade"))
+      # The group key is the clade name lowercased (ref_id_from_name), so showing
+      # both is showing the same thing twice; the key stays in the data for the
+      # selection, the CSV and the row classes, and stays visible in the database
+      # path, which is named after it.
+      cols[["ID"]] <- reactable::colDef(show = FALSE)
+      cols[["status"]] <- reactable::colDef(name = "Status", sticky = "left", minWidth = 150)
+      cols[["clade_name"]] <- reactable::colDef(name = "Clade", minWidth = 160, sticky = "left",
+        html = TRUE, cell = rt_link("ref_open_clade"))
       cols[["clade_rank"]] <- reactable::colDef(name = "Rank", width = 90)
       cols[["n_samples"]] <- reactable::colDef(name = "Samples", width = 90)
       cols[["n_records"]] <- reactable::colDef(name = "GenBank records", width = 140)
-      cols[["source"]] <- reactable::colDef(name = "Source", width = 90)
       cols[["database"]] <- reactable::colDef(name = "Database", minWidth = 240, html = TRUE,
         cell = rt_longtext())
       cols[["fail_reason"]] <- reactable::colDef(name = "Note", minWidth = 200, html = TRUE,
         cell = rt_link("ref_open_log"))
-      cols[[state_col]] <- reactable::colDef(name = "", sticky = "left", html = TRUE, width = 32,
-        align = "center", filterable = FALSE, cell = rt_dynamicIcon(REFERENCE_STATE_ICONS))
+      # the row's own verb, named for the state it is in
+      cols[["action"]] <- reactable::colDef(name = "", minWidth = 150, sticky = "right",
+        html = TRUE, filterable = FALSE, cell = rt_link("ref_row_action"))
+      # the state still drives the row class, so it stays in the data, unshown
+      cols[[state_col]] <- reactable::colDef(show = FALSE)
     }
     rowclass <- reactable::JS(sprintf(
       "function(rowInfo){ if(!rowInfo||!rowInfo.values) return '';
@@ -281,7 +285,9 @@ app_server <- function(input, output, session) {
     # "No rows found" reads like a failed import.
     nodata <- switch(mode,
       Taxonomy = "No samples yet. Create the project with a mapping file (new_project()).",
-      Reference = "No reference groups yet. Press Suggest to propose clades from the assigned taxonomy.",
+      Reference = paste("No reference groups yet. Until a group has its own database, its samples",
+        "assemble against RiboPilot's built-in ray-finned fish reference.",
+        "Press Propose groups to group your samples by clade from the assigned taxonomy."),
       Assemble = "No taxonomy-locked samples. Assign and lock taxonomy in Taxonomy mode first.",
       Annotate = "No assembly-locked samples. Review and lock assemblies in Assemble mode first.",
       Export   = "No annotation-locked samples. Review and lock annotations in Annotation Review first.",
@@ -334,8 +340,6 @@ app_server <- function(input, output, session) {
     mode <- input$mode %||% "Assemble"
     if (mode == "Taxonomy") {
       open_taxon_review(id)
-    } else if (mode == "Reference") {
-      ref_h$open_ladder(id)
     } else if (mode == "Assemble") {
       showModal(assemble_modal(id))
     } else if (mode == "Annotate") {

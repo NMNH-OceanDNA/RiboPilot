@@ -55,11 +55,11 @@ app_ui <- function(request) {
             ctrls(bttn("state_btn", "State"), bttn("lock_btn", "Lock"),
               bttn("edit_taxon_btn", "Edit Taxon"),
               bttn("run_btn", "Update", "circle-play"))),
+          # Only the two controls that act on the whole tab live here. Everything
+          # that acts on ONE group is in that group's own row (see app_reference.R).
           shiny::conditionalPanel("input.mode == 'Reference'",
-            ctrls(bttn("ref_suggest_btn", "Suggest", "wand-magic-sparkles"),
-              bttn("ref_edit_btn", "Edit Clade"), bttn("ref_existing_btn", "Use Existing"),
-              bttn("ref_skip_btn", "Skip"), bttn("ref_build_btn", "Build", "circle-play"),
-              bttn("ref_dir_btn", "Folder", "folder-open"))),
+            ctrls(bttn("ref_suggest_btn", "Propose groups", "wand-magic-sparkles"),
+              bttn("ref_dir_btn", "Settings", "gear"))),
           shiny::conditionalPanel("input.mode == 'Assemble'",
             ctrls(bttn("state_btn", "State"), bttn("lock_btn", "Lock"),
               bttn("triage_btn", "Triage", "traffic-light"),
@@ -79,8 +79,12 @@ app_ui <- function(request) {
             shiny::span(shiny::textOutput("n_selected", inline = TRUE),
               style = "color:#888; font-size:0.85em;"),
             shiny::downloadButton("table_csv", "CSV", class = "btn-sm"),
-            shinyWidgets::actionBttn("workdirs_btn", "Work Dirs",
-              icon = shiny::icon("folder-tree"), style = "material-flat", size = "sm"))
+            # per-SAMPLE Nextflow task dirs: meaningless on Taxonomy, Reference
+            # and Export, and on Reference the selection is group keys, not sample
+            # IDs, so it fed the picker something it could never match
+            shiny::conditionalPanel("input.mode == 'Assemble'",
+              shinyWidgets::actionBttn("workdirs_btn", "Work Dirs",
+                icon = shiny::icon("folder-tree"), style = "material-flat", size = "sm")))
         ),
         # ---- filter row (status pickers, below the control bar like MitoPilot) ----
         shiny::conditionalPanel("input.mode == 'Assemble'",

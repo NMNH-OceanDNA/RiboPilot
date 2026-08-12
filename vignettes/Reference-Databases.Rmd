@@ -30,58 +30,76 @@ database ahead of time or from a script.
 
 # The Reference tab
 
-The Reference tab sits between the **Taxonomy** and **Assemble** tabs. Once your
-samples' taxonomy is assigned, open it and press **Suggest**. RiboPilot looks at
-each sample's lineage and groups samples that can share one reference database,
-using how many ribosomal sequences GenBank already holds for each candidate group:
-a group needs at least 1,000 GenBank records to make a useful reference, and
-RiboPilot picks the narrowest group (family, order, class, and so on) that clears
-that bar, without letting it grow past about 25,000 records. Samples from very
-different parts of the tree end up in different groups, each getting its own
-database.
+The Reference tab sits between the **Taxonomy** and **Assemble** tabs. Until a
+group has a database of its own, its samples are assembled against RiboPilot's
+built-in **ray-finned fish** reference, which is usually the wrong choice outside
+fish. This tab is where you replace it.
 
-Each row in the tab is one proposed group, showing the clade, how many of your
-samples it covers, and how many GenBank records back it up. From there you can:
+Once your samples' taxonomy is assigned, open the tab and press **Propose
+groups**. RiboPilot looks at each sample's lineage and groups samples that can
+share one reference database, using how many ribosomal sequences GenBank already
+holds for each candidate group: a group needs at least 1,000 GenBank records to
+make a useful reference, and RiboPilot picks the narrowest group (family, order,
+class, and so on) that clears that bar, without letting it grow past about 25,000
+records. Samples from very different parts of the tree end up in different
+groups, each getting its own database.
 
-- **Build.** Opens a run window, the same kind the Assemble tab uses, showing the
-  command that will run and letting you set an NCBI API key or restrict to
-  RefSeq records first. Press Run and the download happens through RiboPilot's
-  Nextflow workflow, with a live progress board and Stop / Close controls; you
-  can keep working in the app while it runs. If you are using RiboPilot through
-  a remote browser, the window instead offers an editable cluster job script to
-  submit or save. When a build finishes successfully, RiboPilot automatically
-  points that group's samples at the new database and writes the files to your
-  reference folder (see below). Samples that are already locked in the Assemble
-  tab are left alone, since their results were produced with whatever database
-  they had before. A group whose database already exists on disk is wired up
-  immediately, without starting a new build.
-- **Edit Clade.** Opens the group's shared lineage as a ladder, from the broadest
-  rank down to the narrowest, each rung showing how many samples it covers and,
-  for rungs RiboPilot has already counted, how many GenBank records back them
-  up; an uncounted rung shows "records unknown" rather than triggering a new
-  count. Pick a different rung to widen or narrow the group, or search for
-  another clade entirely; picking one runs a quick record count for that clade
-  if it is not already cached. If the rung you pick does not cover every sample
-  in the group, the leftover samples are split off into a group of their own so
-  nobody is left under the wrong reference.
-- **Use Existing.** Points the group at a database that was already built, either
-  earlier in this project or by someone else sharing the same reference folder.
-- **Skip.** Leaves the group's samples on whatever database their assembly
-  settings already use (RiboPilot's built-in fish database, unless you have
-  changed it).
+Each row is one proposed group. The **Status** column says where that group
+stands ("Needs a database", "Building", "Ready", "Build failed", or "Left on
+current database"), and the rest of the row shows the clade, how many of your
+samples it covers, and how many GenBank records back it up.
+
+## Setting a group up
+
+The link at the right-hand end of each row says what that group needs: **Set up
+database**, **Try again**, or **Change**. Click it and you are offered four
+choices:
+
+- **Download sequences from GenBank.** The normal choice. Opens a run window, the
+  same kind the Assemble tab uses, showing the command that will run and letting
+  you set an NCBI API key or restrict to RefSeq records first. Press Run and the
+  download happens through RiboPilot's Nextflow workflow, with a live progress
+  board and Stop / Close controls; you can keep working in the app while it runs.
+  If you are using RiboPilot through a remote browser, the window instead offers
+  an editable cluster job script to submit or save. When a build finishes,
+  RiboPilot automatically points that group's samples at the new database and
+  writes the files to your reference folder (see below). Samples already locked
+  in the Assemble tab are left alone, since their results were produced with
+  whatever database they had before. A group whose database already exists on
+  disk is wired up immediately, without starting a new build.
+- **Use a database I already have.** Points the group at a database that was
+  already built, either earlier in this project or by someone else sharing the
+  same reference folder.
+- **Change which clade this group uses.** Opens the group's shared lineage as a
+  ladder, from the broadest rank down to the narrowest, each rung showing how
+  many samples it covers and, for rungs RiboPilot has already counted, how many
+  GenBank records back them up; an uncounted rung shows "records unknown" rather
+  than triggering a new count. Pick a different rung to widen or narrow the
+  group, or search for another clade entirely. If the rung you pick does not
+  cover every sample in the group, the leftover samples are split off into a
+  group of their own so nobody is left under the wrong reference. You can also
+  reach this by clicking the group's **Clade** cell directly.
+- **Leave these samples on the built-in fish database.** Nothing is built. Only
+  sensible if your samples really are ray-finned fishes, or if you have already
+  pointed their assembly settings at some other database yourself.
+
+To handle several groups at once, tick their rows first, then click the link on
+any one of them: the choice you make applies to the whole selection. The clade
+option is offered only for a single group, since the ladder walks one group's
+shared lineage.
 
 Working through the Reference tab is optional. If you start the Assemble step
 with groups that are still unresolved, RiboPilot warns you but goes ahead: those
 samples simply assemble with whatever database their assembly settings already
-have, same as if you had skipped them.
+have, same as if you had left them on the fish database.
 
 # The reference folder
 
 Built databases live in a **reference folder** that is shared across projects: one
 clade database, built once, is reused by every project that needs that clade, and
 if the folder is on a shared drive, by everyone in your lab. You can set it in the
-Reference tab with the **Folder** button (which also lets you adjust the minimum
-and maximum record counts the Suggest step uses), or when you create a project:
+Reference tab with the **Settings** button (which also lets you adjust the minimum
+and maximum record counts the grouping step uses), or when you create a project:
 
 ```{r, purl = FALSE}
 RiboPilot::new_project(

@@ -1,10 +1,10 @@
 #!/bin/bash
 # Regenerate inst/tool_help/<tool>.txt from the RiboPilot Docker image, so the
 # app's CLI-help popovers match the tool versions the pipeline actually runs.
-# Usage: tools/capture_tool_help.sh [image]   (default: ribopilot:latest)
+# Usage: tools/capture_tool_help.sh [image]   (default: ribopilot:<DESCRIPTION Version>)
 set -euo pipefail
 
-image="${1:-ribopilot:latest}"
+image="${1:-ribopilot:$(awk '/^Version:/{print $2}' DESCRIPTION)}"
 here="$(cd "$(dirname "$0")/.." && pwd)"
 out="$here/inst/tool_help"
 mkdir -p "$out"
