@@ -20,7 +20,7 @@ reference_table <- function(con) {
          WHEN 2 THEN 'Ready' WHEN 3 THEN 'Build failed' WHEN 4 THEN 'Building'
          WHEN 5 THEN 'Left on current database' ELSE 'Needs a database' END AS status,
        ref_id AS ID, clade_name, clade_rank, n_samples, n_records,
-       COALESCE(seeds_db, '') AS database,
+       COALESCE(seeds_db, '') AS database, COALESCE(labels_db, '') AS labels_db,
        COALESCE(fail_reason, '') AS fail_reason, time_stamp,
        CASE COALESCE(reference_switch, 1)
          WHEN 3 THEN 'Try again' WHEN 2 THEN 'Change' WHEN 4 THEN 'Change'
@@ -32,6 +32,20 @@ reference_table <- function(con) {
       n_records = integer(0), database = character(0), fail_reason = character(0),
       time_stamp = integer(0), action = character(0), stringsAsFactors = FALSE)
   }
+  # "Ready" has to mean the database is still on disk. The reference folder is
+  # shared and can be deleted or moved long after a group was wired to it, and
+  # nothing else ever revisits that decision, so a row wired to files that are
+  # gone would keep reading Ready and offering only "Change".
+  if (nrow(d) > 0) {
+    gone <- !is.na(d$reference_switch) & d$reference_switch == 2 &
+      !(vapply(d$database, reference_db_ok, logical(1)) &
+        vapply(d$labels_db, reference_db_ok, logical(1)))
+    d$status[gone] <- "Database missing"
+    d$action[gone] <- "Set up database"
+    d$fail_reason[gone] <- paste("The seed/label FASTAs this group was wired to are no longer",
+      "there. Build the database again, or point the group at one that exists.")
+  }
+  d$labels_db <- NULL
   d
 }
 

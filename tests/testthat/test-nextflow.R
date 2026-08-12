@@ -411,9 +411,17 @@ test_that("a sample with no seeds database goes to the fallback, not to file('')
   # sqlite3 renders a SQL NULL as '', and file('') throws during channel
   # construction, killing the run before any task is submitted
   txt <- paste(main_nf, collapse = "\n")
-  expect_match(txt, "asm_opts = rows.map \\{ r -> tuple\\(r.ID, r.asm_cpus, r.asm_mem, r.getOrganelle, r.seeds_db, r.labels_db, r.assembler\\)")
+  expect_match(txt, "asm_opts = rows.map \\{ r -> tuple\\(r.ID, r.asm_cpus, r.asm_mem, r.getOrganelle, live_db\\(r.seeds_db\\), live_db\\(r.labels_db\\), r.assembler\\)")
   expect_match(txt, "go: it[7] == 'getorganelle' && it[5] && it[6]", fixed = TRUE)
   expect_match(txt, "fb: true", fixed = TRUE)
+})
+
+test_that("a seeds path that no longer exists goes to the fallback too", {
+  # a dead path used to be staged as a dangling symlink; GetOrganelle then exits
+  # 0 after "seeds not found" and the sample reports success with no assembly
+  txt <- paste(main_nf, collapse = "\n")
+  expect_match(txt, "def live_db(p)", fixed = TRUE)
+  expect_match(txt, "file(p).exists()", fixed = TRUE)
 })
 
 test_that("the Nextflow version probe runs once per session", {

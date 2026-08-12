@@ -642,6 +642,19 @@ app_server <- function(input, output, session) {
   observeEvent(input$run_btn, {
     # Taxonomy runs locally in the app (lightweight taxdump lookup, no Nextflow).
     if ((input$mode %||% "") == "Taxonomy") { run_taxonomy_update(); return() }
+    # block: a preset naming a database that is not there assembles nothing, and
+    # the pipeline reports success while doing it (dangling symlink in, exit 0
+    # out), so the run is pure wasted cluster time
+    dead <- tryCatch({
+      c0 <- app_con(); on.exit(DBI::dbDisconnect(c0), add = TRUE); missing_assembly_dbs(c0)
+    }, error = function(e) character(0))
+    if (length(dead) > 0) {
+      rp_alert(sprintf(paste0(
+        "Cannot run: %d reference database file(s) named by the samples queued for assembly ",
+        "are missing or empty (%s). Rebuild them in the Reference tab, or point those samples ",
+        "at a database that exists."), length(dead), paste(dead, collapse = ", ")), type = "error")
+      return()
+    }
     # warn, never block: a pending group only means those samples keep the
     # database their options set already names
     pending <- tryCatch({

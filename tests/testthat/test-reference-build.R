@@ -271,6 +271,34 @@ test_that("reference_pending lists everything not done or skipped", {
   expect_equal(length(RiboPilot:::reference_pending(con)), 0L)
 })
 
+# The run preflight's only chance to catch a deleted reference folder: Nextflow
+# stages a dead path as a dangling symlink and GetOrganelle exits 0 without
+# assembling, so the whole run "succeeds" with nothing to show for it.
+test_that("missing_assembly_dbs finds dead database paths on queued samples", {
+  skip_if_not_installed("withr")
+  dir <- withr::local_tempdir()
+  seeds <- file.path(dir, "s.fa"); labels <- file.path(dir, "l.fa")
+  writeLines(c(">x", "ACGT"), seeds); writeLines(c(">x", "ACGT"), labels)
+  con <- mk_ref_db(); on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "UPDATE assemble_opts SET seeds_db = ?, labels_db = ?",
+    params = list(seeds, labels))
+  DBI::dbExecute(con, "UPDATE assemble SET assemble_switch = 1")
+  expect_length(RiboPilot:::missing_assembly_dbs(con), 0L)
+  unlink(seeds)
+  expect_equal(RiboPilot:::missing_assembly_dbs(con), seeds)
+  # a locked or already-assembled sample is not part of the run
+  DBI::dbExecute(con, "UPDATE assemble SET assemble_lock = 1")
+  expect_length(RiboPilot:::missing_assembly_dbs(con), 0L)
+  # a URL is fetched at run time, not read off disk, so it is taken on trust
+  DBI::dbExecute(con, "UPDATE assemble SET assemble_lock = 0")
+  DBI::dbExecute(con, "UPDATE assemble_opts SET seeds_db = 'https://example.org/s.fasta'")
+  expect_length(RiboPilot:::missing_assembly_dbs(con), 0L)
+  # a sample not using GetOrganelle has no use for seeds either way
+  DBI::dbExecute(con, "UPDATE assemble_opts SET seeds_db = ?, assembler = 'bait'",
+    params = list(seeds))
+  expect_length(RiboPilot:::missing_assembly_dbs(con), 0L)
+})
+
 test_that("wire_reference_db errors when no base preset exists, without moving samples", {
   con <- mk_ref_db(); on.exit(DBI::dbDisconnect(con))
   RiboPilot:::write_reference_groups(con, grp, mem)

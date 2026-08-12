@@ -334,6 +334,40 @@ usable_fasta <- function(f) {
   length(first) > 0 && startsWith(trimws(first[1]), ">")
 }
 
+#' Is a stored database path still usable?
+#'
+#' A path is checked once, when it is wired, and the folder it points into can
+#' be deleted afterwards. A URL is taken on trust: it is fetched at run time,
+#' not read off disk. A blank is FALSE; callers decide what that means.
+#' @noRd
+reference_db_ok <- function(p) {
+  if (length(p) != 1 || is.na(p) || !nzchar(trimws(p))) return(FALSE)
+  grepl("^https?://", p) || usable_fasta(p)
+}
+
+#' Queued samples whose assemble preset names a database that is not there
+#'
+#' The pipeline stages these paths as dangling symlinks and GetOrganelle exits 0
+#' after "seeds not found", so the whole run reports success with no assemblies;
+#' catching it before the run is the only cheap place.
+#'
+#' @param con Open project DB connection.
+#' @return character vector of the distinct dead paths, empty when all are fine.
+#' @noRd
+missing_assembly_dbs <- function(con) {
+  d <- tryCatch(DBI::dbGetQuery(con,
+    "SELECT ao.seeds_db, ao.labels_db FROM assemble a
+       JOIN assemble_opts ao ON a.assemble_opts = ao.assemble_opts
+      WHERE a.assemble_switch IN (1, 4) AND COALESCE(a.assemble_lock, 0) = 0
+        AND COALESCE(ao.assembler, 'getorganelle') = 'getorganelle'"),
+    error = function(e) NULL)
+  if (is.null(d)) return(character(0))
+  # a blank path is a sample with no database, which assembles by the fallback
+  # method on purpose; only a path that names a file has anything to be missing
+  p <- unique(c(d$seeds_db, d$labels_db))
+  p[!is.na(p) & nzchar(trimws(p)) & !vapply(p, reference_db_ok, logical(1))]
+}
+
 #' Group keys whose seed/label FASTAs are not both usable yet
 #' @noRd
 reference_missing_dbs <- function(ref_dir, ref_ids) {
