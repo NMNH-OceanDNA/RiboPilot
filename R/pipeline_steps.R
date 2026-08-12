@@ -67,7 +67,10 @@ blast_scaffolds_local <- function(con, id, blast_db) {
     ps <- strsplit(bh$qseqid[i], "\\.")[[1]]
     if (length(ps) != 2) next
     DBI::dbExecute(con,
-      "UPDATE assemblies SET blast_accession = ?, blast_species = ?, blast_pident = ?
+      # blast_source records which search named the species: the remote path
+      # writes 'core_nt', so a hit left unlabelled here reads as a GenBank call.
+      "UPDATE assemblies SET blast_accession = ?, blast_species = ?, blast_pident = ?,
+         blast_source = 'seeds'
        WHERE ID = ? AND path = ? AND scaffold = ?",
       params = list(sub("_.*", "", bh$sseqid[i]), sseqid_species(bh$sseqid[i]),
         round(bh$pident[i], 1), id, as.integer(ps[1]), as.integer(ps[2])))

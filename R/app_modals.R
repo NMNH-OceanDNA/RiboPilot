@@ -18,6 +18,40 @@ status_badge <- function(label, state, invert = FALSE, neutral_no = FALSE) {
     paste0(label, ": ", toupper(val)))
 }
 
+#' The stored per-scaffold BLAST hit, labelled with the search that produced it
+#'
+#' Two searches write `assemblies.blast_*`: the remote core_nt one, and the local
+#' one against the GetOrganelle seed file. The seed file is the same set of
+#' sequences that baited the assembly, so its hit answers "which seed does this
+#' scaffold resemble", not "what is this". Shown where no GenBank screen exists,
+#' and never without saying which search it came from.
+#' @param r One row of [unit_evidence()].
+#' @noRd
+seed_hit_block <- function(r) {
+  sp <- r$blast_species %||% NA_character_
+  if (length(sp) == 0 || is.na(sp) || !nzchar(sp)) {
+    return(NULL)
+  }
+  acc <- r$blast_accession %|NA|% ""
+  from_seeds <- !identical(r$blast_source %|NA|% "", "core_nt")
+  div(style = "margin-top:8px;",
+    tags$span(style = "color:#555;", if (from_seeds) {
+      "Closest sequence in the local seed file (a hint, NOT a GenBank identification):"
+    } else {
+      "Best nuclear rDNA reference from the GenBank search:"
+    }),
+    div(class = "code-block", style = "white-space:normal; margin-top:3px;",
+      HTML(sprintf("<b>%s</b> &nbsp; %s &nbsp; %s%% id", sp,
+        if (nzchar(acc)) {
+          sprintf("<a href='https://www.ncbi.nlm.nih.gov/nuccore/%s' target='_blank'>%s</a>", acc, acc)
+        } else "no accession",
+        r$blast_pident %|NA|% "?"))),
+    if (from_seeds) div(style = "margin-top:3px; color:#7d4a1e; font-size:0.85em;",
+      paste("These seeds are what GetOrganelle used to bait the assembly, so a high",
+        "identity here says the scaffold looks like its own bait. A missing or",
+        "distant relative in the seed file can put this name on the wrong genus.")))
+}
+
 #' Sample taxon header line for the detail modals (organism + taxid + rank).
 #' @noRd
 modal_taxon_header <- function(id) {

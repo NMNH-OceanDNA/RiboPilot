@@ -157,7 +157,12 @@ app_server <- function(input, output, session) {
       app_query(
         "SELECT an.annotate_lock, an.annotate_switch, s.ID, an.path, an.scaffold, s.Taxon, s.sci_name, s.taxid,
            asm.length, an.n_features, an.missing,
-           asm.blast_species, asm.blast_accession, asm.blast_pident,
+           -- blast_source says WHICH search named the species: the local seed
+           -- BLAST or the remote core_nt one. Without it a seed hint reads as a
+           -- GenBank identification. blast_qcovs is written by the remote path
+           -- only and its column was already defined but never selected.
+           asm.blast_species, asm.blast_accession, asm.blast_pident, asm.blast_qcovs,
+           asm.blast_source,
            an.n_flags, an.reviewed,
            an.problematic, an.partial, an.time_stamp,
            'Details' AS details, 'Output' AS output
@@ -211,6 +216,8 @@ app_server <- function(input, output, session) {
       blast_accession = reactable::colDef(name = "Accession", minWidth = 110, html = TRUE, cell = rt_ncbi_link()),
       blast_pident = reactable::colDef(name = "BLAST %ID", width = 90),
       blast_qcovs = reactable::colDef(name = "BLAST Cov", width = 90),
+      blast_source = reactable::colDef(name = "Hit source", width = 100, html = TRUE,
+        cell = rt_blast_source_badge()),
       details = reactable::colDef(name = "", width = 55, align = "center", filterable = FALSE, html = TRUE,
         cell = rt_icon_link(det_input, "fa fa-up-right-from-square", det_tip)),
       output = reactable::colDef(name = "", width = 55, align = "center", filterable = FALSE, html = TRUE,
@@ -1179,10 +1186,20 @@ app_server <- function(input, output, session) {
     r <- r[1, ]
     lbl <- sprintf("Scaffold p%s.s%s", r$path, r$scaffold)
     if (is.na(r$screen_accession)) {
+      # Two different states used to share one message: BLAST switched off, and
+      # BLAST switched on but the remote search never came back. The second told
+      # the user to enable something already enabled.
       return(tagList(
         tags$b(lbl),
         div(style = "color:#888; margin-top:4px;",
-          "No GenBank screen for this scaffold yet (run WF1 with BLAST enabled).")))
+          if (blast_enabled(sel_id())) {
+            paste("No GenBank screen for this scaffold. The remote BLAST is still",
+              "running, or it did not return (NCBI queue, network, or retries used up).")
+          } else {
+            paste("GenBank BLAST is switched off for this sample (Assemble tab,",
+              "BLAST options). Run WF1 with BLAST enabled to screen this scaffold.")
+          }),
+        seed_hit_block(r)))
     }
     tagList(
       tags$b(lbl),
@@ -1216,9 +1233,17 @@ app_server <- function(input, output, session) {
       params = list(id, h$path, h$scaffold))
     if (nrow(d) == 0) {
       # An empty panel is itself a finding: the nuclear-rDNA title filter matched
-      # nothing, which is common in sparse invertebrate clades.
+      # nothing, which is common in sparse invertebrate clades. But when the
+      # screen above is empty too, pointing at it sent the reader in a circle.
+      sr <- scaffold_rows()
+      sr <- sr[sr$path == h$path & sr$scaffold == h$scaffold, , drop = FALSE]
+      screened <- nrow(sr) > 0 && !is.na(sr$screen_accession[1])
       return(reactable::reactable(data.frame(
-        ` ` = "No nuclear rDNA reference matched this scaffold. See the unrestricted screen above.",
+        ` ` = if (screened) {
+          "No nuclear rDNA reference matched this scaffold. See the unrestricted screen above."
+        } else {
+          "No GenBank result for this scaffold, so there is nothing to rank here yet."
+        },
         check.names = FALSE), compact = TRUE))
     }
     reactable::reactable(d, compact = TRUE, resizable = TRUE, filterable = TRUE,

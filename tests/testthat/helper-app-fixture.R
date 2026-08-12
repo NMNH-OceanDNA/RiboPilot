@@ -14,6 +14,9 @@ fixture_fill_schema <- function(con) {
   DBI::dbExecute(con, "CREATE TABLE IF NOT EXISTS curate_opts (curate_opts TEXT PRIMARY KEY,
     ruleset TEXT, min_anchor_pid REAL, check_contaminant INTEGER)")
   DBI::dbExecute(con, "INSERT INTO curate_opts VALUES ('default','metazoa_generic',85,1)")
+  DBI::dbExecute(con, "CREATE TABLE IF NOT EXISTS blast_opts (blast_opts TEXT PRIMARY KEY,
+    run_blast INTEGER, entrez_query TEXT, max_target_seqs INTEGER, extra_opts TEXT)")
+  DBI::dbExecute(con, "INSERT OR IGNORE INTO blast_opts VALUES ('default',1,NULL,50,'')")
   DBI::dbExecute(con, "CREATE TABLE IF NOT EXISTS annotate_opts (annotate_opts TEXT PRIMARY KEY,
     cpus INTEGER, memory INTEGER, rrna_tool TEXT, rrna_kingdom TEXT, itsx_taxon TEXT, itsx_opts TEXT)")
   DBI::dbExecute(con, "INSERT INTO annotate_opts VALUES ('default',4,8,'pybarrnap','euk','all','')")
