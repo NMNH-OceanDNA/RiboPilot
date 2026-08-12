@@ -348,10 +348,12 @@ test_that("headless Build offers a BUILD job script and saves it, running nothin
     while (!later::loop_empty()) later::run_now()
   })
 
-  f <- file.path(dir, "submit_ribopilot_reference.sh")
+  f <- Sys.glob(file.path(dir, "jobs", "ribopilot_ref_*.sh"))
   expect_true(file.exists(f))
   script <- paste(readLines(f), collapse = "\n")
-  expect_match(script, "'nextflow' 'run'", fixed = TRUE)
+  # -log is a top-level option, so it sits between the binary and `run`
+  expect_match(script, "'nextflow' '-log'", fixed = TRUE)
+  expect_match(script, "'run'", fixed = TRUE)
   expect_match(script, "'-entry' 'BUILD'", fixed = TRUE)
   expect_true(grepl("--clades", script, fixed = TRUE))
   # the job reads the manifest long after the modal closed, so it must be on disk
@@ -371,6 +373,10 @@ test_that("the saved job script carries the API key and RefSeq settings typed in
   deps <- mk_split_deps(dbfile, dir)
   deps$selected_ids <- function() "asteroidea"
   withr::local_options(list(RiboPilot.headless = TRUE))
+  # the stale copy below is built out of band, so it only matches what the
+  # handler generated if both get the same submission timestamp
+  testthat::local_mocked_bindings(
+    job_basename = function(...) "ribopilot_ref_2026-08-12_09-45-03", .package = "RiboPilot")
 
   shiny::testServer(function(input, output, session) {
     RiboPilot:::reference_handlers(input, output, session, deps)
@@ -389,7 +395,7 @@ test_that("the saved job script carries the API key and RefSeq settings typed in
     while (!later::loop_empty()) later::run_now()
   })
 
-  script <- paste(readLines(file.path(dir, "submit_ribopilot_reference.sh")), collapse = "\n")
+  script <- paste(readLines(Sys.glob(file.path(dir, "jobs", "ribopilot_ref_*.sh"))), collapse = "\n")
   expect_match(script, "'--ncbi_api_key' 'KEY123'", fixed = TRUE)
   expect_match(script, "'--refseq' 'true'", fixed = TRUE)
 })
@@ -413,7 +419,7 @@ test_that("an emptied script textarea falls back to a generated script", {
     while (!later::loop_empty()) later::run_now()
   })
 
-  script <- paste(readLines(file.path(dir, "submit_ribopilot_reference.sh")), collapse = "\n")
+  script <- paste(readLines(Sys.glob(file.path(dir, "jobs", "ribopilot_ref_*.sh"))), collapse = "\n")
   expect_match(script, "'-entry' 'BUILD'", fixed = TRUE)
 })
 
@@ -481,7 +487,7 @@ test_that("a hand-edited script is written as edited", {
     while (!later::loop_empty()) later::run_now()
   })
 
-  script <- paste(readLines(file.path(dir, "submit_ribopilot_reference.sh")), collapse = "\n")
+  script <- paste(readLines(Sys.glob(file.path(dir, "jobs", "ribopilot_ref_*.sh"))), collapse = "\n")
   expect_true(grepl("#SBATCH -p bigmem", script, fixed = TRUE))
 })
 

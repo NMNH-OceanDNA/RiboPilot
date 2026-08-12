@@ -520,7 +520,7 @@ test_that("a cleared script textarea falls back to a generated submit script", {
     session$flushReact()
   })
 
-  script <- readLines(file.path(dir, "submit_ribopilot.sh"))
+  script <- readLines(Sys.glob(file.path(dir, "jobs", "ribopilot_*.sh")))
   expect_true(any(grepl("nextflow", script, fixed = TRUE)))
 })
 
@@ -536,5 +536,5 @@ test_that("a typed script is saved as typed", {
     session$flushReact()
   })
 
-  expect_true(any(grepl("bigmem", readLines(file.path(dir, "submit_ribopilot.sh")), fixed = TRUE)))
+  expect_true(any(grepl("bigmem", readLines(Sys.glob(file.path(dir, "jobs", "ribopilot_*.sh"))), fixed = TRUE)))
 })

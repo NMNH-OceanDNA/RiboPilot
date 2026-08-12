@@ -625,6 +625,7 @@ app_server <- function(input, output, session) {
   # ---- Update modal: run the workflow with live Nextflow progress ----
   nf_process <- reactiveVal(NULL)
   nf_state <- reactiveVal(nf_progress_empty())
+  submit_base <- reactiveVal(NULL)   # timestamp shared by one submission's files
 
   output$nf_cmd_text <- renderText({
     args <- nf_command(app_project(), resume = isTRUE(input$nf_resume %||% TRUE))
@@ -647,7 +648,11 @@ app_server <- function(input, output, session) {
     nf_state(nf_progress_empty())
     hl <- app_headless()
     sched <- if (hl) detect_scheduler() else NULL
-    script <- if (hl) build_submit_script(app_project(), resume = TRUE, sched = sched) else ""
+    # one timestamp per opening of the modal, so the script the user is looking
+    # at is saved under the same name as the log paths written inside it
+    if (hl) submit_base(job_basename("ribopilot"))
+    script <- if (hl) build_submit_script(app_project(), resume = TRUE, sched = sched,
+      base = submit_base()) else ""
     showModal(run_modal(nf_pending_count(app_project()),
       headless = hl, sched = sched, script = script))
   })
@@ -655,10 +660,12 @@ app_server <- function(input, output, session) {
   # Headless run modal: save / submit the cluster job script (instead of running
   # Nextflow on the login node).
   write_submit_script <- function() {
+    base <- submit_base() %||% job_basename("ribopilot")
     typed <- input$submit_script_text %||% ""
     script <- if (nzchar(trimws(typed))) typed else
-      build_submit_script(app_project(), resume = isTRUE(input$nf_resume %||% TRUE))
-    f <- file.path(app_project(), "submit_ribopilot.sh")
+      build_submit_script(app_project(), resume = isTRUE(input$nf_resume %||% TRUE),
+        base = base)
+    f <- job_path(app_project(), "script", paste0(base, ".sh"))
     writeLines(script, f)
     try(Sys.chmod(f, "0755"), silent = TRUE)
     f

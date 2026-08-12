@@ -116,6 +116,7 @@ reference_handlers <- function(input, output, session, deps) {
   gen_scripts <- shiny::reactiveVal(character(0))   # scripts this session generated
   submitted <- shiny::reactiveVal(character(0))     # groups with a cluster job out
   resubmit_ok <- shiny::reactiveVal(FALSE)
+  ref_base <- shiny::reactiveVal(NULL)              # timestamp for one submission
 
   with_con <- function(fn) {
     con <- deps$con(); on.exit(DBI::dbDisconnect(con)); fn(con)
@@ -382,6 +383,10 @@ reference_handlers <- function(input, output, session, deps) {
   # the job script is written now but runs much later, so the manifest it reads
   # has to be on disk before the modal closes
   ref_submit_script <- function() {
+    # the settings observer below regenerates this script several times while the
+    # modal is open; the base must NOT move with it, or the file finally saved is
+    # named for a different moment than the log paths written inside it
+    base <- shiny::isolate(ref_base()) %||% job_basename("ribopilot_ref")
     s <- with_con(function(con) {
       cfg <- ref_config(con)
       ids <- reference_missing_dbs(cfg$ref_dir, build_targets())
@@ -389,7 +394,8 @@ reference_handlers <- function(input, output, session, deps) {
       man <- write_build_manifest(deps$project(), reference_rows(con, ids))
       build_reference_submit_script(deps$project(), man, cfg$ref_dir,
         api_key = input$ref_api_key %||% "", refseq = isTRUE(input$ref_refseq),
-        resume = isTRUE(input$ref_nf_resume %||% TRUE), sched = detect_scheduler())
+        resume = isTRUE(input$ref_nf_resume %||% TRUE), sched = detect_scheduler(),
+        base = base)
     })
     if (nzchar(s)) gen_scripts(unique(c(shiny::isolate(gen_scripts()), s)))
     s
@@ -421,6 +427,8 @@ reference_handlers <- function(input, output, session, deps) {
     }
     hl <- app_headless()
     sched <- if (hl) detect_scheduler() else NULL
+    # one timestamp per opening of the modal; see ref_submit_script()
+    if (hl) ref_base(job_basename("ribopilot_ref"))
     script <- if (hl) tryCatch(ref_submit_script(), error = function(e) "") else ""
     headless_open(hl)
     shiny::showModal(reference_run_modal(length(res$todo), res$ref_dir,
@@ -463,7 +471,8 @@ reference_handlers <- function(input, output, session, deps) {
     fresh <- ref_submit_script()
     script <- if (edited) typed else fresh
     if (!nzchar(trimws(script))) stop("Nothing to build: every selected group already has a database.", call. = FALSE)
-    f <- file.path(deps$project(), "submit_ribopilot_reference.sh")
+    f <- job_path(deps$project(), "script",
+      paste0(shiny::isolate(ref_base()) %||% job_basename("ribopilot_ref"), ".sh"))
     writeLines(script, f)
     try(Sys.chmod(f, "0755"), silent = TRUE)
     f

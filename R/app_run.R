@@ -30,6 +30,37 @@ detect_scheduler <- function() {
   NULL
 }
 
+#' Project subdirectories holding cluster job files
+#'
+#' Every submission drops three files (a script, the scheduler's job log, and
+#' Nextflow's own log). In the project root they bury the handful of files a user
+#' actually opens, so each kind gets its own directory. Visible, not dotted: the
+#' logs are what you read when a run fails.
+#' @noRd
+JOB_DIRS <- list(script = "jobs", log = "logs", nextflow = "nextflow_logs")
+
+#' Path inside one of the job directories, creating the directory on demand
+#'
+#' The scheduler will not create a missing directory for its `-o` file: it fails
+#' the job instead, before anything has run and with nowhere to say why.
+#' @noRd
+job_path <- function(project, which, file) {
+  d <- file.path(project, JOB_DIRS[[which]])
+  dir.create(d, recursive = TRUE, showWarnings = FALSE)
+  file.path(d, file)
+}
+
+#' Timestamped base name shared by one submission's script and its logs
+#'
+#' One base per submission, so a run's script, scheduler log, and Nextflow log
+#' sort together and carry the same name. The fixed names this replaces meant
+#' every run overwrote the last one's script and Nextflow log, which is exactly
+#' the evidence a failed run is diagnosed from. Mirrors MitoPilot.
+#' @noRd
+job_basename <- function(kind, time = Sys.time()) {
+  paste0(kind, "_", format(time, "%Y-%m-%d_%H-%M-%S"))
+}
+
 #' Wrap a Nextflow command in a scheduler job script
 #'
 #' A multi-hour run belongs in the queue, not on the login node. The script is a
@@ -53,7 +84,7 @@ job_script <- function(project, cmd, sched, jobname) {
   }
   # log paths are absolute: the app submits from wherever its R session happens
   # to be, which is not the project, so a relative -o lands somewhere arbitrary
-  log <- function(suffix) file.path(project, paste0(jobname, suffix))
+  log <- function(suffix) job_path(project, "log", paste0(jobname, suffix))
   hdr <- if (is.null(sched)) {
     character(0)
   } else {
@@ -74,28 +105,43 @@ job_script <- function(project, cmd, sched, jobname) {
     NF_EXIT_TRAILER, ""), collapse = "\n")
 }
 
-#' Cluster job script for the main workflow
+#' Give the run its own Nextflow log
+#'
+#' `-log` is a top-level option, so it goes BEFORE `run`. Without it Nextflow
+#' writes .nextflow.log into the launch directory and rotates it, so the log of
+#' the run you want is gone a couple of runs later.
 #' @noRd
-build_submit_script <- function(project, resume = TRUE, sched = detect_scheduler()) {
+nf_log_opt <- function(project, base) {
+  c("-log", job_path(project, "nextflow", paste0(base, ".nextflow.log")))
+}
+
+#' Cluster job script for the main workflow
+#' @param base Timestamped name for this submission's script and logs.
+#' @noRd
+build_submit_script <- function(project, resume = TRUE, sched = detect_scheduler(),
+                                base = job_basename("ribopilot")) {
   # one arg (the container bind options) contains spaces, so quote per argument
-  args <- c(nf_command(project, resume = resume), "-ansi-log", "false")
+  args <- c(nf_log_opt(project, base), nf_command(project, resume = resume),
+    "-ansi-log", "false")
   cmd <- paste(c(shQuote("nextflow"), shQuote(args)), collapse = " ")
-  job_script(project, cmd, sched, "ribopilot")
+  job_script(project, cmd, sched, base)
 }
 
 #' Cluster job script for a reference BUILD run
 #'
 #' The manifest must already be on disk: the job reads it when it runs, which is
 #' long after the modal that wrote the script has closed.
+#' @param base Timestamped name for this submission's script and logs.
 #' @noRd
 build_reference_submit_script <- function(project, manifest, ref_dir, api_key = "",
                                           refseq = FALSE, resume = TRUE,
-                                          sched = detect_scheduler()) {
+                                          sched = detect_scheduler(),
+                                          base = job_basename("ribopilot_ref")) {
   args <- nf_reference_command(project, "BUILD", manifest, ref_dir, ref_dir,
     api_key = api_key, refseq = refseq, resume = resume)
-  args <- c(args, "-ansi-log", "false")
+  args <- c(nf_log_opt(project, base), args, "-ansi-log", "false")
   job_script(project, paste(c(shQuote("nextflow"), shQuote(args)), collapse = " "),
-    sched, "ribopilot_ref")
+    sched, base)
 }
 
 #' Open the RiboPilot GUI

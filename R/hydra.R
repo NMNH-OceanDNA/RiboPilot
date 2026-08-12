@@ -88,7 +88,7 @@ hydra_job_script <- function(project, cmd, jobname) {
     "#!/bin/sh",
     sprintf("#$ -N %s", jobname),
     # absolute: the submitting session's cwd is not necessarily the project dir
-    sprintf("#$ -o %s", file.path(project, paste0(jobname, ".$JOB_ID.log"))),
+    sprintf("#$ -o %s", job_path(project, "log", paste0(jobname, ".$JOB_ID.log"))),
     # no -cwd: it resolves to whatever directory the app happened to be in, which
     # is not the project. The script cds there itself.
     "#$ -j y",
