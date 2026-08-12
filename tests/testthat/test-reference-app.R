@@ -19,18 +19,19 @@ test_that("the Reference control bar keeps only the two tab-wide actions", {
   }
 })
 
-test_that("the empty-table message can wrap without stacking on itself", {
-  # reactable's own stylesheet sets `.rt-no-data { line-height: 0 }`, which only
-  # works for its one-word default. Every mode's message here is a sentence, and
-  # the Reference one runs to three lines, so without this override each wrapped
-  # line is drawn on top of the last.
+test_that("the empty-table message stays readable and clear of the header", {
+  # Two reactable defaults assume its own one-word default. `line-height: 0`
+  # draws each wrapped line on top of the last, and absolute centring on
+  # `.rt-tbody-no-data` puts the block on the header row, because an empty body
+  # has no height. Both overrides have to survive for the message to be legible.
   css <- paste(readLines(RiboPilot:::app_sys("app/www/custom.css"), warn = FALSE), collapse = "\n")
-  # drop comments first: the one above this rule quotes the very declaration
+  # drop comments first: the one above this rule quotes the very declarations
   # being overridden, and would otherwise match instead of the rule
   css <- gsub("(?s)/\\*.*?\\*/", "", css, perl = TRUE)
   rule <- regmatches(css, regexpr("\\.rt-no-data\\s*\\{[^}]*\\}", css))
   expect_length(rule, 1L)
   expect_match(rule, "line-height:\\s*[1-9]")
+  expect_match(rule, "position:\\s*static")
 })
 
 test_that("the row action modal names what skipping actually costs", {

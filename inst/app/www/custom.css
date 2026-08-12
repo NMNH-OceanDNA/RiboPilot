@@ -164,16 +164,21 @@ details[open] summary {
   height: 100% !important;
 }
 
-/* Empty-table message. reactable ships `.rt-no-data { line-height: 0 }`, which
-   only holds for its own one-word default ("No rows found"); every mode here
-   explains what to do next instead, and at zero line-height a message that
-   wraps draws each line on top of the last. Restore a real line-height and give
-   it a width to wrap inside, since it is absolutely positioned and would
-   otherwise run past the table on a narrow window. */
+/* Empty-table message. Two reactable defaults assume its own one-word default
+   ("No rows found"), and both break on a message that says what to do next:
+     - `line-height: 0` draws every wrapped line on top of the last;
+     - the message is absolutely centred on `.rt-tbody-no-data`, which has no
+       height while the table is empty, so the block straddles the header row
+       and disappears behind the sticky header.
+   Putting it in normal flow inside the empty body fixes both: the body then
+   takes its height from the message, so nothing can overlap it. */
 .rt-no-data {
-  line-height: 1.45;
+  position: static;
+  transform: none;
+  margin: 0 auto;
   max-width: min(46em, 90%);
-  padding: 0 1em;
+  padding: 1.75em 1em;
+  line-height: 1.45;
   text-align: center;
   white-space: normal;
 }
