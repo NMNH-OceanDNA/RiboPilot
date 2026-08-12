@@ -412,7 +412,7 @@ rt_depth_sparkline <- function() {
 
 #' Row click -> "examine this unit", for tables whose tick boxes mean something else
 #'
-#' The scaffold table's tick boxes feed Copy FASTA, so the row click is free to
+#' The scaffold table's tick boxes feed Copy FASTA and bulk K/D, so the row click is free to
 #' mean "show this scaffold in the panels below". Clicks on the tick box and on
 #' the in-cell action buttons are ignored: the buttons already stop propagation,
 #' and `.selection` would otherwise both tick the row and move the panels.

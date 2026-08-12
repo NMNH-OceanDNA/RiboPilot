@@ -1019,8 +1019,8 @@ app_server <- function(input, output, session) {
     d <- d[, c(intersect(lead, names(d)), setdiff(names(d), lead)), drop = FALSE]
     reactable::reactable(d, compact = TRUE, resizable = TRUE, filterable = TRUE,
       searchable = TRUE, sortable = TRUE, wrap = FALSE, defaultPageSize = 20,
-      # tick boxes feed the Copy FASTA button below the table; clicking the row
-      # anywhere else opens that scaffold in the evidence panels below
+      # tick boxes drive Copy FASTA and, with more than one ticked, a bulk K/D
+      # verdict; clicking the row anywhere else opens that scaffold below
       selection = "multiple",
       onClick = rt_examine_row("scaf_examine"),
       meta = list(examined = isolate(examined_uid())),
@@ -1031,7 +1031,10 @@ app_server <- function(input, output, session) {
         # what the ticks are for, since they do NOT drive the panels below.
         .selection = reactable::colDef(show = TRUE, width = 36, sticky = "left",
           html = TRUE, header = as.character(icon("clipboard",
-            title = "Tick rows to copy as FASTA"))),
+            title = paste("Tick rows to copy them as FASTA, or to keep/drop them",
+              "together: with more than one ticked, K or D on any ticked row",
+              "applies to all of them. K or D on an unticked row affects only",
+              "that row.")))),
         # Every visible column explains itself on hover ("?" in the header), so a
         # reviewer never has to remember which number is comparable with what.
         unit = reactable::colDef(name = "Unit", width = 72, show = TRUE, sticky = "left",
@@ -1088,26 +1091,33 @@ app_server <- function(input, output, session) {
       rowStyle = rt_scaffold_row_style())
   })
 
-  # ---- Copy FASTA for the ticked scaffolds ----
-  observeEvent(input$copy_fasta, {
+  # The ticked scaffolds as (path, scaffold) rows. Two controls read this: Copy
+  # FASTA, and a K/D click while more than one row is ticked.
+  ticked_units <- function() {
     d <- scaffold_rows()
     sel <- reactable::getReactableState("assemble_scaffolds", "selected")
     sel <- sel[!is.na(sel) & sel >= 1 & sel <= nrow(d)]
-    if (length(sel) == 0) {
+    d[sel, c("path", "scaffold"), drop = FALSE]
+  }
+
+  # ---- Copy FASTA for the ticked scaffolds ----
+  observeEvent(input$copy_fasta, {
+    u <- ticked_units()
+    if (nrow(u) == 0) {
       rp_alert("Tick one or more scaffolds first.", type = "warning"); return()
     }
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    txt <- unit_fasta_text(con, sel_id(), d[sel, c("path", "scaffold"), drop = FALSE])
+    txt <- unit_fasta_text(con, sel_id(), u)
     if (length(txt) == 0) {
       rp_alert("Those scaffolds have no stored sequence.", type = "warning"); return()
     }
     copy_to_clipboard(paste(txt, collapse = "\n"))
-    rp_toast(sprintf("Copied %d scaffold(s) as FASTA.", length(sel)), type = "message")
+    rp_toast(sprintf("Copied %d scaffold(s) as FASTA.", nrow(u)), type = "message")
   })
 
   # ---- per-unit BLAST evidence: the unfiltered screen vs the rDNA panel ----
   # The examined unit drives both panels below the table. Clicking a row picks
-  # it; the tick boxes are for Copy FASTA and deliberately do not move it.
+  # it; the tick boxes are for Copy FASTA and bulk K/D, and do not move it.
   sel_hit_unit <- reactiveVal(NULL)
   examined_uid <- reactive({
     h <- sel_hit_unit()
@@ -1210,13 +1220,42 @@ app_server <- function(input, output, session) {
   # so a reviewed unit only warns; an annotation-locked one is still refused,
   # because the Annotate-mode lock guard cannot see this path.
   pending_triage <- reactiveVal(NULL)
-  do_scaf_triage <- function(id, p, s, verdict) {
+  unit_label <- function(u) paste0(u$path, ".", u$scaffold)
+  do_scaf_triage <- function(id, units, verdict) {
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    set_unit_triage(con, id, p, s, verdict, reason = NA_character_, source = "user")
+    for (i in seq_len(nrow(units))) {
+      set_unit_triage(con, id, units$path[i], units$scaffold[i], verdict,
+        reason = NA_character_, source = "user")
+    }
     refresh(refresh() + 1)
-    rp_toast(sprintf("Scaffold %s.%s marked %s.", p, s,
-      if (is.na(verdict)) "undecided" else switch(verdict, keep = "keep", drop = "drop", verdict)),
-      type = "message")
+    word <- if (is.na(verdict)) "undecided" else verdict
+    rp_toast(if (nrow(units) == 1) {
+      sprintf("Scaffold %s marked %s.", unit_label(units[1, ]), word)
+    } else {
+      sprintf("%d scaffolds marked %s.", nrow(units), word)
+    }, type = "message")
+  }
+  # Split the units a drop would touch into the ones it must refuse, the ones it
+  # must ask about, and the rest. Annotation-locked is a refusal because the
+  # Annotate-mode lock guard cannot see this path; reviewed or exported only
+  # warns, since the annotate row is held rather than deleted.
+  classify_drop <- function(id, units) {
+    locked <- character(0); ask <- character(0); keep_idx <- integer(0)
+    for (i in seq_len(nrow(units))) {
+      p <- units$path[i]; s <- units$scaffold[i]
+      st <- app_query(
+        "SELECT annotate_lock, reviewed, export_group FROM annotate
+         WHERE ID = ? AND path = ? AND scaffold = ?", params = list(id, p, s))
+      if (nrow(st) && isTRUE(as.integer(st$annotate_lock[1]) == 1L)) {
+        locked <- c(locked, paste0(p, ".", s)); next
+      }
+      if (nrow(st) && (identical(st$reviewed[1], "yes") ||
+                       (!is.na(st$export_group[1]) && nzchar(st$export_group[1])))) {
+        ask <- c(ask, paste0(p, ".", s))
+      }
+      keep_idx <- c(keep_idx, i)
+    }
+    list(locked = locked, ask = ask, units = units[keep_idx, , drop = FALSE])
   }
   observeEvent(input$scaf_triage, {
     id <- sel_id(); req(id)
@@ -1227,39 +1266,62 @@ app_server <- function(input, output, session) {
     want <- parts[4]
     req(want %in% TRIAGE_VERDICTS)
     u <- unit_by_uid(paste(parts[1:3], collapse = "|")); req(!is.null(u))
-    p <- u$path; s <- u$scaffold
-    # clicking the state a row is already in clears it back to undecided
-    verdict <- if (identical(u$triage %|NA|% "", want)) NA_character_ else want
+
+    # A click INSIDE a multi-row selection is a bulk verdict over that selection.
+    # A click OUTSIDE it stays a single-row action on the row clicked: the ticked
+    # rows are not what the user is pointing at, and retargeting the click onto
+    # them would change rows they never aimed at while leaving the row they did
+    # aim at alone.
+    # Bulk SETS rather than toggles: a mixed selection has no single state to
+    # toggle out of, so "clear it again" would mean different things per row.
+    ticked <- ticked_units()
+    on_ticked <- nrow(ticked) > 0 &&
+      any(ticked$path == u$path & ticked$scaffold == u$scaffold)
+    if (nrow(ticked) > 1 && on_ticked) {
+      units <- ticked
+      verdict <- want
+    } else {
+      units <- u[, c("path", "scaffold"), drop = FALSE]
+      # clicking the state a row is already in clears it back to undecided
+      verdict <- if (identical(u$triage %|NA|% "", want)) NA_character_ else want
+    }
 
     if (identical(verdict, "drop")) {
-      st <- app_query(
-        "SELECT annotate_lock, reviewed, export_group FROM annotate
-         WHERE ID = ? AND path = ? AND scaffold = ?", params = list(id, p, s))
-      if (nrow(st) && isTRUE(as.integer(st$annotate_lock[1]) == 1L)) {
+      cls <- classify_drop(id, units)
+      if (length(cls$locked)) {
         rp_alert(sprintf(
-          "Scaffold %s.%s is annotation-locked. Unlock that unit in Annotation Review first.", p, s),
-          type = "error")
-        return()
+          "Scaffold%s %s %s annotation-locked. Unlock %s in Annotation Review first.",
+          if (length(cls$locked) == 1) "" else "s", paste(cls$locked, collapse = ", "),
+          if (length(cls$locked) == 1) "is" else "are",
+          if (length(cls$locked) == 1) "that unit" else "those units"),
+          type = if (nrow(cls$units)) "warning" else "error")
       }
-      if (nrow(st) && (identical(st$reviewed[1], "yes") ||
-                       (!is.na(st$export_group[1]) && nzchar(st$export_group[1])))) {
-        pending_triage(list(id = id, p = p, s = s))
+      if (nrow(cls$units) == 0) return()
+      if (length(cls$ask)) {
+        pending_triage(list(id = id, units = cls$units))
         showModal(modalDialog(
-          title = "Drop a reviewed scaffold?", size = "s",
-          tags$p(sprintf(paste("Scaffold %s.%s has already been reviewed. Dropping it excludes it",
-            "from annotation and export. Its annotation and curation are kept, so this can be undone."), p, s)),
+          title = if (length(cls$ask) == 1) "Drop a reviewed scaffold?" else "Drop reviewed scaffolds?",
+          size = "s",
+          tags$p(sprintf(paste("Scaffold%s %s already been reviewed. Dropping",
+            "%s from annotation and export. Annotation and curation are kept, so this can be undone."),
+            if (length(cls$ask) == 1) paste0(" ", cls$ask) else
+              paste0("s ", paste(cls$ask, collapse = ", ")),
+            if (length(cls$ask) == 1) "has" else "have",
+            if (nrow(cls$units) == 1) "excludes it" else
+              sprintf("excludes %d scaffolds", nrow(cls$units)))),
           footer = tagList(
             actionButton("scaf_triage_ok", "Drop it", class = "btn-danger btn-sm"),
             modalButton("Cancel"))))
         return()
       }
+      units <- cls$units
     }
-    do_scaf_triage(id, p, s, verdict)
+    do_scaf_triage(id, units, verdict)
   })
   observeEvent(input$scaf_triage_ok, {
     pt <- pending_triage(); req(pt); pending_triage(NULL)
     removeModal()
-    do_scaf_triage(pt$id, pt$p, pt$s, "drop")
+    do_scaf_triage(pt$id, pt$units, "drop")
     showModal(assemble_modal(pt$id))
   })
   # ---- bulk triage over the selected samples ----
