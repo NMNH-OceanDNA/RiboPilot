@@ -278,6 +278,12 @@ rt_variant_badge <- function() {
 #' R/coverage.R for why a mean misleads on an rDNA scaffold); the tooltip names
 #' which statistic it is, so a pre-v10 row falling back to the mean is not read
 #' as a median.
+#'
+#' The bar has no background track. A grey remainder said only "this is a
+#' fraction of something", which the fill length and the number beside it
+#' already say. The 48px slot it used to shade is kept, transparent: the width
+#' is what puts every row's number in the same place, and a bar that sets its
+#' own width drags the number left and right by up to 46px down the column.
 #' @param max_col Column holding the sample maximum.
 #' @noRd
 rt_depth_bar <- function(max_col = "depth_max") {
@@ -296,7 +302,7 @@ rt_depth_bar <- function(max_col = "depth_max") {
       tip += ', ' + Math.round(f*100) + '%% of this sample&#39;s deepest scaffold'
       if (v === 0) tip += ' -- over half this scaffold has no coverage'
       return '<span title=\"' + tip + '\">' +
-        '<span style=\"display:inline-block; width:48px; height:8px; background:#eee; vertical-align:middle;\">' +
+        '<span style=\"display:inline-block; width:48px; height:8px; vertical-align:middle;\">' +
         '<span style=\"display:inline-block; width:' + w + 'px; height:8px; background:' + col + ';\"></span></span>' +
         '<span style=\"margin-left:5px; font-size:0.85em; color:#555;\">' + v + '</span></span>'
     }", max_col) |> htmlwidgets::JS()
@@ -406,7 +412,7 @@ rt_depth_sparkline <- function() {
 
 #' Row click -> "examine this unit", for tables whose tick boxes mean something else
 #'
-#' The scaffold table's tick boxes feed Copy FASTA, so the row click is free to
+#' The scaffold table's tick boxes feed Copy FASTA and bulk K/D, so the row click is free to
 #' mean "show this scaffold in the panels below". Clicks on the tick box and on
 #' the in-cell action buttons are ignored: the buttons already stop propagation,
 #' and `.selection` would otherwise both tick the row and move the panels.

@@ -35,3 +35,19 @@ test_that("the sparkline renderer draws an SVG and never evaluates its input", {
   expect_false(grepl("eval(", js, fixed = TRUE))
   expect_false(grepl("innerHTML", js, fixed = TRUE))
 })
+
+test_that("the depth bar draws no background track but keeps its fixed slot", {
+  js <- as.character(RiboPilot:::rt_depth_bar())
+  # the grey remainder is gone: it only restated what the fill length and the
+  # number beside it already say
+  expect_false(grepl("#eee", js, fixed = TRUE))
+  expect_false(grepl("background:#", js, fixed = TRUE) &&
+    grepl("width:48px; height:8px; background", js, fixed = TRUE))
+  # the 48px slot stays, transparent. It is what holds every row's number in the
+  # same column; without it a short bar pulls its number ~46px left of a long one
+  expect_match(js, "width:48px; height:8px; vertical-align:middle;", fixed = TRUE)
+  # the fill itself, and the three severity colours, are untouched
+  for (col in c("#c0392b", "#b8860b", "#2d6a4f")) {
+    expect_match(js, col, fixed = TRUE)
+  }
+})

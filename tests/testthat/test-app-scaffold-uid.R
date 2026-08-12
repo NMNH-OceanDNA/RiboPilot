@@ -538,3 +538,158 @@ test_that("a typed script is saved as typed", {
 
   expect_true(any(grepl("bigmem", readLines(Sys.glob(file.path(dir, "jobs", "ribopilot_*.sh"))), fixed = TRUE)))
 })
+
+# The reactable selection reaches the server as this input; setting it is how a
+# test ticks rows.
+scaf_tick <- function(session, rows) {
+  session$setInputs(assemble_scaffolds__reactable__selected = as.integer(rows))
+}
+
+test_that("K on a ticked row applies the verdict to every ticked row", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    sel_id("S1")
+    session$flushReact()
+    d <- scaffold_rows()
+    expect_equal(nrow(d), 4)
+
+    # tick rows 1 and 3, then click K on row 1: the click lands inside the
+    # selection, so the selection is the scope
+    scaf_tick(session, c(1, 3))
+    session$flushReact()
+    u1 <- d[1, ]; u2 <- d[2, ]; u3 <- d[3, ]
+    session$setInputs(scaf_triage = paste("S1", u1$path, u1$scaffold, "keep", sep = "|"))
+    session$flushReact()
+
+    tr <- RiboPilot:::app_query(
+      "SELECT path, scaffold, triage FROM assemblies WHERE ID='S1' ORDER BY path, scaffold")
+    got <- function(u) tr$triage[tr$path == u$path & tr$scaffold == u$scaffold]
+    expect_equal(got(u1), "keep")
+    expect_equal(got(u3), "keep")
+    expect_true(is.na(got(u2)))          # unticked, untouched
+  })
+})
+
+test_that("K on an UNTICKED row changes only that row, leaving the ticked ones alone", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    sel_id("S1")
+    session$flushReact()
+    d <- scaffold_rows()
+
+    # rows 1 and 3 ticked, but the click is on row 2. The user is pointing at
+    # row 2; retargeting onto the selection would change rows they never aimed
+    # at and skip the one they did.
+    scaf_tick(session, c(1, 3))
+    session$flushReact()
+    u1 <- d[1, ]; u2 <- d[2, ]; u3 <- d[3, ]
+    session$setInputs(scaf_triage = paste("S1", u2$path, u2$scaffold, "drop", sep = "|"))
+    session$flushReact()
+
+    tr <- RiboPilot:::app_query(
+      "SELECT path, scaffold, triage, ignore FROM assemblies WHERE ID='S1' ORDER BY path, scaffold")
+    row <- function(u) tr[tr$path == u$path & tr$scaffold == u$scaffold, ]
+    expect_equal(row(u2)$triage, "drop")
+    expect_equal(row(u2)$ignore, 1L)
+    expect_true(is.na(row(u1)$triage))
+    expect_true(is.na(row(u3)$triage))
+    expect_equal(c(row(u1)$ignore, row(u3)$ignore), c(0L, 0L))
+  })
+})
+
+test_that("a bulk verdict sets rather than toggles, so a mixed selection lands on one state", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    sel_id("S1")
+    session$flushReact()
+    d <- scaffold_rows()
+
+    # row 1 already "keep", row 2 undecided: a toggle would clear row 1 and set
+    # row 2, leaving the selection more mixed than it started
+    scaf_tick(session, 1)
+    session$flushReact()
+    session$setInputs(scaf_triage = paste("S1", d$path[1], d$scaffold[1], "keep", sep = "|"))
+    session$flushReact()
+    expect_equal(RiboPilot:::app_query(
+      "SELECT triage FROM assemblies WHERE ID='S1' AND path=? AND scaffold=?",
+      params = list(d$path[1], d$scaffold[1]))$triage, "keep")
+
+    scaf_tick(session, c(1, 2))
+    session$flushReact()
+    session$setInputs(scaf_triage = paste("S1", d$path[1], d$scaffold[1], "keep", sep = "|"))
+    session$flushReact()
+    tr <- RiboPilot:::app_query(
+      "SELECT path, scaffold, triage FROM assemblies WHERE ID='S1' ORDER BY path, scaffold")
+    got <- function(i) tr$triage[tr$path == d$path[i] & tr$scaffold == d$scaffold[i]]
+    expect_equal(got(1), "keep")
+    expect_equal(got(2), "keep")
+  })
+})
+
+test_that("exactly one ticked row leaves the single-row toggle alone", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    sel_id("S1")
+    session$flushReact()
+    d <- scaffold_rows()
+    scaf_tick(session, 2)                     # one tick: not a bulk action
+    session$flushReact()
+    uid <- paste("S1", d$path[1], d$scaffold[1], "keep", sep = "|")
+    session$setInputs(scaf_triage = uid)
+    session$flushReact()
+    session$setInputs(scaf_triage = uid)      # same state again -> undecided
+    session$flushReact()
+    tr <- RiboPilot:::app_query(
+      "SELECT triage FROM assemblies WHERE ID='S1' AND path=? AND scaffold=?",
+      params = list(d$path[1], d$scaffold[1]))
+    expect_true(is.na(tr$triage))
+    # and the ticked row was never touched
+    expect_true(is.na(RiboPilot:::app_query(
+      "SELECT triage FROM assemblies WHERE ID='S1' AND path=? AND scaffold=?",
+      params = list(d$path[2], d$scaffold[2]))$triage))
+  })
+})
+
+test_that("a bulk drop refuses annotation-locked units and still drops the rest", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_lock = 1 WHERE path = 1 AND scaffold = 1")
+  DBI::dbDisconnect(con)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    sel_id("S1")
+    session$flushReact()
+    d <- scaffold_rows()
+    locked <- which(d$path == 1 & d$scaffold == 1)
+    other <- setdiff(seq_len(nrow(d)), locked)[1]
+    scaf_tick(session, c(locked, other))
+    session$flushReact()
+    session$setInputs(scaf_triage = paste("S1", d$path[other], d$scaffold[other], "drop", sep = "|"))
+    session$flushReact()
+
+    ig <- RiboPilot:::app_query(
+      "SELECT path, scaffold, ignore FROM assemblies WHERE ID='S1' ORDER BY path, scaffold")
+    # the locked unit is refused, not silently dropped along with the rest
+    expect_equal(ig$ignore[ig$path == 1 & ig$scaffold == 1], 0L)
+    expect_equal(ig$ignore[ig$path == d$path[other] & ig$scaffold == d$scaffold[other]], 1L)
+  })
+})
