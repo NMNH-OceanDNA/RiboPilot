@@ -122,6 +122,23 @@ app_query <- function(sql, params = NULL) {
   if (is.null(params)) DBI::dbGetQuery(con, sql) else DBI::dbGetQuery(con, sql, params = params)
 }
 
+#' Is the remote GenBank BLAST switched on for this sample?
+#'
+#' Lets the modal tell "BLAST was never asked for" apart from "BLAST was asked
+#' for and has not come back". Defaults to TRUE when the option row is missing,
+#' matching the pipeline's own default (blast.nf).
+#' @param id Sample ID.
+#' @noRd
+blast_enabled <- function(id) {
+  if (is.null(id) || !nzchar(id)) {
+    return(TRUE)
+  }
+  d <- app_query(
+    "SELECT COALESCE(bo.run_blast, 1) AS run_blast FROM assemble a
+       JOIN blast_opts bo ON a.blast_opts = bo.blast_opts WHERE a.ID = ?", params = list(id))
+  if (nrow(d) == 0) TRUE else !identical(as.integer(d$run_blast[1]), 0L)
+}
+
 #' Per-unit evidence for one sample: assembly, depth, screen hit, taxonomy
 #'
 #' Everything the reviewer needs at the moment of the keep/drop decision, in one
