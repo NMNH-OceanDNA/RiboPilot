@@ -44,17 +44,24 @@ parse_gfa_depth <- function(gfa_path) {
 #' Length-weighted mean depth of the segments a scaffold traverses
 #'
 #' @param header A GetOrganelle scaffold header, e.g.
-#'   `scaffold_1--24280-,32579-,31679-` (segment ids after `--`, sign stripped).
+#'   `scaffold_1--24280-,32579-,31679-` (segment ids after `--`, orientation sign
+#'   stripped). Merged segments carry underscores (`62361_60645`), so only the
+#'   trailing `+`/`-` may be removed; the rest of the id is literal.
 #' @param gfa_depth data.frame from [parse_gfa_depth()].
 #' @return numeric mean depth (NA if no segments matched)
 #' @noRd
 scaffold_depth <- function(header, gfa_depth) {
   ids <- sub(".*--", "", header)
-  ids <- unlist(strsplit(ids, ","))
-  ids <- gsub("[^0-9]", "", ids)
+  ids <- trimws(unlist(strsplit(ids, ",")))
+  ids <- sub("[+-]$", "", ids)
   ids <- ids[nzchar(ids)]
-  d <- gfa_depth[match(ids, gfa_depth$segment), ]
-  d <- d[!is.na(d$depth), ]
+  i <- match(ids, gfa_depth$segment)
+  if (anyNA(i)) {
+    warning("scaffold header names segments missing from the GFA: ",
+      paste(unique(ids[is.na(i)]), collapse = ", "), call. = FALSE)
+  }
+  d <- gfa_depth[i[!is.na(i)], , drop = FALSE]
+  d <- d[!is.na(d$depth), , drop = FALSE]
   if (nrow(d) == 0) {
     return(NA_real_)
   }
