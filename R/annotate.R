@@ -367,3 +367,98 @@ orient_rrna_sense <- function(seq, kingdom = "euk") {
 annotate_seq <- function(fasta, cpu = 2) {
   reconcile_features(run_barrnap(fasta), run_itsx(fasta, cpu = cpu))
 }
+
+#' Sequence ids short enough for ITSx
+#' @param lens Named integer vector of sequence lengths.
+#' @noRd
+itsx_eligible <- function(lens) {
+  names(lens)[!is.na(lens) & lens <= ITSX_MAX_BP]
+}
+
+#' Map ITSx coordinates from the reverse-complement frame back to the input frame
+#' @param its parse_itsx() output for reverse-complemented records.
+#' @param lens Named integer vector of input-frame sequence lengths.
+#' @noRd
+flip_itsx_coords <- function(its, lens) {
+  if (is.null(its) || nrow(its) == 0) return(its)
+  L <- lens[its$seqid]
+  ok <- !is.na(L)
+  if (!any(ok)) return(its)
+  s <- its$start; e <- its$stop
+  its$start[ok] <- as.integer(L[ok] - e[ok] + 1L)
+  its$stop[ok] <- as.integer(L[ok] - s[ok] + 1L)
+  its
+}
+
+#' Reconcile per record
+#' @param bar,its parse_barrnap()/parse_itsx() output carrying a seqid column.
+#' @return reconcile_features() output with a leading seqid column.
+#' @noRd
+reconcile_records <- function(bar, its) {
+  ids <- unique(c(
+    if (!is.null(bar) && nrow(bar) > 0) bar$seqid else character(0),
+    if (!is.null(its) && nrow(its) > 0) its$seqid else character(0)))
+  if (length(ids) == 0) return(data.frame())
+  out <- list()
+  drop_seqid <- function(d) {
+    if (is.null(d) || nrow(d) == 0) return(data.frame())
+    d[, setdiff(names(d), "seqid"), drop = FALSE]
+  }
+  for (sid in ids) {
+    b <- drop_seqid(if (!is.null(bar) && nrow(bar) > 0) bar[bar$seqid == sid, , drop = FALSE] else NULL)
+    i <- drop_seqid(if (!is.null(its) && nrow(its) > 0) its[its$seqid == sid, , drop = FALSE] else NULL)
+    r <- reconcile_features(b, i)
+    if (is.null(r) || nrow(r) == 0) next
+    out[[length(out) + 1]] <- cbind(seqid = sid, r, stringsAsFactors = FALSE)
+  }
+  if (length(out) == 0) data.frame() else do.call(rbind, out)
+}
+
+#' Annotate every record in a multi-record fasta
+#'
+#' Runs the rRNA anchor caller once over the whole file and ITSx once per strand
+#' group, then reconciles per record. Records longer than [ITSX_MAX_BP] are kept
+#' but get anchors only, because ITSx aborts the entire run on an oversized
+#' target rather than skipping it.
+#'
+#' @param fasta Path to a multi-record fasta.
+#' @param kingdom Anchor-caller kingdom.
+#' @param cpu Threads for ITSx.
+#' @param taxon ITSx `-t` profile set.
+#' @return data.frame(seqid, element, type, start, stop, length, strand, model_cov, tool).
+#' @noRd
+annotate_records <- function(fasta, kingdom = "euk", cpu = 2, taxon = "all") {
+  seqs <- Biostrings::readDNAStringSet(fasta)
+  if (length(seqs) == 0) return(data.frame())
+  names(seqs) <- sub("\\s.*$", "", names(seqs))
+  lens <- stats::setNames(as.integer(Biostrings::width(seqs)), names(seqs))
+
+  caller <- rrna_caller()
+  bar <- data.frame()
+  if (!is.null(caller)) {
+    gff <- run_rrna_tool(caller$bin, caller$tool, fasta,
+      rrna_kingdom_for(kingdom, caller$tool))
+    bar <- parse_barrnap(gff)
+  }
+
+  minus <- if (nrow(bar) > 0) unique(bar$seqid[bar$strand == "-"]) else character(0)
+  eligible <- itsx_eligible(lens)
+  plus_ids <- setdiff(intersect(names(seqs), eligible), minus)
+  minus_ids <- intersect(minus, eligible)
+
+  run_on <- function(ids, revcomp) {
+    if (length(ids) == 0) return(data.frame())
+    sub <- seqs[ids]
+    if (revcomp) sub <- Biostrings::reverseComplement(sub)
+    f <- tempfile(fileext = ".fa")
+    on.exit(unlink(f), add = TRUE)
+    Biostrings::writeXStringSet(sub, f)
+    run_itsx(f, cpu = cpu, taxon = taxon)
+  }
+
+  its_plus <- run_on(plus_ids, FALSE)
+  its_minus <- flip_itsx_coords(run_on(minus_ids, TRUE), lens)
+  its <- rbind(its_plus, its_minus)
+
+  reconcile_records(bar, its)
+}
