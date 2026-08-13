@@ -54,3 +54,33 @@ test_that("reconcile derives a missing spacer by subtraction", {
   expect_equal(its1$stop, 2200)
   expect_equal(its1$tool, "derived")
 })
+
+test_that("parse_barrnap carries the GFF seqid", {
+  gff <- c(
+    "ACC1\tbarrnap\trRNA\t10\t1800\t.\t+\t.\tName=18S_rRNA;product=18S ribosomal RNA",
+    "ACC2\tbarrnap\trRNA\t20\t1900\t.\t-\t.\tName=18S_rRNA;product=18S ribosomal RNA")
+  d <- RiboPilot:::parse_barrnap(gff)
+  expect_equal(nrow(d), 2L)
+  expect_equal(d$seqid, c("ACC1", "ACC2"))
+  expect_equal(d$element, c("18S", "18S"))
+  expect_equal(d$start, c(10L, 20L))
+  expect_equal(d$strand, c("+", "-"))
+})
+
+test_that("parse_itsx reads every record, not just the first", {
+  pos <- c(
+    "ACC1\t7000 bp.\tSSU: 1-1800\tITS1: 1801-2100\t5.8S: 2101-2258\tITS2: 2259-2500\tLSU: 2501-6900",
+    "ACC2\t4000 bp.\tSSU: Not found\tITS1: Not found\t5.8S: Not found\tITS2: Not found\tLSU: 1-3950")
+  d <- RiboPilot:::parse_itsx(pos)
+  expect_equal(sort(unique(d$seqid)), c("ACC1", "ACC2"))
+  expect_equal(nrow(d[d$seqid == "ACC1", ]), 5L)
+  expect_equal(nrow(d[d$seqid == "ACC2", ]), 1L)
+  expect_equal(d$element[d$seqid == "ACC2"], "28S")
+})
+
+test_that("a single-record positions line still parses exactly as before", {
+  pos <- "S1\t7000 bp.\tSSU: 1-1800\tITS1: 1801-2100\t5.8S: 2101-2258\tITS2: 2259-2500\tLSU: 2501-6900"
+  d <- RiboPilot:::parse_itsx(pos)
+  expect_equal(d$element, c("18S", "ITS1", "5.8S", "ITS2", "28S"))
+  expect_equal(d$start, c(1L, 1801L, 2101L, 2259L, 2501L))
+})

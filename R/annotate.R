@@ -14,7 +14,7 @@
 #' the ...`. That coverage is what tells a complete 18S from one missing its 3'
 #' V9 region (the terminus most metazoan eDNA assays target), so it is kept
 #' rather than discarded.
-#' @return data.frame(element, start, stop, strand, model_cov) for 18S/5.8S/28S,
+#' @return data.frame(seqid, element, start, stop, strand, model_cov) for 18S/5.8S/28S,
 #'   where `model_cov` is the percent of the model aligned (100 for a full hit,
 #'   NA when the tool reported partial without a percentage).
 #' @noRd
@@ -43,6 +43,7 @@ parse_barrnap <- function(gff_lines) {
     sub(".*aligned only ([0-9.]+) percent.*", "\\1", attrs[has_pct])))
   model_cov[!has_pct & !partial] <- 100 # full-length hit, no partial marker
   data.frame(
+    seqid = vapply(f, `[`, character(1), 1)[keep],
     element = el[keep],
     start = as.integer(vapply(f, `[`, character(1), 4))[keep],
     stop = as.integer(vapply(f, `[`, character(1), 5))[keep],
@@ -53,21 +54,27 @@ parse_barrnap <- function(gff_lines) {
 }
 
 #' Parse an ITSx `.positions.txt` into region features
-#' @return data.frame(element, start, stop) for SSU/ITS1/5.8S/ITS2/LSU found
+#' @return data.frame(seqid, element, start, stop) for SSU/ITS1/5.8S/ITS2/LSU found
 #' @noRd
 parse_itsx <- function(pos_lines) {
   if (length(pos_lines) == 0) {
     return(data.frame())
   }
-  fields <- strsplit(pos_lines[1], "\t")[[1]]
+  pos_lines <- pos_lines[nzchar(trimws(pos_lines))]
   labmap <- c("SSU" = "18S", "ITS1" = "ITS1", "5.8S" = "5.8S", "ITS2" = "ITS2", "LSU" = "28S")
   out <- list()
-  for (fd in fields) {
-    m <- regmatches(fd, regexec("^\\s*(SSU|ITS1|5\\.8S|ITS2|LSU):\\s*(\\d+)-(\\d+)", fd))[[1]]
-    if (length(m) == 4) {
-      out[[length(out) + 1]] <- data.frame(
-        element = unname(labmap[m[2]]), start = as.integer(m[3]), stop = as.integer(m[4]),
-        stringsAsFactors = FALSE)
+  for (ln in pos_lines) {
+    fields <- strsplit(ln, "\t")[[1]]
+    if (length(fields) == 0) next
+    sid <- fields[1]
+    for (fd in fields) {
+      m <- regmatches(fd, regexec("^\\s*(SSU|ITS1|5\\.8S|ITS2|LSU):\\s*(\\d+)-(\\d+)", fd))[[1]]
+      if (length(m) == 4) {
+        out[[length(out) + 1]] <- data.frame(
+          seqid = sid, element = unname(labmap[m[2]]),
+          start = as.integer(m[3]), stop = as.integer(m[4]),
+          stringsAsFactors = FALSE)
+      }
     }
   }
   if (length(out) == 0) data.frame() else do.call(rbind, out)
