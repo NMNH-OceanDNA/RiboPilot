@@ -144,22 +144,27 @@ test_that("rank_distance is left NA when no taxdump resolved the hits", {
   expect_true(is.na(h$lineage_taxids))
 })
 
-test_that("derive_blast_products reproduces what the parser wrote", {
+test_that("derive_blast_products rebuilds candidates and screen from stored hits alone", {
   con <- mk_blast_db()
   on.exit(DBI::dbDisconnect(con))
   f <- write_hits(c(
     hit("AA1", "Danio rerio 18S ribosomal RNA gene", 99.1, 80, 1500, 1600, 1, 1600),
     hit("AA2", "Danio rerio 28S ribosomal RNA gene", 98.0, 60, 900, 950, 1, 950)))
   RiboPilot:::parse_blast_candidates(con, "S1", 1, 1, f)
-  before_c <- DBI::dbGetQuery(con, "SELECT * FROM blast_ref_candidates ORDER BY rank")
-  before_s <- DBI::dbGetQuery(con, "SELECT * FROM blast_screen")
 
-  RiboPilot:::derive_blast_products(con, "S1", 1, 1, ts = before_c$time_stamp[1])
-  after_c <- DBI::dbGetQuery(con, "SELECT * FROM blast_ref_candidates ORDER BY rank")
-  after_s <- DBI::dbGetQuery(con, "SELECT * FROM blast_screen")
+  DBI::dbExecute(con, "DELETE FROM blast_ref_candidates")
+  DBI::dbExecute(con, "DELETE FROM blast_screen")
+  RiboPilot:::derive_blast_products(con, "S1", 1, 1)
 
-  expect_equal(after_c, before_c)
-  expect_equal(after_s, before_s)
+  cand <- DBI::dbGetQuery(con, "SELECT * FROM blast_ref_candidates ORDER BY rank")
+  expect_equal(nrow(cand), 2L)
+  expect_equal(cand$accession, c("AA1", "AA2"))
+  expect_equal(cand$rank, c(1L, 2L))
+  expect_equal(cand$pident, c(99.1, 98.0))
+
+  scr <- DBI::dbGetQuery(con, "SELECT * FROM blast_screen")
+  expect_equal(nrow(scr), 1L)
+  expect_equal(scr$accession[1], "AA1")
 })
 
 test_that("derive_blast_products is idempotent and does not duplicate rows", {
