@@ -24,15 +24,26 @@ is_nuclear_rrna_title <- function(title) {
 REF_CANDIDATE_MIN_PIDENT <- 85
 REF_CANDIDATE_MIN_QCOVS <- 50
 
+#' Absolute aligned length that admits a subject regardless of query coverage.
+#'
+#' qcovs against a full rDNA repeat measures recovered intergenic spacer, not
+#' match quality, so it falls as an assembly improves. 1500 bp is most of an 18S
+#' and well under a 28S. NOT yet calibrated outside Actinopterygii: confirm on a
+#' clade with shorter elements before treating it as settled.
+#' @noRd
+REF_CANDIDATE_MIN_ALN_BP <- 1500
+
 #' Does this subject qualify as a reference the sample is aligned to?
 #'
 #' @param x data.frame with hit_class, pident, qcovs.
 #' @return logical vector, one element per row.
 #' @noRd
 ref_candidate_ok <- function(x) {
+  aln <- if ("aln_len" %in% names(x)) x$aln_len else rep(NA_integer_, nrow(x))
   !is.na(x$hit_class) & x$hit_class == "rdna" &
     !is.na(x$pident) & x$pident >= REF_CANDIDATE_MIN_PIDENT &
-    !is.na(x$qcovs) & x$qcovs >= REF_CANDIDATE_MIN_QCOVS
+    ((!is.na(x$qcovs) & x$qcovs >= REF_CANDIDATE_MIN_QCOVS) |
+      (!is.na(aln) & aln >= REF_CANDIDATE_MIN_ALN_BP))
 }
 
 #' Parse remote blastn hits into ranked reference candidates + a contamination

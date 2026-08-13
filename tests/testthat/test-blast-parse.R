@@ -188,3 +188,31 @@ test_that("derive_blast_products on a unit with no hits clears its derived rows"
   expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM blast_ref_candidates")$n, 0L)
   expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM blast_screen")$n, 0L)
 })
+
+test_that("a long assembly matching a short reference end to end is kept", {
+  con <- mk_blast_db()
+  on.exit(DBI::dbDisconnect(con))
+  # SRR14433904: 15120 bp unit, 6997 bp reference matched end to end, qcovs 46
+  f <- write_hits(hit("MZ286333.1", "Gymnothorax fimbriatus small subunit ribosomal RNA gene",
+    100.0, 46, 12922, 6997, 4998, 11994))
+  RiboPilot:::parse_blast_candidates(con, "S1", 1, 1, f)
+  cand <- DBI::dbGetQuery(con, "SELECT * FROM blast_ref_candidates")
+  expect_equal(nrow(cand), 1)
+  expect_equal(cand$accession[1], "MZ286333.1")
+})
+
+test_that("a short incidental alignment is still rejected", {
+  con <- mk_blast_db()
+  on.exit(DBI::dbDisconnect(con))
+  f <- write_hits(hit("AA9", "Danio rerio 18S ribosomal RNA gene", 99.0, 5, 300, 200, 1, 200))
+  RiboPilot:::parse_blast_candidates(con, "S1", 1, 1, f)
+  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM blast_ref_candidates")$n, 0L)
+})
+
+test_that("the identity floor still applies on the aligned-length branch", {
+  con <- mk_blast_db()
+  on.exit(DBI::dbDisconnect(con))
+  f <- write_hits(hit("AA8", "Danio rerio 28S ribosomal RNA gene", 70.0, 20, 2000, 3000, 1, 3000))
+  RiboPilot:::parse_blast_candidates(con, "S1", 1, 1, f)
+  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM blast_ref_candidates")$n, 0L)
+})
