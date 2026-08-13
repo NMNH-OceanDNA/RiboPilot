@@ -333,9 +333,14 @@ throughput.
 
 ## Stage 4: the shipped local rDNA BLAST database
 
-The build pipeline, dedup thresholds, misidentification screen, and shipping
-mechanics are pending the build-and-ship design round. Decisions already settled
-are recorded here.
+The build is: harvest, byte-exact dereplication, taxid map, `makeblastdb`,
+manifest. No annotation pass, no species collapse, no misidentification screen.
+The reasoning for each omission is below.
+
+**The escalation path in "When the local panel cannot answer" is a hard
+prerequisite for shipping any of this.** Without it, moving the search local
+reinstates precisely the restriction that `inst/nextflow/modules/blast.nf:7-13`
+was written to remove.
 
 ### Scope of the harvest
 
@@ -356,7 +361,9 @@ subunit, internal transcribed spacer), NOT `mitochondrion[Filter]`, NOT
 
 RefSeq `XR_*` and `NR_*` rRNA records carry `MolType=rna` (verified:
 `XR_003928005.1`, Biomol rRNA, MolType rna, 3947 bp), so the molecule filter
-removes essentially the whole RefSeq rRNA set, 150,441 records.
+removes 150,441 records. The intersection of the RefSeq subset with
+`-molecule genomic` is **zero**: the filter removes the entire RefSeq rRNA set,
+not merely most of it.
 
 Those are exactly the records that dominate real candidate lists. In the
 reference sequences the test projects actually fetched from core_nt, RefSeq
@@ -371,7 +378,7 @@ builds GetOrganelle seeds and labels, which do want genomic DNA. It is wrong for
 a BLAST panel. This is a difference between the two builders, not a bug in
 either.
 
-891,382 records is roughly 526 MB of FASTA at the 0.59 KB per record measured on
+891,382 records is roughly 528 MB of FASTA at the 593 bytes per record measured on
 the Cnidaria subset.
 
 ### The database ships unannotated. Annotation is on demand.
@@ -379,7 +386,7 @@ the Cnidaria subset.
 Element coordinates for a reference are derived when a run actually needs that
 reference, not when the database is built.
 
-The case is arithmetic. A build-time pass covers 740,941 records. A project
+The case is arithmetic. A build-time pass covers all 891,382 records. A project
 needs only its own distinct candidate accessions, measured at 235, 232, and 187
 in the three test projects. On-demand annotation therefore does about one three
 thousandth of the work. At the measured rate (232 records in 156 s at 8 cores) a
@@ -397,7 +404,7 @@ both places.
 
 ### Deduplication is exact-match only
 
-At roughly 526 MB the database is small enough that curation is not worth its
+At roughly 528 MB raw the database is small enough that curation is not worth its
 risk. The build removes byte-identical sequences and nothing else. No clustering
 at a similarity threshold, no collapse to one record per species, no
 misidentification screen.
@@ -434,8 +441,180 @@ distinct staxid through `tk_ranked_lineage()` to populate `lineage`,
 `lineage_taxids`, and `rank_distance`, and the contamination screen's
 bitscore-weighted LCA vote and triage's lineage comparison both read them. A
 database built without `-taxid_map` would silently strip the taxonomy channel out
-of the screen. The map comes from a batched `esummary` pass over the accession
-list, which is a lookup rather than a curation step.
+of the screen. The map comes from a batched `efetch -format docsum` pass over the
+accession list, which is a lookup rather than a curation step.
+
+Key it on `AccessionVersion`, never `Caption`. `Caption` is the unversioned
+accession while efetch FASTA deflines carry `ACC.V`, so a map keyed on `Caption`
+matches nothing, `staxids` comes back empty, and the failure is silent.
+
+The build must also reconcile the accession set three ways: the `esearch` count,
+the records in the FASTA, and the rows in the docsum table. efetch silently omits
+unresolvable ids and EDirect re-sorts, which is how `e2e_ponytail` wanted 187
+accessions, got 50, and reported success. Any accession in one set and not
+another is retried individually and then written to a dropped-records ledger with
+a reason. A build that cannot reconcile does not ship.
+
+### When the local panel cannot answer
+
+This is the release blocker, and it is why the local database cannot ship alone.
+
+`inst/nextflow/modules/blast.nf:7-13` records that the search was deliberately
+made unrestricted, because restricting it "also restricted what a contaminant
+could look like: a symbiont, bacterial 16S, or mitochondrial rRNA assembly could
+only ever match some distant nuclear rDNA record and so looked plausible." A
+metazoan nuclear-rDNA panel reinstates that restriction in three places:
+
+1. `consensus_hit_class()` (`R/hit_class.R:58`) votes `hit_class` over the top
+   hits to set `blast_screen.is_nuclear_rrna`. Against an rDNA-only panel every
+   title is rDNA, so the vote returns 1 unconditionally and the flag stops
+   carrying information.
+2. `screen_class_for()` (`R/screen.R:121`) derives an off-target class from the
+   hits' LCA. `SCREEN_CLASSES` is bacterial, archaeal, fungal, algal_plant,
+   other_euk, metazoan_other, human. A Metazoa-only panel makes five of seven
+   unreachable.
+3. A real contaminant returns no hits, which lands in `SCREEN_NO_REF_CODES` as
+   `no_hits` and reports `no_reference` rather than `off_target`. Read as
+   unchecked rather than clean, which is the safe reading, but the signal is
+   gone.
+
+**Escalate, do not enlarge.** A contaminant against the local panel produces
+exactly the signature that says the panel cannot answer. That is a trigger, not a
+failure. Those units, and only those, fall back to the existing
+`-remote -db core_nt` search. Escalate when any of:
+
+| | condition | reading |
+|---|---|---|
+| E1 | zero local hits | panel cannot answer |
+| E2 | `nrow(blast_ref_candidates) == 0` | panel cannot answer |
+| E3 | `blast_screen.is_nuclear_rrna == 0` | unit is not nuclear rDNA |
+| E4 | `blast_pident < min_anchor_pid["18S"]` | nearest local reference is worse than the identity at which curation would flag the sample's own 18S |
+| E5 | `blast_screen.rank_distance >= 5` | best local answer shares nothing below phylum |
+
+Every input already exists. E4 introduces no new constant, reusing the per-clade
+floor from `R/params_rrna.R:48-50` (93 invertebrate, 95 metazoan, 97 fish). E5
+reuses `rank_distance`, whose docstring rightly warns it must never be read as
+contamination on its own; here it is read as "the panel has no near relative",
+which is what it measures. Local `dc-megablast` is tried first on the existing
+`BESTCOV < 25` trigger, because locally it is free.
+
+E5 will fire often for Asteroidea, Scyphozoa, and Octocorallia. That is correct
+behaviour and it is also the honest cost accounting: a clade with thin GenBank
+coverage saves less than a fish project does.
+
+Shape: two processes rather than one. `blast_local` with `cpus N`, no network and
+no `maxForks` cap; `blast_remote_escalate` with the existing remote body
+unchanged at `maxForks 3`. Control via a `blast_opts.remote_fallback` column
+(`auto` / `never` / `always`, default `auto`) beside the existing `run_blast` and
+`entrez_query`, plus a per-project escalation cap so a badly matched clade cannot
+silently become a full remote run.
+
+Two consequences to state plainly. `-entrez_query` is remote-only
+(`inst/tool_help/blastn.txt:289`) and is inert on the local path, so log it once
+per run and re-apply it on escalation rather than dropping it silently. And
+e-values shift by roughly 3,000x between a ~10^12 base `core_nt` and a ~3x10^8
+base panel; everything RiboPilot ranks on is bitscore, which is normalised and
+unaffected, but a user-supplied `-evalue` floor in `blast_opts.extra_opts` is not,
+so warn when one is present and record the effective search space in the manifest.
+
+### The contamination decoys come from NCBI, not from us
+
+The screen's missing classes are restored by searching a decoy panel alongside
+our database. `blastn` accepts a space-separated database list in one `-db`
+argument, so the panel is composed at query time and never merged into the build.
+NCBI already ships the pieces prebuilt, taxid-mapped, and curated:
+`16S_ribosomal_RNA` (~72 MB), `SSU_eukaryote_rRNA` (~60 MB),
+`LSU_eukaryote_rRNA` (~59 MB), fetched with `update_blastdb.pl`.
+
+These sets are useless as a reference panel, which was established earlier:
+frozen at 2022-12-05, and on a real *Acanthaster* assembly the best hit was an
+amphibian at 88 percent identity. As decoys the identifier never has to resolve
+to a usable reference, only to a kingdom, so that objection does not apply.
+
+Because escalation already catches what the decoys catch, the decoy panel is a
+speed optimisation rather than a correctness requirement: without it a bacterial
+contaminant escalates and gets the right answer slowly. Escalation is the
+prerequisite. Decoys are not.
+
+### What ships
+
+Layout under `ribopilot_ref_dir()`, beside the clade databases and the Stage 3
+store:
+
+```
+<ref_dir>/blastdb/<db_version>/
+  manifest.json
+  ribopilot_rrna.{ndb,nhr,nin,njs,nog,nos,not,nsq,ntf,nto}
+  ribopilot_rrna.taxid.map
+  ribopilot_rrna.dropped.tsv
+```
+
+Size, projected from a measured `makeblastdb -parse_seqids -taxid_map
+-blastdb_version 5` run on the existing seed FASTAs rewritten to genuine GenBank
+deflines: **180 to 280 MB unpacked, 120 to 190 MB compressed**. The two
+load-bearing unknowns are the post-dereplication base count and the mean defline
+length. Both are free to measure during the build and both go in the manifest. No
+number is quoted to users until the real build is measured.
+
+**Not baked into the Docker image.** The image is 5.98 GB and its R-package
+layers, which re-push on every version bump, are 537 kB and 1.16 MB. Coupling a
+quarterly 220 MB artefact to a daily image cadence is the wrong trade, and
+`docker/Dockerfile` already states the intent that reference databases resolve at
+run time. It is mounted instead, which needs three things that do not exist
+today: `ribopilot_db_dir()` added to the `extra_mounts` built at
+`R/init_project.R:137` (without it a containerised run fails with "No alias or
+index file found"), `:ro` appended to the reference mounts interpolated at
+`R/generate_config.R:34,38`, and `params.blastdb` reaching
+`inst/nextflow/modules/blast.nf`, which today hardcodes `-remote -db core_nt` in
+both the megablast and the dc-megablast call.
+
+A shared read-only install is the recommended HPC deployment and is blocked today
+by `validate_ref_dir()` (`R/reference_dir.R:51`), which fails any directory
+without write access. It needs a read-consumer path. Note this function is called
+only from the settings-modal Save handler (`R/app_reference.R:770`), so it is not
+on the BLAST path.
+
+Distribution is a GitHub release asset: one `.tar.gz` plus a `.sha256`, tagged
+`db-<version>`, published with `--latest=false` so it does not steal the badge
+from the package release. Verified limits: 2 GiB per file, no total or bandwidth
+cap, anonymous download, no LFS. Never re-upload over a published version:
+`--clobber` deletes before uploading, so an interrupted upload destroys the
+original and a checksum already recorded in someone's project would then point at
+different bytes. A botched build gets a new tag. Verification is a shell helper
+rather than R, because `tools::sha256sum()` needs R 4.5.0 while `DESCRIPTION`
+declares 4.4.0 and the Dockerfile pins `r-base=4.4.*`, and neither `digest` nor
+`openssl` is in Imports.
+
+Provenance is recorded per project so a result can be traced to the database that
+produced it: database version, checksum, and the effective search space, written
+when the pipeline first uses the database.
+
+### Refresh and staleness
+
+Developers rebuild at version bumps. The manifest carries the build date, the
+verbatim query, the record counts, the tool versions, and the artefact checksum.
+The app surfaces the age of the local copy rather than forcing an upgrade, since
+an older database is a reproducibility asset, not a defect: a project that ran
+against `2026.08.1` should keep saying so. Old versions stay on disk under their
+own version directory.
+
+### Acceptance gate
+
+The 94 percent CPU figure that justifies this whole design is **queue time, not
+local compute**. Moving the search local converts near-zero local CPU into real
+local CPU, and nobody has yet measured a local query against a ~300 Mbp panel at
+the real query size. Before this ships, measure on the Asteroidea, Scyphozoa, and
+Octocorallia projects:
+
+1. Local query wall time and peak RSS per unit, and the `maxForks` that implies.
+2. **Escalation rate.** At 20 percent escalation the saving is 80 percent, not 94.
+   At 60 percent on invertebrates the design does not pay for itself on the very
+   clades it was built for.
+3. Local-versus-remote concordance: for the same units, does the rank-1 candidate
+   accession agree, and where it differs, is the local answer better or worse.
+
+The fish projects cannot answer any of these, for the reasons in Validation
+below.
 
 ## Migration
 
