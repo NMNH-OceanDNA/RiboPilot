@@ -24,6 +24,17 @@ is_nuclear_rrna_title <- function(title) {
 REF_CANDIDATE_MIN_PIDENT <- 85
 REF_CANDIDATE_MIN_QCOVS <- 50
 
+#' Does this subject qualify as a reference the sample is aligned to?
+#'
+#' @param x data.frame with hit_class, pident, qcovs.
+#' @return logical vector, one element per row.
+#' @noRd
+ref_candidate_ok <- function(x) {
+  !is.na(x$hit_class) & x$hit_class == "rdna" &
+    !is.na(x$pident) & x$pident >= REF_CANDIDATE_MIN_PIDENT &
+    !is.na(x$qcovs) & x$qcovs >= REF_CANDIDATE_MIN_QCOVS
+}
+
 #' Parse remote blastn hits into ranked reference candidates + a contamination
 #' screen
 #'
@@ -113,35 +124,57 @@ parse_blast_candidates <- function(con, id, path = 1L, scaffold = 1L, hits_file,
     aln_len = h$aln_len, qstart = h$qstart, qend = h$qend, sstart = h$sstart,
     send = h$send, is_nuclear_rrna = h$is_nuclear_rrna, hit_class = h$hit_class,
     time_stamp = ts, stringsAsFactors = FALSE)
-  # one row per subject, best HSP first, for the two derived tables
-  subj <- h[!duplicated(h$hit_rank), , drop = FALSE]
-
-  # --- reference panel: nuclear rDNA only ---
-  # equivalent to the old is_nuclear_rrna filter, since that predicate now
-  # delegates to the same classifier. Written against hit_class directly so the
-  # intent stays explicit and survives if the legacy wrapper is retired.
-  # Identity/coverage floor belongs HERE, not on the search: blast_screen above
-  # is written from the unfiltered distribution, so flooring the search would
-  # blind the contamination screen to the distant hits it exists to catch. A
-  # reference the sample is aligned against, by contrast, has to be a real match.
-  ref <- subj[subj$hit_class == "rdna" &
-    !is.na(subj$pident) & subj$pident >= REF_CANDIDATE_MIN_PIDENT &
-    !is.na(subj$qcovs) & subj$qcovs >= REF_CANDIDATE_MIN_QCOVS, , drop = FALSE]
-  df <- NULL
-  if (nrow(ref) > 0) {
-    ref$rank <- seq_len(nrow(ref))
-    df <- data.frame(ID = id, path = path, scaffold = scaffold, rank = ref$rank, accession = ref$accession,
-      species = ref$species, title = ref$title, pident = ref$pident,
-      qcovs = ref$qcovs, evalue = ref$evalue, bitscore = ref$bitscore, time_stamp = ts,
-      stringsAsFactors = FALSE)
-  }
-
-  # one transaction, and the delete moved in with it: this unit's stored hits are
-  # replaced wholesale, and a failure partway would leave it with none
   DBI::dbWithTransaction(con, {
     clear_unit()
     DBI::dbAppendTable(con, "blast_hits", hits)
-    # --- contamination screen: top subject over everything, before any filtering ---
+  })
+  derive_blast_products(con, id, path, scaffold, ts = ts)
+}
+
+#' Derive a unit's reference panel and contamination screen from stored hits
+#'
+#' Reads `blast_hits` rather than a hits file, so thresholds can change without
+#' re-running a remote search. Replaces the unit's rows in
+#' `blast_ref_candidates` and `blast_screen` and updates `assemblies.blast_*`.
+#'
+#' @param con Open project DB connection.
+#' @param id Sample ID.
+#' @param path,scaffold Assembly unit within the sample.
+#' @param ts Timestamp to stamp the written rows with.
+#' @return (invisibly) the ranked candidate data.frame.
+#' @export
+derive_blast_products <- function(con, id, path = 1L, scaffold = 1L,
+                                  ts = as.integer(Sys.time())) {
+  path <- as.integer(path); scaffold <- as.integer(scaffold)
+  clear <- function() {
+    for (tbl in c("blast_ref_candidates", "blast_screen")) {
+      DBI::dbExecute(con,
+        sprintf("DELETE FROM %s WHERE ID = ? AND path = ? AND scaffold = ?", tbl),
+        params = list(id, path, scaffold))
+    }
+  }
+  h <- DBI::dbGetQuery(con,
+    "SELECT * FROM blast_hits WHERE ID = ? AND path = ? AND scaffold = ?
+     ORDER BY hit_rank, hsp",
+    params = list(id, path, scaffold))
+  if (nrow(h) == 0) {
+    DBI::dbWithTransaction(con, clear())
+    return(invisible(data.frame()))
+  }
+
+  subj <- h[!duplicated(h$hit_rank), , drop = FALSE]
+  ref <- subj[ref_candidate_ok(subj), , drop = FALSE]
+  df <- NULL
+  if (nrow(ref) > 0) {
+    ref$rank <- seq_len(nrow(ref))
+    df <- data.frame(ID = id, path = path, scaffold = scaffold, rank = ref$rank,
+      accession = ref$accession, species = ref$species, title = ref$title,
+      pident = ref$pident, qcovs = ref$qcovs, evalue = ref$evalue,
+      bitscore = ref$bitscore, time_stamp = ts, stringsAsFactors = FALSE)
+  }
+
+  DBI::dbWithTransaction(con, {
+    clear()
     write_blast_screen(con, id, path, scaffold, subj[1, ], hits = h, ts = ts)
     if (!is.null(df)) {
       DBI::dbAppendTable(con, "blast_ref_candidates", df)
@@ -150,13 +183,11 @@ parse_blast_candidates <- function(con, id, path = 1L, scaffold = 1L, hits_file,
         "UPDATE assemblies SET blast_accession = ?, blast_species = ?, blast_pident = ?, blast_qcovs = ?,
            blast_evalue = ?, blast_source = 'core_nt'
          WHERE ID = ? AND path = ? AND scaffold = ?",
-        params = list(top$accession, top$species, top$pident, top$qcovs, top$evalue, id, path, scaffold))
+        params = list(top$accession, top$species, top$pident, top$qcovs, top$evalue,
+          id, path, scaffold))
     }
   })
-  if (is.null(df)) {
-    return(invisible(data.frame()))
-  }
-  invisible(df)
+  invisible(df %||% data.frame())
 }
 
 #' Parse a blastn outfmt-6 hits file into one row per HSP

@@ -143,3 +143,43 @@ test_that("rank_distance is left NA when no taxdump resolved the hits", {
   expect_true(is.na(h$rank_distance))
   expect_true(is.na(h$lineage_taxids))
 })
+
+test_that("derive_blast_products reproduces what the parser wrote", {
+  con <- mk_blast_db()
+  on.exit(DBI::dbDisconnect(con))
+  f <- write_hits(c(
+    hit("AA1", "Danio rerio 18S ribosomal RNA gene", 99.1, 80, 1500, 1600, 1, 1600),
+    hit("AA2", "Danio rerio 28S ribosomal RNA gene", 98.0, 60, 900, 950, 1, 950)))
+  RiboPilot:::parse_blast_candidates(con, "S1", 1, 1, f)
+  before_c <- DBI::dbGetQuery(con, "SELECT * FROM blast_ref_candidates ORDER BY rank")
+  before_s <- DBI::dbGetQuery(con, "SELECT * FROM blast_screen")
+
+  RiboPilot:::derive_blast_products(con, "S1", 1, 1, ts = before_c$time_stamp[1])
+  after_c <- DBI::dbGetQuery(con, "SELECT * FROM blast_ref_candidates ORDER BY rank")
+  after_s <- DBI::dbGetQuery(con, "SELECT * FROM blast_screen")
+
+  expect_equal(after_c, before_c)
+  expect_equal(after_s, before_s)
+})
+
+test_that("derive_blast_products is idempotent and does not duplicate rows", {
+  con <- mk_blast_db()
+  on.exit(DBI::dbDisconnect(con))
+  f <- write_hits(hit("AA1", "Danio rerio 18S ribosomal RNA gene", 99.1, 80, 1500, 1600, 1, 1600))
+  RiboPilot:::parse_blast_candidates(con, "S1", 1, 1, f)
+  RiboPilot:::derive_blast_products(con, "S1", 1, 1)
+  RiboPilot:::derive_blast_products(con, "S1", 1, 1)
+  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM blast_ref_candidates")$n, 1L)
+  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM blast_screen")$n, 1L)
+})
+
+test_that("derive_blast_products on a unit with no hits clears its derived rows", {
+  con <- mk_blast_db()
+  on.exit(DBI::dbDisconnect(con))
+  f <- write_hits(hit("AA1", "Danio rerio 18S ribosomal RNA gene", 99.1, 80, 1500, 1600, 1, 1600))
+  RiboPilot:::parse_blast_candidates(con, "S1", 1, 1, f)
+  DBI::dbExecute(con, "DELETE FROM blast_hits")
+  RiboPilot:::derive_blast_products(con, "S1", 1, 1)
+  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM blast_ref_candidates")$n, 0L)
+  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM blast_screen")$n, 0L)
+})
