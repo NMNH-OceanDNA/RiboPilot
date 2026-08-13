@@ -261,19 +261,40 @@ run_barrnap <- function(fasta, kingdom = "euk") {
   parse_barrnap(run_rrna_tool(bin, "barrnap", fasta, rrna_kingdom_for(kingdom, "barrnap")))
 }
 
+#' Largest record ITSx will accept.
+#'
+#' ITSx runs HMMER's protein pipeline, which refuses a target over 100K and
+#' aborts the whole run rather than skipping the record, writing no positions
+#' file at all. pybarrnap has no such limit.
+#' @noRd
+ITSX_MAX_BP <- 100000
+
 #' Run ITSx on a fasta and parse region positions
 #' @noRd
-run_itsx <- function(fasta, cpu = 2) {
+run_itsx <- function(fasta, cpu = 2, taxon = "all") {
   bin <- unname(Sys.which("ITSx"))
   if (!nzchar(bin)) {
     return(data.frame())
   }
   pre <- tempfile("rp_itsx_")
-  suppressWarnings(system2(bin, c("-i", shQuote(fasta), "-o", shQuote(pre),
-    "--save_regions", "none", "--graphical", "F", "--cpu", cpu, "-t", "all", "--preserve", "T"),
-  stdout = FALSE, stderr = FALSE))
+  err <- tempfile("rp_itsx_err_")
+  on.exit(unlink(err), add = TRUE)
+  st <- suppressWarnings(system2(bin, c("-i", shQuote(fasta), "-o", shQuote(pre),
+    "--save_regions", "none", "--graphical", "F", "--cpu", cpu,
+    "-t", taxon, "--preserve", "T"),
+    stdout = FALSE, stderr = err))
+  tail_msg <- function() {
+    tryCatch(paste(utils::tail(readLines(err, warn = FALSE), 3L), collapse = " | "),
+      error = function(e) "")
+  }
+  if (!identical(as.integer(st), 0L)) {
+    warning(sprintf("ITSx failed on %s: %s", basename(fasta), tail_msg()), call. = FALSE)
+    return(data.frame())
+  }
   pf <- paste0(pre, ".positions.txt")
   if (!file.exists(pf)) {
+    warning(sprintf("ITSx wrote no positions file for %s: %s", basename(fasta), tail_msg()),
+      call. = FALSE)
     return(data.frame())
   }
   parse_itsx(readLines(pf, warn = FALSE))
