@@ -52,7 +52,7 @@ process blast_genbank {
         # a blast_hits row count, so a unit that found nothing is not re-searched
         # forever, and a re-assembled or trimmed unit is searched again instead of
         # inheriting the previous contig's hits.
-        QMD5=\$(grep -v '^>' query.fa | tr -d '[:space:]' | md5sum | cut -d' ' -f1)
+        QMD5=\$( (grep -v '^>' query.fa || true) | tr -d '[:space:]' | (md5sum 2>/dev/null || md5 -q) | awk '{print \$1}')
         PREV=\$(sqlite3 -cmd '.timeout 10000' '${params.db}' "SELECT query_md5 FROM blast_searched WHERE ID='${id}' AND path=\$P AND scaffold=\$S;" 2>/dev/null || echo "")
         if [ "\${PREV}" = "\${QMD5}" ]; then echo "already searched ${id} \$P.\$S"; continue; fi
 

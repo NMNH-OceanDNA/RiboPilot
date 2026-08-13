@@ -189,6 +189,22 @@ test_that("derive_blast_products on a unit with no hits clears its derived rows"
   expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM blast_screen")$n, 0L)
 })
 
+test_that("derive_blast_products clears assemblies.blast_* when a re-derive drops all candidates", {
+  con <- mk_blast_db()
+  on.exit(DBI::dbDisconnect(con))
+  f <- write_hits(hit("AA1", "Danio rerio 18S ribosomal RNA gene", 99.1, 80, 1500, 1600, 1, 1600))
+  RiboPilot:::parse_blast_candidates(con, "S1", 1, 1, f)
+  expect_equal(DBI::dbGetQuery(con, "SELECT blast_accession FROM assemblies")$blast_accession, "AA1")
+
+  # push the stored hit below every reference floor so the re-derive keeps none
+  DBI::dbExecute(con, "UPDATE blast_hits SET pident = 10, qcovs = 5, aln_len = 10")
+  RiboPilot:::derive_blast_products(con, "S1", 1, 1)
+
+  a <- DBI::dbGetQuery(con,
+    "SELECT blast_accession, blast_species, blast_pident, blast_qcovs, blast_evalue, blast_source FROM assemblies")
+  expect_true(all(vapply(a, is.na, logical(1))))
+})
+
 test_that("a long assembly matching a short reference end to end is kept", {
   con <- mk_blast_db()
   on.exit(DBI::dbDisconnect(con))

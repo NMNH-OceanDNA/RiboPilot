@@ -31,13 +31,17 @@ process blast_ref_fetch {
         have=\$(sqlite3 -cmd '.timeout 10000' '${params.db}' "SELECT 1 FROM blast_ref_sequences WHERE accession = '\$acc';")
         if [ -n "\$have" ]; then STORED=\$(( STORED + 1 )); continue; fi
 
+        bad=""
         if ! efetch -db nuccore -id "\$acc" -format fasta > "\$acc.fa"; then
-            echo "efetch failed for \$acc (non-zero exit)"; continue
+            echo "efetch failed for \$acc (non-zero exit)"; bad=1
         fi
-        if ! efetch -db nuccore -id "\$acc" -format ft > "\$acc.ft"; then
-            echo "efetch ft failed for \$acc (non-zero exit)"; continue
+        if [ -z "\$bad" ] && ! efetch -db nuccore -id "\$acc" -format ft > "\$acc.ft"; then
+            echo "efetch ft failed for \$acc (non-zero exit)"; bad=1
         fi
+        # sleep unconditionally, before any continue, so a failing accession
+        # still pays the pacing delay instead of spinning the loop at full speed
         sleep \$PACE
+        [ -z "\$bad" ] || continue
 
         if [ ! -s "\$acc.fa" ]; then echo "efetch returned an empty body for \$acc"; continue; fi
         # NCBI answers HTTP 200 with an XML error body, and also with a

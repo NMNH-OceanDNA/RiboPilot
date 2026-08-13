@@ -18,8 +18,10 @@ is_nuclear_rrna_title <- function(title) {
 #'
 #' Applied to the reference panel only, never to the search or to the screen's
 #' hit distribution. rDNA anchors are conserved well above 85 percent within a
-#' phylum, and a subject covering under half the query is a fragment rather than
-#' a comparable record.
+#' phylum. Below-half query coverage usually means a fragment rather than a
+#' comparable record, but REF_CANDIDATE_MIN_ALN_BP below admits the exception:
+#' a long absolute alignment against a full rDNA repeat, where low qcovs comes
+#' from recovered spacer rather than a short match.
 #' @noRd
 REF_CANDIDATE_MIN_PIDENT <- 85
 REF_CANDIDATE_MIN_QCOVS <- 50
@@ -35,7 +37,7 @@ REF_CANDIDATE_MIN_ALN_BP <- 1500
 
 #' Does this subject qualify as a reference the sample is aligned to?
 #'
-#' @param x data.frame with hit_class, pident, qcovs.
+#' @param x data.frame with hit_class, pident, qcovs, aln_len.
 #' @return logical vector, one element per row.
 #' @noRd
 ref_candidate_ok <- function(x) {
@@ -73,17 +75,17 @@ parse_blast_candidates <- function(con, id, path = 1L, scaffold = 1L, hits_file,
   ts <- as.integer(Sys.time())
   path <- as.integer(path); scaffold <- as.integer(scaffold)
   clear_unit <- function() {
-    for (tbl in c("blast_hits", "blast_ref_candidates", "blast_screen")) {
-      DBI::dbExecute(con,
-        sprintf("DELETE FROM %s WHERE ID = ? AND path = ? AND scaffold = ?", tbl),
-        params = list(id, path, scaffold))
-    }
+    DBI::dbExecute(con,
+      "DELETE FROM blast_hits WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = list(id, path, scaffold))
   }
 
   h <- parse_blast_hits_file(hits_file)
   if (nrow(h) == 0) {
     DBI::dbWithTransaction(con, clear_unit())
-    return(invisible(data.frame()))
+    # blast_hits is now empty for this unit; let derive_blast_products clear
+    # the derived tables (and any now-stale assemblies.blast_*) too.
+    return(derive_blast_products(con, id, path, scaffold, ts = ts))
   }
   h$species <- extract_species(h$title)
   h$is_nuclear_rrna <- as.integer(is_nuclear_rrna_title(h$title))
@@ -164,12 +166,19 @@ derive_blast_products <- function(con, id, path = 1L, scaffold = 1L,
         params = list(id, path, scaffold))
     }
   }
+  clear_assembly_ref <- function() {
+    DBI::dbExecute(con,
+      "UPDATE assemblies SET blast_accession = NULL, blast_species = NULL, blast_pident = NULL,
+         blast_qcovs = NULL, blast_evalue = NULL, blast_source = NULL
+       WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = list(id, path, scaffold))
+  }
   h <- DBI::dbGetQuery(con,
     "SELECT * FROM blast_hits WHERE ID = ? AND path = ? AND scaffold = ?
      ORDER BY hit_rank, hsp",
     params = list(id, path, scaffold))
   if (nrow(h) == 0) {
-    DBI::dbWithTransaction(con, clear())
+    DBI::dbWithTransaction(con, { clear(); clear_assembly_ref() })
     return(invisible(data.frame()))
   }
 
@@ -196,6 +205,8 @@ derive_blast_products <- function(con, id, path = 1L, scaffold = 1L,
          WHERE ID = ? AND path = ? AND scaffold = ?",
         params = list(top$accession, top$species, top$pident, top$qcovs, top$evalue,
           id, path, scaffold))
+    } else {
+      clear_assembly_ref()
     }
   })
   invisible(df %||% data.frame())
@@ -205,8 +216,10 @@ derive_blast_products <- function(con, id, path = 1L, scaffold = 1L,
 #'
 #' Tolerates both the pre-v9 six-column format and the current
 #' `saccver stitle pident qcovs evalue staxids bitscore length qstart qend
-#' sstart send`, so a re-parse of an older run still works (with the extra
-#' columns NA and ranking falling back to pident*qcovs).
+#' sstart send slen qseqid` (slen parsed at column 13; qseqid, column 14, is
+#' captured by the search but not read here), so a re-parse of an older run
+#' still works (with the extra columns NA and ranking falling back to
+#' pident*qcovs).
 #' @param hits_file Path to the blastn output.
 #' @return data.frame, one row per HSP; empty when there are no hits.
 #' @noRd
@@ -284,6 +297,13 @@ write_blast_screen <- function(con, id, path, scaffold, top, hits,
 #'
 #' Replays [derive_blast_products()] over `blast_hits`, so a changed threshold or
 #' a fixed filter reaches existing projects without re-running a remote search.
+#'
+#' Changing which candidate ranks 1 invalidates `blast_ref_alignment`
+#' (`compute_ref_alignment()` always aligns against the rank-1 candidate) and any
+#' curation derived from it; this function does not mark those stale.
+#' `inst/nextflow/bin/rp_rederive.R` is a manual tool wired into no `.nf`
+#' process, so after running it the operator must re-run the reference-fetch and
+#' alignment steps by hand.
 #'
 #' @param con Open project DB connection.
 #' @param ids Optional character vector of sample IDs; default is every sample.

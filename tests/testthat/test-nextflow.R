@@ -464,3 +464,16 @@ test_that("nextflow.config still supplies NCBI_API_KEY from params", {
   expect_length(line, 1)
   expect_match(line, "ncbi_api_key", fixed = TRUE)
 })
+
+test_that("blast.nf gates re-search on blast_searched.query_md5, not a blast_hits COUNT", {
+  # pins the fix: re-searching used to be gated on a COUNT(*) of blast_hits,
+  # which re-submitted a unit forever once it found nothing. A revert to that
+  # must not pass silently.
+  path <- system.file("nextflow", "modules", "blast.nf", package = "RiboPilot")
+  if (!nzchar(path)) path <- "inst/nextflow/modules/blast.nf"
+  txt <- readLines(path, warn = FALSE)
+  code <- paste(txt, collapse = "\n")
+  expect_match(code, "SELECT query_md5 FROM blast_searched", fixed = TRUE)
+  expect_false(grepl("COUNT\\(\\*\\)[^\\n]*blast_hits|blast_hits[^\\n]*COUNT\\(\\*\\)", code),
+    info = "blast.nf still gates re-search on a COUNT of blast_hits")
+})

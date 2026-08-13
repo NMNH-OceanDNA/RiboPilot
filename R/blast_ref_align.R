@@ -62,7 +62,8 @@ alignment_coverage <- function(sample_aln, sample_len) {
 #' Compute per-feature sample-vs-reference alignments for one sample
 #'
 #' Aligns each rRNA/ITS element that both the sample and its top reference
-#' annotate, writing aligned strings + percent identity to `blast_ref_alignment`.
+#' annotate, writing percent identity and alignment coverage/length (not the
+#' aligned strings themselves) to `blast_ref_alignment`.
 #'
 #' @param con Open project DB connection.
 #' @param id Sample ID.
