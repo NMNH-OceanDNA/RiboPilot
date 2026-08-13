@@ -216,3 +216,32 @@ test_that("the identity floor still applies on the aligned-length branch", {
   RiboPilot:::parse_blast_candidates(con, "S1", 1, 1, f)
   expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM blast_ref_candidates")$n, 0L)
 })
+
+test_that("rederive_blast_products recovers units across a whole project", {
+  con <- mk_blast_db()
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',2,1,NULL,NULL,NULL,NULL,NULL,NULL,0)")
+  f1 <- write_hits(hit("AA1", "Danio rerio 18S ribosomal RNA gene", 99.1, 80, 1500, 1600, 1, 1600))
+  f2 <- write_hits(hit("AA2", "Danio rerio 28S ribosomal RNA gene", 98.0, 70, 1400, 1500, 1, 1500))
+  RiboPilot:::parse_blast_candidates(con, "S1", 1, 1, f1)
+  RiboPilot:::parse_blast_candidates(con, "S1", 2, 1, f2)
+
+  DBI::dbExecute(con, "DELETE FROM blast_ref_candidates")
+  DBI::dbExecute(con, "DELETE FROM blast_screen")
+  n <- RiboPilot:::rederive_blast_products(con)
+
+  expect_equal(n, 2L)
+  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM blast_ref_candidates")$n, 2L)
+  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM blast_screen")$n, 2L)
+})
+
+test_that("rederive_blast_products can be limited to given samples", {
+  con <- mk_blast_db()
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S2',1,1,NULL,NULL,NULL,NULL,NULL,NULL,0)")
+  DBI::dbExecute(con, "INSERT INTO samples VALUES('S2',7955,NULL,NULL)")
+  f <- write_hits(hit("AA1", "Danio rerio 18S ribosomal RNA gene", 99.1, 80, 1500, 1600, 1, 1600))
+  RiboPilot:::parse_blast_candidates(con, "S1", 1, 1, f)
+  RiboPilot:::parse_blast_candidates(con, "S2", 1, 1, f)
+  expect_equal(RiboPilot:::rederive_blast_products(con, ids = "S2"), 1L)
+})

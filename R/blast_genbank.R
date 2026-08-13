@@ -280,6 +280,31 @@ write_blast_screen <- function(con, id, path, scaffold, top, hits,
   invisible(row$lineage)
 }
 
+#' Re-derive stored BLAST products for every unit that has hits
+#'
+#' Replays [derive_blast_products()] over `blast_hits`, so a changed threshold or
+#' a fixed filter reaches existing projects without re-running a remote search.
+#'
+#' @param con Open project DB connection.
+#' @param ids Optional character vector of sample IDs; default is every sample.
+#' @return (invisibly) the number of units re-derived.
+#' @export
+rederive_blast_products <- function(con, ids = NULL) {
+  sql <- "SELECT DISTINCT ID, path, scaffold FROM blast_hits"
+  units <- if (is.null(ids)) {
+    DBI::dbGetQuery(con, paste(sql, "ORDER BY ID, path, scaffold"))
+  } else {
+    ph <- paste(rep("?", length(ids)), collapse = ",")
+    DBI::dbGetQuery(con, sprintf("%s WHERE ID IN (%s) ORDER BY ID, path, scaffold", sql, ph),
+      params = as.list(ids))
+  }
+  if (nrow(units) == 0) return(invisible(0L))
+  for (i in seq_len(nrow(units))) {
+    derive_blast_products(con, units$ID[i], units$path[i], units$scaffold[i])
+  }
+  invisible(nrow(units))
+}
+
 #' Best-effort species name from a GenBank defline title
 #' @noRd
 extract_species <- function(title) {
