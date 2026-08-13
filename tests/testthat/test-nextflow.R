@@ -439,7 +439,7 @@ test_that("the Nextflow version probe runs once per session", {
 })
 
 test_that("the API key is not interpolated into task scripts", {
-  for (f in c("modules/blast.nf", "modules/blast_ref.nf")) {
+  for (f in c("modules/blast.nf", "modules/blast_ref.nf", "main_reference.nf")) {
     txt <- readLines(system.file("nextflow", f, package = "RiboPilot"), warn = FALSE)
     expect_false(any(grepl("export NCBI_API_KEY='\\$\\{params", txt, perl = TRUE)),
       info = paste(f, "interpolates the API key into the task script"))
@@ -453,4 +453,14 @@ test_that("efetch failures are not swallowed", {
   expect_true(length(efetch) > 0)
   expect_false(any(grepl("\\|\\| true", efetch)),
     info = "efetch still ends with || true")
+})
+
+test_that("nextflow.config still supplies NCBI_API_KEY from params", {
+  # a static grep for the removed exports gives false confidence on its own;
+  # this pins the replacement so the key cannot be silently dropped again
+  txt <- readLines(system.file("nextflow", "nextflow.config", package = "RiboPilot"),
+    warn = FALSE)
+  line <- grep("NCBI_API_KEY\\s*=", txt, value = TRUE)
+  expect_length(line, 1)
+  expect_match(line, "ncbi_api_key", fixed = TRUE)
 })

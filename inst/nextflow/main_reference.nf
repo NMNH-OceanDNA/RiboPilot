@@ -29,7 +29,6 @@ process count_clade {
     script:
     """
     if [ "${task.attempt}" -gt 1 ]; then sleep \$(( (${task.attempt} - 1) * 20 )); fi
-    export NCBI_API_KEY='${params.ncbi_api_key ?: ""}'
     export RP_REFSEQ='${params.refseq}'
     RIBOPILOT_SRC='${params.ribopilot_src}' rp_ref_db.R count '${taxid}' '${query}' '${taxid}.count'
     """
@@ -53,7 +52,6 @@ process build_ref_db {
 
     script:
     """
-    export NCBI_API_KEY='${params.ncbi_api_key ?: ""}'
     export RP_REFSEQ='${params.refseq}'
     RIBOPILOT_SRC='${params.ribopilot_src}' rp_ref_db.R build '${ref_id}' '${query}' .
     """

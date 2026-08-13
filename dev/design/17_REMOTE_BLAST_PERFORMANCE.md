@@ -166,10 +166,16 @@ log the difference once, and stop retrying accessions that are permanently gone.
 **Stop leaking the API key.** `export NCBI_API_KEY='${params.ncbi_api_key}'` at
 `blast.nf:41` and `blast_ref.nf:23` is Groovy interpolation, written verbatim
 into `.command.sh` and `.command.run` in every task work directory. Work
-directories on shared HPC filesystems are typically group readable. Use Nextflow
-secrets or an `env{}` scope populated from the launching shell. Separately, the
-key is dead code in `blast.nf`: it is an E-utilities credential and has no effect
-on the BLAST URL API.
+directories on shared HPC filesystems are typically group readable. Separately,
+the key is dead code in `blast.nf`: it is an E-utilities credential and has no
+effect on the BLAST URL API.
+
+Moving the key to an `env{}` scope only gets it out of `.command.sh`. Nextflow
+still writes every `env{}` value verbatim into `.command.run` for each task, so
+the credential still lands in the same group-readable work directory, just in a
+different file. Keeping it out of both files needs Nextflow secrets, or a key
+file passed by path and read at runtime from outside the work dir. Deferred to
+its own task.
 
 ## Stage 2: reference yield
 
