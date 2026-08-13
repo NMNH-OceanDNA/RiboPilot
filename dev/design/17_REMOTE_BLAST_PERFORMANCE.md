@@ -333,8 +333,109 @@ throughput.
 
 ## Stage 4: the shipped local rDNA BLAST database
 
-This section is pending the build-and-ship design round and will be completed
-before this document is reviewed.
+The build pipeline, dedup thresholds, misidentification screen, and shipping
+mechanics are pending the build-and-ship design round. Decisions already settled
+are recorded here.
+
+### Scope of the harvest
+
+The GenBank query reuses the title and organelle terms from
+`inst/ref_dbs/getOrganelle/GenBankDownload/download_rrna.sh:67,110`: the clade
+term, AND the nuclear rRNA title terms (18S, 28S, 5.8S, small subunit, large
+subunit, internal transcribed spacer), NOT `mitochondrion[Filter]`, NOT
+`plastid[Filter]`.
+
+**It drops that script's `efilter -molecule genomic`.** Measured for
+`txid33208[Organism:exp]` (Metazoa):
+
+| query | records |
+|---|---|
+| title terms, no organelles | 891,382 |
+| the same, `-molecule genomic` | 740,941 |
+| RefSeq subset of the unfiltered query | 148,209 |
+
+RefSeq `XR_*` and `NR_*` rRNA records carry `MolType=rna` (verified:
+`XR_003928005.1`, Biomol rRNA, MolType rna, 3947 bp), so the molecule filter
+removes essentially the whole RefSeq rRNA set, 150,441 records.
+
+Those are exactly the records that dominate real candidate lists. In the
+reference sequences the test projects actually fetched from core_nt, RefSeq
+`XR_*` 28S-only records around 3.9 to 4.0 kb accounted for 90 of 235 accessions
+in `e2e_run2`, 49 in `full_project_docker`, and 32 in `e2e_ponytail`, and they
+are why 28S has 215 usable references where every other element has 44. Keeping
+the filter would make the local panel systematically worse than the remote search
+it replaces, and worse for 28S specifically.
+
+The filter is correct where it currently lives, because `download_rrna.sh`
+builds GetOrganelle seeds and labels, which do want genomic DNA. It is wrong for
+a BLAST panel. This is a difference between the two builders, not a bug in
+either.
+
+891,382 records is roughly 526 MB of FASTA at the 0.59 KB per record measured on
+the Cnidaria subset.
+
+### The database ships unannotated. Annotation is on demand.
+
+Element coordinates for a reference are derived when a run actually needs that
+reference, not when the database is built.
+
+The case is arithmetic. A build-time pass covers 740,941 records. A project
+needs only its own distinct candidate accessions, measured at 235, 232, and 187
+in the three test projects. On-demand annotation therefore does about one three
+thousandth of the work. At the measured rate (232 records in 156 s at 8 cores) a
+build-time pass would take 21 to 34 hours even with ITSx sharded single-threaded
+across 16 cores and `-t M` in place of `-t all`, while a project pays a couple of
+minutes, parallelised across the per-unit fan-out that already exists, and
+Stage 3's store caches the result across projects. The store then warms toward
+exactly the records users touch.
+
+This also means Stage 4 adds no annotation machinery at all. Stage 2 already
+annotates fetched references at run time; Stage 4 only changes where the sequence
+comes from, `blastdbcmd` instead of `efetch`. The ITSx 100 kb ceiling and the
+minus-strand frame mismatch are handled once, on the Stage 2 path, rather than in
+both places.
+
+### Deduplication is exact-match only
+
+At roughly 526 MB the database is small enough that curation is not worth its
+risk. The build removes byte-identical sequences and nothing else. No clustering
+at a similarity threshold, no collapse to one record per species, no
+misidentification screen.
+
+What this avoids is worth stating, because each was a real hazard:
+
+- **Congener collapse.** Many congeneric metazoan 18S sequences are over 99
+  percent identical, so clustering at any threshold tight enough to reduce size
+  meaningfully would merge species and destroy the species label the app
+  displays.
+- **Intraspecific ITS variation.** ITS1 and ITS2 vary within a species, and
+  between paralogous copies within one genome. A single retained representative
+  can be a worse match than the conspecific it displaced.
+- **Coverage holes.** Dropping a flagged record that is the only one for its
+  taxon removes that taxon from the panel entirely.
+- **Circularity.** Screening species labels for error requires trusting species
+  labels to group the records being screened.
+
+The aggressive collapse considered earlier was motivated by making a build-time
+annotation pass tractable. With annotation moved to run time that motive is gone,
+and with it the reason to accept any of the above.
+
+Contamination and misidentification are still caught, just at the point where
+there is evidence to catch them: a misidentified reference that becomes a unit's
+rank-1 candidate shows up in the contamination screen's lineage comparison and in
+triage's odd-one-out check, both of which already exist and both of which see the
+sample's own taxonomy. ITSx's chimera flag still fires during run-time
+annotation.
+
+### What the build still has to produce
+
+A taxid map. `staxids` is not optional: `parse_blast_candidates()` resolves every
+distinct staxid through `tk_ranked_lineage()` to populate `lineage`,
+`lineage_taxids`, and `rank_distance`, and the contamination screen's
+bitscore-weighted LCA vote and triage's lineage comparison both read them. A
+database built without `-taxid_map` would silently strip the taxonomy channel out
+of the screen. The map comes from a batched `esummary` pass over the accession
+list, which is a lookup rather than a curation step.
 
 ## Migration
 
