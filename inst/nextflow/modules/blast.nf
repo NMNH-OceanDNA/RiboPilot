@@ -38,7 +38,6 @@ process blast_genbank {
 
     # Back off on retries to let NCBI recover from rate limits
     if [ "${task.attempt}" -gt 1 ]; then sleep \$(( (${task.attempt} - 1) * 60 )); fi
-    export NCBI_API_KEY='${params.ncbi_api_key ?: ""}'
 
     # BLAST each non-ignored scaffold (unit) separately -> per-unit candidates.
     # `for` (not a pipe) so a blastn failure can `exit 1` and trigger a retry.

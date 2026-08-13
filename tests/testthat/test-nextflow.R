@@ -437,3 +437,20 @@ test_that("the Nextflow version probe runs once per session", {
   expect_true(is.na(RiboPilot:::nf_version_session()))
   expect_equal(calls, 1L)
 })
+
+test_that("the API key is not interpolated into task scripts", {
+  for (f in c("modules/blast.nf", "modules/blast_ref.nf")) {
+    txt <- readLines(system.file("nextflow", f, package = "RiboPilot"), warn = FALSE)
+    expect_false(any(grepl("export NCBI_API_KEY='\\$\\{params", txt, perl = TRUE)),
+      info = paste(f, "interpolates the API key into the task script"))
+  }
+})
+
+test_that("efetch failures are not swallowed", {
+  txt <- readLines(system.file("nextflow", "modules/blast_ref.nf", package = "RiboPilot"),
+    warn = FALSE)
+  efetch <- grep("efetch -db nuccore", txt, value = TRUE)
+  expect_true(length(efetch) > 0)
+  expect_false(any(grepl("\\|\\| true", efetch)),
+    info = "efetch still ends with || true")
+})
