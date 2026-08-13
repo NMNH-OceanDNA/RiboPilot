@@ -457,8 +457,6 @@ new_db <- function(
       pid REAL,
       aln_cov REAL,
       aln_len INTEGER,
-      sample_aln TEXT,
-      ref_aln TEXT,
       time_stamp INTEGER,
       PRIMARY KEY (ID, path, scaffold, accession, element)
     );"

@@ -109,12 +109,11 @@ compute_ref_alignment <- function(con, id, path = 1L, scaffold = 1L) {
     aln <- tryCatch(pairwise_nt(s_sub, r_sub), error = function(e) NULL)
     if (is.null(aln)) next
     s_aln <- as.character(pwalign::pattern(aln))
-    r_aln <- as.character(pwalign::subject(aln))
     pid <- pwalign::pid(aln)
     aln_cov <- alignment_coverage(s_aln, nchar(s_sub))
     DBI::dbAppendTable(con, "blast_ref_alignment", data.frame(ID = id, path = path, scaffold = scaffold,
       accession = acc, element = el, pid = round(pid, 1), aln_cov = round(aln_cov, 3), aln_len = nchar(s_aln),
-      sample_aln = s_aln, ref_aln = r_aln, time_stamp = ts, stringsAsFactors = FALSE))
+      time_stamp = ts, stringsAsFactors = FALSE))
     n <- n + 1L
   }
   invisible(n)
