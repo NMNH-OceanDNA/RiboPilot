@@ -30,6 +30,7 @@ BLAST_HITS_DDL <- "CREATE TABLE IF NOT EXISTS blast_hits (
   qend INTEGER,
   sstart INTEGER,
   send INTEGER,
+  slen INTEGER,
   is_nuclear_rrna INTEGER,
   hit_class TEXT,
   time_stamp INTEGER,

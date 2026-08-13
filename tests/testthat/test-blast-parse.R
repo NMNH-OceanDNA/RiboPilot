@@ -245,3 +245,24 @@ test_that("rederive_blast_products can be limited to given samples", {
   RiboPilot:::parse_blast_candidates(con, "S2", 1, 1, f)
   expect_equal(RiboPilot:::rederive_blast_products(con, ids = "S2"), 1L)
 })
+
+test_that("slen is parsed when present and NA when absent", {
+  new_fmt <- paste("BB1", "Danio rerio 18S ribosomal RNA gene", 99.0, 80, "1e-90",
+    7955, 1500, 1600, 1, 1600, 1, 1600, 6997, "q1", sep = "\t")
+  d <- RiboPilot:::parse_blast_hits_file(write_hits(new_fmt))
+  expect_equal(d$slen[1], 6997L)
+
+  old_fmt <- paste("BB2", "Danio rerio 18S ribosomal RNA gene", 99.0, 80, "1e-90",
+    7955, 1500, 1600, 1, 1600, 1, 1600, sep = "\t")
+  d2 <- RiboPilot:::parse_blast_hits_file(write_hits(old_fmt))
+  expect_true(is.na(d2$slen[1]))
+})
+
+test_that("slen reaches blast_hits", {
+  con <- mk_blast_db()
+  on.exit(DBI::dbDisconnect(con))
+  f <- write_hits(paste("BB1", "Danio rerio 18S ribosomal RNA gene", 99.0, 80, "1e-90",
+    7955, 1500, 1600, 1, 1600, 1, 1600, 6997, "q1", sep = "\t"))
+  RiboPilot:::parse_blast_candidates(con, "S1", 1, 1, f)
+  expect_equal(DBI::dbGetQuery(con, "SELECT slen FROM blast_hits")$slen[1], 6997L)
+})

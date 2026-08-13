@@ -60,7 +60,10 @@ process blast_genbank {
         # statistic that actually orders alignments), alignment length, and the
         # query coordinates that make a chimera visible as two disjoint HSP sets
         # with different subjects. Same single remote round trip as before.
-        OUTFMT="6 saccver stitle pident qcovs evalue staxids bitscore length qstart qend sstart send"
+        # slen enables a subject-coverage filter without a second remote re-run;
+        # qseqid is captured for a future batched query. Appended last so the
+        # positional parser in parse_blast_hits_file() needs no change.
+        OUTFMT="6 saccver stitle pident qcovs evalue staxids bitscore length qstart qend sstart send slen qseqid"
         if blastn -remote -db core_nt -query query.fa \
             -outfmt "\$OUTFMT" \
             -max_target_seqs "\${MTS:-50}" -max_hsps 5 -task megablast \

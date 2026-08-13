@@ -133,7 +133,7 @@ parse_blast_candidates <- function(con, id, path = 1L, scaffold = 1L, hits_file,
     lineage_taxids = h$lineage_taxids, rank_distance = h$rank_distance,
     pident = h$pident, qcovs = h$qcovs, evalue = h$evalue, bitscore = h$bitscore,
     aln_len = h$aln_len, qstart = h$qstart, qend = h$qend, sstart = h$sstart,
-    send = h$send, is_nuclear_rrna = h$is_nuclear_rrna, hit_class = h$hit_class,
+    send = h$send, slen = h$slen, is_nuclear_rrna = h$is_nuclear_rrna, hit_class = h$hit_class,
     time_stamp = ts, stringsAsFactors = FALSE)
   DBI::dbWithTransaction(con, {
     clear_unit()
@@ -231,7 +231,7 @@ parse_blast_hits_file <- function(hits_file) {
       staxid = int(strsplit(g(6) %|NA|% "", ";")[[1]][1]),
       bitscore = num(g(7)), aln_len = int(g(8)),
       qstart = int(g(9)), qend = int(g(10)),
-      sstart = int(g(11)), send = int(g(12)),
+      sstart = int(g(11)), send = int(g(12)), slen = int(g(13)),
       stringsAsFactors = FALSE)
   })
   rows <- Filter(Negate(is.null), rows)
