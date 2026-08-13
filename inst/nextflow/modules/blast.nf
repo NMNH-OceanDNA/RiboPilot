@@ -44,14 +44,17 @@ process blast_genbank {
     UNITS=\$(sqlite3 -cmd '.timeout 10000' -separator '.' '${params.db}' "SELECT path||'.'||scaffold FROM assemblies WHERE ID='${id}' AND COALESCE(ignore,0)=0;")
     for U in \$UNITS; do
         P=\${U%.*}; S=\${U#*.}
-        # Already screened on an earlier attempt: do not re-submit to NCBI. The
-        # loop exits 1 on any unit's failure under a shared retry budget, so
-        # without this a 30-unit sample re-runs every completed search.
-        DONE=\$(sqlite3 -cmd '.timeout 10000' '${params.db}' "SELECT COUNT(*) FROM blast_hits WHERE ID='${id}' AND path=\$P AND scaffold=\$S;" 2>/dev/null || echo 0)
-        if [ "\${DONE:-0}" -gt 0 ]; then continue; fi
-
         sqlite3 -cmd '.timeout 10000' '${params.db}' "SELECT '>'||ID||'.'||path||'.'||scaffold||char(10)||sequence FROM assemblies WHERE ID='${id}' AND path=\$P AND scaffold=\$S;" > query.fa
         [ -s query.fa ] || continue
+
+        # Already searched with this exact query on an earlier attempt or run: do
+        # not re-submit to NCBI. Keyed on a hash of the query sequence rather than
+        # a blast_hits row count, so a unit that found nothing is not re-searched
+        # forever, and a re-assembled or trimmed unit is searched again instead of
+        # inheriting the previous contig's hits.
+        QMD5=\$(grep -v '^>' query.fa | tr -d '[:space:]' | md5sum | cut -d' ' -f1)
+        PREV=\$(sqlite3 -cmd '.timeout 10000' '${params.db}' "SELECT query_md5 FROM blast_searched WHERE ID='${id}' AND path=\$P AND scaffold=\$S;" 2>/dev/null || echo "")
+        if [ "\${PREV}" = "\${QMD5}" ]; then echo "already searched ${id} \$P.\$S"; continue; fi
 
         # \${XO} carries the significance and identity floors (blast_opts.extra_opts,
         # "Extra blastn options" in the app); blastn's own defaults keep chance hits.
@@ -89,6 +92,10 @@ process blast_genbank {
             fi
         fi
         RIBOPILOT_SRC='${params.ribopilot_src}' rp_blast.R '${params.db}' '${id}' "\$P" "\$S" hits.txt '${params.taxdump_dir}'
+
+        NHITS=\$(grep -c . hits.txt 2>/dev/null || echo 0)
+        grep -q NO_SIGNIFICANT_HITS hits.txt && NHITS=0
+        RIBOPILOT_SRC='${params.ribopilot_src}' rp_searched.R '${params.db}' '${id}' "\$P" "\$S" "\$QMD5" "\$NHITS"
     done
     """
 }

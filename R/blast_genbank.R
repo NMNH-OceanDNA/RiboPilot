@@ -305,6 +305,25 @@ rederive_blast_products <- function(con, ids = NULL) {
   invisible(nrow(units))
 }
 
+#' Record that a unit's query was sent to the remote search
+#'
+#' @param con Open project DB connection.
+#' @param id Sample ID.
+#' @param path,scaffold Assembly unit within the sample.
+#' @param query_md5 md5 of the exact query sequence submitted.
+#' @param n_hits Number of hits the search returned.
+#' @return (invisibly) TRUE.
+#' @export
+mark_unit_searched <- function(con, id, path = 1L, scaffold = 1L, query_md5,
+                               n_hits = 0L) {
+  DBI::dbExecute(con,
+    "INSERT OR REPLACE INTO blast_searched (ID, path, scaffold, query_md5, n_hits, time_stamp)
+     VALUES (?, ?, ?, ?, ?, ?)",
+    params = list(id, as.integer(path), as.integer(scaffold), query_md5,
+      as.integer(n_hits), as.integer(Sys.time())))
+  invisible(TRUE)
+}
+
 #' Best-effort species name from a GenBank defline title
 #' @noRd
 extract_species <- function(title) {

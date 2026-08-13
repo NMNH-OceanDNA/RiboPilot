@@ -348,6 +348,9 @@ new_db <- function(
   # blast_hits (full retained hit distribution per unit; see BLAST_HITS_DDL) ----
   DBI::dbExecute(con, BLAST_HITS_DDL)
 
+  # blast_searched (resume marker keyed on query hash; see BLAST_SEARCHED_DDL) ----
+  DBI::dbExecute(con, BLAST_SEARCHED_DDL)
+
   # assembly_blast (per-path BLAST hits) ----
   DBI::dbExecute(
     con,

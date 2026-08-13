@@ -266,3 +266,26 @@ test_that("slen reaches blast_hits", {
   RiboPilot:::parse_blast_candidates(con, "S1", 1, 1, f)
   expect_equal(DBI::dbGetQuery(con, "SELECT slen FROM blast_hits")$slen[1], 6997L)
 })
+
+test_that("a searched unit is recorded even when it found nothing", {
+  con <- mk_blast_db()
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, RiboPilot:::BLAST_SEARCHED_DDL)
+  RiboPilot:::mark_unit_searched(con, "S1", 1, 1, "abc123", 0L)
+  r <- DBI::dbGetQuery(con, "SELECT * FROM blast_searched")
+  expect_equal(nrow(r), 1L)
+  expect_equal(r$query_md5[1], "abc123")
+  expect_equal(r$n_hits[1], 0L)
+})
+
+test_that("re-marking the same unit replaces rather than duplicates", {
+  con <- mk_blast_db()
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, RiboPilot:::BLAST_SEARCHED_DDL)
+  RiboPilot:::mark_unit_searched(con, "S1", 1, 1, "abc123", 0L)
+  RiboPilot:::mark_unit_searched(con, "S1", 1, 1, "def456", 7L)
+  r <- DBI::dbGetQuery(con, "SELECT * FROM blast_searched")
+  expect_equal(nrow(r), 1L)
+  expect_equal(r$query_md5[1], "def456")
+  expect_equal(r$n_hits[1], 7L)
+})

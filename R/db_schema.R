@@ -37,6 +37,23 @@ BLAST_HITS_DDL <- "CREATE TABLE IF NOT EXISTS blast_hits (
   PRIMARY KEY (ID, path, scaffold, hit_rank, hsp)
 );"
 
+#' DDL for blast_searched: which units have been sent to the remote search.
+#'
+#' Keyed on a hash of the query sequence, so a re-assembled or trimmed unit is
+#' searched again rather than inheriting the previous contig's hits. A unit that
+#' found nothing still gets a row, which is what stops it being re-searched on
+#' every retry and every re-run.
+#' @noRd
+BLAST_SEARCHED_DDL <- "CREATE TABLE IF NOT EXISTS blast_searched (
+  ID TEXT NOT NULL,
+  path INTEGER NOT NULL DEFAULT 1,
+  scaffold INTEGER NOT NULL DEFAULT 1,
+  query_md5 TEXT NOT NULL,
+  n_hits INTEGER,
+  time_stamp INTEGER,
+  PRIMARY KEY (ID, path, scaffold)
+);"
+
 #' DDL for the triage_opts table (per-rule action presets).
 #' @noRd
 TRIAGE_OPTS_DDL <- "CREATE TABLE IF NOT EXISTS triage_opts (
