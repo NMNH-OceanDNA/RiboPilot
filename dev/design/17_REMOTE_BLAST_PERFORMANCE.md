@@ -549,12 +549,79 @@ store:
   ribopilot_rrna.dropped.tsv
 ```
 
-Size, projected from a measured `makeblastdb -parse_seqids -taxid_map
--blastdb_version 5` run on the existing seed FASTAs rewritten to genuine GenBank
-deflines: **180 to 280 MB unpacked, 120 to 190 MB compressed**. The two
-load-bearing unknowns are the post-dereplication base count and the mean defline
-length. Both are free to measure during the build and both go in the manifest. No
-number is quoted to users until the real build is measured.
+Size is now measured, not projected. The v1 build (`2026.08.1`, built
+2026-08-13) is **342 MB unpacked and 78 MB compressed**, comfortably inside a
+GitHub release asset and well under the earlier 120 to 190 MB compressed
+estimate. The compression ratio is better than a projection from 2-bit-packed
+`.nsq` would suggest, because rDNA is conserved and the retained records are
+highly similar to one another.
+
+Measured build, end to end:
+
+| | |
+|---|---|
+| accessions matching the query | 891,382 |
+| records retrieved | 891,371 |
+| unavailable | 11, all WGS master records that carry no sequence |
+| exact duplicates removed, keyed on (taxid, sequence) | 293,273 (33%) |
+| PDB structure records dropped | 110 |
+| **records in the database** | **597,988** |
+| total bases | 688,449,026 |
+| longest sequence | 81,206 bp |
+| unpacked / compressed | 342 MB / 78 MB |
+
+Download took about 2 h 20 min in 179 chunks of 5,000. Dereplication and
+`makeblastdb` together take under 30 s; `makeblastdb` itself indexed 597,988
+sequences in 6.3 s.
+
+PDB structure records must be excluded, and the reason is user-facing rather than
+cosmetic. They return deflined `>pdb|28ZU|S2 Chain S2, 18S ribosomal RNA` instead
+of `>ACC.V Genus species ...`. `extract_species()` (`R/blast_genbank.R:243`)
+takes the first two words of the title, so such a hit would set
+`assemblies.blast_species` to "Chain 2," in the app. Their parsed seqid
+(`pdb|28ZU|S2`) also fails to match the `28ZU_S2` key in the taxid map, so they
+would carry no staxid. They are modelled ribosome chains, overwhelmingly human,
+and ordinary GenBank records cover the same sequences.
+
+Every other record in the build carries a plain `ACC.V` defline, so
+`classify_hit_title()` and `extract_species()` need no change.
+
+### Measured performance
+
+On the 15,120 bp `SRR14433904` unit, against the full 688 Mbp panel:
+
+| threads | wall | peak RSS |
+|---|---|---|
+| 1 | 5.46 s | 254 MB |
+| 4 | 1.46 s | 256 MB |
+| 8 | 0.80 s | 256 MB |
+
+Against a remote `blast_genbank` median of 7,589 s per task, that is roughly
+**9,500x** at 8 threads and still about 1,400x single-threaded. Peak RSS is flat
+at ~256 MB regardless of thread count, so `maxForks` is bounded by cores rather
+than by memory.
+
+Concordance against the answers remote `core_nt` gave for the same units, on
+`full_project_docker`:
+
+| unit | remote rank-1 | local rank-1 | pident |
+|---|---|---|---|
+| SRR14163830.1.1 | MZ188965.1 | MZ188965.1 | 99.807 both |
+| SRR14433895.1.1 | MZ286342.1 | MZ286342.1 | 99.986 both |
+| SRR14433899.1.1 | MZ286337.1 | MZ286337.1 | 100.000 both |
+| SRR14433900.1.1 | MZ286336.1 | MZ286336.1 | 99.957 both |
+
+Exact agreement on accession and on identity to three decimals. `staxids`
+populate and `blastdbcmd -entry` retrieves sequence plus taxid plus title, which
+is what the on-demand annotation path needs in place of `efetch`.
+
+The panel also returns `MZ286333.1` at 100.000 percent for the 15 kb unit whose
+`qcovs` of 46 the candidate floor currently rejects, so the local path and the
+Stage 1 filter fix address the same unit from two directions.
+
+**This validates fish only.** Every sample in all three test projects is a
+ray-finned fish. The escalation rate on Asteroidea, Scyphozoa, and Octocorallia
+remains unmeasured and remains the acceptance gate.
 
 **Not baked into the Docker image.** The image is 5.98 GB and its R-package
 layers, which re-push on every version bump, are 537 kB and 1.16 MB. Coupling a
