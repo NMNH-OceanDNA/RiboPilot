@@ -32,7 +32,23 @@ test_that("scaffold_depth is the length-weighted mean over traversed segments", 
   # weighted: (100*10 + 900*110) / 1000
   expect_equal(RiboPilot:::scaffold_depth("scaffold_1--11-,22+", gd), 100)
   # a header naming no known segment has no depth, rather than depth 0
-  expect_true(is.na(RiboPilot:::scaffold_depth("scaffold_2--99+", gd)))
+  expect_true(is.na(suppressWarnings(RiboPilot:::scaffold_depth("scaffold_2--99+", gd))))
+})
+
+test_that("scaffold_depth keeps merged GetOrganelle segment ids intact", {
+  # merged segments are named with underscores; stripping them loses the segment
+  gd <- data.frame(segment = c("11", "62361_60645"), length = c(100, 900),
+    rc = c(1, 1), depth = c(10, 110), stringsAsFactors = FALSE)
+  expect_equal(RiboPilot:::scaffold_depth("scaffold_1--62361_60645+", gd), 110)
+  # mixed plain + merged: the merged segment must carry its weight
+  expect_equal(RiboPilot:::scaffold_depth("scaffold_1--11-,62361_60645+", gd), 100)
+})
+
+test_that("scaffold_depth warns when a header names a segment the GFA lacks", {
+  gd <- data.frame(segment = "11", length = 100, rc = 1, depth = 10,
+    stringsAsFactors = FALSE)
+  expect_warning(RiboPilot:::scaffold_depth("scaffold_1--11+,99+", gd), "missing from the GFA")
+  expect_equal(suppressWarnings(RiboPilot:::scaffold_depth("scaffold_1--11+,99+", gd)), 10)
 })
 
 test_that("taxonomic_match scores the deepest agreeing rank", {
