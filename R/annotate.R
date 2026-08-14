@@ -375,19 +375,25 @@ itsx_eligible <- function(lens) {
   names(lens)[!is.na(lens) & lens <= ITSX_MAX_BP]
 }
 
-#' Map ITSx coordinates from the reverse-complement frame back to the input frame
-#' @param its parse_itsx() output for reverse-complemented records.
+#' Map a seqid/start/stop frame between a sequence and its reverse complement
+#'
+#' Self-inverse: applying this twice with the same `lens` returns the original
+#' coordinates. Used both to move barrnap's input-frame anchors into the
+#' revcomp frame ITSx reports on for a minus-strand record, and to move a
+#' finished reconciled model back out of that frame.
+#' @param d A data.frame with seqid, start, stop columns (any other columns
+#'   are left untouched).
 #' @param lens Named integer vector of input-frame sequence lengths.
 #' @noRd
-flip_itsx_coords <- function(its, lens) {
-  if (is.null(its) || nrow(its) == 0) return(its)
-  L <- lens[its$seqid]
+flip_coords <- function(d, lens) {
+  if (is.null(d) || nrow(d) == 0) return(d)
+  L <- lens[d$seqid]
   ok <- !is.na(L)
-  if (!any(ok)) return(its)
-  s <- its$start; e <- its$stop
-  its$start[ok] <- as.integer(L[ok] - e[ok] + 1L)
-  its$stop[ok] <- as.integer(L[ok] - s[ok] + 1L)
-  its
+  if (!any(ok)) return(d)
+  s <- d$start; e <- d$stop
+  d$start[ok] <- as.integer(L[ok] - e[ok] + 1L)
+  d$stop[ok] <- as.integer(L[ok] - s[ok] + 1L)
+  d
 }
 
 #' Reconcile per record
@@ -421,6 +427,15 @@ reconcile_records <- function(bar, its) {
 #' but get anchors only, because ITSx aborts the entire run on an oversized
 #' target rather than skipping it.
 #'
+#' barrnap reports coordinates in the input frame; on a genuinely minus-strand
+#' record those anchors run 28S -> 5.8S -> 18S in ascending position, the
+#' opposite of the ascending order [reconcile_features()]'s spacer-clipping
+#' assumes. ITSx, run on a reverse-complemented copy of those records, reports
+#' its regions in the frame where the anchors DO ascend. So minus-strand
+#' records are reconciled in that revcomp frame -- barrnap's anchors are
+#' flipped into it, ITSx's output is used as reported -- and the finished
+#' model is flipped back to the input frame afterward.
+#'
 #' @param fasta Path to a multi-record fasta.
 #' @param kingdom Anchor-caller kingdom.
 #' @param cpu Threads for ITSx.
@@ -442,9 +457,8 @@ annotate_records <- function(fasta, kingdom = "euk", cpu = 2, taxon = "all") {
   }
 
   minus <- if (nrow(bar) > 0) unique(bar$seqid[bar$strand == "-"]) else character(0)
+  plus <- setdiff(names(seqs), minus)
   eligible <- itsx_eligible(lens)
-  plus_ids <- setdiff(intersect(names(seqs), eligible), minus)
-  minus_ids <- intersect(minus, eligible)
 
   run_on <- function(ids, revcomp) {
     if (length(ids) == 0) return(data.frame())
@@ -455,10 +469,14 @@ annotate_records <- function(fasta, kingdom = "euk", cpu = 2, taxon = "all") {
     Biostrings::writeXStringSet(sub, f)
     run_itsx(f, cpu = cpu, taxon = taxon)
   }
+  bar_by <- function(ids) if (nrow(bar) == 0) data.frame() else bar[bar$seqid %in% ids, , drop = FALSE]
 
-  its_plus <- run_on(plus_ids, FALSE)
-  its_minus <- flip_itsx_coords(run_on(minus_ids, TRUE), lens)
-  its <- rbind(its_plus, its_minus)
+  its_plus <- run_on(intersect(plus, eligible), FALSE)
+  out_plus <- reconcile_records(bar_by(plus), its_plus)
 
-  reconcile_records(bar, its)
+  its_minus <- run_on(intersect(minus, eligible), TRUE)     # ITSx's native revcomp frame
+  bar_minus_rc <- flip_coords(bar_by(minus), lens)           # barrnap -> revcomp frame
+  out_minus <- flip_coords(reconcile_records(bar_minus_rc, its_minus), lens) # -> input frame
+
+  rbind(out_plus, out_minus)
 }
