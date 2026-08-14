@@ -563,7 +563,9 @@ test_that("blast.nf searches locally when a panel is configured", {
 test_that("blast.nf records the search source", {
   p <- system.file("nextflow", "modules", "blast.nf", package = "RiboPilot")
   if (!nzchar(p)) p <- "inst/nextflow/modules/blast.nf"
-  txt <- paste(readLines(p, warn = FALSE), collapse = "\n")
-  expect_true(grepl("rp_searched.R", txt, fixed = TRUE))
-  expect_true(grepl("SRC", txt, fixed = TRUE))
+  lines <- readLines(p, warn = FALSE)
+  call_line <- grep("rp_searched.R", lines, fixed = TRUE, value = TRUE)
+  expect_length(call_line, 1)
+  # the search source must be the LAST argument rp_searched.R is invoked with
+  expect_true(endsWith(trimws(call_line), '"\\$SRC"'))
 })

@@ -37,7 +37,7 @@ BLAST_HITS_DDL <- "CREATE TABLE IF NOT EXISTS blast_hits (
   PRIMARY KEY (ID, path, scaffold, hit_rank, hsp)
 );"
 
-#' DDL for blast_searched: which units have been sent to the remote search.
+#' DDL for blast_searched: which units have been searched, and by which search.
 #'
 #' Keyed on a hash of the query sequence, so a re-assembled or trimmed unit is
 #' searched again rather than inheriting the previous contig's hits. A unit that

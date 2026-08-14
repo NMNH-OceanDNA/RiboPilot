@@ -199,12 +199,24 @@ derive_blast_products <- function(con, id, path = 1L, scaffold = 1L,
     if (!is.null(df)) {
       DBI::dbAppendTable(con, "blast_ref_candidates", df)
       top <- ref[1, ]
+      searched_source <- tryCatch(
+        DBI::dbGetQuery(con,
+          "SELECT source FROM blast_searched WHERE ID = ? AND path = ? AND scaffold = ?",
+          params = list(id, path, scaffold))$source,
+        error = function(e) NA_character_)
+      # a missing row (or table, for a DB that predates blast_searched) means
+      # remote, which preserves current behaviour for every existing project.
+      blast_source <- if (length(searched_source) > 0 && identical(searched_source[1], "local")) {
+        "local_rrna"
+      } else {
+        "core_nt"
+      }
       DBI::dbExecute(con,
         "UPDATE assemblies SET blast_accession = ?, blast_species = ?, blast_pident = ?, blast_qcovs = ?,
-           blast_evalue = ?, blast_source = 'core_nt'
+           blast_evalue = ?, blast_source = ?
          WHERE ID = ? AND path = ? AND scaffold = ?",
         params = list(top$accession, top$species, top$pident, top$qcovs, top$evalue,
-          id, path, scaffold))
+          blast_source, id, path, scaffold))
     } else {
       clear_assembly_ref()
     }
@@ -325,7 +337,7 @@ rederive_blast_products <- function(con, ids = NULL) {
   invisible(nrow(units))
 }
 
-#' Record that a unit's query was sent to the remote search
+#' Record that a unit was searched, and by which search
 #'
 #' @param con Open project DB connection.
 #' @param id Sample ID.
@@ -337,6 +349,7 @@ rederive_blast_products <- function(con, ids = NULL) {
 #' @export
 mark_unit_searched <- function(con, id, path = 1L, scaffold = 1L, query_md5,
                                n_hits = 0L, source = "remote") {
+  source <- match.arg(source, c("remote", "local"))
   DBI::dbExecute(con,
     "INSERT OR REPLACE INTO blast_searched
        (ID, path, scaffold, query_md5, n_hits, source, time_stamp)

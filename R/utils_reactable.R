@@ -200,10 +200,11 @@ rt_shares_badge <- function() {
 
 #' Which BLAST named the species in the neighbouring hit columns
 #'
-#' 'core_nt' is the remote GenBank search; 'seeds' is the local search against
-#' the GetOrganelle seed file, which is a hint rather than an identification.
-#' Rows written before the source was recorded show as unknown, not as either
-#' one.
+#' 'core_nt' is the remote GenBank search; 'local_rrna' is a local search
+#' against a configured rDNA reference panel, a real reference search just run
+#' locally instead of remotely; 'seeds' is the local search against the
+#' GetOrganelle seed file, which is a hint rather than an identification. Rows
+#' written before the source was recorded show as unknown, not as any of these.
 #' @noRd
 rt_blast_source_badge <- function() {
   htmlwidgets::JS(
@@ -212,6 +213,10 @@ rt_blast_source_badge <- function() {
       if (v === 'core_nt')
         return '<span title=\"remote megablast against NCBI core_nt\" style=\"background:#d4edda;' +
           ' color:#2d6a4f; border-radius:3px; padding:1px 6px; font-size:0.85em;\">GenBank</span>'
+      if (v === 'local_rrna')
+        return '<span title=\"local BLAST against the configured rDNA reference panel\"' +
+          ' style=\"background:#d4edda; color:#2d6a4f; border-radius:3px; padding:1px 6px;' +
+          ' font-size:0.85em;\">local panel</span>'
       if (v === 'seeds')
         return '<span title=\"local BLAST against the GetOrganelle seed file: the closest bait' +
           ' sequence, NOT a GenBank identification\" style=\"background:#fde8d0; color:#7d4a1e;' +

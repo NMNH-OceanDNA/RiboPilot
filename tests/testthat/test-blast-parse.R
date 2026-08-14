@@ -323,3 +323,32 @@ test_that("the search source defaults to remote", {
   RiboPilot:::mark_unit_searched(con, "S1", 1, 1, "abc", 0L)
   expect_equal(DBI::dbGetQuery(con, "SELECT source FROM blast_searched")$source[1], "remote")
 })
+
+test_that("an invalid search source errors", {
+  con <- mk_blast_db()
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, RiboPilot:::BLAST_SEARCHED_DDL)
+  expect_error(RiboPilot:::mark_unit_searched(con, "S1", 1, 1, "abc", 0L, source = "LOCAL"))
+})
+
+test_that("a locally searched unit is labelled local_rrna, not core_nt", {
+  con <- mk_blast_db()
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, RiboPilot:::BLAST_SEARCHED_DDL)
+  f <- write_hits(hit("AA1", "Danio rerio 18S ribosomal RNA gene", 99.1, 80, 1500, 1600, 1, 1600))
+  RiboPilot:::parse_blast_candidates(con, "S1", 1, 1, f)
+  RiboPilot:::mark_unit_searched(con, "S1", 1, 1, "abc", 1L, source = "local")
+  RiboPilot:::derive_blast_products(con, "S1", 1, 1)
+  expect_equal(DBI::dbGetQuery(con,
+    "SELECT blast_source FROM assemblies WHERE ID='S1'")$blast_source[1], "local_rrna")
+})
+
+test_that("a remotely searched unit is still labelled core_nt", {
+  con <- mk_blast_db()
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, RiboPilot:::BLAST_SEARCHED_DDL)
+  f <- write_hits(hit("AA1", "Danio rerio 18S ribosomal RNA gene", 99.1, 80, 1500, 1600, 1, 1600))
+  RiboPilot:::parse_blast_candidates(con, "S1", 1, 1, f)
+  expect_equal(DBI::dbGetQuery(con,
+    "SELECT blast_source FROM assemblies WHERE ID='S1'")$blast_source[1], "core_nt")
+})
