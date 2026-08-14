@@ -44,12 +44,15 @@ process blast_ref_fetch {
         echo "no reference sequence returned for ${id}" >&2
         exit 1
     fi
-    grep -q -e '<ERROR>' -e '<eFetchResult>' -e 'F a i l e d' refs.fa && { echo "efetch error body for ${id}" >&2; exit 1; }
+    grep -q -e '<ERROR>' -e '<eFetchResult>' -e 'F a i l e d' -e '^Error' refs.fa && { echo "efetch error body for ${id}" >&2; exit 1; }
 
     RIBOPILOT_SRC='${params.ribopilot_src}' rp_ref_store.R '${params.db}' refs.fa euk ${task.cpus ?: 2}
 
-    GOT=\$(grep -c '^>' refs.fa)
+    GOT=\$(grep -c '^>' refs.fa || true)
     echo "reference fetch for ${id}: returned \${GOT} of \${WANTED} requested accession(s)"
+    if [ "\$GOT" -lt "\$WANTED" ]; then
+        echo "reference fetch for ${id}: got fewer records (\${GOT}) than requested (\${WANTED})" >&2
+    fi
     """
 }
 

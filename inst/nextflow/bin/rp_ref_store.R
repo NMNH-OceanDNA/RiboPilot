@@ -13,5 +13,6 @@ local({
   cpu <- if (length(a) >= 4 && nzchar(a[4])) as.integer(a[4]) else 2L
   ann <- annotate_records(a[2], kingdom = kingdom, cpu = cpu)
   n <- write_blast_refs(con, a[2], ann)
+  stop_if_nothing_stored(a[2], n)
   cat("references stored:", n, "\n")
 })

@@ -102,6 +102,7 @@ test_that("blast_ref_fetch validates the efetch response before storing it", {
   expect_true(grepl("<ERROR>", txt, fixed = TRUE))
   expect_true(grepl("<eFetchResult>", txt, fixed = TRUE))
   expect_true(grepl("F a i l e d", txt, fixed = TRUE))
+  expect_true(grepl("^Error", txt, fixed = TRUE))
   # a failed chunk is logged rather than aborting the whole batch
   expect_true(any(grepl("efetch failed for chunk", nf, fixed = TRUE)))
   # the sqlite timeout stays on every sqlite3 call
@@ -152,6 +153,25 @@ test_that("write_blast_refs replaces rather than duplicating on a re-run", {
   RiboPilot:::write_blast_refs(con, f, NULL)
   RiboPilot:::write_blast_refs(con, f, NULL)
   expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM blast_ref_sequences")$n, 1L)
+})
+
+test_that("stop_if_nothing_stored fires only when input existed but nothing landed", {
+  con <- mk_ref_db()
+  on.exit(DBI::dbDisconnect(con))
+  # two headers, no sequence lines: both records fail write_blast_refs' nzchar() check
+  f <- withr::local_tempfile(fileext = ".fa")
+  writeLines(c(">A.1 x", ">B.1 y"), f)
+
+  n <- RiboPilot:::write_blast_refs(con, f, NULL)
+  expect_equal(as.integer(n), 0L)
+
+  expect_error(RiboPilot:::stop_if_nothing_stored(f, n), "stored nothing")
+  # storing at least one record clears the guard
+  expect_equal(RiboPilot:::stop_if_nothing_stored(f, 1L), 1L)
+  # an empty fasta (no input records) is not this guard's job either
+  empty <- withr::local_tempfile(fileext = ".fa")
+  file.create(empty)
+  expect_equal(RiboPilot:::stop_if_nothing_stored(empty, 0L), 0L)
 })
 
 test_that("the fetch module asks for fasta only, not feature tables", {

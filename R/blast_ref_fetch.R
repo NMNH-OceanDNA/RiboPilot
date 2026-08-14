@@ -152,3 +152,27 @@ write_blast_refs <- function(con, fasta_file, ann = NULL) {
   }
   invisible(n)
 }
+
+#' Fail loudly when a fetched batch stored nothing
+#'
+#' Mirrors the old per-accession guard (`WANTED > 0 && STORED == 0`): a fasta
+#' that held at least one input record but stored none means NCBI returned
+#' bytes that then failed to store, which is worth stopping on even though
+#' `refs.fa` itself was non-empty.
+#'
+#' @param fasta_file Path to the fasta passed to [write_blast_refs()]; named
+#'   in the error and re-read here to count input records.
+#' @param n_stored Number of records [write_blast_refs()] actually stored.
+#' @return (invisibly) `n_stored`, when the check passes.
+#' @export
+stop_if_nothing_stored <- function(fasta_file, n_stored) {
+  n_in <- if (file.exists(fasta_file)) {
+    sum(grepl("^>", readLines(fasta_file, warn = FALSE)))
+  } else {
+    0L
+  }
+  if (n_in > 0 && n_stored == 0) {
+    stop("stored nothing from ", fasta_file, " (", n_in, " input record(s))", call. = FALSE)
+  }
+  invisible(n_stored)
+}
