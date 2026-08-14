@@ -105,6 +105,11 @@ reference_mount_dirs <- function(project, mounted = character(0)) {
   # only what a preset actually names: the configured reference folder may hold
   # databases this project never uses, and mounting it would say otherwise
   dirs <- unique(dirname(path.expand(paths)))
+  # the cross-project reference store also lives under this folder, and the
+  # fetch step's priming/push calls need it mounted just like a seeds/labels db
+  ref <- tryCatch(ref_config(con)$ref_dir, error = function(e) "")
+  if (!is.na(ref) && nzchar(ref)) dirs <- c(dirs, path.expand(ref))
+  dirs <- unique(dirs)
   dirs <- dirs[dir.exists(dirs)]
   dirs <- drop_covered(dirs, path.expand(mounted[nzchar(mounted %||% "")]))
   # a folder and its own seeds/ and labels/ subfolders would be three mounts of

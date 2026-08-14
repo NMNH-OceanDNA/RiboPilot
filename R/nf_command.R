@@ -35,6 +35,7 @@ nf_command <- function(path, resume = TRUE,
   }
   src <- ribopilot_src %||% ribopilot_src_default()
   taxdump <- file.path(path, ".taxonomy")
+  ref_dir <- nf_ref_dir(path)
 
   c("run", main_nf, "-c", cfg, "-work-dir", work,
     if (isTRUE(resume)) "-resume",
@@ -44,12 +45,27 @@ nf_command <- function(path, resume = TRUE,
     "--minDepth", min_depth,
     "--ribopilot_src", src,
     "--taxdump_dir", taxdump,
+    "--ref_dir", ref_dir,
     if (nzchar(api_key)) c("--ncbi_api_key", api_key),
     # the config only mounts what project creation knew about; a database the
     # Reference tab wired later lives wherever the user put it, and the
     # assembler cannot read a staged symlink whose target is unmounted
     container_bind_opts(cfg_lines,
       reference_mount_dirs(path, c(path, raw_dir, config_mounted_dirs(cfg_lines)))))
+}
+
+#' The project's reference folder, resolved the same way `ref_config()` does
+#'
+#' A missing or unreadable project database must not fail command-building
+#' the way a missing rawDir does; an empty string reaches Nextflow instead,
+#' and priming/pushing degrade to a silent no-op from there.
+#' @noRd
+nf_ref_dir <- function(path) {
+  tryCatch({
+    con <- open_project_db(file.path(path, ".sqlite"))
+    on.exit(DBI::dbDisconnect(con), add = TRUE)
+    ref_config(con)$ref_dir
+  }, error = function(e) "")
 }
 
 #' Where the pipeline's R processes should load RiboPilot from

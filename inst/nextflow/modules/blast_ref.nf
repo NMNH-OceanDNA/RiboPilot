@@ -19,6 +19,9 @@ process blast_ref_fetch {
 
     script:
     """
+    if [ -n '${params.ref_dir}' ]; then
+        RIBOPILOT_SRC='${params.ribopilot_src}' rp_ref_prime.R '${params.db}' '${params.ref_dir}' '${id}' || true
+    fi
     ACCS=\$(sqlite3 -cmd '.timeout 10000' '${params.db}' "SELECT DISTINCT c.accession FROM blast_ref_candidates c LEFT JOIN blast_ref_sequences s ON s.accession = c.accession WHERE c.ID = '${id}' AND s.accession IS NULL;")
     if [ -z "\$ACCS" ]; then echo "nothing to fetch for ${id}"; exit 0; fi
     if [ "${task.attempt}" -gt 1 ]; then sleep \$(( (${task.attempt} - 1) * 30 )); fi
@@ -56,7 +59,7 @@ process blast_ref_fetch {
       WHERE an.ID = '${id}' LIMIT 1;")"
     KINGDOM="\${KINGDOM:-euk}"; ITSXT="\${ITSXT:-all}"
 
-    RIBOPILOT_SRC='${params.ribopilot_src}' rp_ref_store.R '${params.db}' refs.fa "\$KINGDOM" ${task.cpus} "\$ITSXT"
+    RIBOPILOT_SRC='${params.ribopilot_src}' rp_ref_store.R '${params.db}' refs.fa "\$KINGDOM" ${task.cpus} "\$ITSXT" '${params.ref_dir}'
 
     GOT=\$(grep -c '^>' refs.fa || true)
     echo "reference fetch for ${id}: returned \${GOT} of \${WANTED} requested accession(s)"

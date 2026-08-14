@@ -287,6 +287,9 @@ test_that("singularity gets --bind, not -v", {
 
 test_that("directories the config already mounts are not mounted twice", {
   skip_if_not_installed("withr")
+  # a fixture project has no reference_config row, so ref_config() would
+  # otherwise fall back to this machine's real, populated default ref dir
+  withr::local_envvar(RIBOPILOT_REF_DIR = tempfile("no-ref-dir-"))
   proj <- withr::local_tempdir(); refs <- withr::local_tempdir()
   s <- file.path(refs, "x_seeds.fasta"); l <- file.path(refs, "x_labels.fasta")
   writeLines(">18S", s); writeLines(">18S", l)
@@ -311,6 +314,9 @@ test_that("a config mount is parsed whole, not truncated at a letter s", {
 
 test_that("seed and label subfolders are each mounted, and neither is dropped", {
   skip_if_not_installed("withr")
+  # a fixture project has no reference_config row, so ref_config() would
+  # otherwise fall back to this machine's real, populated default ref dir
+  withr::local_envvar(RIBOPILOT_REF_DIR = tempfile("no-ref-dir-"))
   proj <- withr::local_tempdir(); refs <- withr::local_tempdir()
   dir.create(file.path(refs, "seeds")); dir.create(file.path(refs, "labels"))
   s <- file.path(refs, "seeds", "x_seeds.fasta"); l <- file.path(refs, "labels", "x_labels.fasta")
@@ -476,4 +482,21 @@ test_that("blast.nf gates re-search on blast_searched.query_md5, not a blast_hit
   expect_match(code, "SELECT query_md5 FROM blast_searched", fixed = TRUE)
   expect_false(grepl("COUNT\\(\\*\\)[^\\n]*blast_hits|blast_hits[^\\n]*COUNT\\(\\*\\)", code),
     info = "blast.nf still gates re-search on a COUNT of blast_hits")
+})
+
+test_that("main.nf declares a ref_dir param", {
+  p <- system.file("nextflow", "main.nf", package = "RiboPilot")
+  if (!nzchar(p)) p <- "inst/nextflow/main.nf"
+  expect_true(any(grepl("params.ref_dir", readLines(p, warn = FALSE), fixed = TRUE)))
+})
+
+test_that("the fetch module primes from the store before fetching", {
+  p <- system.file("nextflow", "modules", "blast_ref.nf", package = "RiboPilot")
+  if (!nzchar(p)) p <- "inst/nextflow/modules/blast_ref.nf"
+  txt <- readLines(p, warn = FALSE)
+  prime <- grep("rp_ref_prime.R", txt)
+  accs <- grep("SELECT DISTINCT c.accession", txt)
+  expect_length(prime, 1L)
+  expect_true(prime < accs[1],
+    info = "priming must run before the un-fetched accession list is computed")
 })
