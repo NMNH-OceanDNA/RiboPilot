@@ -499,10 +499,40 @@ metazoan nuclear-rDNA panel reinstates that restriction in three places:
    unchecked rather than clean, which is the safe reading, but the signal is
    gone.
 
-**Escalate, do not enlarge.** A contaminant against the local panel produces
-exactly the signature that says the panel cannot answer. That is a trigger, not a
-failure. Those units, and only those, fall back to the existing
-`-remote -db core_nt` search. Escalate when any of:
+**Superseded 2026-08-14: automatic escalation is shelved.** The maintainer's
+decision, and the reasoning is sound: remote search is the thing this whole
+design exists to remove, and a pipeline that silently falls back to it can spend
+hours without the user choosing to. Instead a unit the local panel cannot answer
+is recorded and surfaced, with a suggestion that the user run a remote search
+themselves if they want one. The triggers below are retained, not as an
+automatic fallback but as the definition of "the panel could not answer this",
+which is what gets reported.
+
+Two consequences follow, and the second inverts what this document said before.
+
+**The safe failure is preserved.** Point 3 above is the common contaminant case:
+a bacterial or fungal unit returns no hits against a metazoan rDNA panel, lands
+in `SCREEN_NO_REF_CODES`, and reports `no_reference`. That reads as unchecked
+rather than clean, which is exactly the signal to surface. The pipeline never
+calls a contaminant clean; it says it does not know, and now says so to the user.
+
+**Metazoan-versus-metazoan discrimination also survives**, because `staxids`
+populate from the local database and the screen's lineage comparison and
+`rank_distance` still work. A sea star unit that hits a polychaete reference is
+still off-target by lineage.
+
+**What is lost is the specific non-metazoan classification.** Points 1 and 2
+stand: `is_nuclear_rrna` becomes constant against an rDNA-only panel, and five of
+seven `SCREEN_CLASSES` become unreachable. The app can no longer say "this is
+bacterial"; it can only say the local search could not identify it.
+
+**Therefore the decoy panel is promoted from optional to the thing that restores
+that signal.** This document previously argued the opposite, on the grounds that
+escalation caught what decoys catch. With escalation shelved that argument no
+longer holds, and decoys are the only remaining way to distinguish "bacterial
+contaminant" from "local panel had nothing".
+
+The triggers, retained as the definition of an unanswerable unit:
 
 | | condition | reading |
 |---|---|---|
@@ -552,10 +582,37 @@ frozen at 2022-12-05, and on a real *Acanthaster* assembly the best hit was an
 amphibian at 88 percent identity. As decoys the identifier never has to resolve
 to a usable reference, only to a kingdom, so that objection does not apply.
 
-Because escalation already catches what the decoys catch, the decoy panel is a
-speed optimisation rather than a correctness requirement: without it a bacterial
-contaminant escalates and gets the right answer slowly. Escalation is the
-prerequisite. Decoys are not.
+**Decided 2026-08-14: the decoys ship.** With automatic escalation shelved they
+are the only remaining way to tell a bacterial contaminant from "the local panel
+had nothing", so the earlier argument that they were merely a speed optimisation
+no longer holds.
+
+Measured sizes and freshness, taken from the FTP headers rather than from an
+earlier report that gave a 2022 date:
+
+| database | size | last modified |
+|---|---|---|
+| `16S_ribosomal_RNA` | 68.6 MB | 2026-08-11 |
+| `SSU_eukaryote_rRNA` | 57.0 MB | 2024-04-26 |
+| `LSU_eukaryote_rRNA` | 56.6 MB | 2024-04-26 |
+| `taxdb` (shared, needed once for staxids) | 61.9 MB | 2026-08-14 |
+
+The 16S set is actively maintained, which is what matters most: bacterial
+contamination is the common case. The two eukaryote sets are two years stale,
+which is fine for a decoy whose identifier only has to resolve to a kingdom.
+
+Verified working end to end against the built panel: a multi-database search
+returns hits from both with `staxids` resolving correctly on each side (81638
+*Brosme brosme* from the panel, 562 *Escherichia coli* from a decoy), and a
+bacterial query is correctly claimed by the decoy rather than forced onto a
+distant metazoan rDNA record.
+
+**Build invariant, discovered by testing rather than assumed:** every database in
+a multi-database list must be built with matching `-parse_seqids`. Combining one
+that carries accession info with one that does not fails outright with
+`BLAST Database error: DB contains no accession info`. NCBI's prebuilt sets and
+our panel both carry it, so the composition holds, but any future database added
+to the list must too.
 
 ### What ships
 
@@ -688,21 +745,33 @@ own version directory.
 
 ### Acceptance gate
 
-The 94 percent CPU figure that justifies this whole design is **queue time, not
-local compute**. Moving the search local converts near-zero local CPU into real
-local CPU, and nobody has yet measured a local query against a ~300 Mbp panel at
-the real query size. Before this ships, measure on the Asteroidea, Scyphozoa, and
-Octocorallia projects:
+Revised 2026-08-14. The original gate had three measurements; the maintainer
+retired all three, with reasons recorded here so a later reader knows they were
+decided rather than forgotten.
 
-1. Local query wall time and peak RSS per unit, and the `maxForks` that implies.
-2. **Escalation rate.** At 20 percent escalation the saving is 80 percent, not 94.
-   At 60 percent on invertebrates the design does not pay for itself on the very
-   clades it was built for.
-3. Local-versus-remote concordance: for the same units, does the rank-1 candidate
-   accession agree, and where it differs, is the local answer better or worse.
+**1. Query wall time and peak RSS: answered, and taxon-independent.** Measured on
+the built database: 0.80 s at 8 threads, 5.46 s single-threaded, peak RSS 256 MB
+flat across thread counts, on a 15,120 bp query against 688 Mbp. Cost is set by
+query length and database size, not by which clade the query came from, so the
+fish measurement carries. `maxForks` is bounded by cores rather than memory.
 
-The fish projects cannot answer any of these, for the reasons in Validation
-below.
+**2. Escalation rate: no longer a gate**, because automatic escalation is
+shelved. A unit the panel cannot answer is reported to the user rather than
+silently re-searched, so there is no hidden remote cost to bound. What matters
+instead is the *unanswerable rate*, which is a reporting quality question rather
+than a shipping blocker: if most invertebrate units come back unanswered the
+feature is unhelpful for those clades, but it is not harmful and it does not cost
+hours.
+
+**3. Local-versus-remote concordance: retired.** BLAST ranking is a heuristic,
+and the pipeline only ever consumes rank 1 as a comparator, not as a
+determination. Exact agreement with a `core_nt` search was never the standard the
+remote path itself was held to.
+
+What remains before Stage 4 ships is narrower: confirm on one invertebrate clade
+that the unanswerable rate is reported honestly and that the surfaced message is
+actionable. That needs one Asteroidea, Scyphozoa, or Octocorallia run, and unlike
+the retired gate it does not need a remote baseline to compare against.
 
 ## Migration
 
