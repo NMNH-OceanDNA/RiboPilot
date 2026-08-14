@@ -40,7 +40,9 @@ REF_STORE_SEQ_DDL <- "CREATE TABLE IF NOT EXISTS ref_sequences (
 
 #' `tool` here is the per-element caller (barrnap, ITSx, or derived), as
 #' returned by annotate_records(); distinct from ref_sequences.tool, the
-#' per-accession pipeline tag.
+#' per-accession pipeline tag. Coordinates, like ref_sequences', are only
+#' comparable within one (kingdom, taxon) combination, so both are part of
+#' the primary key here too.
 #' @noRd
 REF_STORE_ANN_DDL <- "CREATE TABLE IF NOT EXISTS ref_annotations (
   accession TEXT NOT NULL,
@@ -50,7 +52,9 @@ REF_STORE_ANN_DDL <- "CREATE TABLE IF NOT EXISTS ref_annotations (
   stop INTEGER,
   strand TEXT,
   tool TEXT,
-  PRIMARY KEY (accession, element)
+  kingdom TEXT,
+  taxon TEXT,
+  PRIMARY KEY (accession, element, kingdom, taxon)
 );"
 
 #' Open the reference store under a reference folder
@@ -96,8 +100,8 @@ ref_store_get <- function(store, accessions, kingdom, taxon) {
   if (nrow(seqs) == 0) return(empty)
   ph2 <- paste(rep("?", nrow(seqs)), collapse = ",")
   ann <- DBI::dbGetQuery(store,
-    sprintf("SELECT * FROM ref_annotations WHERE accession IN (%s)", ph2),
-    params = as.list(seqs$accession))
+    sprintf("SELECT * FROM ref_annotations WHERE accession IN (%s) AND kingdom = ? AND taxon = ?", ph2),
+    params = c(as.list(seqs$accession), list(kingdom, taxon)))
   list(seqs = seqs, ann = ann)
 }
 
@@ -126,12 +130,14 @@ ref_store_put <- function(store, seqs, ann, kingdom, taxon, tool) {
           sequence = seqs$sequence[i], length = seqs$length[i],
           kingdom = kingdom, taxon = taxon, tool = tool, ribopilot_version = version,
           stored_utc = ts, stringsAsFactors = FALSE))
-        DBI::dbExecute(store, "DELETE FROM ref_annotations WHERE accession = ?", params = list(acc))
+        DBI::dbExecute(store, "DELETE FROM ref_annotations WHERE accession = ? AND kingdom = ? AND taxon = ?",
+          params = list(acc, kingdom, taxon))
         if (!is.null(rows) && nrow(rows) > 0) {
           DBI::dbAppendTable(store, "ref_annotations", data.frame(
             accession = acc, element = rows$element, type = rows$type,
             start = rows$start, stop = rows$stop, strand = rows$strand,
             tool = if ("tool" %in% names(rows)) rows$tool else NA_character_,
+            kingdom = kingdom, taxon = taxon,
             stringsAsFactors = FALSE))
         }
       })

@@ -104,6 +104,40 @@ test_that("ref_store_get scopes matches to the requested kingdom and taxon", {
   expect_equal(right$seqs$accession, "A.1")
 })
 
+variant_seq <- function() data.frame(accession = "A.1", species = "Genus a",
+  title = "Genus a 18S", sequence = "ACGTACGTAC", length = 10L, stringsAsFactors = FALSE)
+variant_ann <- function(start, stop) data.frame(accession = "A.1", element = "18S",
+  type = "rRNA", start = start, stop = stop, strand = "+", stringsAsFactors = FALSE)
+
+test_that("stored annotation coordinates are scoped by kingdom/taxon, not shared across variants", {
+  d <- mk_store_dir()
+  st <- RiboPilot:::open_ref_store(d, write = TRUE)
+  on.exit(DBI::dbDisconnect(st))
+  RiboPilot:::ref_store_put(st, variant_seq(), variant_ann(1L, 4L), kingdom = "euk", taxon = "all", tool = "pybarrnap")
+  RiboPilot:::ref_store_put(st, variant_seq(), variant_ann(5L, 10L), kingdom = "bac", taxon = "all", tool = "pybarrnap")
+
+  got_euk <- RiboPilot:::ref_store_get(st, "A.1", "euk", "all")
+  expect_equal(got_euk$ann$start, 1L)
+  expect_equal(got_euk$ann$stop, 4L)
+
+  got_bac <- RiboPilot:::ref_store_get(st, "A.1", "bac", "all")
+  expect_equal(got_bac$ann$start, 5L)
+  expect_equal(got_bac$ann$stop, 10L)
+})
+
+test_that("re-putting one variant does not disturb another variant's annotation rows", {
+  d <- mk_store_dir()
+  st <- RiboPilot:::open_ref_store(d, write = TRUE)
+  on.exit(DBI::dbDisconnect(st))
+  RiboPilot:::ref_store_put(st, variant_seq(), variant_ann(1L, 4L), kingdom = "euk", taxon = "all", tool = "pybarrnap")
+  RiboPilot:::ref_store_put(st, variant_seq(), variant_ann(5L, 10L), kingdom = "bac", taxon = "all", tool = "pybarrnap")
+  RiboPilot:::ref_store_put(st, variant_seq(), variant_ann(1L, 4L), kingdom = "euk", taxon = "all", tool = "pybarrnap")
+
+  got_bac <- RiboPilot:::ref_store_get(st, "A.1", "bac", "all")
+  expect_equal(got_bac$ann$start, 5L)
+  expect_equal(got_bac$ann$stop, 10L)
+})
+
 test_that("re-putting an accession replaces rather than duplicating", {
   d <- mk_store_dir()
   st <- RiboPilot:::open_ref_store(d, write = TRUE)
