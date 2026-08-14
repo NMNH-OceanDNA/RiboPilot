@@ -105,3 +105,55 @@ ref_store_put <- function(store, seqs, ann, kingdom, taxon, tool) {
   }
   invisible(n)
 }
+
+#' Copy stored references for a project's candidates into the project database
+#'
+#' The fetch step selects only candidate accessions absent from
+#' `blast_ref_sequences`, so anything copied here is not fetched again. An
+#' accession the project already holds is left alone.
+#'
+#' @param con Open project DB connection.
+#' @param ref_dir Reference folder, as resolved by [ref_config()].
+#' @param ids Optional sample IDs to limit to; default is every candidate.
+#' @return (invisibly) the number of accessions copied.
+#' @export
+prime_from_ref_store <- function(con, ref_dir, ids = NULL) {
+  store <- tryCatch(open_ref_store(ref_dir, write = FALSE), error = function(e) NULL)
+  if (is.null(store)) return(invisible(0L))
+  on.exit(DBI::dbDisconnect(store), add = TRUE)
+
+  sql <- "SELECT DISTINCT c.accession FROM blast_ref_candidates c
+          LEFT JOIN blast_ref_sequences s ON s.accession = c.accession
+          WHERE s.accession IS NULL"
+  want <- if (is.null(ids)) {
+    DBI::dbGetQuery(con, sql)$accession
+  } else {
+    ph <- paste(rep("?", length(ids)), collapse = ",")
+    DBI::dbGetQuery(con, sprintf("%s AND c.ID IN (%s)", sql, ph), params = as.list(ids))$accession
+  }
+  if (length(want) == 0) return(invisible(0L))
+
+  got <- ref_store_get(store, want)
+  if (nrow(got$seqs) == 0) return(invisible(0L))
+
+  ts <- as.integer(Sys.time())
+  n <- 0L
+  for (i in seq_len(nrow(got$seqs))) {
+    acc <- got$seqs$accession[i]
+    rows <- if (nrow(got$ann) > 0) got$ann[got$ann$accession == acc, , drop = FALSE] else NULL
+    DBI::dbWithTransaction(con, {
+      DBI::dbAppendTable(con, "blast_ref_sequences", data.frame(
+        accession = acc, species = got$seqs$species[i], title = got$seqs$title[i],
+        taxid = NA_character_, lineage = NA_character_, sequence = got$seqs$sequence[i],
+        length = got$seqs$length[i], time_stamp = ts, stringsAsFactors = FALSE))
+      if (!is.null(rows) && nrow(rows) > 0) {
+        DBI::dbAppendTable(con, "blast_ref_annotations", data.frame(
+          accession = acc, element = rows$element, type = rows$type,
+          start = rows$start, stop = rows$stop, strand = rows$strand,
+          time_stamp = ts, stringsAsFactors = FALSE))
+      }
+    })
+    n <- n + 1L
+  }
+  invisible(n)
+}

@@ -127,3 +127,55 @@ test_that("an existing store opens read-only without a write lock", {
   on.exit(DBI::dbDisconnect(ro))
   expect_equal(nrow(RiboPilot:::ref_store_get(ro, "A.1")$seqs), 1L)
 })
+
+mk_project_db <- function() {
+  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+  DBI::dbExecute(con, "CREATE TABLE blast_ref_candidates(ID TEXT, path INT, scaffold INT,
+    rank INT, accession TEXT)")
+  DBI::dbExecute(con, "CREATE TABLE blast_ref_sequences(accession TEXT PRIMARY KEY,
+    species TEXT, title TEXT, taxid TEXT, lineage TEXT, sequence TEXT, length INT,
+    time_stamp INT)")
+  DBI::dbExecute(con, "CREATE TABLE blast_ref_annotations(accession TEXT, element TEXT,
+    type TEXT, start INT, stop INT, strand TEXT, time_stamp INT,
+    PRIMARY KEY (accession, element))")
+  DBI::dbExecute(con, "INSERT INTO blast_ref_candidates VALUES('S1',1,1,1,'A.1')")
+  DBI::dbExecute(con, "INSERT INTO blast_ref_candidates VALUES('S1',1,1,2,'ZZ.9')")
+  con
+}
+
+test_that("priming copies a stored accession into the project and skips unknown ones", {
+  d <- mk_store_dir()
+  st <- RiboPilot:::open_ref_store(d, write = TRUE)
+  RiboPilot:::ref_store_put(st, seq_fixture(), ann_fixture(), "euk", "all", "pybarrnap")
+  DBI::dbDisconnect(st)
+
+  con <- mk_project_db()
+  on.exit(DBI::dbDisconnect(con))
+  n <- RiboPilot:::prime_from_ref_store(con, d)
+  expect_equal(as.integer(n), 1L)
+  s <- DBI::dbGetQuery(con, "SELECT accession FROM blast_ref_sequences")
+  expect_equal(s$accession, "A.1")
+  a <- DBI::dbGetQuery(con, "SELECT element FROM blast_ref_annotations ORDER BY element")
+  expect_equal(a$element, c("18S", "ITS1"))
+})
+
+test_that("priming is a no-op when no store exists", {
+  con <- mk_project_db()
+  on.exit(DBI::dbDisconnect(con))
+  d <- mk_store_dir()
+  expect_equal(as.integer(RiboPilot:::prime_from_ref_store(con, d)), 0L)
+})
+
+test_that("priming does not overwrite an accession the project already has", {
+  d <- mk_store_dir()
+  st <- RiboPilot:::open_ref_store(d, write = TRUE)
+  RiboPilot:::ref_store_put(st, seq_fixture(), ann_fixture(), "euk", "all", "pybarrnap")
+  DBI::dbDisconnect(st)
+
+  con <- mk_project_db()
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "INSERT INTO blast_ref_sequences (accession, sequence) VALUES ('A.1','KEEPME')")
+  RiboPilot:::prime_from_ref_store(con, d)
+  expect_equal(DBI::dbGetQuery(con, "SELECT sequence FROM blast_ref_sequences WHERE accession='A.1'")$sequence,
+    "KEEPME")
+})
