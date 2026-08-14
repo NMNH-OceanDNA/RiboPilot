@@ -33,3 +33,16 @@ test_that("open_sqlite_ro errors on a missing file rather than creating one", {
   expect_error(RiboPilot:::open_sqlite_ro(p))
   expect_false(file.exists(p))
 })
+
+test_that("open_sqlite_ro refuses writes even when the file is writable", {
+  d <- withr::local_tempdir()
+  p <- file.path(d, "rw.sqlite")
+  con <- DBI::dbConnect(RSQLite::SQLite(), p)
+  DBI::dbExecute(con, "CREATE TABLE t (a TEXT)")
+  DBI::dbExecute(con, "INSERT INTO t VALUES ('x')")
+  DBI::dbDisconnect(con)
+  ro <- RiboPilot:::open_sqlite_ro(p)
+  on.exit(DBI::dbDisconnect(ro))
+  expect_equal(DBI::dbGetQuery(ro, "SELECT a FROM t")$a, "x")
+  expect_error(DBI::dbExecute(ro, "INSERT INTO t VALUES ('y')"))
+})
