@@ -75,16 +75,34 @@ test_that("a panel prefix containing a space warns and returns NULL", {
   expect_null(got)
 })
 
-test_that("a decoy path containing a space warns, is skipped, and panel is returned", {
+test_that("unrelated stray file with space does not drop valid decoys", {
   d <- withr::local_tempdir()
   p <- mk_fake_db(d, "ribopilot_rrna")
   dd <- withr::local_tempdir()
   mk_fake_db(dd, "16S_ribosomal_RNA")
-  decoy_with_space <- file.path(dd, "SSU eukaryote_rRNA")
-  file.create(paste0(decoy_with_space, ".nhr"))
-  file.create(paste0(decoy_with_space, ".nin"))
-  file.create(paste0(decoy_with_space, ".nsq"))
-  expect_warning(got <- RiboPilot:::local_blast_db_arg(p, dd), "whitespace")
+  stray_with_space <- file.path(dd, "SSU eukaryote_rRNA")
+  file.create(paste0(stray_with_space, ".nhr"))
+  file.create(paste0(stray_with_space, ".nin"))
+  file.create(paste0(stray_with_space, ".nsq"))
+  got <- RiboPilot:::local_blast_db_arg(p, dd)
+  parts <- strsplit(got, " ", fixed = TRUE)[[1]]
+  expect_equal(parts[1], p)
+  expect_equal(basename(parts[2]), "16S_ribosomal_RNA")
+})
+
+test_that("decoy_dir path with space causes all decoys to skip with warnings", {
+  d <- withr::local_tempdir()
+  p <- mk_fake_db(d, "ribopilot_rrna")
+  dd <- withr::local_tempdir()
+  dd_with_space <- file.path(dirname(dd), "decoy dir")
+  dir.create(dd_with_space)
+  mk_fake_db(dd_with_space, "16S_ribosomal_RNA")
+  mk_fake_db(dd_with_space, "SSU_eukaryote_rRNA")
+  mk_fake_db(dd_with_space, "LSU_eukaryote_rRNA")
+  expect_warning(
+    got <- RiboPilot:::local_blast_db_arg(p, dd_with_space),
+    "whitespace"
+  )
   parts <- strsplit(got, " ", fixed = TRUE)[[1]]
   expect_equal(parts, p)
 })
