@@ -198,3 +198,32 @@ test_that("run_itsx passes the requested taxon through to -t", {
 test_that("ITSX_MAX_BP is the documented HMMER ceiling", {
   expect_equal(RiboPilot:::ITSX_MAX_BP, 100000)
 })
+
+test_that("run_itsx omits --complement unless asked", {
+  d <- withr::local_tempdir()
+  mk_fake_tool(d, "ITSx", status = 0L)
+  withr::local_path(d, action = "prefix")
+  fa <- mk_fasta(d)
+  suppressWarnings(RiboPilot:::run_itsx(fa))
+  expect_false(grepl("--complement", fake_args(d, "ITSx")))
+})
+
+test_that("run_itsx passes --complement F when asked", {
+  d <- withr::local_tempdir()
+  mk_fake_tool(d, "ITSx", status = 0L)
+  withr::local_path(d, action = "prefix")
+  fa <- mk_fasta(d)
+  suppressWarnings(RiboPilot:::run_itsx(fa, complement = FALSE))
+  expect_match(fake_args(d, "ITSx"), "--complement F")
+})
+
+test_that("annotate_records asks ITSx not to search the complement", {
+  d <- withr::local_tempdir()
+  mk_fake_tool(d, "pybarrnap", status = 0L)
+  mk_fake_tool(d, "ITSx", status = 0L)
+  withr::local_path(d, action = "prefix")
+  fa <- file.path(d, "refs.fa")
+  writeLines(c(">ACC1.1 x", paste(rep("ACGT", 60), collapse = "")), fa)
+  suppressWarnings(RiboPilot:::annotate_records(fa))
+  expect_match(fake_args(d, "ITSx"), "--complement F")
+})
