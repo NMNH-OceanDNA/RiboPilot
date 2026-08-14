@@ -64,6 +64,10 @@ process blast_genbank {
 
     for U in \$UNITS; do
         P=\${U%.*}; S=\${U#*.}
+        # per-unit copy: a local failure on one unit must not leak "remote"
+        # into the plain shell loop's next iteration. SRC stays the task-level
+        # resolution of whether a usable panel exists at all.
+        UNIT_SRC="\$SRC"
         sqlite3 -cmd '.timeout 10000' '${params.db}' "SELECT '>'||ID||'.'||path||'.'||scaffold||char(10)||sequence FROM assemblies WHERE ID='${id}' AND path=\$P AND scaffold=\$S;" > query.fa
         [ -s query.fa ] || continue
 
@@ -86,7 +90,7 @@ process blast_genbank {
         # qseqid is captured for a future batched query. Appended last so the
         # positional parser in parse_blast_hits_file() needs no change.
         OUTFMT="6 saccver stitle pident qcovs evalue staxids bitscore length qstart qend sstart send slen qseqid"
-        if [ "\$SRC" = "local" ]; then
+        if [ "\$UNIT_SRC" = "local" ]; then
             if blastn -db "\$DBARG" -query query.fa \
                 -outfmt "\$OUTFMT" \
                 -max_target_seqs "\${MTS:-50}" -max_hsps 5 -task megablast \
@@ -99,10 +103,10 @@ process blast_genbank {
                 # itself, not before it. That is a config error, not "no answer":
                 # fall back to remote for this unit rather than losing it entirely.
                 echo "local BLAST failed for ${id} \$P.\$S (misconfigured panel?), falling back to remote" >&2
-                SRC="remote"
+                UNIT_SRC="remote"
             fi
         fi
-        if [ "\$SRC" = "remote" ]; then
+        if [ "\$UNIT_SRC" = "remote" ]; then
             if blastn -remote -db core_nt -query query.fa \
                 -outfmt "\$OUTFMT" \
                 -max_target_seqs "\${MTS:-50}" -max_hsps 5 -task megablast \
@@ -119,7 +123,7 @@ process blast_genbank {
         # discontiguous-megablast retry for those units only.
         BESTCOV=\$(awk -F'\\t' 'BEGIN{m=0} \$4+0>m{m=\$4+0} END{print m+0}' hits.txt 2>/dev/null || echo 0)
         if grep -q NO_SIGNIFICANT_HITS hits.txt || [ "\${BESTCOV%%.*}" -lt 25 ]; then
-            if [ "\$SRC" = "local" ]; then
+            if [ "\$UNIT_SRC" = "local" ]; then
                 if blastn -db "\$DBARG" -query query.fa \
                     -outfmt "\$OUTFMT" \
                     -max_target_seqs "\${MTS:-50}" -max_hsps 5 -task dc-megablast \
@@ -146,7 +150,7 @@ process blast_genbank {
 
         NHITS=\$(grep -c . hits.txt 2>/dev/null || echo 0)
         grep -q NO_SIGNIFICANT_HITS hits.txt && NHITS=0
-        RIBOPILOT_SRC='${params.ribopilot_src}' rp_searched.R '${params.db}' '${id}' "\$P" "\$S" "\$QMD5" "\$NHITS" "\$SRC"
+        RIBOPILOT_SRC='${params.ribopilot_src}' rp_searched.R '${params.db}' '${id}' "\$P" "\$S" "\$QMD5" "\$NHITS" "\$UNIT_SRC"
     done
     """
 }
