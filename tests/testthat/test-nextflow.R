@@ -336,6 +336,37 @@ test_that("a folder collapses its own subfolders when both are named", {
   expect_equal(RiboPilot:::drop_covered(c(d, file.path(d, "seeds")), c(d, file.path(d, "seeds"))), d)
 })
 
+# nf_ref_dir must use the reference folder only when reference_config.ref_dir is
+# explicitly set, or an unconfigured project silently picks up whatever this
+# machine's default reference folder resolves to.
+
+mk_ref_config_project <- function(dir, ref_dir_value) {
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, RiboPilot:::REFERENCE_CONFIG_DDL)
+  DBI::dbExecute(con, "INSERT INTO reference_config (rowid_key, ref_dir, min_records, max_records)
+    VALUES (1, ?, 1000, 25000)", params = list(ref_dir_value))
+  DBI::dbDisconnect(con)
+  dir
+}
+
+test_that("nf_ref_dir is blank for a project with no explicit ref_dir", {
+  skip_if_not_installed("withr")
+  # unset so a real machine default (which ribopilot_ref_dir() always resolves
+  # to something for) cannot mask the fix
+  withr::local_envvar(RIBOPILOT_REF_DIR = "")
+  d <- withr::local_tempdir()
+  mk_ref_config_project(d, NA_character_)
+  expect_equal(RiboPilot:::nf_ref_dir(d), "")
+})
+
+test_that("nf_ref_dir returns the configured folder when explicitly set", {
+  skip_if_not_installed("withr")
+  d <- withr::local_tempdir()
+  refs <- withr::local_tempdir()
+  mk_ref_config_project(d, refs)
+  expect_equal(RiboPilot:::nf_ref_dir(d), path.expand(refs))
+})
+
 # Failure handling. A pipeline that reports success while quietly dropping work
 # is worse than one that stops, so pin the three guarantees that prevent it.
 

@@ -18,7 +18,14 @@ local({
   stop_if_nothing_stored(a[2], n)
   cat("references stored:", n, "\n")
   if (nzchar(ref_dir)) {
-    pushed <- push_to_ref_store(ref_dir, a[2], ann, kingdom, taxon, "ribopilot-annotate")
+    # the project-side store above has already succeeded; the shared store is
+    # an optimisation and must never fail an otherwise successful task
+    pushed <- tryCatch(
+      push_to_ref_store(ref_dir, a[2], ann, kingdom, taxon, "ribopilot-annotate"),
+      error = function(e) {
+        warning("push to reference store failed: ", conditionMessage(e), call. = FALSE)
+        0L
+      })
     cat("references pushed to store:", pushed, "\n")
   }
 })

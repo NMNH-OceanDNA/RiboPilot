@@ -46,6 +46,14 @@ parse_feature_table <- function(ft_lines) {
   df[!duplicated(df$element), , drop = FALSE]
 }
 
+#' Split fasta deflines ">ACC.V description" into accession and title
+#' @param full Character vector of defline strings (Biostrings names()).
+#' @return list(acc, title)
+#' @noRd
+parse_defline_ids <- function(full) {
+  list(acc = sub("\\s.*$", "", full), title = trimws(sub("^\\S+\\s*", "", full)))
+}
+
 #' TRUE if the file's first non-blank line is a FASTA header
 #' @noRd
 is_fasta_file <- function(path) {
@@ -123,9 +131,9 @@ write_blast_refs <- function(con, fasta_file, ann = NULL) {
   seqs <- Biostrings::readDNAStringSet(fasta_file)
   if (length(seqs) == 0) return(invisible(0L))
   ts <- as.integer(Sys.time())
-  full <- names(seqs)
-  acc <- sub("\\s.*$", "", full)
-  title <- trimws(sub("^\\S+\\s*", "", full))
+  ids <- parse_defline_ids(names(seqs))
+  acc <- ids$acc
+  title <- ids$title
   n <- 0L
   for (i in seq_along(seqs)) {
     s <- as.character(seqs[[i]])

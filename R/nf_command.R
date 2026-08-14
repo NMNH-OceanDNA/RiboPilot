@@ -54,17 +54,23 @@ nf_command <- function(path, resume = TRUE,
       reference_mount_dirs(path, c(path, raw_dir, config_mounted_dirs(cfg_lines)))))
 }
 
-#' The project's reference folder, resolved the same way `ref_config()` does
+#' The project's reference folder, used only when explicitly configured
 #'
-#' A missing or unreadable project database must not fail command-building
-#' the way a missing rawDir does; an empty string reaches Nextflow instead,
-#' and priming/pushing degrade to a silent no-op from there.
+#' Reads reference_config.ref_dir directly rather than through ref_config(),
+#' whose fallback chain (project setting -> RIBOPILOT_REF_DIR ->
+#' ribopilot_ref_dir()) never yields an empty string: an unconfigured project
+#' would otherwise silently pick up whatever folder the running machine
+#' defaults to, and behave differently on another machine or in CI. A missing
+#' or unreadable project database, and an unset or blank ref_dir, all resolve
+#' to "" here, and priming/pushing degrade to a silent no-op from there.
 #' @noRd
 nf_ref_dir <- function(path) {
   tryCatch({
     con <- open_project_db(file.path(path, ".sqlite"))
     on.exit(DBI::dbDisconnect(con), add = TRUE)
-    ref_config(con)$ref_dir
+    v <- DBI::dbGetQuery(con, "SELECT ref_dir FROM reference_config WHERE rowid_key = 1")$ref_dir
+    v <- if (length(v) > 0) v[1] else NA_character_
+    if (is.na(v) || !nzchar(trimws(v))) "" else path.expand(trimws(v))
   }, error = function(e) "")
 }
 
