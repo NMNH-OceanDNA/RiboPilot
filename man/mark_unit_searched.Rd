@@ -2,9 +2,17 @@
 % Please edit documentation in R/blast_genbank.R
 \name{mark_unit_searched}
 \alias{mark_unit_searched}
-\title{Record that a unit's query was sent to the remote search}
+\title{Record that a unit was searched, and by which search}
 \usage{
-mark_unit_searched(con, id, path = 1L, scaffold = 1L, query_md5, n_hits = 0L)
+mark_unit_searched(
+  con,
+  id,
+  path = 1L,
+  scaffold = 1L,
+  query_md5,
+  n_hits = 0L,
+  source = "remote"
+)
 }
 \arguments{
 \item{con}{Open project DB connection.}
@@ -16,10 +24,12 @@ mark_unit_searched(con, id, path = 1L, scaffold = 1L, query_md5, n_hits = 0L)
 \item{query_md5}{md5 of the exact query sequence submitted.}
 
 \item{n_hits}{Number of hits the search returned.}
+
+\item{source}{Which search produced the hits, "local" or "remote".}
 }
 \value{
 (invisibly) TRUE.
 }
 \description{
-Record that a unit's query was sent to the remote search
+Record that a unit was searched, and by which search
 }

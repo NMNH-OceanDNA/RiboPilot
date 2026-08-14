@@ -44,13 +44,13 @@ local_blast_db_arg <- function(panel, decoy_dir = NULL) {
     for (n in RP_DECOY_DBS) {
       p <- file.path(decoy_dir, n)
       if (grepl("\\s", p)) {
-        warning("decoy path contains whitespace, skipping: ", n, call. = FALSE)
+        warning("decoy path contains whitespace, skipping: ", p, call. = FALSE)
         next
       }
       if (blast_db_exists(p)) {
         out <- c(out, p)
       } else {
-        warning("decoy database not found, skipping: ", n, call. = FALSE)
+        warning("decoy database not found, skipping: ", p, call. = FALSE)
       }
     }
   }

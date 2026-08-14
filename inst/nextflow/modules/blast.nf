@@ -17,7 +17,7 @@ process blast_genbank {
     tag "${id}"
     errorStrategy { task.attempt <= 3 ? 'retry' : 'ignore' }
     maxRetries 3
-    cpus 4
+    cpus { params.blastdb ? 4 : 1 }
 
     input:
     val id
@@ -57,6 +57,10 @@ process blast_genbank {
     if [ "\$SRC" = "local" ] && [ -n "\${EQ}" ]; then
         echo "entrez_query is remote-only, ignored for local search on ${id}" >&2
     fi
+    if [ "\$SRC" = "local" ] && echo "\$XO" | grep -q -- '-evalue'; then
+        EVAL_VAL=\$(echo "\$XO" | awk '{for (i=1;i<=NF;i++) if (\$i=="-evalue") print \$(i+1)}')
+        echo "WARNING: extra_opts sets -evalue \${EVAL_VAL} for the local search on ${id}; the local panel (~7x10^8 bp) is a much smaller search space than core_nt (~10^12 bp), so this threshold does not mean the same thing here" >&2
+    fi
 
     for U in \$UNITS; do
         P=\${U%.*}; S=\${U#*.}
@@ -90,9 +94,15 @@ process blast_genbank {
                 \${XO} > hits.txt; then
                 [ -s hits.txt ] || echo "NO_SIGNIFICANT_HITS" > hits.txt
             else
-                exit 1
+                # a panel that exists and passed rp_dbarg.R but was built without
+                # -parse_seqids (or mixed with one that was) fails inside blastn
+                # itself, not before it. That is a config error, not "no answer":
+                # fall back to remote for this unit rather than losing it entirely.
+                echo "local BLAST failed for ${id} \$P.\$S (misconfigured panel?), falling back to remote" >&2
+                SRC="remote"
             fi
-        else
+        fi
+        if [ "\$SRC" = "remote" ]; then
             if blastn -remote -db core_nt -query query.fa \
                 -outfmt "\$OUTFMT" \
                 -max_target_seqs "\${MTS:-50}" -max_hsps 5 -task megablast \

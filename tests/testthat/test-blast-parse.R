@@ -332,14 +332,47 @@ test_that("an invalid search source errors", {
 })
 
 test_that("a locally searched unit is labelled local_rrna, not core_nt", {
-  con <- mk_blast_db()
-  on.exit(DBI::dbDisconnect(con))
+  # Exercises the REAL production order: rp_blast.R (parse_blast_candidates)
+  # runs before rp_searched.R (mark_unit_searched) in blast.nf, so this drives
+  # the actual rp_searched.R script rather than an extra in-test derive call
+  # that would mask the ordering bug the script is responsible for fixing.
+  skip_on_cran()
+  skip_if_not_installed("pkgload")
+  src <- RiboPilot:::ribopilot_src_default()
+  skip_if(!file.exists(file.path(src, "DESCRIPTION")), "not a source checkout")
+  bin_dir <- system.file("nextflow", "bin", package = "RiboPilot")
+  if (!nzchar(bin_dir)) bin_dir <- file.path(src, "inst", "nextflow", "bin")
+  script <- file.path(bin_dir, "rp_searched.R")
+
+  db_path <- withr::local_tempfile(fileext = ".sqlite")
+  con <- DBI::dbConnect(RSQLite::SQLite(), db_path)
+  DBI::dbExecute(con, RiboPilot:::BLAST_HITS_DDL)
+  DBI::dbExecute(con, "CREATE TABLE blast_ref_candidates(ID TEXT, path INT, scaffold INT, rank INT,
+    accession TEXT, species TEXT, title TEXT, pident REAL, qcovs REAL, evalue REAL, bitscore REAL, time_stamp INT)")
+  DBI::dbExecute(con, "CREATE TABLE blast_screen(ID TEXT, path INT, scaffold INT, accession TEXT, title TEXT,
+    species TEXT, staxid INT, lineage TEXT, lineage_taxids TEXT, rank_distance INT, pident REAL, qcovs REAL,
+    evalue REAL, bitscore REAL, is_nuclear_rrna INT, time_stamp INT)")
+  DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, blast_accession TEXT,
+    blast_species TEXT, blast_pident REAL, blast_qcovs REAL, blast_evalue REAL, blast_source TEXT,
+    ignore INT)")
+  DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT, taxid INT, lineage TEXT, lineage_taxids TEXT)")
+  DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',1,1,NULL,NULL,NULL,NULL,NULL,NULL,0)")
+  DBI::dbExecute(con, "INSERT INTO samples VALUES('S1',7955,NULL,?)", params = list(FISH_T))
   DBI::dbExecute(con, RiboPilot:::BLAST_SEARCHED_DDL)
+
   f <- write_hits(hit("AA1", "Danio rerio 18S ribosomal RNA gene", 99.1, 80, 1500, 1600, 1, 1600))
   RiboPilot:::parse_blast_candidates(con, "S1", 1, 1, f)
-  RiboPilot:::mark_unit_searched(con, "S1", 1, 1, "abc", 1L, source = "local")
-  RiboPilot:::derive_blast_products(con, "S1", 1, 1)
-  expect_equal(DBI::dbGetQuery(con,
+  DBI::dbDisconnect(con)
+
+  err <- withr::local_tempfile()
+  status <- system2("Rscript",
+    c(shQuote(script), shQuote(db_path), "S1", "1", "1", "abc", "1", "local"),
+    env = paste0("RIBOPILOT_SRC=", src), stdout = FALSE, stderr = err)
+  expect_equal(status, 0, info = paste(readLines(err, warn = FALSE), collapse = "\n"))
+
+  con2 <- DBI::dbConnect(RSQLite::SQLite(), db_path)
+  on.exit(DBI::dbDisconnect(con2))
+  expect_equal(DBI::dbGetQuery(con2,
     "SELECT blast_source FROM assemblies WHERE ID='S1'")$blast_source[1], "local_rrna")
 })
 

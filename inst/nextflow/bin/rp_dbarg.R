@@ -10,7 +10,10 @@ local({
   # decoys ship beside the panel, so default to its own directory; the optional
   # second argument exists only to let a site keep them somewhere else
   dd <- if (length(a) >= 2 && nzchar(a[2])) a[2] else dirname(a[1])
-  arg <- suppressWarnings(RiboPilot:::local_blast_db_arg(a[1], dd))
+  # R warnings go to stderr, not the stdout this call substitution captures,
+  # so leaving them unsuppressed is safe and lets the per-decoy "not found" /
+  # "whitespace" warnings reach the task log.
+  arg <- RiboPilot:::local_blast_db_arg(a[1], dd)
   if (is.null(arg)) quit(status = 1L)
   cat(arg, "\n", sep = "")
 })

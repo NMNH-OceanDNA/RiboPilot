@@ -569,3 +569,206 @@ test_that("blast.nf records the search source", {
   # the search source must be the LAST argument rp_searched.R is invoked with
   expect_true(endsWith(trimws(call_line), '"\\$SRC"'))
 })
+
+test_that("blast.nf only claims 4 cpus when a local panel is configured", {
+  p <- system.file("nextflow", "modules", "blast.nf", package = "RiboPilot")
+  if (!nzchar(p)) p <- "inst/nextflow/modules/blast.nf"
+  lines <- readLines(p, warn = FALSE)
+  cpus_line <- grep("^\\s*cpus\\b", lines, value = TRUE)
+  expect_length(cpus_line, 1)
+  expect_match(cpus_line, "params\\.blastdb\\s*\\?\\s*4\\s*:\\s*1",
+    info = "a remote-only task must not claim 4 cpus to sit on a network wait")
+})
+
+test_that("rp_dbarg.R does not suppress the decoy warnings", {
+  p <- system.file("nextflow", "bin", "rp_dbarg.R", package = "RiboPilot")
+  if (!nzchar(p)) p <- "inst/nextflow/bin/rp_dbarg.R"
+  txt <- paste(readLines(p, warn = FALSE), collapse = "\n")
+  expect_false(grepl("suppressWarnings", txt, fixed = TRUE),
+    info = "decoy not-found/whitespace warnings must reach the task log")
+})
+
+test_that("blast.nf falls back to remote when a configured local panel fails inside blastn", {
+  # A panel that exists and passes rp_dbarg.R's checks (no missing/whitespace
+  # path) can still fail INSIDE blastn, e.g. built without -parse_seqids. That
+  # used to `exit 1` and lose the unit entirely (no hits, no blast_searched
+  # row). Runs the real blast.nf process end to end with a stub blastn on
+  # PATH, so this is a genuine behavioural check, not a text grep.
+  skip_on_cran()
+  skip_if_not_installed("withr")
+  skip_if(Sys.which("nextflow") == "", "nextflow not installed")
+  skip_if(Sys.which("sqlite3") == "", "sqlite3 not installed")
+  src <- RiboPilot:::ribopilot_src_default()
+  skip_if(!file.exists(file.path(src, "DESCRIPTION")), "not a source checkout")
+  blast_nf <- system.file("nextflow", "modules", "blast.nf", package = "RiboPilot")
+  if (!nzchar(blast_nf)) blast_nf <- file.path(src, "inst", "nextflow", "modules", "blast.nf")
+  bin_dir <- system.file("nextflow", "bin", package = "RiboPilot")
+  if (!nzchar(bin_dir)) bin_dir <- file.path(src, "inst", "nextflow", "bin")
+
+  root <- withr::local_tempdir()
+  fake_bin <- file.path(root, "fakebin"); dir.create(fake_bin)
+  panel_dir <- file.path(root, "panel"); dir.create(panel_dir)
+  wf_dir <- file.path(root, "wf"); dir.create(wf_dir)
+  work_dir <- file.path(root, "work")
+
+  # stub blastn: fails any local (-db, no -remote) call like a panel built
+  # without -parse_seqids; succeeds on -remote with one fixed rDNA hit.
+  stub <- file.path(fake_bin, "blastn")
+  writeLines(c(
+    "#!/usr/bin/env bash",
+    "case \" $* \" in",
+    "  *\" -remote \"*)",
+    "    printf 'REMOTE1\\tDanio rerio 18S ribosomal RNA gene\\t99.0\\t80\\t1e-90\\t7955\\t1500\\t1600\\t1\\t1600\\t1\\t1600\\t6997\\tq1\\n'",
+    "    exit 0",
+    "    ;;",
+    "  *)",
+    "    echo 'BLAST Database error: No alias or index file found [TEST STUB]' >&2",
+    "    exit 1",
+    "    ;;",
+    "esac"
+  ), stub)
+  Sys.chmod(stub, "0755")
+
+  panel <- file.path(panel_dir, "ribopilot_rrna")
+  file.create(paste0(panel, ".nin"))
+
+  db_path <- file.path(root, "test.sqlite")
+  con <- DBI::dbConnect(RSQLite::SQLite(), db_path)
+  DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, blast_opts TEXT)")
+  DBI::dbExecute(con, "CREATE TABLE blast_opts(blast_opts TEXT, run_blast INTEGER,
+    entrez_query TEXT, extra_opts TEXT, max_target_seqs INTEGER)")
+  DBI::dbExecute(con, "INSERT INTO assemble VALUES('S1','default')")
+  DBI::dbExecute(con, "INSERT INTO blast_opts VALUES('default',1,'','',50)")
+  DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, sequence TEXT, ignore INT,
+    blast_accession TEXT, blast_species TEXT, blast_pident REAL, blast_qcovs REAL, blast_evalue REAL, blast_source TEXT)")
+  DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',1,1,
+    'ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT',0,NULL,NULL,NULL,NULL,NULL,NULL)")
+  DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT, taxid INT, lineage TEXT, lineage_taxids TEXT)")
+  DBI::dbExecute(con, "INSERT INTO samples VALUES('S1',7955,NULL,NULL)")
+  DBI::dbExecute(con, RiboPilot:::BLAST_HITS_DDL)
+  DBI::dbExecute(con, RiboPilot:::BLAST_SEARCHED_DDL)
+  DBI::dbExecute(con, "CREATE TABLE blast_ref_candidates(ID TEXT, path INT, scaffold INT, rank INT,
+    accession TEXT, species TEXT, title TEXT, pident REAL, qcovs REAL, evalue REAL, bitscore REAL, time_stamp INT)")
+  DBI::dbExecute(con, "CREATE TABLE blast_screen(ID TEXT, path INT, scaffold INT, accession TEXT, title TEXT,
+    species TEXT, staxid INT, lineage TEXT, lineage_taxids TEXT, rank_distance INT, pident REAL, qcovs REAL,
+    evalue REAL, bitscore REAL, is_nuclear_rrna INT, time_stamp INT)")
+  DBI::dbDisconnect(con)
+
+  writeLines(c(
+    sprintf("include { blast_genbank } from '%s'", blast_nf),
+    "workflow {",
+    "    blast_genbank(Channel.of('S1'))",
+    "}"
+  ), file.path(wf_dir, "main.nf"))
+  writeLines(c(
+    sprintf("params.db = '%s'", db_path),
+    sprintf("params.blastdb = '%s'", panel),
+    "params.taxdump_dir = ''",
+    sprintf("params.ribopilot_src = '%s'", src),
+    "process {",
+    "    withName: 'blast_genbank' {",
+    "        errorStrategy = 'terminate'",
+    "        maxRetries = 0",
+    "    }",
+    "}"
+  ), file.path(wf_dir, "nextflow.config"))
+
+  old_path <- Sys.getenv("PATH")
+  Sys.setenv(PATH = paste(fake_bin, bin_dir, old_path, sep = .Platform$path.sep))
+  on.exit(Sys.setenv(PATH = old_path), add = TRUE)
+
+  withr::local_dir(wf_dir)
+  status <- system2("nextflow", c("run", "main.nf", "-w", shQuote(work_dir)),
+    stdout = FALSE, stderr = FALSE)
+  expect_equal(status, 0,
+    info = "the run must succeed by falling back to remote, not exit 1 on the local failure")
+
+  con2 <- DBI::dbConnect(RSQLite::SQLite(), db_path)
+  on.exit(DBI::dbDisconnect(con2), add = TRUE)
+  searched <- DBI::dbGetQuery(con2, "SELECT source FROM blast_searched WHERE ID='S1'")
+  expect_equal(nrow(searched), 1L,
+    info = "the unit must end up recorded as searched, not silently dropped")
+  expect_equal(searched$source[1], "remote",
+    info = "the source must be recorded truthfully as remote, not the originally configured local")
+})
+
+test_that("blast.nf warns when extra_opts sets -evalue for a local search", {
+  # core_nt is ~10^12 bp and the local panel ~7x10^8 bp, so the shipped
+  # default -evalue 1e-20 admits far weaker alignments locally. No units are
+  # ignore=0, so the per-unit loop never runs and no blastn call is needed;
+  # this only checks the warning that fires right after SRC/DBARG resolve.
+  skip_on_cran()
+  skip_if_not_installed("withr")
+  skip_if(Sys.which("nextflow") == "", "nextflow not installed")
+  skip_if(Sys.which("sqlite3") == "", "sqlite3 not installed")
+  src <- RiboPilot:::ribopilot_src_default()
+  skip_if(!file.exists(file.path(src, "DESCRIPTION")), "not a source checkout")
+  blast_nf <- system.file("nextflow", "modules", "blast.nf", package = "RiboPilot")
+  if (!nzchar(blast_nf)) blast_nf <- file.path(src, "inst", "nextflow", "modules", "blast.nf")
+  bin_dir <- system.file("nextflow", "bin", package = "RiboPilot")
+  if (!nzchar(bin_dir)) bin_dir <- file.path(src, "inst", "nextflow", "bin")
+
+  run_once <- function(extra_opts) {
+    root <- withr::local_tempdir(.local_envir = parent.frame())
+    panel_dir <- file.path(root, "panel"); dir.create(panel_dir)
+    wf_dir <- file.path(root, "wf"); dir.create(wf_dir)
+    work_dir <- file.path(root, "work")
+    panel <- file.path(panel_dir, "ribopilot_rrna")
+    file.create(paste0(panel, ".nin"))
+
+    db_path <- file.path(root, "test.sqlite")
+    con <- DBI::dbConnect(RSQLite::SQLite(), db_path)
+    DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, blast_opts TEXT)")
+    DBI::dbExecute(con, "CREATE TABLE blast_opts(blast_opts TEXT, run_blast INTEGER,
+      entrez_query TEXT, extra_opts TEXT, max_target_seqs INTEGER)")
+    DBI::dbExecute(con, "INSERT INTO assemble VALUES('S1','default')")
+    DBI::dbExecute(con, "INSERT INTO blast_opts VALUES('default',1,'',?,50)", params = list(extra_opts))
+    # no assemblies rows: UNITS resolves empty, so the per-unit loop never runs
+    DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, sequence TEXT, ignore INT)")
+    DBI::dbExecute(con, RiboPilot:::BLAST_SEARCHED_DDL)
+    DBI::dbDisconnect(con)
+
+    writeLines(c(
+      sprintf("include { blast_genbank } from '%s'", blast_nf),
+      "workflow {",
+      "    blast_genbank(Channel.of('S1'))",
+      "}"
+    ), file.path(wf_dir, "main.nf"))
+    writeLines(c(
+      sprintf("params.db = '%s'", db_path),
+      sprintf("params.blastdb = '%s'", panel),
+      "params.taxdump_dir = ''",
+      sprintf("params.ribopilot_src = '%s'", src),
+      "process {",
+      "    withName: 'blast_genbank' {",
+      "        errorStrategy = 'terminate'",
+      "        maxRetries = 0",
+      "    }",
+      "}"
+    ), file.path(wf_dir, "nextflow.config"))
+
+    withr::local_dir(wf_dir, .local_envir = parent.frame())
+    status <- system2("nextflow", c("run", "main.nf", "-w", shQuote(work_dir)),
+      stdout = FALSE, stderr = FALSE)
+    # nextflow does not stream a task's own stderr to its own console log;
+    # read it from the task work dir instead.
+    task_err <- list.files(work_dir, pattern = "^\\.command\\.err$",
+      recursive = TRUE, full.names = TRUE, all.files = TRUE)
+    task_stderr <- paste(unlist(lapply(task_err, readLines, warn = FALSE)), collapse = "\n")
+    list(status = status, stderr = task_stderr)
+  }
+
+  old_path <- Sys.getenv("PATH")
+  Sys.setenv(PATH = paste(bin_dir, old_path, sep = .Platform$path.sep))
+  on.exit(Sys.setenv(PATH = old_path), add = TRUE)
+
+  with_evalue <- run_once("-evalue 1e-20")
+  expect_equal(with_evalue$status, 0)
+  expect_match(with_evalue$stderr, "WARNING:.*-evalue 1e-20",
+    info = "must name the value and warn the local search space differs from core_nt")
+
+  without_evalue <- run_once("")
+  expect_equal(without_evalue$status, 0)
+  expect_false(grepl("-evalue", without_evalue$stderr, fixed = TRUE),
+    info = "no -evalue in extra_opts means no warning")
+})

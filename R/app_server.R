@@ -158,9 +158,10 @@ app_server <- function(input, output, session) {
         "SELECT an.annotate_lock, an.annotate_switch, s.ID, an.path, an.scaffold, s.Taxon, s.sci_name, s.taxid,
            asm.length, an.n_features, an.missing,
            -- blast_source says WHICH search named the species: the local seed
-           -- BLAST or the remote core_nt one. Without it a seed hint reads as a
-           -- GenBank identification. blast_qcovs is written by the remote path
-           -- only and its column was already defined but never selected.
+           -- BLAST, the local panel BLAST, or the remote core_nt one. Without
+           -- it a seed or panel hit reads as a GenBank identification.
+           -- blast_qcovs is written by the remote and local-panel paths only
+           -- and its column was already defined but never selected.
            asm.blast_species, asm.blast_accession, asm.blast_pident, asm.blast_qcovs,
            asm.blast_source,
            an.n_flags, an.reviewed,
