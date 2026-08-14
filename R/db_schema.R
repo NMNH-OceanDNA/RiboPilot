@@ -50,6 +50,7 @@ BLAST_SEARCHED_DDL <- "CREATE TABLE IF NOT EXISTS blast_searched (
   scaffold INTEGER NOT NULL DEFAULT 1,
   query_md5 TEXT NOT NULL,
   n_hits INTEGER,
+  source TEXT,
   time_stamp INTEGER,
   PRIMARY KEY (ID, path, scaffold)
 );"

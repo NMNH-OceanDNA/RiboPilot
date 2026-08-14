@@ -305,3 +305,21 @@ test_that("re-marking the same unit replaces rather than duplicates", {
   expect_equal(r$query_md5[1], "def456")
   expect_equal(r$n_hits[1], 7L)
 })
+
+test_that("a searched unit records which search produced it", {
+  con <- mk_blast_db()
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, RiboPilot:::BLAST_SEARCHED_DDL)
+  RiboPilot:::mark_unit_searched(con, "S1", 1, 1, "abc", 3L, source = "local")
+  r <- DBI::dbGetQuery(con, "SELECT source, n_hits FROM blast_searched")
+  expect_equal(r$source[1], "local")
+  expect_equal(r$n_hits[1], 3L)
+})
+
+test_that("the search source defaults to remote", {
+  con <- mk_blast_db()
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, RiboPilot:::BLAST_SEARCHED_DDL)
+  RiboPilot:::mark_unit_searched(con, "S1", 1, 1, "abc", 0L)
+  expect_equal(DBI::dbGetQuery(con, "SELECT source FROM blast_searched")$source[1], "remote")
+})

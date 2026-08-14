@@ -332,15 +332,17 @@ rederive_blast_products <- function(con, ids = NULL) {
 #' @param path,scaffold Assembly unit within the sample.
 #' @param query_md5 md5 of the exact query sequence submitted.
 #' @param n_hits Number of hits the search returned.
+#' @param source Which search produced the hits, "local" or "remote".
 #' @return (invisibly) TRUE.
 #' @export
 mark_unit_searched <- function(con, id, path = 1L, scaffold = 1L, query_md5,
-                               n_hits = 0L) {
+                               n_hits = 0L, source = "remote") {
   DBI::dbExecute(con,
-    "INSERT OR REPLACE INTO blast_searched (ID, path, scaffold, query_md5, n_hits, time_stamp)
-     VALUES (?, ?, ?, ?, ?, ?)",
+    "INSERT OR REPLACE INTO blast_searched
+       (ID, path, scaffold, query_md5, n_hits, source, time_stamp)
+     VALUES (?, ?, ?, ?, ?, ?, ?)",
     params = list(id, as.integer(path), as.integer(scaffold), query_md5,
-      as.integer(n_hits), as.integer(Sys.time())))
+      as.integer(n_hits), source, as.integer(Sys.time())))
   invisible(TRUE)
 }
 
