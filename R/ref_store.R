@@ -2,6 +2,13 @@
 # element coordinates. Lives under the user-chosen reference folder so a second
 # project in the same clade neither re-fetches nor re-annotates.
 
+# Reference annotation is pinned to these constants, not a per-project
+# setting: the shipped reference database is metazoan, and a wrong kingdom
+# swaps which tool defines the anchors (a wrong barrnap kingdom reports
+# 16S/23S, which maps to no element, silently handing the anchors to ITSx).
+REF_ANNOT_KINGDOM <- "euk"
+REF_ANNOT_TAXON <- "M"
+
 #' Path to the store inside a reference folder
 #' @noRd
 ref_store_path <- function(ref_dir) {
@@ -19,10 +26,9 @@ ref_dir_ok <- function(ref_dir) {
   length(ref_dir) == 1 && !is.na(ref_dir) && nzchar(trimws(ref_dir))
 }
 
-#' Coordinates in ref_sequences are only comparable within one (kingdom, taxon)
-#' combination, since a different barrnap kingdom or ITSx taxon can produce
-#' different start/stop for the same accession. The primary key includes both
-#' so the store can hold more than one combination per accession.
+#' Reference annotation is pinned to REF_ANNOT_KINGDOM/REF_ANNOT_TAXON, so
+#' accession alone is enough to key a row. kingdom and taxon are kept as
+#' provenance columns: a row still records what produced it.
 #' @noRd
 REF_STORE_SEQ_DDL <- "CREATE TABLE IF NOT EXISTS ref_sequences (
   accession TEXT NOT NULL,
@@ -35,14 +41,13 @@ REF_STORE_SEQ_DDL <- "CREATE TABLE IF NOT EXISTS ref_sequences (
   tool TEXT,
   ribopilot_version TEXT,
   stored_utc TEXT,
-  PRIMARY KEY (accession, kingdom, taxon)
+  PRIMARY KEY (accession)
 );"
 
 #' `tool` here is the per-element caller (barrnap, ITSx, or derived), as
 #' returned by annotate_records(); distinct from ref_sequences.tool, the
-#' per-accession pipeline tag. Coordinates, like ref_sequences', are only
-#' comparable within one (kingdom, taxon) combination, so both are part of
-#' the primary key here too.
+#' per-accession pipeline tag. kingdom and taxon are provenance only, not
+#' part of the key (see REF_STORE_SEQ_DDL).
 #' @noRd
 REF_STORE_ANN_DDL <- "CREATE TABLE IF NOT EXISTS ref_annotations (
   accession TEXT NOT NULL,
@@ -54,7 +59,7 @@ REF_STORE_ANN_DDL <- "CREATE TABLE IF NOT EXISTS ref_annotations (
   tool TEXT,
   kingdom TEXT,
   taxon TEXT,
-  PRIMARY KEY (accession, element, kingdom, taxon)
+  PRIMARY KEY (accession, element)
 );"
 
 #' Open the reference store under a reference folder
@@ -83,25 +88,26 @@ open_ref_store <- function(ref_dir, write = FALSE) {
   con
 }
 
-#' Fetch stored records for a set of accessions under one kingdom/taxon
+#' Fetch stored records for a set of accessions
 #'
-#' Coordinates are only comparable within the kingdom/taxon they were derived
-#' under (see REF_STORE_SEQ_DDL), so a caller under different settings must not
-#' match a row written under different ones.
+#' Filters on REF_ANNOT_KINGDOM/REF_ANNOT_TAXON internally rather than taking
+#' them as arguments. This is deliberate and self-healing: if those constants
+#' are ever changed, rows written under the old values simply stop matching,
+#' so they are re-fetched and re-annotated instead of silently reused.
 #' @return list(seqs, ann); zero-row frames when nothing matches.
 #' @noRd
-ref_store_get <- function(store, accessions, kingdom, taxon) {
+ref_store_get <- function(store, accessions) {
   empty <- list(seqs = data.frame(), ann = data.frame())
   if (is.null(store) || length(accessions) == 0) return(empty)
   ph <- paste(rep("?", length(accessions)), collapse = ",")
   seqs <- DBI::dbGetQuery(store,
     sprintf("SELECT * FROM ref_sequences WHERE accession IN (%s) AND kingdom = ? AND taxon = ?", ph),
-    params = c(as.list(accessions), list(kingdom, taxon)))
+    params = c(as.list(accessions), list(REF_ANNOT_KINGDOM, REF_ANNOT_TAXON)))
   if (nrow(seqs) == 0) return(empty)
   ph2 <- paste(rep("?", nrow(seqs)), collapse = ",")
   ann <- DBI::dbGetQuery(store,
     sprintf("SELECT * FROM ref_annotations WHERE accession IN (%s) AND kingdom = ? AND taxon = ?", ph2),
-    params = c(as.list(seqs$accession), list(kingdom, taxon)))
+    params = c(as.list(seqs$accession), list(REF_ANNOT_KINGDOM, REF_ANNOT_TAXON)))
   list(seqs = seqs, ann = ann)
 }
 
@@ -113,7 +119,7 @@ ref_store_get <- function(store, accessions, kingdom, taxon) {
 #' so the caller still gets the count of what was actually written.
 #' @return (invisibly) the number of accessions written.
 #' @noRd
-ref_store_put <- function(store, seqs, ann, kingdom, taxon, tool) {
+ref_store_put <- function(store, seqs, ann, tool) {
   if (is.null(store) || is.null(seqs) || nrow(seqs) == 0) return(invisible(0L))
   ts <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
   version <- as.character(utils::packageVersion("RiboPilot"))
@@ -123,21 +129,19 @@ ref_store_put <- function(store, seqs, ann, kingdom, taxon, tool) {
     rows <- if (!is.null(ann) && nrow(ann) > 0) ann[ann$accession == acc, , drop = FALSE] else NULL
     ok <- tryCatch({
       DBI::dbWithTransaction(store, {
-        DBI::dbExecute(store, "DELETE FROM ref_sequences WHERE accession = ? AND kingdom = ? AND taxon = ?",
-          params = list(acc, kingdom, taxon))
+        DBI::dbExecute(store, "DELETE FROM ref_sequences WHERE accession = ?", params = list(acc))
         DBI::dbAppendTable(store, "ref_sequences", data.frame(
           accession = acc, species = seqs$species[i], title = seqs$title[i],
           sequence = seqs$sequence[i], length = seqs$length[i],
-          kingdom = kingdom, taxon = taxon, tool = tool, ribopilot_version = version,
+          kingdom = REF_ANNOT_KINGDOM, taxon = REF_ANNOT_TAXON, tool = tool, ribopilot_version = version,
           stored_utc = ts, stringsAsFactors = FALSE))
-        DBI::dbExecute(store, "DELETE FROM ref_annotations WHERE accession = ? AND kingdom = ? AND taxon = ?",
-          params = list(acc, kingdom, taxon))
+        DBI::dbExecute(store, "DELETE FROM ref_annotations WHERE accession = ?", params = list(acc))
         if (!is.null(rows) && nrow(rows) > 0) {
           DBI::dbAppendTable(store, "ref_annotations", data.frame(
             accession = acc, element = rows$element, type = rows$type,
             start = rows$start, stop = rows$stop, strand = rows$strand,
             tool = if ("tool" %in% names(rows)) rows$tool else NA_character_,
-            kingdom = kingdom, taxon = taxon,
+            kingdom = REF_ANNOT_KINGDOM, taxon = REF_ANNOT_TAXON,
             stringsAsFactors = FALSE))
         }
       })
@@ -157,11 +161,11 @@ ref_store_put <- function(store, seqs, ann, kingdom, taxon, tool) {
 #' same guard for a corrupt store to degrade cleanly.
 #' @return list(seqs, ann), or NULL when the store does not exist.
 #' @noRd
-prime_read_store <- function(ref_dir, want, kingdom, taxon) {
+prime_read_store <- function(ref_dir, want) {
   store <- open_ref_store(ref_dir, write = FALSE)
   if (is.null(store)) return(NULL)
   on.exit(DBI::dbDisconnect(store), add = TRUE)
-  ref_store_get(store, want, kingdom, taxon)
+  ref_store_get(store, want)
 }
 
 #' Copy one accession's stored record into the project DB
@@ -196,37 +200,11 @@ prime_copy_accession <- function(con, acc, seq_row, ann_rows, ts) {
   })
 }
 
-#' Resolve the kingdom/taxon a sample's coordinates were (or would be) derived
-#' under, the same join blast_ref.nf uses for its own annotate_records() call
-#'
-#' @param con Open project DB connection.
-#' @param id Sample ID, or NULL to resolve from any row (used when priming is
-#'   not scoped to one sample).
-#' @return list(kingdom, taxon); c("euk", "all") when the query errors or
-#'   returns nothing, matching the COALESCE defaults blast_ref.nf falls back to.
-#' @noRd
-prime_kingdom_taxon <- function(con, id = NULL) {
-  sql <- "SELECT COALESCE(ao.rrna_kingdom,'euk'), COALESCE(ao.itsx_taxon,'all')
-          FROM annotate an JOIN annotate_opts ao ON an.annotate_opts = ao.annotate_opts"
-  r <- tryCatch({
-    if (is.null(id)) {
-      DBI::dbGetQuery(con, paste(sql, "LIMIT 1"))
-    } else {
-      DBI::dbGetQuery(con, paste(sql, "WHERE an.ID = ? LIMIT 1"), params = list(id))
-    }
-  }, error = function(e) NULL)
-  if (is.null(r) || nrow(r) == 0) return(list(kingdom = "euk", taxon = "all"))
-  list(kingdom = r[[1]][1], taxon = r[[2]][1])
-}
-
 #' Copy stored references for a project's candidates into the project database
 #'
 #' The fetch step selects only candidate accessions absent from
 #' `blast_ref_sequences`, so anything copied here is not fetched again. An
-#' accession the project already holds is left alone. Priming is grouped by
-#' sample id because kingdom/taxon -- and so which store row is a valid match
-#' -- can differ per id; with no ids given, everything is primed as one group
-#' resolved from any row.
+#' accession the project already holds is left alone.
 #'
 #' @param con Open project DB connection.
 #' @param ref_dir Reference folder, as resolved by [ref_config()].
@@ -251,9 +229,8 @@ prime_from_ref_store <- function(con, ref_dir, ids = NULL) {
   for (id in groups) {
     want <- want_for(id)
     if (length(want) == 0) next
-    kt <- prime_kingdom_taxon(con, id)
 
-    got <- tryCatch(prime_read_store(ref_dir, want, kt$kingdom, kt$taxon), error = function(e) {
+    got <- tryCatch(prime_read_store(ref_dir, want), error = function(e) {
       warning("reference store at ", ref_store_path(ref_dir), " could not be read, skipping: ",
         conditionMessage(e), call. = FALSE)
       NULL
@@ -278,14 +255,13 @@ prime_from_ref_store <- function(con, ref_dir, ids = NULL) {
 #' @param ref_dir Reference folder.
 #' @param fasta_file The multi-record fasta that was fetched.
 #' @param ann annotate_records() output, or NULL.
-#' @param kingdom,taxon Provenance for the coordinates.
 #' @param tool Pipeline-level provenance label for this write, e.g.
 #'   `"ribopilot-annotate"`. Not the name of one external binary: anchors come
 #'   from whichever rRNA caller is configured (pybarrnap or barrnap) and
 #'   spacers from ITSx, so a single per-accession string cannot name both.
 #' @return (invisibly) the number of accessions written.
 #' @export
-push_to_ref_store <- function(ref_dir, fasta_file, ann, kingdom, taxon, tool) {
+push_to_ref_store <- function(ref_dir, fasta_file, ann, tool) {
   if (!ref_dir_ok(ref_dir)) return(invisible(0L))
   store <- tryCatch(open_ref_store(ref_dir, write = TRUE), error = function(e) NULL)
   if (is.null(store)) return(invisible(0L))
@@ -307,6 +283,6 @@ push_to_ref_store <- function(ref_dir, fasta_file, ann, kingdom, taxon, tool) {
       start = ann$start, stop = ann$stop, strand = ann$strand,
       tool = if ("tool" %in% names(ann)) ann$tool else NA_character_, stringsAsFactors = FALSE)
   }
-  tryCatch(ref_store_put(store, sdf, adf, kingdom, taxon, tool),
+  tryCatch(ref_store_put(store, sdf, adf, tool),
     error = function(e) invisible(0L))
 }

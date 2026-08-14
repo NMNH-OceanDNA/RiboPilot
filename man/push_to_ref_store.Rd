@@ -4,7 +4,7 @@
 \alias{push_to_ref_store}
 \title{Write fetched records and their annotations into the shared store}
 \usage{
-push_to_ref_store(ref_dir, fasta_file, ann, kingdom, taxon, tool)
+push_to_ref_store(ref_dir, fasta_file, ann, tool)
 }
 \arguments{
 \item{ref_dir}{Reference folder.}
@@ -12,8 +12,6 @@ push_to_ref_store(ref_dir, fasta_file, ann, kingdom, taxon, tool)
 \item{fasta_file}{The multi-record fasta that was fetched.}
 
 \item{ann}{annotate_records() output, or NULL.}
-
-\item{kingdom, taxon}{Provenance for the coordinates.}
 
 \item{tool}{Pipeline-level provenance label for this write, e.g.
 `"ribopilot-annotate"`. Not the name of one external binary: anchors come

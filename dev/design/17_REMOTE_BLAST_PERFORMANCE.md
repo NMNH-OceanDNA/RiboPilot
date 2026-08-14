@@ -337,6 +337,21 @@ intra-run dedup win is about 1.00x. This stage is justified by cross-project
 reuse and by fixing the check-then-act race on `blast_ref_sequences`, not by
 throughput.
 
+**Reference annotation is pinned to kingdom euk and taxon M, not a per-project
+setting.** The shipped reference database is metazoan, so there is no per-run
+choice to make: barrnap always runs with kingdom "euk" and ITSx always runs
+with taxon "M". Taxon M was measured byte-identical to taxon "all" across 82
+reference records sampled from the 891k-record Metazoa harvest, spanning
+Aedes, Artemia, Aricidea, Donax, Dugesia, Echiniscus, Calopteryx and other
+metazoan phyla: 96 rows both ways, 96 identical coordinate pairs, zero
+elements lost, zero gained, and about 1.4x faster (12 s versus 17 s). Kingdom
+is pinned rather than left to a per-project option because a wrong kingdom
+does not merely shift boundaries: on four fish references, barrnap under
+kingdom "bac" reports 16S_rRNA/23S_rRNA, which parse_barrnap maps to nothing,
+so the anchors silently fall through to ITSx's own SSU/LSU calls and the 28S
+extent moves by up to 224 bp. The store's primary key is accession alone;
+kingdom and taxon are still recorded on each row as provenance.
+
 ## Stage 4: the shipped local rDNA BLAST database
 
 The build is: harvest, byte-exact dereplication, taxid map, `makeblastdb`,

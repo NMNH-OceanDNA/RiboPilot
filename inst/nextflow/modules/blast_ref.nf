@@ -51,15 +51,7 @@ process blast_ref_fetch {
     fi
     grep -q -e '<ERROR>' -e '<eFetchResult>' -e 'F a i l e d' -e '^Error' refs.fa && { echo "efetch error body for ${id}" >&2; exit 1; }
 
-    # same annotate_opts kingdom/taxon as the sample path, for a like-for-like
-    # sample-vs-reference comparison; any one unit's opts stand in for the sample
-    read KINGDOM ITSXT <<< "\$(sqlite3 -cmd '.timeout 10000' -separator ' ' '${params.db}' "
-      SELECT COALESCE(ao.rrna_kingdom,'euk'), COALESCE(ao.itsx_taxon,'all')
-      FROM annotate an JOIN annotate_opts ao ON an.annotate_opts = ao.annotate_opts
-      WHERE an.ID = '${id}' LIMIT 1;")"
-    KINGDOM="\${KINGDOM:-euk}"; ITSXT="\${ITSXT:-all}"
-
-    RIBOPILOT_SRC='${params.ribopilot_src}' rp_ref_store.R '${params.db}' refs.fa "\$KINGDOM" ${task.cpus} "\$ITSXT" '${params.ref_dir}'
+    RIBOPILOT_SRC='${params.ribopilot_src}' rp_ref_store.R '${params.db}' refs.fa ${task.cpus} '${params.ref_dir}'
 
     GOT=\$(grep -c '^>' refs.fa || true)
     echo "reference fetch for ${id}: returned \${GOT} of \${WANTED} requested accession(s)"

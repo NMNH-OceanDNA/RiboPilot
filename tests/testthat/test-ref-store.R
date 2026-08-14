@@ -63,10 +63,9 @@ test_that("a store round-trips sequences and annotations", {
   d <- mk_store_dir()
   st <- RiboPilot:::open_ref_store(d, write = TRUE)
   on.exit(DBI::dbDisconnect(st))
-  n <- RiboPilot:::ref_store_put(st, seq_fixture(), ann_fixture(),
-    kingdom = "euk", taxon = "all", tool = "pybarrnap")
+  n <- RiboPilot:::ref_store_put(st, seq_fixture(), ann_fixture(), tool = "pybarrnap")
   expect_equal(as.integer(n), 2L)
-  got <- RiboPilot:::ref_store_get(st, c("A.1", "B.1"), "euk", "all")
+  got <- RiboPilot:::ref_store_get(st, c("A.1", "B.1"))
   expect_equal(sort(got$seqs$accession), c("A.1", "B.1"))
   expect_equal(nrow(got$ann), 3L)
   expect_equal(sort(got$ann$element[got$ann$accession == "A.1"]), c("18S", "ITS1"))
@@ -76,8 +75,8 @@ test_that("ref_store_get returns only what was asked for", {
   d <- mk_store_dir()
   st <- RiboPilot:::open_ref_store(d, write = TRUE)
   on.exit(DBI::dbDisconnect(st))
-  RiboPilot:::ref_store_put(st, seq_fixture(), ann_fixture(), "euk", "all", "pybarrnap")
-  got <- RiboPilot:::ref_store_get(st, "A.1", "euk", "all")
+  RiboPilot:::ref_store_put(st, seq_fixture(), ann_fixture(), "pybarrnap")
+  got <- RiboPilot:::ref_store_get(st, "A.1")
   expect_equal(got$seqs$accession, "A.1")
   expect_true(all(got$ann$accession == "A.1"))
 })
@@ -86,64 +85,39 @@ test_that("ref_store_get on an unknown accession returns empty frames, not an er
   d <- mk_store_dir()
   st <- RiboPilot:::open_ref_store(d, write = TRUE)
   on.exit(DBI::dbDisconnect(st))
-  got <- RiboPilot:::ref_store_get(st, "ZZ.9", "euk", "all")
+  got <- RiboPilot:::ref_store_get(st, "ZZ.9")
   expect_equal(nrow(got$seqs), 0L)
   expect_equal(nrow(got$ann), 0L)
 })
 
-test_that("ref_store_get scopes matches to the requested kingdom and taxon", {
+test_that("ref_store_get returns a row written under the current constants, and not one written under different values", {
+  # Pins the self-healing property: if REF_ANNOT_KINGDOM/REF_ANNOT_TAXON are
+  # ever changed, rows written under the old values must stop matching so
+  # they get re-fetched and re-annotated rather than silently reused.
   d <- mk_store_dir()
   st <- RiboPilot:::open_ref_store(d, write = TRUE)
   on.exit(DBI::dbDisconnect(st))
-  RiboPilot:::ref_store_put(st, seq_fixture(), ann_fixture(), kingdom = "euk", taxon = "all", tool = "pybarrnap")
 
-  wrong <- RiboPilot:::ref_store_get(st, "A.1", "bac", "all")
-  expect_equal(nrow(wrong$seqs), 0L)
+  cur <- seq_fixture()[1, , drop = FALSE]
+  cur$accession <- "CUR.1"
+  RiboPilot:::ref_store_put(st, cur, NULL, "pybarrnap")
 
-  right <- RiboPilot:::ref_store_get(st, "A.1", "euk", "all")
-  expect_equal(right$seqs$accession, "A.1")
-})
+  # a row as if written under different kingdom/taxon values, bypassing
+  # ref_store_put, which can now only ever write the current constants
+  DBI::dbExecute(st, "INSERT INTO ref_sequences
+    (accession, species, title, sequence, length, kingdom, taxon, tool, ribopilot_version, stored_utc)
+    VALUES ('OLD.1', 'Genus x', 'Genus x 18S', 'ACGT', 4, 'bac', 'all', 'pybarrnap', '0.0.0', '2020-01-01T00:00:00Z')")
 
-variant_seq <- function() data.frame(accession = "A.1", species = "Genus a",
-  title = "Genus a 18S", sequence = "ACGTACGTAC", length = 10L, stringsAsFactors = FALSE)
-variant_ann <- function(start, stop) data.frame(accession = "A.1", element = "18S",
-  type = "rRNA", start = start, stop = stop, strand = "+", stringsAsFactors = FALSE)
-
-test_that("stored annotation coordinates are scoped by kingdom/taxon, not shared across variants", {
-  d <- mk_store_dir()
-  st <- RiboPilot:::open_ref_store(d, write = TRUE)
-  on.exit(DBI::dbDisconnect(st))
-  RiboPilot:::ref_store_put(st, variant_seq(), variant_ann(1L, 4L), kingdom = "euk", taxon = "all", tool = "pybarrnap")
-  RiboPilot:::ref_store_put(st, variant_seq(), variant_ann(5L, 10L), kingdom = "bac", taxon = "all", tool = "pybarrnap")
-
-  got_euk <- RiboPilot:::ref_store_get(st, "A.1", "euk", "all")
-  expect_equal(got_euk$ann$start, 1L)
-  expect_equal(got_euk$ann$stop, 4L)
-
-  got_bac <- RiboPilot:::ref_store_get(st, "A.1", "bac", "all")
-  expect_equal(got_bac$ann$start, 5L)
-  expect_equal(got_bac$ann$stop, 10L)
-})
-
-test_that("re-putting one variant does not disturb another variant's annotation rows", {
-  d <- mk_store_dir()
-  st <- RiboPilot:::open_ref_store(d, write = TRUE)
-  on.exit(DBI::dbDisconnect(st))
-  RiboPilot:::ref_store_put(st, variant_seq(), variant_ann(1L, 4L), kingdom = "euk", taxon = "all", tool = "pybarrnap")
-  RiboPilot:::ref_store_put(st, variant_seq(), variant_ann(5L, 10L), kingdom = "bac", taxon = "all", tool = "pybarrnap")
-  RiboPilot:::ref_store_put(st, variant_seq(), variant_ann(1L, 4L), kingdom = "euk", taxon = "all", tool = "pybarrnap")
-
-  got_bac <- RiboPilot:::ref_store_get(st, "A.1", "bac", "all")
-  expect_equal(got_bac$ann$start, 5L)
-  expect_equal(got_bac$ann$stop, 10L)
+  got <- RiboPilot:::ref_store_get(st, c("CUR.1", "OLD.1"))
+  expect_equal(got$seqs$accession, "CUR.1")
 })
 
 test_that("re-putting an accession replaces rather than duplicating", {
   d <- mk_store_dir()
   st <- RiboPilot:::open_ref_store(d, write = TRUE)
   on.exit(DBI::dbDisconnect(st))
-  RiboPilot:::ref_store_put(st, seq_fixture(), ann_fixture(), "euk", "all", "pybarrnap")
-  RiboPilot:::ref_store_put(st, seq_fixture(), ann_fixture(), "euk", "all", "pybarrnap")
+  RiboPilot:::ref_store_put(st, seq_fixture(), ann_fixture(), "pybarrnap")
+  RiboPilot:::ref_store_put(st, seq_fixture(), ann_fixture(), "pybarrnap")
   expect_equal(DBI::dbGetQuery(st, "SELECT COUNT(*) n FROM ref_sequences")$n, 2L)
   expect_equal(DBI::dbGetQuery(st, "SELECT COUNT(*) n FROM ref_annotations")$n, 3L)
 })
@@ -152,10 +126,10 @@ test_that("the store records how its coordinates were produced", {
   d <- mk_store_dir()
   st <- RiboPilot:::open_ref_store(d, write = TRUE)
   on.exit(DBI::dbDisconnect(st))
-  RiboPilot:::ref_store_put(st, seq_fixture(), ann_fixture(), "euk", "M", "pybarrnap")
+  RiboPilot:::ref_store_put(st, seq_fixture(), ann_fixture(), "pybarrnap")
   r <- DBI::dbGetQuery(st, "SELECT kingdom, taxon, tool FROM ref_sequences WHERE accession='A.1'")
-  expect_equal(r$kingdom, "euk")
-  expect_equal(r$taxon, "M")
+  expect_equal(r$kingdom, RiboPilot:::REF_ANNOT_KINGDOM)
+  expect_equal(r$taxon, RiboPilot:::REF_ANNOT_TAXON)
   expect_equal(r$tool, "pybarrnap")
 })
 
@@ -171,7 +145,7 @@ test_that("an existing store opens read-only without a write lock", {
   # read-only directory refuses.
   d <- mk_store_dir()
   st <- RiboPilot:::open_ref_store(d, write = TRUE)
-  RiboPilot:::ref_store_put(st, seq_fixture(), ann_fixture(), "euk", "all", "pybarrnap")
+  RiboPilot:::ref_store_put(st, seq_fixture(), ann_fixture(), "pybarrnap")
   DBI::dbDisconnect(st)
   p <- RiboPilot:::ref_store_path(d)
   store_dir <- dirname(p)
@@ -185,7 +159,7 @@ test_that("an existing store opens read-only without a write lock", {
   }, add = TRUE, after = FALSE)
   ro <- RiboPilot:::open_ref_store(d, write = FALSE)
   on.exit(DBI::dbDisconnect(ro), add = TRUE)
-  expect_equal(nrow(RiboPilot:::ref_store_get(ro, "A.1", "euk", "all")$seqs), 1L)
+  expect_equal(nrow(RiboPilot:::ref_store_get(ro, "A.1")$seqs), 1L)
 })
 
 mk_project_db <- function() {
@@ -203,51 +177,10 @@ mk_project_db <- function() {
   con
 }
 
-#' A project db that also carries the annotate/annotate_opts join
-#' prime_kingdom_taxon() reads, matching blast_ref.nf's own query.
-mk_project_db_with_opts <- function(sample_id, kingdom, taxon) {
-  con <- mk_project_db()
-  DBI::dbExecute(con, "CREATE TABLE annotate(ID TEXT, annotate_opts TEXT)")
-  DBI::dbExecute(con, "CREATE TABLE annotate_opts(annotate_opts TEXT, rrna_kingdom TEXT, itsx_taxon TEXT)")
-  DBI::dbExecute(con, "INSERT INTO annotate VALUES(?, 'custom')", params = list(sample_id))
-  DBI::dbExecute(con, "INSERT INTO annotate_opts VALUES('custom', ?, ?)", params = list(kingdom, taxon))
-  con
-}
-
-test_that("prime_kingdom_taxon falls back to euk/all when annotate tables are absent", {
-  con <- mk_project_db()
-  on.exit(DBI::dbDisconnect(con))
-  expect_equal(RiboPilot:::prime_kingdom_taxon(con), list(kingdom = "euk", taxon = "all"))
-  expect_equal(RiboPilot:::prime_kingdom_taxon(con, "S1"), list(kingdom = "euk", taxon = "all"))
-})
-
-test_that("prime_kingdom_taxon resolves per id from annotate_opts", {
-  con <- mk_project_db_with_opts("S1", "bac", "fungi")
-  on.exit(DBI::dbDisconnect(con))
-  expect_equal(RiboPilot:::prime_kingdom_taxon(con, "S1"), list(kingdom = "bac", taxon = "fungi"))
-})
-
-test_that("prime_from_ref_store primes the store row matching the project's resolved kingdom/taxon", {
-  d <- mk_store_dir()
-  st <- RiboPilot:::open_ref_store(d, write = TRUE)
-  bac <- seq_fixture(); bac$sequence <- c("AAAA", "AAAA")
-  euk <- seq_fixture(); euk$sequence <- c("CCCC", "CCCC")
-  RiboPilot:::ref_store_put(st, bac, ann_fixture(), kingdom = "bac", taxon = "all", tool = "pybarrnap")
-  RiboPilot:::ref_store_put(st, euk, ann_fixture(), kingdom = "euk", taxon = "all", tool = "pybarrnap")
-  DBI::dbDisconnect(st)
-
-  con <- mk_project_db_with_opts("S1", "bac", "all")
-  on.exit(DBI::dbDisconnect(con))
-  n <- RiboPilot:::prime_from_ref_store(con, d)
-  expect_equal(as.integer(n), 1L)
-  got <- DBI::dbGetQuery(con, "SELECT sequence FROM blast_ref_sequences WHERE accession='A.1'")
-  expect_equal(got$sequence, "AAAA")
-})
-
 test_that("priming copies a stored accession into the project and skips unknown ones", {
   d <- mk_store_dir()
   st <- RiboPilot:::open_ref_store(d, write = TRUE)
-  RiboPilot:::ref_store_put(st, seq_fixture(), ann_fixture(), "euk", "all", "pybarrnap")
+  RiboPilot:::ref_store_put(st, seq_fixture(), ann_fixture(), "pybarrnap")
   DBI::dbDisconnect(st)
 
   con <- mk_project_db()
@@ -270,7 +203,7 @@ test_that("priming is a no-op when no store exists", {
 test_that("priming does not overwrite an accession the project already has", {
   d <- mk_store_dir()
   st <- RiboPilot:::open_ref_store(d, write = TRUE)
-  RiboPilot:::ref_store_put(st, seq_fixture(), ann_fixture(), "euk", "all", "pybarrnap")
+  RiboPilot:::ref_store_put(st, seq_fixture(), ann_fixture(), "pybarrnap")
   DBI::dbDisconnect(st)
 
   con <- mk_project_db()
@@ -302,12 +235,12 @@ test_that("pushing writes fetched records into the store", {
   ann <- data.frame(seqid = c("A.1", "B.1"), element = c("18S", "28S"),
     type = c("rRNA", "rRNA"), start = c(1L, 1L), stop = c(4L, 4L),
     strand = c("+", "-"), stringsAsFactors = FALSE)
-  n <- RiboPilot:::push_to_ref_store(d, fa, ann, "euk", "all", "pybarrnap")
+  n <- RiboPilot:::push_to_ref_store(d, fa, ann, "pybarrnap")
   expect_equal(as.integer(n), 2L)
 
   st <- RiboPilot:::open_ref_store(d, write = FALSE)
   on.exit(DBI::dbDisconnect(st))
-  got <- RiboPilot:::ref_store_get(st, c("A.1", "B.1"), "euk", "all")
+  got <- RiboPilot:::ref_store_get(st, c("A.1", "B.1"))
   expect_equal(sort(got$seqs$accession), c("A.1", "B.1"))
   expect_equal(got$seqs$species[got$seqs$accession == "A.1"], "Genus a")
   expect_equal(nrow(got$ann), 2L)
@@ -319,7 +252,7 @@ test_that("pushing to an unwritable reference folder is not an error", {
   on.exit(Sys.chmod(d, "0755"), add = TRUE)
   fa <- withr::local_tempfile(fileext = ".fa")
   writeLines(c(">A.1 x", "ACGT"), fa)
-  expect_equal(as.integer(RiboPilot:::push_to_ref_store(d, fa, NULL, "euk", "all", "pybarrnap")), 0L)
+  expect_equal(as.integer(RiboPilot:::push_to_ref_store(d, fa, NULL, "pybarrnap")), 0L)
 })
 
 test_that("push_to_ref_store fails closed on a blank or NA ref_dir", {
@@ -328,10 +261,10 @@ test_that("push_to_ref_store fails closed on a blank or NA ref_dir", {
   fa <- withr::local_tempfile(fileext = ".fa")
   writeLines(c(">A.1 x", "ACGT"), fa)
 
-  expect_equal(as.integer(RiboPilot:::push_to_ref_store("", fa, NULL, "euk", "all", "pybarrnap")), 0L)
+  expect_equal(as.integer(RiboPilot:::push_to_ref_store("", fa, NULL, "pybarrnap")), 0L)
   expect_false(dir.exists("/refstore"))
 
-  expect_equal(as.integer(RiboPilot:::push_to_ref_store(NA_character_, fa, NULL, "euk", "all", "pybarrnap")), 0L)
+  expect_equal(as.integer(RiboPilot:::push_to_ref_store(NA_character_, fa, NULL, "pybarrnap")), 0L)
   expect_false(dir.exists(file.path(wd, "NA")))
 })
 
@@ -346,7 +279,7 @@ test_that("prime_from_ref_store fails closed on a blank or NA ref_dir", {
   # plant a real store at the bogus relative path ref_store_path(NA) resolves
   # to, so only a fixed guard stands between this and a coincidental read
   decoy <- RiboPilot:::open_ref_store("NA", write = TRUE)
-  RiboPilot:::ref_store_put(decoy, seq_fixture(), ann_fixture(), "euk", "all", "pybarrnap")
+  RiboPilot:::ref_store_put(decoy, seq_fixture(), ann_fixture(), "pybarrnap")
   DBI::dbDisconnect(decoy)
 
   expect_equal(as.integer(RiboPilot:::prime_from_ref_store(con, NA_character_)), 0L)
@@ -357,7 +290,7 @@ test_that("a stored row carries honest pipeline provenance", {
   d <- mk_store_dir()
   st <- RiboPilot:::open_ref_store(d, write = TRUE)
   on.exit(DBI::dbDisconnect(st))
-  RiboPilot:::ref_store_put(st, seq_fixture(), ann_fixture(), "euk", "all", "ribopilot-annotate")
+  RiboPilot:::ref_store_put(st, seq_fixture(), ann_fixture(), "ribopilot-annotate")
   r <- DBI::dbGetQuery(st, "SELECT tool, ribopilot_version FROM ref_sequences WHERE accession='A.1'")
   expect_equal(r$tool, "ribopilot-annotate")
   expect_true(nzchar(r$ribopilot_version))
@@ -366,7 +299,7 @@ test_that("a stored row carries honest pipeline provenance", {
 test_that("a per-accession insert collision is skipped, not fatal to the batch", {
   d <- mk_store_dir()
   st <- RiboPilot:::open_ref_store(d, write = TRUE)
-  RiboPilot:::ref_store_put(st, seq_fixture(), ann_fixture(), "euk", "all", "pybarrnap")
+  RiboPilot:::ref_store_put(st, seq_fixture(), ann_fixture(), "pybarrnap")
   DBI::dbDisconnect(st)
 
   con <- mk_project_db()
@@ -399,7 +332,7 @@ test_that("ann$tool round-trips into ref_annotations", {
   writeLines(c(">A.1 Genus a 18S ribosomal RNA", "ACGT"), fa)
   ann <- data.frame(seqid = "A.1", element = "18S", type = "rRNA",
     start = 1L, stop = 4L, strand = "+", tool = "barrnap", stringsAsFactors = FALSE)
-  n <- RiboPilot:::push_to_ref_store(d, fa, ann, "euk", "all", "ribopilot-annotate")
+  n <- RiboPilot:::push_to_ref_store(d, fa, ann, "ribopilot-annotate")
   expect_equal(as.integer(n), 1L)
 
   st <- RiboPilot:::open_ref_store(d, write = FALSE)
@@ -418,12 +351,12 @@ test_that("pushing skips a record with an empty sequence, like write_blast_refs 
   fa <- withr::local_tempfile(fileext = ".fa")
   writeLines(c(">A.1 Genus a 18S ribosomal RNA", "ACGT",
                ">EMPTY.1 nothing here", ""), fa)
-  n <- RiboPilot:::push_to_ref_store(d, fa, NULL, "euk", "all", "pybarrnap")
+  n <- RiboPilot:::push_to_ref_store(d, fa, NULL, "pybarrnap")
   expect_equal(as.integer(n), 1L)
 
   st <- RiboPilot:::open_ref_store(d, write = FALSE)
   on.exit(DBI::dbDisconnect(st))
-  got <- RiboPilot:::ref_store_get(st, c("A.1", "EMPTY.1"), "euk", "all")
+  got <- RiboPilot:::ref_store_get(st, c("A.1", "EMPTY.1"))
   expect_equal(got$seqs$accession, "A.1")
 })
 
@@ -433,7 +366,7 @@ test_that("a mid-loop failure in ref_store_put returns the partial count, not ze
   on.exit(DBI::dbDisconnect(st))
   bad <- seq_fixture()
   bad$accession[2] <- NA_character_  # violates NOT NULL, forcing the second row to fail
-  n <- RiboPilot:::ref_store_put(st, bad, ann_fixture(), "euk", "all", "pybarrnap")
+  n <- RiboPilot:::ref_store_put(st, bad, ann_fixture(), "pybarrnap")
   expect_equal(as.integer(n), 1L)
   expect_equal(DBI::dbGetQuery(st, "SELECT COUNT(*) n FROM ref_sequences")$n, 1L)
 })
