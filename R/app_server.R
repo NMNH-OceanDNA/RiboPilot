@@ -1098,8 +1098,7 @@ app_server <- function(input, output, session) {
         # no reference to judge against, including when a local panel search
         # came back empty and a remote search might still resolve it
         screen_reason = reactable::colDef(name = "Screen why", width = 140, show = TRUE, html = TRUE,
-          header = rt_help_header("Screen why",
-            "Why the screen check reached that verdict, including when the panel found no usable hit."),
+          header = rt_help_header("Screen why", SCAFFOLD_COL_HELP$screen_reason),
           cell = rt_longtext()),
         # Information, not a flag: neither an isomer nor a paralog is a defect.
         variant_class = reactable::colDef(name = "Variant", width = 115, show = TRUE, html = TRUE,

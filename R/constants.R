@@ -134,6 +134,8 @@ SCAFFOLD_COL_HELP <- list(
   screen_verdict = paste("Contamination check: whether the best GenBank match looks like the",
     "sample's own organism (on target), something else (off target), or the",
     "evidence is too thin to say."),
+  screen_reason = paste("Why the screen check reached that verdict, including when the panel",
+    "found no usable hit."),
   variant_class = paste("Whether this scaffold looks like an alternative arrangement of another",
     "scaffold in the sample, or a second copy of the rDNA. Information only:",
     "neither one is a fault."),
