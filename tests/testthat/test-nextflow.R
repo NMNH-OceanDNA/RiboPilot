@@ -340,11 +340,11 @@ test_that("a folder collapses its own subfolders when both are named", {
 # explicitly set, or an unconfigured project silently picks up whatever this
 # machine's default reference folder resolves to.
 
-mk_ref_config_project <- function(dir, ref_dir_value) {
+mk_ref_config_project <- function(dir, ref_dir_value, blastdb = NA_character_) {
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
   DBI::dbExecute(con, RiboPilot:::REFERENCE_CONFIG_DDL)
-  DBI::dbExecute(con, "INSERT INTO reference_config (rowid_key, ref_dir, min_records, max_records)
-    VALUES (1, ?, 1000, 25000)", params = list(ref_dir_value))
+  DBI::dbExecute(con, "INSERT INTO reference_config (rowid_key, ref_dir, min_records, max_records, blastdb)
+    VALUES (1, ?, 1000, 25000, ?)", params = list(ref_dir_value, blastdb))
   DBI::dbDisconnect(con)
   dir
 }
@@ -530,4 +530,22 @@ test_that("the fetch module primes from the store before fetching", {
   expect_length(prime, 1L)
   expect_true(prime < accs[1],
     info = "priming must run before the un-fetched accession list is computed")
+})
+
+test_that("main.nf declares a blastdb param", {
+  p <- system.file("nextflow", "main.nf", package = "RiboPilot")
+  if (!nzchar(p)) p <- "inst/nextflow/main.nf"
+  expect_true(any(grepl("params.blastdb", readLines(p, warn = FALSE), fixed = TRUE)))
+})
+
+test_that("nf_blastdb is blank when the project configures no panel", {
+  d <- withr::local_tempdir()
+  proj <- mk_ref_config_project(d, NA_character_)
+  expect_equal(RiboPilot:::nf_blastdb(proj), "")
+})
+
+test_that("nf_blastdb returns the configured panel prefix", {
+  d <- withr::local_tempdir()
+  proj <- mk_ref_config_project(d, NA_character_, blastdb = "/opt/rp/ribopilot_rrna")
+  expect_equal(RiboPilot:::nf_blastdb(proj), "/opt/rp/ribopilot_rrna")
 })

@@ -114,6 +114,12 @@ reference_mount_dirs <- function(project, mounted = character(0)) {
     error = function(e) NA_character_)
   ref <- if (length(ref) > 0) ref[1] else NA_character_
   if (!is.na(ref) && nzchar(trimws(ref))) dirs <- c(dirs, path.expand(trimws(ref)))
+  # the local BLAST panel is a database PREFIX, not a directory; mount its
+  # containing folder, and only when a project has explicitly configured one
+  bdb <- tryCatch(DBI::dbGetQuery(con, "SELECT blastdb FROM reference_config WHERE rowid_key = 1")$blastdb,
+    error = function(e) NA_character_)
+  bdb <- if (length(bdb) > 0) bdb[1] else NA_character_
+  if (!is.na(bdb) && nzchar(trimws(bdb))) dirs <- c(dirs, dirname(path.expand(trimws(bdb))))
   dirs <- unique(dirs)
   dirs <- dirs[dir.exists(dirs)]
   dirs <- drop_covered(dirs, path.expand(mounted[nzchar(mounted %||% "")]))

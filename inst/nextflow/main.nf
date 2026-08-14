@@ -39,6 +39,7 @@ params.rawDir = ''
 params.ribopilot_src = ''
 params.taxdump_dir = ''
 params.ref_dir = ''
+params.blastdb = ''
 params.ncbi_api_key = ''
 
 // A seeds/labels path stored in the database can point into a reference folder

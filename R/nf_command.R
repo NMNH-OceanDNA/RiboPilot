@@ -36,6 +36,7 @@ nf_command <- function(path, resume = TRUE,
   src <- ribopilot_src %||% ribopilot_src_default()
   taxdump <- file.path(path, ".taxonomy")
   ref_dir <- nf_ref_dir(path)
+  blastdb <- nf_blastdb(path)
 
   c("run", main_nf, "-c", cfg, "-work-dir", work,
     if (isTRUE(resume)) "-resume",
@@ -46,6 +47,7 @@ nf_command <- function(path, resume = TRUE,
     "--ribopilot_src", src,
     "--taxdump_dir", taxdump,
     "--ref_dir", ref_dir,
+    "--blastdb", blastdb,
     if (nzchar(api_key)) c("--ncbi_api_key", api_key),
     # the config only mounts what project creation knew about; a database the
     # Reference tab wired later lives wherever the user put it, and the
@@ -69,6 +71,22 @@ nf_ref_dir <- function(path) {
     con <- open_project_db(file.path(path, ".sqlite"))
     on.exit(DBI::dbDisconnect(con), add = TRUE)
     v <- DBI::dbGetQuery(con, "SELECT ref_dir FROM reference_config WHERE rowid_key = 1")$ref_dir
+    v <- if (length(v) > 0) v[1] else NA_character_
+    if (is.na(v) || !nzchar(trimws(v))) "" else path.expand(trimws(v))
+  }, error = function(e) "")
+}
+
+#' The project's local BLAST panel prefix, used only when explicitly configured
+#'
+#' Reads reference_config.blastdb directly, the same way nf_ref_dir() reads
+#' ref_dir: a missing or unreadable project database, and an unset or blank
+#' blastdb, all resolve to "" here.
+#' @noRd
+nf_blastdb <- function(path) {
+  tryCatch({
+    con <- open_project_db(file.path(path, ".sqlite"))
+    on.exit(DBI::dbDisconnect(con), add = TRUE)
+    v <- DBI::dbGetQuery(con, "SELECT blastdb FROM reference_config WHERE rowid_key = 1")$blastdb
     v <- if (length(v) > 0) v[1] else NA_character_
     if (is.na(v) || !nzchar(trimws(v))) "" else path.expand(trimws(v))
   }, error = function(e) "")
