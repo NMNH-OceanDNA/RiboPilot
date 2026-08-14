@@ -773,6 +773,49 @@ that the unanswerable rate is reported honestly and that the surfaced message is
 actionable. That needs one Asteroidea, Scyphozoa, or Octocorallia run, and unlike
 the retired gate it does not need a remote baseline to compare against.
 
+### Stage 4a acceptance measurement (2026-08-14)
+
+Ran on copies of all four available validation projects against panel
+`2026.08.1` (597,988 sequences, 688 Mbp, no decoy databases downloaded, so
+panel-only): Asteroidea (`DRR251133`, *Acanthaster planci*), Scyphozoa
+(`ERR3597993`, *Aurelia aurita*), Octocorallia/Keratoisis (`SRR25308289`, 2
+units), and Actinopterygii (`SRR14163830`, pufferfish) as a fish control.
+**n = 5 units total across 4 projects.** This is a small-n measurement; the
+per-clade counts (1, 1, 2, 1) are far too few to estimate a rate, only to
+observe individual outcomes.
+
+| unit | clade | top pident | rank distance | anchor floor (18S) | signal | screen verdict |
+|---|---|---|---|---|---|---|
+| DRR251133.1.1 | Asteroidea | 91.491 | class | 93 | below_anchor_pid_18S | on_target |
+| ERR3597993.1.1 | Scyphozoa | 96.751 | genus | 93 | answered | on_target |
+| SRR25308289.1.1 | Octocorallia | 99.276 | family | 93 | answered | on_target |
+| SRR25308289.1.2 | Octocorallia | 95.533 | family | 93 | answered | on_target |
+| SRR14163830.1.1 | Actinopterygii (control) | 100.000 | species | 97 | answered | on_target |
+
+Of the 5 units, 1 was unanswerable (the Asteroidea unit), by the identity
+signal only: the top reference candidate (*Asterias amurensis*, `OR630824.1`)
+cleared the reference-candidate floors and the taxonomy screen agreed it was
+on-target, but its identity (91.491 percent) fell under the invertebrate 18S
+anchor floor of 93. No unit in this run returned zero hits or no candidate at
+all; every unit saturated `max_target_seqs` (50 distinct subjects each). The
+`screen_reason` text a user would see for the unanswerable unit: "hits agree
+on Asteroidea (class, 3 voting, mostly nuclear rDNA records); on the sample's
+lineage. support 0.30 w 0.30, resolution 0.43 w 0.30, separation 1.00 w 0.40
+-> confidence 0.62".
+
+Local query wall time: 0.705-1.437 s per unit (mean 1.14 s), no dc-megablast
+fallback triggered on any unit. Peak RSS: 242.8-255.9 MB per unit, consistent
+with the flat ~256 MB reported above regardless of query.
+
+Caveat: with n=5, this cannot support a general escalation-rate estimate for
+invertebrates. What it shows is that the panel can answer genus- and
+family-level invertebrate queries (Scyphozoa, Octocorallia) and can fail a
+class-level one on identity alone even while the taxonomy screen still calls
+it on-target (Asteroidea): the local path is not merely a fish-only win, but
+neither is a single below-floor case grounds to claim it generalizes to
+Asteroidea as a clade. More invertebrate projects are needed before an actual
+rate can be reported.
+
 ## Migration
 
 Every stage adds columns, and this project deliberately ships no migrations
