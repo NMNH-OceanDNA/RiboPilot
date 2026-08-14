@@ -270,8 +270,14 @@ run_barrnap <- function(fasta, kingdom = "euk") {
 ITSX_MAX_BP <- 100000
 
 #' Run ITSx on a fasta and parse region positions
+#'
+#' @param complement NULL keeps ITSx's own default (`--complement T`, searches
+#'   both strands and reports sense-frame coordinates regardless of input
+#'   orientation). FALSE adds `--complement F`, for callers that have already
+#'   oriented the input and want "no coordinates" rather than mirrored ones on
+#'   an unanchored antisense record.
 #' @noRd
-run_itsx <- function(fasta, cpu = 2, taxon = "all") {
+run_itsx <- function(fasta, cpu = 2, taxon = "all", complement = NULL) {
   bin <- unname(Sys.which("ITSx"))
   if (!nzchar(bin)) {
     return(data.frame())
@@ -279,9 +285,10 @@ run_itsx <- function(fasta, cpu = 2, taxon = "all") {
   pre <- tempfile("rp_itsx_")
   err <- tempfile("rp_itsx_err_")
   on.exit(unlink(err), add = TRUE)
+  comp_arg <- if (is.null(complement)) NULL else c("--complement", if (complement) "T" else "F")
   st <- suppressWarnings(system2(bin, c("-i", shQuote(fasta), "-o", shQuote(pre),
     "--save_regions", "none", "--graphical", "F", "--cpu", cpu,
-    "-t", taxon, "--preserve", "T"),
+    "-t", taxon, "--preserve", "T", comp_arg),
     stdout = FALSE, stderr = err))
   tail_msg <- function() {
     tryCatch(paste(utils::tail(readLines(err, warn = FALSE), 3L), collapse = " | "),
@@ -452,7 +459,7 @@ annotate_records <- function(fasta, kingdom = "euk", cpu = 2, taxon = "all") {
   bar <- data.frame()
   if (!is.null(caller)) {
     gff <- run_rrna_tool(caller$bin, caller$tool, fasta,
-      rrna_kingdom_for(kingdom, caller$tool))
+      rrna_kingdom_for(kingdom, caller$tool), cpu = cpu)
     bar <- parse_barrnap(gff)
   }
 
@@ -467,7 +474,9 @@ annotate_records <- function(fasta, kingdom = "euk", cpu = 2, taxon = "all") {
     f <- tempfile(fileext = ".fa")
     on.exit(unlink(f), add = TRUE)
     Biostrings::writeXStringSet(sub, f)
-    run_itsx(f, cpu = cpu, taxon = taxon)
+    # both groups are already oriented by construction; sense-frame-only
+    # coordinates from ITSx are correct here (see run_itsx() complement doc)
+    run_itsx(f, cpu = cpu, taxon = taxon, complement = FALSE)
   }
   bar_by <- function(ids) if (nrow(bar) == 0) data.frame() else bar[bar$seqid %in% ids, , drop = FALSE]
 
@@ -477,6 +486,8 @@ annotate_records <- function(fasta, kingdom = "euk", cpu = 2, taxon = "all") {
   its_minus <- run_on(intersect(minus, eligible), TRUE)     # ITSx's native revcomp frame
   bar_minus_rc <- flip_coords(bar_by(minus), lens)           # barrnap -> revcomp frame
   out_minus <- flip_coords(reconcile_records(bar_minus_rc, its_minus), lens) # -> input frame
+  # minus-set membership is barrnap's call; overrides reconcile's "+" default
+  if (nrow(out_minus) > 0) out_minus$strand <- "-"
 
   rbind(out_plus, out_minus)
 }

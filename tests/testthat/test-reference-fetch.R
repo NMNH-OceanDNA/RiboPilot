@@ -119,10 +119,12 @@ test_that("write_blast_refs stores every record in a multi-fasta", {
     paste(rep("ACGT", 50), collapse = ""),
     ">ACC2.1 Danio rerio 28S ribosomal RNA gene",
     paste(rep("TGCA", 60), collapse = "")), f)
+  # seqid order deliberately does NOT match the fasta record order (ACC1.1
+  # then ACC2.1): write_blast_refs must join ann by seqid, not positionally
   ann <- data.frame(
-    seqid = c("ACC1.1", "ACC2.1"), element = c("18S", "28S"),
-    type = c("rRNA", "rRNA"), start = c(1L, 1L), stop = c(200L, 240L),
-    length = c(200L, 240L), strand = c("+", "+"),
+    seqid = c("ACC2.1", "ACC1.1"), element = c("28S", "18S"),
+    type = c("rRNA", "rRNA"), start = c(1L, 1L), stop = c(240L, 200L),
+    length = c(240L, 200L), strand = c("+", "+"),
     model_cov = c(100, 100), tool = c("barrnap", "barrnap"),
     stringsAsFactors = FALSE)
   n <- RiboPilot:::write_blast_refs(con, f, ann)

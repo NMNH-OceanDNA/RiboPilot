@@ -9,6 +9,7 @@ process blast_ref_fetch {
     tag "${id}"
     errorStrategy { task.attempt <= 3 ? 'retry' : 'ignore' }
     maxRetries 3
+    cpus 4
 
     input:
     val id
@@ -21,9 +22,10 @@ process blast_ref_fetch {
     ACCS=\$(sqlite3 -cmd '.timeout 10000' '${params.db}' "SELECT DISTINCT c.accession FROM blast_ref_candidates c LEFT JOIN blast_ref_sequences s ON s.accession = c.accession WHERE c.ID = '${id}' AND s.accession IS NULL;")
     if [ -z "\$ACCS" ]; then echo "nothing to fetch for ${id}"; exit 0; fi
     if [ "${task.attempt}" -gt 1 ]; then sleep \$(( (${task.attempt} - 1) * 30 )); fi
-    # edirect throttles within one invocation, not across a loop of them, and
-    # this makes two calls per accession. NCBI allows 10 requests/s with a key
-    # and 3 without, so pace the loop to stay under the lower bound either way.
+    # edirect throttles within one invocation, not across a loop of them; the
+    # loop below makes one call per chunk of 200 accessions. NCBI allows 10
+    # requests/s with a key and 3 without, so pace the loop to stay under the
+    # lower bound either way.
     if [ -n "\$NCBI_API_KEY" ]; then PACE=0.2; else PACE=0.7; fi
 
     printf '%s\\n' \$ACCS > wanted.txt
@@ -46,7 +48,15 @@ process blast_ref_fetch {
     fi
     grep -q -e '<ERROR>' -e '<eFetchResult>' -e 'F a i l e d' -e '^Error' refs.fa && { echo "efetch error body for ${id}" >&2; exit 1; }
 
-    RIBOPILOT_SRC='${params.ribopilot_src}' rp_ref_store.R '${params.db}' refs.fa euk ${task.cpus ?: 2}
+    # same annotate_opts kingdom/taxon as the sample path, for a like-for-like
+    # sample-vs-reference comparison; any one unit's opts stand in for the sample
+    read KINGDOM ITSXT <<< "\$(sqlite3 -cmd '.timeout 10000' -separator ' ' '${params.db}' "
+      SELECT COALESCE(ao.rrna_kingdom,'euk'), COALESCE(ao.itsx_taxon,'all')
+      FROM annotate an JOIN annotate_opts ao ON an.annotate_opts = ao.annotate_opts
+      WHERE an.ID = '${id}' LIMIT 1;")"
+    KINGDOM="\${KINGDOM:-euk}"; ITSXT="\${ITSXT:-all}"
+
+    RIBOPILOT_SRC='${params.ribopilot_src}' rp_ref_store.R '${params.db}' refs.fa "\$KINGDOM" ${task.cpus} "\$ITSXT"
 
     GOT=\$(grep -c '^>' refs.fa || true)
     echo "reference fetch for ${id}: returned \${GOT} of \${WANTED} requested accession(s)"
