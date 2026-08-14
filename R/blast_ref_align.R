@@ -59,6 +59,15 @@ alignment_coverage <- function(sample_aln, sample_len) {
   min(covered / sample_len, 1)
 }
 
+#' Floors an element alignment must clear to be stored.
+#'
+#' pairwise_nt() is ends-free, so two unrelated hypervariable spacers can align
+#' over a handful of bases at high identity. Storing that reports a similarity
+#' that does not exist.
+#' @noRd
+REF_ALN_MIN_COV <- 0.5
+REF_ALN_MIN_BP <- 50
+
 #' Compute per-feature sample-vs-reference alignments for one sample
 #'
 #' Aligns each rRNA/ITS element that both the sample and its top reference
@@ -112,6 +121,10 @@ compute_ref_alignment <- function(con, id, path = 1L, scaffold = 1L) {
     s_aln <- as.character(pwalign::pattern(aln))
     pid <- pwalign::pid(aln)
     aln_cov <- alignment_coverage(s_aln, nchar(s_sub))
+    if (is.na(pid) || is.na(aln_cov) ||
+        aln_cov < REF_ALN_MIN_COV || nchar(gsub("-", "", s_aln)) < REF_ALN_MIN_BP) {
+      next
+    }
     DBI::dbAppendTable(con, "blast_ref_alignment", data.frame(ID = id, path = path, scaffold = scaffold,
       accession = acc, element = el, pid = round(pid, 1), aln_cov = round(aln_cov, 3), aln_len = nchar(s_aln),
       time_stamp = ts, stringsAsFactors = FALSE))

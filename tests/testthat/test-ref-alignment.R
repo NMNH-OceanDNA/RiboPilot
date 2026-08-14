@@ -35,3 +35,23 @@ test_that("compute_ref_alignment writes identity and coverage but no aligned str
   expect_equal(r$aln_len[1], 200L)
   expect_false("sample_aln" %in% names(r))
 })
+
+test_that("a degenerate element alignment is not stored", {
+  con <- mk_aln_db()
+  on.exit(DBI::dbDisconnect(con))
+  # replace the reference with a short unrelated spacer so the ends-free
+  # alignment covers almost none of the sample element
+  DBI::dbExecute(con, "UPDATE blast_ref_sequences SET sequence = ? WHERE accession = 'ACC1'",
+    params = list(paste(rep("TTTTTTTTTT", 3), collapse = "")))
+  DBI::dbExecute(con, "UPDATE blast_ref_annotations SET stop = 30 WHERE accession = 'ACC1'")
+  n <- RiboPilot:::compute_ref_alignment(con, "S1", 1, 1)
+  expect_equal(as.integer(n), 0L)
+  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM blast_ref_alignment")$n, 0L)
+})
+
+test_that("a good alignment is still stored", {
+  con <- mk_aln_db()
+  on.exit(DBI::dbDisconnect(con))
+  n <- RiboPilot:::compute_ref_alignment(con, "S1", 1, 1)
+  expect_equal(as.integer(n), 1L)
+})
