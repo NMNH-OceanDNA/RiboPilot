@@ -221,6 +221,47 @@ test_that("pushing to an unwritable reference folder is not an error", {
   expect_equal(as.integer(RiboPilot:::push_to_ref_store(d, fa, NULL, "euk", "all", "pybarrnap")), 0L)
 })
 
+test_that("push_to_ref_store fails closed on a blank or NA ref_dir", {
+  wd <- withr::local_tempdir()
+  withr::local_dir(wd)
+  fa <- withr::local_tempfile(fileext = ".fa")
+  writeLines(c(">A.1 x", "ACGT"), fa)
+
+  expect_equal(as.integer(RiboPilot:::push_to_ref_store("", fa, NULL, "euk", "all", "pybarrnap")), 0L)
+  expect_false(dir.exists("/refstore"))
+
+  expect_equal(as.integer(RiboPilot:::push_to_ref_store(NA_character_, fa, NULL, "euk", "all", "pybarrnap")), 0L)
+  expect_false(dir.exists(file.path(wd, "NA")))
+})
+
+test_that("prime_from_ref_store fails closed on a blank or NA ref_dir", {
+  wd <- withr::local_tempdir()
+  withr::local_dir(wd)
+
+  con <- mk_project_db()
+  on.exit(DBI::dbDisconnect(con))
+  expect_equal(as.integer(RiboPilot:::prime_from_ref_store(con, "")), 0L)
+
+  # plant a real store at the bogus relative path ref_store_path(NA) resolves
+  # to, so only a fixed guard stands between this and a coincidental read
+  decoy <- RiboPilot:::open_ref_store("NA", write = TRUE)
+  RiboPilot:::ref_store_put(decoy, seq_fixture(), ann_fixture(), "euk", "all", "pybarrnap")
+  DBI::dbDisconnect(decoy)
+
+  expect_equal(as.integer(RiboPilot:::prime_from_ref_store(con, NA_character_)), 0L)
+  expect_equal(nrow(DBI::dbGetQuery(con, "SELECT accession FROM blast_ref_sequences")), 0L)
+})
+
+test_that("a stored row carries honest pipeline provenance", {
+  d <- mk_store_dir()
+  st <- RiboPilot:::open_ref_store(d, write = TRUE)
+  on.exit(DBI::dbDisconnect(st))
+  RiboPilot:::ref_store_put(st, seq_fixture(), ann_fixture(), "euk", "all", "ribopilot-annotate")
+  r <- DBI::dbGetQuery(st, "SELECT tool, ribopilot_version FROM ref_sequences WHERE accession='A.1'")
+  expect_equal(r$tool, "ribopilot-annotate")
+  expect_true(nzchar(r$ribopilot_version))
+})
+
 test_that("a per-accession insert collision is skipped, not fatal to the batch", {
   d <- mk_store_dir()
   st <- RiboPilot:::open_ref_store(d, write = TRUE)

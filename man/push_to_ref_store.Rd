@@ -13,7 +13,12 @@ push_to_ref_store(ref_dir, fasta_file, ann, kingdom, taxon, tool)
 
 \item{ann}{annotate_records() output, or NULL.}
 
-\item{kingdom, taxon, tool}{Provenance for the coordinates.}
+\item{kingdom, taxon}{Provenance for the coordinates.}
+
+\item{tool}{Pipeline-level provenance label for this write, e.g.
+`"ribopilot-annotate"`. Not the name of one external binary: anchors come
+from whichever rRNA caller is configured (pybarrnap or barrnap) and
+spacers from ITSx, so a single per-accession string cannot name both.}
 }
 \value{
 (invisibly) the number of accessions written.

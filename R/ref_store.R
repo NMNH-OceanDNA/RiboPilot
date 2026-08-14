@@ -8,6 +8,17 @@ ref_store_path <- function(ref_dir) {
   file.path(path.expand(ref_dir), "refstore", "refstore.sqlite")
 }
 
+#' Whether ref_dir is usable as a real path
+#'
+#' NA or blank routes through file.path() into a bogus but literal path
+#' ("NA/refstore/..." relative, or "/refstore/..." absolute for "") that can
+#' silently create or read a store in the wrong place instead of failing
+#' closed.
+#' @noRd
+ref_dir_ok <- function(ref_dir) {
+  !is.null(ref_dir) && !is.na(ref_dir) && nzchar(trimws(ref_dir))
+}
+
 #' @noRd
 REF_STORE_SEQ_DDL <- "CREATE TABLE IF NOT EXISTS ref_sequences (
   accession TEXT NOT NULL,
@@ -18,6 +29,7 @@ REF_STORE_SEQ_DDL <- "CREATE TABLE IF NOT EXISTS ref_sequences (
   kingdom TEXT,
   taxon TEXT,
   tool TEXT,
+  ribopilot_version TEXT,
   stored_utc TEXT,
   PRIMARY KEY (accession)
 );"
@@ -82,6 +94,7 @@ ref_store_get <- function(store, accessions) {
 ref_store_put <- function(store, seqs, ann, kingdom, taxon, tool) {
   if (is.null(store) || is.null(seqs) || nrow(seqs) == 0) return(invisible(0L))
   ts <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
+  version <- as.character(utils::packageVersion("RiboPilot"))
   n <- 0L
   for (i in seq_len(nrow(seqs))) {
     acc <- seqs$accession[i]
@@ -91,8 +104,8 @@ ref_store_put <- function(store, seqs, ann, kingdom, taxon, tool) {
       DBI::dbAppendTable(store, "ref_sequences", data.frame(
         accession = acc, species = seqs$species[i], title = seqs$title[i],
         sequence = seqs$sequence[i], length = seqs$length[i],
-        kingdom = kingdom, taxon = taxon, tool = tool, stored_utc = ts,
-        stringsAsFactors = FALSE))
+        kingdom = kingdom, taxon = taxon, tool = tool, ribopilot_version = version,
+        stored_utc = ts, stringsAsFactors = FALSE))
       DBI::dbExecute(store, "DELETE FROM ref_annotations WHERE accession = ?", params = list(acc))
       if (!is.null(rows) && nrow(rows) > 0) {
         DBI::dbAppendTable(store, "ref_annotations", data.frame(
@@ -165,6 +178,7 @@ prime_copy_accession <- function(con, acc, seq_row, ann_rows, ts) {
 #' @return (invisibly) the number of accessions copied.
 #' @export
 prime_from_ref_store <- function(con, ref_dir, ids = NULL) {
+  if (!ref_dir_ok(ref_dir)) return(invisible(0L))
   sql <- "SELECT DISTINCT c.accession FROM blast_ref_candidates c
           LEFT JOIN blast_ref_sequences s ON s.accession = c.accession
           WHERE s.accession IS NULL"
@@ -201,10 +215,15 @@ prime_from_ref_store <- function(con, ref_dir, ids = NULL) {
 #' @param ref_dir Reference folder.
 #' @param fasta_file The multi-record fasta that was fetched.
 #' @param ann annotate_records() output, or NULL.
-#' @param kingdom,taxon,tool Provenance for the coordinates.
+#' @param kingdom,taxon Provenance for the coordinates.
+#' @param tool Pipeline-level provenance label for this write, e.g.
+#'   `"ribopilot-annotate"`. Not the name of one external binary: anchors come
+#'   from whichever rRNA caller is configured (pybarrnap or barrnap) and
+#'   spacers from ITSx, so a single per-accession string cannot name both.
 #' @return (invisibly) the number of accessions written.
 #' @export
 push_to_ref_store <- function(ref_dir, fasta_file, ann, kingdom, taxon, tool) {
+  if (!ref_dir_ok(ref_dir)) return(invisible(0L))
   store <- tryCatch(open_ref_store(ref_dir, write = TRUE), error = function(e) NULL)
   if (is.null(store)) return(invisible(0L))
   on.exit(DBI::dbDisconnect(store), add = TRUE)

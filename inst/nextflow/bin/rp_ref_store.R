@@ -18,7 +18,7 @@ local({
   stop_if_nothing_stored(a[2], n)
   cat("references stored:", n, "\n")
   if (nzchar(ref_dir)) {
-    pushed <- push_to_ref_store(ref_dir, a[2], ann, kingdom, taxon, "pybarrnap")
+    pushed <- push_to_ref_store(ref_dir, a[2], ann, kingdom, taxon, "ribopilot-annotate")
     cat("references pushed to store:", pushed, "\n")
   }
 })
