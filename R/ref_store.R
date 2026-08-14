@@ -106,6 +106,53 @@ ref_store_put <- function(store, seqs, ann, kingdom, taxon, tool) {
   invisible(n)
 }
 
+#' Open the store and fetch records for the wanted accessions, as one guarded step
+#'
+#' `open_sqlite_ro()` only sets `busy_timeout`; it never reads a page, so a
+#' file that exists but is not a valid SQLite database "opens" fine and only
+#' fails once a query runs. Both the open and the read have to be inside the
+#' same guard for a corrupt store to degrade cleanly.
+#' @return list(seqs, ann), or NULL when the store does not exist.
+#' @noRd
+prime_read_store <- function(ref_dir, want) {
+  store <- open_ref_store(ref_dir, write = FALSE)
+  if (is.null(store)) return(NULL)
+  on.exit(DBI::dbDisconnect(store), add = TRUE)
+  ref_store_get(store, want)
+}
+
+#' Copy one accession's stored record into the project DB
+#'
+#' The pipeline runs one priming call per sample id and Nextflow parallelises
+#' across ids against the same project database, so two processes racing to
+#' insert the same accession is expected. `dbWithTransaction()` already rolls
+#' back cleanly on a constraint violation; this only needs to keep that
+#' failure from aborting the accessions still queued behind it.
+#' @return TRUE if copied, FALSE if skipped because another process already
+#'   holds this accession.
+#' @noRd
+prime_copy_accession <- function(con, acc, seq_row, ann_rows, ts) {
+  tryCatch({
+    DBI::dbWithTransaction(con, {
+      DBI::dbAppendTable(con, "blast_ref_sequences", data.frame(
+        accession = acc, species = seq_row$species, title = seq_row$title,
+        taxid = NA_character_, lineage = NA_character_, sequence = seq_row$sequence,
+        length = seq_row$length, time_stamp = ts, stringsAsFactors = FALSE))
+      if (!is.null(ann_rows) && nrow(ann_rows) > 0) {
+        DBI::dbAppendTable(con, "blast_ref_annotations", data.frame(
+          accession = acc, element = ann_rows$element, type = ann_rows$type,
+          start = ann_rows$start, stop = ann_rows$stop, strand = ann_rows$strand,
+          time_stamp = ts, stringsAsFactors = FALSE))
+      }
+    })
+    TRUE
+  }, error = function(e) {
+    if (!grepl("constraint failed", conditionMessage(e), ignore.case = TRUE)) stop(e)
+    warning("skipping accession primed by a concurrent run: ", acc, call. = FALSE)
+    FALSE
+  })
+}
+
 #' Copy stored references for a project's candidates into the project database
 #'
 #' The fetch step selects only candidate accessions absent from
@@ -118,10 +165,6 @@ ref_store_put <- function(store, seqs, ann, kingdom, taxon, tool) {
 #' @return (invisibly) the number of accessions copied.
 #' @export
 prime_from_ref_store <- function(con, ref_dir, ids = NULL) {
-  store <- tryCatch(open_ref_store(ref_dir, write = FALSE), error = function(e) NULL)
-  if (is.null(store)) return(invisible(0L))
-  on.exit(DBI::dbDisconnect(store), add = TRUE)
-
   sql <- "SELECT DISTINCT c.accession FROM blast_ref_candidates c
           LEFT JOIN blast_ref_sequences s ON s.accession = c.accession
           WHERE s.accession IS NULL"
@@ -133,27 +176,19 @@ prime_from_ref_store <- function(con, ref_dir, ids = NULL) {
   }
   if (length(want) == 0) return(invisible(0L))
 
-  got <- ref_store_get(store, want)
-  if (nrow(got$seqs) == 0) return(invisible(0L))
+  got <- tryCatch(prime_read_store(ref_dir, want), error = function(e) {
+    warning("reference store at ", ref_store_path(ref_dir), " could not be read, skipping: ",
+      conditionMessage(e), call. = FALSE)
+    NULL
+  })
+  if (is.null(got) || nrow(got$seqs) == 0) return(invisible(0L))
 
   ts <- as.integer(Sys.time())
   n <- 0L
   for (i in seq_len(nrow(got$seqs))) {
     acc <- got$seqs$accession[i]
     rows <- if (nrow(got$ann) > 0) got$ann[got$ann$accession == acc, , drop = FALSE] else NULL
-    DBI::dbWithTransaction(con, {
-      DBI::dbAppendTable(con, "blast_ref_sequences", data.frame(
-        accession = acc, species = got$seqs$species[i], title = got$seqs$title[i],
-        taxid = NA_character_, lineage = NA_character_, sequence = got$seqs$sequence[i],
-        length = got$seqs$length[i], time_stamp = ts, stringsAsFactors = FALSE))
-      if (!is.null(rows) && nrow(rows) > 0) {
-        DBI::dbAppendTable(con, "blast_ref_annotations", data.frame(
-          accession = acc, element = rows$element, type = rows$type,
-          start = rows$start, stop = rows$stop, strand = rows$strand,
-          time_stamp = ts, stringsAsFactors = FALSE))
-      }
-    })
-    n <- n + 1L
+    if (prime_copy_accession(con, acc, got$seqs[i, , drop = FALSE], rows, ts)) n <- n + 1L
   }
   invisible(n)
 }

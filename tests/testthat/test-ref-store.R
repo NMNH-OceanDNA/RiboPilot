@@ -179,3 +179,46 @@ test_that("priming does not overwrite an accession the project already has", {
   expect_equal(DBI::dbGetQuery(con, "SELECT sequence FROM blast_ref_sequences WHERE accession='A.1'")$sequence,
     "KEEPME")
 })
+
+test_that("a corrupt store is a no-op rather than an error", {
+  d <- mk_store_dir()
+  p <- RiboPilot:::ref_store_path(d)
+  dir.create(dirname(p), recursive = TRUE, showWarnings = FALSE)
+  writeBin(charToRaw("this is not a sqlite file"), p)
+
+  con <- mk_project_db()
+  on.exit(DBI::dbDisconnect(con))
+  n <- NULL
+  expect_warning(n <- RiboPilot:::prime_from_ref_store(con, d), "reference store")
+  expect_equal(as.integer(n), 0L)
+})
+
+test_that("a per-accession insert collision is skipped, not fatal to the batch", {
+  d <- mk_store_dir()
+  st <- RiboPilot:::open_ref_store(d, write = TRUE)
+  RiboPilot:::ref_store_put(st, seq_fixture(), ann_fixture(), "euk", "all", "pybarrnap")
+  DBI::dbDisconnect(st)
+
+  con <- mk_project_db()
+  on.exit(DBI::dbDisconnect(con))
+  # Simulate the race: another process primes A.1 concurrently, between this
+  # process's SELECT of candidates and this process's own INSERT for A.1.
+  DBI::dbExecute(con, "INSERT INTO blast_ref_sequences (accession, sequence) VALUES ('A.1','RACED')")
+  seq_row <- data.frame(accession = "A.1", species = "Genus a", title = "Genus a 18S",
+    sequence = "ACGT", length = 4L, stringsAsFactors = FALSE)
+  ann_rows <- ann_fixture()[ann_fixture()$accession == "A.1", , drop = FALSE]
+  ts <- as.integer(Sys.time())
+  ok1 <- NULL
+  expect_warning(ok1 <- RiboPilot:::prime_copy_accession(con, "A.1", seq_row, ann_rows, ts), "A.1")
+  expect_false(ok1)
+  expect_equal(DBI::dbGetQuery(con, "SELECT sequence FROM blast_ref_sequences WHERE accession='A.1'")$sequence,
+    "RACED")
+
+  # the collision must not wedge the connection for the next accession
+  seq_row2 <- data.frame(accession = "B.1", species = "Genus b", title = "Genus b 28S",
+    sequence = "TTTT", length = 4L, stringsAsFactors = FALSE)
+  ok2 <- RiboPilot:::prime_copy_accession(con, "B.1", seq_row2, NULL, ts)
+  expect_true(ok2)
+  expect_equal(DBI::dbGetQuery(con, "SELECT accession FROM blast_ref_sequences ORDER BY accession")$accession,
+    c("A.1", "B.1"))
+})
