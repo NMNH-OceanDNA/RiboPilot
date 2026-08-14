@@ -117,6 +117,36 @@ test_that("a desktop session still opens the OS file manager", {
   expect_equal(readLines(marker), "/tmp/ribopilot-desktop")
 })
 
+test_that("unit_evidence surfaces the screen reason", {
+  skip_if_not_installed("withr")
+  dir <- withr::local_tempdir()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT, sci_name TEXT, lineage_taxids TEXT)")
+  DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, length INT, ignore INT,
+    triage TEXT, triage_reason TEXT, triage_source TEXT,
+    blast_species TEXT, blast_accession TEXT, blast_pident REAL, blast_qcovs REAL, blast_source TEXT)")
+  DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT, start INT)")
+  DBI::dbExecute(con, "CREATE TABLE coverage(ID TEXT, path INT, scaffold INT, mean_depth REAL,
+    median_depth REAL, depths TEXT)")
+  DBI::dbExecute(con, "CREATE TABLE blast_screen(ID TEXT, path INT, scaffold INT, accession TEXT, title TEXT,
+    species TEXT, lineage TEXT, lineage_taxids TEXT, rank_distance INT, pident REAL, qcovs REAL,
+    bitscore REAL, is_nuclear_rrna INT)")
+  DBI::dbExecute(con, "CREATE TABLE path_scores(ID TEXT, path INT, score REAL)")
+  DBI::dbExecute(con, RiboPilot:::SCREEN_DDL)
+  DBI::dbExecute(con, "INSERT INTO samples VALUES('S1','Danio rerio',NULL)")
+  DBI::dbExecute(con, "INSERT INTO assemblies (ID,path,scaffold,length) VALUES('S1',1,1,500)")
+  DBI::dbExecute(con,
+    "INSERT INTO screen (ID,path,scaffold,screen_verdict,screen_reason,screen_version)
+     VALUES('S1',1,1,'no_reference',
+     'the local reference panel returned no usable hit for this scaffold; a remote BLAST search may identify it',1)")
+  DBI::dbDisconnect(con)
+  withr::local_dir(dir)
+
+  d <- RiboPilot:::unit_evidence("S1")
+  expect_true("screen_reason" %in% names(d))
+  expect_match(d$screen_reason[1], "remote BLAST search")
+})
+
 test_that("the Files pane helper declines outside RStudio rather than erroring", {
   # this test process is not an RStudio session, which is the same position a
   # tunnelled plain-R session on a login node is in

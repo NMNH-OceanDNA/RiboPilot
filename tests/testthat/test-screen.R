@@ -478,3 +478,25 @@ test_that("SCREEN_VERSION is 5 so earlier rows recompute", {
   # hits joined the vote
   expect_equal(RiboPilot:::SCREEN_VERSION, 5L)
 })
+
+test_that("an unanswered local search suggests a remote one", {
+  con <- mk_screen_db()
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, RiboPilot:::BLAST_SEARCHED_DDL)
+  RiboPilot:::mark_unit_searched(con, "S1", 1, 1, "abc", 0L, source = "local")
+  RiboPilot:::screen_one(con, "S1", 1, 1)
+  r <- DBI::dbGetQuery(con, "SELECT screen_verdict, screen_reason FROM screen")
+  expect_equal(r$screen_verdict[1], "no_reference")
+  expect_match(r$screen_reason[1], "local")
+  expect_match(r$screen_reason[1], "remote")
+})
+
+test_that("an unanswered remote search does not suggest another remote one", {
+  con <- mk_screen_db()
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, RiboPilot:::BLAST_SEARCHED_DDL)
+  RiboPilot:::mark_unit_searched(con, "S1", 1, 1, "abc", 0L, source = "remote")
+  RiboPilot:::screen_one(con, "S1", 1, 1)
+  expect_false(grepl("remote search",
+    DBI::dbGetQuery(con, "SELECT screen_reason FROM screen")$screen_reason[1]))
+})

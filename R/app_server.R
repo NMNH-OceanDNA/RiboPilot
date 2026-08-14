@@ -1050,7 +1050,7 @@ app_server <- function(input, output, session) {
     # reactable renders in data-frame column order, so the row identifier has to
     # lead here; colDef(sticky=) alone does not move it.
     lead <- c("unit", "triage", "length", "path_score", "depth", "depth_track", "elements",
-      "screen_verdict", "variant_class")
+      "screen_verdict", "screen_reason", "variant_class")
     d <- d[, c(intersect(lead, names(d)), setdiff(names(d), lead)), drop = FALSE]
     reactable::reactable(d, compact = TRUE, resizable = TRUE, filterable = TRUE,
       searchable = TRUE, sortable = TRUE, wrap = FALSE, defaultPageSize = 20,
@@ -1094,6 +1094,13 @@ app_server <- function(input, output, session) {
         screen_verdict = reactable::colDef(name = "Screen", width = 100, show = TRUE, html = TRUE,
           header = rt_help_header("Screen", SCAFFOLD_COL_HELP$screen_verdict),
           cell = rt_screen_badge()),
+        # advisory only, not a primary column: tells a curator why a scaffold has
+        # no reference to judge against, including when a local panel search
+        # came back empty and a remote search might still resolve it
+        screen_reason = reactable::colDef(name = "Screen why", width = 140, show = TRUE, html = TRUE,
+          header = rt_help_header("Screen why",
+            "Why the screen check reached that verdict, including when the panel found no usable hit."),
+          cell = rt_longtext()),
         # Information, not a flag: neither an isomer nor a paralog is a defect.
         variant_class = reactable::colDef(name = "Variant", width = 115, show = TRUE, html = TRUE,
           header = rt_help_header("Variant", SCAFFOLD_COL_HELP$variant_class),
