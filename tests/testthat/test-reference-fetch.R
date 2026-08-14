@@ -96,17 +96,14 @@ test_that("an empty or missing result is still handled", {
   expect_equal(nrow(DBI::dbGetQuery(con, "SELECT * FROM blast_ref_sequences")), 0L)
 })
 
-test_that("blast_ref_fetch validates the efetch bodies before storing them", {
+test_that("blast_ref_fetch validates the efetch response before storing it", {
   nf <- readLines(system.file("nextflow", "modules", "blast_ref.nf", package = "RiboPilot"))
   txt <- paste(nf, collapse = "\n")
   expect_true(grepl("<ERROR>", txt, fixed = TRUE))
   expect_true(grepl("<eFetchResult>", txt, fixed = TRUE))
-  expect_true(grepl(">Feature", txt, fixed = TRUE))
-  # each guard names the accession and skips it rather than failing silently
-  guards <- grep("efetch returned", nf, value = TRUE)
-  expect_true(length(guards) >= 3)
-  expect_true(all(grepl("\\$acc", guards)))
-  expect_true(length(grep("continue", nf)) >= 4)
+  expect_true(grepl("F a i l e d", txt, fixed = TRUE))
+  # a failed chunk is logged rather than aborting the whole batch
+  expect_true(any(grepl("efetch failed for chunk", nf, fixed = TRUE)))
   # the sqlite timeout stays on every sqlite3 call
   sq <- grep("sqlite3", nf, value = TRUE)
   expect_true(all(grepl(".timeout 10000", sq, fixed = TRUE)))
@@ -155,4 +152,20 @@ test_that("write_blast_refs replaces rather than duplicating on a re-run", {
   RiboPilot:::write_blast_refs(con, f, NULL)
   RiboPilot:::write_blast_refs(con, f, NULL)
   expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM blast_ref_sequences")$n, 1L)
+})
+
+test_that("the fetch module asks for fasta only, not feature tables", {
+  p <- system.file("nextflow", "modules", "blast_ref.nf", package = "RiboPilot")
+  if (!nzchar(p)) p <- "inst/nextflow/modules/blast_ref.nf"
+  txt <- readLines(p, warn = FALSE)
+  expect_false(any(grepl("-format ft", txt, fixed = TRUE)))
+  expect_true(any(grepl("-format fasta", txt, fixed = TRUE)))
+})
+
+test_that("the fetch module batches accessions rather than looping one at a time", {
+  p <- system.file("nextflow", "modules", "blast_ref.nf", package = "RiboPilot")
+  if (!nzchar(p)) p <- "inst/nextflow/modules/blast_ref.nf"
+  txt <- paste(readLines(p, warn = FALSE), collapse = "\n")
+  expect_true(grepl("rp_ref_store.R", txt, fixed = TRUE))
+  expect_false(grepl("rp_ref_fetch.R", txt, fixed = TRUE))
 })

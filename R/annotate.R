@@ -441,7 +441,7 @@ reconcile_records <- function(bar, its) {
 #' @param cpu Threads for ITSx.
 #' @param taxon ITSx `-t` profile set.
 #' @return data.frame(seqid, element, type, start, stop, length, strand, model_cov, tool).
-#' @noRd
+#' @export
 annotate_records <- function(fasta, kingdom = "euk", cpu = 2, taxon = "all") {
   seqs <- Biostrings::readDNAStringSet(fasta)
   if (length(seqs) == 0) return(data.frame())

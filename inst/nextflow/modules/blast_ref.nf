@@ -1,7 +1,8 @@
-// WF1 reference fetch + align. blast_ref_fetch pulls each candidate accession's
-// sequence + feature table from NCBI (edirect efetch, skipping already-fetched
-// accessions) into blast_ref_sequences / blast_ref_annotations. blast_ref_align
-// then computes per-feature sample-vs-reference nucleotide alignments (pure R).
+// WF1 reference fetch + align. blast_ref_fetch batch-fetches sequence only
+// (edirect efetch, skipping already-fetched accessions) and stores every
+// record with locally-derived annotation into blast_ref_sequences /
+// blast_ref_annotations. blast_ref_align then computes per-feature
+// sample-vs-reference nucleotide alignments (pure R).
 
 process blast_ref_fetch {
     cache false
@@ -17,51 +18,38 @@ process blast_ref_fetch {
 
     script:
     """
-    ACCS=\$(sqlite3 -cmd '.timeout 10000' '${params.db}' "SELECT DISTINCT accession FROM blast_ref_candidates WHERE ID = '${id}';")
-    if [ -z "\$ACCS" ]; then echo "no candidates for ${id}"; exit 0; fi
+    ACCS=\$(sqlite3 -cmd '.timeout 10000' '${params.db}' "SELECT DISTINCT c.accession FROM blast_ref_candidates c LEFT JOIN blast_ref_sequences s ON s.accession = c.accession WHERE c.ID = '${id}' AND s.accession IS NULL;")
+    if [ -z "\$ACCS" ]; then echo "nothing to fetch for ${id}"; exit 0; fi
     if [ "${task.attempt}" -gt 1 ]; then sleep \$(( (${task.attempt} - 1) * 30 )); fi
     # edirect throttles within one invocation, not across a loop of them, and
     # this makes two calls per accession. NCBI allows 10 requests/s with a key
     # and 3 without, so pace the loop to stay under the lower bound either way.
     if [ -n "\$NCBI_API_KEY" ]; then PACE=0.2; else PACE=0.7; fi
-    STORED=0
-    WANTED=0
-    for acc in \$ACCS; do
-        WANTED=\$(( WANTED + 1 ))
-        have=\$(sqlite3 -cmd '.timeout 10000' '${params.db}' "SELECT 1 FROM blast_ref_sequences WHERE accession = '\$acc';")
-        if [ -n "\$have" ]; then STORED=\$(( STORED + 1 )); continue; fi
 
-        bad=""
-        if ! efetch -db nuccore -id "\$acc" -format fasta > "\$acc.fa"; then
-            echo "efetch failed for \$acc (non-zero exit)"; bad=1
+    printf '%s\\n' \$ACCS > wanted.txt
+    WANTED=\$(grep -c . wanted.txt)
+
+    # one request per chunk instead of two per accession
+    : > refs.fa
+    split -l 200 -d -a 4 wanted.txt chunk_
+    for f in chunk_*; do
+        IDS=\$(paste -sd, "\$f")
+        if ! efetch -db nuccore -id "\$IDS" -format fasta >> refs.fa; then
+            echo "efetch failed for chunk \$f" >&2
         fi
-        if [ -z "\$bad" ] && ! efetch -db nuccore -id "\$acc" -format ft > "\$acc.ft"; then
-            echo "efetch ft failed for \$acc (non-zero exit)"; bad=1
-        fi
-        # sleep unconditionally, before any continue, so a failing accession
-        # still pays the pacing delay instead of spinning the loop at full speed
         sleep \$PACE
-        [ -z "\$bad" ] || continue
-
-        if [ ! -s "\$acc.fa" ]; then echo "efetch returned an empty body for \$acc"; continue; fi
-        # NCBI answers HTTP 200 with an XML error body, and also with a
-        # letter-spaced plain-text error that the XML patterns do not match.
-        if grep -q -e '<ERROR>' -e '<eFetchResult>' -e 'F a i l e d' -e '^Error' "\$acc.fa" "\$acc.ft" 2>/dev/null; then
-            echo "efetch returned an error body for \$acc"; continue
-        fi
-        if [ "\$(head -c 1 "\$acc.fa")" != ">" ]; then echo "efetch returned a non-fasta body for \$acc"; continue; fi
-        if [ -s "\$acc.ft" ] && ! head -n 1 "\$acc.ft" | grep -q '^>Feature'; then
-            echo "efetch returned a non-feature-table body for \$acc"; continue
-        fi
-        RIBOPILOT_SRC='${params.ribopilot_src}' rp_ref_fetch.R '${params.db}' "\$acc" "\$acc.fa" "\$acc.ft"
-        STORED=\$(( STORED + 1 ))
     done
 
-    echo "reference fetch for ${id}: stored \${STORED} of \${WANTED} candidate accession(s)"
-    if [ "\${WANTED}" -gt 0 ] && [ "\${STORED}" -eq 0 ]; then
-        echo "stored nothing for ${id} despite \${WANTED} candidates" >&2
+    if [ ! -s refs.fa ]; then
+        echo "no reference sequence returned for ${id}" >&2
         exit 1
     fi
+    grep -q -e '<ERROR>' -e '<eFetchResult>' -e 'F a i l e d' refs.fa && { echo "efetch error body for ${id}" >&2; exit 1; }
+
+    RIBOPILOT_SRC='${params.ribopilot_src}' rp_ref_store.R '${params.db}' refs.fa euk ${task.cpus ?: 2}
+
+    GOT=\$(grep -c '^>' refs.fa)
+    echo "reference fetch for ${id}: returned \${GOT} of \${WANTED} requested accession(s)"
     """
 }
 
