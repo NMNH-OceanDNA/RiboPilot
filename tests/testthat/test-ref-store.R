@@ -193,6 +193,34 @@ test_that("a corrupt store is a no-op rather than an error", {
   expect_equal(as.integer(n), 0L)
 })
 
+test_that("pushing writes fetched records into the store", {
+  d <- mk_store_dir()
+  fa <- withr::local_tempfile(fileext = ".fa")
+  writeLines(c(">A.1 Genus a 18S ribosomal RNA", "ACGT",
+               ">B.1 Genus b 28S ribosomal RNA", "TTTT"), fa)
+  ann <- data.frame(seqid = c("A.1", "B.1"), element = c("18S", "28S"),
+    type = c("rRNA", "rRNA"), start = c(1L, 1L), stop = c(4L, 4L),
+    strand = c("+", "-"), stringsAsFactors = FALSE)
+  n <- RiboPilot:::push_to_ref_store(d, fa, ann, "euk", "all", "pybarrnap")
+  expect_equal(as.integer(n), 2L)
+
+  st <- RiboPilot:::open_ref_store(d, write = FALSE)
+  on.exit(DBI::dbDisconnect(st))
+  got <- RiboPilot:::ref_store_get(st, c("A.1", "B.1"))
+  expect_equal(sort(got$seqs$accession), c("A.1", "B.1"))
+  expect_equal(got$seqs$species[got$seqs$accession == "A.1"], "Genus a")
+  expect_equal(nrow(got$ann), 2L)
+})
+
+test_that("pushing to an unwritable reference folder is not an error", {
+  d <- mk_store_dir()
+  Sys.chmod(d, "0555")
+  on.exit(Sys.chmod(d, "0755"), add = TRUE)
+  fa <- withr::local_tempfile(fileext = ".fa")
+  writeLines(c(">A.1 x", "ACGT"), fa)
+  expect_equal(as.integer(RiboPilot:::push_to_ref_store(d, fa, NULL, "euk", "all", "pybarrnap")), 0L)
+})
+
 test_that("a per-accession insert collision is skipped, not fatal to the batch", {
   d <- mk_store_dir()
   st <- RiboPilot:::open_ref_store(d, write = TRUE)

@@ -192,3 +192,37 @@ prime_from_ref_store <- function(con, ref_dir, ids = NULL) {
   }
   invisible(n)
 }
+
+#' Write fetched records and their annotations into the shared store
+#'
+#' Best effort. A reference folder that cannot be written leaves the run
+#' unaffected: the project keeps its own copy either way.
+#'
+#' @param ref_dir Reference folder.
+#' @param fasta_file The multi-record fasta that was fetched.
+#' @param ann annotate_records() output, or NULL.
+#' @param kingdom,taxon,tool Provenance for the coordinates.
+#' @return (invisibly) the number of accessions written.
+#' @export
+push_to_ref_store <- function(ref_dir, fasta_file, ann, kingdom, taxon, tool) {
+  store <- tryCatch(open_ref_store(ref_dir, write = TRUE), error = function(e) NULL)
+  if (is.null(store)) return(invisible(0L))
+  on.exit(DBI::dbDisconnect(store), add = TRUE)
+
+  seqs <- tryCatch(Biostrings::readDNAStringSet(fasta_file), error = function(e) NULL)
+  if (is.null(seqs) || length(seqs) == 0) return(invisible(0L))
+  full <- names(seqs)
+  acc <- sub("\\s.*$", "", full)
+  title <- trimws(sub("^\\S+\\s*", "", full))
+  sdf <- data.frame(accession = acc, species = extract_species(title), title = title,
+    sequence = as.character(seqs), length = as.integer(Biostrings::width(seqs)),
+    stringsAsFactors = FALSE)
+
+  adf <- NULL
+  if (!is.null(ann) && nrow(ann) > 0) {
+    adf <- data.frame(accession = ann$seqid, element = ann$element, type = ann$type,
+      start = ann$start, stop = ann$stop, strand = ann$strand, stringsAsFactors = FALSE)
+  }
+  tryCatch(ref_store_put(store, sdf, adf, kingdom, taxon, tool),
+    error = function(e) invisible(0L))
+}
