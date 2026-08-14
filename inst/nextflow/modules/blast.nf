@@ -17,6 +17,7 @@ process blast_genbank {
     tag "${id}"
     errorStrategy { task.attempt <= 3 ? 'retry' : 'ignore' }
     maxRetries 3
+    cpus 4
 
     input:
     val id
@@ -42,6 +43,21 @@ process blast_genbank {
     # BLAST each non-ignored scaffold (unit) separately -> per-unit candidates.
     # `for` (not a pipe) so a blastn failure can `exit 1` and trigger a retry.
     UNITS=\$(sqlite3 -cmd '.timeout 10000' -separator '.' '${params.db}' "SELECT path||'.'||scaffold FROM assemblies WHERE ID='${id}' AND COALESCE(ignore,0)=0;")
+
+    DBARG=""
+    SRC="remote"
+    if [ -n '${params.blastdb}' ]; then
+        if DBARG=\$(RIBOPILOT_SRC='${params.ribopilot_src}' rp_dbarg.R '${params.blastdb}'); then
+            SRC="local"
+        else
+            echo "configured local panel is unusable, falling back to remote for ${id}" >&2
+            DBARG=""
+        fi
+    fi
+    if [ "\$SRC" = "local" ] && [ -n "\${EQ}" ]; then
+        echo "entrez_query is remote-only, ignored for local search on ${id}" >&2
+    fi
+
     for U in \$UNITS; do
         P=\${U%.*}; S=\${U#*.}
         sqlite3 -cmd '.timeout 10000' '${params.db}' "SELECT '>'||ID||'.'||path||'.'||scaffold||char(10)||sequence FROM assemblies WHERE ID='${id}' AND path=\$P AND scaffold=\$S;" > query.fa
@@ -66,13 +82,25 @@ process blast_genbank {
         # qseqid is captured for a future batched query. Appended last so the
         # positional parser in parse_blast_hits_file() needs no change.
         OUTFMT="6 saccver stitle pident qcovs evalue staxids bitscore length qstart qend sstart send slen qseqid"
-        if blastn -remote -db core_nt -query query.fa \
-            -outfmt "\$OUTFMT" \
-            -max_target_seqs "\${MTS:-50}" -max_hsps 5 -task megablast \
-            \${EQ_OPT:+\$EQ_OPT "\$EQ"} \${XO} > hits.txt; then
-            [ -s hits.txt ] || echo "NO_SIGNIFICANT_HITS" > hits.txt
+        if [ "\$SRC" = "local" ]; then
+            if blastn -db "\$DBARG" -query query.fa \
+                -outfmt "\$OUTFMT" \
+                -max_target_seqs "\${MTS:-50}" -max_hsps 5 -task megablast \
+                -num_threads ${task.cpus} \
+                \${XO} > hits.txt; then
+                [ -s hits.txt ] || echo "NO_SIGNIFICANT_HITS" > hits.txt
+            else
+                exit 1
+            fi
         else
-            exit 1
+            if blastn -remote -db core_nt -query query.fa \
+                -outfmt "\$OUTFMT" \
+                -max_target_seqs "\${MTS:-50}" -max_hsps 5 -task megablast \
+                \${EQ_OPT:+\$EQ_OPT "\$EQ"} \${XO} > hits.txt; then
+                [ -s hits.txt ] || echo "NO_SIGNIFICANT_HITS" > hits.txt
+            else
+                exit 1
+            fi
         fi
 
         # megablast needs a 28 bp exact match, which a divergent fungal or
@@ -81,13 +109,26 @@ process blast_genbank {
         # discontiguous-megablast retry for those units only.
         BESTCOV=\$(awk -F'\\t' 'BEGIN{m=0} \$4+0>m{m=\$4+0} END{print m+0}' hits.txt 2>/dev/null || echo 0)
         if grep -q NO_SIGNIFICANT_HITS hits.txt || [ "\${BESTCOV%%.*}" -lt 25 ]; then
-            if blastn -remote -db core_nt -query query.fa \
-                -outfmt "\$OUTFMT" \
-                -max_target_seqs "\${MTS:-50}" -max_hsps 5 -task dc-megablast \
-                \${EQ_OPT:+\$EQ_OPT "\$EQ"} \${XO} > hits_dc.txt 2>/dev/null; then
-                if [ -s hits_dc.txt ]; then
-                    echo "dc-megablast fallback used for ${id} \$P.\$S" >&2
-                    mv hits_dc.txt hits.txt
+            if [ "\$SRC" = "local" ]; then
+                if blastn -db "\$DBARG" -query query.fa \
+                    -outfmt "\$OUTFMT" \
+                    -max_target_seqs "\${MTS:-50}" -max_hsps 5 -task dc-megablast \
+                    -num_threads ${task.cpus} \
+                    \${XO} > hits_dc.txt 2>/dev/null; then
+                    if [ -s hits_dc.txt ]; then
+                        echo "dc-megablast fallback used for ${id} \$P.\$S" >&2
+                        mv hits_dc.txt hits.txt
+                    fi
+                fi
+            else
+                if blastn -remote -db core_nt -query query.fa \
+                    -outfmt "\$OUTFMT" \
+                    -max_target_seqs "\${MTS:-50}" -max_hsps 5 -task dc-megablast \
+                    \${EQ_OPT:+\$EQ_OPT "\$EQ"} \${XO} > hits_dc.txt 2>/dev/null; then
+                    if [ -s hits_dc.txt ]; then
+                        echo "dc-megablast fallback used for ${id} \$P.\$S" >&2
+                        mv hits_dc.txt hits.txt
+                    fi
                 fi
             fi
         fi
@@ -95,7 +136,7 @@ process blast_genbank {
 
         NHITS=\$(grep -c . hits.txt 2>/dev/null || echo 0)
         grep -q NO_SIGNIFICANT_HITS hits.txt && NHITS=0
-        RIBOPILOT_SRC='${params.ribopilot_src}' rp_searched.R '${params.db}' '${id}' "\$P" "\$S" "\$QMD5" "\$NHITS"
+        RIBOPILOT_SRC='${params.ribopilot_src}' rp_searched.R '${params.db}' '${id}' "\$P" "\$S" "\$QMD5" "\$NHITS" "\$SRC"
     done
     """
 }

@@ -549,3 +549,21 @@ test_that("nf_blastdb returns the configured panel prefix", {
   proj <- mk_ref_config_project(d, NA_character_, blastdb = "/opt/rp/ribopilot_rrna")
   expect_equal(RiboPilot:::nf_blastdb(proj), "/opt/rp/ribopilot_rrna")
 })
+
+test_that("blast.nf searches locally when a panel is configured", {
+  p <- system.file("nextflow", "modules", "blast.nf", package = "RiboPilot")
+  if (!nzchar(p)) p <- "inst/nextflow/modules/blast.nf"
+  txt <- paste(readLines(p, warn = FALSE), collapse = "\n")
+  expect_true(grepl("params.blastdb", txt, fixed = TRUE))
+  expect_true(grepl("rp_dbarg.R", txt, fixed = TRUE))
+  expect_true(grepl("-remote", txt, fixed = TRUE),
+    info = "the remote path must remain for projects with no panel")
+})
+
+test_that("blast.nf records the search source", {
+  p <- system.file("nextflow", "modules", "blast.nf", package = "RiboPilot")
+  if (!nzchar(p)) p <- "inst/nextflow/modules/blast.nf"
+  txt <- paste(readLines(p, warn = FALSE), collapse = "\n")
+  expect_true(grepl("rp_searched.R", txt, fixed = TRUE))
+  expect_true(grepl("SRC", txt, fixed = TRUE))
+})
