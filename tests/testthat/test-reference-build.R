@@ -516,6 +516,17 @@ test_that("a queued job with no output yet keeps waiting, it is not failed", {
   expect_true(is.na(r$fail_reason[1]))
 })
 
+# ---- shipped builder script ------------------------------------------------
+# efilter -molecule genomic drops every RefSeq rRNA record (MolType rna, not
+# genomic), silently starving every clade DB built through this script.
+
+test_that("download_rrna.sh does not filter out RefSeq records", {
+  script <- RiboPilot:::app_sys("ref_dbs/getOrganelle/GenBankDownload/download_rrna.sh")
+  skip_if_not(nzchar(script) && file.exists(script))
+  s <- paste(readLines(script, warn = FALSE), collapse = "\n")
+  expect_false(grepl("efilter", s, fixed = TRUE))
+})
+
 test_that("a submitted build wires itself once the job writes its FASTAs", {
   con <- mk_ref_db(); on.exit(DBI::dbDisconnect(con))
   refs <- withr::local_tempdir()
