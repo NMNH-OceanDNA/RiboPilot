@@ -841,3 +841,37 @@ One knife-edge worth knowing about: `SRR33849683.1.1`'s 28S scores raw `pid`
 84.96, stored as `round(pid, 1)` = 85.0, against a fish floor of 85 tested with
 strict `<`. It does not flag, by 0.04 points, because of rounding. Expect a
 handful of units parked on a floor like this, ready to flip on any retune.
+
+---
+
+## Stage 4b outcome (2026-08-15)
+
+Shipped in 12 commits. Suite 2686 passed / 0 failed by default, 2720 / 0 skipped with `NOT_CRAN=true`.
+
+`install_ribopilot_db()` fetches a checksummed panel from a GitHub release, verifies it, and stages the
+extraction so a directory where `blast_db_exists()` is TRUE never holds an incomplete database. The panel
+path is set from the Reference settings modal, validated read-only so a shared read-only mount is usable,
+and the version a project searched is recorded at launch. `dev/refdb/` holds the maintainer scripts.
+
+Measured end to end on the real 2026.08.1 panel: packaged to 76 MB gzipped from 332 MB unpacked, installed
+through the downloader from a `file://` release, manifest read back 597,988 records, and a blastn search of
+the installed copy returned hits identical to the original build directory in 0.128 s.
+
+Two decisions worth carrying forward. Decoys live BESIDE the panel in its version directory, because
+`rp_dbarg.R` defaults the decoy directory to `dirname(panel_prefix)`; a panel upgrade therefore re-fetches
+them, which was accepted to avoid changing Stage 4a's wiring. And the shipped set is the BLAST volume set
+plus `manifest.json` only: `.fasta` (770 MB), `.taxid.map`, and `.dropped.tsv` are build artifacts. A probe
+confirmed `.ndb`/`.nin`/`.nsq`/`.nhr` alone serve both search and accession retrieval, but the full volume
+set ships anyway since it costs little compressed and avoids breaking `-taxids` or `blastdbcmd`.
+
+The defect that nearly shipped: R's `options(timeout)` is 60 seconds and caps the TOTAL transfer, so a
+76 MB download needs a sustained 1.27 MB/s. On a throttled HPC login node every install would have failed
+at around 60 MB and reported it as file corruption. Neither the plan nor the implementation considered it.
+
+### Still open after 4b
+- `.nin`-vs-`.nal`: the installer's completeness guard demands literal single-volume filenames while
+  `blast_db_exists()` accepts a `.nal` alias, so a future multi-volume panel would be refused. Not live;
+  2026.08.1 is single-volume.
+- The orphan sweep uses a 24-hour age as a stand-in for a liveness check, so an install running longer
+  than a day could be swept by a concurrent run.
+- `:ro` on the panel bind mount, and the Docker layer strategy, remain deferred as recorded in the plan.
