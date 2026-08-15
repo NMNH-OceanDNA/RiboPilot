@@ -17,17 +17,25 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # shellcheck source=dev/refdb/lib.sh
 source "$SCRIPT_DIR/lib.sh"
 
-# Before anything can print: the canonical invocation is
-# `./build_refdb.sh 2>&1 | tee build.log`, and the key must not reach that log.
-rp_scrub_output
+# Sourcing must define functions and constants and do nothing else. Tests
+# source this file to drive guards directly, and a side effect here would
+# rewire the caller's streams, install traps in it, or leave BUILD_DIR
+# pointing at the developer's real build tree.
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then RP_EXECUTED=1; else RP_EXECUTED=0; fi
 
 RP_LOCK_HELD=""
 rp_cleanup() {
   [ -z "$RP_LOCK_HELD" ] || rm -f "$RP_LOCK_HELD"
   rp_scrub_flush
 }
-trap rp_cleanup EXIT
-trap 'rp_die "unexpected error at ${BASH_SOURCE[0]}:${LINENO}"' ERR
+
+if [ "$RP_EXECUTED" -eq 1 ]; then
+  # Before anything can print: the canonical invocation is
+  # `./build_refdb.sh 2>&1 | tee build.log`, and the key must not reach it.
+  rp_scrub_output
+  trap rp_cleanup EXIT
+  trap 'rp_die "unexpected error at ${BASH_SOURCE[0]}:${LINENO}"' ERR
+fi
 
 # ---------------------------------------------------------------------------
 # Verbatim definitional constants (dev/design/18_REFDB_REBUILD.md section 3).
@@ -62,6 +70,10 @@ RP_A2T_DUMPS="nucl_gb nucl_wgs pdb"
 # ~150,000 -- still trips it.
 EXPECTED_COUNT=892123
 EXPECTED_COUNT_TOLERANCE=15000
+# Half the expected count. Far below any plausible real shrink of a database
+# that only grows, and far above the collapse cases (0, or a handful of rows
+# from an error response) this exists to catch.
+EXPECTED_COUNT_FLOOR="${RP_MIN_ACCESSIONS:-446000}"
 
 REQUIRED_TOOLS="esearch efetch epost esummary xtract update_blastdb.pl makeblastdb blastdbcmd seqkit jq curl sha256sum tar zcat comm"
 ALL_STAGES="accessions taxidmap fetch build decoys package"
@@ -95,7 +107,9 @@ EOF
 }
 
 VERSION_ARG=""
-BUILD_DIR="$SCRIPT_DIR/build"
+# No real-tree default when sourced: a sourced stage function must refuse
+# rather than write into the developer's build directory.
+if [ "$RP_EXECUTED" -eq 1 ]; then BUILD_DIR="$SCRIPT_DIR/build"; else BUILD_DIR=""; fi
 STAGE=""
 JOBS=1
 ACCEPT_DRIFT=0
@@ -103,7 +117,7 @@ FORCE=0
 CHECK_VERSION=0
 COMMAND=""
 
-while [ $# -gt 0 ]; do
+while [ "$RP_EXECUTED" -eq 1 ] && [ $# -gt 0 ]; do
   case "$1" in
     --version)
       VERSION_ARG="${2:?--version requires an argument}"
@@ -155,7 +169,7 @@ if [ -n "$STAGE" ]; then
   esac
 fi
 
-RP_STATE_FILE="$BUILD_DIR/state.txt"
+RP_STATE_FILE="${BUILD_DIR:+$BUILD_DIR/state.txt}"
 
 # ---------------------------------------------------------------------------
 # Version helpers (dev/design/18_REFDB_REBUILD.md section 5)
@@ -287,8 +301,13 @@ cmd_clean() {
   done
   rp_log "release tarballs verify; cleaning intermediates under $BUILD_DIR"
 
-  rm -rf "$BUILD_DIR/chunks"
+  rm -rf "$BUILD_DIR/chunks" "$BUILD_DIR/taxidmap.tmp"
   rm -f "$BUILD_DIR"/*.raw.fasta
+  # Harvest-stage leftovers. accessions.txt and accessions.sha256 stay: they
+  # are the fingerprint the fetch stage refuses to resume against.
+  rm -f "$BUILD_DIR/accessions.raw.txt" "$BUILD_DIR/accessions.esearch.xml" \
+    "$BUILD_DIR/taxidmap.tsv" "$BUILD_DIR/taxidmap.sources.tsv" \
+    "$BUILD_DIR/taxidmap.sha256" "$BUILD_DIR/dropped.taxidmap.tsv"
   rm -f "$panel_dir"/*.fasta "$panel_dir"/*.taxid.map "$panel_dir"/*dropped.tsv
 
   # Only the markers whose outputs this removed. Deleting the whole state file
@@ -302,6 +321,13 @@ cmd_clean() {
 # ---------------------------------------------------------------------------
 # Preflight (dev/design/18_REFDB_REBUILD.md section 4, guard list)
 # ---------------------------------------------------------------------------
+
+# rp_require_build_dir
+# A stage reached by sourcing has no BUILD_DIR, and must refuse rather than
+# fall back to a default that would write into the developer's real tree.
+rp_require_build_dir() {
+  [ -n "$BUILD_DIR" ] || rp_die "BUILD_DIR is not set; run this script rather than sourcing it, or pass --build-dir"
+}
 
 rp_require_free_space() {
   local dir="$1" min_gb="$2" avail_kb
@@ -395,10 +421,31 @@ rp_filter_wgs_masters() {
   rp_log "accessions: dropped $((total - kept)) WGS master accession(s) (expected, permanently unavailable)"
 }
 
+# rp_assert_shape LABEL FILE
+# EDirect reports total failure as a line of prose with exit status 0, so
+# "QUERY FAILURE" otherwise passes counting, uniqueness and WGS filtering and
+# lands in the accession list as though it were an accession.
+rp_assert_shape() {
+  local label="$1" file="$2" bad
+  bad="$(grep -vE '^[A-Za-z0-9._]+$' "$file" | head -1 || true)"
+  [ -z "$bad" ] || rp_die "$label: not an accession: $bad"
+}
+
 # rp_check_drift ACTUAL ACCEPT_DRIFT
 # Beyond EXPECTED_COUNT_TOLERANCE, refuse unless ACCEPT_DRIFT=1, which logs
 # the new count instead of aborting. Within tolerance, silent: the source
 # moves ~370 records/day and that is not news.
+# rp_check_collapse ACTUAL
+# A floor --accept-drift cannot waive. Drift is gradual (~370 records/day), so
+# --accept-drift becomes routine within weeks and would otherwise also wave
+# through a transiently rejected query returning Count=0: every later guard
+# then passes honestly on an empty set and an empty panel ships.
+rp_check_collapse() {
+  local actual="$1"
+  [ "$actual" -lt "$EXPECTED_COUNT_FLOOR" ] || return 0
+  rp_die "accessions: count $actual is below the collapse floor of $EXPECTED_COUNT_FLOOR; --accept-drift does not waive this. The query or the source is broken, not merely drifting."
+}
+
 rp_check_drift() {
   local actual="$1" accept_drift="$2" delta
   if [ "$actual" -ge "$EXPECTED_COUNT" ]; then
@@ -509,6 +556,7 @@ rp_assert_coverage() {
 # history-server result set.
 stage_accessions() {
   local xml raw filtered count
+  rp_require_build_dir
 
   mkdir -p "$BUILD_DIR"
   xml="$BUILD_DIR/accessions.esearch.xml"
@@ -525,18 +573,29 @@ stage_accessions() {
   [ -n "$count" ] && [[ "$count" =~ ^[0-9]+$ ]] \
     || rp_die "accessions: could not parse a numeric <Count> from esearch output"
 
+  rp_check_collapse "$count"
   rp_check_drift "$count" "$ACCEPT_DRIFT"
 
   rp_log "accessions: replaying the same WebEnv/QueryKey into efetch -format acc ($count expected)"
   efetch -input "$xml" -format acc > "$raw"
 
+  rp_assert_shape "accessions: harvested list" "$raw"
   rp_assert_count "accessions: harvested line count vs esearch <Count>" "$(rp_line_count "$raw")" "$count"
   rp_assert_unique "accessions: harvested accession list" "$raw"
 
-  rp_filter_wgs_masters "$raw" "$filtered"
+  rp_filter_wgs_masters "$raw" "$BUILD_DIR/accessions.wgsfiltered.txt"
+  # Sorted before hashing: efetch history-server order is not contractually
+  # stable, and the fetch stage refuses to resume on a fingerprint mismatch,
+  # so an unsorted hash would discard a valid multi-hour fetch.
+  sort "$BUILD_DIR/accessions.wgsfiltered.txt" > "$filtered"
+  rm -f "$BUILD_DIR/accessions.wgsfiltered.txt"
 
   (cd "$BUILD_DIR" && sha256sum "$(basename "$filtered")" > accessions.sha256)
-  printf '%s\n' "$count" > "$BUILD_DIR/accessions.count"
+  # Two distinctly named counts. They differ by the WGS masters, so a single
+  # ambiguous "count" lets a later stage chunk on records that are not in the
+  # list it is chunking.
+  printf '%s\n' "$count" > "$BUILD_DIR/accessions.esearch_count"
+  rp_line_count "$filtered" > "$BUILD_DIR/accessions.final_count"
   rp_marker_set accessions "$(cut -d' ' -f1 < "$BUILD_DIR/accessions.sha256")"
   rp_log "accessions: wrote $(rp_line_count "$filtered") accession(s) to $filtered"
 }
@@ -554,6 +613,7 @@ stage_accessions() {
 # stage_accessions never promoting a truncated accessions.txt.
 stage_taxidmap() {
   local harvest requested tmp combined dump url out residual candidate_map
+  rp_require_build_dir
   local candidate_sources mapped unresolved_n dropped_tmp ftp_n esummary_n
 
   mkdir -p "$BUILD_DIR"
@@ -610,10 +670,10 @@ stage_taxidmap() {
   mapped="$(rp_line_count "$candidate_map")"
   rp_assert_coverage "taxidmap: mapped rows vs requested accessions" "$mapped" "$requested"
 
-  # Only now, with both guards passed, commit. dropped.tsv is written fresh
-  # each run (never appended across retries): the stage is spec'd idempotent
-  # ("re-run from scratch, cheap"), and appending would let a retried run
-  # accumulate stale unresolved rows from a prior attempt.
+  # Only now, with both guards passed, commit. Each stage owns its own
+  # dropped-record file and rewrites it wholesale; the build stage merges them
+  # into the shipped dropped.tsv. A single shared file would make this stage's
+  # idempotent rewrite silently discard another stage's rows.
   unresolved_n="$(rp_line_count "$residual")"
   dropped_tmp="$tmp/dropped.tsv"
   if [ "$unresolved_n" -gt 0 ]; then
@@ -625,7 +685,7 @@ stage_taxidmap() {
   else
     : > "$dropped_tmp"
   fi
-  cp "$dropped_tmp" "$BUILD_DIR/dropped.tsv"
+  cp "$dropped_tmp" "$BUILD_DIR/dropped.taxidmap.tsv"
 
   cp "$candidate_map" "$BUILD_DIR/taxidmap.tsv"
   cp "$candidate_sources" "$BUILD_DIR/taxidmap.sources.tsv"

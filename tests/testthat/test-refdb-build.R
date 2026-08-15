@@ -174,6 +174,14 @@ make_build_tree <- function(ver, tarballs = c("good", "corrupt", "none")) {
   dir.create(panel, recursive = TRUE)
   writeLines("fa", file.path(build, "chunks", "fa_0001"))
   writeLines("raw", file.path(build, "metazoa_rrna.raw.fasta"))
+  # BUILD_DIR-root leftovers of the accessions and taxidmap stages
+  dir.create(file.path(build, "taxidmap.tmp"))
+  for (f in c("accessions.raw.txt", "accessions.esearch.xml", "taxidmap.tsv",
+              "taxidmap.sources.tsv", "taxidmap.sha256", "dropped.taxidmap.tsv",
+              "accessions.txt", "accessions.sha256")) {
+    writeLines("x", file.path(build, f))
+  }
+  writeLines("x", file.path(build, "taxidmap.tmp", "combined.tsv"))
   for (f in c("ribopilot_rrna.nin", "manifest.json", "ribopilot_rrna.fasta",
               "ribopilot_rrna.taxid.map", "dropped.tsv")) {
     writeLines("x", file.path(panel, f))
@@ -226,6 +234,15 @@ test_that("clean drops the unshipped artifacts and keeps the surviving stages' m
   expect_true(file.exists(file.path(panel, "manifest.json")))
   expect_true(file.exists(file.path(build, "blastdb", paste0("release-", ver),
     paste0("ribopilot_rrna-", ver, ".tar.gz"))))
+  # both harvest stages' BUILD_DIR-root leftovers go too
+  for (f in c("accessions.raw.txt", "accessions.esearch.xml", "taxidmap.tsv",
+              "taxidmap.sources.tsv", "taxidmap.sha256", "dropped.taxidmap.tsv")) {
+    expect_false(file.exists(file.path(build, f)), label = f)
+  }
+  expect_false(dir.exists(file.path(build, "taxidmap.tmp")))
+  # accessions.txt stays: it is the fingerprint fetch refuses to resume against
+  expect_true(file.exists(file.path(build, "accessions.txt")))
+  expect_true(file.exists(file.path(build, "accessions.sha256")))
   stages <- sub("\t.*", "", readLines(file.path(build, "state.txt"), warn = FALSE))
   expect_setequal(stages, c("accessions", "build", "decoys", "package"))
   expect_false(file.exists(file.path(build, "build.pid")))
@@ -440,7 +457,8 @@ write_accessions_stubs <- function(bindir) {
   bindir
 }
 
-run_accessions_stage <- function(count, efetch_lines, extra_args = character(0)) {
+run_accessions_stage <- function(count, efetch_lines, extra_args = character(0),
+                                 min_accessions = 1L) {
   build <- withr::local_tempdir(.local_envir = parent.frame())
   bindir <- file.path(build, "stubbin")
   write_accessions_stubs(bindir)
@@ -450,6 +468,12 @@ run_accessions_stage <- function(count, efetch_lines, extra_args = character(0))
     paste0("PATH=", bindir, ":", Sys.getenv("PATH")),
     "NCBI_API_KEY=test-key-not-real"
   )
+  # RP_MIN_ACCESSIONS is the test seam for the collapse floor: these fixtures
+  # are a handful of records, not ~892,000. min_accessions = NULL leaves it
+  # unset, so the stage runs against the real production floor.
+  if (!is.null(min_accessions)) {
+    env <- c(env, paste0("RP_MIN_ACCESSIONS=", min_accessions))
+  }
   out <- suppressWarnings(system2("bash",
     c(shQuote(refdb_sh), "--build-dir", shQuote(build), "--stage", "accessions", extra_args),
     stdout = TRUE, stderr = TRUE, env = env))
@@ -457,7 +481,7 @@ run_accessions_stage <- function(count, efetch_lines, extra_args = character(0))
   list(status = if (is.null(st)) 0L else as.integer(st), out = out, build = build, bindir = bindir)
 }
 
-test_that("accessions stage writes accessions.txt/.sha256/.count, drops WGS masters, calls esearch once", {
+test_that("accessions stage writes accessions.txt/.sha256 and two distinctly named counts, drops WGS masters, calls esearch once", {
   skip_if_not(file.exists(refdb_sh))
   skip_if(Sys.which("bash") == "")
   lines <- c("AAAA00000000", "BBBB00000000", "MZ000001", "AB123456",
@@ -477,10 +501,126 @@ test_that("accessions stage writes accessions.txt/.sha256/.count, drops WGS mast
   got <- readLines(sha_file)
   expect_true(any(startsWith(got, want_hash)))
 
-  expect_equal(readLines(file.path(r$build, "accessions.count")), as.character(length(lines)))
+  # The pre-filter esearch <Count> and the length of the list are DIFFERENT
+  # numbers by construction (the WGS masters are dropped between them), so
+  # each gets its own name. A single ambiguous "accessions.count" is what
+  # would let a chunking stage request records the list does not contain.
+  esearch_n <- as.integer(readLines(file.path(r$build, "accessions.esearch_count")))
+  final_n <- as.integer(readLines(file.path(r$build, "accessions.final_count")))
+  expect_equal(esearch_n, length(lines))
+  expect_equal(final_n, length(readLines(acc_file)))
+  expect_equal(esearch_n - final_n, 2L)
+  expect_false(file.exists(file.path(r$build, "accessions.count")))
 
   calls <- readLines(file.path(r$bindir, "esearch_calls.log"), warn = FALSE)
   expect_equal(paste(calls, collapse = ""), "x")
+})
+
+# THE REQUIRED TEST: --accept-drift becomes routine (about five weeks of the
+# source's measured drift exceeds the tolerance band), so it must not be able
+# to promote a collapsed result set. Every other guard passes honestly here --
+# 0 == 0 lines, 0 unique, 0 dropped -- which is exactly why the floor has to
+# be its own unconditional check.
+test_that("an empty harvest is refused even with --accept-drift, and promotes nothing", {
+  skip_if_not(file.exists(refdb_sh))
+  skip_if(Sys.which("bash") == "")
+  r <- run_accessions_stage(count = 0, efetch_lines = character(0),
+    extra_args = "--accept-drift", min_accessions = NULL)
+  expect_gt(r$status, 0L)
+  expect_false(file.exists(file.path(r$build, "accessions.txt")))
+  expect_false(file.exists(file.path(r$build, "accessions.sha256")))
+  expect_false(file.exists(file.path(r$build, "accessions.final_count")))
+  # no stage marker: state.txt is only ever created by rp_marker_set
+  expect_false(file.exists(file.path(r$build, "state.txt")))
+  expect_true(any(grepl("collapse floor", r$out, fixed = TRUE)))
+})
+
+test_that("the collapse floor also refuses a harvest that is merely tiny, not just empty", {
+  skip_if_not(file.exists(refdb_sh))
+  skip_if(Sys.which("bash") == "")
+  lines <- c("MZ000001", "AB123456", "KX999999")
+  r <- run_accessions_stage(count = length(lines), efetch_lines = lines,
+    extra_args = "--accept-drift", min_accessions = NULL)
+  expect_gt(r$status, 0L)
+  expect_false(file.exists(file.path(r$build, "accessions.txt")))
+  expect_true(any(grepl("collapse floor", r$out, fixed = TRUE)))
+})
+
+test_that("the accession fingerprint is over the sorted list, so the same set in a different order hashes the same", {
+  skip_if_not(file.exists(refdb_sh))
+  skip_if(Sys.which("bash") == "")
+  lines <- c("MZ000001", "AB123456", "KX999999", "OP111111")
+  hash_of <- function(build) {
+    sub("\\s.*", "", readLines(file.path(build, "accessions.sha256"))[1])
+  }
+  r1 <- run_accessions_stage(count = length(lines), efetch_lines = lines,
+    extra_args = "--accept-drift")
+  r2 <- run_accessions_stage(count = length(lines), efetch_lines = rev(lines),
+    extra_args = "--accept-drift")
+  expect_equal(r1$status, 0L)
+  expect_equal(r2$status, 0L)
+  # efetch history-server order is not contractually stable; the fetch stage
+  # refuses to resume on a hash mismatch, so an order-sensitive fingerprint
+  # would discard a valid 2 h 20 m fetch
+  expect_equal(hash_of(r1$build), hash_of(r2$build))
+  expect_equal(readLines(file.path(r1$build, "accessions.txt")),
+    sort(lines, method = "radix"))
+  expect_equal(readLines(file.path(r2$build, "accessions.txt")),
+    sort(lines, method = "radix"))
+})
+
+test_that("accessions stage refuses an efetch error line that every other guard lets through", {
+  skip_if_not(file.exists(refdb_sh))
+  skip_if(Sys.which("bash") == "")
+  # efetch exits 0 with QUERY FAILURE on total failure, and such a line is
+  # unique, non-WGS and counts as a line
+  lines <- c("MZ000001", "QUERY FAILURE", "AB123456")
+  r <- run_accessions_stage(count = length(lines), efetch_lines = lines,
+    extra_args = "--accept-drift")
+  expect_gt(r$status, 0L)
+  expect_false(file.exists(file.path(r$build, "accessions.txt")))
+  expect_true(any(grepl("QUERY FAILURE", r$out, fixed = TRUE)))
+})
+
+test_that("sourcing build_refdb.sh defines functions and constants and nothing else", {
+  skip_if_not(file.exists(refdb_sh))
+  skip_if(Sys.which("bash") == "")
+  work <- withr::local_tempdir()
+  driver <- file.path(work, "src.sh")
+  writeLines(c(
+    "set -uo pipefail",
+    'dir="$(cd "$(dirname "$0")" && pwd)"',
+    # a positional argument must not make the sourced script parse it and exit
+    'source "$1" some-positional-argument',
+    "set +Ee",
+    "trap - ERR",
+    'trap -p EXIT > "$dir/exit_traps.txt"',
+    'echo "BUILD_DIR=[$BUILD_DIR]"',
+    'echo "STATE=[$RP_STATE_FILE]"',
+    'echo "SCRUB=[${RP_SCRUB_PIDS:-}]"',
+    'echo "EXITTRAPS=$(wc -l < "$dir/exit_traps.txt" | tr -d " ")"',
+    'echo "SURVIVED"'
+  ), driver)
+  out <- suppressWarnings(system2("bash",
+    c(shQuote(driver), shQuote(normalizePath(refdb_sh))),
+    stdout = TRUE, stderr = TRUE))
+  expect_true(any(out == "SURVIVED"))
+  # no real-tree default: a sourced stage function cannot write into dev/refdb/build
+  expect_true(any(out == "BUILD_DIR=[]"))
+  expect_true(any(out == "STATE=[]"))
+  # no scrub coprocesses forked into the caller, no EXIT trap installed in it
+  expect_true(any(out == "SCRUB=[]"))
+  expect_true(any(out == "EXITTRAPS=0"))
+})
+
+test_that("a sourced stage function refuses to run rather than writing into a defaulted build tree", {
+  r <- run_sourced(c(
+    "stage_accessions",
+    'echo "UNREACHABLE"'
+  ))
+  expect_gt(r$status, 0L)
+  expect_false(any(r$out == "UNREACHABLE"))
+  expect_true(any(grepl("BUILD_DIR is not set", r$out, fixed = TRUE)))
 })
 
 test_that("accessions stage aborts on a truncated harvest and does not promote a partial accessions.txt", {
@@ -840,8 +980,11 @@ test_that("taxidmap stage maps accessions across all three ftp dumps plus the es
   calls <- readLines(file.path(r$bindir, "epost_calls.log"), warn = FALSE)
   expect_equal(paste(calls, collapse = ""), "x")
 
-  expect_true(file.exists(file.path(r$build, "dropped.tsv")))
-  expect_equal(length(readLines(file.path(r$build, "dropped.tsv"))), 0L)
+  # one dropped file per stage, never a shared dropped.tsv that a later stage
+  # would have to append to (see the contract comment in stage_taxidmap)
+  expect_true(file.exists(file.path(r$build, "dropped.taxidmap.tsv")))
+  expect_equal(length(readLines(file.path(r$build, "dropped.taxidmap.tsv"))), 0L)
+  expect_false(file.exists(file.path(r$build, "dropped.tsv")))
 })
 
 test_that("taxidmap stage drops distinct unresolved accessions individually into dropped.tsv, never a shared key", {
@@ -861,7 +1004,7 @@ test_that("taxidmap stage drops distinct unresolved accessions individually into
   )
   expect_equal(r$status, 0L, label = paste(r$out, collapse = "\n"))
 
-  dropped <- read.table(file.path(r$build, "dropped.tsv"), sep = "\t", header = FALSE,
+  dropped <- read.table(file.path(r$build, "dropped.taxidmap.tsv"), sep = "\t", header = FALSE,
     col.names = c("accession", "reason", "detail"), stringsAsFactors = FALSE, fill = TRUE)
   expect_equal(nrow(dropped), 2L)
   expect_setequal(dropped$accession, unresolved)
@@ -882,7 +1025,7 @@ test_that("taxidmap stage aborts below the 99.5% coverage floor and promotes nei
   )
   expect_gt(r$status, 0L)
   expect_false(file.exists(file.path(r$build, "taxidmap.tsv")))
-  expect_false(file.exists(file.path(r$build, "dropped.tsv")))
+  expect_false(file.exists(file.path(r$build, "dropped.taxidmap.tsv")))
   expect_true(any(grepl("3 of 5 accessions mapped, below the 99.5% floor", r$out, fixed = TRUE)))
 })
 
