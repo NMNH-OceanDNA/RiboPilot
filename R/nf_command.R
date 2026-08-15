@@ -37,6 +37,16 @@ nf_command <- function(path, resume = TRUE,
   taxdump <- file.path(path, ".taxonomy")
   ref_dir <- nf_ref_dir(path)
   blastdb <- nf_blastdb(path)
+  if (nzchar(blastdb)) {
+    # local() so the connection closes here rather than on nf_command's exit,
+    # and so `con` cannot shadow anything in the enclosing frame
+    local({
+      pcon <- tryCatch(open_project_db(file.path(path, ".sqlite")), error = function(e) NULL)
+      if (is.null(pcon)) return(invisible(NULL))
+      on.exit(DBI::dbDisconnect(pcon), add = TRUE)
+      tryCatch(record_blastdb_provenance(pcon, blastdb), error = function(e) NULL)
+    })
+  }
 
   c("run", main_nf, "-c", cfg, "-work-dir", work,
     if (isTRUE(resume)) "-resume",

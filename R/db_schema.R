@@ -149,6 +149,7 @@ REFERENCE_CONFIG_DDL <- "CREATE TABLE IF NOT EXISTS reference_config (
   min_records INTEGER,
   max_records INTEGER,
   blastdb     TEXT,
+  blastdb_version TEXT,
   PRIMARY KEY (rowid_key)
 );"
 

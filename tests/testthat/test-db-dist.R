@@ -220,3 +220,38 @@ test_that("install_ribopilot_db refuses a destination it cannot write", {
   expect_error(install_ribopilot_db("9.9.9", dest = dest, decoys = FALSE,
     base_url = "file:///nowhere"), "not writable")
 })
+
+mk_prov_db <- function() {
+  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+  DBI::dbExecute(con, RiboPilot:::REFERENCE_CONFIG_DDL)
+  DBI::dbExecute(con, "INSERT INTO reference_config (rowid_key) VALUES (1)")
+  con
+}
+
+test_that("record_blastdb_provenance stores the manifest version beside the panel", {
+  con <- mk_prov_db(); on.exit(DBI::dbDisconnect(con))
+  d <- tempfile(); dir.create(d); on.exit(unlink(d, recursive = TRUE), add = TRUE)
+  writeLines('{"db_name":"ribopilot_rrna","db_version":"2026.08.1"}',
+    file.path(d, "manifest.json"))
+  file.create(file.path(d, "ribopilot_rrna.nin"))
+  expect_equal(record_blastdb_provenance(con, file.path(d, "ribopilot_rrna")), "2026.08.1")
+  expect_equal(blastdb_provenance(con), "ribopilot_rrna 2026.08.1")
+})
+
+test_that("an unset or unmanifested panel records nothing and reports empty", {
+  con <- mk_prov_db(); on.exit(DBI::dbDisconnect(con))
+  expect_equal(record_blastdb_provenance(con, ""), "")
+  expect_equal(blastdb_provenance(con), "")
+  d <- tempfile(); dir.create(d); on.exit(unlink(d, recursive = TRUE), add = TRUE)
+  file.create(file.path(d, "ribopilot_rrna.nin"))   # panel, no manifest
+  expect_equal(record_blastdb_provenance(con, file.path(d, "ribopilot_rrna")), "")
+})
+
+test_that("provenance reads degrade to empty on a project predating the column", {
+  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:"); on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "CREATE TABLE reference_config (rowid_key INTEGER PRIMARY KEY,
+    ref_dir TEXT, min_records INTEGER, max_records INTEGER, blastdb TEXT)")
+  DBI::dbExecute(con, "INSERT INTO reference_config (rowid_key) VALUES (1)")
+  expect_equal(blastdb_provenance(con), "")
+  expect_silent(record_blastdb_provenance(con, ""))
+})

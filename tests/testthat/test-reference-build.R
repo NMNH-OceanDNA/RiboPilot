@@ -12,7 +12,7 @@ mk_ref_db <- function() {
     max_scaffolds INT, min_assembly_length INT, assembler TEXT, bowtie2 TEXT, spades TEXT)")
   DBI::dbExecute(con, RiboPilot:::REFERENCE_DDL)
   DBI::dbExecute(con, RiboPilot:::REFERENCE_CONFIG_DDL)
-  DBI::dbExecute(con, "INSERT INTO reference_config VALUES(1, NULL, 1000, 25000, NULL)")
+  DBI::dbExecute(con, "INSERT INTO reference_config VALUES(1, NULL, 1000, 25000, NULL, NULL)")
   DBI::dbExecute(con, "INSERT INTO assemble_opts VALUES('default',4,16,'--flag','old_s.fa','old_l.fa',NULL,10,10,1000,'getorganelle','--local','--isolate')")
   for (id in c("S1", "S2")) {
     DBI::dbExecute(con, "INSERT INTO samples VALUES(?,NULL,NULL,NULL,1,2,NULL)", params = list(id))

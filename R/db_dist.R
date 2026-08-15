@@ -209,3 +209,32 @@ install_ribopilot_db <- function(version = RP_DB_VERSION,
   message("Panel ", version, " installed at ", final)
   invisible(prefix)
 }
+
+#' Record which panel a run searched against
+#'
+#' Written when a run launches so a result can be traced to the database that
+#' produced it. Silent and non-fatal on a project predating the column.
+#' @return (invisibly) the recorded version, or "" when there is nothing to record.
+#' @noRd
+record_blastdb_provenance <- function(con, prefix) {
+  prefix <- trimws(prefix %||% "")
+  if (!nzchar(prefix)) return(invisible(""))
+  m <- read_panel_manifest(dirname(path.expand(prefix)))
+  if (is.null(m)) return(invisible(""))
+  v <- paste(m$db_name, m$db_version)
+  ok <- tryCatch({
+    DBI::dbExecute(con, "UPDATE reference_config SET blastdb_version = ? WHERE rowid_key = 1",
+      params = list(v))
+    TRUE
+  }, error = function(e) FALSE)
+  invisible(if (ok) as.character(m$db_version) else "")
+}
+
+#' The recorded panel, for display; "" when none
+#' @noRd
+blastdb_provenance <- function(con) {
+  v <- tryCatch(DBI::dbGetQuery(con,
+    "SELECT blastdb_version FROM reference_config WHERE rowid_key = 1")$blastdb_version,
+    error = function(e) NULL)
+  if (length(v) < 1 || is.na(v[1]) || !nzchar(trimws(v[1]))) "" else trimws(v[1])
+}
