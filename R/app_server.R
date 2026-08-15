@@ -781,6 +781,7 @@ app_server <- function(input, output, session) {
     nf_env <- c("current", COLUMNS = "500", NXF_ANSI_SUMMARY = "true")
     nxf_pin <- nf_pin_version()
     if (!is.na(nxf_pin)) nf_env <- c(nf_env, NXF_VER = nxf_pin)
+    nf_record_blastdb_launch(app_project())
     p <- processx::process$new("nextflow",
       args = c(nf_command(app_project(), resume = isTRUE(input$nf_resume %||% TRUE)),
         "-ansi-log"),

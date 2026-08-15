@@ -305,4 +305,13 @@ test_that("provenance reads degrade to empty on a project predating the column",
   DBI::dbExecute(con, "INSERT INTO reference_config (rowid_key) VALUES (1)")
   expect_equal(blastdb_provenance(con), "")
   expect_silent(record_blastdb_provenance(con, ""))
+
+  # a genuine prefix with a readable manifest reaches the UPDATE itself, which
+  # is the write-side half of the same guard
+  d <- tempfile(); dir.create(d); on.exit(unlink(d, recursive = TRUE), add = TRUE)
+  writeLines('{"db_name":"ribopilot_rrna","db_version":"2026.08.1"}',
+    file.path(d, "manifest.json"))
+  file.create(file.path(d, "ribopilot_rrna.nin"))
+  expect_silent(record_blastdb_provenance(con, file.path(d, "ribopilot_rrna")))
+  expect_equal(blastdb_provenance(con), "")
 })

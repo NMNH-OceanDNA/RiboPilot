@@ -10,7 +10,7 @@
 #' Resolution order: the project setting, then `RIBOPILOT_REF_DIR`, then
 #' [ribopilot_ref_dir()].
 #' @param con Open project DB connection.
-#' @return list(ref_dir, min_records, max_records).
+#' @return list(ref_dir, min_records, max_records, blastdb).
 #' @noRd
 ref_config <- function(con) {
   d <- tryCatch(DBI::dbGetQuery(con, "SELECT * FROM reference_config WHERE rowid_key = 1"),

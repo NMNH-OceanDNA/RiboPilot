@@ -37,16 +37,6 @@ nf_command <- function(path, resume = TRUE,
   taxdump <- file.path(path, ".taxonomy")
   ref_dir <- nf_ref_dir(path)
   blastdb <- nf_blastdb(path)
-  if (nzchar(blastdb)) {
-    # local() so the connection closes here rather than on nf_command's exit,
-    # and so `con` cannot shadow anything in the enclosing frame
-    local({
-      pcon <- tryCatch(open_project_db(file.path(path, ".sqlite")), error = function(e) NULL)
-      if (is.null(pcon)) return(invisible(NULL))
-      on.exit(DBI::dbDisconnect(pcon), add = TRUE)
-      tryCatch(record_blastdb_provenance(pcon, blastdb), error = function(e) NULL)
-    })
-  }
 
   c("run", main_nf, "-c", cfg, "-work-dir", work,
     if (isTRUE(resume)) "-resume",
@@ -100,6 +90,25 @@ nf_blastdb <- function(path) {
     v <- if (length(v) > 0) v[1] else NA_character_
     if (is.na(v) || !nzchar(trimws(v))) "" else path.expand(trimws(v))
   }, error = function(e) "")
+}
+
+#' Record which panel a real run searches against
+#'
+#' Call only from an actual launch (run_assembly(), the app's nf_start
+#' observer), never from nf_command() itself: nf_command() also backs the
+#' read-only command-preview text (app_server.R's nf_cmd_text), and recording
+#' there would credit a panel search that never ran, on every render.
+#' @noRd
+nf_record_blastdb_launch <- function(path) {
+  blastdb <- nf_blastdb(path)
+  if (!nzchar(blastdb)) return(invisible(NULL))
+  # local() so the connection closes here, not deferred to the caller's exit
+  local({
+    pcon <- tryCatch(open_project_db(file.path(path, ".sqlite")), error = function(e) NULL)
+    if (is.null(pcon)) return(invisible(NULL))
+    on.exit(DBI::dbDisconnect(pcon), add = TRUE)
+    tryCatch(record_blastdb_provenance(pcon, blastdb), error = function(e) NULL)
+  })
 }
 
 #' Where the pipeline's R processes should load RiboPilot from

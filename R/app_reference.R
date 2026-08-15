@@ -134,8 +134,9 @@ SETTINGS_HEAD <- "font-weight:600; margin:2px 0 6px;"
 #' Settings modal: the reference folder, and the record window Propose groups uses
 #'
 #' @param cfg From [ref_config()].
+#' @param blastdb_version From [blastdb_provenance()]; "" when nothing has run yet.
 #' @noRd
-reference_settings_modal <- function(cfg) {
+reference_settings_modal <- function(cfg, blastdb_version = "") {
   shiny::modalDialog(
     title = "Reference settings", size = "l",
     shiny::h5("Reference database folder", style = SETTINGS_HEAD),
@@ -163,6 +164,10 @@ reference_settings_modal <- function(cfg) {
     shiny::textInput("ref_blastdb_path", NULL, width = "100%",
       value = cfg$blastdb %||% "",
       placeholder = "/data/blastdb/2026.08.1/ribopilot_rrna"),
+    if (nzchar(blastdb_version %||% "")) {
+      shiny::div(style = "font-size:0.85em; color:#666; margin-top:0.4em;",
+        paste("Last run searched against:", blastdb_version))
+    },
     footer = shiny::tagList(
       shiny::actionButton("ref_dir_apply", "Save", class = "btn-primary btn-sm"),
       shiny::modalButton("Cancel")))
@@ -769,7 +774,8 @@ reference_handlers <- function(input, output, session, deps) {
 
   # ---- settings ----
   shiny::observeEvent(input$ref_dir_btn, {
-    res <- tryCatch(with_con(function(con) reference_settings_modal(ref_config(con))),
+    res <- tryCatch(with_con(function(con)
+        reference_settings_modal(ref_config(con), blastdb_provenance(con))),
       error = function(e) e)
     if (inherits(res, "error")) { notify(conditionMessage(res), "error"); return() }
     shiny::showModal(res)

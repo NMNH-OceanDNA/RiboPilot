@@ -550,6 +550,28 @@ test_that("nf_blastdb returns the configured panel prefix", {
   expect_equal(RiboPilot:::nf_blastdb(proj), "/opt/rp/ribopilot_rrna")
 })
 
+test_that("building the command preview does not record provenance; launching does", {
+  skip_if_not_installed("withr")
+  d <- withr::local_tempdir()
+  writeLines(c("params {", "  rawDir = '/data/raw'", "}"), file.path(d, ".config"))
+  panel_dir <- withr::local_tempdir()
+  writeLines('{"db_name":"ribopilot_rrna","db_version":"2026.08.1"}',
+    file.path(panel_dir, "manifest.json"))
+  prefix <- file.path(panel_dir, "ribopilot_rrna")
+  file.create(paste0(prefix, ".nin"))
+  mk_ref_config_project(d, NA_character_, blastdb = prefix)
+
+  RiboPilot:::nf_command(d, resume = FALSE)   # the preview path: must record nothing
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(d, ".sqlite"))
+  expect_equal(RiboPilot:::blastdb_provenance(con), "")
+  DBI::dbDisconnect(con)
+
+  RiboPilot:::nf_record_blastdb_launch(d)   # the launch path: must record it
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(d, ".sqlite"))
+  expect_equal(RiboPilot:::blastdb_provenance(con), "ribopilot_rrna 2026.08.1")
+  DBI::dbDisconnect(con)
+})
+
 test_that("blast.nf searches locally when a panel is configured", {
   p <- system.file("nextflow", "modules", "blast.nf", package = "RiboPilot")
   if (!nzchar(p)) p <- "inst/nextflow/modules/blast.nf"
