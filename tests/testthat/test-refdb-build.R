@@ -511,3 +511,392 @@ test_that("accessions stage refuses a drifted count without --accept-drift, proc
   expect_true(file.exists(file.path(r_accept$build, "accessions.txt")))
   expect_true(any(grepl("accepted via --accept-drift", r_accept$out, fixed = TRUE)))
 })
+
+# --- taxidmap stage ----------------------------------------------------------
+
+test_that("build_refdb.sh streams the exact three accession2taxid dumps, never landing them", {
+  skip_if_not(file.exists(refdb_sh))
+  lines <- readLines(refdb_sh, warn = FALSE)
+  s <- paste(lines, collapse = "\n")
+  expect_match(s, "nucl_gb", fixed = TRUE)
+  expect_match(s, "nucl_wgs", fixed = TRUE)
+  expect_match(s, "pdb", fixed = TRUE)
+  expect_match(s, "accession2taxid", fixed = TRUE)
+  # the actual scan code, not just a comment mentioning it
+  start <- grep("^rp_taxidmap_scan_dump\\(\\)", lines)
+  expect_equal(length(start), 1L)
+  end <- start + which(lines[(start + 1):length(lines)] == "}")[1]
+  code_lines <- lines[start:end]
+  code_lines <- code_lines[!grepl("^[[:space:]]*#", code_lines)]
+  expect_true(any(grepl("curl --fail", code_lines, fixed = TRUE)))
+  expect_true(any(grepl("zcat", code_lines, fixed = TRUE)))
+  expect_true(any(grepl("awk", code_lines, fixed = TRUE)))
+})
+
+test_that("build_refdb.sh never suppresses zcat's stderr in the taxidmap scan", {
+  skip_if_not(file.exists(refdb_sh))
+  lines <- readLines(refdb_sh, warn = FALSE)
+  zcat_lines <- grep("zcat", lines, value = TRUE)
+  # gzip's own CRC is the truncation detector; suppressing its stderr was the
+  # historical defect (356,851 taxid-0 records from one 40% truncation)
+  expect_true(length(zcat_lines) > 0)
+  expect_false(any(grepl("2>/dev/null", zcat_lines, fixed = TRUE)))
+})
+
+test_that("build_refdb.sh's taxid map validator checks the subset before the uniqueness check", {
+  skip_if_not(file.exists(refdb_sh))
+  lines <- readLines(refdb_sh, warn = FALSE)
+  start <- grep("^rp_taxidmap_validate\\(\\)", lines)
+  expect_equal(length(start), 1L)
+  end <- start + which(lines[(start + 1):length(lines)] == "}")[1]
+  body <- lines[start:end]
+  pos_subset <- grep("not in the harvest list", body, fixed = TRUE)
+  pos_unique <- grep("duplicate accession row", body, fixed = TRUE)
+  expect_equal(length(pos_subset), 1L)
+  expect_equal(length(pos_unique), 1L)
+  expect_true(pos_subset < pos_unique)
+})
+
+test_that("stage_taxidmap's own status messages go through rp_log (stderr), never a bare echo that a caller could capture as map content", {
+  skip_if_not(file.exists(refdb_sh))
+  s <- readLines(refdb_sh, warn = FALSE)
+  start <- grep("^stage_taxidmap\\(\\)", s)
+  end <- grep("^stage_fetch\\(\\)", s)
+  expect_equal(length(start), 1L)
+  expect_true(length(end) >= 1)
+  body <- s[start:(end[1] - 1)]
+  # the historical bug was a helper writing a human-readable status line to a
+  # stdout that was being captured into the taxid map
+  suspect <- grep('^[[:space:]]*(echo|printf) ["\x27][A-Za-z]', body, value = TRUE)
+  expect_equal(suspect, character(0))
+})
+
+# rp_taxidmap_validate -------------------------------------------------------
+
+test_that("taxid map validator's line-shape check rejects a malformed row", {
+  r <- run_sourced(c(
+    'printf "AB123456.1\n" > "$dir/harvest.txt"',
+    'printf "AB123456.1\t9606\nbad row with spaces\t123\n" > "$dir/map.tsv"',
+    'rp_taxidmap_validate "$dir/map.tsv" "$dir/harvest.txt"',
+    'echo "UNREACHABLE"'
+  ))
+  expect_gt(r$status, 0L)
+  expect_false(any(r$out == "UNREACHABLE"))
+  expect_true(any(grepl("not matching accession", r$out, fixed = TRUE)))
+})
+
+# THE REQUIRED TEST: reproduces the historical corruption exactly (two
+# phantom log lines injected into the map as fake accession rows) and proves
+# the guard ORDER is load-bearing -- the subset check catches it, the weaker
+# "unique == row count" check alone does not.
+test_that("taxid map validator's subset check catches injected log lines that the weaker unique-count check would miss", {
+  r <- run_sourced(c(
+    'printf "AB123456.1\nCD789012.1\n" > "$dir/harvest.txt"',
+    # two real accession rows plus two phantom "log lines" shaped exactly
+    # like the historical corruption: syntactically valid map rows
+    # (alnum/dot/underscore, tab, digits) that are not accessions at all
+    'printf "AB123456.1\t9606\nCD789012.1\t10090\ntaxidmap_scan_nucl_gb_complete\t1\ntaxidmap_scan_nucl_wgs_complete\t1\n" > "$dir/corrupt_map.tsv"',
+    # measure the weaker check directly: unique accessions (column 1) == row count
+    'total=$(wc -l < "$dir/corrupt_map.tsv" | tr -d " ")',
+    'uniq=$(cut -f1 "$dir/corrupt_map.tsv" | sort -u | wc -l | tr -d " ")',
+    'if [ "$total" = "$uniq" ]; then echo "WEAK_CHECK_WOULD_PASS total=$total uniq=$uniq"; else echo "WEAK_CHECK_WOULD_REJECT total=$total uniq=$uniq"; fi',
+    # now the real, ordered validator
+    'rp_taxidmap_validate "$dir/corrupt_map.tsv" "$dir/harvest.txt"',
+    'echo "UNREACHABLE"'
+  ))
+  expect_gt(r$status, 0L)
+  expect_false(any(r$out == "UNREACHABLE"))
+  # measured result 1: the weak check alone would have passed the corrupt map
+  expect_true(any(grepl("WEAK_CHECK_WOULD_PASS total=4 uniq=4", r$out, fixed = TRUE)),
+    label = paste(r$out, collapse = "\n"))
+  # measured result 2: the real validator rejects it via the subset check,
+  # naming the offending phantom line
+  expect_true(any(grepl("not in the harvest list", r$out, fixed = TRUE)))
+  expect_true(any(grepl("taxidmap_scan_nucl_gb_complete", r$out, fixed = TRUE)))
+})
+
+test_that("taxid map validator's uniqueness check catches a duplicated accession row that passes format and subset", {
+  r <- run_sourced(c(
+    'printf "AB123456.1\nCD789012.1\n" > "$dir/harvest.txt"',
+    'printf "AB123456.1\t9606\nAB123456.1\t9606\nCD789012.1\t10090\n" > "$dir/map.tsv"',
+    'rp_taxidmap_validate "$dir/map.tsv" "$dir/harvest.txt"',
+    'echo "UNREACHABLE"'
+  ))
+  expect_gt(r$status, 0L)
+  expect_false(any(r$out == "UNREACHABLE"))
+  expect_true(any(grepl("duplicate accession row", r$out, fixed = TRUE)))
+})
+
+test_that("taxid map validator passes a clean, valid map", {
+  r <- run_sourced(c(
+    'printf "AB123456.1\nCD789012.1\n" > "$dir/harvest.txt"',
+    'printf "AB123456.1\t9606\nCD789012.1\t10090\n" > "$dir/map.tsv"',
+    'rp_taxidmap_validate "$dir/map.tsv" "$dir/harvest.txt"',
+    'echo "REACHED"'
+  ))
+  expect_equal(r$status, 0L)
+  expect_true(any(r$out == "REACHED"))
+})
+
+# rp_assert_coverage ---------------------------------------------------------
+
+test_that("rp_assert_coverage enforces the 99.5% floor with integer boundary math, passes trivially on empty input", {
+  r_pass_boundary <- run_sourced(c(
+    'rp_assert_coverage "test" "199" "200"',
+    'echo "REACHED"'
+  ))
+  expect_equal(r_pass_boundary$status, 0L)
+  expect_true(any(r_pass_boundary$out == "REACHED"))
+
+  r_fail_just_below <- run_sourced(c(
+    'rp_assert_coverage "test" "198" "200"',
+    'echo "UNREACHABLE"'
+  ))
+  expect_gt(r_fail_just_below$status, 0L)
+  expect_false(any(r_fail_just_below$out == "UNREACHABLE"))
+  expect_true(any(grepl("198 of 200", r_fail_just_below$out, fixed = TRUE)))
+
+  r_empty <- run_sourced(c(
+    'rp_assert_coverage "test" "0" "0"',
+    'echo "REACHED"'
+  ))
+  expect_equal(r_empty$status, 0L)
+  expect_true(any(r_empty$out == "REACHED"))
+})
+
+# rp_taxidmap_scan_dump -------------------------------------------------------
+
+make_gz_fixture <- function(path, lines) {
+  con <- gzfile(path, "w")
+  writeLines(lines, con)
+  close(con)
+}
+
+test_that("rp_taxidmap_scan_dump matches wanted accessions from a streamed gz dump, skips the header and unwanted rows, tags the source", {
+  fixdir <- withr::local_tempdir()
+  dump_path <- file.path(fixdir, "nucl_gb.accession2taxid.gz")
+  make_gz_fixture(dump_path, c(
+    "accession\taccession.version\ttaxid\tgi",
+    "AB111111\tAB111111.1\t100\t1",
+    "AB222222\tAB222222.1\t200\t2",
+    "ZZ999999\tZZ999999.1\t999\t9"
+  ))
+  r <- run_sourced(c(
+    'printf "AB111111.1\nAB222222.1\n" > "$dir/wanted.txt"',
+    sprintf('rp_taxidmap_scan_dump "$dir/wanted.txt" "file://%s" ftp "$dir/out.tsv"', dump_path),
+    'cat "$dir/out.tsv"'
+  ))
+  expect_equal(r$status, 0L)
+  rows <- r$out[!grepl("^\\[", r$out)]
+  expect_setequal(rows, c("AB111111.1\t100\tftp", "AB222222.1\t200\tftp"))
+})
+
+test_that("rp_taxidmap_scan_dump aborts on a truncated gz dump, exit status checked explicitly", {
+  fixdir <- withr::local_tempdir()
+  good_path <- file.path(fixdir, "good.gz")
+  make_gz_fixture(good_path, c(
+    "accession\taccession.version\ttaxid\tgi",
+    "AB111111\tAB111111.1\t100\t1",
+    "AB222222\tAB222222.1\t200\t2"
+  ))
+  raw <- readBin(good_path, "raw", n = file.info(good_path)$size)
+  truncated_path <- file.path(fixdir, "truncated.gz")
+  writeBin(raw[seq_len(length(raw) - 5L)], truncated_path)
+
+  r <- run_sourced(c(
+    'printf "AB111111.1\nAB222222.1\n" > "$dir/wanted.txt"',
+    sprintf('rp_taxidmap_scan_dump "$dir/wanted.txt" "file://%s" ftp "$dir/out.tsv"', truncated_path),
+    'echo "UNREACHABLE"'
+  ))
+  expect_gt(r$status, 0L)
+  expect_false(any(r$out == "UNREACHABLE"))
+  expect_true(any(grepl("scan of", r$out, fixed = TRUE)))
+})
+
+test_that("rp_taxidmap_scan_dump aborts when the dump URL does not resolve (curl --fail), not a silent empty match", {
+  r <- run_sourced(c(
+    'printf "AB111111.1\n" > "$dir/wanted.txt"',
+    'rp_taxidmap_scan_dump "$dir/wanted.txt" "file://$dir/does_not_exist.gz" ftp "$dir/out.tsv"',
+    'echo "UNREACHABLE"'
+  ))
+  expect_gt(r$status, 0L)
+  expect_false(any(r$out == "UNREACHABLE"))
+})
+
+# Full CLI stage -- epost/esummary/xtract stubbed (per the brief: real
+# network calls are limited to fetching one dump's HTTP headers, done once,
+# separately, during development). The three accession2taxid dumps are real
+# gz files served via RP_A2T_BASE_URL=file://..., exercised through the real
+# curl | zcat | awk pipeline, not stubbed.
+write_taxidmap_stubs <- function(bindir) {
+  dir.create(bindir, showWarnings = FALSE, recursive = TRUE)
+  write_stub <- function(name, body) {
+    p <- file.path(bindir, name)
+    writeLines(c("#!/usr/bin/env bash", "set -eu", body), p)
+    Sys.chmod(p, "0755")
+  }
+  write_stub("epost", c(
+    'self_dir="$(cd "$(dirname "$0")" && pwd)"',
+    'printf x >> "$self_dir/epost_calls.log"',
+    'exit 0'
+  ))
+  write_stub("esummary", "exit 0")
+  # Verified against real EDirect (test-edirect, esample, ecommon.sh on this
+  # machine; no live epost/esummary call made): esummary is `efetch -docsum`,
+  # whose root pattern is DocumentSummary (not DocSum/eSummaryResult), and
+  # AccessionVersion/TaxId are real element names on it. Failing on a wrong
+  # -pattern/-element here, instead of silently returning nothing, is what
+  # would catch this exact class of bug (Task 2's ENTREZ_DIRECT lesson).
+  write_stub("xtract", c(
+    'pattern="" have_accver=0 have_taxid=0',
+    'while [ $# -gt 0 ]; do',
+    '  case "$1" in',
+    '    -pattern) pattern="$2"; shift 2 ;;',
+    '    -element)',
+    '      shift',
+    '      while [ $# -gt 0 ] && [[ "$1" != -* ]]; do',
+    '        [ "$1" = "AccessionVersion" ] && have_accver=1',
+    '        [ "$1" = "TaxId" ] && have_taxid=1',
+    '        shift',
+    '      done',
+    '      ;;',
+    '    *) shift ;;',
+    '  esac',
+    'done',
+    '[ "$pattern" = "DocumentSummary" ] || { echo "stub xtract: unexpected -pattern $pattern" >&2; exit 1; }',
+    '[ "$have_accver" = 1 ] && [ "$have_taxid" = 1 ] || { echo "stub xtract: unexpected -element" >&2; exit 1; }',
+    'self_dir="$(cd "$(dirname "$0")" && pwd)"',
+    'cat "$self_dir/xtract_output.tsv"'
+  ))
+  for (noop in c("esearch", "efetch", "update_blastdb.pl", "makeblastdb", "blastdbcmd", "seqkit")) {
+    write_stub(noop, "exit 0")
+  }
+  writeLines(character(0), file.path(bindir, "xtract_output.tsv"))
+  file.create(file.path(bindir, "epost_calls.log"))
+  bindir
+}
+
+run_taxidmap_stage <- function(accessions, dumps = list(), xtract_output = character(0),
+                                extra_args = character(0)) {
+  build <- withr::local_tempdir(.local_envir = parent.frame())
+  bindir <- file.path(build, "stubbin")
+  write_taxidmap_stubs(bindir)
+  writeLines(xtract_output, file.path(bindir, "xtract_output.tsv"))
+  writeLines(accessions, file.path(build, "accessions.txt"))
+
+  fixdir <- file.path(build, "a2t_fixtures")
+  dir.create(fixdir)
+  hdr <- "accession\taccession.version\ttaxid\tgi"
+  all_dumps <- c("nucl_gb", "nucl_wgs", "pdb")
+  for (nm in all_dumps) {
+    lines <- if (!is.null(dumps[[nm]])) dumps[[nm]] else hdr
+    make_gz_fixture(file.path(fixdir, paste0(nm, ".accession2taxid.gz")), lines)
+  }
+
+  env <- c(
+    paste0("PATH=", bindir, ":", Sys.getenv("PATH")),
+    "NCBI_API_KEY=test-key-not-real",
+    paste0("RP_A2T_BASE_URL=file://", fixdir)
+  )
+  out <- suppressWarnings(system2("bash",
+    c(shQuote(refdb_sh), "--build-dir", shQuote(build), "--stage", "taxidmap", extra_args),
+    stdout = TRUE, stderr = TRUE, env = env))
+  st <- attr(out, "status")
+  list(status = if (is.null(st)) 0L else as.integer(st), out = out, build = build, bindir = bindir)
+}
+
+test_that("taxidmap stage maps accessions across all three ftp dumps plus the esummary fallback, tags each row's source", {
+  skip_if_not(file.exists(refdb_sh))
+  skip_if(Sys.which("bash") == "")
+  hdr <- "accession\taccession.version\ttaxid\tgi"
+  r <- run_taxidmap_stage(
+    accessions = c("AB111111.1", "AB222222.1", "CD333333.1", "CD444444.1", "EF555555.1", "GH666666.1"),
+    dumps = list(
+      nucl_gb = c(hdr, "AB111111\tAB111111.1\t100\t1", "AB222222\tAB222222.1\t200\t2", "ZZ000000\tZZ000000.1\t999\t9"),
+      nucl_wgs = c(hdr, "CD333333\tCD333333.1\t300\t3", "CD444444\tCD444444.1\t400\t4"),
+      pdb = c(hdr, "EF555555\tEF555555.1\t500\t5")
+    ),
+    xtract_output = "GH666666.1\t600"
+  )
+  expect_equal(r$status, 0L, label = paste(r$out, collapse = "\n"))
+
+  map <- readLines(file.path(r$build, "taxidmap.tsv"))
+  expect_setequal(map, c(
+    "AB111111.1\t100", "AB222222.1\t200", "CD333333.1\t300",
+    "CD444444.1\t400", "EF555555.1\t500", "GH666666.1\t600"
+  ))
+
+  sources <- readLines(file.path(r$build, "taxidmap.sources.tsv"))
+  expect_true(any(sources == "GH666666.1\t600\tesummary"))
+  expect_true(any(sources == "AB111111.1\t100\tftp"))
+
+  sha_file <- file.path(r$build, "taxidmap.sha256")
+  expect_true(file.exists(sha_file))
+  want <- system2("sha256sum", shQuote(file.path(r$build, "taxidmap.tsv")), stdout = TRUE)
+  want_hash <- sub("\\s.*", "", want)
+  expect_true(any(startsWith(readLines(sha_file), want_hash)))
+
+  # residual (one accession) went through epost exactly once, not once per accession
+  calls <- readLines(file.path(r$bindir, "epost_calls.log"), warn = FALSE)
+  expect_equal(paste(calls, collapse = ""), "x")
+
+  expect_true(file.exists(file.path(r$build, "dropped.tsv")))
+  expect_equal(length(readLines(file.path(r$build, "dropped.tsv"))), 0L)
+})
+
+test_that("taxidmap stage drops distinct unresolved accessions individually into dropped.tsv, never a shared key", {
+  skip_if_not(file.exists(refdb_sh))
+  skip_if(Sys.which("bash") == "")
+  hdr <- "accession\taccession.version\ttaxid\tgi"
+  n <- 1000L
+  accs <- sprintf("AB%06d.1", seq_len(n))
+  bare <- sprintf("AB%06d", 1:998)
+  dump_lines <- c(hdr, sprintf("%s\t%s.1\t%d\t%d", bare, bare, 1:998, 1:998))
+  unresolved <- accs[999:1000]
+
+  r <- run_taxidmap_stage(
+    accessions = accs,
+    dumps = list(nucl_gb = dump_lines),
+    xtract_output = character(0)
+  )
+  expect_equal(r$status, 0L, label = paste(r$out, collapse = "\n"))
+
+  dropped <- read.table(file.path(r$build, "dropped.tsv"), sep = "\t", header = FALSE,
+    col.names = c("accession", "reason", "detail"), stringsAsFactors = FALSE, fill = TRUE)
+  expect_equal(nrow(dropped), 2L)
+  expect_setequal(dropped$accession, unresolved)
+  expect_true(all(dropped$reason == "taxid_unresolved"))
+  # each dropped record keeps its own accession as the key -- nothing here
+  # collapses two different unresolved accessions into one shared row
+  expect_equal(length(unique(dropped$accession)), 2L)
+})
+
+test_that("taxidmap stage aborts below the 99.5% coverage floor and promotes neither the map nor dropped.tsv", {
+  skip_if_not(file.exists(refdb_sh))
+  skip_if(Sys.which("bash") == "")
+  hdr <- "accession\taccession.version\ttaxid\tgi"
+  r <- run_taxidmap_stage(
+    accessions = c("AB111111.1", "AB222222.1", "AB333333.1", "AB444444.1", "AB555555.1"),
+    dumps = list(nucl_gb = c(hdr, "AB111111\tAB111111.1\t100\t1", "AB222222\tAB222222.1\t200\t2", "AB333333\tAB333333.1\t300\t3")),
+    xtract_output = character(0)
+  )
+  expect_gt(r$status, 0L)
+  expect_false(file.exists(file.path(r$build, "taxidmap.tsv")))
+  expect_false(file.exists(file.path(r$build, "dropped.tsv")))
+  expect_true(any(grepl("3 of 5 accessions mapped, below the 99.5% floor", r$out, fixed = TRUE)))
+})
+
+test_that("taxidmap stage refuses to run before the accessions stage has produced accessions.txt", {
+  skip_if_not(file.exists(refdb_sh))
+  skip_if(Sys.which("bash") == "")
+  build <- withr::local_tempdir()
+  bindir <- file.path(build, "stubbin")
+  write_taxidmap_stubs(bindir)
+  env <- c(paste0("PATH=", bindir, ":", Sys.getenv("PATH")), "NCBI_API_KEY=test-key-not-real")
+  out <- suppressWarnings(system2("bash",
+    c(shQuote(refdb_sh), "--build-dir", shQuote(build), "--stage", "taxidmap"),
+    stdout = TRUE, stderr = TRUE, env = env))
+  st <- attr(out, "status")
+  expect_gt(if (is.null(st)) 0L else as.integer(st), 0L)
+  expect_true(any(grepl("run the accessions stage first", out, fixed = TRUE)))
+})

@@ -47,6 +47,13 @@ CHUNK_SIZE=5000
 DECOY_DBS="16S_ribosomal_RNA SSU_eukaryote_rRNA LSU_eukaryote_rRNA taxdb"
 MAKEBLASTDB_FLAGS=(-dbtype nucl -parse_seqids -blastdb_version 5)
 
+# accession->taxid source (dev/design/18_REFDB_REBUILD.md section 1). ~9.4 GB
+# total across the three dumps, not the 2.5 GB an old comment once claimed;
+# streamed, never landed. Overridable so tests can point it at a file://
+# fixture directory instead of the network.
+RP_A2T_BASE_URL="${RP_A2T_BASE_URL:-https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/accession2taxid}"
+RP_A2T_DUMPS="nucl_gb nucl_wgs pdb"
+
 # Committed count as of 2026-08-15 (dev/design/18_REFDB_REBUILD.md section 4).
 # Tolerance covers about 5 weeks of the source's measured drift of ~370
 # records/day (891,382 on 2026-08-13 -> 892,123 on 2026-08-15), so a rebuild
@@ -56,7 +63,7 @@ MAKEBLASTDB_FLAGS=(-dbtype nucl -parse_seqids -blastdb_version 5)
 EXPECTED_COUNT=892123
 EXPECTED_COUNT_TOLERANCE=15000
 
-REQUIRED_TOOLS="esearch efetch epost esummary xtract update_blastdb.pl makeblastdb blastdbcmd seqkit jq curl sha256sum tar"
+REQUIRED_TOOLS="esearch efetch epost esummary xtract update_blastdb.pl makeblastdb blastdbcmd seqkit jq curl sha256sum tar zcat comm"
 ALL_STAGES="accessions taxidmap fetch build decoys package"
 MIN_FREE_GB=8
 
@@ -408,6 +415,89 @@ rp_check_drift() {
 }
 
 # ---------------------------------------------------------------------------
+# Taxidmap stage guards (dev/design/18_REFDB_REBUILD.md section 4, Taxonomy).
+# ---------------------------------------------------------------------------
+
+# RP_TAXIDMAP_LINE_RE
+# accession<TAB>taxid, nothing else -- the exact shape makeblastdb -taxid_map
+# requires. Built with an actual embedded tab, not the two characters "\t":
+# POSIX extended regex does not guarantee that escape means tab.
+RP_TAXIDMAP_LINE_RE='^[A-Za-z0-9._]+'$'\t''[0-9]+$'
+
+# rp_taxidmap_scan_dump WANTED_FILE URL SOURCE_TAG OUT_FILE
+# Streams URL, never landed: curl --fail | zcat | awk. Matches column 2
+# (accession.version) of the dump against WANTED_FILE (one accession per
+# line) and writes accession<TAB>taxid<TAB>SOURCE_TAG per match to OUT_FILE.
+#
+# zcat's stderr is left connected here, never routed to the bit bucket:
+# gzip's own CRC catches truncation and corruption for free, so a
+# stderr-visible zcat failure plus `pipefail` (lib.sh) is enough to abort.
+# `curl --fail` catches the other failure mode, an HTTP error page fed to
+# zcat as if it were gzip data. The exit status is still checked explicitly
+# (the `if !` below), not left to implicit propagation, so the abort message
+# can name the URL: a 40% truncation of one of these dumps once silently
+# produced 356,851 taxid-0 records.
+rp_taxidmap_scan_dump() {
+  local wanted="$1" url="$2" source_tag="$3" out="$4"
+  if ! curl --fail -sL "$url" \
+      | zcat \
+      | awk -F'\t' -v OFS='\t' -v src="$source_tag" '
+          NR==FNR { want[$1] = 1; next }
+          $1 == "accession" && $2 == "accession.version" { next }
+          ($2 in want) { print $2, $3, src; delete want[$2] }
+        ' "$wanted" - \
+      > "$out"; then
+    rp_die "taxidmap: scan of $url failed (curl/zcat/awk pipeline exit nonzero)"
+  fi
+}
+
+# rp_taxidmap_validate MAP HARVEST
+# Three checks, in this exact order -- the order is load-bearing, not
+# stylistic:
+#   1. every line matches accession<TAB>taxid.
+#   2. the map's accession set is a SUBSET of the harvest list.
+#   3. unique accessions in the map == row count.
+# Step 2 is the one that catches the historical corruption: a helper wrote
+# two progress lines to a stdout that was being captured as the map, and
+# each injected line -- e.g. "taxidmap_scan_nucl_gb_complete<TAB>1" -- is a
+# syntactically valid, individually unique row. Step 3 run alone PASSES a map
+# corrupted this way (it only compares the map to itself); step 2 fails it,
+# because neither injected line is a harvested accession. Hence step 2 must
+# run before step 3, and it must run at all.
+rp_taxidmap_validate() {
+  local map="$1" harvest="$2" bad total uniq extra map_ids harvest_ids
+
+  bad="$(grep -Ev "$RP_TAXIDMAP_LINE_RE" "$map" || true)"
+  [ -z "$bad" ] \
+    || rp_die "taxidmap: map has line(s) not matching accession<TAB>taxid: $(printf '%s\n' "$bad" | head -1)"
+
+  map_ids="$(mktemp)"
+  harvest_ids="$(mktemp)"
+  cut -f1 "$map" | sort -u > "$map_ids"
+  sort -u "$harvest" > "$harvest_ids"
+  extra="$(comm -23 "$map_ids" "$harvest_ids" || true)"
+  rm -f "$map_ids" "$harvest_ids"
+  [ -z "$extra" ] \
+    || rp_die "taxidmap: map has accession(s) not in the harvest list: $(printf '%s\n' "$extra" | head -1)"
+
+  total="$(rp_line_count "$map")"
+  uniq="$(cut -f1 "$map" | sort -u | wc -l | tr -d ' ')"
+  [ "$total" = "$uniq" ] \
+    || rp_die "taxidmap: map has $((total - uniq)) duplicate accession row(s) among $total"
+}
+
+# rp_assert_coverage LABEL MAPPED REQUESTED
+# Mapped rows must be >= 99.5% of requested accessions (historical coverage
+# was 100%). Integer comparison (mapped*1000 vs requested*995) avoids a
+# floating-point percentage; on REQUESTED=0 this is 0 >= 0, which passes
+# rather than dividing by zero.
+rp_assert_coverage() {
+  local label="$1" mapped="$2" requested="$3"
+  [ "$((mapped * 1000))" -ge "$((requested * 995))" ] \
+    || rp_die "$label: $mapped of $requested accessions mapped, below the 99.5% floor"
+}
+
+# ---------------------------------------------------------------------------
 # Stages -- not implemented yet, land in later work. Each is a hard stub so a
 # partial run cannot be mistaken for a real one.
 # ---------------------------------------------------------------------------
@@ -450,7 +540,104 @@ stage_accessions() {
   rp_marker_set accessions "$(cut -d' ' -f1 < "$BUILD_DIR/accessions.sha256")"
   rp_log "accessions: wrote $(rp_line_count "$filtered") accession(s) to $filtered"
 }
-stage_taxidmap() { rp_die "stage 'taxidmap' is not implemented yet"; }
+
+# stage_taxidmap
+# Depends only on accessions.txt, so it is safe to run concurrently with
+# fetch (spec: both depend on the same accession list, not on each other).
+# Three sources, tried in order, each accession claimed by at most one:
+#   1-3. the three accession2taxid dumps (rp_taxidmap_scan_dump), each dump
+#        searched only for accessions the prior sources did not resolve.
+#   4. epost | esummary | xtract for whatever is left (newer than the dumps).
+# Everything is assembled in a scratch dir and validated before anything is
+# written under $BUILD_DIR, so a failed run (bad coverage, a corrupt map)
+# never promotes a partial taxidmap.tsv or dropped.tsv -- same reasoning as
+# stage_accessions never promoting a truncated accessions.txt.
+stage_taxidmap() {
+  local harvest requested tmp combined dump url out residual candidate_map
+  local candidate_sources mapped unresolved_n dropped_tmp ftp_n esummary_n
+
+  mkdir -p "$BUILD_DIR"
+  harvest="$BUILD_DIR/accessions.txt"
+  [ -f "$harvest" ] || rp_die "taxidmap: $harvest not found; run the accessions stage first"
+  requested="$(rp_line_count "$harvest")"
+
+  tmp="$BUILD_DIR/taxidmap.tmp"
+  rm -rf "$tmp"
+  mkdir -p "$tmp"
+
+  sort -u "$harvest" > "$tmp/still_wanted.txt"
+  combined="$tmp/combined.tsv"
+  : > "$combined"
+
+  for dump in $RP_A2T_DUMPS; do
+    url="$RP_A2T_BASE_URL/$dump.accession2taxid.gz"
+    out="$tmp/matched.$dump.tsv"
+    rp_log "taxidmap: scanning $dump dump ($(rp_line_count "$tmp/still_wanted.txt") accession(s) still wanted)"
+    rp_taxidmap_scan_dump "$tmp/still_wanted.txt" "$url" ftp "$out"
+    cat "$out" >> "$combined"
+    cut -f1 "$out" | sort -u > "$tmp/found.$dump.txt"
+    comm -23 "$tmp/still_wanted.txt" "$tmp/found.$dump.txt" > "$tmp/still_wanted.next.txt"
+    mv "$tmp/still_wanted.next.txt" "$tmp/still_wanted.txt"
+  done
+
+  residual="$tmp/still_wanted.txt"
+  if [ "$(rp_line_count "$residual")" -gt 0 ]; then
+    rp_log "taxidmap: $(rp_line_count "$residual") accession(s) not in the ftp dumps; falling back to epost | esummary"
+    if ! epost -db nuccore -format acc -input "$residual" \
+        | esummary \
+        | xtract -pattern DocumentSummary -element AccessionVersion TaxId \
+        > "$tmp/esummary.raw.tsv"; then
+      rp_die "taxidmap: epost | esummary | xtract pipeline failed for $(rp_line_count "$residual") residual accession(s)"
+    fi
+    # xtract prints an empty second column for a DocumentSummary with no
+    # TaxId (withdrawn/obsolete record); keep only rows that actually
+    # resolved. Never `grep -c ... || echo 0` here either -- rp_line_count
+    # below is the only count taken from this.
+    grep -E $'^[^\t]+\t[0-9]+$' "$tmp/esummary.raw.tsv" > "$tmp/esummary.matched.tsv" || true
+    awk -F'\t' -v OFS='\t' '{print $1, $2, "esummary"}' "$tmp/esummary.matched.tsv" >> "$combined"
+    cut -f1 "$tmp/esummary.matched.tsv" | sort -u > "$tmp/found.esummary.txt"
+    comm -23 "$residual" "$tmp/found.esummary.txt" > "$tmp/still_wanted.next.txt"
+    mv "$tmp/still_wanted.next.txt" "$residual"
+  fi
+
+  candidate_map="$tmp/taxidmap.tsv"
+  candidate_sources="$tmp/taxidmap.sources.tsv"
+  cut -f1,2 "$combined" > "$candidate_map"
+  cp "$combined" "$candidate_sources"
+
+  rp_taxidmap_validate "$candidate_map" "$harvest"
+
+  mapped="$(rp_line_count "$candidate_map")"
+  rp_assert_coverage "taxidmap: mapped rows vs requested accessions" "$mapped" "$requested"
+
+  # Only now, with both guards passed, commit. dropped.tsv is written fresh
+  # each run (never appended across retries): the stage is spec'd idempotent
+  # ("re-run from scratch, cheap"), and appending would let a retried run
+  # accumulate stale unresolved rows from a prior attempt.
+  unresolved_n="$(rp_line_count "$residual")"
+  dropped_tmp="$tmp/dropped.tsv"
+  if [ "$unresolved_n" -gt 0 ]; then
+    # One row per accession, never a shared "NA" placeholder: a shared key
+    # would let unrelated species that happen to share byte-identical rRNA
+    # collide in the build stage's (taxid, sequence) dedup and be mislabeled
+    # as duplicates of each other.
+    awk -v OFS='\t' '{print $1, "taxid_unresolved", ""}' "$residual" > "$dropped_tmp"
+  else
+    : > "$dropped_tmp"
+  fi
+  cp "$dropped_tmp" "$BUILD_DIR/dropped.tsv"
+
+  cp "$candidate_map" "$BUILD_DIR/taxidmap.tsv"
+  cp "$candidate_sources" "$BUILD_DIR/taxidmap.sources.tsv"
+  (cd "$BUILD_DIR" && sha256sum taxidmap.tsv > taxidmap.sha256)
+  rp_marker_set taxidmap "$(cut -d' ' -f1 < "$BUILD_DIR/taxidmap.sha256")"
+
+  ftp_n="$(awk -F'\t' '$3=="ftp"' "$combined" | wc -l | tr -d ' ')"
+  esummary_n="$(awk -F'\t' '$3=="esummary"' "$combined" | wc -l | tr -d ' ')"
+  rp_log "taxidmap: wrote $mapped mapped accession(s) ($ftp_n ftp, $esummary_n esummary), $unresolved_n unresolved (dropped) of $requested requested"
+
+  rm -rf "$tmp"
+}
 stage_fetch() { rp_die "stage 'fetch' is not implemented yet"; }
 stage_build() { rp_die "stage 'build' is not implemented yet"; }
 stage_decoys() { rp_die "stage 'decoys' is not implemented yet"; }
