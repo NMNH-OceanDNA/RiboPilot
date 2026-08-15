@@ -46,10 +46,22 @@ process blast_genbank {
 
     DBARG=""
     SRC="remote"
-    if DBARG=\$(RIBOPILOT_SRC='${params.ribopilot_src}' rp_dbarg.R '${params.blastdb}'); then
-        SRC="local"
+    if [ -n '${params.blastdb}' ]; then
+        if DBARG=\$(RIBOPILOT_SRC='${params.ribopilot_src}' rp_dbarg.R '${params.blastdb}'); then
+            SRC="local"
+        else
+            DBARG=""
+            echo "configured local panel '${params.blastdb}' could not be used, falling back to remote for ${id}" >&2
+        fi
     else
-        DBARG=""
+        # empty blastdb is the normal unconfigured case, not an error: call
+        # rp_dbarg.R anyway (a later task uses this for panel discovery) but
+        # discard its usage-error noise for this argument-less invocation
+        if DBARG=\$(RIBOPILOT_SRC='${params.ribopilot_src}' rp_dbarg.R '' 2>/dev/null); then
+            SRC="local"
+        else
+            DBARG=""
+        fi
     fi
     if [ "\$SRC" = "local" ] && [ -n "\${EQ}" ]; then
         echo "entrez_query is remote-only, ignored for local search on ${id}" >&2

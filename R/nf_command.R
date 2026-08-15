@@ -27,13 +27,15 @@ nf_command <- function(path, resume = TRUE,
   }
   raw_dir <- cfg_val("rawDir", "")
   min_depth <- cfg_val("minDepth", "0")
+  if (!nzchar(min_depth)) min_depth <- "0"
   api_key <- cfg_val("ncbi_api_key", "")
   if (!nzchar(raw_dir)) {
     stop("No rawDir set in ", cfg, ".\n",
       "Without it the pipeline has nowhere to look for reads and every sample ",
       "fails. Set params.rawDir in the project config.", call. = FALSE)
   }
-  src <- ribopilot_src %||% ribopilot_src_default()
+  src <- ribopilot_src %||% ""
+  if (!nzchar(src)) src <- ribopilot_src_default()
   taxdump <- file.path(path, ".taxonomy")
   ref_dir <- nf_ref_dir(path)
   blastdb <- nf_blastdb(path)
