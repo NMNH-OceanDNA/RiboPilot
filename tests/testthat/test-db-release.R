@@ -14,3 +14,21 @@ test_that("the packaging script emits the asset names the installer requests", {
   expect_match(fn, 'decoys-%s.tar.gz', fixed = TRUE)
   expect_match(fn, '"db-"', fixed = TRUE)
 })
+
+test_that("the Dockerfile and deploy script agree with the installer on asset names and RIBOPILOT_DB_DIR", {
+  skip_on_cran()
+  dockerfile <- "../../docker/Dockerfile"
+  deploy <- "../../docker/deploy-dockerhub.sh"
+  skip_if_not(file.exists(dockerfile), "docker/ is Rbuildignored; this runs from the source tree only")
+  skip_if_not(file.exists(deploy), "docker/ is Rbuildignored; this runs from the source tree only")
+
+  df <- paste(readLines(dockerfile, warn = FALSE), collapse = "\n")
+  expect_match(df, "ADD docker/ribopilot_rrna-${RP_DB_VERSION}.tar.gz", fixed = TRUE)
+  expect_match(df, "ADD docker/decoys-${RP_DB_VERSION}.tar.gz", fixed = TRUE)
+  expect_match(df, "ENV RIBOPILOT_DB_DIR=/opt/ribopilot/blastdb", fixed = TRUE)
+
+  ds <- paste(readLines(deploy, warn = FALSE), collapse = "\n")
+  expect_match(ds, "ribopilot_rrna-${RP_DB_VERSION}.tar.gz", fixed = TRUE)
+  expect_match(ds, "decoys-${RP_DB_VERSION}.tar.gz", fixed = TRUE)
+  expect_match(ds, "RIBOPILOT_DB_DIR", fixed = TRUE)
+})

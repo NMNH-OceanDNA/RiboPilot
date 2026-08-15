@@ -23,6 +23,19 @@ fi
 rm -f docker/RiboPilot_*.tar.gz
 Rscript -e 'devtools::build(path = "docker", vignettes = FALSE)'
 
-docker build --platform linux/amd64 -f docker/Dockerfile --progress=plain -t "${repo}:${tag}" .
+# db panel tarballs: fetched once and reused, these are 82 MB and 77 MB, so a
+# per-build download would make every build slow for no reason.
+RP_DB_VERSION=$(awk -F'"' '/^RP_DB_VERSION/{print $2}' R/db_dist.R)
+for A in "ribopilot_rrna-${RP_DB_VERSION}.tar.gz" "decoys-${RP_DB_VERSION}.tar.gz"; do
+  if [ ! -f "docker/$A" ]; then
+    echo "fetching $A ..."
+    curl -fsSL -o "docker/$A" \
+      "https://github.com/dmacguigan/RiboPilot/releases/download/db-${RP_DB_VERSION}/$A"
+  fi
+done
+
+docker build --platform linux/amd64 -f docker/Dockerfile --progress=plain \
+  --build-arg "RP_DB_VERSION=${RP_DB_VERSION}" \
+  -t "${repo}:${tag}" .
 
 echo "Local image build successful: ${repo}:${tag}"

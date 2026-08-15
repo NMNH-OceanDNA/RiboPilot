@@ -73,6 +73,18 @@ if [ "$count" -ne 1 ]; then
   exit 1
 fi
 
+# --- db panel tarballs -------------------------------------------------------
+# Fetched once and reused: these are 82 MB and 77 MB, so a per-build download
+# would make every build slow for no reason. Not covered by the rm -f above.
+RP_DB_VERSION=$(awk -F'"' '/^RP_DB_VERSION/{print $2}' R/db_dist.R)
+for A in "ribopilot_rrna-${RP_DB_VERSION}.tar.gz" "decoys-${RP_DB_VERSION}.tar.gz"; do
+  if [ ! -f "docker/$A" ]; then
+    echo "fetching $A ..."
+    curl -fsSL -o "docker/$A" \
+      "https://github.com/dmacguigan/RiboPilot/releases/download/db-${RP_DB_VERSION}/$A"
+  fi
+done
+
 # --- build -----------------------------------------------------------------
 # Pinned to linux/amd64: the conda channels this image installs from do not
 # carry every tool for arm64, and an image that silently builds for the host
@@ -82,6 +94,7 @@ docker build \
   -f docker/Dockerfile \
   --progress=plain \
   --build-arg "GIT_VERSION_TAG=${GIT_SHA}" \
+  --build-arg "RP_DB_VERSION=${RP_DB_VERSION}" \
   --label "org.opencontainers.image.revision=${GIT_SHA}" \
   --label "org.opencontainers.image.version=${TAG}" \
   --label "org.opencontainers.image.source=https://github.com/dmacguigan/RiboPilot" \
@@ -102,6 +115,10 @@ docker run --rm --platform linux/amd64 "${LOCAL}" bash -lc '
   done
   Rscript -e "suppressMessages(library(RiboPilot)); cat(\"RiboPilot\", as.character(packageVersion(\"RiboPilot\")), \"loads OK\n\")"
 '
+# No pipe here: a piped command returns 141 on this machine even when it
+# succeeds, which would pass this check for the wrong reason.
+docker run --rm --platform linux/amd64 "${LOCAL}" bash -lc \
+  'blastdbcmd -db "$RIBOPILOT_DB_DIR/'"${RP_DB_VERSION}"'/ribopilot_rrna" -info > /dev/null'
 echo "Image looks sane."
 
 if [ "$DRY_RUN" -eq 1 ]; then

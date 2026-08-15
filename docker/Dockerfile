@@ -6,7 +6,6 @@
 
 FROM condaforge/mambaforge:24.9.2-0
 
-ARG GIT_VERSION_TAG=unspecified
 ARG DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && \
@@ -82,12 +81,25 @@ RUN mamba install -y \
         'r-svglite' && \
     mamba clean -a -y
 
+# The panel and its decoys are versioned quarterly while the image versions on
+# every package bump, so they sit below the package layer and stay cached.
+# ADD extracts a local tarball in place and never stores the archive itself.
+ARG RP_DB_VERSION=2026.08.1
+ADD docker/ribopilot_rrna-${RP_DB_VERSION}.tar.gz /opt/ribopilot/blastdb/${RP_DB_VERSION}/
+ADD docker/decoys-${RP_DB_VERSION}.tar.gz         /opt/ribopilot/blastdb/${RP_DB_VERSION}/
+ENV RIBOPILOT_DB_DIR=/opt/ribopilot/blastdb
+
 # --- Install RiboPilot last so R-code edits only invalidate this cheap layer.
 #     Dependencies are already provided by conda above, so skip re-resolving them.
+#     GIT_VERSION_TAG moves here, immediately above the layer it labels: every
+#     layer below an ARG that changes on each publish rebuilds on each publish,
+#     and the database layers above must not pay that cost.
+ARG GIT_VERSION_TAG=unspecified
 COPY docker/RiboPilot_*.tar.gz /pkg.tar.gz
 RUN R -e 'remotes::install_local("/pkg.tar.gz", dependencies = FALSE, upgrade = "never")' && \
     R -e 'library(RiboPilot)' && \
     rm /pkg.tar.gz
 
-# Reference databases are resolved at run time (shipped in the installed package,
-# a user-built directory, or GitHub URLs), so none are baked into the image.
+# The rDNA panel and decoy databases are baked in above at RIBOPILOT_DB_DIR, so
+# a default install works with zero configuration; RIBOPILOT_DB_DIR can still be
+# overridden to point at a user-built directory or a different version.
