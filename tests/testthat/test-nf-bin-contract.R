@@ -36,10 +36,15 @@ test_that("every script that opens the project DB closes it from a frame", {
 test_that("every script validates its argument count before doing work", {
   # rp_dbarg.R accepts zero or more arguments by design (no argument means
   # "discover an installed panel") and touches no project database, so the
-  # rp_args() requirement below does not apply to it. Pin the exemption list
-  # itself so a future script cannot silently join it and lose the check.
+  # rp_args() requirement below does not apply to it. Derive the set that
+  # actually skips rp_args() from the scripts and compare it to that intent, so
+  # a new script that forgets rp_args() is a failure here rather than a silent
+  # addition to a hand-written list.
   exempt <- "rp_dbarg.R"
-  expect_equal(exempt, "rp_dbarg.R")
+  no_rp_args <- vapply(bin_files, function(f) {
+    !any(grepl("^rp_args\\(", readLines(f, warn = FALSE)))
+  }, logical(1))
+  expect_setequal(basename(bin_files)[no_rp_args], exempt)
 
   for (f in bin_files) {
     if (basename(f) %in% exempt) next

@@ -4,7 +4,11 @@
 # multi-env image. Built and pushed with docker/deploy-*.sh; referenced from a
 # project's .config via `process.container` (see inst/config.docker).
 
-FROM condaforge/mambaforge:24.9.2-0
+# 1 bakes the rDNA panel in, 0 builds without it (deploy-*.sh --no-db). Declared
+# before the first FROM because only a global ARG can be used in a FROM.
+ARG RP_DB=1
+
+FROM condaforge/mambaforge:24.9.2-0 AS base
 
 ARG DEBIAN_FRONTEND=noninteractive
 
@@ -84,10 +88,20 @@ RUN mamba install -y \
 # The panel and its decoys are versioned quarterly while the image versions on
 # every package bump, so they sit below the package layer and stay cached.
 # ADD extracts a local tarball in place and never stores the archive itself.
+#
+# Two stages, selected by RP_DB, so an image can be built before the panel
+# release exists. Only the selected one is built, so db-0 needs no tarballs in
+# the context. db-0 deliberately leaves RIBOPILOT_DB_DIR unset: an image with no
+# panel must not advertise one, and discovery then finds nothing and goes remote.
+FROM base AS db-0
+
+FROM base AS db-1
 ARG RP_DB_VERSION=2026.08.1
 ADD docker/ribopilot_rrna-${RP_DB_VERSION}.tar.gz /opt/ribopilot/blastdb/${RP_DB_VERSION}/
 ADD docker/decoys-${RP_DB_VERSION}.tar.gz         /opt/ribopilot/blastdb/${RP_DB_VERSION}/
 ENV RIBOPILOT_DB_DIR=/opt/ribopilot/blastdb
+
+FROM db-${RP_DB} AS final
 
 # --- Install RiboPilot last so R-code edits only invalidate this cheap layer.
 #     Dependencies are already provided by conda above, so skip re-resolving them.
@@ -100,6 +114,8 @@ RUN R -e 'remotes::install_local("/pkg.tar.gz", dependencies = FALSE, upgrade = 
     R -e 'library(RiboPilot)' && \
     rm /pkg.tar.gz
 
-# The rDNA panel and decoy databases are baked in above at RIBOPILOT_DB_DIR, so
-# a default install works with zero configuration; RIBOPILOT_DB_DIR can still be
-# overridden to point at a user-built directory or a different version.
+# With RP_DB=1 (the default) the rDNA panel and decoy databases are baked in
+# above at RIBOPILOT_DB_DIR, so a default install works with zero configuration;
+# RIBOPILOT_DB_DIR can still be overridden to point at a user-built directory or
+# a different version. With RP_DB=0 nothing is baked in and every search is
+# remote unless the user configures or mounts a panel.

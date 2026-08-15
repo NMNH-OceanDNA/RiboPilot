@@ -136,10 +136,12 @@ fetch_verified <- function(base_url, tag, asset, dir) {
 #' would otherwise install and then be searched as if it were whole. Naming the
 #' absentees keeps the refusal diagnosable, for instance when a future panel
 #' ships as .nal volumes rather than the single-volume layout expected here.
+#' The extension set is PANEL_REQUIRED_EXT, the same one discovery uses, so an
+#' installed panel cannot be one discovery then refuses to see.
 #' @return character(0) when the directory holds a whole panel.
 #' @noRd
 panel_missing_parts <- function(dir) {
-  want <- paste0("ribopilot_rrna", c(".nin", ".nsq", ".nhr"))
+  want <- paste0("ribopilot_rrna.", PANEL_REQUIRED_EXT)
   miss <- want[!file.exists(file.path(dir, want))]
   if (is.null(read_panel_manifest(dir))) miss <- c(miss, "manifest.json")
   miss

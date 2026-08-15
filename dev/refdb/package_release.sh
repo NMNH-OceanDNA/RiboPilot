@@ -20,9 +20,10 @@ PANEL_FILES="manifest.json"
 for e in ndb nhr nin njs nog nos not nsq ntf nto; do
   [ -f "ribopilot_rrna.$e" ] && PANEL_FILES="$PANEL_FILES ribopilot_rrna.$e"
 done
-# Without these three the installer's own completeness check rejects the panel,
-# so a release missing them is a release nobody can install.
-for e in nin nsq nhr; do
+# PANEL_REQUIRED_EXT in R/blast_local.R. Without these the installer rejects the
+# panel and discovery cannot see it, so a release missing any is a release
+# nobody can use.
+for e in nin nsq nhr ndb; do
   [ -f "ribopilot_rrna.$e" ] || {
     echo "no ribopilot_rrna.$e in $SRC; the panel is incomplete, rebuild it" >&2; exit 1; }
 done

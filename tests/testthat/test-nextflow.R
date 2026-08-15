@@ -502,6 +502,21 @@ test_that("nextflow.config still supplies NCBI_API_KEY from params", {
   expect_match(line, "ncbi_api_key", fixed = TRUE)
 })
 
+test_that("nextflow.config forwards RIBOPILOT_NO_LOCAL_BLAST to tasks", {
+  # docker tasks are launched with only NXF_TASK_WORKDIR forwarded, so a
+  # shell-set opt-out reaches the container only if it is named in env{}
+  txt <- readLines(system.file("nextflow", "nextflow.config", package = "RiboPilot"),
+    warn = FALSE)
+  line <- grep("RIBOPILOT_NO_LOCAL_BLAST\\s*=", txt, value = TRUE)
+  expect_length(line, 1)
+  expect_match(line, "System.getenv('RIBOPILOT_NO_LOCAL_BLAST')", fixed = TRUE)
+  # inside env{}, not somewhere the task never sees
+  env_open <- grep("^env \\{", txt)
+  env_close <- grep("^\\}", txt)
+  expect_gt(grep("RIBOPILOT_NO_LOCAL_BLAST\\s*=", txt), env_open[1])
+  expect_lt(grep("RIBOPILOT_NO_LOCAL_BLAST\\s*=", txt), min(env_close[env_close > env_open[1]]))
+})
+
 test_that("blast.nf gates re-search on blast_searched.query_md5, not a blast_hits COUNT", {
   # pins the fix: re-searching used to be gated on a COUNT(*) of blast_hits,
   # which re-submitted a unit forever once it found nothing. A revert to that
@@ -701,8 +716,13 @@ test_that("blast.nf falls back to remote when a configured local panel fails ins
   ), stub)
   Sys.chmod(stub, "0755")
 
+  # a whole panel WITH a manifest beside it, so a unit wrongly credited to it
+  # would leave a recorded provenance string behind: that is what makes the
+  # UNIT_PANEL reset in blast.nf's blastn-failure branch checkable as behaviour
   panel <- file.path(panel_dir, "ribopilot_rrna")
-  file.create(paste0(panel, ".nin"))
+  for (e in c("nin", "nsq", "nhr", "ndb")) writeLines("x", paste0(panel, ".", e))
+  writeLines('{"db_name":"ribopilot_rrna","db_version":"2026.08.1"}',
+    file.path(panel_dir, "manifest.json"))
 
   db_path <- file.path(root, "test.sqlite")
   con <- DBI::dbConnect(RSQLite::SQLite(), db_path)
@@ -724,6 +744,8 @@ test_that("blast.nf falls back to remote when a configured local panel fails ins
   DBI::dbExecute(con, "CREATE TABLE blast_screen(ID TEXT, path INT, scaffold INT, accession TEXT, title TEXT,
     species TEXT, staxid INT, lineage TEXT, lineage_taxids TEXT, rank_distance INT, pident REAL, qcovs REAL,
     evalue REAL, bitscore REAL, is_nuclear_rrna INT, time_stamp INT)")
+  DBI::dbExecute(con, RiboPilot:::REFERENCE_CONFIG_DDL)
+  DBI::dbExecute(con, "INSERT INTO reference_config (rowid_key) VALUES (1)")
   DBI::dbDisconnect(con)
 
   writeLines(c(
@@ -762,6 +784,9 @@ test_that("blast.nf falls back to remote when a configured local panel fails ins
     info = "the unit must end up recorded as searched, not silently dropped")
   expect_equal(searched$source[1], "remote",
     info = "the source must be recorded truthfully as remote, not the originally configured local")
+  # fails if blast.nf's blastn-failure branch stops clearing UNIT_PANEL
+  expect_equal(RiboPilot:::blastdb_provenance(con2), "",
+    info = "a unit that fell back to remote must not be credited with the local panel")
 })
 
 # Shared fixture for the two rp_dbarg.R end-to-end cases below: an unconfigured
@@ -863,6 +888,11 @@ test_that("an unconfigured project falls back to remote without usage noise", {
   skip_if(!file.exists(file.path(src, "DESCRIPTION")), "not a source checkout")
 
   root <- withr::local_tempdir()
+  # pinned at an empty directory, or a panel installed on the host makes this
+  # pass through the "local blastn failed, fall back to remote" path instead of
+  # the "nothing discovered" path it exists to test
+  empty_db_dir <- file.path(root, "no_panels"); dir.create(empty_db_dir)
+  withr::local_envvar(RIBOPILOT_DB_DIR = empty_db_dir)
   proj <- mk_dbarg_project(root, "")
   res <- run_dbarg_project(root, proj)
   expect_equal(res$status, 0)
@@ -870,6 +900,8 @@ test_that("an unconfigured project falls back to remote without usage noise", {
   expect_false(grepl("Execution halted", res$stderr, fixed = TRUE))
   expect_false(grepl("configured local panel", res$stderr, fixed = TRUE),
     info = "no panel configured is the normal case, not something to report")
+  expect_false(grepl("unexpected local blastn call", res$stderr, fixed = TRUE),
+    info = "nothing should have been discovered, so blastn must never be called locally")
 
   con <- DBI::dbConnect(RSQLite::SQLite(), proj$db_path)
   on.exit(DBI::dbDisconnect(con), add = TRUE)

@@ -62,6 +62,12 @@ local_blast_db_arg <- function(panel, decoy_dir = NULL) {
 #' blast_db_exists() is deliberately looser (it gates a user-supplied prefix).
 #' A directory holding only .nin passes that and then segfaults blastn, so
 #' discovery, which chooses on the user's behalf, demands the whole set.
+#'
+#' .ndb is in the set because the panel is built with blast >= 2.12, whose
+#' makeblastdb always writes a v5 database. Requiring it here, in
+#' panel_missing_parts() and in dev/refdb/package_release.sh keeps one answer to
+#' "is this a whole panel"; a v4 panel that only some of them accepted would
+#' install and then be invisible to discovery, falling back to remote in silence.
 #' @noRd
 PANEL_REQUIRED_EXT <- c("nin", "nsq", "nhr", "ndb")
 

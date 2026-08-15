@@ -5,6 +5,7 @@
 #   docker/deploy-dockerhub.sh                 # tag = DESCRIPTION Version
 #   docker/deploy-dockerhub.sh v0.1.0          # explicit tag
 #   docker/deploy-dockerhub.sh --dry-run       # build + test, push nothing
+#   docker/deploy-dockerhub.sh --no-db         # build without the rDNA panel
 #
 # There is deliberately no :latest. A floating tag means two machines can run
 # different code while naming the same image, and every project pins an exact
@@ -24,10 +25,12 @@ NAMESPACE="${DOCKERHUB_USER:-macguigand}"
 REPO='ribopilot'
 TAG=''
 DRY_RUN=0
+NO_DB=0
 
 for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=1 ;;
+    --no-db)   NO_DB=1 ;;
     -*)        echo "Unknown option: $arg" >&2; exit 2 ;;
     *)         TAG="$arg" ;;
   esac
@@ -80,32 +83,63 @@ fi
 # the build: Docker's ADD does not reliably fail on a corrupt-but-gzip-shaped
 # tarball, so an unverified stale or interrupted download would get baked into
 # the image silently, and every user of it would then search a broken database.
+# gh, not curl: the repo is private, so an unauthenticated fetch 404s.
 RP_DB_VERSION=$(awk -F'"' '/^RP_DB_VERSION/{print $2}' R/db_dist.R)
-RP_DB_BASE="https://github.com/dmacguigan/RiboPilot/releases/download/db-${RP_DB_VERSION}"
+RP_DB_REPO="dmacguigan/RiboPilot"
+RP_DB_TAG="db-${RP_DB_VERSION}"
+RP_DB=1
 
-if command -v sha256sum >/dev/null 2>&1; then
-  RP_SHA_CMD=(sha256sum)
-elif command -v shasum >/dev/null 2>&1; then
-  RP_SHA_CMD=(shasum -a 256)
-else
-  echo "Need sha256sum or shasum on PATH to verify the db panel tarballs." >&2
+rp_db_unavailable() {
+  cat >&2 <<MSG
+Could not get $1 from release ${RP_DB_TAG} of ${RP_DB_REPO}.
+The panel release probably has not been published yet. Do one of:
+  dev/refdb/package_release.sh <panel_dir> ${RP_DB_VERSION} --publish
+  # or place ribopilot_rrna-${RP_DB_VERSION}.tar.gz, decoys-${RP_DB_VERSION}.tar.gz
+  # and their .sha256 files in docker/ by hand
+  # or build an image with no panel in it:
+  $0 --no-db
+MSG
   exit 1
-fi
+}
 
-for A in "ribopilot_rrna-${RP_DB_VERSION}.tar.gz" "decoys-${RP_DB_VERSION}.tar.gz"; do
-  if [ ! -f "docker/$A" ]; then
-    echo "fetching $A ..."
-    curl -fsSL -o "docker/$A" "${RP_DB_BASE}/$A"
-  fi
-  sumfile="$(mktemp)"
-  curl -fsSL -o "$sumfile" "${RP_DB_BASE}/$A.sha256"
-  if ! ( cd docker && "${RP_SHA_CMD[@]}" -c "$sumfile" ); then
-    echo "Checksum mismatch for $A: the file is corrupt or truncated. Removing it so the next run re-fetches it." >&2
-    rm -f "docker/$A" "$sumfile"
+if [ "$NO_DB" -eq 1 ]; then
+  RP_DB=0
+  echo "Building WITHOUT the rDNA panel (--no-db): this image searches NCBI remotely."
+else
+  if command -v sha256sum >/dev/null 2>&1; then
+    RP_SHA_CMD=(sha256sum)
+  elif command -v shasum >/dev/null 2>&1; then
+    RP_SHA_CMD=(shasum -a 256)
+  else
+    echo "Need sha256sum or shasum on PATH to verify the db panel tarballs." >&2
     exit 1
   fi
-  rm -f "$sumfile"
-done
+
+  for A in "ribopilot_rrna-${RP_DB_VERSION}.tar.gz" "decoys-${RP_DB_VERSION}.tar.gz"; do
+    if [ ! -f "docker/$A" ]; then
+      command -v gh >/dev/null 2>&1 || rp_db_unavailable "$A"
+      echo "fetching $A ..."
+      gh release download "$RP_DB_TAG" --repo "$RP_DB_REPO" --pattern "$A" \
+        --output "docker/$A" --clobber || rp_db_unavailable "$A"
+    fi
+    sumfile="$(mktemp)"
+    # a hand-placed tarball brings its own .sha256; only reach for the release
+    # when there is none beside it
+    if [ -f "docker/$A.sha256" ]; then
+      cp "docker/$A.sha256" "$sumfile"
+    else
+      command -v gh >/dev/null 2>&1 || rp_db_unavailable "$A.sha256"
+      gh release download "$RP_DB_TAG" --repo "$RP_DB_REPO" --pattern "$A.sha256" \
+        --output "$sumfile" --clobber || rp_db_unavailable "$A.sha256"
+    fi
+    if ! ( cd docker && "${RP_SHA_CMD[@]}" -c "$sumfile" ); then
+      echo "Checksum mismatch for $A: the file is corrupt or truncated. Removing it so the next run re-fetches it." >&2
+      rm -f "docker/$A" "$sumfile"
+      exit 1
+    fi
+    rm -f "$sumfile"
+  done
+fi
 
 # --- build -----------------------------------------------------------------
 # Pinned to linux/amd64: the conda channels this image installs from do not
@@ -116,6 +150,7 @@ docker build \
   -f docker/Dockerfile \
   --progress=plain \
   --build-arg "GIT_VERSION_TAG=${GIT_SHA}" \
+  --build-arg "RP_DB=${RP_DB}" \
   --build-arg "RP_DB_VERSION=${RP_DB_VERSION}" \
   --label "org.opencontainers.image.revision=${GIT_SHA}" \
   --label "org.opencontainers.image.version=${TAG}" \
@@ -139,9 +174,16 @@ docker run --rm --platform linux/amd64 "${LOCAL}" bash -lc '
 '
 # No pipe here: a piped command returns 141 on this machine even when it
 # succeeds, which would pass this check for the wrong reason.
-docker run --rm --platform linux/amd64 "${LOCAL}" bash -lc \
-  'blastdbcmd -db "$RIBOPILOT_DB_DIR/'"${RP_DB_VERSION}"'/ribopilot_rrna" -info > /dev/null'
-echo "Image looks sane."
+if [ "$RP_DB" -eq 1 ]; then
+  docker run --rm --platform linux/amd64 "${LOCAL}" bash -lc \
+    'blastdbcmd -db "$RIBOPILOT_DB_DIR/'"${RP_DB_VERSION}"'/ribopilot_rrna" -info > /dev/null'
+  echo "Image looks sane (rDNA panel ${RP_DB_VERSION} baked in)."
+else
+  # a --no-db image must not advertise a panel it does not carry
+  docker run --rm --platform linux/amd64 "${LOCAL}" bash -lc \
+    '[ -z "${RIBOPILOT_DB_DIR:-}" ]'
+  echo "Image looks sane (NO rDNA panel; searches NCBI remotely)."
+fi
 
 if [ "$DRY_RUN" -eq 1 ]; then
   echo "Dry run: built and tested ${LOCAL}, pushed nothing."

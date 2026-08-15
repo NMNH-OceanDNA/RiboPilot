@@ -103,7 +103,8 @@ make_fake_release <- function(root, version = "9.9.9", decoys = FALSE) {
   make_fake_asset(tagdir, sprintf("ribopilot_rrna-%s.tar.gz", version), list(
     manifest.json = sprintf(
       '{"manifest_schema":1,"db_name":"ribopilot_rrna","db_version":"%s"}', version),
-    ribopilot_rrna.nin = "x", ribopilot_rrna.nsq = "x", ribopilot_rrna.nhr = "x"))
+    ribopilot_rrna.nin = "x", ribopilot_rrna.nsq = "x", ribopilot_rrna.nhr = "x",
+    ribopilot_rrna.ndb = "x"))
   if (isTRUE(decoys)) {
     make_fake_asset(tagdir, sprintf("decoys-%s.tar.gz", version), list(decoy.nin = "x"))
   }
@@ -188,7 +189,7 @@ test_that("install_ribopilot_db rejects an archive holding only the index file",
     "did not contain a usable panel")
   # naming the absentees is what makes a future .nal-volume panel diagnosable
   expect_error(install_ribopilot_db("9.9.9", dest = dest, decoys = FALSE, base_url = base),
-    "ribopilot_rrna\\.nsq, ribopilot_rrna\\.nhr, manifest\\.json")
+    "ribopilot_rrna\\.nsq, ribopilot_rrna\\.nhr, ribopilot_rrna\\.ndb, manifest\\.json")
   expect_false(blast_db_exists(file.path(dest, "9.9.9", "ribopilot_rrna")))
 })
 
