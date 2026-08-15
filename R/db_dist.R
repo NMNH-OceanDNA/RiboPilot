@@ -74,3 +74,91 @@ ribopilot_db_dir <- function() {
   if (!nzchar(d)) d <- file.path(ribopilot_ref_dir(), "blastdb")
   path.expand(d)
 }
+
+#' Base URL of the panel release assets
+#' @noRd
+RP_DB_RELEASE_BASE <- "https://github.com/dmacguigan/RiboPilot/releases/download"
+
+#' Default panel version
+#' @noRd
+RP_DB_VERSION <- "2026.08.1"
+
+#' Download one asset and check it against its published .sha256
+#' @noRd
+fetch_verified <- function(base_url, tag, asset, dir) {
+  url <- paste(base_url, tag, asset, sep = "/")
+  dest <- file.path(dir, asset)
+  if (utils::download.file(url, dest, mode = "wb", quiet = TRUE) != 0 || !file.exists(dest)) {
+    stop("Could not download ", url, call. = FALSE)
+  }
+  sum_dest <- paste0(dest, ".sha256")
+  if (utils::download.file(paste0(url, ".sha256"), sum_dest, mode = "wb", quiet = TRUE) != 0) {
+    stop("Could not download the checksum for ", asset, call. = FALSE)
+  }
+  line <- readLines(sum_dest, warn = FALSE)[1]
+  want <- regmatches(line, regexpr("[0-9a-fA-F]{64}", line))
+  got <- rp_sha256(dest)
+  if (length(want) != 1 || is.na(got)) {
+    stop("Could not verify the checksum of ", asset, call. = FALSE)
+  }
+  if (!identical(tolower(want), got)) {
+    stop("Checksum mismatch for ", asset, ": the download is corrupt or truncated.",
+      call. = FALSE)
+  }
+  dest
+}
+
+#' Download and install a RiboPilot BLAST panel
+#'
+#' Extraction is staged in a sibling directory and moved into place only after
+#' every asset verifies, so an interrupted or corrupt download never leaves a
+#' half-panel that blast_db_exists() would call usable.
+#'
+#' @param version Panel version, matching release tag `db-<version>`.
+#' @param dest Parent directory; the panel lands in `<dest>/<version>`.
+#' @param decoys Also fetch the NCBI decoy databases (adds roughly 110 MB).
+#' @param base_url Release download base; overridable for testing.
+#' @param force Re-download even when the panel is already present.
+#' @return (invisibly) the panel prefix.
+#' @export
+install_ribopilot_db <- function(version = RP_DB_VERSION,
+                                 dest = ribopilot_db_dir(),
+                                 decoys = TRUE,
+                                 base_url = RP_DB_RELEASE_BASE,
+                                 force = FALSE) {
+  dest <- path.expand(dest)
+  final <- file.path(dest, version)
+  prefix <- file.path(final, "ribopilot_rrna")
+  if (!force && blast_db_exists(prefix)) {
+    message("Panel ", version, " is already installed at ", final)
+    return(invisible(prefix))
+  }
+  dir.create(dest, recursive = TRUE, showWarnings = FALSE)
+  if (unname(file.access(dest, 2)) != 0) {
+    stop(dest, " is not writable. Set RIBOPILOT_DB_DIR to a writable location.",
+      call. = FALSE)
+  }
+  stage <- file.path(dest, paste0(".stage-", version))
+  unlink(stage, recursive = TRUE)
+  dir.create(stage, recursive = TRUE, showWarnings = FALSE)
+  on.exit(unlink(stage, recursive = TRUE), add = TRUE)
+
+  tag <- paste0("db-", version)
+  assets <- sprintf("ribopilot_rrna-%s.tar.gz", version)
+  if (isTRUE(decoys)) assets <- c(assets, sprintf("decoys-%s.tar.gz", version))
+  for (a in assets) {
+    message("Downloading ", a, " ...")
+    tgz <- fetch_verified(base_url, tag, a, stage)
+    utils::untar(tgz, exdir = stage)
+    unlink(c(tgz, paste0(tgz, ".sha256")))
+  }
+  if (!blast_db_exists(file.path(stage, "ribopilot_rrna"))) {
+    stop("The downloaded archive did not contain a usable panel.", call. = FALSE)
+  }
+  unlink(final, recursive = TRUE)
+  if (!file.rename(stage, final)) {
+    stop("Could not move the panel into ", final, call. = FALSE)
+  }
+  message("Panel ", version, " installed at ", final)
+  invisible(prefix)
+}

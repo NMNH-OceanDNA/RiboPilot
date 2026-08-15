@@ -69,3 +69,50 @@ test_that("parse_sha256_line is not fooled by a hex-looking path component", {
 test_that("parse_sha256_line returns NA for unrecognised output", {
   expect_true(is.na(parse_sha256_line("not a digest line")))
 })
+
+make_fake_release <- function(root, version = "9.9.9") {
+  stage <- file.path(root, "stage"); dir.create(stage, recursive = TRUE)
+  writeLines(sprintf('{"manifest_schema":1,"db_name":"ribopilot_rrna","db_version":"%s"}', version),
+    file.path(stage, "manifest.json"))
+  writeLines("x", file.path(stage, "ribopilot_rrna.nin"))
+  writeLines("x", file.path(stage, "ribopilot_rrna.nsq"))
+  rel <- file.path(root, "rel")
+  # assets live under a tag dir, mirroring the real releases/download/<tag>/<asset> layout
+  tagdir <- file.path(rel, paste0("db-", version)); dir.create(tagdir, recursive = TRUE)
+  tgz <- file.path(tagdir, sprintf("ribopilot_rrna-%s.tar.gz", version))
+  withr::with_dir(stage, utils::tar(tgz, files = list.files("."), compression = "gzip"))
+  writeLines(paste0(rp_sha256(tgz), "  ", basename(tgz)), paste0(tgz, ".sha256"))
+  paste0("file://", rel)
+}
+
+test_that("install_ribopilot_db extracts a verified panel and returns its prefix", {
+  root <- tempfile(); dir.create(root); on.exit(unlink(root, recursive = TRUE))
+  base <- make_fake_release(root)
+  dest <- file.path(root, "dbs")
+  p <- install_ribopilot_db("9.9.9", dest = dest, decoys = FALSE, base_url = base)
+  expect_equal(p, file.path(dest, "9.9.9", "ribopilot_rrna"))
+  expect_true(blast_db_exists(p))
+  expect_equal(read_panel_manifest(dirname(p))$db_version, "9.9.9")
+})
+
+test_that("install_ribopilot_db refuses a tarball whose checksum does not match", {
+  root <- tempfile(); dir.create(root); on.exit(unlink(root, recursive = TRUE))
+  base <- make_fake_release(root)
+  sums <- list.files(file.path(root, "rel"), pattern = "\\.sha256$", full.names = TRUE,
+    recursive = TRUE)
+  writeLines(paste0(strrep("0", 64), "  ", sub("\\.sha256$", "", basename(sums[1]))), sums[1])
+  dest <- file.path(root, "dbs")
+  expect_error(install_ribopilot_db("9.9.9", dest = dest, decoys = FALSE, base_url = base),
+    "[Cc]hecksum")
+  # a failed verification must leave nothing behind to be mistaken for a panel
+  expect_false(blast_db_exists(file.path(dest, "9.9.9", "ribopilot_rrna")))
+})
+
+test_that("install_ribopilot_db is a no-op when the panel is already present", {
+  root <- tempfile(); dir.create(root); on.exit(unlink(root, recursive = TRUE))
+  base <- make_fake_release(root)
+  dest <- file.path(root, "dbs")
+  p <- install_ribopilot_db("9.9.9", dest = dest, decoys = FALSE, base_url = base)
+  unlink(file.path(root, "rel"), recursive = TRUE)   # make any refetch impossible
+  expect_equal(install_ribopilot_db("9.9.9", dest = dest, decoys = FALSE, base_url = base), p)
+})
