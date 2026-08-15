@@ -253,3 +253,261 @@ test_that("clean refuses while a build holds the lock", {
   expect_true(any(grepl("already running", r$out, fixed = TRUE)))
   expect_true(file.exists(file.path(build, "chunks", "fa_0001")))
 })
+
+# --- accessions stage --------------------------------------------------------
+
+test_that("build_refdb.sh commits to the spec's EXPECTED_COUNT", {
+  skip_if_not(file.exists(refdb_sh))
+  s <- paste(readLines(refdb_sh, warn = FALSE), collapse = "\n")
+  expect_match(s, "EXPECTED_COUNT=892123", fixed = TRUE)
+})
+
+test_that("build_refdb.sh filters WGS master accessions with the exact spec pattern", {
+  skip_if_not(file.exists(refdb_sh))
+  s <- paste(readLines(refdb_sh, warn = FALSE), collapse = "\n")
+  expect_match(s, "[A-Z]{4}0{6}", fixed = TRUE)
+})
+
+test_that("build_refdb.sh never uses the broken grep -c-with-fallback line-count idiom", {
+  skip_if_not(file.exists(refdb_sh))
+  s <- paste(readLines(refdb_sh, warn = FALSE), collapse = "\n")
+  # on an existing EMPTY file this idiom prints "0" twice, and `[ -eq ]` on
+  # the two-line result errors rc=2, silently skipping the guard
+  expect_false(grepl("grep -c . ", s, fixed = TRUE))
+  expect_true(grepl("wc -l", s, fixed = TRUE))
+})
+
+# Sources build_refdb.sh with no positional args (so its own arg-parser sees
+# $# == 0 and never runs main_build/dispatch), the same way lib.sh is sourced
+# elsewhere in this file, so guard functions can be called directly. `$dir`
+# in body_lines is the driver's own directory, a fresh tempdir per call.
+run_sourced <- function(body_lines) {
+  skip_if_not(file.exists(refdb_sh))
+  skip_if(Sys.which("bash") == "")
+  work <- withr::local_tempdir(.local_envir = parent.frame())
+  driver <- file.path(work, "drive.sh")
+  writeLines(c(
+    "set -uo pipefail",
+    'dir="$(cd "$(dirname "$0")" && pwd)"',
+    'refdb="$1"',
+    "shift",
+    "set --",
+    'source "$refdb"',
+    "set +Ee",
+    "trap - ERR",
+    body_lines
+  ), driver)
+  out <- suppressWarnings(system2("bash", c(shQuote(driver), shQuote(normalizePath(refdb_sh))),
+    stdout = TRUE, stderr = TRUE))
+  st <- attr(out, "status")
+  list(status = if (is.null(st)) 0L else as.integer(st), out = out, work = work)
+}
+
+test_that("rp_line_count returns a clean single 0 on an empty file", {
+  r <- run_sourced(c(
+    ': > "$dir/empty.txt"',
+    'n=$(rp_line_count "$dir/empty.txt")',
+    'echo "N=$n"'
+  ))
+  expect_equal(r$status, 0L)
+  expect_equal(r$out, "N=0")
+})
+
+test_that("rp_assert_count aborts on a mismatch derived from an empty file, passes on a match", {
+  r_fail <- run_sourced(c(
+    ': > "$dir/empty.txt"',
+    'n=$(rp_line_count "$dir/empty.txt")',
+    'rp_assert_count "test label" "$n" "5"',
+    'echo "UNREACHABLE"'
+  ))
+  expect_gt(r_fail$status, 0L)
+  expect_false(any(r_fail$out == "UNREACHABLE"))
+  expect_true(any(grepl("test label: expected 5, got 0", r_fail$out, fixed = TRUE)))
+
+  r_pass <- run_sourced(c(
+    ': > "$dir/empty.txt"',
+    'n=$(rp_line_count "$dir/empty.txt")',
+    'rp_assert_count "test label" "$n" "0"',
+    'echo "REACHED"'
+  ))
+  expect_equal(r_pass$status, 0L)
+  expect_true(any(r_pass$out == "REACHED"))
+})
+
+test_that("rp_assert_unique aborts on a duplicate accession, passes on empty input", {
+  r_dup <- run_sourced(c(
+    'printf "AB123456\nAB123456\n" > "$dir/dup.txt"',
+    'rp_assert_unique "test label" "$dir/dup.txt"',
+    'echo "UNREACHABLE"'
+  ))
+  expect_gt(r_dup$status, 0L)
+  expect_false(any(r_dup$out == "UNREACHABLE"))
+
+  r_empty <- run_sourced(c(
+    ': > "$dir/empty.txt"',
+    'rp_assert_unique "test label" "$dir/empty.txt"',
+    'echo "REACHED"'
+  ))
+  expect_equal(r_empty$status, 0L)
+  expect_true(any(r_empty$out == "REACHED"))
+})
+
+test_that("rp_filter_wgs_masters drops matching accessions as a recorded drop, no-op on empty input", {
+  r <- run_sourced(c(
+    'printf "AAAA00000000\nMZ000001\nBBBB00000000\nAB123456\n" > "$dir/in.txt"',
+    'rp_filter_wgs_masters "$dir/in.txt" "$dir/out.txt"',
+    'cat "$dir/out.txt"'
+  ))
+  expect_equal(r$status, 0L)
+  kept <- r$out[!grepl("^\\[", r$out)]
+  expect_setequal(kept, c("MZ000001", "AB123456"))
+  expect_true(any(grepl("dropped 2 WGS master accession", r$out, fixed = TRUE)))
+
+  r_empty <- run_sourced(c(
+    ': > "$dir/in.txt"',
+    'rp_filter_wgs_masters "$dir/in.txt" "$dir/out.txt"',
+    'wc -l < "$dir/out.txt" | tr -d " "'
+  ))
+  expect_equal(r_empty$status, 0L)
+  expect_true(any(grepl("dropped 0 WGS master accession", r_empty$out, fixed = TRUE)))
+  expect_true(any(r_empty$out == "0"))
+})
+
+test_that("rp_check_drift refuses beyond tolerance without --accept-drift, accepts (and logs) with it", {
+  r_refuse <- run_sourced(c(
+    'rp_check_drift "800000" "0"',
+    'echo "UNREACHABLE"'
+  ))
+  expect_gt(r_refuse$status, 0L)
+  expect_false(any(r_refuse$out == "UNREACHABLE"))
+  expect_true(any(grepl("accept-drift", r_refuse$out, fixed = TRUE)))
+
+  r_accept <- run_sourced(c(
+    'rp_check_drift "800000" "1"',
+    'echo "REACHED"'
+  ))
+  expect_equal(r_accept$status, 0L)
+  expect_true(any(r_accept$out == "REACHED"))
+  expect_true(any(grepl("accepted via --accept-drift", r_accept$out, fixed = TRUE)))
+
+  r_within <- run_sourced(c(
+    'rp_check_drift "902123" "0"',
+    'echo "REACHED"'
+  ))
+  expect_equal(r_within$status, 0L)
+  expect_true(any(r_within$out == "REACHED"))
+  expect_false(any(grepl("drift", r_within$out, fixed = TRUE)))
+})
+
+# Static stub tools for the full-CLI accessions-stage tests: esearch/xtract/
+# efetch behave per-test via companion data files; the rest are no-ops that
+# only need to exist so run_preflight's tool check passes.
+write_accessions_stubs <- function(bindir) {
+  dir.create(bindir, showWarnings = FALSE, recursive = TRUE)
+  write_stub <- function(name, body) {
+    p <- file.path(bindir, name)
+    writeLines(c("#!/usr/bin/env bash", "set -eu", body), p)
+    Sys.chmod(p, "0755")
+  }
+  # ENTREZ_DIRECT is esearch's real default chaining wrapper (verified
+  # against a live esearch, see task-2-report.md), not raw eSearchResult XML.
+  write_stub("esearch", c(
+    'self_dir="$(cd "$(dirname "$0")" && pwd)"',
+    'printf x >> "$self_dir/esearch_calls.log"',
+    'n="$(cat "$self_dir/esearch_count.txt")"',
+    "cat <<XML",
+    '<ENTREZ_DIRECT><Db>nuccore</Db><WebEnv>NCID_test</WebEnv><QueryKey>1</QueryKey><Count>$n</Count></ENTREZ_DIRECT>',
+    "XML"
+  ))
+  write_stub("xtract", c(
+    'file="" pattern=""',
+    'while [ $# -gt 0 ]; do case "$1" in -input) file="$2"; shift 2 ;; -pattern) pattern="$2"; shift 2 ;; *) shift ;; esac; done',
+    # a -pattern that does not actually wrap the file is exactly the bug this
+    # stub exists to catch, so fail instead of parsing anyway
+    'grep -q "<$pattern>" "$file"',
+    'grep -o "<Count>[0-9]*</Count>" "$file" | head -1 | grep -oE "[0-9]+"'
+  ))
+  write_stub("efetch", c(
+    'self_dir="$(cd "$(dirname "$0")" && pwd)"',
+    'cat "$self_dir/efetch_output.txt"'
+  ))
+  for (noop in c("epost", "esummary", "update_blastdb.pl", "makeblastdb", "blastdbcmd", "seqkit")) {
+    write_stub(noop, "exit 0")
+  }
+  writeLines("0", file.path(bindir, "esearch_count.txt"))
+  writeLines(character(0), file.path(bindir, "efetch_output.txt"))
+  file.create(file.path(bindir, "esearch_calls.log"))
+  bindir
+}
+
+run_accessions_stage <- function(count, efetch_lines, extra_args = character(0)) {
+  build <- withr::local_tempdir(.local_envir = parent.frame())
+  bindir <- file.path(build, "stubbin")
+  write_accessions_stubs(bindir)
+  writeLines(as.character(count), file.path(bindir, "esearch_count.txt"))
+  writeLines(efetch_lines, file.path(bindir, "efetch_output.txt"))
+  env <- c(
+    paste0("PATH=", bindir, ":", Sys.getenv("PATH")),
+    "NCBI_API_KEY=test-key-not-real"
+  )
+  out <- suppressWarnings(system2("bash",
+    c(shQuote(refdb_sh), "--build-dir", shQuote(build), "--stage", "accessions", extra_args),
+    stdout = TRUE, stderr = TRUE, env = env))
+  st <- attr(out, "status")
+  list(status = if (is.null(st)) 0L else as.integer(st), out = out, build = build, bindir = bindir)
+}
+
+test_that("accessions stage writes accessions.txt/.sha256/.count, drops WGS masters, calls esearch once", {
+  skip_if_not(file.exists(refdb_sh))
+  skip_if(Sys.which("bash") == "")
+  lines <- c("AAAA00000000", "BBBB00000000", "MZ000001", "AB123456",
+             "KX999999", "OP111111", "QR222222", "ST333333")
+  r <- run_accessions_stage(count = length(lines), efetch_lines = lines,
+    extra_args = "--accept-drift")
+  expect_equal(r$status, 0L)
+
+  acc_file <- file.path(r$build, "accessions.txt")
+  expect_true(file.exists(acc_file))
+  expect_setequal(readLines(acc_file), setdiff(lines, c("AAAA00000000", "BBBB00000000")))
+
+  sha_file <- file.path(r$build, "accessions.sha256")
+  expect_true(file.exists(sha_file))
+  want <- system2("sha256sum", shQuote(acc_file), stdout = TRUE)
+  want_hash <- sub("\\s.*", "", want)
+  got <- readLines(sha_file)
+  expect_true(any(startsWith(got, want_hash)))
+
+  expect_equal(readLines(file.path(r$build, "accessions.count")), as.character(length(lines)))
+
+  calls <- readLines(file.path(r$bindir, "esearch_calls.log"), warn = FALSE)
+  expect_equal(paste(calls, collapse = ""), "x")
+})
+
+test_that("accessions stage aborts on a truncated harvest and does not promote a partial accessions.txt", {
+  skip_if_not(file.exists(refdb_sh))
+  skip_if(Sys.which("bash") == "")
+  full <- c("MZ000001", "AB123456", "KX999999", "OP111111",
+            "QR222222", "ST333333", "UV444444", "WX555555")
+  r <- run_accessions_stage(count = length(full), efetch_lines = full[-length(full)],
+    extra_args = "--accept-drift")
+  expect_gt(r$status, 0L)
+  expect_false(file.exists(file.path(r$build, "accessions.txt")))
+  expect_true(any(grepl("expected 8, got 7", r$out, fixed = TRUE)))
+})
+
+test_that("accessions stage refuses a drifted count without --accept-drift, proceeds with it", {
+  skip_if_not(file.exists(refdb_sh))
+  skip_if(Sys.which("bash") == "")
+  lines <- c("MZ000001", "AB123456")
+
+  r_refuse <- run_accessions_stage(count = length(lines), efetch_lines = lines)
+  expect_gt(r_refuse$status, 0L)
+  expect_false(file.exists(file.path(r_refuse$build, "accessions.txt")))
+  expect_true(any(grepl("accept-drift", r_refuse$out, fixed = TRUE)))
+
+  r_accept <- run_accessions_stage(count = length(lines), efetch_lines = lines,
+    extra_args = "--accept-drift")
+  expect_equal(r_accept$status, 0L)
+  expect_true(file.exists(file.path(r_accept$build, "accessions.txt")))
+  expect_true(any(grepl("accepted via --accept-drift", r_accept$out, fixed = TRUE)))
+})

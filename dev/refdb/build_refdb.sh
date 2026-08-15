@@ -47,6 +47,15 @@ CHUNK_SIZE=5000
 DECOY_DBS="16S_ribosomal_RNA SSU_eukaryote_rRNA LSU_eukaryote_rRNA taxdb"
 MAKEBLASTDB_FLAGS=(-dbtype nucl -parse_seqids -blastdb_version 5)
 
+# Committed count as of 2026-08-15 (dev/design/18_REFDB_REBUILD.md section 4).
+# Tolerance covers about 5 weeks of the source's measured drift of ~370
+# records/day (891,382 on 2026-08-13 -> 892,123 on 2026-08-15), so a rebuild
+# run every few weeks does not require --accept-drift, while a change big
+# enough to matter -- a molecule-type filter alone swings the count by
+# ~150,000 -- still trips it.
+EXPECTED_COUNT=892123
+EXPECTED_COUNT_TOLERANCE=15000
+
 REQUIRED_TOOLS="esearch efetch epost esummary xtract update_blastdb.pl makeblastdb blastdbcmd seqkit jq curl sha256sum tar"
 ALL_STAGES="accessions taxidmap fetch build decoys package"
 MIN_FREE_GB=8
@@ -333,11 +342,114 @@ run_preflight() {
 }
 
 # ---------------------------------------------------------------------------
+# Accessions stage guards (dev/design/18_REFDB_REBUILD.md section 4).
+# ---------------------------------------------------------------------------
+
+# rp_line_count FILE
+# wc -l, never a grep-match-count with an `|| echo 0` fallback: on an
+# existing EMPTY file, grep's own count and the fallback both print, so that
+# idiom emits two lines of "0"; `[ "$n" -eq ... ]` then sees a two-line
+# argument and errors with rc 2, which an unguarded caller treats as the
+# guard being skipped, promoting an empty file as success. wc -l has none of
+# that: one line of output, "0" on an empty file.
+rp_line_count() {
+  wc -l < "$1" | tr -d ' '
+}
+
+# rp_assert_count LABEL ACTUAL EXPECTED
+# Exact-match guard: replaces the historical `-lt 500000` floor, which sat
+# 44% below the true count and passed a stream that died at 600k.
+rp_assert_count() {
+  local label="$1" actual="$2" expected="$3"
+  [ "$actual" = "$expected" ] \
+    || rp_die "$label: expected $expected, got $actual"
+}
+
+# rp_assert_unique LABEL FILE
+# Count == lines == unique was verified on three clades; a duplicate means
+# the harvest looped or the history-server replay landed the wrong page.
+rp_assert_unique() {
+  local label="$1" file="$2" total uniq
+  total="$(rp_line_count "$file")"
+  uniq="$(sort -u "$file" | wc -l | tr -d ' ')"
+  [ "$total" = "$uniq" ] \
+    || rp_die "$label: $file has $((total - uniq)) duplicate line(s) among $total"
+}
+
+# rp_filter_wgs_masters IN OUT
+# WGS master accessions (4 letters + 6 zeros) are permanently unavailable via
+# efetch by design, so dropping them here is a recorded expected drop, not a
+# silent one.
+rp_filter_wgs_masters() {
+  local in="$1" out="$2" total kept
+  grep -Ev '^[A-Z]{4}0{6}' "$in" > "$out" || true
+  total="$(rp_line_count "$in")"
+  kept="$(rp_line_count "$out")"
+  rp_log "accessions: dropped $((total - kept)) WGS master accession(s) (expected, permanently unavailable)"
+}
+
+# rp_check_drift ACTUAL ACCEPT_DRIFT
+# Beyond EXPECTED_COUNT_TOLERANCE, refuse unless ACCEPT_DRIFT=1, which logs
+# the new count instead of aborting. Within tolerance, silent: the source
+# moves ~370 records/day and that is not news.
+rp_check_drift() {
+  local actual="$1" accept_drift="$2" delta
+  if [ "$actual" -ge "$EXPECTED_COUNT" ]; then
+    delta=$((actual - EXPECTED_COUNT))
+  else
+    delta=$((EXPECTED_COUNT - actual))
+  fi
+  [ "$delta" -gt "$EXPECTED_COUNT_TOLERANCE" ] || return 0
+  if [ "$accept_drift" -eq 1 ]; then
+    rp_log "accessions: count drifted by $delta (EXPECTED_COUNT=$EXPECTED_COUNT, got $actual); accepted via --accept-drift"
+  else
+    rp_die "accessions: count $actual is $delta from EXPECTED_COUNT=$EXPECTED_COUNT (tolerance $EXPECTED_COUNT_TOLERANCE); pass --accept-drift to proceed and record the new count"
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # Stages -- not implemented yet, land in later work. Each is a hard stub so a
 # partial run cannot be mistaken for a real one.
 # ---------------------------------------------------------------------------
 
-stage_accessions() { rp_die "stage 'accessions' is not implemented yet"; }
+# stage_accessions
+# One esearch against nuccore with the verbatim QUERY. The XML is captured
+# once and replayed into efetch (-input, not a second esearch), so the
+# accession list and the <Count> it is checked against come from the same
+# history-server result set.
+stage_accessions() {
+  local xml raw filtered count
+
+  mkdir -p "$BUILD_DIR"
+  xml="$BUILD_DIR/accessions.esearch.xml"
+  raw="$BUILD_DIR/accessions.raw.txt"
+  filtered="$BUILD_DIR/accessions.txt"
+
+  rp_log "accessions: esearch (nuccore) for the panel query"
+  esearch -db nuccore -query "$QUERY" > "$xml"
+
+  # esearch's default output is its own ENTREZ_DIRECT chaining wrapper
+  # (WebEnv/QueryKey/Count), not raw eSearchResult XML -- verified against a
+  # live esearch, not assumed.
+  count="$(xtract -input "$xml" -pattern ENTREZ_DIRECT -element Count)"
+  [ -n "$count" ] && [[ "$count" =~ ^[0-9]+$ ]] \
+    || rp_die "accessions: could not parse a numeric <Count> from esearch output"
+
+  rp_check_drift "$count" "$ACCEPT_DRIFT"
+
+  rp_log "accessions: replaying the same WebEnv/QueryKey into efetch -format acc ($count expected)"
+  efetch -input "$xml" -format acc > "$raw"
+
+  rp_assert_count "accessions: harvested line count vs esearch <Count>" "$(rp_line_count "$raw")" "$count"
+  rp_assert_unique "accessions: harvested accession list" "$raw"
+
+  rp_filter_wgs_masters "$raw" "$filtered"
+
+  (cd "$BUILD_DIR" && sha256sum "$(basename "$filtered")" > accessions.sha256)
+  printf '%s\n' "$count" > "$BUILD_DIR/accessions.count"
+  rp_marker_set accessions "$(cut -d' ' -f1 < "$BUILD_DIR/accessions.sha256")"
+  rp_log "accessions: wrote $(rp_line_count "$filtered") accession(s) to $filtered"
+}
 stage_taxidmap() { rp_die "stage 'taxidmap' is not implemented yet"; }
 stage_fetch() { rp_die "stage 'fetch' is not implemented yet"; }
 stage_build() { rp_die "stage 'build' is not implemented yet"; }
@@ -375,21 +487,25 @@ main_build() {
 # ---------------------------------------------------------------------------
 # Dispatch
 # ---------------------------------------------------------------------------
+# Guarded so tests can `source` this file (functions and constants only, no
+# side effects) to exercise guard functions directly, the same way lib.sh is
+# sourced in isolation elsewhere in the test suite.
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  if [ "$CHECK_VERSION" -eq 1 ]; then
+    cmd_check_version
+    exit $?
+  fi
 
-if [ "$CHECK_VERSION" -eq 1 ]; then
-  cmd_check_version
-  exit $?
+  case "$COMMAND" in
+    status)
+      cmd_status
+      exit 0
+      ;;
+    clean)
+      cmd_clean
+      exit 0
+      ;;
+  esac
+
+  main_build
 fi
-
-case "$COMMAND" in
-  status)
-    cmd_status
-    exit 0
-    ;;
-  clean)
-    cmd_clean
-    exit 0
-    ;;
-esac
-
-main_build
