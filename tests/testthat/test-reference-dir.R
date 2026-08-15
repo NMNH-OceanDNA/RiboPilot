@@ -32,6 +32,29 @@ test_that("set_ref_config writes only the arguments it is given", {
   expect_true(is.na(cfg$ref_dir[1]))
 })
 
+test_that("ref_config reports the stored panel prefix, empty when unset", {
+  con <- mk_cfg_db(); on.exit(DBI::dbDisconnect(con))
+  expect_equal(ref_config(con)$blastdb, "")
+  set_ref_config(con, blastdb = "/data/blastdb/2026.08.1/ribopilot_rrna")
+  expect_equal(ref_config(con)$blastdb, "/data/blastdb/2026.08.1/ribopilot_rrna")
+})
+
+test_that("set_ref_config clears the panel prefix when given an empty string", {
+  con <- mk_cfg_db(); on.exit(DBI::dbDisconnect(con))
+  set_ref_config(con, blastdb = "/data/p/ribopilot_rrna")
+  set_ref_config(con, blastdb = "")
+  expect_equal(ref_config(con)$blastdb, "")
+  expect_true(is.na(DBI::dbGetQuery(con,
+    "SELECT blastdb FROM reference_config WHERE rowid_key = 1")$blastdb[1]))
+})
+
+test_that("set_ref_config leaves the panel prefix alone when not supplied", {
+  con <- mk_cfg_db(); on.exit(DBI::dbDisconnect(con))
+  set_ref_config(con, blastdb = "/data/p/ribopilot_rrna")
+  set_ref_config(con, min_records = 500)
+  expect_equal(ref_config(con)$blastdb, "/data/p/ribopilot_rrna")
+})
+
 test_that("validate_ref_dir rejects a path that is not a writable directory", {
   f <- withr::local_tempfile()
   writeLines("x", f)

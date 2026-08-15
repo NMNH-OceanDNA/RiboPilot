@@ -155,6 +155,14 @@ reference_settings_modal <- function(cfg) {
       "clade holding at least the minimum. Below that there is too little published ",
       "sequence to seed an assembly; past the maximum a clade is so broad that its ",
       "seeds stop being specific to your organism."),
+    shiny::h5("Local BLAST panel", style = SETTINGS_HEAD),
+    shiny::div(
+      style = "font-size:0.85em; color:#666; margin-bottom:0.4em;",
+      "Path prefix of a downloaded panel, without a file extension. ",
+      "Leave empty to search NCBI over the network."),
+    shiny::textInput("ref_blastdb_path", NULL, width = "100%",
+      value = cfg$blastdb %||% "",
+      placeholder = "/data/blastdb/2026.08.1/ribopilot_rrna"),
     footer = shiny::tagList(
       shiny::actionButton("ref_dir_apply", "Save", class = "btn-primary btn-sm"),
       shiny::modalButton("Cancel")))
@@ -769,8 +777,10 @@ reference_handlers <- function(input, output, session, deps) {
   shiny::observeEvent(input$ref_dir_apply, {
     v <- validate_ref_dir(input$ref_dir_path %||% "")
     if (!isTRUE(v$ok)) { notify(v$msg, "error"); return() }
+    b <- validate_blastdb_prefix(input$ref_blastdb_path %||% "")
+    if (!isTRUE(b$ok)) { notify(b$msg, "error"); return() }
     with_con(function(con) set_ref_config(con, ref_dir = v$msg,
-      min_records = input$ref_min, max_records = input$ref_max))
+      min_records = input$ref_min, max_records = input$ref_max, blastdb = b$msg))
     shiny::removeModal(); bump()
     notify(paste("Reference folder set to", v$msg))
   })

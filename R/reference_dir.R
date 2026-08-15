@@ -20,16 +20,21 @@ ref_config <- function(con) {
   list(
     ref_dir = path.expand(dir),
     min_records = if (nrow(d) > 0) as.integer(d$min_records[1] %|NA|% 1000L) else 1000L,
-    max_records = if (nrow(d) > 0) as.integer(d$max_records[1] %|NA|% 25000L) else 25000L
+    max_records = if (nrow(d) > 0) as.integer(d$max_records[1] %|NA|% 25000L) else 25000L,
+    blastdb = {
+      b <- if (nrow(d) > 0 && "blastdb" %in% names(d)) d$blastdb[1] else NA_character_
+      if (!is.na(b) && nzchar(trimws(b))) path.expand(trimws(b)) else ""
+    }
   )
 }
 
 #' Write project-level reference settings (only the arguments supplied)
 #' @param con Open project DB connection.
-#' @param ref_dir,min_records,max_records New values, or NULL to leave as is.
+#' @param ref_dir,min_records,max_records,blastdb New values, or NULL to leave as is.
 #' @return (invisibly) the resulting [ref_config()].
 #' @noRd
-set_ref_config <- function(con, ref_dir = NULL, min_records = NULL, max_records = NULL) {
+set_ref_config <- function(con, ref_dir = NULL, min_records = NULL, max_records = NULL,
+                           blastdb = NULL) {
   if (!is.null(ref_dir)) {
     DBI::dbExecute(con, "UPDATE reference_config SET ref_dir = ? WHERE rowid_key = 1",
       params = list(if (nzchar(trimws(ref_dir))) path.expand(trimws(ref_dir)) else NA_character_))
@@ -41,6 +46,10 @@ set_ref_config <- function(con, ref_dir = NULL, min_records = NULL, max_records 
   if (!is.null(max_records)) {
     DBI::dbExecute(con, "UPDATE reference_config SET max_records = ? WHERE rowid_key = 1",
       params = list(as.integer(max_records)))
+  }
+  if (!is.null(blastdb)) {
+    DBI::dbExecute(con, "UPDATE reference_config SET blastdb = ? WHERE rowid_key = 1",
+      params = list(if (nzchar(trimws(blastdb))) path.expand(trimws(blastdb)) else NA_character_))
   }
   invisible(ref_config(con))
 }
