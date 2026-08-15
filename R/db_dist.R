@@ -1,5 +1,26 @@
 # Getting a reference panel onto disk, and knowing which one it is.
 
+#' Pull the digest out of one line of sha256sum/shasum/openssl output
+#'
+#' Position matters: sha256sum/shasum print the hex first ("hex  path"), so
+#' that shape is anchored to the line start; openssl prints the path first
+#' ("SHA2-256(path)= hex"), so that shape is anchored to the "= " right
+#' before the hex. An unanchored search would match a hex-looking path
+#' component instead of the real digest.
+#' @return 64-char lowercase hex, or NA_character_ when unrecognised.
+#' @noRd
+parse_sha256_line <- function(line) {
+  if (length(line) != 1 || is.na(line)) return(NA_character_)
+  m <- regmatches(line, regexpr("^[0-9a-fA-F]{64}", line))
+  if (length(m) == 1) return(tolower(m))
+  m <- regmatches(line, regexpr("=\\s*[0-9a-fA-F]{64}\\s*$", line))
+  if (length(m) == 1) {
+    hex <- regmatches(m, regexpr("[0-9a-fA-F]{64}", m))
+    return(tolower(hex))
+  }
+  NA_character_
+}
+
 #' SHA-256 of a file, as lowercase hex
 #'
 #' tools::sha256sum() arrived in R 4.5.0 and the package floor is 4.4.0, so it
@@ -21,8 +42,8 @@ rp_sha256 <- function(path) {
       system2(cc[1], shQuote(cc[-1]), stdout = TRUE, stderr = FALSE)),
       error = function(e) character(0))
     if (length(out) < 1) next
-    hit <- regmatches(out[1], regexpr("[0-9a-fA-F]{64}", out[1]))
-    if (length(hit) == 1) return(tolower(hit))
+    hit <- parse_sha256_line(out[1])
+    if (!is.na(hit)) return(hit)
   }
   NA_character_
 }

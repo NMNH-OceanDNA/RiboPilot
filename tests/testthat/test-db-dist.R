@@ -42,3 +42,30 @@ test_that("ribopilot_db_dir falls back to blastdb under the ref dir", {
     expect_equal(ribopilot_db_dir(), file.path("/refs", "blastdb"))
   })
 })
+
+RP_DIGEST <- "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+
+test_that("parse_sha256_line reads sha256sum output", {
+  expect_equal(parse_sha256_line(paste0(RP_DIGEST, "  /tmp/x")), RP_DIGEST)
+})
+
+test_that("parse_sha256_line reads shasum -a 256 output", {
+  expect_equal(parse_sha256_line(paste0(RP_DIGEST, "  /tmp/x")), RP_DIGEST)
+})
+
+test_that("parse_sha256_line reads openssl 3.x output", {
+  expect_equal(parse_sha256_line(paste0("SHA2-256(/tmp/x)= ", RP_DIGEST)), RP_DIGEST)
+})
+
+test_that("parse_sha256_line reads openssl 1.x output", {
+  expect_equal(parse_sha256_line(paste0("SHA256(/tmp/x)= ", RP_DIGEST)), RP_DIGEST)
+})
+
+test_that("parse_sha256_line is not fooled by a hex-looking path component", {
+  line <- paste0("SHA2-256(/tmp/", strrep("a", 64), "/x)= ", RP_DIGEST)
+  expect_equal(parse_sha256_line(line), RP_DIGEST)
+})
+
+test_that("parse_sha256_line returns NA for unrecognised output", {
+  expect_true(is.na(parse_sha256_line("not a digest line")))
+})

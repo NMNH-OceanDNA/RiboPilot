@@ -84,6 +84,10 @@ test_that("an empty panel prefix is valid and means remote", {
   expect_true(validate_blastdb_prefix(NULL)$ok)
 })
 
+test_that("a non-scalar prefix is rejected rather than erroring", {
+  expect_false(validate_blastdb_prefix(c("a", "b"))$ok)
+})
+
 test_that("a prefix with no volume files is rejected", {
   r <- validate_blastdb_prefix(file.path(tempdir(), "nope", "ribopilot_rrna"))
   expect_false(r$ok)

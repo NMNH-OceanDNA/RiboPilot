@@ -72,6 +72,7 @@ validate_ref_dir <- function(dir) {
 #' @return list(ok, msg); on success msg is the normalised prefix.
 #' @noRd
 validate_blastdb_prefix <- function(prefix) {
+  if (length(prefix) > 1) return(list(ok = FALSE, msg = "Give a single panel path."))
   prefix <- trimws(prefix %||% "")
   if (!nzchar(prefix)) return(list(ok = TRUE, msg = ""))
   prefix <- path.expand(prefix)
