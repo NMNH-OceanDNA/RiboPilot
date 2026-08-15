@@ -164,3 +164,21 @@ test_that("discover_panel refuses a path containing whitespace", {
   mk_panel(r, "2026.08.1")
   expect_null(discover_panel(r))
 })
+
+test_that("RIBOPILOT_NO_LOCAL_BLAST forces discovery to find nothing", {
+  r <- tempfile(); dir.create(r); on.exit(unlink(r, recursive = TRUE))
+  p <- mk_panel(r, "2026.08.1")
+  expect_equal(discover_panel(r), p)
+  withr::with_envvar(c(RIBOPILOT_NO_LOCAL_BLAST = "1"), {
+    expect_null(discover_panel(r))
+  })
+})
+
+test_that("the opt-out does not affect an explicitly configured panel", {
+  # an explicit prefix bypasses discovery entirely
+  r <- tempfile(); dir.create(r); on.exit(unlink(r, recursive = TRUE))
+  p <- mk_panel(r, "2026.08.1")
+  withr::with_envvar(c(RIBOPILOT_NO_LOCAL_BLAST = "1"), {
+    expect_type(local_blast_db_arg(p, dirname(p)), "character")
+  })
+})

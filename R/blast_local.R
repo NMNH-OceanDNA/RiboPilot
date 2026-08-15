@@ -79,6 +79,7 @@ panel_complete <- function(prefix) {
 #' builder bind a host directory over the panel and hide it.
 #' @noRd
 discover_panel <- function(db_dir = ribopilot_db_dir()) {
+  if (nzchar(Sys.getenv("RIBOPILOT_NO_LOCAL_BLAST", ""))) return(NULL)
   if (length(db_dir) != 1 || is.na(db_dir) || !nzchar(db_dir)) return(NULL)
   db_dir <- path.expand(db_dir)
   if (!dir.exists(db_dir) || grepl("\\s", db_dir)) return(NULL)

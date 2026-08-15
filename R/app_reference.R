@@ -160,7 +160,8 @@ reference_settings_modal <- function(cfg, blastdb_version = "") {
     shiny::div(
       style = "font-size:0.85em; color:#666; margin-bottom:0.4em;",
       "Path prefix of a downloaded panel, without a file extension. ",
-      "Leave empty to search NCBI over the network."),
+      "Leave empty and RiboPilot uses a panel shipped with the image or ",
+      "installed locally if it finds one, otherwise it searches NCBI."),
     shiny::textInput("ref_blastdb_path", NULL, width = "100%",
       value = cfg$blastdb %||% "",
       placeholder = "/data/blastdb/2026.08.1/ribopilot_rrna"),
