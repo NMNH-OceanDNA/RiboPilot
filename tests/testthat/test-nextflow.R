@@ -594,14 +594,18 @@ test_that("blast.nf records the search source", {
   expect_true(endsWith(trimws(call_line), '"\\$UNIT_SRC"'))
 })
 
-test_that("blast.nf only claims 4 cpus when a local panel is configured", {
+test_that("blast.nf claims a fixed 4 cpus, not a params.blastdb-gated closure", {
+  # the cpus{} closure evaluates before the script block runs, so it cannot
+  # see the local/remote decision rp_dbarg.R makes at task time; params.blastdb
+  # also no longer reliably reflects "no panel configured" (nextflow coerces
+  # an empty --blastdb '' CLI value to the string "true"), so a conditional
+  # here was never correct
   p <- system.file("nextflow", "modules", "blast.nf", package = "RiboPilot")
   if (!nzchar(p)) p <- "inst/nextflow/modules/blast.nf"
   lines <- readLines(p, warn = FALSE)
   cpus_line <- grep("^\\s*cpus\\b", lines, value = TRUE)
   expect_length(cpus_line, 1)
-  expect_match(cpus_line, "params\\.blastdb\\s*\\?\\s*4\\s*:\\s*1",
-    info = "a remote-only task must not claim 4 cpus to sit on a network wait")
+  expect_match(cpus_line, "^\\s*cpus\\s+4\\s*$")
 })
 
 test_that("rp_dbarg.R does not suppress the decoy warnings", {

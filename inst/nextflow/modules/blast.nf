@@ -17,7 +17,7 @@ process blast_genbank {
     tag "${id}"
     errorStrategy { task.attempt <= 3 ? 'retry' : 'ignore' }
     maxRetries 3
-    cpus { params.blastdb ? 4 : 1 }
+    cpus 4
 
     input:
     val id
@@ -46,13 +46,10 @@ process blast_genbank {
 
     DBARG=""
     SRC="remote"
-    if [ -n '${params.blastdb}' ]; then
-        if DBARG=\$(RIBOPILOT_SRC='${params.ribopilot_src}' rp_dbarg.R '${params.blastdb}'); then
-            SRC="local"
-        else
-            echo "configured local panel is unusable, falling back to remote for ${id}" >&2
-            DBARG=""
-        fi
+    if DBARG=\$(RIBOPILOT_SRC='${params.ribopilot_src}' rp_dbarg.R '${params.blastdb}'); then
+        SRC="local"
+    else
+        DBARG=""
     fi
     if [ "\$SRC" = "local" ] && [ -n "\${EQ}" ]; then
         echo "entrez_query is remote-only, ignored for local search on ${id}" >&2

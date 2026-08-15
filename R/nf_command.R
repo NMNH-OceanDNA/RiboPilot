@@ -46,8 +46,8 @@ nf_command <- function(path, resume = TRUE,
     "--minDepth", min_depth,
     "--ribopilot_src", src,
     "--taxdump_dir", taxdump,
-    "--ref_dir", ref_dir,
-    "--blastdb", blastdb,
+    if (nzchar(ref_dir)) c("--ref_dir", ref_dir),
+    if (nzchar(blastdb)) c("--blastdb", blastdb),
     if (nzchar(api_key)) c("--ncbi_api_key", api_key),
     # the config only mounts what project creation knew about; a database the
     # Reference tab wired later lives wherever the user put it, and the
