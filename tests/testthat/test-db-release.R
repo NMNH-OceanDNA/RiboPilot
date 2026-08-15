@@ -32,3 +32,14 @@ test_that("the Dockerfile and deploy script agree with the installer on asset na
   expect_match(ds, "decoys-${RP_DB_VERSION}.tar.gz", fixed = TRUE)
   expect_match(ds, "RIBOPILOT_DB_DIR", fixed = TRUE)
 })
+
+test_that("the deploy script checksum-verifies the db panel tarballs before building", {
+  skip_on_cran()
+  deploy <- "../../docker/deploy-dockerhub.sh"
+  skip_if_not(file.exists(deploy), "docker/ is Rbuildignored; this runs from the source tree only")
+  ds <- paste(readLines(deploy, warn = FALSE), collapse = "\n")
+  # fetches the published checksum alongside the tarball
+  expect_match(ds, ".sha256", fixed = TRUE)
+  # and actually runs the verification, not just downloads it
+  expect_match(ds, '-c "$sumfile"', fixed = TRUE)
+})
