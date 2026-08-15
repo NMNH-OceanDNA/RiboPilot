@@ -63,6 +63,10 @@ process blast_genbank {
             DBARG=""
         fi
     fi
+    # DBARG's first space-separated element is the panel prefix (decoys
+    # follow it); this is what a container-discovered panel reports back,
+    # since it has no host-side prefix to record provenance from.
+    PANEL_PREFIX=\${DBARG%% *}
     if [ "\$SRC" = "local" ] && [ -n "\${EQ}" ]; then
         echo "entrez_query is remote-only, ignored for local search on ${id}" >&2
     fi
@@ -77,6 +81,8 @@ process blast_genbank {
         # into the plain shell loop's next iteration. SRC stays the task-level
         # resolution of whether a usable panel exists at all.
         UNIT_SRC="\$SRC"
+        UNIT_PANEL=""
+        [ "\$UNIT_SRC" = "local" ] && UNIT_PANEL="\$PANEL_PREFIX"
         sqlite3 -cmd '.timeout 10000' '${params.db}' "SELECT '>'||ID||'.'||path||'.'||scaffold||char(10)||sequence FROM assemblies WHERE ID='${id}' AND path=\$P AND scaffold=\$S;" > query.fa
         [ -s query.fa ] || continue
 
@@ -113,6 +119,7 @@ process blast_genbank {
                 # fall back to remote for this unit rather than losing it entirely.
                 echo "local BLAST failed for ${id} \$P.\$S (misconfigured panel?), falling back to remote" >&2
                 UNIT_SRC="remote"
+                UNIT_PANEL=""
             fi
         fi
         if [ "\$UNIT_SRC" = "remote" ]; then
@@ -159,7 +166,7 @@ process blast_genbank {
 
         NHITS=\$(grep -c . hits.txt 2>/dev/null || echo 0)
         grep -q NO_SIGNIFICANT_HITS hits.txt && NHITS=0
-        RIBOPILOT_SRC='${params.ribopilot_src}' rp_searched.R '${params.db}' '${id}' "\$P" "\$S" "\$QMD5" "\$NHITS" "\$UNIT_SRC"
+        RIBOPILOT_SRC='${params.ribopilot_src}' rp_searched.R '${params.db}' '${id}' "\$P" "\$S" "\$QMD5" "\$NHITS" "\$UNIT_SRC" "\$UNIT_PANEL"
     done
     """
 }

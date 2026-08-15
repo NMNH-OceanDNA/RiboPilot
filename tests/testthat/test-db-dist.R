@@ -330,6 +330,69 @@ test_that("an unset or unmanifested panel records nothing and reports empty", {
   expect_equal(record_blastdb_provenance(con, file.path(d, "ribopilot_rrna")), "")
 })
 
+test_that("provenance can be recorded from a discovered panel", {
+  con <- mk_prov_db(); on.exit(DBI::dbDisconnect(con))
+  r <- tempfile(); dir.create(r); on.exit(unlink(r, recursive = TRUE), add = TRUE)
+  d <- file.path(r, "2026.08.1"); dir.create(d)
+  for (e in c("nin", "nsq", "nhr", "ndb")) writeLines("x", file.path(d, paste0("ribopilot_rrna.", e)))
+  writeLines('{"db_name":"ribopilot_rrna","db_version":"2026.08.1"}', file.path(d, "manifest.json"))
+  p <- discover_panel(r)
+  expect_equal(record_blastdb_provenance(con, p), "2026.08.1")
+  expect_equal(blastdb_provenance(con), "ribopilot_rrna 2026.08.1")
+})
+
+# rp_searched.R's DB fixture: everything derive_blast_products() and
+# mark_unit_searched() touch, plus reference_config for the provenance write.
+mk_searched_script_db <- function(db_path) {
+  con <- DBI::dbConnect(RSQLite::SQLite(), db_path)
+  DBI::dbExecute(con, RiboPilot:::REFERENCE_CONFIG_DDL)
+  DBI::dbExecute(con, "INSERT INTO reference_config (rowid_key) VALUES (1)")
+  DBI::dbExecute(con, RiboPilot:::BLAST_SEARCHED_DDL)
+  DBI::dbExecute(con, RiboPilot:::BLAST_HITS_DDL)
+  DBI::dbExecute(con, "CREATE TABLE blast_ref_candidates(ID TEXT, path INT, scaffold INT, rank INT,
+    accession TEXT, species TEXT, title TEXT, pident REAL, qcovs REAL, evalue REAL, bitscore REAL, time_stamp INT)")
+  DBI::dbExecute(con, "CREATE TABLE blast_screen(ID TEXT, path INT, scaffold INT, accession TEXT, title TEXT,
+    species TEXT, staxid INT, lineage TEXT, lineage_taxids TEXT, rank_distance INT, pident REAL, qcovs REAL,
+    evalue REAL, bitscore REAL, is_nuclear_rrna INT, time_stamp INT)")
+  DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, blast_accession TEXT,
+    blast_species TEXT, blast_pident REAL, blast_qcovs REAL, blast_evalue REAL, blast_source TEXT, ignore INT)")
+  DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',1,1,NULL,NULL,NULL,NULL,NULL,NULL,0)")
+  DBI::dbDisconnect(con)
+}
+
+run_searched_script <- function(script, src, db_path, panel) {
+  err <- withr::local_tempfile()
+  status <- system2("Rscript",
+    c(shQuote(script), shQuote(db_path), "S1", "1", "1", "abc", "0", "local", shQuote(panel)),
+    env = paste0("RIBOPILOT_SRC=", src), stdout = FALSE, stderr = err)
+  list(status = status, stderr = paste(readLines(err, warn = FALSE), collapse = "\n"))
+}
+
+test_that("rp_searched.R records nothing for a panel prefix with no manifest, without erroring", {
+  skip_on_cran()
+  skip_if_not_installed("pkgload")
+  skip_if_not_installed("withr")
+  src <- RiboPilot:::ribopilot_src_default()
+  skip_if(!file.exists(file.path(src, "DESCRIPTION")), "not a source checkout")
+  bin_dir <- system.file("nextflow", "bin", package = "RiboPilot")
+  if (!nzchar(bin_dir)) bin_dir <- file.path(src, "inst", "nextflow", "bin")
+  script <- file.path(bin_dir, "rp_searched.R")
+
+  panel_dir <- withr::local_tempdir()  # no manifest.json beside this panel
+  panel <- file.path(panel_dir, "ribopilot_rrna")
+
+  db_path <- withr::local_tempfile(fileext = ".sqlite")
+  mk_searched_script_db(db_path)
+
+  res <- run_searched_script(script, src, db_path, panel)
+  expect_equal(res$status, 0, info = res$stderr)
+  expect_equal(res$stderr, "")
+
+  con2 <- DBI::dbConnect(RSQLite::SQLite(), db_path)
+  on.exit(DBI::dbDisconnect(con2), add = TRUE)
+  expect_equal(blastdb_provenance(con2), "")
+})
+
 test_that("provenance reads degrade to empty on a project predating the column", {
   con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:"); on.exit(DBI::dbDisconnect(con))
   DBI::dbExecute(con, "CREATE TABLE reference_config (rowid_key INTEGER PRIMARY KEY,
