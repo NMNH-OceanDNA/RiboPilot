@@ -875,3 +875,48 @@ at around 60 MB and reported it as file corruption. Neither the plan nor the imp
 - The orphan sweep uses a 24-hour age as a stand-in for a liveness check, so an install running longer
   than a day could be swept by a concurrent run.
 - `:ro` on the panel bind mount, and the Docker layer strategy, remain deferred as recorded in the plan.
+
+---
+
+## Stage 4c outcome (2026-08-15): the panel ships in the image
+
+Shipped in 9 commits. Suite 2713 passed / 0 failed by default, 2788 / 0 skipped with `NOT_CRAN=true`.
+
+A Docker user now gets local BLAST with no configuration. The panel and its decoys are baked in at
+`/opt/ribopilot/blastdb/<version>/` with `ENV RIBOPILOT_DB_DIR`, and discovery runs container-side in
+`rp_dbarg.R`. `install_ribopilot_db()` remains for conda and bare-metal users and for anyone wanting a
+panel newer than their image.
+
+Verified on real built images, not mimics: a `RP_DB=1` build discovers the panel and its decoy and
+returns real hits with zero configuration; a `--no-db` build leaves `RIBOPILOT_DB_DIR` unset and falls
+back to remote; the opt-out is honoured inside the image. 6.33 GB with the database, 5.98 GB without,
+and every base layer stayed CACHED.
+
+### The load-bearing constraint
+A discovered path must never reach `reference_config.blastdb`, because `reference_mount_dirs()` turns
+that column into a host bind mount and a mount over the in-image path SHADOWS the baked-in database,
+silently reverting every search to the slow remote path. Shadowing was measured on both Docker and
+Singularity: exit 0, no error. A review confirmed the invariant is defended behaviourally, not merely
+documented: mutating `rp_searched.R` to write the discovered prefix into that column fails a test.
+
+### Defects this stage found in already-shipped code
+- `nextflow run --blastdb ''` coerces an empty CLI value to the STRING `"true"`, and `nf_command()`
+  passed the flag unconditionally. So `cpus { params.blastdb ? 4 : 1 }` had NEVER worked: every
+  unconfigured run always took 4 CPUs, and every user was told "configured local panel is unusable"
+  for a panel they never configured. `--ref_dir` did the same, and `rp_ref_store.R` really created a
+  directory named `true`.
+- `local_blast_db_arg()` returns NULL with no warning when the panel is absent, so a configured panel
+  that is not bind-mounted into the container failed silently.
+- Docker's `ADD` does not fail on a corrupt-but-gzip-shaped archive; it plain-copies it. The deploy
+  scripts fetched release assets without verifying checksums, so a truncated download would have been
+  baked in and every user of that image would have searched a broken database returning zero hits.
+
+### Still open
+- **The `db-<version>` release is not published, and the repo is private.** Deploy scripts now use
+  `gh release download` so the maintainer's auth works, and `--no-db` builds an honest image without a
+  database, but a database-bearing image cannot be built until the release exists.
+- `blastdb_version` can still overstate: a configured-but-unmounted panel records it host-side at
+  launch, the run goes fully remote, and nothing corrects it.
+- `cpus 4` now applies to remote-only tasks too; with `maxForks = 3` that is 12 cores held on network
+  waits. Deliberate, since the closure cannot see a container-side discovery.
+- The dead `GIT_VERSION_TAG` ARG remains declared but unused.
