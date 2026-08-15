@@ -106,3 +106,61 @@ test_that("decoy_dir path with space causes all decoys to skip with warnings", {
   parts <- strsplit(got, " ", fixed = TRUE)[[1]]
   expect_equal(parts, p)
 })
+
+mk_panel <- function(root, ver, complete = TRUE) {
+  d <- file.path(root, ver); dir.create(d, recursive = TRUE)
+  ext <- if (complete) c("nin", "nsq", "nhr", "ndb") else c("nin")
+  for (e in ext) writeLines("x", file.path(d, paste0("ribopilot_rrna.", e)))
+  file.path(d, "ribopilot_rrna")
+}
+
+test_that("discover_panel finds a complete panel", {
+  r <- tempfile(); dir.create(r); on.exit(unlink(r, recursive = TRUE))
+  p <- mk_panel(r, "2026.08.1")
+  expect_equal(discover_panel(r), p)
+})
+
+test_that("discover_panel orders versions numerically, not as strings", {
+  r <- tempfile(); dir.create(r); on.exit(unlink(r, recursive = TRUE))
+  mk_panel(r, "2026.08.9")
+  newer <- mk_panel(r, "2026.08.10")
+  expect_equal(discover_panel(r), newer)
+})
+
+test_that("discover_panel returns the raw directory name, not a normalised version", {
+  r <- tempfile(); dir.create(r); on.exit(unlink(r, recursive = TRUE))
+  p <- mk_panel(r, "2026.08.1")
+  got <- discover_panel(r)
+  expect_true(file.exists(paste0(got, ".nin")))
+  expect_false(grepl("2026[.]8[.]1", got))
+})
+
+test_that("discover_panel skips an incomplete panel and falls through", {
+  r <- tempfile(); dir.create(r); on.exit(unlink(r, recursive = TRUE))
+  good <- mk_panel(r, "2026.08.1")
+  mk_panel(r, "2026.08.2", complete = FALSE)
+  expect_equal(discover_panel(r), good)
+})
+
+test_that("discover_panel returns NULL when there is nothing usable", {
+  r <- tempfile(); dir.create(r); on.exit(unlink(r, recursive = TRUE))
+  expect_null(discover_panel(r))
+  mk_panel(r, "2026.08.1", complete = FALSE)
+  expect_null(discover_panel(r))
+  expect_null(discover_panel(file.path(r, "absent")))
+})
+
+test_that("discover_panel ignores install leftovers", {
+  r <- tempfile(); dir.create(r); on.exit(unlink(r, recursive = TRUE))
+  good <- mk_panel(r, "2026.08.1")
+  mk_panel(r, "2026.08.2.old-123")
+  mk_panel(r, ".stage-2026.08.3-99")
+  expect_equal(discover_panel(r), good)
+})
+
+test_that("discover_panel refuses a path containing whitespace", {
+  r <- file.path(tempfile(), "has space"); dir.create(r, recursive = TRUE)
+  on.exit(unlink(dirname(r), recursive = TRUE))
+  mk_panel(r, "2026.08.1")
+  expect_null(discover_panel(r))
+})

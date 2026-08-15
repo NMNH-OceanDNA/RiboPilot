@@ -56,3 +56,43 @@ local_blast_db_arg <- function(panel, decoy_dir = NULL) {
   }
   paste(out, collapse = " ")
 }
+
+#' Files a panel must have before blastn is pointed at it
+#'
+#' blast_db_exists() is deliberately looser (it gates a user-supplied prefix).
+#' A directory holding only .nin passes that and then segfaults blastn, so
+#' discovery, which chooses on the user's behalf, demands the whole set.
+#' @noRd
+PANEL_REQUIRED_EXT <- c("nin", "nsq", "nhr", "ndb")
+
+#' TRUE when every required volume file is present and non-empty
+#' @noRd
+panel_complete <- function(prefix) {
+  f <- paste0(prefix, ".", PANEL_REQUIRED_EXT)
+  all(file.exists(f)) && all(file.info(f)$size > 0)
+}
+
+#' Newest usable panel installed under `db_dir`, or NULL
+#'
+#' Container-side only. The result must never be written to
+#' reference_config.blastdb: an in-image path there would make the mount
+#' builder bind a host directory over the panel and hide it.
+#' @noRd
+discover_panel <- function(db_dir = ribopilot_db_dir()) {
+  if (length(db_dir) != 1 || is.na(db_dir) || !nzchar(db_dir)) return(NULL)
+  db_dir <- path.expand(db_dir)
+  if (!dir.exists(db_dir) || grepl("\\s", db_dir)) return(NULL)
+  subs <- list.dirs(db_dir, full.names = FALSE, recursive = FALSE)
+  subs <- subs[nzchar(subs) & !startsWith(subs, ".")]
+  if (!length(subs)) return(NULL)
+  v <- suppressWarnings(numeric_version(subs, strict = FALSE))
+  keep <- !is.na(v)
+  if (!any(keep)) return(NULL)
+  subs <- subs[keep]
+  subs <- subs[order(v[keep], decreasing = TRUE)]
+  for (s in subs) {
+    p <- file.path(db_dir, s, "ribopilot_rrna")
+    if (panel_complete(p)) return(p)
+  }
+  NULL
+}
