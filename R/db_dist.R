@@ -88,18 +88,24 @@ RP_DB_VERSION <- "2026.08.1"
 #' Fetch one URL, or stop naming the asset and the reason
 #'
 #' download.file() signals a condition rather than returning nonzero, so a
-#' failure has to be caught to be reported at all.
+#' failure has to be caught to be reported at all. options(timeout) is a cap on
+#' the whole transfer rather than on idle time, and its 60s default cannot carry
+#' a 76 MB asset on any link slower than 1.3 MB/s, so it is raised here.
 #' @noRd
-download_or_stop <- function(url, dest, what) {
+download_or_stop <- function(url, dest, what, quiet = TRUE) {
+  old <- options(timeout = max(getOption("timeout"), 3600))
+  on.exit(options(old), add = TRUE)
   why <- ""
   note <- function(c) {
     why <<- conditionMessage(c)
     FALSE
   }
-  ok <- tryCatch(utils::download.file(url, dest, mode = "wb", quiet = TRUE) == 0,
+  ok <- tryCatch(utils::download.file(url, dest, mode = "wb", quiet = quiet) == 0,
     error = note, warning = note)
   if (!isTRUE(ok) || !file.exists(dest)) {
-    stop("Could not download ", what, if (nzchar(why)) paste0(": ", why), call. = FALSE)
+    stop("Could not download ", what, if (nzchar(why)) paste0(": ", why),
+      ". A slow or interrupted connection is the usual cause; try again.",
+      call. = FALSE)
   }
   dest
 }
@@ -108,7 +114,8 @@ download_or_stop <- function(url, dest, what) {
 #' @noRd
 fetch_verified <- function(base_url, tag, asset, dir) {
   url <- paste(base_url, tag, asset, sep = "/")
-  dest <- download_or_stop(url, file.path(dir, asset), url)
+  # Progress on the asset itself: it is the part worth waiting on.
+  dest <- download_or_stop(url, file.path(dir, asset), url, quiet = FALSE)
   sum_dest <- download_or_stop(paste0(url, ".sha256"), paste0(dest, ".sha256"),
     paste0("the checksum for ", asset))
   want <- parse_sha256_line(readLines(sum_dest, warn = FALSE)[1])
@@ -184,6 +191,12 @@ install_ribopilot_db <- function(version = RP_DB_VERSION,
   dest <- path.expand(dest)
   final <- file.path(dest, version)
   prefix <- file.path(final, "ribopilot_rrna")
+  # Refused up front, not after the download: blastn cannot express a
+  # whitespace path, so validate_blastdb_prefix() would reject the result.
+  if (grepl("\\s", prefix)) {
+    stop(dest, " contains whitespace; blastn cannot read a panel there. ",
+      "Set RIBOPILOT_DB_DIR to a path without spaces.", call. = FALSE)
+  }
   if (!force && blast_db_exists(prefix)) {
     message("Panel ", version, " is already installed at ", final)
     return(invisible(prefix))
@@ -241,6 +254,7 @@ install_ribopilot_db <- function(version = RP_DB_VERSION,
       call. = FALSE)
   }
   message("Panel ", version, " installed at ", final)
+  message("Reference database path to use in RiboPilot: ", prefix)
   invisible(prefix)
 }
 

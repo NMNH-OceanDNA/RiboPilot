@@ -29,5 +29,6 @@ install_ribopilot_db(
 \description{
 Extraction is staged in a sibling directory and moved into place only after
 every asset verifies, so an interrupted or corrupt download never leaves a
-half-panel that blast_db_exists() would call usable.
+half-panel that blast_db_exists() would call usable. An already-installed
+panel is only deleted once the replacement is in place.
 }

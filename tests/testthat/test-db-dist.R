@@ -192,6 +192,30 @@ test_that("install_ribopilot_db rejects an archive holding only the index file",
   expect_false(blast_db_exists(file.path(dest, "9.9.9", "ribopilot_rrna")))
 })
 
+test_that("install_ribopilot_db refuses an archive it cannot unpack", {
+  root <- tempfile(); dir.create(root); on.exit(unlink(root, recursive = TRUE))
+  tagdir <- file.path(root, "rel", "db-9.9.9"); dir.create(tagdir, recursive = TRUE)
+  # a gzip header with no body: the checksum verifies, the unpack cannot
+  tgz <- file.path(tagdir, "ribopilot_rrna-9.9.9.tar.gz")
+  writeBin(as.raw(c(0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00)), tgz)
+  writeLines(paste0(rp_sha256(tgz), "  ", basename(tgz)), paste0(tgz, ".sha256"))
+  dest <- file.path(root, "dbs")
+  expect_error(install_ribopilot_db("9.9.9", dest = dest, decoys = FALSE,
+    base_url = paste0("file://", file.path(root, "rel"))), "Could not unpack")
+  expect_false(blast_db_exists(file.path(dest, "9.9.9", "ribopilot_rrna")))
+})
+
+test_that("a failed install leaves no staging directory behind", {
+  root <- tempfile(); dir.create(root); on.exit(unlink(root, recursive = TRUE))
+  base <- make_fake_release(root)   # the panel is published, the decoys are not
+  dest <- file.path(root, "dbs")
+  expect_error(install_ribopilot_db("9.9.9", dest = dest, base_url = base),
+    "Could not download")
+  # a stage can hold a few hundred MB, so a failure must not orphan one
+  left <- list.files(dest, all.files = TRUE, no.. = TRUE)
+  expect_false(any(startsWith(left, ".stage-")))
+})
+
 test_that("a failed reinstall leaves the installed panel whole, not re-extracted", {
   root <- tempfile(); dir.create(root); on.exit(unlink(root, recursive = TRUE))
   base <- make_fake_release(root, decoys = TRUE)
@@ -259,6 +283,14 @@ test_that("a failed re-install leaves the installed panel intact", {
     force = TRUE), "Could not download")
   expect_true(blast_db_exists(p))
   expect_equal(read_panel_manifest(dirname(p))$db_version, "9.9.9")
+})
+
+test_that("install_ribopilot_db refuses a destination holding a space", {
+  root <- tempfile(); dir.create(root); on.exit(unlink(root, recursive = TRUE))
+  dest <- file.path(root, "panel dir")
+  expect_error(install_ribopilot_db("9.9.9", dest = dest, decoys = FALSE,
+    base_url = "file:///nowhere"), "whitespace")
+  expect_false(dir.exists(dest))   # refused before anything is created or fetched
 })
 
 test_that("install_ribopilot_db refuses a destination it cannot write", {

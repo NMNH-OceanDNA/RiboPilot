@@ -2,12 +2,15 @@
 
 test_that("the packaging script emits the asset names the installer requests", {
   skip_on_cran()
-  s <- readLines("../../dev/refdb/package_release.sh", warn = FALSE)
-  txt <- paste(s, collapse = "\n")
+  p <- "../../dev/refdb/package_release.sh"
+  skip_if_not(file.exists(p), "dev/ is Rbuildignored; this runs from the source tree only")
+  txt <- paste(readLines(p, warn = FALSE), collapse = "\n")
   expect_match(txt, 'ribopilot_rrna-${VER}.tar.gz', fixed = TRUE)
   expect_match(txt, 'decoys-${VER}.tar.gz', fixed = TRUE)
   expect_match(txt, 'db-${VER}', fixed = TRUE)
-  # the installer builds exactly these
-  expect_equal(sprintf("ribopilot_rrna-%s.tar.gz", "1.2.3"), "ribopilot_rrna-1.2.3.tar.gz")
-  expect_equal(paste0("db-", "1.2.3"), "db-1.2.3")
+  # the other half of the contract: the names the installer actually asks for
+  fn <- paste(deparse(body(install_ribopilot_db)), collapse = "\n")
+  expect_match(fn, 'ribopilot_rrna-%s.tar.gz', fixed = TRUE)
+  expect_match(fn, 'decoys-%s.tar.gz', fixed = TRUE)
+  expect_match(fn, '"db-"', fixed = TRUE)
 })
