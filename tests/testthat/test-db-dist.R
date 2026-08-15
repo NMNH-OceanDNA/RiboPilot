@@ -86,18 +86,27 @@ test_that("parse_sha256_line trims leading whitespace before matching", {
   expect_equal(parse_sha256_line(paste0("\t", RP_DIGEST, "  /tmp/x")), RP_DIGEST)
 })
 
-make_fake_release <- function(root, version = "9.9.9") {
-  stage <- file.path(root, "stage"); dir.create(stage, recursive = TRUE)
-  writeLines(sprintf('{"manifest_schema":1,"db_name":"ribopilot_rrna","db_version":"%s"}', version),
-    file.path(stage, "manifest.json"))
-  writeLines("x", file.path(stage, "ribopilot_rrna.nin"))
-  writeLines("x", file.path(stage, "ribopilot_rrna.nsq"))
-  rel <- file.path(root, "rel")
-  # assets live under a tag dir, mirroring the real releases/download/<tag>/<asset> layout
-  tagdir <- file.path(rel, paste0("db-", version)); dir.create(tagdir, recursive = TRUE)
-  tgz <- file.path(tagdir, sprintf("ribopilot_rrna-%s.tar.gz", version))
-  withr::with_dir(stage, utils::tar(tgz, files = list.files("."), compression = "gzip"))
+# One release asset: a .tar.gz holding `files` (name -> contents) plus its .sha256
+make_fake_asset <- function(tagdir, name, files) {
+  src <- tempfile(); dir.create(src); on.exit(unlink(src, recursive = TRUE))
+  for (f in names(files)) writeLines(files[[f]], file.path(src, f))
+  tgz <- file.path(tagdir, name)
+  withr::with_dir(src, utils::tar(tgz, files = list.files("."), compression = "gzip"))
   writeLines(paste0(rp_sha256(tgz), "  ", basename(tgz)), paste0(tgz, ".sha256"))
+  tgz
+}
+
+make_fake_release <- function(root, version = "9.9.9", decoys = FALSE) {
+  # assets live under a tag dir, mirroring the real releases/download/<tag>/<asset> layout
+  rel <- file.path(root, "rel")
+  tagdir <- file.path(rel, paste0("db-", version)); dir.create(tagdir, recursive = TRUE)
+  make_fake_asset(tagdir, sprintf("ribopilot_rrna-%s.tar.gz", version), list(
+    manifest.json = sprintf(
+      '{"manifest_schema":1,"db_name":"ribopilot_rrna","db_version":"%s"}', version),
+    ribopilot_rrna.nin = "x", ribopilot_rrna.nsq = "x", ribopilot_rrna.nhr = "x"))
+  if (isTRUE(decoys)) {
+    make_fake_asset(tagdir, sprintf("decoys-%s.tar.gz", version), list(decoy.nin = "x"))
+  }
   paste0("file://", rel)
 }
 
@@ -131,4 +140,83 @@ test_that("install_ribopilot_db is a no-op when the panel is already present", {
   p <- install_ribopilot_db("9.9.9", dest = dest, decoys = FALSE, base_url = base)
   unlink(file.path(root, "rel"), recursive = TRUE)   # make any refetch impossible
   expect_equal(install_ribopilot_db("9.9.9", dest = dest, decoys = FALSE, base_url = base), p)
+})
+
+test_that("install_ribopilot_db reads an openssl-shaped checksum file", {
+  root <- tempfile(); dir.create(root); on.exit(unlink(root, recursive = TRUE))
+  base <- make_fake_release(root)
+  tgz <- file.path(root, "rel", "db-9.9.9", "ribopilot_rrna-9.9.9.tar.gz")
+  # the path holds a 64-hex component, which an unanchored search would take
+  writeLines(sprintf("SHA2-256(/b/%s/%s)= %s", strrep("a", 64), basename(tgz), rp_sha256(tgz)),
+    paste0(tgz, ".sha256"))
+  dest <- file.path(root, "dbs")
+  expect_true(blast_db_exists(
+    install_ribopilot_db("9.9.9", dest = dest, decoys = FALSE, base_url = base)))
+})
+
+test_that("install_ribopilot_db leaves no panel when a later asset fails to verify", {
+  root <- tempfile(); dir.create(root); on.exit(unlink(root, recursive = TRUE))
+  base <- make_fake_release(root, decoys = TRUE)
+  # the panel tarball verifies and unpacks; the decoys tarball then fails
+  sum_file <- file.path(root, "rel", "db-9.9.9", "decoys-9.9.9.tar.gz.sha256")
+  writeLines(paste0(strrep("0", 64), "  ", "decoys-9.9.9.tar.gz"), sum_file)
+  dest <- file.path(root, "dbs")
+  expect_error(install_ribopilot_db("9.9.9", dest = dest, base_url = base), "[Cc]hecksum")
+  expect_false(blast_db_exists(file.path(dest, "9.9.9", "ribopilot_rrna")))
+  expect_false(dir.exists(file.path(dest, "9.9.9")))
+})
+
+test_that("install_ribopilot_db leaves no panel when a later asset is missing", {
+  root <- tempfile(); dir.create(root); on.exit(unlink(root, recursive = TRUE))
+  base <- make_fake_release(root)   # the panel is published, the decoys are not
+  dest <- file.path(root, "dbs")
+  expect_error(install_ribopilot_db("9.9.9", dest = dest, base_url = base),
+    "Could not download")
+  expect_false(blast_db_exists(file.path(dest, "9.9.9", "ribopilot_rrna")))
+  expect_false(dir.exists(file.path(dest, "9.9.9")))
+})
+
+test_that("install_ribopilot_db rejects an archive holding only the index file", {
+  root <- tempfile(); dir.create(root); on.exit(unlink(root, recursive = TRUE))
+  tagdir <- file.path(root, "rel", "db-9.9.9"); dir.create(tagdir, recursive = TRUE)
+  make_fake_asset(tagdir, "ribopilot_rrna-9.9.9.tar.gz", list(ribopilot_rrna.nin = "x"))
+  dest <- file.path(root, "dbs")
+  expect_error(install_ribopilot_db("9.9.9", dest = dest, decoys = FALSE,
+    base_url = paste0("file://", file.path(root, "rel"))), "did not contain a usable panel")
+  expect_false(blast_db_exists(file.path(dest, "9.9.9", "ribopilot_rrna")))
+})
+
+test_that("install_ribopilot_db with force=TRUE replaces what is there", {
+  root <- tempfile(); dir.create(root); on.exit(unlink(root, recursive = TRUE))
+  base <- make_fake_release(root)
+  dest <- file.path(root, "dbs")
+  p <- install_ribopilot_db("9.9.9", dest = dest, decoys = FALSE, base_url = base)
+  writeLines("stale", file.path(dirname(p), "leftover.txt"))
+  expect_equal(install_ribopilot_db("9.9.9", dest = dest, decoys = FALSE, base_url = base,
+    force = TRUE), p)
+  expect_true(blast_db_exists(p))
+  expect_false(file.exists(file.path(dirname(p), "leftover.txt")))
+})
+
+test_that("a failed re-install leaves the installed panel intact", {
+  root <- tempfile(); dir.create(root); on.exit(unlink(root, recursive = TRUE))
+  base <- make_fake_release(root)
+  dest <- file.path(root, "dbs")
+  p <- install_ribopilot_db("9.9.9", dest = dest, decoys = FALSE, base_url = base)
+  unlink(file.path(root, "rel"), recursive = TRUE)
+  expect_error(install_ribopilot_db("9.9.9", dest = dest, decoys = FALSE, base_url = base,
+    force = TRUE), "Could not download")
+  expect_true(blast_db_exists(p))
+  expect_equal(read_panel_manifest(dirname(p))$db_version, "9.9.9")
+})
+
+test_that("install_ribopilot_db refuses a destination it cannot write", {
+  skip_on_os("windows")
+  skip_if(unname(Sys.info()[["user"]]) == "root", "root ignores directory permissions")
+  root <- tempfile(); dir.create(root); on.exit(unlink(root, recursive = TRUE))
+  dest <- file.path(root, "readonly"); dir.create(dest)
+  Sys.chmod(dest, "0555")
+  on.exit(Sys.chmod(dest, "0755"), add = TRUE, after = FALSE)
+  expect_error(install_ribopilot_db("9.9.9", dest = dest, decoys = FALSE,
+    base_url = "file:///nowhere"), "not writable")
 })

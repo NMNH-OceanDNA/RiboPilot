@@ -85,36 +85,56 @@ RP_DB_RELEASE_BASE <- "https://github.com/dmacguigan/RiboPilot/releases/download
 #' @noRd
 RP_DB_VERSION <- "2026.08.1"
 
+#' Fetch one URL, reporting failure in our own words
+#'
+#' download.file() signals a condition on a missing or 404 URL rather than
+#' returning nonzero, so the status check alone never fires.
+#' @noRd
+download_or_stop <- function(url, dest, what) {
+  ok <- tryCatch(utils::download.file(url, dest, mode = "wb", quiet = TRUE) == 0,
+    error = function(e) FALSE, warning = function(w) FALSE)
+  if (!isTRUE(ok) || !file.exists(dest)) {
+    stop("Could not download ", what, call. = FALSE)
+  }
+  dest
+}
+
 #' Download one asset and check it against its published .sha256
 #' @noRd
 fetch_verified <- function(base_url, tag, asset, dir) {
   url <- paste(base_url, tag, asset, sep = "/")
-  dest <- file.path(dir, asset)
-  if (utils::download.file(url, dest, mode = "wb", quiet = TRUE) != 0 || !file.exists(dest)) {
-    stop("Could not download ", url, call. = FALSE)
-  }
-  sum_dest <- paste0(dest, ".sha256")
-  if (utils::download.file(paste0(url, ".sha256"), sum_dest, mode = "wb", quiet = TRUE) != 0) {
-    stop("Could not download the checksum for ", asset, call. = FALSE)
-  }
-  line <- readLines(sum_dest, warn = FALSE)[1]
-  want <- regmatches(line, regexpr("[0-9a-fA-F]{64}", line))
+  dest <- download_or_stop(url, file.path(dir, asset), url)
+  sum_dest <- download_or_stop(paste0(url, ".sha256"), paste0(dest, ".sha256"),
+    paste0("the checksum for ", asset))
+  want <- parse_sha256_line(readLines(sum_dest, warn = FALSE)[1])
   got <- rp_sha256(dest)
-  if (length(want) != 1 || is.na(got)) {
+  if (is.na(want) || is.na(got)) {
     stop("Could not verify the checksum of ", asset, call. = FALSE)
   }
-  if (!identical(tolower(want), got)) {
+  if (!identical(want, got)) {
     stop("Checksum mismatch for ", asset, ": the download is corrupt or truncated.",
       call. = FALSE)
   }
   dest
 }
 
+#' Does a directory hold a whole panel, not the front of one?
+#'
+#' blast_db_exists() is satisfied by the index file alone, so a unpack that
+#' stopped partway (a disk quota, an interrupted transfer) would pass as an
+#' install and then be searched as if it were complete.
+#' @noRd
+panel_is_complete <- function(dir) {
+  parts <- file.path(dir, paste0("ribopilot_rrna", c(".nin", ".nsq", ".nhr")))
+  all(file.exists(parts)) && !is.null(read_panel_manifest(dir))
+}
+
 #' Download and install a RiboPilot BLAST panel
 #'
 #' Extraction is staged in a sibling directory and moved into place only after
 #' every asset verifies, so an interrupted or corrupt download never leaves a
-#' half-panel that blast_db_exists() would call usable.
+#' half-panel that blast_db_exists() would call usable. An already-installed
+#' panel is only deleted once the replacement is in place.
 #'
 #' @param version Panel version, matching release tag `db-<version>`.
 #' @param dest Parent directory; the panel lands in `<dest>/<version>`.
@@ -140,7 +160,8 @@ install_ribopilot_db <- function(version = RP_DB_VERSION,
     stop(dest, " is not writable. Set RIBOPILOT_DB_DIR to a writable location.",
       call. = FALSE)
   }
-  stage <- file.path(dest, paste0(".stage-", version))
+  # The pid keeps two concurrent installs of one version off each other's stage.
+  stage <- file.path(dest, paste0(".stage-", version, "-", Sys.getpid()))
   unlink(stage, recursive = TRUE)
   dir.create(stage, recursive = TRUE, showWarnings = FALSE)
   on.exit(unlink(stage, recursive = TRUE), add = TRUE)
@@ -151,15 +172,39 @@ install_ribopilot_db <- function(version = RP_DB_VERSION,
   for (a in assets) {
     message("Downloading ", a, " ...")
     tgz <- fetch_verified(base_url, tag, a, stage)
-    utils::untar(tgz, exdir = stage)
+    st <- tryCatch(utils::untar(tgz, exdir = stage),
+      error = function(e) 1L, warning = function(w) 1L)
+    if (!isTRUE(st == 0)) {
+      stop("Could not unpack ", a, ": the archive is damaged, or the disk is full.",
+        call. = FALSE)
+    }
     unlink(c(tgz, paste0(tgz, ".sha256")))
   }
-  if (!blast_db_exists(file.path(stage, "ribopilot_rrna"))) {
+  if (!panel_is_complete(stage)) {
     stop("The downloaded archive did not contain a usable panel.", call. = FALSE)
   }
-  unlink(final, recursive = TRUE)
+
+  # Set any existing panel aside instead of deleting it: deleting first means a
+  # failed rename leaves either nothing or, worse, a gutted directory that
+  # blast_db_exists() still calls usable.
+  old <- paste0(final, ".old-", Sys.getpid())
+  if (unlink(old, recursive = TRUE) != 0) {
+    stop("Could not clear ", old, "; remove it by hand and retry.", call. = FALSE)
+  }
+  had_old <- file.exists(final)
+  if (had_old && !file.rename(final, old)) {
+    stop("Could not set the panel at ", final, " aside; it is unchanged.", call. = FALSE)
+  }
   if (!file.rename(stage, final)) {
+    if (had_old && !file.rename(old, final)) {
+      stop("Could not move the panel into ", final, ", and the previous panel is now ",
+        "at ", old, "; move it back by hand.", call. = FALSE)
+    }
     stop("Could not move the panel into ", final, call. = FALSE)
+  }
+  if (had_old && unlink(old, recursive = TRUE) != 0) {
+    warning("The replaced panel is still at ", old, "; delete it to reclaim the space.",
+      call. = FALSE)
   }
   message("Panel ", version, " installed at ", final)
   invisible(prefix)
