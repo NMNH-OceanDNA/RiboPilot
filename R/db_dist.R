@@ -42,3 +42,14 @@ read_panel_manifest <- function(dir) {
   if (!ok(m$db_version) || !ok(m$db_name)) return(NULL)
   m
 }
+
+#' Where downloaded BLAST panels live
+#'
+#' Honours RIBOPILOT_DB_DIR so a cluster user can put a multi-hundred-MB panel
+#' off their home quota, then falls back to a subfolder of the reference dir.
+#' @noRd
+ribopilot_db_dir <- function() {
+  d <- Sys.getenv("RIBOPILOT_DB_DIR", "")
+  if (!nzchar(d)) d <- file.path(ribopilot_ref_dir(), "blastdb")
+  path.expand(d)
+}

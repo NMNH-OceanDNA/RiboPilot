@@ -77,3 +77,34 @@ test_that("appending twice keeps one row per clade, the newest", {
   expect_equal(m$n_records[1], 20L)
   expect_equal(m$seeds[1], "s2")
 })
+
+test_that("an empty panel prefix is valid and means remote", {
+  r <- validate_blastdb_prefix("")
+  expect_true(r$ok); expect_equal(r$msg, "")
+  expect_true(validate_blastdb_prefix(NULL)$ok)
+})
+
+test_that("a prefix with no volume files is rejected", {
+  r <- validate_blastdb_prefix(file.path(tempdir(), "nope", "ribopilot_rrna"))
+  expect_false(r$ok)
+  expect_match(r$msg, "No BLAST database")
+})
+
+test_that("a prefix with volume files is accepted without needing write access", {
+  d <- tempfile(); dir.create(d)
+  on.exit({Sys.chmod(d, "0755"); unlink(d, recursive = TRUE)})
+  file.create(file.path(d, "ribopilot_rrna.nin"))
+  Sys.chmod(d, "0555")  # read-only, as on a shared HPC mount
+  skip_if(unname(file.access(d, 2)) == 0, "cannot drop write permission here")
+  r <- validate_blastdb_prefix(file.path(d, "ribopilot_rrna"))
+  expect_true(r$ok)
+  expect_equal(r$msg, file.path(d, "ribopilot_rrna"))
+})
+
+test_that("a whitespace prefix is rejected, since blastn cannot express it", {
+  d <- tempfile("has space"); dir.create(d); on.exit(unlink(d, recursive = TRUE))
+  file.create(file.path(d, "ribopilot_rrna.nin"))
+  r <- validate_blastdb_prefix(file.path(d, "ribopilot_rrna"))
+  expect_false(r$ok)
+  expect_match(r$msg, "space")
+})

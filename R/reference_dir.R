@@ -64,6 +64,29 @@ validate_ref_dir <- function(dir) {
   list(ok = TRUE, msg = dir)
 }
 
+#' Is `prefix` usable as a local BLAST panel?
+#'
+#' Read-only on purpose: a panel is often on a shared read-only mount, so this
+#' must not reuse validate_ref_dir(), which requires write access and creates
+#' the directory. An empty prefix is valid and selects the remote search.
+#' @return list(ok, msg); on success msg is the normalised prefix.
+#' @noRd
+validate_blastdb_prefix <- function(prefix) {
+  prefix <- trimws(prefix %||% "")
+  if (!nzchar(prefix)) return(list(ok = TRUE, msg = ""))
+  prefix <- path.expand(prefix)
+  if (grepl("\\s", prefix)) {
+    return(list(ok = FALSE, msg = "Panel path cannot contain spaces; blastn cannot read it."))
+  }
+  if (!blast_db_exists(prefix)) {
+    return(list(ok = FALSE, msg = paste0(
+      "No BLAST database at ", prefix,
+      ". Give the prefix without a file extension, for example ",
+      "/data/blastdb/2026.08.1/ribopilot_rrna")))
+  }
+  list(ok = TRUE, msg = prefix)
+}
+
 #' Path to a reference folder's manifest
 #' @noRd
 ref_manifest_path <- function(dir) file.path(path.expand(dir), "manifest.tsv")

@@ -30,3 +30,15 @@ test_that("read_panel_manifest returns NULL when absent or unusable", {
   writeLines('{"db_name":"x"}', file.path(d, "manifest.json"))
   expect_null(read_panel_manifest(d))  # no db_version
 })
+
+test_that("ribopilot_db_dir honours RIBOPILOT_DB_DIR", {
+  withr::with_envvar(c(RIBOPILOT_DB_DIR = "/custom/panels"), {
+    expect_equal(ribopilot_db_dir(), "/custom/panels")
+  })
+})
+
+test_that("ribopilot_db_dir falls back to blastdb under the ref dir", {
+  withr::with_envvar(c(RIBOPILOT_DB_DIR = "", RIBOPILOT_REF_DIR = "/refs"), {
+    expect_equal(ribopilot_db_dir(), file.path("/refs", "blastdb"))
+  })
+})
