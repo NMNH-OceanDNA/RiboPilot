@@ -17,6 +17,16 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # shellcheck source=dev/refdb/lib.sh
 source "$SCRIPT_DIR/lib.sh"
 
+# Before anything can print: the canonical invocation is
+# `./build_refdb.sh 2>&1 | tee build.log`, and the key must not reach that log.
+rp_scrub_output
+
+RP_LOCK_HELD=""
+rp_cleanup() {
+  [ -z "$RP_LOCK_HELD" ] || rm -f "$RP_LOCK_HELD"
+  rp_scrub_flush
+}
+trap rp_cleanup EXIT
 trap 'rp_die "unexpected error at ${BASH_SOURCE[0]}:${LINENO}"' ERR
 
 # ---------------------------------------------------------------------------
@@ -161,7 +171,7 @@ rp_valid_version() {
 # is a network-authoritative fact and --publish is manual by design, so no
 # local artifact represents it before a release exists.
 cmd_check_version() {
-  local ver docker_ver ok=1 out_dir manifest_ver f base pat fver sumfile
+  local ver docker_ver ok=1 d dver manifest_ver f base pat fver sumfile
 
   ver="$(rp_read_version)"
   rp_valid_version "$ver" || rp_die "RP_DB_VERSION '$ver' is not dotted-numeric"
@@ -173,14 +183,25 @@ cmd_check_version() {
     ok=0
   fi
 
-  out_dir="$BUILD_DIR/blastdb/$ver"
-  if [ -f "$out_dir/manifest.json" ]; then
-    manifest_ver="$(jq -r '.db_version // empty' "$out_dir/manifest.json" 2>/dev/null || true)"
-    if [ "$manifest_ver" != "$ver" ]; then
-      rp_log "MISMATCH $out_dir/manifest.json db_version=$manifest_ver != $ver"
+  # Every version-carrying directory that actually exists on disk, not the one
+  # derived from $ver: a derived path can only ever compare $ver to itself, so
+  # a stale blastdb/<old>/ next to it was reported OK.
+  for d in "$BUILD_DIR"/blastdb/*/; do
+    [ -d "$d" ] || continue
+    base="$(basename "$d")"
+    dver="${base#release-}"
+    if [ "$dver" != "$ver" ]; then
+      rp_log "MISMATCH $d carries version $dver != $ver"
       ok=0
     fi
-  fi
+    if [ -f "$d/manifest.json" ]; then
+      manifest_ver="$(jq -r '.db_version // empty' "$d/manifest.json" 2>/dev/null || true)"
+      if [ "$manifest_ver" != "$ver" ]; then
+        rp_log "MISMATCH ${d}manifest.json db_version=$manifest_ver != $ver"
+        ok=0
+      fi
+    fi
+  done
 
   for pat in ribopilot_rrna decoys; do
     for f in "$REPO_ROOT"/docker/"${pat}"-*.tar.gz; do
@@ -221,14 +242,45 @@ cmd_status() {
 }
 
 # cmd_clean
-# Removes cheap-to-regenerate intermediates only. Never touches blastdb/<VER>
-# output; overwriting that is gated separately by --force.
+# Spec section 6: drops chunks/, the raw FASTA, and the unshipped .fasta,
+# .taxid.map and .dropped.tsv -- but only once the release tarballs verify,
+# because until they do these intermediates are the only thing standing between
+# a mistake and a 2 h 41 m refetch. Never touches blastdb/<VER> output;
+# overwriting that is gated separately by --force.
 cmd_clean() {
-  rp_log "cleaning intermediate build artifacts under $BUILD_DIR"
+  local ver panel_dir rel f stage
+  rp_need sha256sum
+  ver="$(rp_read_version)"
+  rp_valid_version "$ver" || rp_die "RP_DB_VERSION '$ver' is not dotted-numeric"
+  panel_dir="$BUILD_DIR/blastdb/$ver"
+  rel="$BUILD_DIR/blastdb/release-$ver"
+
+  mkdir -p "$BUILD_DIR"
+  # The same lock a build takes: unlocked, clean deletes chunks/ out from under
+  # a running fetch.
+  rp_lock "$BUILD_DIR/build.pid"
+  RP_LOCK_HELD="$BUILD_DIR/build.pid"
+
+  for f in "ribopilot_rrna-$ver.tar.gz" "decoys-$ver.tar.gz"; do
+    [ -f "$rel/$f" ] \
+      || rp_die "refusing to clean: no $rel/$f (run package_release.sh first)"
+    [ -f "$rel/$f.sha256" ] \
+      || rp_die "refusing to clean: no $rel/$f.sha256"
+    (cd "$rel" && sha256sum -c --status "$f.sha256") \
+      || rp_die "refusing to clean: $rel/$f does not match $rel/$f.sha256"
+  done
+  rp_log "release tarballs verify; cleaning intermediates under $BUILD_DIR"
+
   rm -rf "$BUILD_DIR/chunks"
   rm -f "$BUILD_DIR"/*.raw.fasta
-  rm -f "$RP_STATE_FILE"
-  rp_log "clean complete (blastdb/ output, if any, is left in place)"
+  rm -f "$panel_dir"/*.fasta "$panel_dir"/*.taxid.map "$panel_dir"/*dropped.tsv
+
+  # Only the markers whose outputs this removed. Deleting the whole state file
+  # would re-run stages whose artifacts are still there, fetch included.
+  for stage in taxidmap fetch; do
+    rp_marker_clear "$stage"
+  done
+  rp_log "clean complete (blastdb/ output and release tarballs left in place)"
 }
 
 # ---------------------------------------------------------------------------
@@ -309,7 +361,7 @@ main_build() {
   run_preflight
   mkdir -p "$BUILD_DIR"
   rp_lock "$BUILD_DIR/build.pid"
-  trap 'rm -f "$BUILD_DIR/build.pid"' EXIT
+  RP_LOCK_HELD="$BUILD_DIR/build.pid"
 
   if [ -n "$STAGE" ]; then
     run_stage "$STAGE"
