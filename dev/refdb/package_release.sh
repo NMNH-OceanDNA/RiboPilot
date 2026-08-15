@@ -3,7 +3,9 @@
 #
 # Ships the BLAST volume set and the manifest only. The .fasta, .taxid.map and
 # .dropped.tsv in the build directory are build artifacts, not query-time files.
-set -ueo pipefail
+set -Eeuo pipefail
+export LC_ALL=C
+trap 'echo "package_release.sh: error at line $LINENO" >&2' ERR
 
 SRC="${1:?usage: package_release.sh <panel_dir> <version> [--publish]}"
 VER="${2:?usage: package_release.sh <panel_dir> <version> [--publish]}"

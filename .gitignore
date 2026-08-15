@@ -26,6 +26,9 @@ docker/RiboPilot_*.tar.gz
 docker/ribopilot_rrna-*.tar.gz
 docker/decoys-*.tar.gz
 
+# refdb build tree (multi-GB intermediates, never committed)
+dev/refdb/build/
+
 # serena MCP tool cache
 .serena/
 test_run/

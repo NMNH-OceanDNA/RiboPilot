@@ -3,7 +3,9 @@
 #
 # The decoys sit beside the panel because rp_dbarg.R defaults the decoy
 # directory to dirname(panel_prefix). taxdb comes along so staxids resolve.
-set -ueo pipefail
+set -Eeuo pipefail
+export LC_ALL=C
+trap 'echo "fetch_decoys.sh: error at line $LINENO" >&2' ERR
 
 DEST="${1:?usage: fetch_decoys.sh <panel_dir>}"
 DBS="16S_ribosomal_RNA SSU_eukaryote_rRNA LSU_eukaryote_rRNA taxdb"
