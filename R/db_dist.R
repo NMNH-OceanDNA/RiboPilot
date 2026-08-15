@@ -3,16 +3,18 @@
 #' Pull the digest out of one line of sha256sum/shasum/openssl output
 #'
 #' Position matters: sha256sum/shasum print the hex first ("hex  path"), so
-#' that shape is anchored to the line start; openssl prints the path first
-#' ("SHA2-256(path)= hex"), so that shape is anchored to the "= " right
-#' before the hex. An unanchored search would match a hex-looking path
-#' component instead of the real digest.
+#' that shape is anchored to the line start and bounded by a separator or
+#' end-of-string (a 65-hex run must reject, not truncate to a spurious 64);
+#' openssl prints the path first ("SHA2-256(path)= hex"), so that shape is
+#' anchored to the "= " right before the hex. An unanchored search would
+#' match a hex-looking path component instead of the real digest.
 #' @return 64-char lowercase hex, or NA_character_ when unrecognised.
 #' @noRd
 parse_sha256_line <- function(line) {
   if (length(line) != 1 || is.na(line)) return(NA_character_)
-  m <- regmatches(line, regexpr("^[0-9a-fA-F]{64}", line))
-  if (length(m) == 1) return(tolower(m))
+  line <- sub("^\\s+", "", line)
+  m <- regmatches(line, regexpr("^[0-9a-fA-F]{64}(\\s|$)", line))
+  if (length(m) == 1) return(tolower(substr(m, 1, 64)))
   m <- regmatches(line, regexpr("=\\s*[0-9a-fA-F]{64}\\s*$", line))
   if (length(m) == 1) {
     hex <- regmatches(m, regexpr("[0-9a-fA-F]{64}", m))

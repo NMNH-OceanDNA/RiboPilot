@@ -49,8 +49,8 @@ test_that("parse_sha256_line reads sha256sum output", {
   expect_equal(parse_sha256_line(paste0(RP_DIGEST, "  /tmp/x")), RP_DIGEST)
 })
 
-test_that("parse_sha256_line reads shasum -a 256 output", {
-  expect_equal(parse_sha256_line(paste0(RP_DIGEST, "  /tmp/x")), RP_DIGEST)
+test_that("parse_sha256_line reads shasum -a 256 output (single-space separator)", {
+  expect_equal(parse_sha256_line(paste0(RP_DIGEST, " /tmp/x")), RP_DIGEST)
 })
 
 test_that("parse_sha256_line reads openssl 3.x output", {
@@ -68,6 +68,22 @@ test_that("parse_sha256_line is not fooled by a hex-looking path component", {
 
 test_that("parse_sha256_line returns NA for unrecognised output", {
   expect_true(is.na(parse_sha256_line("not a digest line")))
+})
+
+test_that("parse_sha256_line rejects a 65-char hex run rather than truncating it", {
+  expect_true(is.na(parse_sha256_line(paste0(strrep("a", 65), "  /tmp/x"))))
+})
+
+test_that("parse_sha256_line rejects a 63-char hex run", {
+  expect_true(is.na(parse_sha256_line(paste0(strrep("a", 63), "  /tmp/x"))))
+})
+
+test_that("parse_sha256_line still accepts exactly 64 hex chars", {
+  expect_equal(parse_sha256_line(paste0(RP_DIGEST, "  /tmp/x")), RP_DIGEST)
+})
+
+test_that("parse_sha256_line trims leading whitespace before matching", {
+  expect_equal(parse_sha256_line(paste0("\t", RP_DIGEST, "  /tmp/x")), RP_DIGEST)
 })
 
 make_fake_release <- function(root, version = "9.9.9") {
