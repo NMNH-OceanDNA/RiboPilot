@@ -34,7 +34,15 @@ test_that("every script that opens the project DB closes it from a frame", {
 })
 
 test_that("every script validates its argument count before doing work", {
+  # rp_dbarg.R accepts zero or more arguments by design (no argument means
+  # "discover an installed panel") and touches no project database, so the
+  # rp_args() requirement below does not apply to it. Pin the exemption list
+  # itself so a future script cannot silently join it and lose the check.
+  exempt <- "rp_dbarg.R"
+  expect_equal(exempt, "rp_dbarg.R")
+
   for (f in bin_files) {
+    if (basename(f) %in% exempt) next
     txt <- readLines(f, warn = FALSE)
     info <- basename(f)
     n_arg <- grep("^rp_args\\(a, [0-9]+,", txt)

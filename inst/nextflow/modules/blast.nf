@@ -55,9 +55,9 @@ process blast_genbank {
         fi
     else
         # empty blastdb is the normal unconfigured case, not an error: call
-        # rp_dbarg.R anyway (a later task uses this for panel discovery) but
-        # discard its usage-error noise for this argument-less invocation
-        if DBARG=\$(RIBOPILOT_SRC='${params.ribopilot_src}' rp_dbarg.R '' 2>/dev/null); then
+        # rp_dbarg.R with no panel so it falls back to whatever is discovered
+        # (e.g. a panel baked into the container image)
+        if DBARG=\$(RIBOPILOT_SRC='${params.ribopilot_src}' rp_dbarg.R ''); then
             SRC="local"
         else
             DBARG=""

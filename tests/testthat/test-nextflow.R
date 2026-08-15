@@ -634,6 +634,32 @@ test_that("rp_dbarg.R does not suppress the decoy warnings", {
     info = "decoy not-found/whitespace warnings must reach the task log")
 })
 
+test_that("rp_dbarg.R falls back to discovery when given no panel", {
+  txt <- readLines(system.file("nextflow/bin/rp_dbarg.R", package = "RiboPilot"), warn = FALSE)
+  s <- paste(txt, collapse = "\n")
+  expect_match(s, "discover_panel", fixed = TRUE)
+  # an empty first argument must not be treated as a usable prefix
+  expect_no_match(s, "rp_args(a, 1", fixed = TRUE)
+})
+
+test_that("rp_dbarg.R discovers a panel from RIBOPILOT_DB_DIR with no argument", {
+  skip_on_cran()
+  skip_if(!nzchar(Sys.which("Rscript")))
+  root <- tempfile(); dir.create(root)
+  on.exit(unlink(root, recursive = TRUE))
+  d <- file.path(root, "2026.08.1"); dir.create(d)
+  for (e in c("nin", "nsq", "nhr", "ndb")) writeLines("x", file.path(d, paste0("ribopilot_rrna.", e)))
+  script <- system.file("nextflow/bin/rp_dbarg.R", package = "RiboPilot")
+  # NOTE: not getwd() -- testthat runs tests with the working directory set to
+  # tests/testthat, not the package root, so getwd() here would send rp_env.R
+  # a non-source RIBOPILOT_SRC and it would silently fall back to whatever
+  # RiboPilot happens to be installed (which may predate discover_panel).
+  out <- suppressWarnings(system2("Rscript", c(script, "''"),
+    env = c(paste0("RIBOPILOT_DB_DIR=", root), paste0("RIBOPILOT_SRC=", RiboPilot:::ribopilot_src_default())),
+    stdout = TRUE, stderr = FALSE))
+  expect_match(paste(out, collapse = " "), "2026.08.1", fixed = TRUE)
+})
+
 test_that("blast.nf falls back to remote when a configured local panel fails inside blastn", {
   # A panel that exists and passes rp_dbarg.R's checks (no missing/whitespace
   # path) can still fail INSIDE blastn, e.g. built without -parse_seqids. That
