@@ -172,6 +172,8 @@ test_that("install_ribopilot_db leaves no panel when a later asset is missing", 
   dest <- file.path(root, "dbs")
   expect_error(install_ribopilot_db("9.9.9", dest = dest, base_url = base),
     "Could not download")
+  # the underlying reason has to survive, or a TLS or proxy failure is unreadable
+  expect_error(install_ribopilot_db("9.9.9", dest = dest, base_url = base), "cannot open")
   expect_false(blast_db_exists(file.path(dest, "9.9.9", "ribopilot_rrna")))
   expect_false(dir.exists(file.path(dest, "9.9.9")))
 })
@@ -181,9 +183,58 @@ test_that("install_ribopilot_db rejects an archive holding only the index file",
   tagdir <- file.path(root, "rel", "db-9.9.9"); dir.create(tagdir, recursive = TRUE)
   make_fake_asset(tagdir, "ribopilot_rrna-9.9.9.tar.gz", list(ribopilot_rrna.nin = "x"))
   dest <- file.path(root, "dbs")
-  expect_error(install_ribopilot_db("9.9.9", dest = dest, decoys = FALSE,
-    base_url = paste0("file://", file.path(root, "rel"))), "did not contain a usable panel")
+  base <- paste0("file://", file.path(root, "rel"))
+  expect_error(install_ribopilot_db("9.9.9", dest = dest, decoys = FALSE, base_url = base),
+    "did not contain a usable panel")
+  # naming the absentees is what makes a future .nal-volume panel diagnosable
+  expect_error(install_ribopilot_db("9.9.9", dest = dest, decoys = FALSE, base_url = base),
+    "ribopilot_rrna\\.nsq, ribopilot_rrna\\.nhr, manifest\\.json")
   expect_false(blast_db_exists(file.path(dest, "9.9.9", "ribopilot_rrna")))
+})
+
+test_that("a failed reinstall leaves the installed panel whole, not re-extracted", {
+  root <- tempfile(); dir.create(root); on.exit(unlink(root, recursive = TRUE))
+  base <- make_fake_release(root, decoys = TRUE)
+  dest <- file.path(root, "dbs")
+  p <- install_ribopilot_db("9.9.9", dest = dest, base_url = base)
+  # republish the panel asset with a different manifest, then break the decoys:
+  # the first asset verifies and unpacks, so only staging keeps it out of the panel
+  tagdir <- file.path(root, "rel", "db-9.9.9")
+  make_fake_asset(tagdir, "ribopilot_rrna-9.9.9.tar.gz", list(
+    manifest.json =
+      '{"manifest_schema":1,"db_name":"ribopilot_rrna","db_version":"9.9.9-new"}',
+    ribopilot_rrna.nin = "y", ribopilot_rrna.nsq = "y", ribopilot_rrna.nhr = "y"))
+  writeLines(paste0(strrep("0", 64), "  decoys-9.9.9.tar.gz"),
+    file.path(tagdir, "decoys-9.9.9.tar.gz.sha256"))
+  expect_error(install_ribopilot_db("9.9.9", dest = dest, base_url = base, force = TRUE),
+    "[Cc]hecksum")
+  expect_true(blast_db_exists(p))
+  expect_equal(read_panel_manifest(dirname(p))$db_version, "9.9.9")
+})
+
+test_that("a set-aside directory from a crash is never the target of a new install", {
+  root <- tempfile(); dir.create(root); on.exit(unlink(root, recursive = TRUE))
+  base <- make_fake_release(root)
+  dest <- file.path(root, "dbs"); dir.create(dest, recursive = TRUE)
+  # a survivor of an earlier crash, named for a pid the OS has since recycled
+  survivor <- file.path(dest, paste0("9.9.9.old-", Sys.getpid()))
+  dir.create(survivor); writeLines("only copy", file.path(survivor, "ribopilot_rrna.nsq"))
+  install_ribopilot_db("9.9.9", dest = dest, decoys = FALSE, base_url = base)
+  expect_true(file.exists(file.path(survivor, "ribopilot_rrna.nsq")))
+})
+
+test_that("install sweeps leftovers from interrupted runs but spares fresh ones", {
+  root <- tempfile(); dir.create(root); on.exit(unlink(root, recursive = TRUE))
+  base <- make_fake_release(root)
+  dest <- file.path(root, "dbs"); dir.create(dest, recursive = TRUE)
+  stale <- file.path(dest, c(".stage-9.9.9-4242", "9.9.9.old-4242"))
+  fresh <- file.path(dest, c(".stage-9.9.9-4243", ".stage-8.8.8-4242"))
+  for (d in c(stale, fresh)) dir.create(d)
+  for (d in stale) Sys.setFileTime(d, Sys.time() - 3 * 86400)
+  expect_message(install_ribopilot_db("9.9.9", dest = dest, decoys = FALSE, base_url = base),
+    "Reclaiming space")
+  expect_false(any(dir.exists(stale)))
+  expect_true(all(dir.exists(fresh)))   # a live concurrent install, and another version
 })
 
 test_that("install_ribopilot_db with force=TRUE replaces what is there", {

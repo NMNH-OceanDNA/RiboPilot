@@ -85,16 +85,21 @@ RP_DB_RELEASE_BASE <- "https://github.com/dmacguigan/RiboPilot/releases/download
 #' @noRd
 RP_DB_VERSION <- "2026.08.1"
 
-#' Fetch one URL, reporting failure in our own words
+#' Fetch one URL, or stop naming the asset and the reason
 #'
-#' download.file() signals a condition on a missing or 404 URL rather than
-#' returning nonzero, so the status check alone never fires.
+#' download.file() signals a condition rather than returning nonzero, so a
+#' failure has to be caught to be reported at all.
 #' @noRd
 download_or_stop <- function(url, dest, what) {
+  why <- ""
+  note <- function(c) {
+    why <<- conditionMessage(c)
+    FALSE
+  }
   ok <- tryCatch(utils::download.file(url, dest, mode = "wb", quiet = TRUE) == 0,
-    error = function(e) FALSE, warning = function(w) FALSE)
+    error = note, warning = note)
   if (!isTRUE(ok) || !file.exists(dest)) {
-    stop("Could not download ", what, call. = FALSE)
+    stop("Could not download ", what, if (nzchar(why)) paste0(": ", why), call. = FALSE)
   }
   dest
 }
@@ -118,15 +123,43 @@ fetch_verified <- function(base_url, tag, asset, dir) {
   dest
 }
 
-#' Does a directory hold a whole panel, not the front of one?
+#' Which pieces of a whole panel are absent from a directory
 #'
-#' blast_db_exists() is satisfied by the index file alone, so a unpack that
-#' stopped partway (a disk quota, an interrupted transfer) would pass as an
-#' install and then be searched as if it were complete.
+#' blast_db_exists() is satisfied by an index file alone, so a partial unpack
+#' would otherwise install and then be searched as if it were whole. Naming the
+#' absentees keeps the refusal diagnosable, for instance when a future panel
+#' ships as .nal volumes rather than the single-volume layout expected here.
+#' @return character(0) when the directory holds a whole panel.
 #' @noRd
-panel_is_complete <- function(dir) {
-  parts <- file.path(dir, paste0("ribopilot_rrna", c(".nin", ".nsq", ".nhr")))
-  all(file.exists(parts)) && !is.null(read_panel_manifest(dir))
+panel_missing_parts <- function(dir) {
+  want <- paste0("ribopilot_rrna", c(".nin", ".nsq", ".nhr"))
+  miss <- want[!file.exists(file.path(dir, want))]
+  if (is.null(read_panel_manifest(dir))) miss <- c(miss, "manifest.json")
+  miss
+}
+
+#' Reclaim staging and set-aside directories left by interrupted installs
+#'
+#' Each abandoned one can hold a few hundred MB. Age stands in for a liveness
+#' check so a concurrent install in another process is never swept out from
+#' under itself.
+#' ponytail: age heuristic; use a real liveness check if installs ever run long.
+#' @return (invisibly) the paths removed.
+#' @noRd
+sweep_stale_installs <- function(dest, version, max_age_days = 1) {
+  hits <- list.files(dest, all.files = TRUE, no.. = TRUE, full.names = TRUE)
+  hits <- hits[dir.exists(hits)]
+  nm <- basename(hits)
+  hits <- hits[startsWith(nm, paste0(".stage-", version, "-")) |
+    startsWith(nm, paste0(version, ".old-"))]
+  age <- difftime(Sys.time(), file.mtime(hits), units = "days")
+  hits <- hits[!is.na(age) & age > max_age_days]
+  if (length(hits)) {
+    message("Reclaiming space from an interrupted install: ",
+      paste(basename(hits), collapse = ", "))
+    unlink(hits, recursive = TRUE)
+  }
+  invisible(hits)
 }
 
 #' Download and install a RiboPilot BLAST panel
@@ -160,6 +193,7 @@ install_ribopilot_db <- function(version = RP_DB_VERSION,
     stop(dest, " is not writable. Set RIBOPILOT_DB_DIR to a writable location.",
       call. = FALSE)
   }
+  sweep_stale_installs(dest, version)
   # The pid keeps two concurrent installs of one version off each other's stage.
   stage <- file.path(dest, paste0(".stage-", version, "-", Sys.getpid()))
   unlink(stage, recursive = TRUE)
@@ -180,17 +214,17 @@ install_ribopilot_db <- function(version = RP_DB_VERSION,
     }
     unlink(c(tgz, paste0(tgz, ".sha256")))
   }
-  if (!panel_is_complete(stage)) {
-    stop("The downloaded archive did not contain a usable panel.", call. = FALSE)
+  miss <- panel_missing_parts(stage)
+  if (length(miss)) {
+    stop("The downloaded archive did not contain a usable panel; it is missing ",
+      paste(miss, collapse = ", "), ".", call. = FALSE)
   }
 
-  # Set any existing panel aside instead of deleting it: deleting first means a
-  # failed rename leaves either nothing or, worse, a gutted directory that
-  # blast_db_exists() still calls usable.
-  old <- paste0(final, ".old-", Sys.getpid())
-  if (unlink(old, recursive = TRUE) != 0) {
-    stop("Could not clear ", old, "; remove it by hand and retry.", call. = FALSE)
-  }
+  # Set the existing panel aside rather than delete it, so a failed rename cannot
+  # leave a gutted directory that blast_db_exists() still calls usable. A name
+  # nothing else holds: a leftover .old- may be a crashed run's only copy, and
+  # pids get recycled.
+  old <- tempfile(paste0(version, ".old-"), tmpdir = dest)
   had_old <- file.exists(final)
   if (had_old && !file.rename(final, old)) {
     stop("Could not set the panel at ", final, " aside; it is unchanged.", call. = FALSE)
