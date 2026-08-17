@@ -25,6 +25,8 @@ docker/RiboPilot_*.tar.gz
 # db panel tarballs staged for the Docker image
 docker/ribopilot_rrna-*.tar.gz
 docker/decoys-*.tar.gz
+docker/ribopilot_rrna-*.tar.gz.sha256
+docker/decoys-*.tar.gz.sha256
 
 # refdb build tree (multi-GB intermediates, never committed)
 dev/refdb/build/

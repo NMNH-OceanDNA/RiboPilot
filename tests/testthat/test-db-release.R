@@ -636,6 +636,20 @@ run_sweep <- function(path, root, ver) {
   list(status = if (is.null(st)) 0L else as.integer(st), out = out)
 }
 
+test_that("git ignores the staged panel assets AND the sidecars the operator is told to place by hand", {
+  skip_without_docker_dir()
+  skip_if(Sys.which("git") == "", "git is not on PATH")
+  # rp_db_unavailable tells the operator to put the tarballs and their .sha256
+  # in docker/; an unignored sidecar dirties the tree and deploy-dockerhub.sh
+  # then refuses to run
+  for (f in c("docker/ribopilot_rrna-9.9.9.tar.gz", "docker/decoys-9.9.9.tar.gz",
+              "docker/ribopilot_rrna-9.9.9.tar.gz.sha256",
+              "docker/decoys-9.9.9.tar.gz.sha256")) {
+    expect_equal(system2("git", c("-C", "../..", "check-ignore", "-q", shQuote(f)),
+      stdout = FALSE, stderr = FALSE), 0L, label = f)
+  }
+})
+
 test_that("the deploy scripts sweep staged assets from other panel versions only", {
   skip_without_docker_dir()
   # the current version's two tarballs are a 160 MB cache the scripts deliberately
@@ -717,7 +731,11 @@ test_that("the panel verification sits in db-1, after both ADDs, with no pipe", 
   expect_gt(at, max(adds))
   # nothing but comments between the ADDs and the check: another instruction
   # there would be a layer that got built on an unverified database
-  expect_true(all(grepl("^\\s*(#|$)", x[(max(adds) + 1L):(at - 1L)])))
+  # guarded: if the explanatory comment lines between the ADDs and the RUN are
+  # ever removed the range counts backwards and hits the RUN and ADD lines
+  if (at > max(adds) + 1L) {
+    expect_true(all(grepl("^\\s*(#|$)", x[(max(adds) + 1L):(at - 1L)])))
+  }
   # and still inside db-1, above the ENV that advertises the panel
   expect_lt(at, grep("^ENV RIBOPILOT_DB_DIR=", x))
   # a piped command returns 141 on this machine even when it succeeds, which
@@ -733,12 +751,28 @@ test_that("the Dockerfile's panel check accepts a real database and refuses a br
   d <- withr::local_tempdir()
   fa <- file.path(d, "in.fasta")
   writeLines(c(">s1", "ACGTACGTACGTACGTACGTACGT", ">s2", "TTTTGGGGCCCCAAAATTTTGGGG"), fa)
-  expect_equal(system2("makeblastdb",
-    c("-in", shQuote(fa), "-dbtype", "nucl", "-blastdb_version", "5",
-      "-out", shQuote(file.path(d, "ribopilot_rrna"))),
-    stdout = FALSE, stderr = FALSE), 0L)
+  # the panel and all three decoys: the RUN checks the decoys too, because a
+  # corrupt decoys tarball also plain-copies and would otherwise bake in
+  for (db in c("ribopilot_rrna", "16S_ribosomal_RNA", "SSU_eukaryote_rRNA",
+               "LSU_eukaryote_rRNA")) {
+    expect_equal(system2("makeblastdb",
+      c("-in", shQuote(fa), "-dbtype", "nucl", "-blastdb_version", "5",
+        "-out", shQuote(file.path(d, db))),
+      stdout = FALSE, stderr = FALSE), 0L, label = db)
+  }
   writeLines('{"db_name": "ribopilot_rrna"}', file.path(d, "manifest.json"))
   expect_equal(run_db_check(d), 0L)
+
+  # a decoys tarball that plain-copied: the decoy volumes never landed, and
+  # without this half of the chain the image ships searching panel-only
+  for (db in c("16S_ribosomal_RNA", "SSU_eukaryote_rRNA", "LSU_eukaryote_rRNA")) {
+    dvols <- list.files(d, pattern = paste0("^", db, "[.]"), full.names = TRUE)
+    dstash <- withr::local_tempdir()
+    expect_true(all(file.rename(dvols, file.path(dstash, basename(dvols)))))
+    expect_gt(run_db_check(d), 0L, label = db)
+    expect_true(all(file.rename(file.path(dstash, basename(dvols)), dvols)))
+    expect_equal(run_db_check(d), 0L, label = db)
+  }
 
   # ADD plain-copies a corrupt-but-gzip-shaped archive instead of failing, so the
   # destination holds the tarball and no volumes at all

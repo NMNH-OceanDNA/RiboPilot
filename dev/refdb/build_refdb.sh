@@ -5,10 +5,9 @@
 #                        [--jobs N] [--accept-drift] [--force] [--check-version]
 #                        [status|clean]
 #
-# See dev/design/18_REFDB_REBUILD.md for the spec this implements. This file
-# is the skeleton: argument parsing, preflight, and version sync. The build
-# stages themselves (accessions, taxidmap, fetch, build, decoys, package) land
-# in later work and are stubs here.
+# See dev/design/18_REFDB_REBUILD.md for the spec this implements: argument
+# parsing, preflight, version sync, and the six build stages (accessions,
+# taxidmap, fetch, build, decoys, package).
 set -Eeuo pipefail
 export LC_ALL=C
 
@@ -352,8 +351,8 @@ cmd_status() {
 }
 
 # cmd_clean
-# Spec section 6: drops chunks/, the raw FASTA, and the unshipped .fasta,
-# .taxid.map and .dropped.tsv -- but only once the release tarballs verify,
+# Spec section 6: drops chunks/, the raw FASTA, TMPDIR's sort spill, and the
+# .fasta, .taxid.map and .dropped.tsv -- but only once the release assets verify,
 # because until they do these intermediates are the only thing standing between
 # a mistake and a 2 h 41 m refetch. Never touches blastdb/<VER> output;
 # overwriting that is gated separately by --force.
@@ -382,10 +381,13 @@ cmd_clean() {
     (cd "$rel" && sha256sum -c --status "$f.sha256") \
       || rp_die "refusing to clean: $rel/$f does not match $rel/$f.sha256"
   done
-  rp_log "release tarballs verify; cleaning intermediates under $BUILD_DIR"
+  rp_log "release assets verify; cleaning intermediates under $BUILD_DIR"
 
+  # $BUILD_DIR/tmp is run_preflight's TMPDIR default and holds up to 2 GB of
+  # sort spill. Only that path, never $TMPDIR: an operator who pointed TMPDIR
+  # at a shared scratch directory must not have it deleted from under them.
   rm -rf "$BUILD_DIR/chunks" "$BUILD_DIR/chunks.missing" "$BUILD_DIR/chunks.tmp" \
-    "$BUILD_DIR/taxidmap.tmp" "$BUILD_DIR/build.tmp"
+    "$BUILD_DIR/taxidmap.tmp" "$BUILD_DIR/build.tmp" "$BUILD_DIR/tmp"
   rm -f "$BUILD_DIR"/*.raw.fasta
   # The resume key goes with the chunks it keys: left behind, it would tell the
   # next fetch that a chunk dir which no longer exists was proven.
@@ -429,6 +431,14 @@ rp_require_free_space() {
 
 run_preflight() {
   local tool resolved_curl ver
+
+  # rp_fetch_wait uses `wait -n -p`, which is bash 5.1. On 4.4 the first
+  # saturated reap prints "wait: -p: invalid option" and the run aborts with
+  # the misleading "fetch: chunk worker(s) failed" -- two hours in.
+  if [ "${BASH_VERSINFO[0]}" -lt 5 ] \
+    || { [ "${BASH_VERSINFO[0]}" -eq 5 ] && [ "${BASH_VERSINFO[1]}" -lt 1 ]; }; then
+    rp_die "bash 5.1 or newer is required (this is ${BASH_VERSION}); the fetch stage uses 'wait -n -p'"
+  fi
 
   for tool in $REQUIRED_TOOLS; do
     rp_need "$tool"
@@ -768,8 +778,7 @@ rp_shipped_bytes() {
 }
 
 # ---------------------------------------------------------------------------
-# Stages -- not implemented yet, land in later work. Each is a hard stub so a
-# partial run cannot be mistaken for a real one.
+# Stages
 # ---------------------------------------------------------------------------
 
 # stage_accessions
@@ -1244,7 +1253,7 @@ stage_build() {
       BEGIN { n = split(ORDER, r, " "); for (i = 1; i <= n; i++) rank[r[i]] = i }
       { print (($2 in rank) ? rank[$2] : n + 1), $0 }' "$tmp/dropped.all.tsv" \
     | sort -t$'\t' -k2,2 -k1,1n \
-    | awk -F'\t' -v OFS='\t' '$2 != prev { prev = $2; print $2, $3, $4 }' \
+    | awk -F'\t' -v OFS='\t' '$2 "" != prev "" { prev = $2; print $2, $3, $4 }' \
     > "$tmp/ribopilot_rrna.dropped.tsv"
 
   n_dropped="$(rp_line_count "$tmp/ribopilot_rrna.dropped.tsv")"

@@ -101,9 +101,17 @@ ADD docker/ribopilot_rrna-${RP_DB_VERSION}.tar.gz /opt/ribopilot/blastdb/${RP_DB
 ADD docker/decoys-${RP_DB_VERSION}.tar.gz         /opt/ribopilot/blastdb/${RP_DB_VERSION}/
 # ADD does not fail on a corrupt-but-gzip-shaped archive; it falls back to a
 # plain copy, so an unusable panel would otherwise bake in and only surface in
-# somebody's run. No pipe: a piped command returns 141 here even on success.
+# somebody's run. The decoys are checked too: without them a search runs
+# panel-only and a non-metazoan contaminant comes back unmatched instead of
+# identified, which is the exact failure the decoys exist to prevent. Named one
+# by one, never a shell loop: an undefined $var in a RUN expands to empty at
+# build time, so a loop variable would check nothing.
+# No pipe: a piped command returns 141 here even on success.
 RUN blastdbcmd -db /opt/ribopilot/blastdb/${RP_DB_VERSION}/ribopilot_rrna -info > /dev/null && \
-    test -s /opt/ribopilot/blastdb/${RP_DB_VERSION}/manifest.json
+    test -s /opt/ribopilot/blastdb/${RP_DB_VERSION}/manifest.json && \
+    blastdbcmd -db /opt/ribopilot/blastdb/${RP_DB_VERSION}/16S_ribosomal_RNA -info > /dev/null && \
+    blastdbcmd -db /opt/ribopilot/blastdb/${RP_DB_VERSION}/SSU_eukaryote_rRNA -info > /dev/null && \
+    blastdbcmd -db /opt/ribopilot/blastdb/${RP_DB_VERSION}/LSU_eukaryote_rRNA -info > /dev/null
 ENV RIBOPILOT_DB_DIR=/opt/ribopilot/blastdb
 
 FROM db-${RP_DB} AS final

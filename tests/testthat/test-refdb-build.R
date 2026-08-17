@@ -217,6 +217,9 @@ make_build_tree <- function(ver, tarballs = c("good", "corrupt", "none")) {
     writeLines("x", file.path(build, f))
   }
   writeLines("x", file.path(build, "taxidmap.tmp", "combined.tsv"))
+  # run_preflight's TMPDIR default, where spec section 6 budgets 2 GB of spill
+  dir.create(file.path(build, "tmp"))
+  writeLines("x", file.path(build, "tmp", "sortXXXX"))
   for (f in c("ribopilot_rrna.nin", "manifest.json", "ribopilot_rrna.fasta",
               "ribopilot_rrna.taxid.map", "dropped.tsv")) {
     writeLines("x", file.path(panel, f))
@@ -304,6 +307,8 @@ test_that("clean drops the unshipped artifacts and keeps the surviving stages' m
     expect_false(file.exists(file.path(build, f)), label = f)
   }
   expect_false(dir.exists(file.path(build, "taxidmap.tmp")))
+  # the sort spill goes too; it was the one artifact clean never named
+  expect_false(dir.exists(file.path(build, "tmp")))
   # accessions.txt stays: it is the fingerprint fetch refuses to resume against
   expect_true(file.exists(file.path(build, "accessions.txt")))
   expect_true(file.exists(file.path(build, "accessions.sha256")))
@@ -2110,6 +2115,17 @@ test_that("the build stage refuses a chunk set that is not the one the accession
   expect_gt(r2$status, 0L)
   expect_true(any(grepl("no chunk files matching", r2$out, fixed = TRUE)))
   expect_false(dir.exists(r2$out_dir))
+})
+
+test_that("the drop-ledger collapse compares accessions as strings, not as numbers", {
+  # awk's strnum rules make "1.0" and "1.00" equal, so two dropped records whose
+  # identifiers differ only in trailing zeros would collapse into one row and
+  # the record would vanish from the only ledger there is
+  build <- make_panel_build(wgs = c("1.0", "1.00"))
+  r <- run_build_sourced(build)
+  expect_equal(r$status, 0L, label = paste(r$out, collapse = "\n"))
+  led <- readLines(file.path(r$out_dir, "ribopilot_rrna.dropped.tsv"), warn = FALSE)
+  expect_true(all(c("1.0", "1.00") %in% tsv_field(led, 1)))
 })
 
 test_that("the build stage refuses a count file that is not a number rather than treating it as zero", {
