@@ -24,7 +24,70 @@ source "$SCRIPT_DIR/lib.sh"
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then RP_EXECUTED=1; else RP_EXECUTED=0; fi
 
 RP_LOCK_HELD=""
+
+# ---------------------------------------------------------------------------
+# Chunk-worker bookkeeping. Defined here, far from the fetch stage that uses
+# it, because rp_cleanup below calls rp_fetch_reap and the EXIT trap that runs
+# rp_cleanup is installed a few lines further down: defined any later, every
+# exit in between -- --help, an unknown argument -- would run the trap against
+# a function that does not exist yet, and command-not-found under errexit would
+# abort the trap before it could flush the scrubbed output.
+# ---------------------------------------------------------------------------
 RP_FETCH_PIDS=""
+RP_FETCH_DONE_PID=""
+
+# rp_fetch_reap
+# Kill every chunk worker's process group and wait for it. Job control gives
+# each worker its own group, so this takes its efetch child down too. It has to
+# happen before any exit, for two different reasons: an orphan still holding
+# the scrubbed stderr open makes rp_scrub_flush's wait block forever, so the
+# script hangs instead of failing; and an orphan that outlives the run can
+# publish a chunk into a build tree the next run is already using, which a pid
+# lockfile cannot see. The wait is per pid and never bare: a bare wait would
+# also wait on the scrub filters, which do not exit until the streams close.
+rp_fetch_reap() {
+  local p
+  # Nothing may interrupt a reap in progress, and job control goes off before
+  # the kill rather than after: a signal-killed job makes a shell still in
+  # monitor mode print "[1]- Terminated" per worker, interleaved with the real
+  # error. Turning monitor off is the whole fix -- redirecting the wait's
+  # stderr instead would be far worse, because bash parks the real stderr on a
+  # spare descriptor for the duration of a redirected command, and exiting
+  # from a trap that fired inside one leaves it parked, so rp_scrub_flush's
+  # `exec 2>&-` closes the wrong descriptor and its wait never returns.
+  # Process groups are assigned at fork time, so the kill still finds them.
+  trap - INT TERM
+  set +m
+  for p in ${RP_FETCH_PIDS:-}; do kill -- "-$p" 2>/dev/null || true; done
+  for p in ${RP_FETCH_PIDS:-}; do wait "$p" || true; done
+  RP_FETCH_PIDS=""
+}
+
+# rp_fetch_wait
+# wait -n, then drop the worker that finished. Without the pruning the list
+# would still name every worker of the run -- 179 of them in production,
+# nearly all long dead -- and the kill above would then signal whatever
+# process group has since been handed a recycled pid.
+rp_fetch_wait() {
+  local status=0 p keep=""
+  wait -n -p RP_FETCH_DONE_PID || status=$?
+  for p in ${RP_FETCH_PIDS:-}; do
+    [ "$p" = "${RP_FETCH_DONE_PID:-}" ] || keep="$keep $p"
+  done
+  RP_FETCH_PIDS="$keep"
+  return "$status"
+}
+
+# rp_fetch_interrupt
+# The maintainer runs this stage by hand for over two hours, so Ctrl-C is a
+# likely action, and the workers are in their own process groups precisely so
+# the terminal's SIGINT does not reach them.
+rp_fetch_interrupt() {
+  trap - INT TERM
+  rp_fetch_reap
+  rp_die "fetch: interrupted; stopped the chunk workers"
+}
+
 rp_cleanup() {
   # Workers first: rp_scrub_flush waits on the scrub filters, and a live child
   # still holding the scrubbed stderr open never lets that wait return.
@@ -595,43 +658,6 @@ rp_fasta_accessions() {
     | sort -u
 }
 
-# rp_fetch_reap
-# Kill every chunk worker's process group and wait for it. Job control gives
-# each worker its own group, so this takes its efetch child down too. It has to
-# happen before any exit, for two different reasons: an orphan still holding
-# the scrubbed stderr open makes rp_scrub_flush's wait block forever, so the
-# script hangs instead of failing; and an orphan that outlives the run can
-# publish a chunk into a build tree the next run is already using, which a pid
-# lockfile cannot see. The wait is per pid and never bare: a bare wait would
-# also wait on the scrub filters, which do not exit until the streams close.
-rp_fetch_reap() {
-  local p
-  # Nothing may interrupt a reap in progress, and job control goes off before
-  # the kill rather than after: a signal-killed job makes a shell still in
-  # monitor mode print "[1]- Terminated" per worker, interleaved with the real
-  # error. Turning monitor off is the whole fix -- redirecting the wait's
-  # stderr instead would be far worse, because bash parks the real stderr on a
-  # spare descriptor for the duration of a redirected command, and exiting
-  # from a trap that fired inside one leaves it parked, so rp_scrub_flush's
-  # `exec 2>&-` closes the wrong descriptor and its wait never returns.
-  # Process groups are assigned at fork time, so the kill still finds them.
-  trap - INT TERM
-  set +m
-  for p in ${RP_FETCH_PIDS:-}; do kill -- "-$p" 2>/dev/null || true; done
-  for p in ${RP_FETCH_PIDS:-}; do wait "$p" || true; done
-  RP_FETCH_PIDS=""
-}
-
-# rp_fetch_interrupt
-# The maintainer runs this stage by hand for over two hours, so Ctrl-C is a
-# likely action, and the workers are in their own process groups precisely so
-# the terminal's SIGINT does not reach them.
-rp_fetch_interrupt() {
-  trap - INT TERM
-  rp_fetch_reap
-  rp_die "fetch: interrupted; stopped the chunk workers"
-}
-
 # rp_fetch_chunk IDX FIRST_LINE
 # One chunk end to end, run as a background worker. Cuts its own request list
 # from the sorted, hash-pinned accession list by line range (positional cutting
@@ -928,7 +954,7 @@ stage_fetch() {
       continue
     fi
     if [ "$running" -ge "$JOBS" ]; then
-      wait -n || failed=1
+      rp_fetch_wait || failed=1
       running=$((running - 1))
     fi
     # `set -m` drops bash's implicit </dev/null for async commands, so without
@@ -945,7 +971,7 @@ stage_fetch() {
       rp_fetch_reap
       break
     fi
-    wait -n || failed=1
+    rp_fetch_wait || failed=1
     running=$((running - 1))
   done
   trap - INT TERM

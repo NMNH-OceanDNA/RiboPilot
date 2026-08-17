@@ -151,6 +151,41 @@ run_refdb <- function(...) {
   list(status = if (is.null(st)) 0L else as.integer(st), out = out)
 }
 
+# These are the earliest exits the script has, and they run the EXIT trap
+# before most of the file has been read, so anything the trap calls has to be
+# defined above it. Nothing else in this suite exercises the argument parser's
+# own exit paths, which is how a forward reference in the trap once made every
+# one of them print a spurious "unexpected error" and skipped the output flush.
+test_that("--help exits 0 and prints the usage text with no error", {
+  skip_if_not(file.exists(refdb_sh))
+  skip_if(Sys.which("bash") == "")
+  r <- run_refdb("--help")
+  expect_equal(r$status, 0L)
+  expect_true(any(grepl("Usage: build_refdb.sh", r$out, fixed = TRUE)))
+  expect_false(any(grepl("ERROR", r$out, fixed = TRUE)))
+  expect_false(any(grepl("command not found", r$out, fixed = TRUE)))
+})
+
+test_that("an unknown argument and an unknown --stage each fail with their own message and nothing after it", {
+  skip_if_not(file.exists(refdb_sh))
+  skip_if(Sys.which("bash") == "")
+  cases <- list(
+    list(args = "--nope", msg = "unknown argument: --nope"),
+    list(args = c("--stage", "bogus"), msg = "unknown --stage: bogus")
+  )
+  for (case in cases) {
+    lbl <- paste(case$args, collapse = " ")
+    r <- run_refdb(case$args)
+    expect_gt(r$status, 0L)
+    expect_true(any(grepl(case$msg, r$out, fixed = TRUE)), label = lbl)
+    # exactly one error, and not the bare "unexpected error" that contradicts
+    # the real one right above it
+    expect_equal(length(grep("ERROR", r$out)), 1L, label = lbl)
+    expect_false(any(grepl("unexpected error", r$out, fixed = TRUE)), label = lbl)
+    expect_false(any(grepl("command not found", r$out, fixed = TRUE)), label = lbl)
+  }
+})
+
 test_that("--check-version reports a version directory that exists on disk", {
   skip_if_not(file.exists(refdb_sh))
   skip_if(Sys.which("bash") == "")
@@ -1581,8 +1616,10 @@ test_that("an interrupt stops the chunk workers instead of leaving them fetching
   expect_false(identical(if (is.null(st)) 0L else as.integer(st), 124L),
     label = "the interrupted run timed out instead of stopping")
 
+  # A failure, never a skip: if the stage never reached a worker there was
+  # nothing to interrupt, and this test would then quietly not run at all.
   worker_pids <- readLines(pidlog, warn = FALSE)
-  skip_if_not(length(worker_pids) > 0, "the fetch stage never reached a worker")
+  expect_gt(length(worker_pids), 0L)
   rc <- as.integer(sub("^RC=", "", grep("^RC=", out, value = TRUE)[1]))
   elapsed <- as.integer(sub("^ELAPSED_MS=", "", grep("^ELAPSED_MS=", out, value = TRUE)[1])) / 1000
   expect_gt(rc, 0L)
