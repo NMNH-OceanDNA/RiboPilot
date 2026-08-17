@@ -71,9 +71,10 @@ calls, so with a container you can skip the conda step below. On a workstation,
 create projects with <code>executor = "docker"</code>; on a cluster, use
 Singularity (the <code>NMNH_Hydra</code> and <code>NOAA_SEDNA</code> profiles
 already do, and <code>generate_config()</code> writes one for any other
-scheduler). The commands later in this guide pass
-<code>conda_env = "ribopilot"</code>; <strong>omit that argument</strong> when you
-run in a container, because the image already supplies the tools. Installing the
+scheduler). The commands later in this guide are written for the container.
+Where one carries a commented <code>conda_env = "ribopilot"</code> line, that
+argument is for a self-installed conda setup only; <strong>leave it off</strong>
+when you run in a container, because the image already supplies the tools. Installing the
 tools yourself, including with conda, is <strong>no longer supported</strong>.
 Those instructions are kept below because they still work, but they are not
 tested.
@@ -213,19 +214,22 @@ the function help for <code>new_project()</code> and
 
 # Step 4: Assemble your samples
 
-One command runs the assembly stage: it cleans the reads, assembles the
-ribosomal repeat for each sample, picks the best reconstruction, and prepares the
-review aids (a closest-match GenBank search and a sequencing-depth profile).
+One command runs the whole analysis: it cleans the reads, assembles the
+ribosomal repeat for each sample, picks the best reconstruction, **annotates
+every reconstruction it produces**, runs the automatic quality checks, and
+prepares the review aids (a closest-match GenBank search and a sequencing-depth
+profile).
 
 ```{r, purl = FALSE}
-RiboPilot::run_assembly("~/my_project", conda_env = "ribopilot")
+RiboPilot::run_assembly("~/my_project")
+# self-installed conda instead of a container? add conda_env = "ribopilot"
 ```
 
 This is the longest step, because it does real work for every sample. You can let
-it run and come back later. When it finishes, every sample has an assembly ready
-for your review. Annotation happens later, in a separate step, only after you
-have reviewed and approved the assemblies (this is deliberate: there is no point
-annotating a reconstruction you have not yet accepted).
+it run and come back later. When it finishes, every sample has an assembly *and*
+its annotation ready for your review. There is no separate annotation command:
+annotating is cheap next to assembling, so RiboPilot does it up front rather than
+making you run a second stage for it.
 
 <div class="alert alert-note">
 Part of this step tries to look up the closest published match on NCBI to help
@@ -242,7 +246,8 @@ first and then assembles only those. It is the same assembly step as before, so
 everything after it works exactly the same way:
 
 ```{r, purl = FALSE}
-RiboPilot::run_fallback("~/my_project", conda_env = "ribopilot")
+RiboPilot::run_fallback("~/my_project")
+# self-installed conda instead of a container? add conda_env = "ribopilot"
 ```
 
 You can skip this and come back to it later if you prefer.
@@ -260,31 +265,37 @@ The app opens in your web browser as a table with one row per sample, organized
 into three tabs that follow the workflow: **Assemble**, **Annotate**, and
 **Export**. Each row shows an icon for the sample's status and whether it is
 **locked**. Locking a sample "signs off" on it and moves it to the next stage: a
-sample must be locked in the Assemble tab before it can be annotated, and locked
-in the Annotate tab before it can be exported. You can select several rows and
-lock them together.
+sample must be locked in the Assemble tab before its annotation appears in the
+Annotate tab, and locked in the Annotate tab before it can be exported. You can
+select several rows and lock them together.
 
 Work in the **Assemble tab**: look at each sample's reconstruction (RiboPilot has
 already chosen what it thinks is the best one), check it against the sequencing
 depth and the closest GenBank match, switch to an alternative reconstruction or
 adjust the exact endpoints if needed, and **lock** each sample you are happy with.
 
-Annotation deliberately does not happen until you have locked an assembly, so the
-Annotate tab is empty until the next step.
+Locking is what fills the Annotate tab: the annotations already exist for every
+reconstruction (Step 4 made them), and the tab lists the ones you have signed off
+on. So it starts empty and fills as you lock.
 
-# Step 7: Annotate the locked assemblies
+# Step 7: Move to the Annotate tab
 
-Now run the annotation stage on the assemblies you locked. It marks the five
-features (18S, ITS1, 5.8S, ITS2, 28S) and runs the automatic quality checks.
+There is no annotation command to run. Step 4 annotated every reconstruction as
+it assembled it, so each sample you locked already has its five features (18S,
+ITS1, 5.8S, ITS2, 28S) marked and its automatic quality checks done. Switch to
+the **Annotate tab** and carry on with Step 8.
+
+The one case that needs anything re-run is changing your mind. If you go back and
+switch a sample to a different reconstruction, or adjust its endpoints, that
+sample has to be annotated again. Press **Update** on the **Assemble tab** (it
+shows a live progress display), or re-run the Step 4 command:
 
 ```{r, purl = FALSE}
-RiboPilot::run_annotate("~/my_project", conda_env = "ribopilot")
+RiboPilot::run_assembly("~/my_project")
+# self-installed conda instead of a container? add conda_env = "ribopilot"
 ```
 
-You can also launch this from inside the app: switch to the Annotate tab and use
-the **Update** button, which shows a live progress display. If you later go back
-and switch a sample to a different reconstruction, just run this step again; it
-re-annotates only the samples that changed.
+Either route re-does only what changed and leaves everything else alone.
 
 # Step 8: Review the annotations and curation flags
 
@@ -329,11 +340,10 @@ rest) are still appended automatically.
 
 ```{r, purl = FALSE}
 RiboPilot::new_project(...)          # Step 3: set up
-RiboPilot::run_assembly(project)     # Step 4: assemble (+ BLAST, coverage)
+RiboPilot::run_assembly(project)     # Step 4: assemble + annotate + curate (+ BLAST, coverage)
 RiboPilot::run_fallback(project)     # Step 5: rescue difficult samples (optional)
-RiboPilot(project)                   # Step 6: review + LOCK assemblies (Assemble tab)
-RiboPilot::run_annotate(project)     # Step 7: annotate + curate locked assemblies
-RiboPilot(project)                   # Step 8: review annotations + flags, lock (Annotate tab)
+RiboPilot(project)                   # Steps 6-8: review + LOCK assemblies (Assemble tab),
+                                     #   then review annotations + flags and lock (Annotate tab)
 RiboPilot::export_project(project)   # Step 9: export
 ```
 

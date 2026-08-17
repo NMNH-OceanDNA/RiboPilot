@@ -16,8 +16,8 @@ new_project("/home/dmacguig/Documents/DJMCompBio/RiboPilot_test/run_03",
             Rproj = FALSE)
 
 run_assembly("~/Documents/DJMCompBio/RiboPilot_test/run_02", conda_env = "ribopilot")
-# review in RiboPilot::run_app(...), adjust selected paths
-run_annotate("~/Documents/DJMCompBio/RiboPilot_test", conda_env = "ribopilot")
+# review in RiboPilot::run_app(...), adjust selected paths, then re-run
+# run_assembly() (or the Assemble tab's Update button) to re-annotate what changed
 # then Export mode / export_bundle()
 
 RiboPilot::RiboPilot("~/Documents/DJMCompBio/RiboPilot_test/run_03")
