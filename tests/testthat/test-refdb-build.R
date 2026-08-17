@@ -230,8 +230,11 @@ make_build_tree <- function(ver, tarballs = c("good", "corrupt", "none")) {
     for (f in paste0(c("ribopilot_rrna-", "decoys-"), ver, ".tar.gz")) {
       writeLines("tarball", file.path(rel, f))
     }
+    # the drop ledger asset: clean deletes the panel's copy, so it verifies this
+    # one first
+    writeLines("ledger", file.path(rel, paste0("dropped-", ver, ".tsv.gz")))
     system2("bash", c("-c", shQuote(sprintf(
-      "cd %s && for f in *.tar.gz; do sha256sum \"$f\" > \"$f.sha256\"; done", shQuote(rel)))))
+      "cd %s && for f in *.gz; do sha256sum \"$f\" > \"$f.sha256\"; done", shQuote(rel)))))
     if (tarballs == "corrupt") {
       writeLines("tampered", file.path(rel, paste0("decoys-", ver, ".tar.gz")))
     }
@@ -250,6 +253,31 @@ test_that("clean refuses until the release tarballs verify", {
     expect_true(any(grepl("refusing to clean", r$out, fixed = TRUE)), label = state)
     expect_true(file.exists(file.path(build, "chunks", "fa_0001")), label = state)
   }
+})
+
+test_that("clean refuses to delete the drop ledger unless the release carries it", {
+  skip_if_not(file.exists(refdb_sh))
+  skip_if(Sys.which("bash") == "")
+  ver <- rp_db_version()
+  panel_ledger <- function(b) file.path(b, "blastdb", ver, "dropped.tsv")
+
+  # the ledger asset absent: clean must not delete the only copy there is
+  build <- make_build_tree(ver, "good")
+  file.remove(file.path(build, "blastdb", paste0("release-", ver),
+    paste0("dropped-", ver, ".tsv.gz")))
+  r <- run_refdb("--build-dir", shQuote(build), "clean")
+  expect_gt(r$status, 0)
+  expect_true(any(grepl("dropped-", r$out, fixed = TRUE)))
+  expect_true(file.exists(panel_ledger(build)))
+
+  # present but not matching its checksum: same refusal
+  build2 <- make_build_tree(ver, "good")
+  writeLines("tampered", file.path(build2, "blastdb", paste0("release-", ver),
+    paste0("dropped-", ver, ".tsv.gz")))
+  r2 <- run_refdb("--build-dir", shQuote(build2), "clean")
+  expect_gt(r2$status, 0)
+  expect_true(any(grepl("refusing to clean", r2$out, fixed = TRUE)))
+  expect_true(file.exists(panel_ledger(build2)))
 })
 
 test_that("clean drops the unshipped artifacts and keeps the surviving stages' markers", {

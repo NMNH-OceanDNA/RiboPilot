@@ -45,6 +45,12 @@ mock_panel_dir <- function(ver = "9.9.9", drop = character(0), extra = character
   files <- c(paste0("ribopilot_rrna.", RP_PANEL_EXT), RP_DECOY_VOLUMES,
     RP_DECOY_MARKERS, RP_TAXONOMY_FILES, "DECOY_VERSION.txt")
   for (f in c(setdiff(files, drop), extra)) writeLines(f, file.path(d, f))
+  # the drop ledger, which the build stage leaves in the panel directory: it is
+  # not in either tarball but it does ship, as its own release asset
+  if (!"ribopilot_rrna.dropped.tsv" %in% drop) {
+    writeLines(c("AAAA00000000\twgs_master_unavailable\t",
+      "MZ000001\ttaxid_unresolved\t"), file.path(d, "ribopilot_rrna.dropped.tsv"))
+  }
   writeLines(sprintf('{"db_name": "ribopilot_rrna", "db_version": "%s"}', manifest_ver),
     file.path(d, "manifest.json"))
   d
@@ -150,12 +156,56 @@ test_that("packaging refuses while a decoy archive is still sitting in the panel
 
 test_that("the panel tarball ships the volume set and the manifest and nothing else", {
   skip_without_packager()
-  src <- mock_panel_dir(extra = c("ribopilot_rrna.fasta", "ribopilot_rrna.taxid.map",
-    "ribopilot_rrna.dropped.tsv"))
+  src <- mock_panel_dir(extra = c("ribopilot_rrna.fasta", "ribopilot_rrna.taxid.map"))
   r <- run_packager(src)
   expect_equal(r$status, 0L, label = paste(r$out, collapse = "\n"))
   expect_setequal(tar_contents(file.path(r$rel, "ribopilot_rrna-9.9.9.tar.gz")),
     c("manifest.json", paste0("ribopilot_rrna.", RP_PANEL_EXT)))
+})
+
+# Spec section 6: the drop ledger is "the only record of the discarded records",
+# and `clean` deletes it from the panel directory once the release assets verify.
+# If packaging does not ship it, it never leaves the build machine.
+test_that("the drop ledger ships as its own gzipped asset, with a checksum, outside both tarballs", {
+  skip_without_packager()
+  src <- mock_panel_dir()
+  r <- run_packager(src)
+  expect_equal(r$status, 0L, label = paste(r$out, collapse = "\n"))
+
+  asset <- file.path(r$rel, "dropped-9.9.9.tsv.gz")
+  expect_true(file.exists(asset))
+  expect_equal(readLines(gzfile(asset), warn = FALSE),
+    readLines(file.path(src, "ribopilot_rrna.dropped.tsv"), warn = FALSE))
+
+  # same sidecar shape as the tarballs, and it actually verifies
+  line <- readLines(paste0(asset, ".sha256"), warn = FALSE)
+  expect_length(line, 1L)
+  expect_match(line, "^[0-9a-f]{64}  dropped-9[.]9[.]9[.]tsv[.]gz$")
+  expect_equal(system2("bash", c("-c", shQuote(sprintf(
+    "cd %s && sha256sum -c --status dropped-9.9.9.tsv.gz.sha256", shQuote(r$rel)))),
+    stdout = FALSE, stderr = FALSE), 0L)
+
+  # an asset in its own right: nobody should unpack an 82 MB index to read it
+  expect_false("ribopilot_rrna.dropped.tsv" %in%
+    tar_contents(file.path(r$rel, "ribopilot_rrna-9.9.9.tar.gz")))
+  expect_false("ribopilot_rrna.dropped.tsv" %in%
+    tar_contents(file.path(r$rel, "decoys-9.9.9.tar.gz")))
+})
+
+test_that("packaging refuses a panel with no drop ledger, and the publish list names the asset", {
+  skip_without_packager()
+  src <- mock_panel_dir(drop = "ribopilot_rrna.dropped.tsv")
+  r <- run_packager(src)
+  expect_gt(r$status, 0L)
+  expect_true(any(grepl("no ribopilot_rrna.dropped.tsv", r$out, fixed = TRUE)))
+  expect_false(dir.exists(r$rel))
+
+  # the asset has to be in the gh upload list too, or it is staged and never
+  # published, which is the same as not shipping it
+  s <- readLines(pkg_sh, warn = FALSE)
+  gh <- grep("^gh release create", s, value = TRUE)
+  expect_length(gh, 1L)
+  expect_match(gh, "dropped-${VER}.tsv.gz", fixed = TRUE)
 })
 
 test_that("packaging refuses a panel missing any of the required volume files", {

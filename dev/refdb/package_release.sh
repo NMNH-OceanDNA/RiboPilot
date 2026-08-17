@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # Package a built panel (and its decoys) as GitHub release assets.
 #
-# Ships the BLAST volume set and the manifest only. The .fasta, .taxid.map and
-# .dropped.tsv in the build directory are build artifacts, not query-time files.
+# Ships the BLAST volume set and the manifest only. The .fasta and .taxid.map in
+# the build directory are build artifacts, not query-time files. The drop ledger
+# is not in the panel tarball either, but it does ship: as its own gzipped
+# release asset, because `clean` deletes it and it is the only record of which
+# records the build discarded and why.
 set -Eeuo pipefail
 export LC_ALL=C
 trap 'echo "package_release.sh: error at line $LINENO" >&2' ERR
@@ -74,17 +77,28 @@ for f in taxdb.btd taxdb.bti taxonomy4blast.sqlite3 DECOY_VERSION.txt; do
   DECOYS="$DECOYS $f"
 done
 
+# The drop ledger. `clean` removes it from the panel directory once these
+# tarballs verify, so if it does not leave the build machine here it is gone:
+# every record the build discarded, and the reason, exists only in this file.
+[ -f ribopilot_rrna.dropped.tsv ] \
+  || { echo "no ribopilot_rrna.dropped.tsv in $SRC; the panel was not built by build_refdb.sh, or clean already removed the drop ledger" >&2; exit 1; }
+
 # Only once every refusal above is past: a refused run must leave nothing
 # behind, neither a lone panel tarball with no checksum nor an empty
 # release-<VER>, which is a version-carrying directory --check-version reports.
 mkdir -p "$OUT"
+# A release asset in its own right, not a member of the panel tarball: nothing
+# at query time reads it, and a user who wants to know why an accession is
+# absent should not have to unpack a 82 MB BLAST index to find out.
+echo "packaging drop ledger ..."
+gzip -c ribopilot_rrna.dropped.tsv > "$OUT/dropped-${VER}.tsv.gz"
 echo "packaging panel ..."
 tar -czf "$OUT/ribopilot_rrna-${VER}.tar.gz" $PANEL_FILES
 echo "packaging decoys ..."
 tar -czf "$OUT/decoys-${VER}.tar.gz" $DECOYS
 
 cd "$OUT"
-for f in *.tar.gz; do
+for f in *.tar.gz "dropped-${VER}.tsv.gz"; do
   sha256sum "$f" > "$f.sha256"
 done
 ls -lh "$OUT"
@@ -97,6 +111,6 @@ fi
 command -v gh >/dev/null || { echo "gh not on PATH" >&2; exit 1; }
 # The db-${VER} tag must not already exist: gh release create cannot overwrite a
 # release, so a bad one has to be deleted before this can be re-run.
-gh release create "db-${VER}" ./*.tar.gz ./*.sha256 \
+gh release create "db-${VER}" ./*.tar.gz "./dropped-${VER}.tsv.gz" ./*.sha256 \
   --repo "$REPO" --title "rDNA panel ${VER}" --latest=false \
   --notes "Metazoan nuclear rDNA BLAST panel ${VER}. Maintainer assets: the panel ships baked into the RiboPilot container image, so end users do not install it themselves."

@@ -151,7 +151,7 @@ EXPECTED_COUNT_FLOOR="${RP_MIN_ACCESSIONS:-446000}"
 FETCH_ROUNDS=3
 MAX_UNAVAILABLE="${RP_MAX_UNAVAILABLE:-100}"
 
-REQUIRED_TOOLS="esearch efetch epost esummary xtract update_blastdb.pl makeblastdb blastdbcmd seqkit jq curl sha256sum tar zcat comm"
+REQUIRED_TOOLS="esearch efetch epost esummary xtract update_blastdb.pl makeblastdb blastdbcmd seqkit jq curl sha256sum tar gzip zcat comm"
 ALL_STAGES="accessions taxidmap fetch build decoys package"
 MIN_FREE_GB=8
 
@@ -371,7 +371,10 @@ cmd_clean() {
   rp_lock "$BUILD_DIR/build.pid"
   RP_LOCK_HELD="$BUILD_DIR/build.pid"
 
-  for f in "ribopilot_rrna-$ver.tar.gz" "decoys-$ver.tar.gz"; do
+  # The drop ledger is in this list because the very next thing clean does is
+  # delete it from the panel directory, and it is the only record of what the
+  # build discarded: it has to have been packaged for release first.
+  for f in "ribopilot_rrna-$ver.tar.gz" "decoys-$ver.tar.gz" "dropped-$ver.tsv.gz"; do
     [ -f "$rel/$f" ] \
       || rp_die "refusing to clean: no $rel/$f (run package_release.sh first)"
     [ -f "$rel/$f.sha256" ] \
@@ -1463,7 +1466,7 @@ stage_package() {
   # aborts with the asset's name instead of a bare unexpected-error. The
   # tarballs are not re-verified here: clean checksums them again before it
   # deletes anything on their strength, which is where that check belongs.
-  for f in "ribopilot_rrna-$VER.tar.gz" "decoys-$VER.tar.gz"; do
+  for f in "ribopilot_rrna-$VER.tar.gz" "decoys-$VER.tar.gz" "dropped-$VER.tsv.gz"; do
     [ -f "$rel/$f" ] || rp_die "package: $rel/$f was not produced"
     [ -f "$rel/$f.sha256" ] || rp_die "package: $rel/$f.sha256 was not produced"
   done
