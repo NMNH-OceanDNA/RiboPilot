@@ -1,3 +1,21 @@
+# DECISION REVERSED - DO NOT EXECUTE SECTION 2
+
+**The maintainer decided to KEEP the user clade-database build.** Nothing in this
+document was carried out, and nothing in it should be.
+
+**Section 2 ("SAFE TO DELETE") must not be executed.** It names about 4,900 lines
+that are still in the tree and still load-bearing: `main_reference.nf`,
+`rp_ref_db.R`, `download_rrna.sh`, `parse_rrna_fasta.py`, `R/reference_groups.R`,
+`R/reference_counts.R`, five test files and a vignette. Running that list would
+leave every non-fish sample assembling against the hardcoded Actinopterygii
+seeds, exit 0, with half the path score computed against fish rDNA - a silent
+wrong answer, not a crash.
+
+This file is retained only because sections 1 and 3 are an accurate map of the
+seeds-versus-panel architecture: the shipped BLAST panel and a user clade
+database are different file types with different consumers, and neither can
+backfill the other. Read it as that map. Do not read it as an instruction sheet.
+
 ## 1. WHAT A CLADE DATABASE IS FOR
 
 A clade database is not a BLAST database. It is a pair of plain FASTA files: a GetOrganelle seeds file (`>ACC_Genus_species`) and a labels file (`>18S`/`>5.8S`/`>28S`). The shipped panel is a BLAST v5 index. Different file types, different tools, different pipeline stages. They are never alternatives to each other.

@@ -884,8 +884,8 @@ Shipped in 9 commits. Suite 2713 passed / 0 failed by default, 2788 / 0 skipped 
 
 A Docker user now gets local BLAST with no configuration. The panel and its decoys are baked in at
 `/opt/ribopilot/blastdb/<version>/` with `ENV RIBOPILOT_DB_DIR`, and discovery runs container-side in
-`rp_dbarg.R`. `install_ribopilot_db()` remains for conda and bare-metal users and for anyone wanting a
-panel newer than their image.
+`rp_dbarg.R`. `install_ribopilot_db()` is now unexported and is a maintainer helper only: conda is no
+longer a supported way to run RiboPilot, and the container carries the panel, so no user installs one.
 
 Verified on real built images, not mimics: a `RP_DB=1` build discovers the panel and its decoy and
 returns real hits with zero configuration; a `--no-db` build leaves `RIBOPILOT_DB_DIR` unset and falls
