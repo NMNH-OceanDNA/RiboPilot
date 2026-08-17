@@ -2,6 +2,30 @@ refdb_dir <- "../../dev/refdb"
 refdb_sh <- file.path(refdb_dir, "build_refdb.sh")
 refdb_lib <- file.path(refdb_dir, "lib.sh")
 
+# The key a stage marker actually records: the panel's definitional identity
+# (QUERY, EXPECTED_COUNT) folded together with the artifact hash. Computed by
+# calling the script's own rp_panel_key rather than reimplemented here, so a
+# fixture cannot drift from the thing it is standing in for, and so passing
+# `query`/`expected_count` reproduces exactly what a panel-definition change
+# would key to.
+panel_key <- function(hash, query = NULL, expected_count = NULL,
+                      .envir = parent.frame()) {
+  work <- withr::local_tempdir(.local_envir = .envir)
+  driver <- file.path(work, "key.sh")
+  writeLines(c(
+    "set -uo pipefail",
+    'source "$1"',
+    "set +Ee",
+    "trap - ERR",
+    if (!is.null(query)) sprintf("QUERY=%s", shQuote(query)),
+    if (!is.null(expected_count)) sprintf("EXPECTED_COUNT=%s", expected_count),
+    'rp_panel_key "$2"'
+  ), driver)
+  out <- system2("bash", c(shQuote(driver), shQuote(normalizePath(refdb_sh)),
+    shQuote(hash)), stdout = TRUE)
+  out[length(out)]
+}
+
 # dev/ is in .Rbuildignore, so these guards belong inside the tests that need
 # them: at file level a single skip drops every test in the file, including
 # ones that never touch dev/.
@@ -560,6 +584,49 @@ run_accessions_stage <- function(count, efetch_lines, extra_args = character(0),
   list(status = if (is.null(st)) 0L else as.integer(st), out = out, build = build, bindir = bindir)
 }
 
+# Drives stage_accessions against an EXISTING build tree with QUERY or
+# EXPECTED_COUNT overridden, which is how the maintainer defines a new panel
+# version (spec section 7). Sourced rather than CLI because those two are
+# constants in the script, not flags: there is no other seam for "the panel
+# definition changed".
+run_accessions_sourced <- function(build, query = NULL, expected_count = NULL,
+                                   force = 0L, stage = "accessions",
+                                   min_accessions = 1L) {
+  skip_if_not(file.exists(refdb_sh))
+  skip_if(Sys.which("bash") == "" || Sys.which("timeout") == "")
+  bindir <- file.path(build, "stubbin")
+  driver <- file.path(build, "drive_accessions.sh")
+  writeLines(c(
+    "set -uo pipefail",
+    'refdb="$1"; b="$2"',
+    "shift 2",
+    "set --",
+    'source "$refdb"',
+    "set +Ee",
+    "trap - ERR",
+    'BUILD_DIR="$b"',
+    'RP_STATE_FILE="$BUILD_DIR/state.txt"',
+    sprintf("FORCE=%d", force),
+    sprintf("STAGE=%s", shQuote(stage)),
+    "ACCEPT_DRIFT=1",
+    if (!is.null(query)) sprintf("QUERY=%s", shQuote(query)),
+    if (!is.null(expected_count)) sprintf("EXPECTED_COUNT=%s", expected_count),
+    "stage_accessions",
+    'echo "RC=$?"'
+  ), driver)
+  env <- c(paste0("PATH=", bindir, ":", Sys.getenv("PATH")),
+    "NCBI_API_KEY=test-key-not-real")
+  if (!is.null(min_accessions)) {
+    env <- c(env, paste0("RP_MIN_ACCESSIONS=", min_accessions))
+  }
+  out <- suppressWarnings(system2("timeout", c("120", "bash", shQuote(driver),
+    shQuote(normalizePath(refdb_sh)), shQuote(build)),
+    stdout = TRUE, stderr = TRUE, env = env))
+  st <- attr(out, "status")
+  list(status = if (is.null(st)) 0L else as.integer(st), out = out, build = build,
+    bindir = bindir)
+}
+
 test_that("accessions stage writes accessions.txt/.sha256 and two distinctly named counts, drops WGS masters, calls esearch once", {
   skip_if_not(file.exists(refdb_sh))
   skip_if(Sys.which("bash") == "")
@@ -798,6 +865,105 @@ test_that("the accessions gate needs the marker AND the on-disk list to agree", 
     expect_equal(paste(readLines(file.path(r1$build, "stubbin", "esearch_calls.log"),
       warn = FALSE), collapse = ""), "x", label = tamper)
   }
+})
+
+# THE REGRESSION GUARD for the restart gate above. Keyed on the accession list
+# alone, that gate matches across a change of panel DEFINITION -- which is
+# exactly what spec section 7 plans ("query filters for EST/GSS/PDB ... each is
+# a new panel version"). state.txt is not version-scoped and run_preflight's
+# existing-OUT_DIR refusal does not fire for a new blastdb/<VER>, so bumping
+# RP_DB_VERSION and editing QUERY would skip the harvest and ship the previous
+# version's records under a manifest quoting the new query, exit 0.
+test_that("a panel-definition change re-harvests instead of skipping on a stale marker", {
+  skip_if_not(file.exists(refdb_sh))
+  skip_if(Sys.which("bash") == "" || Sys.which("timeout") == "")
+  lines <- c("MZ000001", "AB123456", "KX999999", "OP111111")
+  # One constant per tree. Changing both against one tree makes each case pass
+  # on the OTHER one's mismatch, so dropping either from the key would still
+  # look green -- an assertion that cannot fail.
+  cases <- list(
+    QUERY = list(query =
+      "(txid7742[Organism:exp]) AND (18S ribosomal RNA[Title]) NOT mitochondrion[Filter]"),
+    EXPECTED_COUNT = list(expected_count = 12345L)
+  )
+  for (lbl in names(cases)) {
+    changed <- cases[[lbl]]
+    r1 <- run_accessions_stage(count = length(lines), efetch_lines = lines,
+      extra_args = "--accept-drift")
+    expect_equal(r1$status, 0L, label = lbl)
+    build <- r1$build
+    hash <- sub("\\s.*", "", readLines(file.path(build, "accessions.sha256"))[1])
+    queries <- function() paste(readLines(file.path(build, "stubbin", "esearch_calls.log"),
+      warn = FALSE), collapse = "")
+    marker <- function() {
+      sub("\t.*", "", sub("^accessions\t", "",
+        grep("^accessions\t", readLines(file.path(build, "state.txt")), value = TRUE)))
+    }
+    # the marker is keyed on the panel definition, not on the list alone
+    expect_equal(marker(), panel_key(hash), label = lbl)
+    expect_false(marker() == hash, label = lbl)
+
+    # control: nothing changed, so the stage skips and issues no query
+    before <- queries()
+    ctl <- run_accessions_sourced(build)
+    expect_equal(ctl$status, 0L, label = lbl)
+    expect_true(any(grepl("already harvested", ctl$out, fixed = TRUE)), label = lbl)
+    expect_equal(queries(), before, label = lbl)
+
+    # a new panel version: this one constant edited, same build dir
+    r2 <- do.call(run_accessions_sourced, c(list(build), changed))
+    expect_equal(r2$status, 0L, label = lbl)
+    expect_false(any(grepl("already harvested", r2$out, fixed = TRUE)), label = lbl)
+    expect_equal(queries(), paste0(before, "x"), label = lbl)
+    expect_equal(marker(), do.call(panel_key, c(list(hash), changed)), label = lbl)
+  }
+})
+
+# --force means one thing per stage, not three at once. run_preflight demands it
+# for any full re-run once blastdb/<VER> exists, so if a bare --force also
+# re-harvested, every restart after the build stage completed would land back on
+# the destructive path the gate above exists to remove.
+test_that("a bare --force rebuilds in place without re-harvesting; --stage accessions --force re-harvests", {
+  skip_if_not(file.exists(refdb_sh))
+  skip_if(Sys.which("bash") == "" || Sys.which("timeout") == "")
+  lines <- c("MZ000001", "AB123456", "KX999999", "OP111111")
+  r1 <- run_accessions_stage(count = length(lines), efetch_lines = lines,
+    extra_args = "--accept-drift")
+  expect_equal(r1$status, 0L)
+  build <- r1$build
+  queries <- function() paste(readLines(file.path(build, "stubbin", "esearch_calls.log"),
+    warn = FALSE), collapse = "")
+  before <- queries()
+
+  # a full run with --force: no --stage, so the gate still holds
+  full <- run_accessions_sourced(build, force = 1L, stage = "")
+  expect_equal(full$status, 0L)
+  expect_true(any(grepl("already harvested", full$out, fixed = TRUE)))
+  expect_equal(queries(), before)
+
+  # the operator naming the stage is the one thing that re-harvests
+  named <- run_accessions_sourced(build, force = 1L, stage = "accessions")
+  expect_equal(named$status, 0L)
+  expect_false(any(grepl("already harvested", named$out, fixed = TRUE)))
+  expect_equal(queries(), paste0(before, "x"))
+})
+
+test_that("the existing-panel refusal names the route that does not rebuild it", {
+  skip_if_not(file.exists(refdb_sh))
+  skip_if(Sys.which("bash") == "")
+  build <- withr::local_tempdir()
+  dir.create(file.path(build, "blastdb", rp_db_version()), recursive = TRUE)
+  bindir <- write_accessions_stubs(file.path(build, "stubbin"))
+  out <- suppressWarnings(system2("bash",
+    c(shQuote(refdb_sh), "--build-dir", shQuote(build), "--stage", "accessions"),
+    stdout = TRUE, stderr = TRUE,
+    env = c(paste0("PATH=", bindir, ":", Sys.getenv("PATH")),
+      "NCBI_API_KEY=test-key-not-real")))
+  expect_true(any(grepl("already exists", out, fixed = TRUE)))
+  # purely destructive advice is what sends the operator down the re-harvest
+  # path; the stage-at-a-time route needs no --force at all
+  expect_true(any(grepl("--stage decoys", out, fixed = TRUE)))
+  expect_true(any(grepl("--stage package", out, fixed = TRUE)))
 })
 
 # --- taxidmap stage ----------------------------------------------------------
@@ -1311,7 +1477,7 @@ fetch_result <- function(out, build) {
 # than the production 5000. Sourcing leaves BUILD_DIR and RP_STATE_FILE empty,
 # so the driver sets both.
 run_fetch_sourced <- function(build, chunk_size = 5L, jobs = 2L, force = 0L,
-                              env_extra = character(0)) {
+                              env_extra = character(0), query = NULL) {
   skip_if_not(file.exists(refdb_sh))
   skip_if(Sys.which("bash") == "" || Sys.which("timeout") == "")
   driver <- file.path(build, "drive_fetch.sh")
@@ -1335,6 +1501,8 @@ run_fetch_sourced <- function(build, chunk_size = 5L, jobs = 2L, force = 0L,
     sprintf("CHUNK_SIZE=%d", chunk_size),
     sprintf("JOBS=%d", jobs),
     sprintf("FORCE=%d", force),
+    # a panel-definition change, applied the way the maintainer would apply one
+    if (!is.null(query)) sprintf("QUERY=%s", shQuote(query)),
     "stage_fetch",
     'echo "RC=$?"'
   ), driver)
@@ -1390,8 +1558,43 @@ test_that("an interrupted build restarts: accessions skips and fetch resumes ins
   f3 <- run_fetch_cli(build)
   expect_gt(f3$status, 0L)
   expect_true(any(grepl("The source moved", f3$out, fixed = TRUE)))
-  # and the advice it gives is not purely destructive
-  expect_true(any(grepl("--stage fetch", f3$out, fixed = TRUE)))
+  # The advice is not purely destructive, and every part of it is actionable.
+  # Naming --stage fetch alone was not: the stage also compares accessions.txt
+  # against accessions.sha256 before it reaches the resume key, so restoring the
+  # list without rewriting the sidecar dies on a different error -- and the
+  # accessions stage overwrites the list in place, so usually there is nothing
+  # to restore. The message has to say both.
+  msg <- paste(f3$out, collapse = " ")
+  expect_true(grepl("--stage fetch", msg, fixed = TRUE))
+  expect_true(grepl("sha256sum accessions.txt > accessions.sha256", msg, fixed = TRUE))
+  expect_true(grepl("keeps no backup", msg, fixed = TRUE))
+})
+
+test_that("a panel-definition change also stops the fetch stage skipping on its own marker", {
+  skip_if_not(file.exists(refdb_sh))
+  skip_if(Sys.which("bash") == "" || Sys.which("timeout") == "")
+  build <- make_fetch_build(c("AB000001.1", "AB000002.1", "AB000003.1", "AB000004.1"))
+  hex <- sub("\\s.*", "", readLines(file.path(build, "accessions.sha256"))[1])
+  marker <- function() {
+    sub("\t.*", "", sub("^fetch\t", "",
+      grep("^fetch\t", readLines(file.path(build, "state.txt")), value = TRUE)))
+  }
+  f1 <- run_fetch_cli(build)
+  expect_equal(f1$status, 0L, label = paste(f1$out, collapse = "\n"))
+  expect_equal(marker(), panel_key(hex))
+
+  # control: same panel definition, so the marker matches and the stage skips
+  f2 <- run_fetch_sourced(build)
+  expect_equal(f2$status, 0L, label = paste(f2$out, collapse = "\n"))
+  expect_true(any(grepl("already complete", f2$out, fixed = TRUE)))
+
+  # QUERY edited: the marker was recorded for a different record set, so it must
+  # not match, or --stage fetch after a panel-definition change skips silently
+  newq <- "(txid7742[Organism:exp]) AND (18S ribosomal RNA[Title]) NOT mitochondrion[Filter]"
+  f3 <- run_fetch_sourced(build, query = newq)
+  expect_equal(f3$status, 0L, label = paste(f3$out, collapse = "\n"))
+  expect_false(any(grepl("already complete", f3$out, fixed = TRUE)))
+  expect_equal(marker(), panel_key(hex, query = newq))
 })
 
 test_that("build_refdb.sh defaults --jobs to 4", {
@@ -1434,7 +1637,10 @@ test_that("fetch stage writes chunks, an empty missing list, the resume key and 
   want_hash <- sub("\\s.*", "", readLines(file.path(build, "accessions.sha256"))[1])
   expect_equal(key, want_hash)
   state <- readLines(file.path(build, "state.txt"))
-  expect_true(any(grepl(paste0("^fetch\t", want_hash, "\t"), state)))
+  # the marker records rp_panel_key(list hash), not the bare list hash: a bare
+  # one matches across a QUERY change and lets a stale fetch skip
+  expect_true(any(grepl(paste0("^fetch\t", panel_key(want_hash), "\t"), state)))
+  expect_false(any(grepl(paste0("^fetch\t", want_hash, "\t"), state)))
 
   expect_equal(length(readLines(file.path(build, "dropped.fetch.tsv"), warn = FALSE)), 0L)
   # each stage owns its own dropped-record file; the build stage merges them
@@ -1903,14 +2109,16 @@ make_panel_build <- function(records = panel_fixture_records(),
 
   hex <- sub("\\s.*", "",
     system2("sha256sum", shQuote(file.path(build, "accessions.txt")), stdout = TRUE))
-  writeLines(sprintf("fetch\t%s\t2026-01-01T00:00:00Z", hex), file.path(build, "state.txt"))
+  writeLines(sprintf("fetch\t%s\t2026-01-01T00:00:00Z", panel_key(hex)),
+    file.path(build, "state.txt"))
   build
 }
 
 # Drives stage_build directly: sourcing leaves BUILD_DIR, RP_STATE_FILE, VER and
 # OUT_DIR empty, and a chunk size other than the production 5000 is only
 # reachable this way.
-run_build_sourced <- function(build, chunk_size = 20L, ver = "9.9.9", path_prefix = NULL) {
+run_build_sourced <- function(build, chunk_size = 20L, ver = "9.9.9", path_prefix = NULL,
+                              query = NULL) {
   skip_if_not(file.exists(refdb_sh))
   skip_without_blast_tools()
   driver <- file.path(build, "drive_build.sh")
@@ -1929,6 +2137,8 @@ run_build_sourced <- function(build, chunk_size = 20L, ver = "9.9.9", path_prefi
     'RP_SORT_MEM="64M"',
     'TMPDIR="$BUILD_DIR/tmp"',
     sprintf("CHUNK_SIZE=%d", chunk_size),
+    # a panel-definition change, applied the way the maintainer would apply one
+    if (!is.null(query)) sprintf("QUERY=%s", shQuote(query)),
     "stage_build",
     'echo "RC=$?"'
   ), driver)
@@ -2154,6 +2364,24 @@ test_that("the build stage refuses to run unless the fetch stage is recorded com
   r2 <- run_build_sourced(build2)
   expect_gt(r2$status, 0L)
   expect_false(dir.exists(r2$out_dir))
+
+  # and a marker recorded against the same list under a DIFFERENT panel
+  # definition is not a marker for this one either. This is the last line of
+  # defence: without it, editing QUERY and re-running in the same build dir
+  # promotes the previous version's records into blastdb/<NEW_VER> with a
+  # manifest quoting the new query.
+  build3 <- make_panel_build()
+  newq <- "(txid7742[Organism:exp]) AND (18S ribosomal RNA[Title]) NOT mitochondrion[Filter]"
+  r3 <- run_build_sourced(build3, query = newq)
+  expect_gt(r3$status, 0L)
+  expect_true(any(grepl("under this panel definition", r3$out, fixed = TRUE)))
+  expect_false(dir.exists(r3$out_dir))
+
+  # the same fixture with the definition untouched builds, so the refusal above
+  # is the panel key and not some other precondition
+  build4 <- make_panel_build()
+  r4 <- run_build_sourced(build4)
+  expect_equal(r4$status, 0L, label = paste(r4$out, collapse = "\n"))
 })
 
 test_that("a fetched record with no taxid, or no sequence, aborts the build instead of entering the panel", {
@@ -2269,7 +2497,8 @@ test_that("the reconstructed requested set is checked against the recorded esear
   # a truncated list would otherwise hash to its own marker
   writeLines(readLines(acc, warn = FALSE)[-1], acc)
   hex <- sub("\\s.*", "", system2("sha256sum", shQuote(acc), stdout = TRUE))
-  writeLines(sprintf("fetch\t%s\t2026-01-01T00:00:00Z", hex), file.path(build, "state.txt"))
+  writeLines(sprintf("fetch\t%s\t2026-01-01T00:00:00Z", panel_key(hex)),
+    file.path(build, "state.txt"))
   r <- run_build_sourced(build)
   expect_gt(r$status, 0L)
   expect_true(any(grepl(

@@ -141,6 +141,23 @@ EXPECTED_COUNT_TOLERANCE=15000
 # from an error response) this exists to catch.
 EXPECTED_COUNT_FLOOR="${RP_MIN_ACCESSIONS:-446000}"
 
+# rp_panel_key ARTIFACT_HASH
+# The key a stage marker records: the panel's definitional identity folded
+# together with the artifact hash the stage would otherwise record alone.
+#
+# A marker keyed on the artifact alone matches across a change of panel
+# DEFINITION, which is the thing spec section 7 explicitly plans for ("query
+# filters for EST/GSS/PDB ... each is a new panel version"). Bump
+# RP_DB_VERSION, edit QUERY, re-run in the same build dir: RP_STATE_FILE is
+# $BUILD_DIR/state.txt, not version-scoped, and run_preflight's existing-OUT_DIR
+# refusal does not fire because blastdb/<NEW_VER> is a new path. Every stage
+# would then skip on a stale marker and blastdb/<NEW_VER> would ship the
+# PREVIOUS version's records under a manifest quoting the NEW query, exit 0.
+# Folding QUERY and EXPECTED_COUNT in makes that marker unmatchable.
+rp_panel_key() {
+  printf '%s\n%s\n%s\n' "$QUERY" "$EXPECTED_COUNT" "$1" | sha256sum | cut -d' ' -f1
+}
+
 # Fetch stage. Rounds are per chunk and each one requests only what is still
 # missing, so a response that dies at 4,900 of 5,000 records costs 100
 # accessions on the next round rather than the whole chunk. The ceiling is on
@@ -174,8 +191,9 @@ Usage: build_refdb.sh [--version V] [--build-dir D] [--stage NAME]
   --stage NAME      Run only one stage (accessions|taxidmap|fetch|build|decoys|package).
   --jobs N          Parallelism for the fetch stage (default: 4).
   --accept-drift    Allow the harvested count to differ from EXPECTED_COUNT.
-  --force           Re-run a stage the state file already records complete, and
-                    allow rebuilding an existing blastdb/<VER> in place.
+  --force           Allow rebuilding an existing blastdb/<VER> in place. With
+                    --stage NAME it also re-runs that stage even when the state
+                    file records it complete.
   --check-version   Diff RP_DB_VERSION across the build's version-carrying files, then exit.
   status            Print the last recorded stage state and exit.
   clean             Remove intermediate build artifacts and exit.
@@ -476,7 +494,7 @@ run_preflight() {
     decoys | package) ;;
     *)
       if [ -d "$OUT_DIR" ] && [ "$FORCE" -ne 1 ]; then
-        rp_die "$OUT_DIR already exists; pass --force to rebuild it in place"
+        rp_die "$OUT_DIR already exists; pass --force to rebuild it in place, or finish the run without rebuilding it by running the remaining stages one at a time (--stage decoys, then --stage package), which do not need --force"
       fi
       ;;
   esac
@@ -802,11 +820,24 @@ stage_accessions() {
   # resume against, destroying the 2 h 20 m fetch the restart existed to
   # resume. --accept-drift does NOT re-harvest: it relaxes a guard, it does not
   # mean "redo", and making it re-harvest would put the destruction straight
-  # back. --force is the flag that means redo.
-  if [ "$FORCE" -eq 0 ] && [ -f "$filtered" ] && [ -f "$BUILD_DIR/accessions.sha256" ] \
+  # back.
+  #
+  # --force re-harvests only when the operator NAMED this stage. A bare --force
+  # on a full run means "rebuild blastdb/<VER> in place" -- run_preflight
+  # demands it once that directory exists -- and re-harvesting on the strength
+  # of that would put the operator back on the destructive path for every
+  # restart after the build stage completed, which is the only route the gate
+  # above does not already cover. `--stage accessions --force` is the precise
+  # way to say re-harvest, and is the one thing that does it.
+  #
+  # The marker key is rp_panel_key, not the bare list hash: see there. A gate
+  # keyed on the artifact alone skips across a QUERY change and ships the
+  # previous panel's records under the new version.
+  if { [ "$FORCE" -eq 0 ] || [ "$STAGE" != "accessions" ]; } \
+      && [ -f "$filtered" ] && [ -f "$BUILD_DIR/accessions.sha256" ] \
       && (cd "$BUILD_DIR" && sha256sum -c --status accessions.sha256) \
-      && rp_marker_ok accessions "$(cut -d' ' -f1 < "$BUILD_DIR/accessions.sha256")"; then
-    rp_log "accessions: already harvested for this build ($(rp_line_count "$filtered") accession(s)); skipping (--stage accessions --force re-harvests)"
+      && rp_marker_ok accessions "$(rp_panel_key "$(cut -d' ' -f1 < "$BUILD_DIR/accessions.sha256")")"; then
+    rp_log "accessions: already harvested for this panel definition ($(rp_line_count "$filtered") accession(s)); skipping (--stage accessions --force re-harvests)"
     return 0
   fi
 
@@ -844,7 +875,7 @@ stage_accessions() {
   # list it is chunking.
   printf '%s\n' "$count" > "$BUILD_DIR/accessions.esearch_count"
   rp_line_count "$filtered" > "$BUILD_DIR/accessions.final_count"
-  rp_marker_set accessions "$(cut -d' ' -f1 < "$BUILD_DIR/accessions.sha256")"
+  rp_marker_set accessions "$(rp_panel_key "$(cut -d' ' -f1 < "$BUILD_DIR/accessions.sha256")")"
   rp_log "accessions: wrote $(rp_line_count "$filtered") accession(s) to $filtered"
 }
 
@@ -983,8 +1014,12 @@ stage_fetch() {
   [ "$hex" = "$recorded" ] \
     || rp_die "fetch: $acc hashes to $hex but $sidecar records $recorded; the accession list changed after the accessions stage wrote it"
 
-  if [ "$FORCE" -eq 0 ] && rp_marker_ok fetch "$hex"; then
-    rp_log "fetch: already complete for this accession list; skipping (--stage fetch --force re-runs it)"
+  # rp_panel_key, not the bare list hash: otherwise this marker inherits the
+  # same staleness the accessions gate now refuses. An operator who edits QUERY
+  # and runs --stage fetch would find a marker recorded under the previous panel
+  # definition still matching, and skip.
+  if [ "$FORCE" -eq 0 ] && rp_marker_ok fetch "$(rp_panel_key "$hex")"; then
+    rp_log "fetch: already complete for this accession list and panel definition; skipping (--stage fetch --force re-runs it)"
     return 0
   fi
 
@@ -996,7 +1031,7 @@ stage_fetch() {
   if [ -f "$key" ]; then
     recorded="$(tr -d '[:space:]' < "$key")"
     [ "$recorded" = "$hex" ] \
-      || rp_die "fetch: refusing to resume: $chunks was cut from an accession list hashing $recorded, but $acc now hashes $hex. The source moved. To keep the chunks, restore the accession list they were cut from and re-run with --stage fetch, which resumes without re-harvesting. To start over, remove $chunks, $missing and $key."
+      || rp_die "fetch: refusing to resume: $chunks was cut from an accession list hashing $recorded, but $acc now hashes $hex. The source moved. The chunks are reusable only with the exact list they were cut from, and both files have to agree: restore a copy hashing $recorded as $acc, rewrite the sidecar from it (cd $BUILD_DIR && sha256sum accessions.txt > accessions.sha256), then --stage fetch resumes without re-harvesting. The accessions stage overwrites $acc in place and keeps no backup, so if no copy was kept the chunks cannot be matched again: remove $chunks, $missing and $key and fetch fresh."
   else
     for f in "$chunks"/fa_[0-9][0-9][0-9][0-9]; do
       [ -e "$f" ] || break
@@ -1102,7 +1137,7 @@ stage_fetch() {
     "$missing"/fa_[0-9][0-9][0-9][0-9].txt > "$BUILD_DIR/dropped.fetch.tsv"
 
   n_got="$(rp_line_count "$allgot")"
-  rp_marker_set fetch "$hex"
+  rp_marker_set fetch "$(rp_panel_key "$hex")"
   rp_log "fetch: $n_got record(s) in $n_chunks chunk(s) of $total requested, $n_unavailable permanently unavailable"
   rm -rf "$tmp"
 }
@@ -1151,8 +1186,8 @@ stage_build() {
     || rp_die "build: accessions.esearch_count ('$requested') and accessions.final_count ('$final_count') must both be numeric"
 
   hex="$(sha256sum "$acc" | cut -d' ' -f1)"
-  rp_marker_ok fetch "$hex" \
-    || rp_die "build: the fetch stage is not recorded complete for $acc (sha256 $hex); run --stage fetch first"
+  rp_marker_ok fetch "$(rp_panel_key "$hex")" \
+    || rp_die "build: the fetch stage is not recorded complete for $acc (sha256 $hex) under this panel definition; run --stage fetch first. A marker recorded under a different QUERY or EXPECTED_COUNT does not match, deliberately: those chunks hold a different record set."
 
   # The strict glob, and the exact chunk count the accession list implies. An
   # empty directory passes the historical `0 -ne 0`, and a stray non-empty

@@ -71,10 +71,12 @@ calls, so with a container you can skip the conda step below. On a workstation,
 create projects with <code>executor = "docker"</code>; on a cluster, use
 Singularity (the <code>NMNH_Hydra</code> and <code>NOAA_SEDNA</code> profiles
 already do, and <code>generate_config()</code> writes one for any other
-scheduler). The commands later in this guide are written for the container.
-Where one carries a commented <code>conda_env = "ribopilot"</code> line, that
-argument is for a self-installed conda setup only; <strong>leave it off</strong>
-when you run in a container, because the image already supplies the tools. Installing the
+scheduler). The pipeline commands later in this guide are written for the
+container, and carry a commented <code>conda_env = "ribopilot"</code> line for a
+self-installed conda setup; <strong>leave that argument off</strong> in a
+container, because the image already supplies the tools. The one exception is
+Step 2, which is a console command rather than a pipeline step and is explained
+there. Installing the
 tools yourself, including with conda, is <strong>no longer supported</strong>.
 Those instructions are kept below because they still work, but they are not
 tested.
@@ -104,8 +106,9 @@ remotes::install_github("dmacguigan/RiboPilot")
 <strong>Tip.</strong> Start R from a terminal where you have already run
 <code>conda activate ribopilot</code>. That way RiboPilot can find all the tools
 it needs. Alternatively, tell each command which environment to use by adding
-<code>conda_env = "ribopilot"</code>, as shown throughout this guide, if you are
-not using a container. In a container, leave <code>conda_env</code> off entirely.
+<code>conda_env = "ribopilot"</code>, which each pipeline command below shows as
+a commented line, if you are not using a container. In a container, leave
+<code>conda_env</code> off entirely.
 </div>
 
 <div class="alert alert-note">
