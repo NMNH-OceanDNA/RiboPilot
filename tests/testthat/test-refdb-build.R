@@ -407,22 +407,30 @@ test_that("rp_assert_unique aborts on a duplicate accession, passes on empty inp
 test_that("rp_filter_wgs_masters drops matching accessions as a recorded drop, no-op on empty input", {
   r <- run_sourced(c(
     'printf "AAAA00000000\nMZ000001\nBBBB00000000\nAB123456\n" > "$dir/in.txt"',
-    'rp_filter_wgs_masters "$dir/in.txt" "$dir/out.txt"',
-    'cat "$dir/out.txt"'
+    'rp_filter_wgs_masters "$dir/in.txt" "$dir/out.txt" "$dir/dropped.tsv"',
+    'cat "$dir/out.txt"',
+    'echo "---"',
+    'cat "$dir/dropped.tsv"'
   ))
   expect_equal(r$status, 0L)
-  kept <- r$out[!grepl("^\\[", r$out)]
-  expect_setequal(kept, c("MZ000001", "AB123456"))
+  body <- r$out[!grepl("^\\[", r$out)]
+  split_at <- which(body == "---")
+  expect_setequal(body[seq_len(split_at - 1)], c("MZ000001", "AB123456"))
   expect_true(any(grepl("dropped 2 WGS master accession", r$out, fixed = TRUE)))
+  # the ledger the build stage's identity is computed from: a drop that exists
+  # only in the log is not computable from files
+  expect_equal(body[-seq_len(split_at)],
+    c("AAAA00000000\twgs_master_unavailable\t", "BBBB00000000\twgs_master_unavailable\t"))
 
   r_empty <- run_sourced(c(
     ': > "$dir/in.txt"',
-    'rp_filter_wgs_masters "$dir/in.txt" "$dir/out.txt"',
-    'wc -l < "$dir/out.txt" | tr -d " "'
+    'rp_filter_wgs_masters "$dir/in.txt" "$dir/out.txt" "$dir/dropped.tsv"',
+    'wc -l < "$dir/out.txt" | tr -d " "',
+    'wc -l < "$dir/dropped.tsv" | tr -d " "'
   ))
   expect_equal(r_empty$status, 0L)
   expect_true(any(grepl("dropped 0 WGS master accession", r_empty$out, fixed = TRUE)))
-  expect_true(any(r_empty$out == "0"))
+  expect_equal(r_empty$out[!grepl("^\\[", r_empty$out)], c("0", "0"))
 })
 
 test_that("rp_check_drift refuses beyond tolerance without --accept-drift, accepts (and logs) with it", {
@@ -546,6 +554,11 @@ test_that("accessions stage writes accessions.txt/.sha256 and two distinctly nam
   expect_equal(final_n, length(readLines(acc_file)))
   expect_equal(esearch_n - final_n, 2L)
   expect_false(file.exists(file.path(r$build, "accessions.count")))
+
+  # The WGS drop is a ledger row, not just a log line: the build stage's
+  # identity accounts for these two accessions out of the esearch count.
+  expect_equal(readLines(file.path(r$build, "dropped.accessions.tsv")),
+    c("AAAA00000000\twgs_master_unavailable\t", "BBBB00000000\twgs_master_unavailable\t"))
 
   calls <- readLines(file.path(r$bindir, "esearch_calls.log"), warn = FALSE)
   expect_equal(paste(calls, collapse = ""), "x")
@@ -1657,4 +1670,399 @@ test_that("clean sweeps every fetch artifact and clears the fetch marker", {
   }
   stages <- sub("\t.*", "", readLines(file.path(build, "state.txt"), warn = FALSE))
   expect_false("fetch" %in% stages)
+})
+
+# --- build stage ------------------------------------------------------------
+
+# The real makeblastdb/blastdbcmd/seqkit, never the no-op stubs the accessions
+# and fetch harnesses put on PATH: this stage is defined by cross-checking what
+# makeblastdb actually produced, and a stubbed one proves nothing about that.
+skip_without_blast_tools <- function() {
+  for (tool in c("bash", "timeout", "makeblastdb", "blastdbcmd", "seqkit", "jq")) {
+    skip_if(Sys.which(tool) == "", paste(tool, "is not on PATH"))
+  }
+}
+
+# A few dozen records carrying every case the dedup has to get right: a PDB-form
+# defline, a byte-identical pair, a pair differing only in sequence case, a pair
+# with identical sequences under DIFFERENT taxids which must both survive, and a
+# real record byte-identical to the PDB one under the same taxid. That last pair
+# is what makes the drop order load-bearing: 28ZU_S2 sorts ahead of any
+# letter-initial accession under LC_ALL=C, so a PDB record still in the dedup
+# wins the tie-break and takes the real record out of the panel with it.
+panel_fixture_records <- function() {
+  sq <- function(n) paste0(strrep("ACGT", n), strrep("ACGTTGCA", 8L))
+  rbind(
+    data.frame(acc = sprintf("AA0000%02d.1", 1:30),
+      taxid = as.character(9600L + (1:30 %% 7L)),
+      seq = vapply(1:30, sq, character(1)), stringsAsFactors = FALSE),
+    # listed second-copy-first, so only the tie-break decides the survivor
+    data.frame(acc = c("DUP0002.1", "DUP0001.1"), taxid = "7777", seq = sq(41)),
+    data.frame(acc = c("CASE0002.1", "CASE0001.1"), taxid = "8888",
+      seq = c(tolower(sq(42)), sq(42))),
+    data.frame(acc = c("SAME0001.1", "SAME0002.1"), taxid = c("5551", "5552"), seq = sq(43)),
+    data.frame(acc = c("28ZU_S2", "AA000031.1"), taxid = "9606", seq = sq(44)))
+}
+
+# A build tree holding exactly what the accessions, taxidmap and fetch stages
+# leave behind: the sorted list, both counts, the taxid map, the three per-stage
+# drop ledgers, chunks cut positionally from the list, and the fetch marker.
+make_panel_build <- function(records = panel_fixture_records(),
+                             unavailable = "MISS0001.1", unresolved = character(0),
+                             wgs = c("AAAA000000", "BBBB000000"), chunk_size = 20L,
+                             .envir = parent.frame()) {
+  build <- withr::local_tempdir(.local_envir = .envir)
+  dir.create(file.path(build, "chunks"))
+  dir.create(file.path(build, "tmp"))
+  acc <- sort(c(records$acc, unavailable), method = "radix")
+  writeLines(acc, file.path(build, "accessions.txt"))
+
+  mapped <- rbind(records[, c("acc", "taxid")],
+    data.frame(acc = unavailable, taxid = "9999", stringsAsFactors = FALSE))
+  mapped <- mapped[!(mapped$acc %in% unresolved), ]
+  mapped <- mapped[order(mapped$acc, method = "radix"), ]
+  writeLines(sprintf("%s\t%s", mapped$acc, mapped$taxid), file.path(build, "taxidmap.tsv"))
+
+  rows <- function(x, reason) if (length(x)) sprintf("%s\t%s\t", x, reason) else character(0)
+  writeLines(rows(wgs, "wgs_master_unavailable"), file.path(build, "dropped.accessions.tsv"))
+  writeLines(rows(unresolved, "taxid_unresolved"), file.path(build, "dropped.taxidmap.tsv"))
+  writeLines(rows(unavailable, "efetch_unavailable"), file.path(build, "dropped.fetch.tsv"))
+  writeLines(as.character(length(acc) + length(wgs)),
+    file.path(build, "accessions.esearch_count"))
+  writeLines(as.character(length(acc)), file.path(build, "accessions.final_count"))
+
+  wrap <- function(s) substring(s, seq(1L, nchar(s), 60L),
+    pmin(seq(60L, nchar(s) + 59L, 60L), nchar(s)))
+  chunk_of <- (seq_along(acc) - 1L) %/% chunk_size
+  for (i in unique(chunk_of)) {
+    lines <- unlist(lapply(acc[chunk_of == i], function(a) {
+      k <- match(a, records$acc)
+      if (is.na(k)) return(NULL)
+      # efetch deflines a PDB record in pipe form whatever form it was asked in
+      hdr <- if (grepl("_", a, fixed = TRUE)) {
+        sprintf(">pdb|%s|%s Chain %s, 18S ribosomal RNA",
+          sub("_.*", "", a), sub(".*_", "", a), sub(".*_", "", a))
+      } else {
+        sprintf(">%s Genus species %s ribosomal RNA gene", a, a)
+      }
+      c(hdr, wrap(records$seq[k]))
+    }))
+    writeLines(lines, file.path(build, "chunks", sprintf("fa_%04d", i)))
+  }
+
+  hex <- sub("\\s.*", "",
+    system2("sha256sum", shQuote(file.path(build, "accessions.txt")), stdout = TRUE))
+  writeLines(sprintf("fetch\t%s\t2026-01-01T00:00:00Z", hex), file.path(build, "state.txt"))
+  build
+}
+
+# Drives stage_build directly: sourcing leaves BUILD_DIR, RP_STATE_FILE, VER and
+# OUT_DIR empty, and a chunk size other than the production 5000 is only
+# reachable this way.
+run_build_sourced <- function(build, chunk_size = 20L, ver = "9.9.9", path_prefix = NULL) {
+  skip_if_not(file.exists(refdb_sh))
+  skip_without_blast_tools()
+  driver <- file.path(build, "drive_build.sh")
+  writeLines(c(
+    "set -uo pipefail",
+    'refdb="$1"; b="$2"',
+    "shift 2",
+    "set --",
+    'source "$refdb"',
+    "set +Ee",
+    "trap - ERR",
+    'BUILD_DIR="$b"',
+    'RP_STATE_FILE="$BUILD_DIR/state.txt"',
+    sprintf('VER="%s"', ver),
+    'OUT_DIR="$BUILD_DIR/blastdb/$VER"',
+    'RP_SORT_MEM="64M"',
+    'TMPDIR="$BUILD_DIR/tmp"',
+    sprintf("CHUNK_SIZE=%d", chunk_size),
+    "stage_build",
+    'echo "RC=$?"'
+  ), driver)
+  env <- if (is.null(path_prefix)) character(0) else {
+    paste0("PATH=", path_prefix, ":", Sys.getenv("PATH"))
+  }
+  out <- suppressWarnings(system2("timeout", c("120", "bash", shQuote(driver),
+    shQuote(normalizePath(refdb_sh)), shQuote(build)),
+    stdout = TRUE, stderr = TRUE, env = env))
+  st <- attr(out, "status")
+  status <- if (is.null(st)) 0L else as.integer(st)
+  expect_false(status == 124L, label = "the build run timed out instead of finishing")
+  list(status = status, out = out, build = build,
+    out_dir = file.path(build, "blastdb", ver))
+}
+
+panel_ids <- function(r) {
+  fa <- readLines(file.path(r$out_dir, "ribopilot_rrna.fasta"), warn = FALSE)
+  sub("^>([^ ]+).*", "\\1", grep("^>", fa, value = TRUE))
+}
+
+# strsplit drops a trailing empty field, so the detail column of a row that has
+# none has to be filled back in rather than read as absent.
+tsv_field <- function(lines, i) {
+  vapply(strsplit(lines, "\t", fixed = TRUE),
+    function(p) if (length(p) >= i) p[i] else "", character(1))
+}
+
+test_that("the build stage dereplicates on (taxid, sequence), drops the PDB records, and promotes a whole panel", {
+  build <- make_panel_build()
+  r <- run_build_sourced(build)
+  expect_equal(r$status, 0L, label = paste(r$out, collapse = "\n"))
+
+  ids <- panel_ids(r)
+  expect_equal(length(ids), 35L)
+  # the byte-identical pair collapses to the lexicographically first accession
+  # under LC_ALL=C, including when only the sequence's case differed
+  expect_true(all(c("DUP0001.1", "CASE0001.1") %in% ids))
+  expect_false(any(c("DUP0002.1", "CASE0002.1") %in% ids))
+  # two species whose rRNA is byte-identical are BOTH kept: the key is
+  # (taxid, sequence), never the sequence alone
+  expect_true(all(c("SAME0001.1", "SAME0002.1") %in% ids))
+  # no PDB record reaches the panel, in either spelling of its accession
+  fa <- readLines(file.path(r$out_dir, "ribopilot_rrna.fasta"), warn = FALSE)
+  expect_false(any(startsWith(fa, ">pdb|")))
+  expect_false("28ZU_S2" %in% ids)
+  # the real record the PDB one duplicates survives: dropping PDB records after
+  # the dedup instead of before takes this record out of the panel too
+  expect_true("AA000031.1" %in% ids)
+
+  # the taxid map ships restricted to the survivors, so makeblastdb has an entry
+  # for every record and none it cannot place
+  map <- readLines(file.path(r$out_dir, "ribopilot_rrna.taxid.map"), warn = FALSE)
+  expect_setequal(tsv_field(map, 1), ids)
+
+  # the scratch tree does not survive a good run, and nothing else lands
+  expect_false(dir.exists(file.path(build, "build.tmp")))
+  expect_setequal(list.files(r$out_dir),
+    c("manifest.json", "ribopilot_rrna.dropped.tsv", "ribopilot_rrna.fasta",
+      "ribopilot_rrna.taxid.map",
+      paste0("ribopilot_rrna.", c("ndb", "nhr", "nin", "njs", "nog", "nos",
+        "not", "nsq", "ntf", "nto"))))
+  # the panel the app would install, by the app's own definition
+  expect_equal(panel_missing_parts(r$out_dir), character(0))
+  stages <- sub("\t.*", "", readLines(file.path(build, "state.txt"), warn = FALSE))
+  expect_true("build" %in% stages)
+})
+
+test_that("the shipped drop ledger has no header row, names the reason for every drop, and balances", {
+  build <- make_panel_build()
+  r <- run_build_sourced(build)
+  expect_equal(r$status, 0L, label = paste(r$out, collapse = "\n"))
+
+  rows <- readLines(file.path(r$out_dir, "ribopilot_rrna.dropped.tsv"), warn = FALSE)
+  # the historical header row is what made 293,693 lines read as 293,693
+  # dropped records, 110 more than the manifest claimed
+  expect_false(startsWith(rows[1], "accession\t"))
+  acc <- tsv_field(rows, 1)
+  reason <- tsv_field(rows, 2)
+  detail <- tsv_field(rows, 3)
+  expect_equal(length(rows), 6L)
+  expect_equal(sort(reason), sort(c("wgs_master_unavailable", "wgs_master_unavailable",
+    "efetch_unavailable", "pdb_structure_record_nonstandard_defline",
+    rep("byte_identical_to_kept_record_same_taxid", 2))))
+  # the PDB drop is recorded under the accession the harvest requested, not the
+  # pipe-form seqid efetch returned: recording both is the double-count that put
+  # the historical ledger 188 records out
+  expect_equal(acc[reason == "pdb_structure_record_nonstandard_defline"], "28ZU_S2")
+  expect_equal(detail[acc == "DUP0002.1"], "DUP0001.1")
+  expect_equal(anyDuplicated(acc), 0L)
+
+  m <- jsonlite::fromJSON(file.path(r$out_dir, "manifest.json"))
+  expect_equal(m$counts$records_dropped, length(rows))
+  expect_equal(m$source$requested_accessions,
+    m$counts$records_after_dedup + m$counts$records_dropped)
+})
+
+test_that("the manifest counts come from the shipped artifacts and the makeblastdb command is a re-runnable array", {
+  build <- make_panel_build()
+  r <- run_build_sourced(build)
+  expect_equal(r$status, 0L, label = paste(r$out, collapse = "\n"))
+
+  m <- jsonlite::fromJSON(file.path(r$out_dir, "manifest.json"))
+  njs <- jsonlite::fromJSON(file.path(r$out_dir, "ribopilot_rrna.njs"))
+  expect_equal(m$db_version, "9.9.9")
+  expect_equal(njs[["description"]], "RiboPilot Metazoa nrDNA 9.9.9")
+  expect_equal(m$counts$records_after_dedup, 35L)
+  expect_equal(m$counts$records_after_dedup, njs[["number-of-sequences"]])
+  expect_equal(m$counts$total_bases, njs[["number-of-letters"]])
+  expect_equal(m$counts$distinct_taxids, njs[["number-of-taxids"]])
+  expect_equal(m$source$requested_accessions, 41L)
+  expect_equal(m$source$records_downloaded, 38L)
+  # not the historical 309 phantom: the only accession this build could not
+  # reconcile is the one efetch never returned
+  expect_equal(m$source$unreconciled_accessions, 1L)
+  expect_true(m$blastdb$has_taxids)
+
+  # measured over the shipped file list only; du -sb over the panel directory
+  # reported 1.14 GB for a 331 MiB database
+  shipped <- c("manifest.json", paste0("ribopilot_rrna.",
+    c("ndb", "nhr", "nin", "njs", "nog", "nos", "not", "nsq", "ntf", "nto")))
+  expect_equal(m$counts$unpacked_bytes, sum(file.size(file.path(r$out_dir, shipped))))
+  expect_lt(m$counts$unpacked_bytes,
+    sum(file.size(list.files(r$out_dir, full.names = TRUE))))
+
+  cmd <- m$blastdb$makeblastdb_cmd
+  expect_true(is.character(cmd))
+  expect_equal(cmd[1], "makeblastdb")
+  # the historical string interpolated -title RiboPilot Metazoa nrDNA <VER>
+  # unquoted, which is not re-runnable
+  expect_true("RiboPilot Metazoa nrDNA 9.9.9" %in% cmd)
+  expect_true(all(c("-dbtype", "nucl", "-parse_seqids", "-blastdb_version", "5",
+    "-taxid_map") %in% cmd))
+  # relative, so the recorded command runs wherever the panel ends up
+  expect_false(any(grepl("/", cmd, fixed = TRUE)))
+})
+
+# THE REQUIRED TEST: makeblastdb's exit status proves nothing. A truncated FASTA
+# gives "added 2 sequences" and exit 0, and a taxid map matching nothing prints
+# Error: and still exits 0 with every staxid 0.
+test_that("the .njs cross-check fails when the database does not describe the fasta it was built from", {
+  skip_without_blast_tools()
+  real <- Sys.which("makeblastdb")
+  for (field in c("number-of-sequences", "number-of-letters", "number-of-taxids")) {
+    build <- make_panel_build()
+    bindir <- file.path(build, "stubbin")
+    dir.create(bindir)
+    stub <- file.path(bindir, "makeblastdb")
+    writeLines(c("#!/usr/bin/env bash", "set -eu",
+      sprintf("%s \"$@\"", shQuote(real)),
+      'out=""',
+      'while [ $# -gt 0 ]; do case "$1" in -out) out="$2"; shift 2 ;; *) shift ;; esac; done',
+      # the stage also runs makeblastdb -version, which builds nothing: without
+      # this the stub would write its rewrite into the caller's directory
+      '[ -n "$out" ] || exit 0',
+      sprintf("jq '.[\"%s\"] = (.[\"%s\"] + 1)' \"$out.njs\" > \"$out.njs.new\"",
+        field, field),
+      'mv "$out.njs.new" "$out.njs"'), stub)
+    Sys.chmod(stub, "0755")
+    r <- run_build_sourced(build, path_prefix = bindir)
+    expect_gt(r$status, 0L, label = field)
+    expect_true(any(grepl(paste0(".njs ", field, " vs"), r$out, fixed = TRUE)),
+      label = field)
+    expect_false(dir.exists(r$out_dir), label = field)
+  }
+})
+
+test_that("the build stage refuses a chunk set that is not the one the accession list implies", {
+  build <- make_panel_build()
+  file.remove(file.path(build, "chunks", "fa_0001"))
+  r <- run_build_sourced(build)
+  expect_gt(r$status, 0L)
+  expect_true(any(grepl("chunk files under", r$out, fixed = TRUE)))
+  expect_false(dir.exists(r$out_dir))
+
+  # an empty chunk directory passes the historical `0 -ne 0`, and the stray
+  # fa_retry the historical tree still holds builds and ships a 3-sequence
+  # database with a full manifest on its own
+  build2 <- make_panel_build()
+  file.remove(list.files(file.path(build2, "chunks"), full.names = TRUE))
+  writeLines(c(">AA000001.1 Genus species", "ACGTACGTACGTACGT"),
+    file.path(build2, "chunks", "fa_retry"))
+  r2 <- run_build_sourced(build2)
+  expect_gt(r2$status, 0L)
+  expect_true(any(grepl("no chunk files matching", r2$out, fixed = TRUE)))
+  expect_false(dir.exists(r2$out_dir))
+})
+
+test_that("the build stage refuses a count file that is not a number rather than treating it as zero", {
+  build <- make_panel_build()
+  # bash arithmetic reads a non-numeric word as 0, which would silently make the
+  # expected chunk count 0 and the ledger identity error out with no reason given
+  writeLines("QUERY FAILURE", file.path(build, "accessions.esearch_count"))
+  r <- run_build_sourced(build)
+  expect_gt(r$status, 0L)
+  expect_true(any(grepl("must both be numeric", r$out, fixed = TRUE)))
+  expect_false(dir.exists(r$out_dir))
+})
+
+test_that("the build stage refuses to run unless the fetch stage is recorded complete for this accession list", {
+  build <- make_panel_build()
+  file.remove(file.path(build, "state.txt"))
+  r <- run_build_sourced(build)
+  expect_gt(r$status, 0L)
+  expect_true(any(grepl("fetch stage is not recorded complete", r$out, fixed = TRUE)))
+  expect_false(dir.exists(r$out_dir))
+
+  # a marker recorded against a DIFFERENT accession list is not a marker for
+  # this one: the chunks would have been cut from a list that has since moved
+  build2 <- make_panel_build()
+  writeLines("fetch\tdeadbeef\t2026-01-01T00:00:00Z", file.path(build2, "state.txt"))
+  r2 <- run_build_sourced(build2)
+  expect_gt(r2$status, 0L)
+  expect_false(dir.exists(r2$out_dir))
+})
+
+test_that("a fetched record with no taxid, or no sequence, aborts the build instead of entering the panel", {
+  build <- make_panel_build()
+  map <- readLines(file.path(build, "taxidmap.tsv"), warn = FALSE)
+  writeLines(map[!startsWith(map, "AA000005.1\t")], file.path(build, "taxidmap.tsv"))
+  r <- run_build_sourced(build)
+  expect_gt(r$status, 0L)
+  # never a shared "NA" key: it collapses unrelated species with byte-identical
+  # rRNA and mislabels them as duplicates of each other
+  expect_true(any(grepl("AA000005.1 no taxid", r$out, fixed = TRUE)))
+  expect_false(dir.exists(r$out_dir))
+
+  build2 <- make_panel_build()
+  chunk <- file.path(build2, "chunks", "fa_0000")
+  lines <- readLines(chunk, warn = FALSE)
+  hdr <- grep("^>", lines)
+  i <- grep("^>AA000003[.]1 ", lines)
+  nxt <- hdr[hdr > i][1]
+  writeLines(lines[c(seq_len(i), seq(nxt, length(lines)))], chunk)
+  r2 <- run_build_sourced(build2)
+  expect_gt(r2$status, 0L)
+  expect_true(any(grepl("AA000003.1 empty sequence", r2$out, fixed = TRUE)))
+  expect_false(dir.exists(r2$out_dir))
+})
+
+test_that("records the taxonomy stage already recorded as unresolved are excluded, and the ledger still balances", {
+  build <- make_panel_build(unresolved = "AA000007.1")
+  r <- run_build_sourced(build)
+  expect_equal(r$status, 0L, label = paste(r$out, collapse = "\n"))
+
+  ids <- panel_ids(r)
+  expect_false("AA000007.1" %in% ids)
+  expect_equal(length(ids), 34L)
+  rows <- readLines(file.path(r$out_dir, "ribopilot_rrna.dropped.tsv"), warn = FALSE)
+  # recorded once, by the stage that dropped it, and not again here
+  expect_equal(sum(tsv_field(rows, 2) == "taxid_unresolved"), 1L)
+  expect_equal(sum(tsv_field(rows, 1) == "AA000007.1"), 1L)
+  m <- jsonlite::fromJSON(file.path(r$out_dir, "manifest.json"))
+  expect_equal(m$source$requested_accessions,
+    m$counts$records_after_dedup + m$counts$records_dropped)
+})
+
+test_that("the ledger identity refuses a build whose drops do not account for every requested accession", {
+  build <- make_panel_build()
+  ledger <- file.path(build, "dropped.accessions.tsv")
+  # a drop that was logged but never recorded in a file: the historical build
+  # counted 298 PDB records twice for the mirror-image reason
+  writeLines(readLines(ledger, warn = FALSE)[1], ledger)
+  r <- run_build_sourced(build)
+  expect_gt(r$status, 0L)
+  expect_true(any(grepl("the drop ledger does not balance", r$out, fixed = TRUE)))
+  expect_true(any(grepl("41 requested != 35 kept + 5 dropped", r$out, fixed = TRUE)))
+  expect_false(dir.exists(r$out_dir))
+})
+
+test_that("has_taxids is measured from the database, never asserted", {
+  build <- make_panel_build()
+  bindir <- file.path(build, "stubbin")
+  dir.create(bindir)
+  stub <- file.path(bindir, "blastdbcmd")
+  # every sampled entry resolves to taxid 0, which is what a taxid map matching
+  # nothing produces -- and what the historical manifest reported as true
+  writeLines(c("#!/usr/bin/env bash", "set -eu",
+    'f=""',
+    'while [ $# -gt 0 ]; do case "$1" in -entry_batch) f="$2"; shift 2 ;; *) shift ;; esac; done',
+    'while read -r _; do echo 0; done < "$f"'), stub)
+  Sys.chmod(stub, "0755")
+  r <- run_build_sourced(build, path_prefix = bindir)
+  expect_equal(r$status, 0L, label = paste(r$out, collapse = "\n"))
+  m <- jsonlite::fromJSON(file.path(r$out_dir, "manifest.json"))
+  expect_false(m$blastdb$has_taxids)
+  expect_true(any(grepl("WARNING has_taxids is false", r$out, fixed = TRUE)))
 })

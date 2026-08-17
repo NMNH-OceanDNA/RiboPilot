@@ -381,7 +381,7 @@ cmd_clean() {
   rp_log "release tarballs verify; cleaning intermediates under $BUILD_DIR"
 
   rm -rf "$BUILD_DIR/chunks" "$BUILD_DIR/chunks.missing" "$BUILD_DIR/chunks.tmp" \
-    "$BUILD_DIR/taxidmap.tmp"
+    "$BUILD_DIR/taxidmap.tmp" "$BUILD_DIR/build.tmp"
   rm -f "$BUILD_DIR"/*.raw.fasta
   # The resume key goes with the chunks it keys: left behind, it would tell the
   # next fetch that a chunk dir which no longer exists was proven.
@@ -492,13 +492,17 @@ rp_assert_unique() {
     || rp_die "$label: $file has $((total - uniq)) duplicate line(s) among $total"
 }
 
-# rp_filter_wgs_masters IN OUT
+# rp_filter_wgs_masters IN OUT DROPPED
 # WGS master accessions (4 letters + 6 zeros) are permanently unavailable via
 # efetch by design, so dropping them here is a recorded expected drop, not a
-# silent one.
+# silent one. Recorded in DROPPED as well as logged: the build stage's ledger
+# identity is computed from files, so a drop that exists only in the log makes
+# it uncomputable.
 rp_filter_wgs_masters() {
-  local in="$1" out="$2" total kept
+  local in="$1" out="$2" dropped="$3" total kept
   grep -Ev '^[A-Z]{4}0{6}' "$in" > "$out" || true
+  grep -E '^[A-Z]{4}0{6}' "$in" \
+    | awk -v OFS='\t' '{print $1, "wgs_master_unavailable", ""}' > "$dropped" || true
   total="$(rp_line_count "$in")"
   kept="$(rp_line_count "$out")"
   rp_log "accessions: dropped $((total - kept)) WGS master accession(s) (expected, permanently unavailable)"
@@ -711,6 +715,29 @@ rp_fetch_chunk() {
 }
 
 # ---------------------------------------------------------------------------
+# Build stage helpers (dev/design/18_REFDB_REBUILD.md section 4, Build/package).
+# ---------------------------------------------------------------------------
+
+# RP_PANEL_FILES
+# Exactly what package_release.sh:21-31 puts in the panel tarball.
+# unpacked_bytes is measured over this list and nothing else: `du -sb` over the
+# panel directory reported 1.14 GB for a 331 MiB database, because it also
+# counted the .fasta, .taxid.map and .dropped.tsv, which are build artifacts and
+# are never shipped.
+RP_PANEL_FILES="manifest.json ribopilot_rrna.ndb ribopilot_rrna.nhr ribopilot_rrna.nin ribopilot_rrna.njs ribopilot_rrna.nog ribopilot_rrna.nos ribopilot_rrna.not ribopilot_rrna.nsq ribopilot_rrna.ntf ribopilot_rrna.nto"
+
+# rp_shipped_bytes DIR
+# Total size of the shipped files present in DIR.
+rp_shipped_bytes() {
+  local dir="$1" f total=0
+  for f in $RP_PANEL_FILES; do
+    [ -f "$dir/$f" ] || continue
+    total=$((total + $(stat -c %s "$dir/$f")))
+  done
+  printf '%s\n' "$total"
+}
+
+# ---------------------------------------------------------------------------
 # Stages -- not implemented yet, land in later work. Each is a hard stub so a
 # partial run cannot be mistaken for a real one.
 # ---------------------------------------------------------------------------
@@ -749,7 +776,8 @@ stage_accessions() {
   rp_assert_count "accessions: harvested line count vs esearch <Count>" "$(rp_line_count "$raw")" "$count"
   rp_assert_unique "accessions: harvested accession list" "$raw"
 
-  rp_filter_wgs_masters "$raw" "$BUILD_DIR/accessions.wgsfiltered.txt"
+  rp_filter_wgs_masters "$raw" "$BUILD_DIR/accessions.wgsfiltered.txt" \
+    "$BUILD_DIR/dropped.accessions.tsv"
   # Sorted before hashing: efetch history-server order is not contractually
   # stable, and the fetch stage refuses to resume on a fingerprint mismatch,
   # so an unsorted hash would discard a valid multi-hour fetch.
@@ -1024,7 +1052,285 @@ stage_fetch() {
   rp_log "fetch: $n_got record(s) in $n_chunks chunk(s) of $total requested, $n_unavailable permanently unavailable"
   rm -rf "$tmp"
 }
-stage_build() { rp_die "stage 'build' is not implemented yet"; }
+# stage_build
+# The panel: concatenate the verified chunks, dereplicate byte-exactly on
+# (taxid, uppercased sequence), run makeblastdb, and write the shipped drop
+# ledger and the manifest. Everything is assembled in scratch and cross-checked
+# against the artifacts makeblastdb actually produced before anything is
+# promoted into $OUT_DIR, the same way the fetch stage publishes a chunk only
+# once it has verified it.
+#
+# The raw concatenated fasta is never landed: the historical 1.2 GB
+# metazoa_rrna.raw.fasta was regenerated every run and is pure peak-disk waste,
+# so the chunk stream is piped into each consumer instead.
+stage_build() {
+  rp_require_build_dir
+  local v f tmp acc chunks hex requested final_count want_chunks n_chunks
+  local stats n_kept sum_len n_taxids n_dropped n_unavailable n_downloaded
+  local mean_defline reasons njs n_sample n_resolved has_taxids
+  local built_utc blast_ver seqkit_ver pkg_ver git_sha mkcmd_json unpacked total round
+  local -a mkcmd chunk_files
+
+  # A stage reached by sourcing has none of these, and must refuse rather than
+  # build into a path it invented.
+  for v in VER OUT_DIR RP_SORT_MEM TMPDIR; do
+    [ -n "${!v:-}" ] \
+      || rp_die "build: $v is not set; run this script rather than sourcing it"
+  done
+
+  acc="$BUILD_DIR/accessions.txt"
+  chunks="$BUILD_DIR/chunks"
+  for f in "$acc" "$BUILD_DIR/accessions.esearch_count" \
+      "$BUILD_DIR/accessions.final_count" "$BUILD_DIR/taxidmap.tsv" \
+      "$BUILD_DIR/dropped.accessions.tsv" "$BUILD_DIR/dropped.taxidmap.tsv" \
+      "$BUILD_DIR/dropped.fetch.tsv"; do
+    [ -f "$f" ] || rp_die "build: $f not found; run the earlier stages first"
+  done
+
+  # The pre-filter esearch <Count> is what the ledger reconciles against; the
+  # post-filter count is what the chunks were cut from. They differ by the WGS
+  # masters, so using one where the other belongs silently shifts the identity.
+  requested="$(tr -d '[:space:]' < "$BUILD_DIR/accessions.esearch_count")"
+  final_count="$(tr -d '[:space:]' < "$BUILD_DIR/accessions.final_count")"
+  [[ "$requested" =~ ^[0-9]+$ ]] && [[ "$final_count" =~ ^[0-9]+$ ]] \
+    || rp_die "build: accessions.esearch_count ('$requested') and accessions.final_count ('$final_count') must both be numeric"
+
+  hex="$(sha256sum "$acc" | cut -d' ' -f1)"
+  rp_marker_ok fetch "$hex" \
+    || rp_die "build: the fetch stage is not recorded complete for $acc (sha256 $hex); run --stage fetch first"
+
+  # The strict glob, and the exact chunk count the accession list implies. An
+  # empty directory passes the historical `0 -ne 0`, and a stray non-empty
+  # fa_retry on its own builds and ships a 3-sequence database with a full
+  # manifest.
+  chunk_files=("$chunks"/fa_[0-9][0-9][0-9][0-9])
+  [ -e "${chunk_files[0]}" ] \
+    || rp_die "build: no chunk files matching $chunks/fa_[0-9][0-9][0-9][0-9]; run --stage fetch first"
+  n_chunks="${#chunk_files[@]}"
+  want_chunks=$(( (final_count + CHUNK_SIZE - 1) / CHUNK_SIZE ))
+  rp_assert_count "build: chunk files under $chunks" "$n_chunks" "$want_chunks"
+
+  tmp="$BUILD_DIR/build.tmp"
+  rm -rf "$tmp"
+  mkdir -p "$tmp"
+  : > "$tmp/pdb.acc"
+  : > "$tmp/dup.acc"
+  : > "$tmp/unusable.acc"
+
+  rp_log "build: dereplicating $n_chunks chunk(s) on (taxid, uppercased sequence)"
+  cat "${chunk_files[@]}" \
+    | seqkit fx2tab -i \
+    | awk -F'\t' -v OFS='\t' -v MAP="$BUILD_DIR/taxidmap.tsv" \
+        -v GONE="$BUILD_DIR/dropped.taxidmap.tsv" \
+        -v PDB="$tmp/pdb.acc" -v BAD="$tmp/unusable.acc" '
+        BEGIN {
+          while ((getline line < MAP) > 0) { split(line, a, "\t"); tax[a[1]] = a[2] }
+          while ((getline line < GONE) > 0) { split(line, a, "\t"); gone[a[1]] = 1 }
+        }
+        {
+          acc = $1
+          # efetch deflines a PDB record as >pdb|28ZU|S2 for an accession the
+          # list requested as 28ZU_S2. Dropped before the dedup, never after:
+          # 28ZU_S2 sorts ahead of any letter-initial accession under LC_ALL=C,
+          # so a PDB record left in would win the tie-break, be dropped anyway,
+          # and take the real GenBank record it duplicated out of the panel.
+          if (acc ~ /^pdb\|/) {
+            sub(/^pdb\|/, "", acc); sub(/\|/, "_", acc)
+            print acc > PDB
+            next
+          }
+          # Already recorded as taxid_unresolved by the taxonomy stage, which
+          # does not remove them from the accession list the fetch works from.
+          if (acc in gone) next
+          if ($2 == "") { print acc, "empty sequence" > BAD; next }
+          if (!(acc in tax)) { print acc, "no taxid in taxidmap.tsv" > BAD; next }
+          print tax[acc], toupper($2), acc
+        }' \
+    | sort -t$'\t' -k1,1 -k2,2 -k3,3 -S "$RP_SORT_MEM" -T "$TMPDIR" \
+    | awk -F'\t' -v OFS='\t' -v DUP="$tmp/dup.acc" '
+        { key = $1 FS $2
+          if (key != prev) { prev = key; keeper = $3; print $3 }
+          else { print $3, keeper > DUP } }' \
+    > "$tmp/keep.acc"
+
+  # Never a shared "NA" taxid for an unmapped record: that key collapses
+  # unrelated species with byte-identical rRNA and mislabels them as duplicates
+  # of each other.
+  [ ! -s "$tmp/unusable.acc" ] \
+    || rp_die "build: $(rp_line_count "$tmp/unusable.acc") fetched record(s) cannot enter the panel, e.g. $(head -1 "$tmp/unusable.acc" | tr '\t' ' ')"
+
+  rp_log "build: writing the panel fasta and its restricted taxid map"
+  cat "${chunk_files[@]}" \
+    | awk -v KEEP="$tmp/keep.acc" '
+        BEGIN { while ((getline line < KEEP) > 0) keep[line] = 1 }
+        /^>/ { k = (substr($1, 2) in keep) }
+        k' \
+    > "$tmp/ribopilot_rrna.fasta"
+  # Restricted to survivors so makeblastdb does not warn on absent ids.
+  awk -F'\t' 'NR==FNR { k[$1]; next } ($1 in k)' \
+    "$tmp/keep.acc" "$BUILD_DIR/taxidmap.tsv" > "$tmp/ribopilot_rrna.taxid.map"
+
+  # Every count below is read back off a final artifact rather than carried
+  # forward from an earlier step, so a write that lost records fails the ledger
+  # instead of being reported as a success.
+  stats="$(seqkit stats -T "$tmp/ribopilot_rrna.fasta" | awk -F'\t' 'NR==2 {print $4, $5}')"
+  n_kept="${stats%% *}"
+  sum_len="${stats##* }"
+  n_taxids="$(cut -f2 "$tmp/ribopilot_rrna.taxid.map" | sort -u | wc -l | tr -d ' ')"
+  mean_defline="$(awk '/^>/ {s += length($0); n++} END {printf "%d", n ? s / n : 0}' \
+    "$tmp/ribopilot_rrna.fasta")"
+
+  # No header row. The historical one made 293,693 lines read as 293,693
+  # dropped records, 110 more than the manifest claimed.
+  cat "$BUILD_DIR/dropped.accessions.tsv" "$BUILD_DIR/dropped.taxidmap.tsv" \
+    "$BUILD_DIR/dropped.fetch.tsv" > "$tmp/ribopilot_rrna.dropped.tsv"
+  awk -v OFS='\t' '{print $1, "pdb_structure_record_nonstandard_defline", ""}' \
+    "$tmp/pdb.acc" >> "$tmp/ribopilot_rrna.dropped.tsv"
+  awk -F'\t' -v OFS='\t' '{print $1, "byte_identical_to_kept_record_same_taxid", $2}' \
+    "$tmp/dup.acc" >> "$tmp/ribopilot_rrna.dropped.tsv"
+
+  n_dropped="$(rp_line_count "$tmp/ribopilot_rrna.dropped.tsv")"
+  reasons="$(awk -F'\t' '{c[$2]++} END {for (r in c) printf "%s=%d ", r, c[r]}' \
+    "$tmp/ribopilot_rrna.dropped.tsv")"
+  # The identity the historical build never checked: it was off by 188, because
+  # 298 PDB records were counted once as unreturned and again as a PDB drop.
+  [ "$((n_kept + n_dropped))" -eq "$requested" ] \
+    || rp_die "build: the drop ledger does not balance: $requested requested != $n_kept kept + $n_dropped dropped ($reasons)"
+  rp_log "build: $n_kept kept, $n_dropped dropped ($reasons)"
+
+  # Relative paths, run from the panel directory, so the command recorded in the
+  # manifest is re-runnable wherever the panel ends up.
+  mkcmd=(makeblastdb -in ribopilot_rrna.fasta "${MAKEBLASTDB_FLAGS[@]}"
+    -out ribopilot_rrna -title "RiboPilot Metazoa nrDNA $VER"
+    -taxid_map ribopilot_rrna.taxid.map)
+  rp_log "build: makeblastdb"
+  ( cd "$tmp" && "${mkcmd[@]}" ) >&2 || rp_die "build: makeblastdb failed"
+
+  # makeblastdb's exit status proves nothing: a truncated FASTA gives "added 2
+  # sequences" and exit 0, and a taxid map matching nothing prints Error: and
+  # still exits 0 with every staxid 0. The .njs it generates is the only
+  # statement of what the database actually holds, so it is what gets checked.
+  njs="$tmp/ribopilot_rrna.njs"
+  [ -f "$njs" ] || rp_die "build: makeblastdb produced no $njs"
+  rp_assert_count "build: .njs number-of-sequences vs panel fasta records" \
+    "$(jq -r '.["number-of-sequences"]' "$njs")" "$n_kept"
+  rp_assert_count "build: .njs number-of-letters vs seqkit sum_len" \
+    "$(jq -r '.["number-of-letters"]' "$njs")" "$sum_len"
+  rp_assert_count "build: .njs number-of-taxids vs the restricted taxid map" \
+    "$(jq -r '.["number-of-taxids"]' "$njs")" "$n_taxids"
+
+  # Sampled, never hardcoded: the historical manifest asserted has_taxids true
+  # unconditionally, which is exactly what a taxid map matching nothing would
+  # have shipped as.
+  head -n 100 "$tmp/keep.acc" > "$tmp/sample.acc"
+  n_sample="$(rp_line_count "$tmp/sample.acc")"
+  ( cd "$tmp" && blastdbcmd -db ribopilot_rrna -entry_batch sample.acc -outfmt '%T' ) \
+    > "$tmp/sample.taxid" || true
+  n_resolved="$(rp_line_count "$tmp/sample.taxid")"
+  has_taxids=false
+  if [ "$n_sample" -gt 0 ] && [ "$n_resolved" = "$n_sample" ] \
+      && ! grep -qvE '^[1-9][0-9]*$' "$tmp/sample.taxid"; then
+    has_taxids=true
+  fi
+  [ "$has_taxids" = true ] \
+    || rp_log "build: WARNING has_taxids is false: blastdbcmd returned $n_resolved line(s) for $n_sample sampled accession(s), not all of them a nonzero taxid; this panel cannot filter by taxonomy"
+
+  n_unavailable="$(rp_line_count "$BUILD_DIR/dropped.fetch.tsv")"
+  n_downloaded=$((final_count - n_unavailable))
+  built_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  blast_ver="$(makeblastdb -version | awk 'NR==1 {print $2}')"
+  seqkit_ver="$(seqkit version | awk '{print $2}')"
+  pkg_ver="$(awk '/^Version:/ {print $2}' "$REPO_ROOT/DESCRIPTION")"
+  git_sha="$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || true)"
+  # A JSON array, not a string: the historical makeblastdb_cmd interpolated
+  # -title RiboPilot Metazoa nrDNA 2026.08.1 unquoted and cannot be re-run.
+  mkcmd_json="$(printf '%s\n' "${mkcmd[@]}" | jq -Rs 'split("\n")[:-1]')"
+
+  # manifest.json is itself one of the shipped files, so its own size belongs in
+  # unpacked_bytes: render it, re-measure, and settle once the number stops
+  # moving.
+  unpacked="$(rp_shipped_bytes "$tmp")"
+  for round in 1 2 3; do
+    jq -n \
+      --arg db_version "$VER" \
+      --arg built_utc "$built_utc" \
+      --arg ribopilot_version "$pkg_ver" \
+      --arg git_sha "$git_sha" \
+      --arg platform "$(uname -sm)" \
+      --arg query "$QUERY" \
+      --arg taxid_source "$RP_A2T_BASE_URL" \
+      --arg blast "$blast_ver" \
+      --arg seqkit "$seqkit_ver" \
+      --argjson requested "$requested" \
+      --argjson downloaded "$n_downloaded" \
+      --argjson unreconciled "$n_unavailable" \
+      --argjson kept "$n_kept" \
+      --argjson dropped "$n_dropped" \
+      --argjson taxids "$n_taxids" \
+      --argjson bases "$sum_len" \
+      --argjson defline "$mean_defline" \
+      --argjson unpacked "$unpacked" \
+      --argjson has_taxids "$has_taxids" \
+      --argjson makeblastdb_cmd "$mkcmd_json" \
+      '{
+        manifest_schema: 1,
+        db_name: "ribopilot_rrna",
+        db_version: $db_version,
+        built_utc: $built_utc,
+        builder: {
+          ribopilot_version: $ribopilot_version,
+          git_sha: $git_sha,
+          platform: $platform
+        },
+        source: {
+          provider: "NCBI Nucleotide (Entrez)",
+          query: $query,
+          molecule_filter: "none (RefSeq XR_/NR_ rRNA records are MolType=rna and would be dropped)",
+          taxid_source: $taxid_source,
+          requested_accessions: $requested,
+          records_downloaded: $downloaded,
+          unreconciled_accessions: $unreconciled
+        },
+        pipeline: {
+          tier: 1,
+          dedup: { mode: "byte_exact", key: ["taxid", "uppercased_sequence"] },
+          annotated: false,
+          species_selection: false,
+          misid_screen: false
+        },
+        counts: {
+          records_after_dedup: $kept,
+          records_dropped: $dropped,
+          distinct_taxids: $taxids,
+          total_bases: $bases,
+          mean_defline_chars: $defline,
+          unpacked_bytes: $unpacked
+        },
+        tools: { blast: $blast, seqkit: $seqkit },
+        blastdb: {
+          version: 5,
+          prefix: "ribopilot_rrna",
+          makeblastdb_cmd: $makeblastdb_cmd,
+          defline_format: "verbatim GenBank: >ACC.V description",
+          has_taxids: $has_taxids
+        },
+        decoy_panel: {
+          mode: "ncbi_prebuilt",
+          databases: ["SSU_eukaryote_rRNA", "LSU_eukaryote_rRNA", "16S_ribosomal_RNA"],
+          note: "composed at query time via a space-separated -db list; not merged into this build"
+        }
+      }' > "$tmp/manifest.json"
+    total="$(rp_shipped_bytes "$tmp")"
+    if [ "$total" = "$unpacked" ]; then break; fi
+    unpacked="$total"
+  done
+
+  mkdir -p "$OUT_DIR"
+  mv "$tmp/manifest.json" "$tmp"/ribopilot_rrna.* "$OUT_DIR/"
+  rp_marker_set build "$hex"
+  rp_log "build: $n_kept record(s), $n_taxids taxid(s), $sum_len base(s), $unpacked shipped byte(s) in $OUT_DIR"
+  rm -rf "$tmp"
+}
 stage_decoys() { rp_die "stage 'decoys' is not implemented yet"; }
 stage_package() { rp_die "stage 'package' is not implemented yet"; }
 
