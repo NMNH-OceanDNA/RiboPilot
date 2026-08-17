@@ -113,6 +113,14 @@ RiboPilot::new_project(
 
 If you do not set a folder, RiboPilot uses a default location on your computer.
 
+<div class="alert alert-note">
+The <code>executor = "conda"</code> shown in the examples on this page is
+<strong>no longer a supported way to run</strong>. Supported execution is Docker or Singularity; use
+<code>executor = "docker"</code> on a workstation, and see the
+<a href="RiboPilot.html">Get started guide</a> for clusters. The examples keep
+<code>"conda"</code> only so they match the rest of the documentation.
+</div>
+
 # Building from the console
 
 You can also build a reference database directly, without going through the app,
@@ -146,7 +154,9 @@ The second value, `"gastropoda"`, is just a short label used in the file names.
 <div class="alert alert-note">
 Running this needs the tools you installed with conda, so start R from a terminal
 where you have run <code>conda activate ribopilot</code>, or keep the
-<code>conda_env = "ribopilot"</code> setting shown above.
+<code>conda_env = "ribopilot"</code> setting shown above. That is the unsupported
+local-tools path: building from the app's Reference tab instead runs the same work
+inside the container, which is the supported route.
 </div>
 
 To use a database built this way in a project, point the project at it by adding

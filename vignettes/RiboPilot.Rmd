@@ -62,9 +62,24 @@ Before your first project, three things need to be installed. This is usually
 done once, and lab or institutional computing staff can help if any of it is
 unfamiliar.
 
+<div class="alert alert-warning">
+<strong>Supported execution: Docker or Singularity.</strong> The analysis steps
+are supported only inside the RiboPilot container image, published on Docker Hub
+as <a href="https://hub.docker.com/r/macguigand/ribopilot"><code>macguigand/ribopilot</code></a>
+and tagged with the RiboPilot version. It carries every analysis tool the pipeline
+calls, so with a container you can skip the conda step below. On a workstation,
+create projects with <code>executor = "docker"</code>; on a cluster, use
+Singularity (the <code>NMNH_Hydra</code> and <code>NOAA_SEDNA</code> profiles
+already do, and <code>generate_config()</code> writes one for any other
+scheduler). Installing the tools yourself, including with conda, is
+<strong>no longer supported</strong>. Those instructions are kept below because
+they still work, but they are not tested.
+</div>
+
 - **R** (version 4.4.0 or newer): the environment you will type commands into.
 - **Nextflow**: the engine that runs the analysis steps.
-- **The analysis tools** RiboPilot relies on. The simplest way to get all of them
+- **The analysis tools** RiboPilot relies on, and only if you are not using a
+  container. The simplest way to get all of them
   is with **conda**, which installs a self-contained bundle of programs (called an
   "environment") that will not interfere with anything else on your computer.
   After installing conda, run these two lines in a terminal to create the
@@ -104,6 +119,9 @@ before using your own data. One command downloads the samples and sets up a read
 ```{r, purl = FALSE}
 RiboPilot::new_test_project(path = "~/ribopilot_test", executor = "conda")
 ```
+
+`new_test_project()` still defaults to `executor = "conda"`, which is no longer a
+supported way to run. Pass `executor = "docker"` instead.
 
 This downloads a few gigabytes of data, so it can take a while. When it finishes,
 you have a working project you can practice on using the steps below. We strongly
@@ -175,10 +193,11 @@ tracking file. From here on, everything refers to that folder.
 
 <div class="alert alert-note">
 <code>executor = "conda"</code> tells RiboPilot to run on your own computer using
-the tools you installed with conda. If your lab uses a shared computing cluster,
-there are other options; see the function help for
-<code>new_project()</code> and <code>generate_config()</code>, or ask your
-computing support staff.
+the tools you installed with conda, which is <strong>no longer a supported
+way to run</strong> (see Step 0). Use <code>executor = "docker"</code> instead. If
+your lab uses a shared computing cluster, there are Singularity options; see the
+function help for <code>new_project()</code> and <code>generate_config()</code>,
+or ask your computing support staff.
 </div>
 
 # Step 4: Assemble your samples

@@ -57,11 +57,25 @@ It also runs automatic quality checks tuned for a taxonomic group. Checks curren
 
 # Installation
 
+**Supported execution: Docker or Singularity.** The analysis steps are supported
+only inside the RiboPilot container image, which bundles every bioinformatics tool
+the pipeline calls at the versions it was tested with. The image is published on
+Docker Hub as [`macguigand/ribopilot`](https://hub.docker.com/r/macguigand/ribopilot),
+tagged with the RiboPilot version, and `new_project()` picks the matching tag for
+you. On a workstation, create projects with `executor = "docker"`. On a cluster,
+use Singularity: the built-in `NMNH_Hydra` and `NOAA_SEDNA` profiles already do,
+and `generate_config()` writes a Singularity config for any other scheduler.
+
+Installing the tools yourself, whether one at a time or through the `conda`
+environment described below, is **not supported going forward**. Those
+instructions are left in place because they still work, but they are not tested
+and problems that come from them cannot be supported.
+
 RiboPilot needs three things installed on your computer (or your lab's server):
 
 1. **[R](https://www.r-project.org/)** (version 4.4.0 or newer), the language RiboPilot is written in. You will type a few short commands into R, but you do not need to know R.
 2. **[Nextflow](https://www.nextflow.io/docs/latest/install.html)** (version 24.10.x through 25.10.x), which runs the heavy analysis steps. RiboPilot refuses to load on an older Nextflow and prompts you to update; on a newer, unverified Nextflow it automatically pins runs to a supported version via `NXF_VER` (the `conda` environment below already installs a compatible one).
-3. **The bioinformatics tools** the pipeline uses. The easiest way to get all of them at once is [conda](https://docs.conda.io/projects/miniconda/en/latest/), a tool that installs a bundle of programs into a self-contained "environment" without interfering with anything else on your machine. Once conda is installed, one command sets up everything RiboPilot needs:
+3. **The bioinformatics tools** the pipeline uses, and only if you are not running in a container. The container already carries them, so with Docker or Singularity you can skip this step. **This conda route is no longer supported** (see above); it is kept for setups that already rely on it. The easiest way to get all of the tools at once is [conda](https://docs.conda.io/projects/miniconda/en/latest/), a tool that installs a bundle of programs into a self-contained "environment" without interfering with anything else on your machine. Once conda is installed, one command sets up everything RiboPilot needs:
 
 ```bash
 conda env create -f environment.yml
@@ -86,6 +100,9 @@ The best way to learn RiboPilot is to run the built-in practice project. RiboPil
 ```{r, eval = FALSE}
 RiboPilot::new_test_project(path = "~/ribopilot_test", executor = "conda")
 ```
+
+`new_test_project()` still defaults to `executor = "conda"`, which is no longer a
+supported way to run. Pass `executor = "docker"` instead.
 
 From there, the [Get started guide](https://dmacguigan.github.io/RiboPilot/articles/RiboPilot.html) walks you through assembling the samples, reviewing and cleaning them up in the app, and exporting the results.
 
