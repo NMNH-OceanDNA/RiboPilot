@@ -75,6 +75,15 @@ EXPECTED_COUNT_TOLERANCE=15000
 # from an error response) this exists to catch.
 EXPECTED_COUNT_FLOOR="${RP_MIN_ACCESSIONS:-446000}"
 
+# Fetch stage. Rounds are per chunk and each one requests only what is still
+# missing, so a response that dies at 4,900 of 5,000 records costs 100
+# accessions on the next round rather than the whole chunk. The ceiling is on
+# what is permanently unavailable across the entire build: the WGS masters are
+# already filtered by the accessions stage, so the measured expectation is 0
+# and this is a ceiling on surprises, not a budget.
+FETCH_ROUNDS=3
+MAX_UNAVAILABLE="${RP_MAX_UNAVAILABLE:-100}"
+
 REQUIRED_TOOLS="esearch efetch epost esummary xtract update_blastdb.pl makeblastdb blastdbcmd seqkit jq curl sha256sum tar zcat comm"
 ALL_STAGES="accessions taxidmap fetch build decoys package"
 MIN_FREE_GB=8
@@ -97,7 +106,7 @@ Usage: build_refdb.sh [--version V] [--build-dir D] [--stage NAME]
   --version V       Refuse to run unless R/db_dist.R's RP_DB_VERSION == V.
   --build-dir D     Build tree root (default: dev/refdb/build).
   --stage NAME      Run only one stage (accessions|taxidmap|fetch|build|decoys|package).
-  --jobs N          Parallelism for the fetch stage (default: 1).
+  --jobs N          Parallelism for the fetch stage (default: 4).
   --accept-drift    Allow the harvested count to differ from EXPECTED_COUNT.
   --force           Allow rebuilding an existing blastdb/<VER> in place.
   --check-version   Diff RP_DB_VERSION across the build's version-carrying files, then exit.
@@ -111,7 +120,10 @@ VERSION_ARG=""
 # rather than write into the developer's build directory.
 if [ "$RP_EXECUTED" -eq 1 ]; then BUILD_DIR="$SCRIPT_DIR/build"; else BUILD_DIR=""; fi
 STAGE=""
-JOBS=1
+# Four concurrent fetches take the chunk fetch from 2 h 20 m to roughly 40 min.
+# run_preflight already refuses to run without NCBI_API_KEY, so the 10 req/s
+# budget this spends against is guaranteed to exist.
+JOBS=4
 ACCEPT_DRIFT=0
 FORCE=0
 CHECK_VERSION=0
@@ -301,8 +313,12 @@ cmd_clean() {
   done
   rp_log "release tarballs verify; cleaning intermediates under $BUILD_DIR"
 
-  rm -rf "$BUILD_DIR/chunks" "$BUILD_DIR/taxidmap.tmp"
+  rm -rf "$BUILD_DIR/chunks" "$BUILD_DIR/chunks.missing" "$BUILD_DIR/chunks.tmp" \
+    "$BUILD_DIR/taxidmap.tmp"
   rm -f "$BUILD_DIR"/*.raw.fasta
+  # The resume key goes with the chunks it keys: left behind, it would tell the
+  # next fetch that a chunk dir which no longer exists was proven.
+  rm -f "$BUILD_DIR/chunks.accessions.sha256" "$BUILD_DIR/dropped.fetch.tsv"
   # Harvest-stage leftovers. accessions.txt and accessions.sha256 stay: they
   # are the fingerprint the fetch stage refuses to resume against.
   rm -f "$BUILD_DIR/accessions.raw.txt" "$BUILD_DIR/accessions.esearch.xml" \
@@ -545,6 +561,89 @@ rp_assert_coverage() {
 }
 
 # ---------------------------------------------------------------------------
+# Fetch stage helpers (dev/design/18_REFDB_REBUILD.md section 4, Fetch).
+# ---------------------------------------------------------------------------
+
+# rp_fasta_complete FILE
+# Pass through only whole records: a header, at least one non-empty sequence
+# line, and -- for the final record -- a stream that actually ended with a
+# newline. A response cut after its last header is the case every count-based
+# check waves through, and appending the next round onto its unterminated line
+# would splice two records into one.
+rp_fasta_complete() {
+  local f="$1" ended=0
+  if [ -s "$f" ] && [ "$(tail -c 1 "$f" | wc -l)" -eq 1 ]; then ended=1; fi
+  awk -v ended="$ended" '
+    /^>/ { if (n > 0) printf "%s", rec; rec = $0 "\n"; n = 0; next }
+    rec != "" { rec = rec $0 "\n"; if ($0 != "") n++ }
+    END { if (n > 0 && ended == 1) printf "%s", rec }
+  ' "$f"
+}
+
+# rp_fasta_accessions FILE...
+# The accession set a fasta actually carries, sorted and unique. efetch returns
+# a PDB record as ">pdb|28ZU|S2" for an accession the list requests as
+# "28ZU_S2", so without this normalisation the panel's 298 PDB records read as
+# 298 missing accessions and 298 unrequested ones at the same time.
+rp_fasta_accessions() {
+  sed -n -E 's/^>([^ ]+).*/\1/p' "$@" \
+    | sed -E 's/^pdb\|([^|]+)\|(.+)$/\1_\2/' \
+    | sort -u
+}
+
+# rp_fetch_chunk IDX FIRST_LINE
+# One chunk end to end, run as a background worker. Cuts its own request list
+# from the sorted, hash-pinned accession list by line range (positional cutting
+# is safe only because of that pinning), then fetches and retries ONLY what is
+# still missing. An existing chunk file seeds the accumulator, so resuming a
+# chunk that was interrupted before its missing list landed re-requests a
+# handful of accessions rather than all 5000.
+rp_fetch_chunk() {
+  local idx="$1" first="$2"
+  local tmp="$BUILD_DIR/chunks.tmp"
+  local want="$tmp/want_$idx" need="$tmp/need_$idx" got="$tmp/got_$idx"
+  local extra="$tmp/extra_$idx" resp="$tmp/resp_$idx" part="$tmp/fa_$idx.tmp"
+  local last=$((first + CHUNK_SIZE - 1)) round n_got n_missing
+
+  sed -n "${first},${last}p;$((last + 1))q" "$BUILD_DIR/accessions.txt" \
+    | sort -u > "$want"
+  if [ -f "$BUILD_DIR/chunks/fa_$idx" ]; then
+    rp_fasta_complete "$BUILD_DIR/chunks/fa_$idx" > "$part"
+  else
+    : > "$part"
+  fi
+  rp_fasta_accessions "$part" > "$got"
+  comm -23 "$want" "$got" > "$need"
+
+  for ((round = 1; round <= FETCH_ROUNDS; round++)); do
+    [ -s "$need" ] || break
+    # Never branch on efetch's exit status. It exits 0 with zero bytes and a
+    # QUERY FAILURE line on total failure, which is what made the historical
+    # repair script's `&& break` retry loop inert. Only the content decides.
+    efetch -db nuccore -input "$need" -format fasta > "$resp" || true
+    rp_fasta_complete "$resp" >> "$part"
+    rp_fasta_accessions "$part" > "$got"
+    comm -13 "$want" "$got" > "$extra"
+    [ ! -s "$extra" ] \
+      || rp_die "fetch: chunk $idx returned $(rp_line_count "$extra") record(s) that were never requested, e.g. $(head -1 "$extra")"
+    comm -23 "$want" "$got" > "$need"
+  done
+
+  n_got="$(rp_line_count "$got")"
+  n_missing="$(rp_line_count "$need")"
+  [ "$n_got" -gt 0 ] \
+    || rp_die "fetch: chunk $idx returned no usable records in $FETCH_ROUNDS round(s); an empty body with exit status 0 is exactly how efetch reports total failure"
+
+  # Both files or neither: the missing list lands first, then the chunk, each
+  # by atomic rename. A worker killed between the two leaves a chunk whose
+  # completeness resume must not assume, and re-verifying one is cheap.
+  mv "$need" "$BUILD_DIR/chunks.missing/fa_$idx.txt"
+  mv "$part" "$BUILD_DIR/chunks/fa_$idx"
+  rm -f "$want" "$got" "$extra" "$resp"
+  rp_log "fetch: chunk $idx done: $n_got record(s), $n_missing unavailable"
+}
+
+# ---------------------------------------------------------------------------
 # Stages -- not implemented yet, land in later work. Each is a hard stub so a
 # partial run cannot be mistaken for a real one.
 # ---------------------------------------------------------------------------
@@ -698,7 +797,154 @@ stage_taxidmap() {
 
   rm -rf "$tmp"
 }
-stage_fetch() { rp_die "stage 'fetch' is not implemented yet"; }
+# stage_fetch
+# The panel FASTA, 5000 accessions per chunk, JOBS chunks at a time. Resumable
+# at chunk granularity and keyed to the sha256 of the accession list, because
+# re-cutting a list that moved would positionally keep withdrawn records and
+# miss new ones without a single chunk name changing.
+stage_fetch() {
+  rp_require_build_dir
+  local acc sidecar hex recorded total n_chunks chunks missing tmp key f
+  local i idx running failed killed pids p
+  local allwant allgot notgot notwant n_unavailable n_got
+
+  acc="$BUILD_DIR/accessions.txt"
+  sidecar="$BUILD_DIR/accessions.sha256"
+  [ -f "$acc" ] || rp_die "fetch: $acc not found; run the accessions stage first"
+  [ -f "$sidecar" ] || rp_die "fetch: $sidecar not found; run the accessions stage first"
+  # Never zero chunks and a green marker: every later guard passes honestly on
+  # an empty set, and an empty panel ships.
+  total="$(rp_line_count "$acc")"
+  [ "$total" -gt 0 ] || rp_die "fetch: $acc is empty; there is nothing to fetch"
+  # Otherwise a non-numeric --jobs makes the pool's `-ge` test error rc 2,
+  # which reads as "pool not full" and launches every chunk at once.
+  [[ "$JOBS" =~ ^[1-9][0-9]*$ ]] \
+    || rp_die "fetch: --jobs must be a positive integer, got '$JOBS'"
+
+  # Recompute rather than trust the sidecar: this hash is both the resume key
+  # and the stage marker, so it has to describe the file that is about to be
+  # chunked, not what a previous stage said about it.
+  hex="$(sha256sum "$acc" | cut -d' ' -f1)"
+  recorded="$(cut -d' ' -f1 < "$sidecar")"
+  [ "$hex" = "$recorded" ] \
+    || rp_die "fetch: $acc hashes to $hex but $sidecar records $recorded; the accession list changed after the accessions stage wrote it"
+
+  if [ "$FORCE" -eq 0 ] && rp_marker_ok fetch "$hex"; then
+    rp_log "fetch: already complete for this accession list; skipping (--stage fetch --force re-runs it)"
+    return 0
+  fi
+
+  chunks="$BUILD_DIR/chunks"
+  missing="$BUILD_DIR/chunks.missing"
+  tmp="$BUILD_DIR/chunks.tmp"
+  key="$BUILD_DIR/chunks.accessions.sha256"
+
+  if [ -f "$key" ]; then
+    recorded="$(tr -d '[:space:]' < "$key")"
+    [ "$recorded" = "$hex" ] \
+      || rp_die "fetch: refusing to resume: $chunks was cut from an accession list hashing $recorded, but $acc now hashes $hex. The source moved. Remove $chunks, $missing and $key to fetch it fresh."
+  else
+    for f in "$chunks"/fa_[0-9][0-9][0-9][0-9]; do
+      [ -e "$f" ] || break
+      rp_die "fetch: refusing to resume: $chunks holds chunk(s) but $key is absent, so the accession list they were cut from cannot be proven. Remove $chunks to fetch it fresh."
+    done
+  fi
+
+  mkdir -p "$chunks" "$missing"
+  # All scratch lives here, never in $chunks: the historical build kept request
+  # lists beside the chunks, where a loose fa_* glob would have eaten them.
+  rm -rf "$tmp"
+  mkdir -p "$tmp"
+  # Written before the first chunk exists. A fetch interrupted at chunk 3 of
+  # 179 has to be resumable, and chunks with no key beside them are refused.
+  printf '%s\n' "$hex" > "$key"
+
+  n_chunks=$(( (total + CHUNK_SIZE - 1) / CHUNK_SIZE ))
+  rp_log "fetch: $total accession(s) in $n_chunks chunk(s) of $CHUNK_SIZE, $JOBS job(s)"
+
+  running=0
+  failed=0
+  killed=0
+  pids=""
+  # Job control so each worker leads its own process group: an abort can then
+  # take a worker's efetch child down with it. An orphan still holding the
+  # scrubbed stderr open makes rp_scrub_flush's wait at exit block forever, so
+  # the script would hang instead of failing.
+  set -m
+  for ((i = 0; i < n_chunks; i++)); do
+    [ "$failed" -eq 0 ] || break
+    idx="$(printf '%04d' "$i")"
+    # Complete means BOTH files. A chunk without its missing list was written
+    # by a worker that did not live to publish the other half.
+    if [ -f "$chunks/fa_$idx" ] && [ -f "$missing/fa_$idx.txt" ]; then
+      continue
+    fi
+    if [ "$running" -ge "$JOBS" ]; then
+      wait -n || failed=1
+      running=$((running - 1))
+    fi
+    rp_fetch_chunk "$idx" $((i * CHUNK_SIZE + 1)) &
+    pids="$pids $!"
+    running=$((running + 1))
+  done
+  # Reap before dying, and kill first so a doomed run does not sit through the
+  # rest of an in-flight chunk. Job control above gave each worker its own
+  # process group, so this takes its efetch child down too: an orphan still
+  # holding the scrubbed stderr open makes rp_scrub_flush's wait at exit block
+  # forever, and the script hangs instead of failing.
+  while [ "$running" -gt 0 ]; do
+    if [ "$failed" -ne 0 ] && [ "$killed" -eq 0 ]; then
+      killed=1
+      for p in $pids; do kill -- "-$p" 2>/dev/null || true; done
+    fi
+    wait -n || failed=1
+    running=$((running - 1))
+  done
+  set +m
+  [ "$failed" -eq 0 ] || rp_die "fetch: chunk worker(s) failed; see the errors above"
+
+  allwant="$tmp/want.all"
+  allgot="$tmp/got.all"
+  notgot="$tmp/want_not_got.all"
+  notwant="$tmp/got_not_want.all"
+  sort -u "$acc" > "$allwant"
+  # The strict glob, so a stray file in the chunk dir cannot join the panel.
+  rp_fasta_accessions "$chunks"/fa_[0-9][0-9][0-9][0-9] > "$allgot"
+  comm -23 "$allwant" "$allgot" > "$notgot"
+  comm -13 "$allwant" "$allgot" > "$notwant"
+
+  # The reverse reconcile, which the historical build never computed: a shrunk
+  # accession list re-cut positionally shipped 12 withdrawn records in
+  # simulation. Measured over the real 179-chunk build this is exactly 0 once
+  # the PDB headers are normalised, so it gets no tolerance at all.
+  [ ! -s "$notwant" ] \
+    || rp_die "fetch: $(rp_line_count "$notwant") record(s) under $chunks were never requested, e.g. $(head -1 "$notwant")"
+
+  # The per-chunk missing lists have to describe the chunks that are on disk
+  # now, not the ones a previous run published. Resume trusts a chunk that has
+  # both its files, and the dropped ledger is built from these lists, so a
+  # chunk that changed underneath us would otherwise ship a panel whose funnel
+  # silently does not add up.
+  sort "$missing"/fa_[0-9][0-9][0-9][0-9].txt > "$tmp/missing.all"
+  comm -3 "$notgot" "$tmp/missing.all" > "$tmp/missing.disagree"
+  [ ! -s "$tmp/missing.disagree" ] \
+    || rp_die "fetch: the chunk missing lists record $(rp_line_count "$tmp/missing.all") unavailable accession(s) but $(rp_line_count "$notgot") are actually absent from $chunks; a published chunk changed. Remove $chunks and $missing and fetch again."
+
+  n_unavailable="$(rp_line_count "$notgot")"
+  [ "$n_unavailable" -le "$MAX_UNAVAILABLE" ] \
+    || rp_die "fetch: $n_unavailable accession(s) unavailable after $FETCH_ROUNDS round(s) per chunk, above the ceiling of $MAX_UNAVAILABLE; e.g. $(head -1 "$notgot")"
+
+  # Rewritten wholesale from chunks.missing/ every run. Each stage owns its own
+  # dropped-record file and the build stage merges them, so appending to a
+  # shared dropped.tsv would let one stage's rewrite discard another's rows.
+  awk -v OFS='\t' '{print $1, "efetch_unavailable", ""}' \
+    "$missing"/fa_[0-9][0-9][0-9][0-9].txt > "$BUILD_DIR/dropped.fetch.tsv"
+
+  n_got="$(rp_line_count "$allgot")"
+  rp_marker_set fetch "$hex"
+  rp_log "fetch: $n_got record(s) in $n_chunks chunk(s) of $total requested, $n_unavailable permanently unavailable"
+  rm -rf "$tmp"
+}
 stage_build() { rp_die "stage 'build' is not implemented yet"; }
 stage_decoys() { rp_die "stage 'decoys' is not implemented yet"; }
 stage_package() { rp_die "stage 'package' is not implemented yet"; }

@@ -1043,3 +1043,490 @@ test_that("taxidmap stage refuses to run before the accessions stage has produce
   expect_gt(if (is.null(st)) 0L else as.integer(st), 0L)
   expect_true(any(grepl("run the accessions stage first", out, fixed = TRUE)))
 })
+
+# --- fetch stage -------------------------------------------------------------
+
+# One efetch stub, several behaviours chosen by a mode file beside it, because
+# the whole job of this stage is telling a complete response apart from a
+# truncated one and from the exit-0 empty body efetch returns on total failure.
+# Every request is logged so a test can prove a retry asked only for what was
+# still missing.
+write_fetch_stubs <- function(bindir, mode = "complete") {
+  dir.create(bindir, showWarnings = FALSE, recursive = TRUE)
+  write_stub <- function(name, body) {
+    p <- file.path(bindir, name)
+    writeLines(c("#!/usr/bin/env bash", "set -eu", body), p)
+    Sys.chmod(p, "0755")
+  }
+  write_stub("efetch", c(
+    'self_dir="$(cd "$(dirname "$0")" && pwd)"',
+    'inp=""',
+    'while [ $# -gt 0 ]; do case "$1" in -input) inp="$2"; shift 2 ;; *) shift ;; esac; done',
+    '[ -n "$inp" ] || { echo "stub efetch: called without -input FILE" >&2; exit 1; }',
+    'mode="$(cat "$self_dir/efetch_mode.txt")"',
+    'paste -sd, "$inp" >> "$self_dir/efetch_requests.log"',
+    'calls="$(wc -l < "$self_dir/efetch_requests.log")"',
+    'total="$(wc -l < "$inp")"',
+    'case "$mode" in',
+    # total failure: exit status 0 either way, which is the whole point
+    '  empty) exit 0 ;;',
+    '  queryfailure) echo "QUERY FAILURE"; exit 0 ;;',
+    # one chunk dies instantly, the rest hang: an abort that reaps its workers
+    # finishes in about a second, one that waits them out takes 20
+    '  failfast) if grep -qx "AA000000.1" "$inp"; then exit 0; fi; sleep 20 ;;',
+    'esac',
+    'i=0',
+    'while read -r a; do',
+    '  i=$((i + 1))',
+    '  if [ "$i" -eq "$total" ]; then',
+    '    case "$mode" in',
+    # the stream dies mid-sequence: header, partial sequence, no trailing newline
+    '      cutseq) printf ">%s some description\\nACGTACG" "$a"; exit 0 ;;',
+    # the stream dies immediately after the last header
+    '      cuthdr) printf ">%s some description\\n" "$a"; exit 0 ;;',
+    # the first call stops one record short, at a clean record boundary
+    '      shortfirst) [ "$calls" -ne 1 ] || exit 0 ;;',
+    '    esac',
+    '  fi',
+    # a record in the middle of the response whose sequence never came
+    '  if [ "$mode" = "emptyseq" ] && [ "$i" -eq 2 ] && [ "$total" -gt 2 ]; then',
+    '    printf ">%s some description\\n" "$a"',
+    '    continue',
+    '  fi',
+    '  if [ "$mode" = "unrequested" ] && [ "$i" -eq 1 ]; then',
+    '    printf ">XX999999.9 never asked for\\nACGTACGTACGTACGT\\n"',
+    '  fi',
+    '  case "$a" in',
+    # efetch returns PDB records in pipe form, whatever form they were asked in
+    '    *_*) printf ">pdb|%s|%s Chain %s, 18S ribosomal RNA\\n" "${a%%_*}" "${a#*_}" "${a#*_}" ;;',
+    '    *) printf ">%s some description\\n" "$a" ;;',
+    '  esac',
+    '  printf "ACGTACGTACGTACGT\\n"',
+    'done < "$inp"'
+  ))
+  for (noop in c("esearch", "epost", "esummary", "xtract", "update_blastdb.pl",
+                 "makeblastdb", "blastdbcmd", "seqkit")) {
+    write_stub(noop, "exit 0")
+  }
+  writeLines(mode, file.path(bindir, "efetch_mode.txt"))
+  file.create(file.path(bindir, "efetch_requests.log"))
+  bindir
+}
+
+# A build dir holding exactly what the accessions stage leaves behind: the
+# sorted list and its sha256 sidecar, in sha256sum's own format.
+make_fetch_build <- function(accessions, mode = "complete", .envir = parent.frame()) {
+  build <- withr::local_tempdir(.local_envir = .envir)
+  write_fetch_stubs(file.path(build, "stubbin"), mode)
+  writeLines(sort(accessions, method = "radix"), file.path(build, "accessions.txt"))
+  system2("bash", c("-c", shQuote(sprintf(
+    "cd %s && sha256sum accessions.txt > accessions.sha256", shQuote(build)))))
+  build
+}
+
+fetch_requests <- function(build) {
+  readLines(file.path(build, "stubbin", "efetch_requests.log"), warn = FALSE)
+}
+
+fetch_env <- function(build, extra = character(0)) {
+  c(paste0("PATH=", file.path(build, "stubbin"), ":", Sys.getenv("PATH")),
+    "NCBI_API_KEY=test-key-not-real", extra)
+}
+
+# Every fetch run is bounded: a stage that hangs instead of failing is the
+# defect the worker reaping exists to prevent, and it must not wedge the suite.
+run_fetch_cli <- function(build, extra_args = character(0), env_extra = character(0)) {
+  skip_if_not(file.exists(refdb_sh))
+  skip_if(Sys.which("bash") == "" || Sys.which("timeout") == "")
+  out <- suppressWarnings(system2("timeout", c("120", "bash", shQuote(refdb_sh),
+    "--build-dir", shQuote(build), "--stage", "fetch", extra_args),
+    stdout = TRUE, stderr = TRUE, env = fetch_env(build, env_extra)))
+  st <- attr(out, "status")
+  list(status = if (is.null(st)) 0L else as.integer(st), out = out, build = build)
+}
+
+# Drives stage_fetch directly, which is the only way to use a chunk size other
+# than the production 5000. Sourcing leaves BUILD_DIR and RP_STATE_FILE empty,
+# so the driver sets both.
+run_fetch_sourced <- function(build, chunk_size = 5L, jobs = 2L, force = 0L,
+                              env_extra = character(0)) {
+  skip_if_not(file.exists(refdb_sh))
+  skip_if(Sys.which("bash") == "" || Sys.which("timeout") == "")
+  driver <- file.path(build, "drive_fetch.sh")
+  writeLines(c(
+    "set -uo pipefail",
+    'refdb="$1"; b="$2"',
+    "shift 2",
+    "set --",
+    'source "$refdb"',
+    "set +Ee",
+    "trap - ERR",
+    'BUILD_DIR="$b"',
+    'RP_STATE_FILE="$BUILD_DIR/state.txt"',
+    sprintf("CHUNK_SIZE=%d", chunk_size),
+    sprintf("JOBS=%d", jobs),
+    sprintf("FORCE=%d", force),
+    "stage_fetch",
+    'echo "RC=$?"'
+  ), driver)
+  out <- suppressWarnings(system2("timeout", c("120", "bash", shQuote(driver),
+    shQuote(normalizePath(refdb_sh)), shQuote(build)),
+    stdout = TRUE, stderr = TRUE, env = fetch_env(build, env_extra)))
+  st <- attr(out, "status")
+  list(status = if (is.null(st)) 0L else as.integer(st), out = out, build = build)
+}
+
+test_that("build_refdb.sh defaults --jobs to 4", {
+  skip_if_not(file.exists(refdb_sh))
+  lines <- readLines(refdb_sh, warn = FALSE)
+  expect_true(any(grepl("^JOBS=4$", lines)))
+  expect_true(any(grepl("--jobs N          Parallelism for the fetch stage (default: 4).",
+    lines, fixed = TRUE)))
+})
+
+test_that("build_refdb.sh only ever globs chunks with the strict four-digit pattern", {
+  skip_if_not(file.exists(refdb_sh))
+  lines <- grep("^[[:space:]]*#", readLines(refdb_sh, warn = FALSE),
+    value = TRUE, invert = TRUE)
+  # a loose fa_* glob eating the in-progress .tmp files is the only reason the
+  # original run did not lose 15,000 records
+  expect_false(any(grepl("fa_*", lines, fixed = TRUE)))
+  expect_true(any(grepl("fa_[0-9][0-9][0-9][0-9]", lines, fixed = TRUE)))
+})
+
+test_that("fetch stage writes chunks, an empty missing list, the resume key and its marker, and leaves nothing else in the chunk dir", {
+  build <- make_fetch_build(c("28ZU_S2", "AB000001.1", "AB000002.1", "MZ618664.1"))
+  r <- run_fetch_cli(build)
+  expect_equal(r$status, 0L, label = paste(r$out, collapse = "\n"))
+
+  expect_equal(list.files(file.path(build, "chunks")), "fa_0000")
+  expect_equal(list.files(file.path(build, "chunks.missing")), "fa_0000.txt")
+  expect_equal(length(readLines(file.path(build, "chunks.missing", "fa_0000.txt"),
+    warn = FALSE)), 0L)
+  # scratch never lives beside the chunks, and it does not survive a good run
+  expect_false(dir.exists(file.path(build, "chunks.tmp")))
+
+  fa <- readLines(file.path(build, "chunks", "fa_0000"))
+  expect_equal(sum(startsWith(fa, ">")), 4L)
+  # every record carries a sequence and the file ends with a newline
+  expect_false(any(fa == ""))
+  expect_equal(length(fa), 8L)
+
+  key <- readLines(file.path(build, "chunks.accessions.sha256"))
+  want_hash <- sub("\\s.*", "", readLines(file.path(build, "accessions.sha256"))[1])
+  expect_equal(key, want_hash)
+  state <- readLines(file.path(build, "state.txt"))
+  expect_true(any(grepl(paste0("^fetch\t", want_hash, "\t"), state)))
+
+  expect_equal(length(readLines(file.path(build, "dropped.fetch.tsv"), warn = FALSE)), 0L)
+  # each stage owns its own dropped-record file; the build stage merges them
+  expect_false(file.exists(file.path(build, "dropped.tsv")))
+})
+
+# THE REQUIRED TEST (plan step 2): a complete response, a response cut after
+# its last header, and an exit-0 empty one. The last is the case that made the
+# historical repair loop's `&& break` inert, so it is the important one.
+test_that("fetch accepts a complete response but never an exit-0 empty one or a QUERY FAILURE body", {
+  accs <- c("AB000001.1", "AB000002.1", "AB000003.1")
+  good <- run_fetch_cli(make_fetch_build(accs, "complete"))
+  expect_equal(good$status, 0L, label = paste(good$out, collapse = "\n"))
+
+  for (mode in c("empty", "queryfailure")) {
+    build <- make_fetch_build(accs, mode)
+    r <- run_fetch_cli(build)
+    expect_gt(r$status, 0L)
+    expect_true(any(grepl("returned no usable records", r$out, fixed = TRUE)), label = mode)
+    # nothing promoted, no marker, and the request was retried the full 3 rounds
+    expect_equal(list.files(file.path(build, "chunks")), character(0), label = mode)
+    expect_false(file.exists(file.path(build, "state.txt")), label = mode)
+    expect_equal(length(fetch_requests(build)), 3L, label = mode)
+  }
+})
+
+test_that("fetch never keeps a record the stream cut short, whether it lost the sequence or only the trailing newline", {
+  accs <- c("AB000001.1", "AB000002.1", "AB000003.1")
+  for (mode in c("cuthdr", "cutseq")) {
+    build <- make_fetch_build(accs, mode)
+    r <- run_fetch_cli(build)
+    expect_equal(r$status, 0L, label = paste(mode, paste(r$out, collapse = "\n")))
+    fa <- readLines(file.path(build, "chunks", "fa_0000"), warn = FALSE)
+    # a `got >= want` count check on ">" lines passes this; a set comparison
+    # over records that actually arrived complete does not
+    expect_equal(grep("^>", fa, value = TRUE),
+      c(">AB000001.1 some description", ">AB000002.1 some description"), label = mode)
+    expect_false(any(grepl("AB000003.1", fa, fixed = TRUE)), label = mode)
+    expect_equal(readLines(file.path(build, "chunks.missing", "fa_0000.txt")),
+      "AB000003.1", label = mode)
+    expect_equal(readLines(file.path(build, "dropped.fetch.tsv")),
+      "AB000003.1\tefetch_unavailable\t", label = mode)
+  }
+})
+
+test_that("fetch retries a record whose sequence never arrived, in the middle of an otherwise good response", {
+  build <- make_fetch_build(sprintf("AB%06d.1", 1:4), "emptyseq")
+  r <- run_fetch_cli(build)
+  expect_equal(r$status, 0L, label = paste(r$out, collapse = "\n"))
+  reqs <- fetch_requests(build)
+  # the header arrived, so a count of ">" lines says the record is there; only
+  # requiring a sequence with it sends the accession back round
+  expect_equal(length(reqs), 2L)
+  expect_equal(reqs[2], "AB000002.1")
+  fa <- readLines(file.path(build, "chunks", "fa_0000"))
+  expect_equal(sum(startsWith(fa, ">")), 4L)
+  expect_equal(length(fa), 8L)
+  expect_equal(length(readLines(file.path(build, "chunks.missing", "fa_0000.txt"),
+    warn = FALSE)), 0L)
+})
+
+test_that("fetch retries only the accessions that are still missing, never the whole chunk", {
+  build <- make_fetch_build(c("AB000001.1", "AB000002.1", "AB000003.1"), "shortfirst")
+  r <- run_fetch_cli(build)
+  expect_equal(r$status, 0L, label = paste(r$out, collapse = "\n"))
+  reqs <- fetch_requests(build)
+  expect_equal(length(reqs), 2L)
+  expect_equal(reqs[1], "AB000001.1,AB000002.1,AB000003.1")
+  expect_equal(reqs[2], "AB000003.1")
+  expect_equal(length(readLines(file.path(build, "chunks.missing", "fa_0000.txt"),
+    warn = FALSE)), 0L)
+})
+
+test_that("fetch pairs a pipe-form PDB header with the underscored accession that was requested", {
+  build <- make_fetch_build(c("28ZU_S2", "3J3C_2", "AB000001.1"))
+  r <- run_fetch_cli(build)
+  expect_equal(r$status, 0L, label = paste(r$out, collapse = "\n"))
+  fa <- readLines(file.path(build, "chunks", "fa_0000"))
+  expect_true(any(startsWith(fa, ">pdb|28ZU|S2 ")))
+  # unnormalised, these read as 2 missing accessions and 2 unrequested records
+  # at the same time, which is what the real 298-record panel would look like
+  expect_equal(length(readLines(file.path(build, "chunks.missing", "fa_0000.txt"),
+    warn = FALSE)), 0L)
+  expect_equal(length(readLines(file.path(build, "dropped.fetch.tsv"), warn = FALSE)), 0L)
+})
+
+test_that("fetch refuses a record it never requested rather than shipping it", {
+  build <- make_fetch_build(c("AB000001.1", "AB000002.1"), "unrequested")
+  r <- run_fetch_cli(build)
+  expect_gt(r$status, 0L)
+  expect_true(any(grepl("never requested", r$out, fixed = TRUE)))
+  expect_true(any(grepl("XX999999.9", r$out, fixed = TRUE)))
+  expect_equal(list.files(file.path(build, "chunks")), character(0))
+  expect_false(file.exists(file.path(build, "state.txt")))
+})
+
+test_that("the reverse reconcile catches an unrequested record in a chunk that resume would otherwise trust", {
+  build <- make_fetch_build(c("AB000001.1", "AB000002.1"))
+  expect_equal(run_fetch_cli(build)$status, 0L)
+  cat(">XX999999.9 never asked for\nACGTACGTACGTACGT\n",
+    file = file.path(build, "chunks", "fa_0000"), append = TRUE)
+  file.remove(file.path(build, "state.txt"))
+  r <- run_fetch_cli(build)
+  expect_gt(r$status, 0L)
+  expect_true(any(grepl("were never requested", r$out, fixed = TRUE)))
+  expect_true(any(grepl("XX999999.9", r$out, fixed = TRUE)))
+  # the chunk had both its files, so no worker ran and no per-chunk check
+  # could have seen this: only reconciling the whole build against the
+  # accession list does
+  expect_equal(length(fetch_requests(build)), 1L)
+})
+
+test_that("fetch never publishes a chunk before the missing list that goes with it", {
+  build <- make_fetch_build(c("AB000001.1", "AB000002.1"))
+  missdir <- file.path(build, "chunks.missing")
+  dir.create(missdir)
+  Sys.chmod(missdir, "0500")
+  on.exit(Sys.chmod(missdir, "0700"), add = TRUE)
+  canary <- file.path(missdir, "canary")
+  if (suppressWarnings(file.create(canary))) {
+    file.remove(canary)
+    skip("cannot make a directory unwritable here")
+  }
+  # the missing list cannot land, so the chunk must not either: a chunk on its
+  # own is a chunk resume would call complete with no record of what it lacks
+  r <- run_fetch_cli(build)
+  expect_gt(r$status, 0L)
+  expect_equal(list.files(file.path(build, "chunks")), character(0))
+  expect_false(file.exists(file.path(build, "state.txt")))
+})
+
+test_that("fetch refuses a non-numeric --jobs rather than launching every chunk at once", {
+  build <- make_fetch_build(c("AB000001.1", "AB000002.1"))
+  r <- run_fetch_cli(build, extra_args = c("--jobs", "abc"))
+  expect_gt(r$status, 0L)
+  expect_true(any(grepl("--jobs must be a positive integer", r$out, fixed = TRUE)))
+  expect_false(dir.exists(file.path(build, "chunks")))
+})
+
+test_that("fetch aborts above the permanently-unavailable ceiling and accepts below it", {
+  accs <- c("AB000001.1", "AB000002.1", "AB000003.1")
+  build <- make_fetch_build(accs, "cuthdr")
+  r <- run_fetch_cli(build, env_extra = "RP_MAX_UNAVAILABLE=0")
+  expect_gt(r$status, 0L)
+  expect_true(any(grepl("above the ceiling of 0", r$out, fixed = TRUE)))
+  expect_true(any(grepl("AB000003.1", r$out, fixed = TRUE)))
+  expect_false(file.exists(file.path(build, "state.txt")))
+  expect_false(file.exists(file.path(build, "dropped.fetch.tsv")))
+
+  ok <- make_fetch_build(accs, "cuthdr")
+  r2 <- run_fetch_cli(ok, env_extra = "RP_MAX_UNAVAILABLE=1")
+  expect_equal(r2$status, 0L, label = paste(r2$out, collapse = "\n"))
+})
+
+test_that("fetch skips a completed stage on its marker, and --force re-verifies without refetching", {
+  build <- make_fetch_build(c("AB000001.1", "AB000002.1"))
+  first <- run_fetch_cli(build)
+  expect_equal(first$status, 0L, label = paste(first$out, collapse = "\n"))
+  expect_equal(length(fetch_requests(build)), 1L)
+
+  again <- run_fetch_cli(build)
+  expect_equal(again$status, 0L)
+  expect_true(any(grepl("already complete", again$out, fixed = TRUE)))
+  expect_equal(length(fetch_requests(build)), 1L)
+
+  # --force re-runs the stage, but a chunk with both its files is still
+  # complete, so the 2 h 20 m of work is not repeated
+  forced <- run_fetch_cli(build, extra_args = "--force")
+  expect_equal(forced$status, 0L, label = paste(forced$out, collapse = "\n"))
+  expect_equal(length(fetch_requests(build)), 1L)
+})
+
+test_that("fetch resumes the chunks it has and re-requests only what a killed worker left behind", {
+  accs <- sprintf("AB%06d.1", 1:20)
+  build <- make_fetch_build(accs)
+  r <- run_fetch_sourced(build, chunk_size = 5L, jobs = 2L)
+  expect_equal(r$status, 0L, label = paste(r$out, collapse = "\n"))
+  expect_equal(list.files(file.path(build, "chunks")),
+    c("fa_0000", "fa_0001", "fa_0002", "fa_0003"))
+  expect_equal(length(fetch_requests(build)), 4L)
+
+  # a worker killed between the two publish steps: the chunk is there, its
+  # missing list is not, so resume must not trust it -- but re-verifying it
+  # against the chunk already on disk costs no efetch call at all
+  file.remove(file.path(build, "chunks.missing", "fa_0002.txt"))
+  file.remove(file.path(build, "state.txt"))
+  r2 <- run_fetch_sourced(build, chunk_size = 5L, jobs = 2L)
+  expect_equal(r2$status, 0L, label = paste(r2$out, collapse = "\n"))
+  expect_equal(length(fetch_requests(build)), 4L)
+  expect_true(file.exists(file.path(build, "chunks.missing", "fa_0002.txt")))
+
+  # a chunk that has both its files is complete as far as resume is concerned,
+  # so a chunk damaged after it was published has to be caught by the final
+  # reconcile instead -- silently shipping 3 fewer records, with a dropped
+  # ledger that does not mention them, is the failure this forbids
+  writeLines(readLines(file.path(build, "chunks", "fa_0003"))[1:4],
+    file.path(build, "chunks", "fa_0003"))
+  file.remove(file.path(build, "state.txt"))
+  r3 <- run_fetch_sourced(build, chunk_size = 5L, jobs = 2L)
+  expect_gt(r3$status, 0L)
+  expect_true(any(grepl("a published chunk changed", r3$out, fixed = TRUE)))
+  expect_true(any(grepl("record 0 unavailable accession(s) but 3 are actually absent",
+    r3$out, fixed = TRUE)))
+  expect_false(file.exists(file.path(build, "state.txt")))
+})
+
+test_that("fetch refuses to resume against a moved accession list, or chunks whose provenance is unprovable", {
+  build <- make_fetch_build(c("AB000001.1", "AB000002.1"))
+  expect_equal(run_fetch_cli(build)$status, 0L)
+
+  # the source moved: the same positional cut of a changed list silently keeps
+  # withdrawn records and misses new ones, and pairing chunks by name cannot
+  # see it, so the hash is the only honest answer
+  writeLines(c("AB000001.1", "AB000002.1", "AB000003.1"), file.path(build, "accessions.txt"))
+  system2("bash", c("-c", shQuote(sprintf(
+    "cd %s && sha256sum accessions.txt > accessions.sha256", shQuote(build)))))
+  moved <- run_fetch_cli(build)
+  expect_gt(moved$status, 0L)
+  expect_true(any(grepl("refusing to resume", moved$out, fixed = TRUE)))
+  expect_true(any(grepl("The source moved", moved$out, fixed = TRUE)))
+
+  file.remove(file.path(build, "chunks.accessions.sha256"))
+  orphan <- run_fetch_cli(build)
+  expect_gt(orphan$status, 0L)
+  expect_true(any(grepl("cannot be proven", orphan$out, fixed = TRUE)))
+})
+
+test_that("fetch recomputes the accession hash rather than trusting the sidecar", {
+  build <- make_fetch_build(c("AB000001.1", "AB000002.1"))
+  writeLines("0000000000000000000000000000000000000000000000000000000000000000  accessions.txt",
+    file.path(build, "accessions.sha256"))
+  r <- run_fetch_cli(build)
+  expect_gt(r$status, 0L)
+  expect_true(any(grepl("changed after the accessions stage wrote it", r$out, fixed = TRUE)))
+  expect_false(dir.exists(file.path(build, "chunks")))
+})
+
+test_that("fetch treats an empty or absent accession list as a hard error, not as zero chunks", {
+  build <- make_fetch_build(c("AB000001.1"))
+  writeLines(character(0), file.path(build, "accessions.txt"))
+  system2("bash", c("-c", shQuote(sprintf(
+    "cd %s && sha256sum accessions.txt > accessions.sha256", shQuote(build)))))
+  r <- run_fetch_cli(build)
+  expect_gt(r$status, 0L)
+  expect_true(any(grepl("is empty; there is nothing to fetch", r$out, fixed = TRUE)))
+  expect_false(file.exists(file.path(build, "state.txt")))
+  expect_false(dir.exists(file.path(build, "chunks")))
+
+  build2 <- make_fetch_build(c("AB000001.1"))
+  file.remove(file.path(build2, "accessions.txt"))
+  r2 <- run_fetch_cli(build2)
+  expect_gt(r2$status, 0L)
+  expect_true(any(grepl("run the accessions stage first", r2$out, fixed = TRUE)))
+})
+
+test_that("fetch cuts an exact multiple of the chunk size into no empty trailing chunk", {
+  build <- make_fetch_build(sprintf("AB%06d.1", 1:10))
+  r <- run_fetch_sourced(build, chunk_size = 5L, jobs = 1L)
+  expect_equal(r$status, 0L, label = paste(r$out, collapse = "\n"))
+  expect_equal(list.files(file.path(build, "chunks")), c("fa_0000", "fa_0001"))
+  expect_equal(vapply(fetch_requests(build),
+    function(x) length(strsplit(x, ",", fixed = TRUE)[[1]]), integer(1),
+    USE.NAMES = FALSE), c(5L, 5L))
+
+  # and the production chunk size really is the one the stage cuts on
+  big <- make_fetch_build(sprintf("AB%06d.1", 1:5000))
+  rb <- run_fetch_cli(big)
+  expect_equal(rb$status, 0L, label = paste(utils::tail(rb$out, 5), collapse = "\n"))
+  expect_equal(list.files(file.path(big, "chunks")), "fa_0000")
+  expect_equal(sum(startsWith(readLines(file.path(big, "chunks", "fa_0000")), ">")), 5000L)
+})
+
+test_that("four concurrent jobs finish the build, and an abort reaps the workers instead of hanging", {
+  build <- make_fetch_build(sprintf("AB%06d.1", 1:20))
+  r <- run_fetch_sourced(build, chunk_size = 5L, jobs = 4L)
+  expect_equal(r$status, 0L, label = paste(r$out, collapse = "\n"))
+  expect_equal(list.files(file.path(build, "chunks")),
+    c("fa_0000", "fa_0001", "fa_0002", "fa_0003"))
+  expect_equal(length(fetch_requests(build)), 4L)
+
+  # one chunk fails at once while the other three sit in a 20s efetch. Killing
+  # the worker process groups gets out in about a second; waiting them out
+  # would take 20, and an orphan holding the scrubbed stderr open would hang
+  # at exit forever.
+  slow <- make_fetch_build(c("AA000000.1", sprintf("AB%06d.1", 1:19)), "failfast")
+  elapsed <- system.time(rs <- run_fetch_sourced(slow, chunk_size = 5L, jobs = 4L))[["elapsed"]]
+  expect_gt(rs$status, 0L)
+  expect_true(any(grepl("chunk worker(s) failed", rs$out, fixed = TRUE)))
+  expect_lt(elapsed, 15)
+})
+
+test_that("clean sweeps every fetch artifact and clears the fetch marker", {
+  skip_if_not(file.exists(refdb_sh))
+  skip_if(Sys.which("bash") == "")
+  ver <- rp_db_version()
+  build <- make_build_tree(ver, "good")
+  dir.create(file.path(build, "chunks.missing"))
+  dir.create(file.path(build, "chunks.tmp"))
+  writeLines("x", file.path(build, "chunks.missing", "fa_0001.txt"))
+  writeLines("x", file.path(build, "chunks.tmp", "fa_0001.tmp"))
+  writeLines("deadbeef", file.path(build, "chunks.accessions.sha256"))
+  writeLines("x", file.path(build, "dropped.fetch.tsv"))
+  r <- run_refdb("--build-dir", shQuote(build), "clean")
+  expect_equal(r$status, 0L)
+  for (p in c("chunks", "chunks.missing", "chunks.tmp")) {
+    expect_false(dir.exists(file.path(build, p)), label = p)
+  }
+  for (p in c("chunks.accessions.sha256", "dropped.fetch.tsv")) {
+    expect_false(file.exists(file.path(build, p)), label = p)
+  }
+  stages <- sub("\t.*", "", readLines(file.path(build, "state.txt"), warn = FALSE))
+  expect_false("fetch" %in% stages)
+})
