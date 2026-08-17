@@ -1388,8 +1388,62 @@ stage_build() {
   rp_log "build: $n_kept record(s), $n_taxids taxid(s), $sum_len base(s), $unpacked shipped byte(s) in $OUT_DIR"
   rm -rf "$tmp"
 }
-stage_decoys() { rp_die "stage 'decoys' is not implemented yet"; }
-stage_package() { rp_die "stage 'package' is not implemented yet"; }
+# stage_decoys
+# The NCBI decoys are fetched into the panel directory itself, because
+# local_blast_db_arg() (R/blast_local.R) defaults the decoy directory to the
+# panel's own directory. fetch_decoys.sh owns the fetch, the post-fetch
+# verification and the version capture; this stage only points it at $OUT_DIR.
+#
+# Deliberately not marker-gated: the decoys are a ~291 MB idempotent download
+# that update_blastdb.pl skips when it is already current, and re-running the
+# verification against the volumes on disk is the point of the stage.
+stage_decoys() {
+  rp_require_build_dir
+  local v
+  for v in VER OUT_DIR; do
+    [ -n "${!v:-}" ] \
+      || rp_die "decoys: $v is not set; run this script rather than sourcing it"
+  done
+  [ -d "$OUT_DIR" ] || rp_die "decoys: $OUT_DIR not found; run the build stage first"
+
+  rp_log "decoys: fetching and verifying $DECOY_DBS in $OUT_DIR"
+  bash "$SCRIPT_DIR/fetch_decoys.sh" "$OUT_DIR" >&2 \
+    || rp_die "decoys: fetch_decoys.sh failed; see the errors above"
+  # The marker records what landed, not what was asked for: DECOY_VERSION.txt
+  # is written only after every volume, taxonomy file and blastdbcmd -info
+  # check has passed.
+  rp_marker_set decoys "$(sha256sum "$OUT_DIR/DECOY_VERSION.txt" | cut -d' ' -f1)"
+  rp_log "decoys: verified, versions recorded in $OUT_DIR/DECOY_VERSION.txt"
+}
+
+# stage_package
+# Stages the two release tarballs and their checksums. --publish is never
+# passed: publishing is manual by spec section 7, so this stage stops at
+# staged assets.
+stage_package() {
+  rp_require_build_dir
+  local v rel f
+  for v in VER OUT_DIR; do
+    [ -n "${!v:-}" ] \
+      || rp_die "package: $v is not set; run this script rather than sourcing it"
+  done
+  [ -d "$OUT_DIR" ] || rp_die "package: $OUT_DIR not found; run the build stage first"
+
+  rel="$BUILD_DIR/blastdb/release-$VER"
+  bash "$SCRIPT_DIR/package_release.sh" "$OUT_DIR" "$VER" >&2 \
+    || rp_die "package: package_release.sh failed; see the errors above"
+
+  # Named rather than left to the marker's own read below, so a missing asset
+  # aborts with the asset's name instead of a bare unexpected-error. The
+  # tarballs are not re-verified here: clean checksums them again before it
+  # deletes anything on their strength, which is where that check belongs.
+  for f in "ribopilot_rrna-$VER.tar.gz" "decoys-$VER.tar.gz"; do
+    [ -f "$rel/$f" ] || rp_die "package: $rel/$f was not produced"
+    [ -f "$rel/$f.sha256" ] || rp_die "package: $rel/$f.sha256 was not produced"
+  done
+  rp_marker_set package "$(cut -d' ' -f1 < "$rel/ribopilot_rrna-$VER.tar.gz.sha256")"
+  rp_log "package: release assets staged in $rel (publish manually with package_release.sh --publish)"
+}
 
 run_stage() {
   case "$1" in

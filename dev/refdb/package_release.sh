@@ -11,12 +11,32 @@ SRC="${1:?usage: package_release.sh <panel_dir> <version> [--publish]}"
 VER="${2:?usage: package_release.sh <panel_dir> <version> [--publish]}"
 PUBLISH="${3:-}"
 [ -d "$SRC" ] || { echo "no such panel directory: $SRC" >&2; exit 1; }
+command -v jq >/dev/null || { echo "jq not on PATH" >&2; exit 1; }
 # Absolute, because the script cd's into SRC before writing anything
 OUT="$(cd "${SRC%/}/.." && pwd)/release-${VER}"
 REPO="dmacguigan/RiboPilot"
 
-mkdir -p "$OUT"
 cd "$SRC"
+
+# The version has to be the same string in all three places or the release is
+# internally inconsistent: discover_panel() reads the directory basename, the
+# installer reads the tarball name, and the app reads manifest.json.
+BASENAME="${PWD##*/}"
+[ "$BASENAME" = "$VER" ] \
+  || { echo "$SRC is named '$BASENAME', not '$VER'; packaging it would ship a tarball whose name disagrees with the panel it holds" >&2; exit 1; }
+[ -f manifest.json ] || { echo "no manifest.json in $SRC" >&2; exit 1; }
+MANIFEST_VER="$(jq -r '.db_version // empty' manifest.json)"
+[ "$MANIFEST_VER" = "$VER" ] \
+  || { echo "manifest.json db_version is '$MANIFEST_VER', not '$VER'" >&2; exit 1; }
+
+# update_blastdb.pl leaves nothing behind on a clean run, so a decoy archive
+# still sitting here means a fetch was interrupted mid-decompress; the decoy
+# glob below would then pack a 72 MB tarball inside the release tarball.
+for f in *.tar.gz; do
+  [ -e "$f" ] || break
+  echo "$SRC still holds $f; the decoy fetch did not finish, re-run fetch_decoys.sh" >&2
+  exit 1
+done
 
 PANEL_FILES="manifest.json"
 for e in ndb nhr nin njs nog nos not nsq ntf nto; do
@@ -31,23 +51,29 @@ for e in nin nsq nhr ndb; do
 done
 
 echo "packaging panel ..."
+# Only once every refusal above is past: an empty release-<VER> left by a
+# refused run is a version-carrying directory --check-version then reports.
+mkdir -p "$OUT"
 tar -czf "$OUT/ribopilot_rrna-${VER}.tar.gz" $PANEL_FILES
 
 DECOYS=""
-HAVE_TAXDB=""
-for n in 16S_ribosomal_RNA SSU_eukaryote_rRNA LSU_eukaryote_rRNA taxdb; do
+for n in 16S_ribosomal_RNA SSU_eukaryote_rRNA LSU_eukaryote_rRNA; do
   for f in "$n".*; do
-    if [ -e "$f" ]; then
-      DECOYS="$DECOYS $f"
-      if [ "$n" = taxdb ]; then HAVE_TAXDB=1; fi
-    fi
+    if [ -e "$f" ]; then DECOYS="$DECOYS $f"; fi
   done
 done
 # install_ribopilot_db() fetches the decoys by default, so a panel-only release
 # 404s for every default install after the panel has already been downloaded.
 [ -n "$DECOYS" ] || { echo "no decoy databases in $SRC; run fetch_decoys.sh first" >&2; exit 1; }
-[ -n "$HAVE_TAXDB" ] || {
-  echo "no taxdb in $SRC; staxids would stop resolving, run fetch_decoys.sh" >&2; exit 1; }
+
+# Named one by one, never a taxdb.* glob: taxonomy4blast.sqlite3 does not match
+# that glob, so it was silently left out of every release, and without it
+# -taxids returns unfiltered rows and blastn still exits 0.
+for f in taxdb.btd taxdb.bti taxonomy4blast.sqlite3 DECOY_VERSION.txt; do
+  [ -f "$f" ] \
+    || { echo "no $f in $SRC; run fetch_decoys.sh" >&2; exit 1; }
+  DECOYS="$DECOYS $f"
+done
 
 echo "packaging decoys ..."
 tar -czf "$OUT/decoys-${VER}.tar.gz" $DECOYS
