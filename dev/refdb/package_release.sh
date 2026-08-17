@@ -29,9 +29,9 @@ MANIFEST_VER="$(jq -r '.db_version // empty' manifest.json)"
 [ "$MANIFEST_VER" = "$VER" ] \
   || { echo "manifest.json db_version is '$MANIFEST_VER', not '$VER'" >&2; exit 1; }
 
-# update_blastdb.pl leaves nothing behind on a clean run, so a decoy archive
-# still sitting here means a fetch was interrupted mid-decompress; the decoy
-# glob below would then pack a 72 MB tarball inside the release tarball.
+# update_blastdb.pl keeps the .tar.gz.md5 markers but never the archive itself,
+# so a decoy archive still sitting here means a fetch was interrupted
+# mid-decompress; packaging it would put a 72 MB tarball inside a tarball.
 for f in *.tar.gz; do
   [ -e "$f" ] || break
   echo "$SRC still holds $f; the decoy fetch did not finish, re-run fetch_decoys.sh" >&2
@@ -50,15 +50,14 @@ for e in nin nsq nhr ndb; do
     echo "no ribopilot_rrna.$e in $SRC; the panel is incomplete, rebuild it" >&2; exit 1; }
 done
 
-echo "packaging panel ..."
-# Only once every refusal above is past: an empty release-<VER> left by a
-# refused run is a version-carrying directory --check-version then reports.
-mkdir -p "$OUT"
-tar -czf "$OUT/ribopilot_rrna-${VER}.tar.gz" $PANEL_FILES
-
 DECOYS=""
+# .n* rather than .*: every nucleotide volume extension begins with n, while
+# update_blastdb.pl deliberately preserves a <db>.tar.gz.md5 beside them as the
+# cache key for its next run. Shipping that marker would plant a stale key in
+# every user's decoy directory, and this task's whole premise is that the marker
+# is never evidence.
 for n in 16S_ribosomal_RNA SSU_eukaryote_rRNA LSU_eukaryote_rRNA; do
-  for f in "$n".*; do
+  for f in "$n".n*; do
     if [ -e "$f" ]; then DECOYS="$DECOYS $f"; fi
   done
 done
@@ -75,6 +74,12 @@ for f in taxdb.btd taxdb.bti taxonomy4blast.sqlite3 DECOY_VERSION.txt; do
   DECOYS="$DECOYS $f"
 done
 
+# Only once every refusal above is past: a refused run must leave nothing
+# behind, neither a lone panel tarball with no checksum nor an empty
+# release-<VER>, which is a version-carrying directory --check-version reports.
+mkdir -p "$OUT"
+echo "packaging panel ..."
+tar -czf "$OUT/ribopilot_rrna-${VER}.tar.gz" $PANEL_FILES
 echo "packaging decoys ..."
 tar -czf "$OUT/decoys-${VER}.tar.gz" $DECOYS
 

@@ -453,9 +453,19 @@ run_preflight() {
   VER="$ver"
 
   OUT_DIR="$BUILD_DIR/blastdb/$VER"
-  if [ -d "$OUT_DIR" ] && [ "$FORCE" -ne 1 ]; then
-    rp_die "$OUT_DIR already exists; pass --force to rebuild it in place"
-  fi
+  # The decoys and package stages read the built panel and write beside it;
+  # neither rebuilds it, and both are idempotent by spec. Applying the overwrite
+  # refusal to them would make their normal case -- re-fetch or re-package a
+  # panel that is already built -- reachable only by passing a flag that means
+  # "rebuild the panel in place", which is not what the operator wants to say.
+  case "$STAGE" in
+    decoys | package) ;;
+    *)
+      if [ -d "$OUT_DIR" ] && [ "$FORCE" -ne 1 ]; then
+        rp_die "$OUT_DIR already exists; pass --force to rebuild it in place"
+      fi
+      ;;
+  esac
 }
 
 # ---------------------------------------------------------------------------

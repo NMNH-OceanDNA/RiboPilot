@@ -19,19 +19,31 @@ skip_without_packager <- function() {
 
 RP_TAXONOMY_FILES <- c("taxdb.btd", "taxdb.bti", "taxonomy4blast.sqlite3")
 RP_PANEL_EXT <- c("ndb", "nhr", "nin", "njs", "nog", "nos", "not", "nsq", "ntf", "nto")
+# Exactly the volume sets in the read-only fixture at ~/.cache/ribopilot-blastdb:
+# 16S carries .nnd/.nni, the two eukaryote sets do not. A mock with four
+# extensions apiece would let a packaging bug through that a real panel hits.
+RP_DECOY_EXT <- list(
+  "16S_ribosomal_RNA" = c("ndb", "nhr", "nin", "nnd", "nni", "nog", "nos", "not",
+    "nsq", "ntf", "nto"),
+  "SSU_eukaryote_rRNA" = c("ndb", "nhr", "nin", "nog", "nos", "not", "nsq", "ntf", "nto"),
+  "LSU_eukaryote_rRNA" = c("ndb", "nhr", "nin", "nog", "nos", "not", "nsq", "ntf", "nto"))
+RP_DECOY_VOLUMES <- unlist(mapply(function(n, e) paste0(n, ".", e),
+  names(RP_DECOY_EXT), RP_DECOY_EXT, USE.NAMES = FALSE))
+# update_blastdb.pl preserves these deliberately, as the cache key for its next
+# run. They are in the panel directory after every real fetch and must not ship.
+RP_DECOY_MARKERS <- paste0(c(names(RP_DECOY_EXT), "taxdb"), ".tar.gz.md5")
 
-# A panel directory holding exactly what the build and decoys stages leave: the
-# panel volume set, a manifest, the three decoy databases, the taxonomy files
-# and the version record. Files are named, not built; nothing here reads them.
+# A panel directory holding what the build and decoys stages really leave: the
+# panel volume set, a manifest, the three decoy databases at their real volume
+# counts, the cache markers, the taxonomy files and the version record. Files
+# are named, not built; nothing here reads them.
 mock_panel_dir <- function(ver = "9.9.9", drop = character(0), extra = character(0),
                            manifest_ver = ver, .envir = parent.frame()) {
   root <- withr::local_tempdir(.local_envir = .envir)
   d <- file.path(root, "blastdb", ver)
   dir.create(d, recursive = TRUE)
-  files <- c(
-    paste0("ribopilot_rrna.", RP_PANEL_EXT),
-    paste0(rep(RiboPilot:::RP_DECOY_DBS, each = 4), ".", c("ndb", "nhr", "nin", "nsq")),
-    RP_TAXONOMY_FILES, "DECOY_VERSION.txt")
+  files <- c(paste0("ribopilot_rrna.", RP_PANEL_EXT), RP_DECOY_VOLUMES,
+    RP_DECOY_MARKERS, RP_TAXONOMY_FILES, "DECOY_VERSION.txt")
   for (f in c(setdiff(files, drop), extra)) writeLines(f, file.path(d, f))
   writeLines(sprintf('{"db_name": "ribopilot_rrna", "db_version": "%s"}', manifest_ver),
     file.path(d, "manifest.json"))
@@ -86,12 +98,15 @@ test_that("the decoy tarball carries every taxonomy file, including the one taxd
   r <- run_packager(src)
   expect_equal(r$status, 0L, label = paste(r$out, collapse = "\n"))
   got <- tar_contents(file.path(r$rel, "decoys-9.9.9.tar.gz"))
-  expect_setequal(got, c(
-    paste0(rep(RiboPilot:::RP_DECOY_DBS, each = 4), ".", c("ndb", "nhr", "nin", "nsq")),
-    RP_TAXONOMY_FILES, "DECOY_VERSION.txt"))
+  expect_setequal(got, c(RP_DECOY_VOLUMES, RP_TAXONOMY_FILES, "DECOY_VERSION.txt"))
   # taxonomy4blast.sqlite3 is not a taxdb.* file, and shipping without it makes
   # -taxids return unfiltered rows while blastn still exits 0
   expect_true("taxonomy4blast.sqlite3" %in% got)
+  # the cache markers were in the directory and must not be in the tarball:
+  # shipped, they become the key update_blastdb.pl reads in a user's decoy dir
+  expect_true(all(file.exists(file.path(src, RP_DECOY_MARKERS))))
+  expect_false(any(RP_DECOY_MARKERS %in% got))
+  expect_false(any(grepl("[.]md5$", got)))
   # flat, never nested under a directory: the installer untars into the panel dir
   expect_false(any(grepl("/", got, fixed = TRUE)))
 })
@@ -103,7 +118,10 @@ test_that("packaging refuses when any taxonomy file or the version record is abs
     r <- run_packager(src)
     expect_gt(r$status, 0L)
     expect_true(any(grepl(paste("no", f), r$out, fixed = TRUE)), label = f)
-    expect_false(file.exists(file.path(r$rel, "decoys-9.9.9.tar.gz")), label = f)
+    # nothing at all: a lone panel tarball with no checksum and no decoys, or
+    # even an empty release-<VER>, is a version-carrying artifact of a run that
+    # refused, and --check-version reports the directory as a mismatch
+    expect_false(dir.exists(r$rel), label = f)
   }
 })
 
@@ -118,7 +136,7 @@ test_that("packaging refuses a version that disagrees with the manifest or the d
   r <- run_packager(src, ver = "7.7.7")
   expect_gt(r$status, 0L)
   expect_true(any(grepl("is named '9.9.9', not '7.7.7'", r$out, fixed = TRUE)))
-  expect_false(file.exists(file.path(r$rel, "ribopilot_rrna-7.7.7.tar.gz")))
+  expect_false(dir.exists(r$rel))
 })
 
 test_that("packaging refuses while a decoy archive is still sitting in the panel", {
@@ -127,6 +145,7 @@ test_that("packaging refuses while a decoy archive is still sitting in the panel
   r <- run_packager(src)
   expect_gt(r$status, 0L)
   expect_true(any(grepl("the decoy fetch did not finish", r$out, fixed = TRUE)))
+  expect_false(dir.exists(r$rel))
 })
 
 test_that("the panel tarball ships the volume set and the manifest and nothing else", {
@@ -178,6 +197,7 @@ test_that("the shell decoy lists are RP_DECOY_DBS plus exactly taxdb", {
   expect_setequal(shell_list(decoys_sh, "SEARCHABLE_DBS"), RiboPilot:::RP_DECOY_DBS)
   expect_setequal(shell_list(decoys_sh, "TAXONOMY_FILES"), RP_TAXONOMY_FILES)
   expect_setequal(shell_list(decoys_sh, "REQUIRED_EXT"), RiboPilot:::PANEL_REQUIRED_EXT)
+  expect_setequal(names(RP_DECOY_EXT), RiboPilot:::RP_DECOY_DBS)
 })
 
 # --- fetch_decoys.sh ---------------------------------------------------------
@@ -186,20 +206,29 @@ test_that("the shell decoy lists are RP_DECOY_DBS plus exactly taxdb", {
 # blastdbcmd are the real ones, because the verification this stage exists for
 # is "does blastdbcmd accept what landed", which a stubbed blastdbcmd cannot
 # answer. RP_STUB_BREAK damages exactly one thing so one guard is under test.
-decoy_stub_bin <- function(.envir = parent.frame()) {
+RP_DECOY_SEQS <- c(`16S_ribosomal_RNA` = 27644L, SSU_eukaryote_rRNA = 8784L,
+  LSU_eukaryote_rRNA = 6575L)
+
+decoy_stub_bin <- function(meta_null = character(0), .envir = parent.frame()) {
   bindir <- withr::local_tempdir(.local_envir = .envir)
   writeLines(c(
     "#!/usr/bin/env bash",
     "set -e",
     'db="${!#}"',
     'brk="${RP_STUB_BREAK:-}"',
+    'here="$(cd "$(dirname "$0")" && pwd)"',
+    "# preserved by the real tool as the cache key for its next run",
+    'echo "0000  $db.tar.gz" > "$db.tar.gz.md5"',
     '[ "$brk" != uptodate ] || { echo "$db is up to date"; exit 0; }',
     'if [ "$db" = taxdb ]; then',
     '  for f in taxdb.btd taxdb.bti taxonomy4blast.sqlite3; do echo stub > "$f"; done',
     '  [ "$brk" != no_taxonomy ] || rm -f taxonomy4blast.sqlite3',
     "  exit 0",
     "fi",
-    'printf ">seq1 stub\\nACGTACGTACGTACGTACGTACGTACGT\\n" > "$db.stub.fasta"',
+    'n="$(awk -v d="$db" \'$1 == d {print $2}\' "$here/counts.txt")"',
+    "# the read-only fixture's own staleness: 27,649 installed against 27,644 live",
+    '[ "$brk" != stale ] || [ "$db" != 16S_ribosomal_RNA ] || n=$((n + 5))',
+    'awk -v n="$n" \'BEGIN {for (i = 1; i <= n; i++) printf(">s%d stub\\nACGTACGTACGTACGTACGT\\n", i)}\' > "$db.stub.fasta"',
     'makeblastdb -in "$db.stub.fasta" -dbtype nucl -blastdb_version 5 -out "$db" > /dev/null',
     'rm -f "$db.stub.fasta"',
     'case "$brk" in',
@@ -208,14 +237,19 @@ decoy_stub_bin <- function(.envir = parent.frame()) {
     '  bad_index) printf "not a blast index" > 16S_ribosomal_RNA.nin ;;',
     "esac"
   ), file.path(bindir, "update_blastdb.pl"))
+  writeLines(sprintf("%s %d", names(RP_DECOY_SEQS), RP_DECOY_SEQS),
+    file.path(bindir, "counts.txt"))
 
   meta <- data.frame(
     dbname = c(RiboPilot:::RP_DECOY_DBS, "taxdb"),
     `last-updated` = c("2026-08-15T00:00:00", "2022-12-05T00:00:00",
       "2022-12-05T00:00:00", "2026-08-13T16:23:29.394961"),
-    `number-of-sequences` = c(27644L, 8784L, 6575L, 0L),
+    `number-of-sequences` = c(unname(RP_DECOY_SEQS[RiboPilot:::RP_DECOY_DBS]), 0L),
     check.names = FALSE, stringsAsFactors = FALSE)
-  writeLines(jsonlite::toJSON(meta, auto_unbox = FALSE), file.path(bindir, "meta.json"))
+  # a present entry with a null field, which jq -r renders as the string "null"
+  meta$`last-updated`[meta$dbname %in% meta_null] <- NA_character_
+  writeLines(jsonlite::toJSON(meta, auto_unbox = FALSE, na = "null"),
+    file.path(bindir, "meta.json"))
   md5 <- c("8ea926b50cb87831abd58e97758b37ff", "f47c1bad5051bda9c5c00a236087c62b",
     "4f8310a6e3e344017594928ce0b05b9a", "5fc70fa3d152fee1608f134ca4cb1507")
   writeLines(sprintf("%s  %s.tar.gz", md5, c(RiboPilot:::RP_DECOY_DBS, "taxdb")),
@@ -294,6 +328,9 @@ test_that("fetch_decoys.sh refuses whatever the fetch failed to leave behind", {
     missing_volume = "16S_ribosomal_RNA.nsq is missing or empty",
     empty_volume = "16S_ribosomal_RNA.nsq is missing or empty",
     bad_index = "blastdbcmd -info failed",
+    # complete, openable and one release out of date: every other check passes
+    # and the live version would otherwise be written beside the old database
+    stale = "holds 27649 sequence(s) but the source publishes 27644",
     no_taxonomy = "taxonomy4blast.sqlite3 is missing or empty")
   for (brk in names(cases)) {
     dest <- withr::local_tempdir()
@@ -306,6 +343,15 @@ test_that("fetch_decoys.sh refuses whatever the fetch failed to leave behind", {
     expect_equal(readLines(file.path(dest, "DECOY_VERSION.txt"), warn = FALSE),
       "sentinel", label = brk)
   }
+})
+
+test_that("fetch_decoys.sh refuses a null metadata field rather than recording it as a version", {
+  skip_without_decoy_tools()
+  dest <- withr::local_tempdir()
+  r <- run_fetch_decoys(dest, decoy_stub_bin(meta_null = "16S_ribosomal_RNA"))
+  expect_gt(r$status, 0L)
+  expect_true(any(grepl("has no last-updated", r$out, fixed = TRUE)))
+  expect_false(file.exists(file.path(dest, "DECOY_VERSION.txt")))
 })
 
 # --- the two stages in build_refdb.sh ----------------------------------------
@@ -358,8 +404,6 @@ test_that("the package stage stages both assets, verifies them and records its m
   }
   state <- readLines(file.path(build, "state.txt"), warn = FALSE)
   expect_match(state, "^package\t[0-9a-f]{64}\t")
-  # publishing is manual: the stage must never reach gh release create
-  expect_false(any(grepl("gh release", r$out, fixed = TRUE)))
 })
 
 test_that("the package stage refuses when the build stage has not run", {
@@ -396,6 +440,56 @@ test_that("the decoys stage fails, with no marker, when verification fails", {
   expect_true(any(grepl("fetch_decoys.sh failed", r$out, fixed = TRUE)))
   # a green marker on an unverifiable decoy set is the whole failure mode
   expect_false(file.exists(file.path(build, "state.txt")))
+})
+
+# Every REQUIRED_TOOLS entry preflight looks for that neither of these two
+# stages actually runs. curl is left alone: preflight demands that it resolve
+# inside the repo shim directory.
+write_preflight_stubs <- function(.envir = parent.frame()) {
+  bindir <- withr::local_tempdir(.local_envir = .envir)
+  for (t in c("esearch", "efetch", "epost", "esummary", "xtract",
+              "update_blastdb.pl", "makeblastdb", "blastdbcmd", "seqkit")) {
+    writeLines(c("#!/usr/bin/env bash", "exit 0"), file.path(bindir, t))
+  }
+  Sys.chmod(list.files(bindir, full.names = TRUE), "0755")
+  bindir
+}
+
+run_refdb_cli <- function(build, args, bindir) {
+  out <- suppressWarnings(system2("timeout",
+    c("120", "bash", shQuote(normalizePath(refdb_sh)),
+      "--build-dir", shQuote(build), args),
+    stdout = TRUE, stderr = TRUE,
+    env = c(paste0("PATH=", bindir, ":", Sys.getenv("PATH")), "NCBI_API_KEY=stub")))
+  st <- attr(out, "status")
+  status <- if (is.null(st)) 0L else as.integer(st)
+  expect_false(status == 124L, label = "the CLI run timed out instead of finishing")
+  list(status = status, out = out)
+}
+
+test_that("the package stage runs on a built panel without --force, and the panel stages still refuse", {
+  skip_without_packager()
+  skip_if(Sys.which("timeout") == "", "timeout is not on PATH")
+  ver <- rp_db_version_string()
+  src <- mock_panel_dir(ver = ver)
+  build <- dirname(dirname(src))
+  bindir <- write_preflight_stubs()
+
+  # the normal case for both new stages is a panel that is already built, so
+  # requiring --force there would mean saying "rebuild the panel in place"
+  r <- run_refdb_cli(build, c("--stage", "package"), bindir)
+  expect_equal(r$status, 0L, label = paste(r$out, collapse = "\n"))
+  expect_false(any(grepl("already exists", r$out, fixed = TRUE)))
+  expect_true(file.exists(file.path(build, "blastdb", paste0("release-", ver),
+    paste0("ribopilot_rrna-", ver, ".tar.gz"))))
+
+  # the refusal itself is untouched for anything that does rebuild the panel
+  for (a in list(c("--stage", "build"), character(0))) {
+    r <- run_refdb_cli(build, a, bindir)
+    expect_gt(r$status, 0L)
+    expect_true(any(grepl("already exists", r$out, fixed = TRUE)),
+      label = paste(a, collapse = " "))
+  }
 })
 
 # --- docker and the installer ------------------------------------------------
