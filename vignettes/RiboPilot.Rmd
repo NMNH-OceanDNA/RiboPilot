@@ -71,9 +71,12 @@ calls, so with a container you can skip the conda step below. On a workstation,
 create projects with <code>executor = "docker"</code>; on a cluster, use
 Singularity (the <code>NMNH_Hydra</code> and <code>NOAA_SEDNA</code> profiles
 already do, and <code>generate_config()</code> writes one for any other
-scheduler). Installing the tools yourself, including with conda, is
-<strong>no longer supported</strong>. Those instructions are kept below because
-they still work, but they are not tested.
+scheduler). The commands later in this guide pass
+<code>conda_env = "ribopilot"</code>; <strong>omit that argument</strong> when you
+run in a container, because the image already supplies the tools. Installing the
+tools yourself, including with conda, is <strong>no longer supported</strong>.
+Those instructions are kept below because they still work, but they are not
+tested.
 </div>
 
 - **R** (version 4.4.0 or newer): the environment you will type commands into.
@@ -100,7 +103,8 @@ remotes::install_github("dmacguigan/RiboPilot")
 <strong>Tip.</strong> Start R from a terminal where you have already run
 <code>conda activate ribopilot</code>. That way RiboPilot can find all the tools
 it needs. Alternatively, tell each command which environment to use by adding
-<code>conda_env = "ribopilot"</code>, as shown throughout this guide.
+<code>conda_env = "ribopilot"</code>, as shown throughout this guide, if you are
+not using a container. In a container, leave <code>conda_env</code> off entirely.
 </div>
 
 <div class="alert alert-note">
@@ -117,11 +121,11 @@ before using your own data. One command downloads the samples and sets up a read
 -to-run project:
 
 ```{r, purl = FALSE}
-RiboPilot::new_test_project(path = "~/ribopilot_test", executor = "conda")
+RiboPilot::new_test_project(path = "~/ribopilot_test", executor = "docker")
 ```
 
-`new_test_project()` still defaults to `executor = "conda"`, which is no longer a
-supported way to run. Pass `executor = "docker"` instead.
+`executor` is passed explicitly here because `new_test_project()` still defaults to
+`executor = "conda"`, which is no longer a supported way to run.
 
 This downloads a few gigabytes of data, so it can take a while. When it finishes,
 you have a working project you can practice on using the steps below. We strongly
@@ -156,6 +160,12 @@ The first value in quotes is a standard NCBI search. Replace `Gastropoda` with
 your group's name. The [reference database guide](Reference-Databases.html) has
 more detail and tips for groups with few available sequences.
 
+<div class="alert alert-note">
+This console command runs on your own machine, so it needs the conda tools and is
+the unsupported path. In a container, build the same reference data from the app's
+<strong>Reference</strong> tab instead, which runs the work inside the image.
+</div>
+
 # Step 3: Set up your project
 
 A project starts with a **mapping file** and one command. The mapping file is a
@@ -175,7 +185,7 @@ RiboPilot::new_project(
   path       = "~/my_project",       # where to create the project folder
   mapping_fn = "~/my_samples.csv",   # your mapping file
   data_path  = "~/my_reads",         # folder containing the read files
-  executor   = "conda",
+  executor   = "docker",
   ncbi_api_key = "PASTE_YOUR_KEY_HERE"
 )
 ```
@@ -192,12 +202,13 @@ This creates a project folder containing your sample list and RiboPilot's
 tracking file. From here on, everything refers to that folder.
 
 <div class="alert alert-note">
-<code>executor = "conda"</code> tells RiboPilot to run on your own computer using
-the tools you installed with conda, which is <strong>no longer a supported
-way to run</strong> (see Step 0). Use <code>executor = "docker"</code> instead. If
-your lab uses a shared computing cluster, there are Singularity options; see the
-function help for <code>new_project()</code> and <code>generate_config()</code>,
-or ask your computing support staff.
+<code>executor = "docker"</code> runs every step inside the container image on your
+own computer. It is passed explicitly because <code>new_project()</code> still
+defaults to <code>executor = "conda"</code>, which runs on the tools you installed
+with conda and is <strong>no longer a supported way to run</strong> (see Step 0).
+If your lab uses a shared computing cluster, there are Singularity options; see
+the function help for <code>new_project()</code> and
+<code>generate_config()</code>, or ask your computing support staff.
 </div>
 
 # Step 4: Assemble your samples

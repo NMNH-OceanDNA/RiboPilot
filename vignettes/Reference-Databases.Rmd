@@ -106,7 +106,7 @@ RiboPilot::new_project(
   path       = "~/my_project",
   mapping_fn = "~/my_samples.csv",
   data_path  = "~/my_reads",
-  executor   = "conda",
+  executor   = "docker",
   ref_dir    = "~/ribopilot_refs"
 )
 ```
@@ -114,11 +114,11 @@ RiboPilot::new_project(
 If you do not set a folder, RiboPilot uses a default location on your computer.
 
 <div class="alert alert-note">
-The <code>executor = "conda"</code> shown in the examples on this page is
-<strong>no longer a supported way to run</strong>. Supported execution is Docker or Singularity; use
-<code>executor = "docker"</code> on a workstation, and see the
-<a href="RiboPilot.html">Get started guide</a> for clusters. The examples keep
-<code>"conda"</code> only so they match the rest of the documentation.
+The examples on this page pass <code>executor = "docker"</code> explicitly, because
+<code>new_project()</code> still defaults to <code>executor = "conda"</code>, which
+is <strong>no longer a supported way to run</strong>. Supported execution is Docker
+or Singularity; see the <a href="RiboPilot.html">Get started guide</a> for
+clusters.
 </div>
 
 # Building from the console
@@ -167,7 +167,7 @@ RiboPilot::new_project(
   path       = "~/my_project",
   mapping_fn = "~/my_samples.csv",
   data_path  = "~/my_reads",
-  executor   = "conda",
+  executor   = "docker",
   custom_seeds_db  = db$seeds,
   custom_labels_db = db$labels
 )

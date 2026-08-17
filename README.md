@@ -163,11 +163,12 @@ RiboPilot ships a small set of fish samples and a single command that
 downloads them and sets everything up:
 
 ``` r
-RiboPilot::new_test_project(path = "~/ribopilot_test", executor = "conda")
+RiboPilot::new_test_project(path = "~/ribopilot_test", executor = "docker")
 ```
 
-`new_test_project()` still defaults to `executor = "conda"`, which is no
-longer a supported way to run. Pass `executor = "docker"` instead.
+`executor` is passed explicitly here because `new_test_project()` still
+defaults to `executor = "conda"`, which is no longer a supported way to
+run.
 
 From there, the [Get started
 guide](https://dmacguigan.github.io/RiboPilot/articles/RiboPilot.html)
