@@ -89,6 +89,20 @@ RP_DB_REPO="dmacguigan/RiboPilot"
 RP_DB_TAG="db-${RP_DB_VERSION}"
 RP_DB=1
 
+# Sweep staged assets from OTHER panel versions, so no artifact carrying a stale
+# version is left in the build context. The current version's tarballs stay:
+# they are the cache described above, and the checksum below is a stronger
+# guarantee against a corrupt one than deleting and re-downloading 160 MB.
+for f in docker/ribopilot_rrna-*.tar.gz docker/ribopilot_rrna-*.tar.gz.sha256 \
+         docker/decoys-*.tar.gz docker/decoys-*.tar.gz.sha256; do
+  [ -e "$f" ] || continue
+  case "$f" in
+    *"-${RP_DB_VERSION}.tar.gz" | *"-${RP_DB_VERSION}.tar.gz.sha256") continue ;;
+  esac
+  echo "removing stale staged asset ${f#docker/}"
+  rm -f "$f"
+done
+
 rp_db_unavailable() {
   cat >&2 <<MSG
 Could not get $1 from release ${RP_DB_TAG} of ${RP_DB_REPO}.

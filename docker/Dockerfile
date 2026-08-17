@@ -99,6 +99,11 @@ FROM base AS db-1
 ARG RP_DB_VERSION=2026.08.1
 ADD docker/ribopilot_rrna-${RP_DB_VERSION}.tar.gz /opt/ribopilot/blastdb/${RP_DB_VERSION}/
 ADD docker/decoys-${RP_DB_VERSION}.tar.gz         /opt/ribopilot/blastdb/${RP_DB_VERSION}/
+# ADD does not fail on a corrupt-but-gzip-shaped archive; it falls back to a
+# plain copy, so an unusable panel would otherwise bake in and only surface in
+# somebody's run. No pipe: a piped command returns 141 here even on success.
+RUN blastdbcmd -db /opt/ribopilot/blastdb/${RP_DB_VERSION}/ribopilot_rrna -info > /dev/null && \
+    test -s /opt/ribopilot/blastdb/${RP_DB_VERSION}/manifest.json
 ENV RIBOPILOT_DB_DIR=/opt/ribopilot/blastdb
 
 FROM db-${RP_DB} AS final

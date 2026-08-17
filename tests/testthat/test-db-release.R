@@ -548,3 +548,156 @@ test_that("the deploy script checksum-verifies the db panel tarballs before buil
   # and actually runs the verification, not just downloads it
   expect_match(ds, '-c "$sumfile"', fixed = TRUE)
 })
+
+# --- docker build wiring -----------------------------------------------------
+
+RP_DOCKERFILE <- "../../docker/Dockerfile"
+RP_DEPLOY_SH <- c("../../docker/deploy-local.sh", "../../docker/deploy-dockerhub.sh")
+
+skip_without_docker_dir <- function() {
+  skip_on_cran()
+  skip_if_not(file.exists(RP_DOCKERFILE),
+    "docker/ is Rbuildignored; this runs from the source tree only")
+  skip_if(Sys.which("bash") == "", "bash is not on PATH")
+}
+
+# The sweep is lifted out of the deploy script and run for real against a staged
+# docker/: a grep for the rm would pass just as well on a loop that deleted the
+# current version's cache, which is the failure this loop exists to avoid.
+sweep_block <- function(path) {
+  x <- readLines(path, warn = FALSE)
+  i <- grep("^for f in docker/ribopilot_rrna-", x)[1]
+  if (is.na(i)) return(character(0))
+  ends <- grep("^done$", x)
+  x[i:ends[ends > i][1]]
+}
+
+run_sweep <- function(path, root, ver) {
+  script <- file.path(root, "sweep.sh")
+  writeLines(c("set -euo pipefail", sprintf('cd "%s"', root),
+    sprintf('RP_DB_VERSION="%s"', ver), sweep_block(path)), script)
+  out <- suppressWarnings(system2("bash", shQuote(script),
+    stdout = TRUE, stderr = TRUE))
+  st <- attr(out, "status")
+  list(status = if (is.null(st)) 0L else as.integer(st), out = out)
+}
+
+test_that("the deploy scripts sweep staged assets from other panel versions only", {
+  skip_without_docker_dir()
+  # the current version's two tarballs are a 160 MB cache the scripts deliberately
+  # reuse and checksum-verify, so sweeping them would make every build re-download
+  keep <- c("ribopilot_rrna-9.9.9.tar.gz", "ribopilot_rrna-9.9.9.tar.gz.sha256",
+    "decoys-9.9.9.tar.gz", "decoys-9.9.9.tar.gz.sha256",
+    "RiboPilot_0.0.0.tar.gz", "Dockerfile")
+  drop <- c("ribopilot_rrna-8.8.8.tar.gz", "ribopilot_rrna-8.8.8.tar.gz.sha256",
+    "decoys-8.8.8.tar.gz",
+    # a sidecar whose tarball is already gone still carries a stale version
+    "decoys-7.7.7.tar.gz.sha256")
+  for (s in RP_DEPLOY_SH) {
+    skip_if_not(file.exists(s), paste(s, "is Rbuildignored"))
+    root <- withr::local_tempdir()
+    dir.create(file.path(root, "docker"))
+    for (f in c(keep, drop)) writeLines(f, file.path(root, "docker", f))
+    r <- run_sweep(s, root, "9.9.9")
+    expect_equal(r$status, 0L, label = paste(s, paste(r$out, collapse = "\n")))
+    expect_setequal(list.files(file.path(root, "docker")), keep)
+    expect_setequal(r$out, paste("removing stale staged asset", drop))
+
+    # nothing staged at all: an unmatched glob must not become a filename, and
+    # must not be announced as a removal either
+    bare <- withr::local_tempdir()
+    dir.create(file.path(bare, "docker"))
+    writeLines("x", file.path(bare, "docker", "Dockerfile"))
+    r <- run_sweep(s, bare, "9.9.9")
+    expect_equal(r$status, 0L, label = paste(s, paste(r$out, collapse = "\n")))
+    expect_equal(list.files(file.path(bare, "docker")), "Dockerfile")
+    expect_length(r$out, 0L)
+
+    # after RP_DB_VERSION is known and before the fetch, so the sweep can tell
+    # which version is current and cannot delete what the fetch just verified
+    x <- readLines(s, warn = FALSE)
+    at <- grep("^for f in docker/ribopilot_rrna-", x)
+    expect_length(at, 1L)
+    expect_gt(at, grep("^RP_DB_VERSION=[$][(]awk", x))
+    expect_lt(at, grep('^  for A in "ribopilot_rrna-', x))
+  }
+})
+
+# The verification RUN as the Dockerfile actually carries it, pointed at a local
+# directory instead of the image path.
+dockerfile_db_check <- function(dir) {
+  x <- readLines(RP_DOCKERFILE, warn = FALSE)
+  i <- grep("^RUN blastdbcmd ", x)[1]
+  if (is.na(i)) return("false")
+  j <- i
+  while (grepl("\\\\$", x[j])) j <- j + 1L
+  gsub("/opt/ribopilot/blastdb/${RP_DB_VERSION}", dir,
+    sub("^RUN +", "", paste(x[i:j], collapse = "\n")), fixed = TRUE)
+}
+
+run_db_check <- function(dir) {
+  out <- suppressWarnings(system2("bash", c("-c", shQuote(dockerfile_db_check(dir))),
+    stdout = TRUE, stderr = TRUE))
+  st <- attr(out, "status")
+  if (is.null(st)) 0L else as.integer(st)
+}
+
+test_that("the panel verification sits in db-1, after both ADDs, with no pipe", {
+  skip_without_docker_dir()
+  x <- readLines(RP_DOCKERFILE, warn = FALSE)
+  at <- grep("^RUN blastdbcmd ", x)
+  expect_length(at, 1L)
+  adds <- grep("^ADD docker/", x)
+  expect_length(adds, 2L)
+  expect_gt(at, max(adds))
+  # nothing but comments between the ADDs and the check: another instruction
+  # there would be a layer that got built on an unverified database
+  expect_true(all(grepl("^\\s*(#|$)", x[(max(adds) + 1L):(at - 1L)])))
+  # and still inside db-1, above the ENV that advertises the panel
+  expect_lt(at, grep("^ENV RIBOPILOT_DB_DIR=", x))
+  # a piped command returns 141 on this machine even when it succeeds, which
+  # would pass the check for the wrong reason
+  expect_false(grepl("|", dockerfile_db_check("/nowhere"), fixed = TRUE))
+})
+
+test_that("the Dockerfile's panel check accepts a real database and refuses a broken one", {
+  skip_without_docker_dir()
+  for (tool in c("makeblastdb", "blastdbcmd")) {
+    skip_if(Sys.which(tool) == "", paste(tool, "is not on PATH"))
+  }
+  d <- withr::local_tempdir()
+  fa <- file.path(d, "in.fasta")
+  writeLines(c(">s1", "ACGTACGTACGTACGTACGTACGT", ">s2", "TTTTGGGGCCCCAAAATTTTGGGG"), fa)
+  expect_equal(system2("makeblastdb",
+    c("-in", shQuote(fa), "-dbtype", "nucl", "-blastdb_version", "5",
+      "-out", shQuote(file.path(d, "ribopilot_rrna"))),
+    stdout = FALSE, stderr = FALSE), 0L)
+  writeLines('{"db_name": "ribopilot_rrna"}', file.path(d, "manifest.json"))
+  expect_equal(run_db_check(d), 0L)
+
+  # ADD plain-copies a corrupt-but-gzip-shaped archive instead of failing, so the
+  # destination holds the tarball and no volumes at all
+  vols <- list.files(d, pattern = "^ribopilot_rrna[.]", full.names = TRUE)
+  stash <- withr::local_tempdir()
+  expect_true(all(file.rename(vols, file.path(stash, basename(vols)))))
+  writeLines("gzip-shaped junk", file.path(d, "ribopilot_rrna-9.9.9.tar.gz"))
+  expect_gt(run_db_check(d), 0L)
+  expect_true(all(file.rename(file.path(stash, basename(vols)), vols)))
+  expect_equal(run_db_check(d), 0L)
+
+  # a volume set that is present but unreadable: blastdbcmd -info is what tells
+  # these apart, and it is the half of the check a file test cannot do
+  idx <- file.path(d, "ribopilot_rrna.nin")
+  intact <- readBin(idx, "raw", file.size(idx))
+  writeBin(charToRaw("not a blast index"), idx)
+  expect_gt(run_db_check(d), 0L)
+  writeBin(intact, idx)
+  expect_equal(run_db_check(d), 0L)
+
+  # an openable database whose manifest never landed: -s, not -e, because an
+  # empty file is what a truncated extraction leaves
+  writeLines(character(0), file.path(d, "manifest.json"))
+  expect_gt(run_db_check(d), 0L)
+  expect_true(file.remove(file.path(d, "manifest.json")))
+  expect_gt(run_db_check(d), 0L)
+})
