@@ -390,7 +390,8 @@ cmd_clean() {
   # are the fingerprint the fetch stage refuses to resume against.
   rm -f "$BUILD_DIR/accessions.raw.txt" "$BUILD_DIR/accessions.esearch.xml" \
     "$BUILD_DIR/taxidmap.tsv" "$BUILD_DIR/taxidmap.sources.tsv" \
-    "$BUILD_DIR/taxidmap.sha256" "$BUILD_DIR/dropped.taxidmap.tsv"
+    "$BUILD_DIR/taxidmap.sha256" "$BUILD_DIR/dropped.taxidmap.tsv" \
+    "$BUILD_DIR/dropped.accessions.tsv"
   rm -f "$panel_dir"/*.fasta "$panel_dir"/*.taxid.map "$panel_dir"/*dropped.tsv
 
   # Only the markers whose outputs this removed. Deleting the whole state file
@@ -656,6 +657,12 @@ rp_fasta_complete() {
 # a PDB record as ">pdb|28ZU|S2" for an accession the list requests as
 # "28ZU_S2", so without this normalisation the panel's 298 PDB records read as
 # 298 missing accessions and 298 unrequested ones at the same time.
+#
+# This is the ONLY place that normalisation is spelled. The build stage feeds
+# its PDB deflines back through this function rather than repeating the rule in
+# awk: two spellings that drift would put an accession in the drop ledger that
+# the harvest never held, at the right row count, which is exactly the shape of
+# error the ledger identity was blind to before it compared sets.
 rp_fasta_accessions() {
   sed -n -E 's/^>([^ ]+).*/\1/p' "$@" \
     | sed -E 's/^pdb\|([^|]+)\|(.+)$/\1_\2/' \
@@ -725,6 +732,15 @@ rp_fetch_chunk() {
 # counted the .fasta, .taxid.map and .dropped.tsv, which are build artifacts and
 # are never shipped.
 RP_PANEL_FILES="manifest.json ribopilot_rrna.ndb ribopilot_rrna.nhr ribopilot_rrna.nin ribopilot_rrna.njs ribopilot_rrna.nog ribopilot_rrna.nos ribopilot_rrna.not ribopilot_rrna.nsq ribopilot_rrna.ntf ribopilot_rrna.nto"
+
+# RP_DROP_PRECEDENCE
+# Which reason wins when an accession is recorded by more than one stage. The
+# per-stage ledgers do not partition and are positively correlated: a record
+# suppressed at NCBI between the harvest and the fetch fails both the
+# accession2taxid dump and efetch's live lookup, so it lands in
+# dropped.taxidmap.tsv and dropped.fetch.tsv alike. The order is how far the
+# record got, earliest failure winning, so the reason names where it stopped.
+RP_DROP_PRECEDENCE="wgs_master_unavailable efetch_unavailable taxid_unresolved pdb_structure_record_nonstandard_defline byte_identical_to_kept_record_same_taxid"
 
 # rp_shipped_bytes DIR
 # Total size of the shipped files present in DIR.
@@ -1068,7 +1084,8 @@ stage_build() {
   local v f tmp acc chunks hex requested final_count want_chunks n_chunks
   local stats n_kept sum_len n_taxids n_dropped n_unavailable n_downloaded
   local mean_defline reasons njs n_sample n_resolved has_taxids
-  local built_utc blast_ver seqkit_ver pkg_ver git_sha mkcmd_json unpacked total round
+  local built_utc blast_ver seqkit_ver pkg_ver git_sha mkcmd_json unpacked total
+  local round settled
   local -a mkcmd chunk_files
 
   # A stage reached by sourcing has none of these, and must refuse rather than
@@ -1113,32 +1130,34 @@ stage_build() {
   tmp="$BUILD_DIR/build.tmp"
   rm -rf "$tmp"
   mkdir -p "$tmp"
-  : > "$tmp/pdb.acc"
   : > "$tmp/dup.acc"
   : > "$tmp/unusable.acc"
+
+  # The PDB records' accessions, normalised by the one function that owns that
+  # rule rather than by a second spelling of it here. `|| true` because zero
+  # matching records is a legitimate state that bare errexit turned into a
+  # failed build at the historical 03_build.sh:101.
+  grep -h '^>pdb|' "${chunk_files[@]}" > "$tmp/pdb.deflines" || true
+  rp_fasta_accessions "$tmp/pdb.deflines" > "$tmp/pdb.acc"
 
   rp_log "build: dereplicating $n_chunks chunk(s) on (taxid, uppercased sequence)"
   cat "${chunk_files[@]}" \
     | seqkit fx2tab -i \
     | awk -F'\t' -v OFS='\t' -v MAP="$BUILD_DIR/taxidmap.tsv" \
-        -v GONE="$BUILD_DIR/dropped.taxidmap.tsv" \
-        -v PDB="$tmp/pdb.acc" -v BAD="$tmp/unusable.acc" '
+        -v GONE="$BUILD_DIR/dropped.taxidmap.tsv" -v BAD="$tmp/unusable.acc" '
         BEGIN {
           while ((getline line < MAP) > 0) { split(line, a, "\t"); tax[a[1]] = a[2] }
           while ((getline line < GONE) > 0) { split(line, a, "\t"); gone[a[1]] = 1 }
         }
         {
           acc = $1
-          # efetch deflines a PDB record as >pdb|28ZU|S2 for an accession the
-          # list requested as 28ZU_S2. Dropped before the dedup, never after:
-          # 28ZU_S2 sorts ahead of any letter-initial accession under LC_ALL=C,
-          # so a PDB record left in would win the tie-break, be dropped anyway,
-          # and take the real GenBank record it duplicated out of the panel.
-          if (acc ~ /^pdb\|/) {
-            sub(/^pdb\|/, "", acc); sub(/\|/, "_", acc)
-            print acc > PDB
-            next
-          }
+          # A pipe-form PDB defline never reaches the dedup, and is dropped
+          # before it rather than after: 28ZU_S2 sorts ahead of any
+          # letter-initial accession under LC_ALL=C, so a PDB record left in
+          # would win the tie-break, be dropped anyway, and take the real
+          # GenBank record it duplicated out of the panel with it. Their ledger
+          # rows come from pdb.acc above.
+          if (acc ~ /^pdb\|/) next
           # Already recorded as taxid_unresolved by the taxonomy stage, which
           # does not remove them from the accession list the fetch works from.
           if (acc in gone) next
@@ -1183,17 +1202,49 @@ stage_build() {
   # No header row. The historical one made 293,693 lines read as 293,693
   # dropped records, 110 more than the manifest claimed.
   cat "$BUILD_DIR/dropped.accessions.tsv" "$BUILD_DIR/dropped.taxidmap.tsv" \
-    "$BUILD_DIR/dropped.fetch.tsv" > "$tmp/ribopilot_rrna.dropped.tsv"
+    "$BUILD_DIR/dropped.fetch.tsv" > "$tmp/dropped.all.tsv"
   awk -v OFS='\t' '{print $1, "pdb_structure_record_nonstandard_defline", ""}' \
-    "$tmp/pdb.acc" >> "$tmp/ribopilot_rrna.dropped.tsv"
+    "$tmp/pdb.acc" >> "$tmp/dropped.all.tsv"
   awk -F'\t' -v OFS='\t' '{print $1, "byte_identical_to_kept_record_same_taxid", $2}' \
-    "$tmp/dup.acc" >> "$tmp/ribopilot_rrna.dropped.tsv"
+    "$tmp/dup.acc" >> "$tmp/dropped.all.tsv"
+  # One row per accession, RP_DROP_PRECEDENCE deciding which reason survives.
+  # The stage ledgers overlap, so concatenating them records the same record
+  # twice -- the historical bug's exact class, and a build that aborts on
+  # arithmetic after the 2 h 20 m fetch rather than naming the accession.
+  awk -F'\t' -v OFS='\t' -v ORDER="$RP_DROP_PRECEDENCE" '
+      BEGIN { n = split(ORDER, r, " "); for (i = 1; i <= n; i++) rank[r[i]] = i }
+      { print (($2 in rank) ? rank[$2] : n + 1), $0 }' "$tmp/dropped.all.tsv" \
+    | sort -t$'\t' -k2,2 -k1,1n \
+    | awk -F'\t' -v OFS='\t' '$2 != prev { prev = $2; print $2, $3, $4 }' \
+    > "$tmp/ribopilot_rrna.dropped.tsv"
 
   n_dropped="$(rp_line_count "$tmp/ribopilot_rrna.dropped.tsv")"
   reasons="$(awk -F'\t' '{c[$2]++} END {for (r in c) printf "%s=%d ", r, c[r]}' \
     "$tmp/ribopilot_rrna.dropped.tsv")"
-  # The identity the historical build never checked: it was off by 188, because
-  # 298 PDB records were counted once as unreturned and again as a PDB drop.
+
+  # Sets, not counts. The historical failure was one set of records counted
+  # twice while another was missed, and a count identity balances silently
+  # whenever those two happen to coincide. Comparing the sorted sets also names
+  # the offending accession instead of reporting arithmetic.
+  cut -f1 "$tmp/ribopilot_rrna.dropped.tsv" | sort > "$tmp/dropped.acc"
+  [ -z "$(uniq -d "$tmp/dropped.acc" | head -1)" ] \
+    || rp_die "build: the drop ledger records $(uniq -d "$tmp/dropped.acc" | head -1) more than once after collapsing by reason"
+  # The requested set is the list the fetch worked from plus the masters
+  # filtered out before it, which is what accessions.esearch_count counts.
+  cut -f1 "$BUILD_DIR/dropped.accessions.tsv" > "$tmp/wgs.acc"
+  sort -u "$tmp/wgs.acc" "$acc" > "$tmp/requested.acc"
+  rp_assert_count "build: reconstructed requested set vs accessions.esearch_count" \
+    "$(rp_line_count "$tmp/requested.acc")" "$requested"
+  rp_fasta_accessions "$tmp/ribopilot_rrna.fasta" > "$tmp/kept.acc"
+  sort -u "$tmp/kept.acc" "$tmp/dropped.acc" > "$tmp/accounted.acc"
+  comm -23 "$tmp/requested.acc" "$tmp/accounted.acc" > "$tmp/unaccounted.acc"
+  comm -13 "$tmp/requested.acc" "$tmp/accounted.acc" > "$tmp/unrequested.acc"
+  [ ! -s "$tmp/unaccounted.acc" ] \
+    || rp_die "build: $(rp_line_count "$tmp/unaccounted.acc") requested accession(s) are neither in the panel nor in the drop ledger, e.g. $(head -1 "$tmp/unaccounted.acc")"
+  [ ! -s "$tmp/unrequested.acc" ] \
+    || rp_die "build: $(rp_line_count "$tmp/unrequested.acc") accession(s) in the panel or the ledger were never requested, e.g. $(head -1 "$tmp/unrequested.acc")"
+  # With both sets equal and each unique, the counts can still disagree only if
+  # an accession is on both sides at once, which is the double-count itself.
   [ "$((n_kept + n_dropped))" -eq "$requested" ] \
     || rp_die "build: the drop ledger does not balance: $requested requested != $n_kept kept + $n_dropped dropped ($reasons)"
   rp_log "build: $n_kept kept, $n_dropped dropped ($reasons)"
@@ -1250,6 +1301,7 @@ stage_build() {
   # unpacked_bytes: render it, re-measure, and settle once the number stops
   # moving.
   unpacked="$(rp_shipped_bytes "$tmp")"
+  settled=0
   for round in 1 2 3; do
     jq -n \
       --arg db_version "$VER" \
@@ -1321,9 +1373,14 @@ stage_build() {
         }
       }' > "$tmp/manifest.json"
     total="$(rp_shipped_bytes "$tmp")"
-    if [ "$total" = "$unpacked" ]; then break; fi
+    if [ "$total" = "$unpacked" ]; then settled=1; break; fi
     unpacked="$total"
   done
+  # Falling out of the loop would ship a byte count describing a previous
+  # render, which is the one thing every other check in this stage exists to
+  # prevent.
+  [ "$settled" -eq 1 ] \
+    || rp_die "build: unpacked_bytes did not settle after 3 renders (last $unpacked, measured $total)"
 
   mkdir -p "$OUT_DIR"
   mv "$tmp/manifest.json" "$tmp"/ribopilot_rrna.* "$OUT_DIR/"

@@ -213,7 +213,7 @@ make_build_tree <- function(ver, tarballs = c("good", "corrupt", "none")) {
   dir.create(file.path(build, "taxidmap.tmp"))
   for (f in c("accessions.raw.txt", "accessions.esearch.xml", "taxidmap.tsv",
               "taxidmap.sources.tsv", "taxidmap.sha256", "dropped.taxidmap.tsv",
-              "accessions.txt", "accessions.sha256")) {
+              "dropped.accessions.tsv", "accessions.txt", "accessions.sha256")) {
     writeLines("x", file.path(build, f))
   }
   writeLines("x", file.path(build, "taxidmap.tmp", "combined.tsv"))
@@ -271,7 +271,8 @@ test_that("clean drops the unshipped artifacts and keeps the surviving stages' m
     paste0("ribopilot_rrna-", ver, ".tar.gz"))))
   # both harvest stages' BUILD_DIR-root leftovers go too
   for (f in c("accessions.raw.txt", "accessions.esearch.xml", "taxidmap.tsv",
-              "taxidmap.sources.tsv", "taxidmap.sha256", "dropped.taxidmap.tsv")) {
+              "taxidmap.sources.tsv", "taxidmap.sha256", "dropped.taxidmap.tsv",
+              "dropped.accessions.tsv")) {
     expect_false(file.exists(file.path(build, f)), label = f)
   }
   expect_false(dir.exists(file.path(build, "taxidmap.tmp")))
@@ -1718,7 +1719,8 @@ make_panel_build <- function(records = panel_fixture_records(),
   writeLines(acc, file.path(build, "accessions.txt"))
 
   mapped <- rbind(records[, c("acc", "taxid")],
-    data.frame(acc = unavailable, taxid = "9999", stringsAsFactors = FALSE))
+    data.frame(acc = unavailable, taxid = rep("9999", length(unavailable)),
+      stringsAsFactors = FALSE))
   mapped <- mapped[!(mapped$acc %in% unresolved), ]
   mapped <- mapped[order(mapped$acc, method = "radix"), ]
   writeLines(sprintf("%s\t%s", mapped$acc, mapped$taxid), file.path(build, "taxidmap.tsv"))
@@ -2035,17 +2037,96 @@ test_that("records the taxonomy stage already recorded as unresolved are exclude
     m$counts$records_after_dedup + m$counts$records_dropped)
 })
 
-test_that("the ledger identity refuses a build whose drops do not account for every requested accession", {
+# The per-stage ledgers overlap rather than partition, and are positively
+# correlated: a record suppressed at NCBI between the harvest and the fetch
+# fails both the accession2taxid dump and efetch's live lookup. Counted twice,
+# it kills the build at the last stage, after the fetch, on arithmetic.
+test_that("an accession recorded by two stages collapses to one row, by how far the record got", {
+  # requested, never arrived, and unplaceable in the taxonomy: both ledgers
+  both <- make_panel_build(unavailable = "MISS0001.1", unresolved = "MISS0001.1")
+  r <- run_build_sourced(both)
+  expect_equal(r$status, 0L, label = paste(r$out, collapse = "\n"))
+  rows <- readLines(file.path(r$out_dir, "ribopilot_rrna.dropped.tsv"), warn = FALSE)
+  hit <- tsv_field(rows, 1) == "MISS0001.1"
+  expect_equal(sum(hit), 1L)
+  expect_equal(tsv_field(rows, 2)[hit], "efetch_unavailable")
+
+  # a PDB record that the taxonomy stage could not place: the earlier failure
+  # wins, so it is not also reported as a policy exclusion
+  pdb <- make_panel_build(unresolved = "28ZU_S2")
+  r2 <- run_build_sourced(pdb)
+  expect_equal(r2$status, 0L, label = paste(r2$out, collapse = "\n"))
+  rows2 <- readLines(file.path(r2$out_dir, "ribopilot_rrna.dropped.tsv"), warn = FALSE)
+  hit2 <- tsv_field(rows2, 1) == "28ZU_S2"
+  expect_equal(sum(hit2), 1L)
+  expect_equal(tsv_field(rows2, 2)[hit2], "taxid_unresolved")
+  expect_false("28ZU_S2" %in% panel_ids(r2))
+})
+
+test_that("the ledger identity is a set identity, so it names the accession and two compensating errors cannot balance", {
+  # a drop that was logged but never recorded in a file: the accession is in
+  # the harvest, in no ledger, and in no panel
   build <- make_panel_build()
-  ledger <- file.path(build, "dropped.accessions.tsv")
-  # a drop that was logged but never recorded in a file: the historical build
-  # counted 298 PDB records twice for the mirror-image reason
-  writeLines(readLines(ledger, warn = FALSE)[1], ledger)
+  writeLines(character(0), file.path(build, "dropped.fetch.tsv"))
   r <- run_build_sourced(build)
   expect_gt(r$status, 0L)
-  expect_true(any(grepl("the drop ledger does not balance", r$out, fixed = TRUE)))
-  expect_true(any(grepl("41 requested != 35 kept + 5 dropped", r$out, fixed = TRUE)))
+  expect_true(any(grepl(
+    "1 requested accession(s) are neither in the panel nor in the drop ledger, e.g. MISS0001.1",
+    r$out, fixed = TRUE)))
   expect_false(dir.exists(r$out_dir))
+
+  # a ledger row for an accession the harvest never held, which is what a
+  # second spelling of the PDB normalisation would produce at the right count
+  build2 <- make_panel_build()
+  fetch_ledger <- file.path(build2, "dropped.fetch.tsv")
+  writeLines(c(readLines(fetch_ledger, warn = FALSE), "ZZ999999.9\tefetch_unavailable\t"),
+    fetch_ledger)
+  r2 <- run_build_sourced(build2)
+  expect_gt(r2$status, 0L)
+  expect_true(any(grepl(
+    "1 accession(s) in the panel or the ledger were never requested, e.g. ZZ999999.9",
+    r2$out, fixed = TRUE)))
+  expect_false(dir.exists(r2$out_dir))
+
+  # the compensating case: an accession that is both kept and dropped leaves
+  # the two sets equal and only the counts disagree
+  build3 <- make_panel_build()
+  fetch_ledger3 <- file.path(build3, "dropped.fetch.tsv")
+  writeLines(c(readLines(fetch_ledger3, warn = FALSE), "AA000010.1\tefetch_unavailable\t"),
+    fetch_ledger3)
+  r3 <- run_build_sourced(build3)
+  expect_gt(r3$status, 0L)
+  expect_true(any(grepl("41 requested != 35 kept + 7 dropped", r3$out, fixed = TRUE)))
+  expect_false(dir.exists(r3$out_dir))
+})
+
+# The requested SET is reconstructed (the list the fetch worked from, plus the
+# masters filtered out before it), so it is pinned to the recorded esearch
+# <Count> before anything is compared against it.
+test_that("the reconstructed requested set is checked against the recorded esearch count", {
+  build <- make_panel_build()
+  acc <- file.path(build, "accessions.txt")
+  # a truncated list would otherwise hash to its own marker
+  writeLines(readLines(acc, warn = FALSE)[-1], acc)
+  hex <- sub("\\s.*", "", system2("sha256sum", shQuote(acc), stdout = TRUE))
+  writeLines(sprintf("fetch\t%s\t2026-01-01T00:00:00Z", hex), file.path(build, "state.txt"))
+  r <- run_build_sourced(build)
+  expect_gt(r$status, 0L)
+  expect_true(any(grepl(
+    "reconstructed requested set vs accessions.esearch_count: expected 41, got 40",
+    r$out, fixed = TRUE)))
+  expect_false(dir.exists(r$out_dir))
+
+  # the WGS rows are half that reconstruction, so a lost one shows up here too
+  build2 <- make_panel_build()
+  ledger <- file.path(build2, "dropped.accessions.tsv")
+  writeLines(readLines(ledger, warn = FALSE)[1], ledger)
+  r2 <- run_build_sourced(build2)
+  expect_gt(r2$status, 0L)
+  expect_true(any(grepl(
+    "reconstructed requested set vs accessions.esearch_count: expected 41, got 40",
+    r2$out, fixed = TRUE)))
+  expect_false(dir.exists(r2$out_dir))
 })
 
 test_that("has_taxids is measured from the database, never asserted", {
