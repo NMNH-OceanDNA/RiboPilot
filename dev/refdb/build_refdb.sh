@@ -24,7 +24,11 @@ source "$SCRIPT_DIR/lib.sh"
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then RP_EXECUTED=1; else RP_EXECUTED=0; fi
 
 RP_LOCK_HELD=""
+RP_FETCH_PIDS=""
 rp_cleanup() {
+  # Workers first: rp_scrub_flush waits on the scrub filters, and a live child
+  # still holding the scrubbed stderr open never lets that wait return.
+  rp_fetch_reap
   [ -z "$RP_LOCK_HELD" ] || rm -f "$RP_LOCK_HELD"
   rp_scrub_flush
 }
@@ -591,6 +595,43 @@ rp_fasta_accessions() {
     | sort -u
 }
 
+# rp_fetch_reap
+# Kill every chunk worker's process group and wait for it. Job control gives
+# each worker its own group, so this takes its efetch child down too. It has to
+# happen before any exit, for two different reasons: an orphan still holding
+# the scrubbed stderr open makes rp_scrub_flush's wait block forever, so the
+# script hangs instead of failing; and an orphan that outlives the run can
+# publish a chunk into a build tree the next run is already using, which a pid
+# lockfile cannot see. The wait is per pid and never bare: a bare wait would
+# also wait on the scrub filters, which do not exit until the streams close.
+rp_fetch_reap() {
+  local p
+  # Nothing may interrupt a reap in progress, and job control goes off before
+  # the kill rather than after: a signal-killed job makes a shell still in
+  # monitor mode print "[1]- Terminated" per worker, interleaved with the real
+  # error. Turning monitor off is the whole fix -- redirecting the wait's
+  # stderr instead would be far worse, because bash parks the real stderr on a
+  # spare descriptor for the duration of a redirected command, and exiting
+  # from a trap that fired inside one leaves it parked, so rp_scrub_flush's
+  # `exec 2>&-` closes the wrong descriptor and its wait never returns.
+  # Process groups are assigned at fork time, so the kill still finds them.
+  trap - INT TERM
+  set +m
+  for p in ${RP_FETCH_PIDS:-}; do kill -- "-$p" 2>/dev/null || true; done
+  for p in ${RP_FETCH_PIDS:-}; do wait "$p" || true; done
+  RP_FETCH_PIDS=""
+}
+
+# rp_fetch_interrupt
+# The maintainer runs this stage by hand for over two hours, so Ctrl-C is a
+# likely action, and the workers are in their own process groups precisely so
+# the terminal's SIGINT does not reach them.
+rp_fetch_interrupt() {
+  trap - INT TERM
+  rp_fetch_reap
+  rp_die "fetch: interrupted; stopped the chunk workers"
+}
+
 # rp_fetch_chunk IDX FIRST_LINE
 # One chunk end to end, run as a background worker. Cuts its own request list
 # from the sorted, hash-pinned accession list by line range (positional cutting
@@ -805,7 +846,7 @@ stage_taxidmap() {
 stage_fetch() {
   rp_require_build_dir
   local acc sidecar hex recorded total n_chunks chunks missing tmp key f
-  local i idx running failed killed pids p
+  local i idx running failed
   local allwant allgot notgot notwant n_unavailable n_got
 
   acc="$BUILD_DIR/accessions.txt"
@@ -820,6 +861,11 @@ stage_fetch() {
   # which reads as "pool not full" and launches every chunk at once.
   [[ "$JOBS" =~ ^[1-9][0-9]*$ ]] \
     || rp_die "fetch: --jobs must be a positive integer, got '$JOBS'"
+  # Checked here, with everything else, rather than where it is used: that
+  # comparison is the last thing the stage does, so a bad value would otherwise
+  # abort with a bare "unexpected error" after the whole 2 h 20 m fetch.
+  [[ "$MAX_UNAVAILABLE" =~ ^[0-9]+$ ]] \
+    || rp_die "fetch: RP_MAX_UNAVAILABLE must be a non-negative integer, got '$MAX_UNAVAILABLE'"
 
   # Recompute rather than trust the sidecar: this hash is both the resume key
   # and the stage marker, so it has to describe the file that is about to be
@@ -858,19 +904,21 @@ stage_fetch() {
   # Written before the first chunk exists. A fetch interrupted at chunk 3 of
   # 179 has to be resumable, and chunks with no key beside them are refused.
   printf '%s\n' "$hex" > "$key"
+  # Emptied before the fetch, rewritten after it: an abort must not leave an
+  # earlier run's ledger sitting there claiming records were unavailable in a
+  # fetch that never finished.
+  : > "$BUILD_DIR/dropped.fetch.tsv"
 
   n_chunks=$(( (total + CHUNK_SIZE - 1) / CHUNK_SIZE ))
   rp_log "fetch: $total accession(s) in $n_chunks chunk(s) of $CHUNK_SIZE, $JOBS job(s)"
 
   running=0
   failed=0
-  killed=0
-  pids=""
-  # Job control so each worker leads its own process group: an abort can then
-  # take a worker's efetch child down with it. An orphan still holding the
-  # scrubbed stderr open makes rp_scrub_flush's wait at exit block forever, so
-  # the script would hang instead of failing.
+  RP_FETCH_PIDS=""
+  # Job control so each worker leads its own process group, which is what lets
+  # an abort take a worker's efetch child down with it rather than orphan it.
   set -m
+  trap rp_fetch_interrupt INT TERM
   for ((i = 0; i < n_chunks; i++)); do
     [ "$failed" -eq 0 ] || break
     idx="$(printf '%04d' "$i")"
@@ -883,24 +931,26 @@ stage_fetch() {
       wait -n || failed=1
       running=$((running - 1))
     fi
-    rp_fetch_chunk "$idx" $((i * CHUNK_SIZE + 1)) &
-    pids="$pids $!"
+    # `set -m` drops bash's implicit </dev/null for async commands, so without
+    # this a worker inherits the script's stdin, and a background process group
+    # that reads a terminal takes SIGTTIN.
+    rp_fetch_chunk "$idx" $((i * CHUNK_SIZE + 1)) < /dev/null &
+    RP_FETCH_PIDS="$RP_FETCH_PIDS $!"
     running=$((running + 1))
   done
-  # Reap before dying, and kill first so a doomed run does not sit through the
-  # rest of an in-flight chunk. Job control above gave each worker its own
-  # process group, so this takes its efetch child down too: an orphan still
-  # holding the scrubbed stderr open makes rp_scrub_flush's wait at exit block
-  # forever, and the script hangs instead of failing.
+  # On failure, kill and drain in one step rather than sitting through the rest
+  # of an in-flight chunk. Nothing may exit while a worker is alive.
   while [ "$running" -gt 0 ]; do
-    if [ "$failed" -ne 0 ] && [ "$killed" -eq 0 ]; then
-      killed=1
-      for p in $pids; do kill -- "-$p" 2>/dev/null || true; done
+    if [ "$failed" -ne 0 ]; then
+      rp_fetch_reap
+      break
     fi
     wait -n || failed=1
     running=$((running - 1))
   done
+  trap - INT TERM
   set +m
+  RP_FETCH_PIDS=""
   [ "$failed" -eq 0 ] || rp_die "fetch: chunk worker(s) failed; see the errors above"
 
   allwant="$tmp/want.all"
@@ -925,7 +975,10 @@ stage_fetch() {
   # both its files, and the dropped ledger is built from these lists, so a
   # chunk that changed underneath us would otherwise ship a panel whose funnel
   # silently does not add up.
-  sort "$missing"/fa_[0-9][0-9][0-9][0-9].txt > "$tmp/missing.all"
+  # -u because an accession duplicated in the list lands in two chunks, so it
+  # would be recorded missing twice here but appear once in the reconcile, and
+  # this guard would then abort a legitimate build.
+  sort -u "$missing"/fa_[0-9][0-9][0-9][0-9].txt > "$tmp/missing.all"
   comm -3 "$notgot" "$tmp/missing.all" > "$tmp/missing.disagree"
   [ ! -s "$tmp/missing.disagree" ] \
     || rp_die "fetch: the chunk missing lists record $(rp_line_count "$tmp/missing.all") unavailable accession(s) but $(rp_line_count "$notgot") are actually absent from $chunks; a published chunk changed. Remove $chunks and $missing and fetch again."

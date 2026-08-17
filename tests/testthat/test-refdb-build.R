@@ -1065,6 +1065,7 @@ write_fetch_stubs <- function(bindir, mode = "complete") {
     '[ -n "$inp" ] || { echo "stub efetch: called without -input FILE" >&2; exit 1; }',
     'mode="$(cat "$self_dir/efetch_mode.txt")"',
     'paste -sd, "$inp" >> "$self_dir/efetch_requests.log"',
+    'printf "%s\\n" "$$" >> "$self_dir/efetch_pids.log"',
     'calls="$(wc -l < "$self_dir/efetch_requests.log")"',
     'total="$(wc -l < "$inp")"',
     'case "$mode" in',
@@ -1074,6 +1075,8 @@ write_fetch_stubs <- function(bindir, mode = "complete") {
     # one chunk dies instantly, the rest hang: an abort that reaps its workers
     # finishes in about a second, one that waits them out takes 20
     '  failfast) if grep -qx "AA000000.1" "$inp"; then exit 0; fi; sleep 20 ;;',
+    # a fetch still in flight, so a test can interrupt one
+    '  slow) sleep 20 ;;',
     'esac',
     'i=0',
     'while read -r a; do',
@@ -1110,6 +1113,7 @@ write_fetch_stubs <- function(bindir, mode = "complete") {
   }
   writeLines(mode, file.path(bindir, "efetch_mode.txt"))
   file.create(file.path(bindir, "efetch_requests.log"))
+  file.create(file.path(bindir, "efetch_pids.log"))
   bindir
 }
 
@@ -1141,8 +1145,18 @@ run_fetch_cli <- function(build, extra_args = character(0), env_extra = characte
   out <- suppressWarnings(system2("timeout", c("120", "bash", shQuote(refdb_sh),
     "--build-dir", shQuote(build), "--stage", "fetch", extra_args),
     stdout = TRUE, stderr = TRUE, env = fetch_env(build, env_extra)))
+  fetch_result(out, build)
+}
+
+# `timeout` exits 124, which is greater than 0, so a run that hung would
+# satisfy every expect_gt(status, 0) in this file and read as a clean abort.
+# The abort tests are exactly the ones that would be fooled, so the check lives
+# here rather than in each of them.
+fetch_result <- function(out, build) {
   st <- attr(out, "status")
-  list(status = if (is.null(st)) 0L else as.integer(st), out = out, build = build)
+  status <- if (is.null(st)) 0L else as.integer(st)
+  expect_false(status == 124L, label = "the fetch run timed out instead of finishing")
+  list(status = status, out = out, build = build)
 }
 
 # Drives stage_fetch directly, which is the only way to use a chunk size other
@@ -1161,6 +1175,13 @@ run_fetch_sourced <- function(build, chunk_size = 5L, jobs = 2L, force = 0L,
     'source "$refdb"',
     "set +Ee",
     "trap - ERR",
+    # Sourcing skips the block that installs these, and without them the abort
+    # tests run in a shell with no scrub coprocesses -- which is the one place
+    # the hang can happen, since rp_scrub_flush's wait is what a worker still
+    # holding the scrubbed stderr blocks forever. A driver that omits them
+    # cannot exhibit the failure the reaping exists to prevent.
+    "rp_scrub_output",
+    "trap rp_cleanup EXIT",
     'BUILD_DIR="$b"',
     'RP_STATE_FILE="$BUILD_DIR/state.txt"',
     sprintf("CHUNK_SIZE=%d", chunk_size),
@@ -1172,8 +1193,7 @@ run_fetch_sourced <- function(build, chunk_size = 5L, jobs = 2L, force = 0L,
   out <- suppressWarnings(system2("timeout", c("120", "bash", shQuote(driver),
     shQuote(normalizePath(refdb_sh)), shQuote(build)),
     stdout = TRUE, stderr = TRUE, env = fetch_env(build, env_extra)))
-  st <- attr(out, "status")
-  list(status = if (is.null(st)) 0L else as.integer(st), out = out, build = build)
+  fetch_result(out, build)
 }
 
 test_that("build_refdb.sh defaults --jobs to 4", {
@@ -1364,11 +1384,21 @@ test_that("fetch aborts above the permanently-unavailable ceiling and accepts be
   expect_true(any(grepl("above the ceiling of 0", r$out, fixed = TRUE)))
   expect_true(any(grepl("AB000003.1", r$out, fixed = TRUE)))
   expect_false(file.exists(file.path(build, "state.txt")))
-  expect_false(file.exists(file.path(build, "dropped.fetch.tsv")))
+  # emptied before the fetch, rewritten after it, so an abort leaves no rows
+  expect_equal(length(readLines(file.path(build, "dropped.fetch.tsv"), warn = FALSE)), 0L)
 
   ok <- make_fetch_build(accs, "cuthdr")
   r2 <- run_fetch_cli(ok, env_extra = "RP_MAX_UNAVAILABLE=1")
   expect_equal(r2$status, 0L, label = paste(r2$out, collapse = "\n"))
+  expect_equal(readLines(file.path(ok, "dropped.fetch.tsv")),
+    "AB000003.1\tefetch_unavailable\t")
+
+  # the same tree, now failing: the ledger must not still be claiming the drop
+  # that the run which succeeded recorded
+  file.remove(file.path(ok, "state.txt"))
+  stale <- run_fetch_cli(ok, env_extra = "RP_MAX_UNAVAILABLE=0")
+  expect_gt(stale$status, 0L)
+  expect_equal(length(readLines(file.path(ok, "dropped.fetch.tsv"), warn = FALSE)), 0L)
 })
 
 test_that("fetch skips a completed stage on its marker, and --force re-verifies without refetching", {
@@ -1506,6 +1536,67 @@ test_that("four concurrent jobs finish the build, and an abort reaps the workers
   expect_gt(rs$status, 0L)
   expect_true(any(grepl("chunk worker(s) failed", rs$out, fixed = TRUE)))
   expect_lt(elapsed, 15)
+})
+
+test_that("an interrupt stops the chunk workers instead of leaving them fetching into the build tree", {
+  skip_if_not(file.exists(refdb_sh))
+  skip_if(Sys.which("bash") == "")
+  build <- make_fetch_build(sprintf("AB%06d.1", 1:20), "slow")
+  # The harness runs the stage under job control, which is both what the
+  # maintainer's interactive shell does and the only way to signal it at all:
+  # a non-interactive shell sets SIGINT to SIG_IGN for a `&` child, and bash
+  # refuses to install a trap for a signal that was ignored on entry, so
+  # without `set -m` here the interrupt is silently a no-op. Job control also
+  # means the workers never see the signal themselves -- exactly as Ctrl-C
+  # only reaches the foreground group -- so the stage's trap is the only thing
+  # that can stop them.
+  runner <- file.path(build, "interrupt.sh")
+  writeLines(c(
+    "set -uo pipefail",
+    'b="$1"; sh_path="$2"',
+    "set -m",
+    'bash "$sh_path" --build-dir "$b" --stage fetch > "$b/run.log" 2>&1 &',
+    "child=$!",
+    'for i in $(seq 1 400); do',
+    '  [ -s "$b/stubbin/efetch_pids.log" ] && break',
+    "  sleep 0.05",
+    "done",
+    "start=$(date +%s%N)",
+    'kill -INT "$child"',
+    # Sampled here, a second after the interrupt, and not from the test after
+    # the run: by then an unstopped worker has finished its own sleep and
+    # would look just like one that was killed.
+    "sleep 1",
+    'while read -r p; do kill -0 "$p" 2>/dev/null && echo "ALIVE=$p"; done < "$b/stubbin/efetch_pids.log"',
+    'wait "$child" 2>/dev/null; rc=$?',
+    "end=$(date +%s%N)",
+    'echo "RC=$rc"',
+    'echo "ELAPSED_MS=$(( (end - start) / 1000000 ))"'
+  ), runner)
+  pidlog <- file.path(build, "stubbin", "efetch_pids.log")
+  out <- suppressWarnings(system2("timeout", c("120", "bash", shQuote(runner),
+    shQuote(build), shQuote(normalizePath(refdb_sh))),
+    stdout = TRUE, stderr = TRUE, env = fetch_env(build)))
+  st <- attr(out, "status")
+  expect_false(identical(if (is.null(st)) 0L else as.integer(st), 124L),
+    label = "the interrupted run timed out instead of stopping")
+
+  worker_pids <- readLines(pidlog, warn = FALSE)
+  skip_if_not(length(worker_pids) > 0, "the fetch stage never reached a worker")
+  rc <- as.integer(sub("^RC=", "", grep("^RC=", out, value = TRUE)[1]))
+  elapsed <- as.integer(sub("^ELAPSED_MS=", "", grep("^ELAPSED_MS=", out, value = TRUE)[1])) / 1000
+  expect_gt(rc, 0L)
+  # not 20s: it stopped the workers rather than waiting out their efetch
+  expect_lt(elapsed, 15)
+
+  # the stub efetch is in the worker's process group, so it goes too. An
+  # orphan here would keep fetching and could publish a chunk into a tree the
+  # next run is already using, which the pid lockfile cannot see.
+  expect_equal(grep("^ALIVE=", out, value = TRUE), character(0))
+  expect_equal(list.files(file.path(build, "chunks")), character(0))
+  expect_false(file.exists(file.path(build, "state.txt")))
+  expect_true(any(grepl("interrupted; stopped the chunk workers",
+    readLines(file.path(build, "run.log"), warn = FALSE), fixed = TRUE)))
 })
 
 test_that("clean sweeps every fetch artifact and clears the fetch marker", {
