@@ -614,9 +614,13 @@ skip_without_docker_dir <- function() {
 # The sweep is lifted out of the deploy script and run for real against a staged
 # docker/: a grep for the rm would pass just as well on a loop that deleted the
 # current version's cache, which is the failure this loop exists to avoid.
+# Lifted from the empty-version guard, not from the loop: with an empty
+# RP_DB_VERSION every case pattern becomes *"-.tar.gz", matches nothing, and the
+# loop deletes the entire 160 MB cache, so the guard is part of the sweep.
 sweep_block <- function(path) {
   x <- readLines(path, warn = FALSE)
-  i <- grep("^for f in docker/ribopilot_rrna-", x)[1]
+  i <- grep('^\\[ -n "\\$RP_DB_VERSION" \\]', x)[1]
+  if (is.na(i)) i <- grep("^for f in docker/ribopilot_rrna-", x)[1]
   if (is.na(i)) return(character(0))
   ends <- grep("^done$", x)
   x[i:ends[ends > i][1]]
@@ -662,6 +666,17 @@ test_that("the deploy scripts sweep staged assets from other panel versions only
     expect_equal(r$status, 0L, label = paste(s, paste(r$out, collapse = "\n")))
     expect_equal(list.files(file.path(bare, "docker")), "Dockerfile")
     expect_length(r$out, 0L)
+
+    # an empty RP_DB_VERSION (constant missing or renamed in R/db_dist.R) must
+    # abort, not sweep: every case pattern would match nothing and the whole
+    # staged cache would go, including on a --no-db build
+    empty <- withr::local_tempdir()
+    dir.create(file.path(empty, "docker"))
+    for (f in c(keep, drop)) writeLines(f, file.path(empty, "docker", f))
+    r <- run_sweep(s, empty, "")
+    expect_gt(r$status, 0L, label = s)
+    expect_true(any(grepl("RP_DB_VERSION not found", r$out, fixed = TRUE)), label = s)
+    expect_setequal(list.files(file.path(empty, "docker")), c(keep, drop))
 
     # after RP_DB_VERSION is known and before the fetch, so the sweep can tell
     # which version is current and cannot delete what the fetch just verified

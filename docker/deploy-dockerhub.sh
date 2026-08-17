@@ -88,6 +88,10 @@ RP_DB_VERSION=$(awk -F'"' '/^RP_DB_VERSION/{print $2}' R/db_dist.R)
 RP_DB_REPO="dmacguigan/RiboPilot"
 RP_DB_TAG="db-${RP_DB_VERSION}"
 RP_DB=1
+# An empty version makes every `case` pattern below `*"-.tar.gz"`, which matches
+# nothing, so the sweep deletes the entire 160 MB staged cache -- including
+# under --no-db, which sits below it.
+[ -n "$RP_DB_VERSION" ] || { echo "RP_DB_VERSION not found in R/db_dist.R" >&2; exit 1; }
 
 # Sweep staged assets from OTHER panel versions, so no artifact carrying a stale
 # version is left in the build context. The current version's tarballs stay:
