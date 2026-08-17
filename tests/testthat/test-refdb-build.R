@@ -502,8 +502,10 @@ write_accessions_stubs <- function(bindir) {
 }
 
 run_accessions_stage <- function(count, efetch_lines, extra_args = character(0),
-                                 min_accessions = 1L) {
-  build <- withr::local_tempdir(.local_envir = parent.frame())
+                                 min_accessions = 1L, build = NULL) {
+  # build = an existing tree re-runs the stage against it, which is the only way
+  # to exercise the restart path the marker gate exists for
+  if (is.null(build)) build <- withr::local_tempdir(.local_envir = parent.frame())
   bindir <- file.path(build, "stubbin")
   write_accessions_stubs(bindir)
   writeLines(as.character(count), file.path(bindir, "esearch_count.txt"))
@@ -699,6 +701,70 @@ test_that("accessions stage refuses a drifted count without --accept-drift, proc
   expect_equal(r_accept$status, 0L)
   expect_true(file.exists(file.path(r_accept$build, "accessions.txt")))
   expect_true(any(grepl("accepted via --accept-drift", r_accept$out, fixed = TRUE)))
+})
+
+# THE RESTART CONTRACT (spec section 6: "re-run the identical command; completed
+# stages skip on marker + input-hash match"). Without the gate a plain restart
+# re-harvests, the source moves ~370 records/day, and the rewritten
+# accessions.txt hashes differently -- which is the resume key the fetch stage
+# refuses to proceed against, so restarting an interrupted build destroyed the
+# fetch it was meant to resume.
+test_that("a plain re-run skips the accessions stage instead of re-harvesting a drifted list", {
+  skip_if_not(file.exists(refdb_sh))
+  skip_if(Sys.which("bash") == "")
+  lines <- c("MZ000001", "AB123456", "KX999999", "OP111111")
+  r1 <- run_accessions_stage(count = length(lines), efetch_lines = lines,
+    extra_args = "--accept-drift")
+  expect_equal(r1$status, 0L)
+  build <- r1$build
+  hash1 <- sub("\\s.*", "", readLines(file.path(build, "accessions.sha256"))[1])
+
+  # the source moved between the two runs, well inside the tolerance
+  drifted <- c(lines, "YZ666666")
+  r2 <- run_accessions_stage(count = length(drifted), efetch_lines = drifted,
+    extra_args = "--accept-drift", build = build)
+  expect_equal(r2$status, 0L)
+  expect_true(any(grepl("already harvested", r2$out, fixed = TRUE)))
+  # esearch was never called: write_accessions_stubs truncates the call log, so
+  # an empty log is proof the skipped run issued no query at all
+  expect_equal(readLines(file.path(build, "stubbin", "esearch_calls.log"),
+    warn = FALSE), character(0))
+  expect_equal(readLines(file.path(build, "accessions.txt")),
+    sort(lines, method = "radix"))
+  expect_equal(sub("\\s.*", "", readLines(file.path(build, "accessions.sha256"))[1]),
+    hash1)
+
+  # --force is the flag that means redo; --accept-drift above did not re-harvest
+  r3 <- run_accessions_stage(count = length(drifted), efetch_lines = drifted,
+    extra_args = c("--accept-drift", "--force"), build = build)
+  expect_equal(r3$status, 0L)
+  expect_false(any(grepl("already harvested", r3$out, fixed = TRUE)))
+  expect_equal(readLines(file.path(build, "accessions.txt")),
+    sort(drifted, method = "radix"))
+})
+
+test_that("the accessions gate needs the marker AND the on-disk list to agree", {
+  skip_if_not(file.exists(refdb_sh))
+  skip_if(Sys.which("bash") == "")
+  lines <- c("MZ000001", "AB123456", "KX999999", "OP111111")
+  for (tamper in c("list", "marker")) {
+    r1 <- run_accessions_stage(count = length(lines), efetch_lines = lines,
+      extra_args = "--accept-drift")
+    expect_equal(r1$status, 0L, label = tamper)
+    if (tamper == "list") {
+      # an edited accessions.txt no longer matches its sidecar
+      writeLines(c(lines, "ZZ000000"), file.path(r1$build, "accessions.txt"))
+    } else {
+      writeLines("accessions\tdeadbeef\t2026-01-01T00:00:00Z",
+        file.path(r1$build, "state.txt"))
+    }
+    r2 <- run_accessions_stage(count = length(lines), efetch_lines = lines,
+      extra_args = "--accept-drift", build = r1$build)
+    expect_equal(r2$status, 0L, label = tamper)
+    expect_false(any(grepl("already harvested", r2$out, fixed = TRUE)), label = tamper)
+    expect_equal(paste(readLines(file.path(r1$build, "stubbin", "esearch_calls.log"),
+      warn = FALSE), collapse = ""), "x", label = tamper)
+  }
 })
 
 # --- taxidmap stage ----------------------------------------------------------
@@ -1244,6 +1310,56 @@ run_fetch_sourced <- function(build, chunk_size = 5L, jobs = 2L, force = 0L,
     stdout = TRUE, stderr = TRUE, env = fetch_env(build, env_extra)))
   fetch_result(out, build)
 }
+
+test_that("an interrupted build restarts: accessions skips and fetch resumes instead of saying the source moved", {
+  skip_if_not(file.exists(refdb_sh))
+  skip_if(Sys.which("bash") == "" || Sys.which("timeout") == "")
+  accs <- c("AB000001.1", "AB000002.1", "AB000003.1", "AB000004.1")
+  r1 <- run_accessions_stage(count = length(accs), efetch_lines = accs,
+    extra_args = "--accept-drift")
+  expect_equal(r1$status, 0L)
+  build <- r1$build
+  hash1 <- sub("\\s.*", "", readLines(file.path(build, "accessions.sha256"))[1])
+
+  # a fetch that wrote its resume key and its chunk, then was interrupted before
+  # the marker: the marker is the last thing the stage sets, so dropping its
+  # line is exactly the state a Ctrl-C leaves
+  write_fetch_stubs(file.path(build, "stubbin"), "complete")
+  f1 <- run_fetch_cli(build)
+  expect_equal(f1$status, 0L, label = paste(f1$out, collapse = "\n"))
+  expect_equal(readLines(file.path(build, "chunks.accessions.sha256")), hash1)
+  chunk_before <- readLines(file.path(build, "chunks", "fa_0000"))
+  writeLines(grep("^fetch\t", readLines(file.path(build, "state.txt")),
+    value = TRUE, invert = TRUE), file.path(build, "state.txt"))
+
+  # the plain restart: the same command, against a source that has since moved
+  drifted <- c(accs, "AB000005.1")
+  r2 <- run_accessions_stage(count = length(drifted), efetch_lines = drifted,
+    extra_args = "--accept-drift", build = build)
+  expect_equal(r2$status, 0L)
+  expect_true(any(grepl("already harvested", r2$out, fixed = TRUE)))
+
+  write_fetch_stubs(file.path(build, "stubbin"), "complete")
+  f2 <- run_fetch_cli(build)
+  expect_equal(f2$status, 0L, label = paste(f2$out, collapse = "\n"))
+  expect_false(any(grepl("The source moved", f2$out, fixed = TRUE)))
+  expect_equal(readLines(file.path(build, "chunks", "fa_0000")), chunk_before)
+  # resumed, not refetched: the existing chunk seeds the accumulator, so nothing
+  # was still missing and no efetch round ran at all
+  expect_equal(fetch_requests(build), character(0))
+
+  # the counterfactual, so this test cannot pass for the wrong reason: force the
+  # re-harvest the gate was suppressing and the fetch refuses, exactly as before
+  r3 <- run_accessions_stage(count = length(drifted), efetch_lines = drifted,
+    extra_args = c("--accept-drift", "--force"), build = build)
+  expect_equal(r3$status, 0L)
+  write_fetch_stubs(file.path(build, "stubbin"), "complete")
+  f3 <- run_fetch_cli(build)
+  expect_gt(f3$status, 0L)
+  expect_true(any(grepl("The source moved", f3$out, fixed = TRUE)))
+  # and the advice it gives is not purely destructive
+  expect_true(any(grepl("--stage fetch", f3$out, fixed = TRUE)))
+})
 
 test_that("build_refdb.sh defaults --jobs to 4", {
   skip_if_not(file.exists(refdb_sh))

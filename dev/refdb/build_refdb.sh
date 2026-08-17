@@ -175,7 +175,8 @@ Usage: build_refdb.sh [--version V] [--build-dir D] [--stage NAME]
   --stage NAME      Run only one stage (accessions|taxidmap|fetch|build|decoys|package).
   --jobs N          Parallelism for the fetch stage (default: 4).
   --accept-drift    Allow the harvested count to differ from EXPECTED_COUNT.
-  --force           Allow rebuilding an existing blastdb/<VER> in place.
+  --force           Re-run a stage the state file already records complete, and
+                    allow rebuilding an existing blastdb/<VER> in place.
   --check-version   Diff RP_DB_VERSION across the build's version-carrying files, then exit.
   status            Print the last recorded stage state and exit.
   clean             Remove intermediate build artifacts and exit.
@@ -782,6 +783,21 @@ stage_accessions() {
   raw="$BUILD_DIR/accessions.raw.txt"
   filtered="$BUILD_DIR/accessions.txt"
 
+  # Marker + input-hash gate, spec section 6: "re-run the identical command;
+  # completed stages skip". Without it a plain restart re-harvests, and the
+  # source moves ~370 records/day, so any drift inside the tolerance rewrites
+  # accessions.txt with a new hash -- the very key stage_fetch refuses to
+  # resume against, destroying the 2 h 20 m fetch the restart existed to
+  # resume. --accept-drift does NOT re-harvest: it relaxes a guard, it does not
+  # mean "redo", and making it re-harvest would put the destruction straight
+  # back. --force is the flag that means redo.
+  if [ "$FORCE" -eq 0 ] && [ -f "$filtered" ] && [ -f "$BUILD_DIR/accessions.sha256" ] \
+      && (cd "$BUILD_DIR" && sha256sum -c --status accessions.sha256) \
+      && rp_marker_ok accessions "$(cut -d' ' -f1 < "$BUILD_DIR/accessions.sha256")"; then
+    rp_log "accessions: already harvested for this build ($(rp_line_count "$filtered") accession(s)); skipping (--stage accessions --force re-harvests)"
+    return 0
+  fi
+
   rp_log "accessions: esearch (nuccore) for the panel query"
   esearch -db nuccore -query "$QUERY" > "$xml"
 
@@ -968,7 +984,7 @@ stage_fetch() {
   if [ -f "$key" ]; then
     recorded="$(tr -d '[:space:]' < "$key")"
     [ "$recorded" = "$hex" ] \
-      || rp_die "fetch: refusing to resume: $chunks was cut from an accession list hashing $recorded, but $acc now hashes $hex. The source moved. Remove $chunks, $missing and $key to fetch it fresh."
+      || rp_die "fetch: refusing to resume: $chunks was cut from an accession list hashing $recorded, but $acc now hashes $hex. The source moved. To keep the chunks, restore the accession list they were cut from and re-run with --stage fetch, which resumes without re-harvesting. To start over, remove $chunks, $missing and $key."
   else
     for f in "$chunks"/fa_[0-9][0-9][0-9][0-9]; do
       [ -e "$f" ] || break
