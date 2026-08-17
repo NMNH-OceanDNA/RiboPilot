@@ -184,7 +184,7 @@ sweep_stale_installs <- function(dest, version, max_age_days = 1) {
 #' @param base_url Release download base; overridable for testing.
 #' @param force Re-download even when the panel is already present.
 #' @return (invisibly) the panel prefix.
-#' @export
+#' @noRd
 install_ribopilot_db <- function(version = RP_DB_VERSION,
                                  dest = ribopilot_db_dir(),
                                  decoys = TRUE,

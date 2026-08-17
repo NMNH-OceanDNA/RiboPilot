@@ -99,4 +99,4 @@ command -v gh >/dev/null || { echo "gh not on PATH" >&2; exit 1; }
 # release, so a bad one has to be deleted before this can be re-run.
 gh release create "db-${VER}" ./*.tar.gz ./*.sha256 \
   --repo "$REPO" --title "rDNA panel ${VER}" --latest=false \
-  --notes "Metazoan nuclear rDNA BLAST panel ${VER}. Install with RiboPilot::install_ribopilot_db(\"${VER}\")."
+  --notes "Metazoan nuclear rDNA BLAST panel ${VER}. Install with RiboPilot:::install_ribopilot_db(\"${VER}\")."

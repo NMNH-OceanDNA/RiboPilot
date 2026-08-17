@@ -111,6 +111,13 @@ make_fake_release <- function(root, version = "9.9.9", decoys = FALSE) {
   paste0("file://", rel)
 }
 
+# End users do not build or install panels: the shipped container carries one.
+# Kept internal on purpose, so a stray devtools::document() must not re-export it.
+test_that("install_ribopilot_db is internal, not part of the public surface", {
+  expect_false("install_ribopilot_db" %in% getNamespaceExports("RiboPilot"))
+  expect_true(is.function(RiboPilot:::install_ribopilot_db))
+})
+
 test_that("install_ribopilot_db extracts a verified panel and returns its prefix", {
   root <- tempfile(); dir.create(root); on.exit(unlink(root, recursive = TRUE))
   base <- make_fake_release(root)
