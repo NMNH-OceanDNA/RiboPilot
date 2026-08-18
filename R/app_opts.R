@@ -156,6 +156,34 @@ assemble_opts_modal <- function(cur, choices, n) {
     update_id = "update_ao")
 }
 
+# Where a BLAST search goes. Stored as two integers because that is what
+# blast.nf reads, but offered as one choice: as two checkboxes the user could
+# ask for "NCBI only" AND "fall back to NCBI", which blast.nf silently ignores.
+BLAST_SOURCE_CHOICES <- c(
+  "Bundled database only" = "bundled",
+  "Bundled database, then NCBI for anything it cannot name" = "escalate",
+  "NCBI only (core_nt)" = "remote")
+
+#' The stored columns as one choice
+#'
+#' remote wins over fallback for a row carrying both, because that is what the
+#' pipeline does with it.
+#' @noRd
+blast_source <- function(remote_blast, remote_fallback) {
+  r <- remote_blast %|NA|% 0
+  f <- remote_fallback %|NA|% 1
+  if (r == 1) "remote" else if (f == 1) "escalate" else "bundled"
+}
+
+#' The choice as the stored columns
+#' @noRd
+blast_source_cols <- function(source) {
+  switch(source %||% "escalate",
+    bundled  = list(remote_blast = 0L, remote_fallback = 0L),
+    remote   = list(remote_blast = 1L, remote_fallback = 0L),
+    list(remote_blast = 0L, remote_fallback = 1L))
+}
+
 #' The bundled-database note, rendered as a callout rather than a field
 #'
 #' A full border plus a radius is exactly what Bootstrap gives a form control,
@@ -194,12 +222,10 @@ with_panel_note <- function(cur, con, project = app_project()) {
 }
 
 blast_opts_modal <- function(cur, choices, n) {
-  remote <- (cur$remote_blast %|NA|% 0) == 1
-  fallback <- (cur$remote_fallback %|NA|% 1) == 1
+  source <- blast_source(cur$remote_blast, cur$remote_fallback)
   # the Entrez filter is passed to every search that leaves the machine, and an
-  # escalated scaffold is one of those, so "remote is off" is not the same as
-  # "the filter is unused"
-  reaches_ncbi <- remote || fallback
+  # escalated scaffold is one of those
+  reaches_ncbi <- source != "bundled"
   opts_modal_shell("BLAST options", n,
     opts_name_row("bo_name", "bo_edit", choices, cur$blast_opts),
     shinyjs::disabled(shinyWidgets::prettyCheckbox("bo_run",
@@ -207,20 +233,12 @@ blast_opts_modal <- function(cur, choices, n) {
       value = (cur$run_blast %|NA|% 1) == 1, status = "primary")),
     panel_note_box(list(known = cur$panel_known %|NA|% FALSE,
       text = cur$panel_note %|NA|% "")),
-    shinyjs::disabled(shinyWidgets::prettyCheckbox("bo_remote",
-      "Search NCBI instead of the bundled database",
-      value = remote, status = "primary")),
-    opts_help("Searches core_nt over the network. Far slower and rate limited, ",
-      "and it needs an internet connection from wherever the pipeline runs."),
-    shinyjs::disabled(shinyWidgets::prettyCheckbox("bo_fallback",
-      "Fall back to NCBI when the bundled database names nothing",
-      value = fallback, status = "primary")),
-    shiny::div(id = "bo_fallback_moot",
-      style = if (remote) NULL else "display:none;",
-      opts_help("Not used when every search already goes to NCBI.")),
-    opts_help("A scaffold the bundled database cannot name is searched again at ",
-      "NCBI. This is what catches contaminants and off-target scaffolds, the ",
-      "things a metazoan rDNA database has no record of."),
+    shinyjs::disabled(shiny::radioButtons("bo_source", "Search:",
+      choices = BLAST_SOURCE_CHOICES, selected = source, width = "100%")),
+    opts_help("The bundled database answers in milliseconds; NCBI is far slower, ",
+      "rate limited, and needs an internet connection from wherever the pipeline ",
+      "runs. Escalating catches contaminants and off-target scaffolds, the things ",
+      "a metazoan rDNA database has no record of."),
     shiny::div(id = "bo_entrez_group",
       style = if (reaches_ncbi) NULL else "display:none;",
       shinyjs::disabled(shiny::textAreaInput("bo_entrez",
@@ -380,7 +398,7 @@ opts_handlers <- function(input, output, session, deps) {
     po = c("po_cpus", "po_mem", "po_fastp"),
     ao = c("ao_cpus", "ao_mem", "ao_getorg", "ao_minlen", "ao_maxpaths", "ao_maxscaf",
            "ao_assembler", "ao_bt2", "ao_spades", "ao_seeds", "ao_labels"),
-    bo = c("bo_run", "bo_remote", "bo_fallback", "bo_entrez", "bo_extra", "bo_mts"),
+    bo = c("bo_run", "bo_source", "bo_entrez", "bo_extra", "bo_mts"),
     no = c("no_cpus", "no_mem", "no_tool", "no_kingdom", "no_itsxtaxon", "no_itsxopts"),
     co = c("co_ruleset", "co_pid", "co_contam")
   )
@@ -436,23 +454,11 @@ opts_handlers <- function(input, output, session, deps) {
     })
   })
 
-  # BLAST source states, registered after the per-opts loop above so the generic
-  # "enable everything on Edit" handler runs first and this can override it.
-  sync_blast_states <- function() {
-    remote <- isTRUE(input$bo_remote)
-    # the Entrez filter reaches NCBI through an escalated scaffold too, so it is
-    # relevant whenever either route can leave the machine
+  # the Entrez filter only matters for a search that can reach NCBI
+  shiny::observeEvent(input$bo_source, ignoreInit = TRUE, {
     shinyjs::toggle(id = "bo_entrez_group",
-      condition = remote || isTRUE(input$bo_fallback))
-    # with every search already remote there is nothing to fall back FROM, and
-    # blast.nf ignores the flag in that state; say so instead of offering it
-    shinyjs::toggle(id = "bo_fallback_moot", condition = remote)
-    shinyjs::toggleState("bo_fallback",
-      condition = !remote && isTRUE(input$bo_edit))
-  }
-  shiny::observeEvent(input$bo_remote, ignoreInit = TRUE, sync_blast_states())
-  shiny::observeEvent(input$bo_fallback, ignoreInit = TRUE, sync_blast_states())
-  shiny::observeEvent(input$bo_edit, ignoreInit = TRUE, sync_blast_states())
+      condition = !identical(input$bo_source, "bundled"))
+  })
 
   # annotate kingdom choices follow the tool selection
   shiny::observeEvent(input$no_tool, ignoreInit = TRUE, {
@@ -513,8 +519,8 @@ opts_row <- function(pfx, nm, input, base) {
       stringsAsFactors = FALSE),
     bo = data.frame(blast_opts = nm, run_blast = as.integer(isTRUE(input$bo_run)),
       entrez_query = input$bo_entrez %||% "",
-      remote_blast = as.integer(isTRUE(input$bo_remote)),
-      remote_fallback = as.integer(isTRUE(input$bo_fallback)),
+      remote_blast = blast_source_cols(input$bo_source)$remote_blast,
+      remote_fallback = blast_source_cols(input$bo_source)$remote_fallback,
       extra_opts = input$bo_extra %||% "",
       max_target_seqs = as.integer(input$bo_mts), stringsAsFactors = FALSE),
     no = data.frame(annotate_opts = nm, cpus = as.integer(input$no_cpus),

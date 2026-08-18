@@ -87,16 +87,6 @@ test_that("blast_opts carries the remote toggles, remote off and fallback on", {
   expect_equal(row$remote_fallback, 1L)
 })
 
-test_that("opts_row writes both remote toggles as integers", {
-  input <- list(bo_run = TRUE, bo_entrez = "", bo_extra = "", bo_mts = 50,
-    bo_remote = FALSE, bo_fallback = TRUE)
-  row <- RiboPilot:::opts_row("bo", "default", input, base = list())
-  expect_equal(row$remote_blast, 0L)
-  expect_equal(row$remote_fallback, 1L)
-
-  input$bo_remote <- TRUE
-  expect_equal(RiboPilot:::opts_row("bo", "default", input, base = list())$remote_blast, 1L)
-})
 
 test_that("the modal shows the panel note, both toggles, and marks Entrez remote-only", {
   html <- as.character(shiny::withReactiveDomain(shiny::MockShinySession$new(),
@@ -107,8 +97,7 @@ test_that("the modal shows the panel note, both toggles, and marks Entrez remote
       panel_note = "ribopilot_rrna 2026.08.18, 598,202 sequences", panel_known = TRUE),
     choices = "default", n = 1)))
   expect_match(html, "598,202")
-  expect_match(html, "bo_remote")
-  expect_match(html, "bo_fallback")
+  expect_match(html, "bo_source")
   expect_match(html, "Entrez query", fixed = TRUE)
   # the old title claimed every search went to GenBank
   expect_false(grepl("GenBank BLAST options", html, fixed = TRUE))
@@ -274,16 +263,6 @@ test_that("Entrez shows whenever a search can reach NCBI, and says so", {
   expect_false(grepl("remote BLAST only", mk(0L, 1L), fixed = TRUE))
 })
 
-test_that("the modal says the fallback is moot while every search goes to NCBI", {
-  html <- as.character(shiny::withReactiveDomain(shiny::MockShinySession$new(),
-    RiboPilot:::blast_opts_modal(
-      cur = list(blast_opts = "default", run_blast = 1L, entrez_query = "",
-        extra_opts = "", max_target_seqs = 50L, remote_blast = 1L,
-        remote_fallback = 1L, panel_note = "x", panel_known = TRUE),
-      choices = "default", n = 1)))
-  expect_match(html, "bo_fallback_moot")
-  expect_match(html, "Not used when every search already goes to NCBI")
-})
 
 test_that("the modal states the metazoan rDNA scope once, not three times", {
   html <- as.character(shiny::withReactiveDomain(shiny::MockShinySession$new(),
@@ -293,4 +272,60 @@ test_that("the modal states the metazoan rDNA scope once, not three times", {
         remote_fallback = 1L, panel_note = "x", panel_known = TRUE),
       choices = "default", n = 1)))
   expect_lte(length(gregexpr("metazoan", html)[[1]]), 1)
+})
+
+test_that("the source choice round-trips through the two stored columns", {
+  f <- RiboPilot:::blast_source
+  expect_equal(f(0L, 0L), "bundled")
+  expect_equal(f(0L, 1L), "escalate")
+  expect_equal(f(1L, 0L), "remote")
+  # legacy and hand-edited rows: remote wins, because that is what blast.nf does
+  expect_equal(f(1L, 1L), "remote")
+  # missing columns fall to the shipped default
+  expect_equal(f(NA, NA), "escalate")
+
+  g <- RiboPilot:::blast_source_cols
+  expect_equal(g("bundled"), list(remote_blast = 0L, remote_fallback = 0L))
+  expect_equal(g("escalate"), list(remote_blast = 0L, remote_fallback = 1L))
+  # the impossible state is not writable: choosing NCBI only clears the flag
+  expect_equal(g("remote"), list(remote_blast = 1L, remote_fallback = 0L))
+})
+
+test_that("opts_row writes the columns the radio implies", {
+  base <- list(bo_run = TRUE, bo_entrez = "", bo_extra = "", bo_mts = 50)
+  row <- RiboPilot:::opts_row("bo", "default", c(base, list(bo_source = "remote")),
+    base = list())
+  expect_equal(row$remote_blast, 1L)
+  expect_equal(row$remote_fallback, 0L)
+
+  row2 <- RiboPilot:::opts_row("bo", "default", c(base, list(bo_source = "bundled")),
+    base = list())
+  expect_equal(row2$remote_blast, 0L)
+  expect_equal(row2$remote_fallback, 0L)
+})
+
+test_that("the modal offers one three-way choice, not two checkboxes", {
+  mk <- function(remote, fallback) {
+    as.character(shiny::withReactiveDomain(shiny::MockShinySession$new(),
+      RiboPilot:::blast_opts_modal(
+        cur = list(blast_opts = "default", run_blast = 1L, entrez_query = "",
+          extra_opts = "", max_target_seqs = 50L, remote_blast = remote,
+          remote_fallback = fallback, panel_note = "x", panel_known = TRUE),
+        choices = "default", n = 1)))
+  }
+  html <- mk(0L, 1L)
+  expect_match(html, "bo_source")
+  expect_false(grepl("bo_remote", html, fixed = TRUE))
+  expect_false(grepl("bo_fallback", html, fixed = TRUE))
+  # the contradiction the two checkboxes allowed has nowhere to live now
+  expect_false(grepl("Not used when every search", html, fixed = TRUE))
+
+  # the stored state selects the matching option
+  expect_match(mk(1L, 1L), 'value="remote"[^>]*checked')
+  expect_match(mk(0L, 0L), 'value="bundled"[^>]*checked')
+
+  # Entrez is irrelevant only when nothing reaches NCBI
+  expect_match(sub("(?s).*id=\"bo_entrez_group\"", "", mk(0L, 0L), perl = TRUE),
+    "display:none", fixed = TRUE)
+  expect_false(grepl("display:none", sub(".*bo_entrez_group", "", mk(0L, 1L))))
 })
