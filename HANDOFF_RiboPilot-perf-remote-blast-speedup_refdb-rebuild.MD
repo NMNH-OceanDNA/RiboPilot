@@ -127,9 +127,26 @@ The corrected decomposition balances exactly, and is the build stage's verificat
                  +      0 taxid_unresolved
 ```
 
-Reference values from the shipped panel: fasta records 597,988; taxid map rows 597,988; distinct
+Reference values from the **2026-08-13 dev panel** at `~/ribopilot_refdb_build/blastdb/2026.08.1`
+(built by the old scripts, never published): fasta records 597,988; taxid map rows 597,988; distinct
 taxids 185,732; `.njs` `number-of-sequences` 597,988, `number-of-letters` 688,449,026,
 `number-of-taxids` 185,732.
+
+**The new pipeline's first successful build, 2026-08-18, does not match those numbers**, and should
+not be expected to: the source grows ~370 records/day and three days passed. It produced 598,202
+records (+214), 688,824,954 letters (+375,928) and 185,708 taxids (-24). It was first built under the
+same version string `2026.08.1`, which meant two different panels carried one label. **Resolved by
+maintainer ruling: the panel is now versioned `YYYY.MM.DD`, the harvest date** (`a9c8ab4`). The
+current panel is **`2026.08.18`**, built and verified; the 2026.08.1 tree under
+`dev/refdb/build/blastdb/` was removed as a mislabelled duplicate of it. Nothing was ever published,
+so no release tag or image collides.
+
+The scheme change is deliberate, not cosmetic: a hand-bumped counter is a manual step that gets
+forgotten, which is exactly how the collision happened. The date is unique per build by construction
+and records how old the snapshot is. It stays dotted-numeric because `rp_valid_version` and R's
+`numeric_version()` both reject anything else, and `discover_panel()` would then be unable to see the
+panel at all. Only two files carry the value (`R/db_dist.R`, `docker/Dockerfile`) and
+`build_refdb.sh --check-version` diffs them.
 
 **Two live defects in existing tooling, both confirmed by running the code:**
 
