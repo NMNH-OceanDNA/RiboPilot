@@ -311,7 +311,11 @@ panel_summary <- function(m) {
   if (!is.list(m)) return("")
   out <- trimws(paste(m$db_name, m$db_version))
   built <- substr(m$built_utc %||% "", 1, 10)
-  if (nzchar(built)) out <- paste0(out, ", built ", built)
+  # the version IS the harvest date, so "2026.08.18, built 2026-08-18" says the
+  # same thing twice. Worth stating only when the build lagged the harvest.
+  if (nzchar(built) && !identical(gsub("[.]", "-", m$db_version), built)) {
+    out <- paste0(out, ", built ", built)
+  }
   n <- fmt_count(m$counts$records_after_dedup)
   if (nzchar(n)) out <- paste0(out, ", ", n, " sequences")
   tx <- fmt_count(m$counts$distinct_taxids)
@@ -323,18 +327,24 @@ panel_summary <- function(m) {
   out
 }
 
-#' The modal's panel line: the manifest if the app can see it, else the last run's
-#' @param m Panel manifest, or NULL when the panel is not visible here.
+#' What to say about the database: the manifest if visible, else the last run's
+#'
+#' Returns `known` as well as the text: the "we do not know yet" state is a
+#' different fact, not a shorter sentence, and the caller styles and labels it
+#' differently rather than leaving the difference to colour alone.
+#' @param m Manifest, or NULL when the database is not visible from here.
 #' @param recorded `reference_config.blastdb_info`, written by the last local run.
+#' @return list(known = logical, text = character(1)); no lead-in, which belongs
+#'   to the callout that renders it.
 #' @noRd
-panel_note_text <- function(m, recorded = "") {
+panel_note <- function(m, recorded = "") {
   s <- panel_summary(m)
   if (!nzchar(s)) s <- trimws(recorded %||% "")
   if (!nzchar(s)) {
-    return(paste0("Bundled BLAST reference database: which database this ",
-      "project searches is recorded the first time a local search runs."))
+    return(list(known = FALSE,
+      text = "Recorded after the first local search in this project."))
   }
-  paste0("Bundled BLAST reference database ", s, ".")
+  list(known = TRUE, text = s)
 }
 
 #' The image named by a project config, or "" when it names none
@@ -416,7 +426,7 @@ project_panel_note <- function(con, prefix = "", project = ".",
         params = list(recorded)), error = function(e) NULL)
     }
   }
-  panel_note_text(m, recorded)
+  panel_note(m, recorded)
 }
 
 #' The recorded panel, for display; "" when none

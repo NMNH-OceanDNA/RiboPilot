@@ -18,8 +18,7 @@ test_that("panel_summary states version, build date, records and taxa", {
   d <- withr::local_tempdir()
   m <- RiboPilot:::read_panel_manifest(mk_manifest(d))
   s <- RiboPilot:::panel_summary(m)
-  expect_match(s, "2026\\.08\\.18")
-  expect_match(s, "2026-08-18")           # build date, not the timestamp
+  expect_match(s, "2026\\.08\\.18")     # the version is the harvest date
   expect_match(s, "598,202")              # thousands separators, not raw digits
   expect_match(s, "185,708")
   expect_false(grepl("15:27:33", s))
@@ -35,22 +34,23 @@ test_that("panel_summary survives a manifest with no counts block", {
   expect_false(grepl("NA", s))
 })
 
-test_that("panel_note_text prefers the panel on disk, then what the last run recorded", {
+test_that("panel_note prefers the database on disk, then what the last run recorded", {
   skip_if_not_installed("withr")
   d <- withr::local_tempdir()
   m <- RiboPilot:::read_panel_manifest(mk_manifest(d))
 
-  # panel visible to the app (conda / local run): full detail
-  expect_match(RiboPilot:::panel_note_text(m, "recorded text"), "598,202")
+  # visible to the app (conda / local run): full detail
+  expect_match(RiboPilot:::panel_note(m, "recorded text")$text, "598,202")
 
-  # panel only inside the container: fall back to what the run wrote down
-  expect_match(RiboPilot:::panel_note_text(NULL, "ribopilot_rrna 2026.08.18, 4 records"),
+  # only inside the container: fall back to what the run wrote down
+  expect_match(RiboPilot:::panel_note(NULL, "ribopilot_rrna 2026.08.18, 4 records")$text,
     "4 records")
 
-  # nothing yet: say so plainly rather than implying there is no panel
-  txt <- RiboPilot:::panel_note_text(NULL, "")
-  expect_match(txt, "first time a local search runs")
-  expect_false(grepl("NA", txt))
+  # nothing yet: say so plainly rather than implying there is no database
+  note <- RiboPilot:::panel_note(NULL, "")
+  expect_false(note$known)
+  expect_match(note$text, "first local search")
+  expect_false(grepl("NA", note$text))
 })
 
 test_that("record_blastdb_provenance stores the summary the modal displays", {
@@ -104,12 +104,12 @@ test_that("the modal shows the panel note, both toggles, and marks Entrez remote
     cur = list(blast_opts = "default", run_blast = 1L, entrez_query = "",
       extra_opts = "-evalue 1e-20", max_target_seqs = 50L,
       remote_blast = 0L, remote_fallback = 1L,
-      panel_note = "Bundled BLAST panel ribopilot_rrna 2026.08.18, 598,202 sequences."),
+      panel_note = "ribopilot_rrna 2026.08.18, 598,202 sequences", panel_known = TRUE),
     choices = "default", n = 1)))
   expect_match(html, "598,202")
   expect_match(html, "bo_remote")
   expect_match(html, "bo_fallback")
-  expect_match(html, "remote BLAST only", fixed = TRUE)
+  expect_match(html, "Entrez query", fixed = TRUE)
   # the old title claimed every search went to GenBank
   expect_false(grepl("GenBank BLAST options", html, fixed = TRUE))
 })
@@ -153,12 +153,12 @@ test_that("the note falls back to asking the image, and caches what it learns", 
   calls <- 0
   probe <- function(...) { calls <<- calls + 1; "ribopilot_rrna 2026.08.18, 42 sequences" }
   note <- RiboPilot:::project_panel_note(con, "", project = d, probe = probe)
-  expect_match(note, "42 sequences")
+  expect_match(note$text, "42 sequences")
   expect_equal(calls, 1)
 
   # cached in the project, so opening the modal again does not re-run the image
   note2 <- RiboPilot:::project_panel_note(con, "", project = d, probe = probe)
-  expect_match(note2, "42 sequences")
+  expect_match(note2$text, "42 sequences")
   expect_equal(calls, 1)
 })
 
@@ -171,7 +171,7 @@ test_that("a probe that cannot reach the image leaves the placeholder, not an er
   DBI::dbExecute(con, "INSERT INTO reference_config (rowid_key) VALUES (1)")
   note <- RiboPilot:::project_panel_note(con, "", project = d,
     probe = function(...) stop("no docker here"))
-  expect_match(note, "first time a local search runs")
+  expect_false(note$known)
 })
 
 test_that("the user-facing wording says reference database, never panel", {
@@ -179,13 +179,14 @@ test_that("the user-facing wording says reference database, never panel", {
     RiboPilot:::blast_opts_modal(
       cur = list(blast_opts = "default", run_blast = 1L, entrez_query = "",
         extra_opts = "", max_target_seqs = 50L, remote_blast = 0L,
-        remote_fallback = 1L, panel_note = RiboPilot:::panel_note_text(NULL, "x")),
+        remote_fallback = 1L, panel_note = RiboPilot:::panel_note(NULL, "")$text,
+        panel_known = FALSE),
       choices = "default", n = 1)))
   # help_panel_* are popover element ids from tool_help_icon(), not wording
   visible <- gsub("help_panel_[a-z]+", "", html)
   expect_false(grepl("\\bpanel\\b", visible, ignore.case = TRUE))
-  expect_match(html, "BLAST reference database")
-  expect_false(grepl("panel", RiboPilot:::panel_note_text(NULL, ""), ignore.case = TRUE))
+  expect_match(html, "Bundled database")
+  expect_false(grepl("panel", RiboPilot:::panel_note(NULL, "")$text, ignore.case = TRUE))
 })
 
 test_that("the modal's note follows the project, not the session's working dir", {
@@ -205,4 +206,91 @@ test_that("the modal's note follows the project, not the session's working dir",
   cur <- RiboPilot:::with_panel_note(
     data.frame(blast_opts = "default", stringsAsFactors = FALSE), con, project = proj)
   expect_match(cur$panel_note, "598,202")
+})
+
+test_that("the summary does not print the build date twice", {
+  skip_if_not_installed("withr")
+  d <- withr::local_tempdir()
+  # version IS the harvest date, so a build on the same day adds nothing
+  s <- RiboPilot:::panel_summary(RiboPilot:::read_panel_manifest(mk_manifest(d)))
+  expect_match(s, "2026\\.08\\.18")
+  expect_false(grepl("built", s))
+
+  # a build that lagged the harvest is worth stating
+  jsonlite::write_json(list(db_name = "ribopilot_rrna", db_version = "2026.08.18",
+    built_utc = "2026-09-02T10:00:00Z",
+    counts = list(records_after_dedup = 10L)),
+    file.path(d, "manifest.json"), auto_unbox = TRUE)
+  s2 <- RiboPilot:::panel_summary(RiboPilot:::read_panel_manifest(d))
+  expect_match(s2, "built 2026-09-02")
+})
+
+test_that("panel_note reports whether the database is known, not just its text", {
+  skip_if_not_installed("withr")
+  d <- withr::local_tempdir()
+  known <- RiboPilot:::panel_note(RiboPilot:::read_panel_manifest(mk_manifest(d)), "")
+  expect_true(known$known)
+  expect_match(known$text, "598,202")
+  # the lead-in belongs to the callout, not the sentence
+  expect_false(grepl("Bundled", known$text))
+
+  unknown <- RiboPilot:::panel_note(NULL, "")
+  expect_false(unknown$known)
+  expect_match(unknown$text, "first local search")
+})
+
+test_that("the note renders as a callout, not as a bordered field", {
+  box <- as.character(RiboPilot:::panel_note_box(
+    list(known = TRUE, text = "ribopilot_rrna 2026.08.18, 42 sequences")))
+  # a full 1px border plus a radius is what made it read as a disabled input
+  expect_false(grepl("border:1px solid", box, fixed = TRUE))
+  expect_match(box, "border-left")
+  expect_match(box, "role=\"note\"", fixed = TRUE)
+  expect_match(box, "Bundled database")          # lead-in, inside the block
+  expect_match(box, "42 sequences")
+
+  # the unknown state differs by wording, not only by colour
+  un <- as.character(RiboPilot:::panel_note_box(list(known = FALSE, text = "x")))
+  expect_match(un, "Not yet recorded")
+})
+
+test_that("Entrez shows whenever a search can reach NCBI, and says so", {
+  mk <- function(remote, fallback) {
+    as.character(shiny::withReactiveDomain(shiny::MockShinySession$new(),
+      RiboPilot:::blast_opts_modal(
+        cur = list(blast_opts = "default", run_blast = 1L, entrez_query = "",
+          extra_opts = "", max_target_seqs = 50L, remote_blast = remote,
+          remote_fallback = fallback, panel_note = "x", panel_known = TRUE),
+        choices = "default", n = 1)))
+  }
+  hidden <- "display:none"
+  # fallback alone still sends unnamed scaffolds to NCBI with this filter
+  expect_false(grepl(hidden, sub(".*bo_entrez_group", "", mk(0L, 1L))))
+  expect_false(grepl(hidden, sub(".*bo_entrez_group", "", mk(1L, 0L))))
+  # neither: no search reaches NCBI, so the filter is irrelevant
+  expect_match(sub("(?s).*id=\"bo_entrez_group\"", "", mk(0L, 0L), perl = TRUE),
+    hidden, fixed = TRUE)
+  expect_match(mk(0L, 1L), "any search that goes to NCBI")
+  expect_false(grepl("remote BLAST only", mk(0L, 1L), fixed = TRUE))
+})
+
+test_that("the modal says the fallback is moot while every search goes to NCBI", {
+  html <- as.character(shiny::withReactiveDomain(shiny::MockShinySession$new(),
+    RiboPilot:::blast_opts_modal(
+      cur = list(blast_opts = "default", run_blast = 1L, entrez_query = "",
+        extra_opts = "", max_target_seqs = 50L, remote_blast = 1L,
+        remote_fallback = 1L, panel_note = "x", panel_known = TRUE),
+      choices = "default", n = 1)))
+  expect_match(html, "bo_fallback_moot")
+  expect_match(html, "Not used when every search already goes to NCBI")
+})
+
+test_that("the modal states the metazoan rDNA scope once, not three times", {
+  html <- as.character(shiny::withReactiveDomain(shiny::MockShinySession$new(),
+    RiboPilot:::blast_opts_modal(
+      cur = list(blast_opts = "default", run_blast = 1L, entrez_query = "",
+        extra_opts = "", max_target_seqs = 50L, remote_blast = 0L,
+        remote_fallback = 1L, panel_note = "x", panel_known = TRUE),
+      choices = "default", n = 1)))
+  expect_lte(length(gregexpr("metazoan", html)[[1]]), 1)
 })

@@ -156,6 +156,28 @@ assemble_opts_modal <- function(cur, choices, n) {
     update_id = "update_ao")
 }
 
+#' The bundled-database note, rendered as a callout rather than a field
+#'
+#' A full border plus a radius is exactly what Bootstrap gives a form control,
+#' so in a column of disabled grey inputs the old box read as one more input the
+#' user could not type in. A tinted fill, a left accent bar and a lead-in INSIDE
+#' the block (every input in this app labels from outside and above) each say
+#' "this is text", and none of them relies on the user noticing a colour.
+#' @param note list(known, text) from panel_note().
+#' @noRd
+panel_note_box <- function(note) {
+  known <- isTRUE(note$known)
+  accent <- if (known) "#5b7fa6" else "#9a7b2e"
+  shiny::tags$div(role = "note",
+    style = paste0("background:#f5f7fa; border-left:3px solid ", accent, ";",
+      "border-radius:0 4px 4px 0; padding:9px 13px; margin:6px 0 14px;",
+      "font-size:0.9em; color:#333;"),
+    shiny::tags$strong(if (known) "Bundled database" else
+      "Bundled database: Not yet recorded"),
+    shiny::tags$br(),
+    note$text %||% "")
+}
+
 #' Attach the reference-database note to a blast_opts row
 #'
 #' Takes the project explicitly: the app is launched from wherever the user's R
@@ -164,49 +186,54 @@ assemble_opts_modal <- function(cur, choices, n) {
 #' @noRd
 with_panel_note <- function(cur, con, project = app_project()) {
   if (NROW(cur) < 1) return(cur)
-  cur$panel_note <- tryCatch(
-    project_panel_note(con, nf_blastdb(project), project = project),
-    error = function(e) NA_character_)
+  note <- tryCatch(project_panel_note(con, nf_blastdb(project), project = project),
+    error = function(e) panel_note(NULL, ""))
+  cur$panel_note <- note$text
+  cur$panel_known <- isTRUE(note$known)
   cur
 }
 
 blast_opts_modal <- function(cur, choices, n) {
   remote <- (cur$remote_blast %|NA|% 0) == 1
+  fallback <- (cur$remote_fallback %|NA|% 1) == 1
+  # the Entrez filter is passed to every search that leaves the machine, and an
+  # escalated scaffold is one of those, so "remote is off" is not the same as
+  # "the filter is unused"
+  reaches_ncbi <- remote || fallback
   opts_modal_shell("BLAST options", n,
     opts_name_row("bo_name", "bo_edit", choices, cur$blast_opts),
     shinyjs::disabled(shinyWidgets::prettyCheckbox("bo_run",
       "Run BLAST (find the closest reference for review + curation)",
       value = (cur$run_blast %|NA|% 1) == 1, status = "primary")),
-    opts_help("Each scaffold is searched against the BLAST reference database ",
-      "shipped with RiboPilot, which is metazoan nuclear rDNA."),
-    shiny::div(style = paste("border:1px solid #ddd; border-radius:6px;",
-        "padding:10px 14px; margin:8px 0 14px; font-size:0.9em;"),
-      cur$panel_note %|NA|% panel_note_text(NULL, "")),
+    panel_note_box(list(known = cur$panel_known %|NA|% FALSE,
+      text = cur$panel_note %|NA|% "")),
     shinyjs::disabled(shinyWidgets::prettyCheckbox("bo_remote",
-      "Search NCBI instead of the bundled BLAST reference database",
+      "Search NCBI instead of the bundled database",
       value = remote, status = "primary")),
     opts_help("Searches core_nt over the network. Far slower and rate limited, ",
-      "and it needs an internet connection from wherever the pipeline runs; use ",
-      "it to reach sequences the bundled database does not contain."),
+      "and it needs an internet connection from wherever the pipeline runs."),
     shinyjs::disabled(shinyWidgets::prettyCheckbox("bo_fallback",
       "Fall back to NCBI when the bundled database names nothing",
-      value = (cur$remote_fallback %|NA|% 1) == 1, status = "primary")),
-    opts_help("A scaffold the bundled database cannot name is searched again at ",
-      "NCBI. This is what catches contaminants and off-target scaffolds, which ",
-      "are exactly the things a metazoan rDNA database has no record of."),
-    shiny::div(id = "bo_entrez_group",
+      value = fallback, status = "primary")),
+    shiny::div(id = "bo_fallback_moot",
       style = if (remote) NULL else "display:none;",
+      opts_help("Not used when every search already goes to NCBI.")),
+    opts_help("A scaffold the bundled database cannot name is searched again at ",
+      "NCBI. This is what catches contaminants and off-target scaffolds, the ",
+      "things a metazoan rDNA database has no record of."),
+    shiny::div(id = "bo_entrez_group",
+      style = if (reaches_ncbi) NULL else "display:none;",
       shinyjs::disabled(shiny::textAreaInput("bo_entrez",
-        shiny::tagList("Entrez query (remote BLAST only)", tool_help_icon("blastn")),
+        shiny::tagList("Entrez query", tool_help_icon("blastn")),
         value = cur$entrez_query %|NA|% "", width = "100%", height = "90px")),
-      opts_help("NCBI Entrez filter, applied only to a search that goes to NCBI. ",
-        "The bundled database search cannot use it and ignores it.")),
+      opts_help("NCBI filter, applied to any search that goes to NCBI, including ",
+        "an escalated scaffold. The bundled database cannot use it.")),
     shiny::div(style = "display:flex; gap:2em;",
       shiny::div(style = "flex:2", shinyjs::disabled(shiny::textInput("bo_extra",
         "Extra blastn options:", value = cur$extra_opts %|NA|% "", width = "100%"))),
       shiny::div(style = "flex:1", shinyjs::disabled(shiny::numericInput("bo_mts",
         "Max target seqs:", value = cur$max_target_seqs %|NA|% 5, min = 1, width = "100%")))),
-    opts_help("Extra options and max target seqs apply to whichever search runs."),
+    opts_help("Both apply to whichever search runs."),
     update_id = "update_bo")
 }
 
@@ -299,12 +326,6 @@ opts_handlers <- function(input, output, session, deps) {
   }
   shiny::observeEvent(input$ao_assembler, ignoreInit = TRUE, {
     toggle_assembler_fields(input$ao_assembler)
-  })
-
-  # the Entrez query is remote-only, so it is hidden while the local search is
-  # the one that will run: a visible field nothing reads is a bug report waiting
-  shiny::observeEvent(input$bo_remote, ignoreInit = TRUE, {
-    shinyjs::toggle(id = "bo_entrez_group", condition = isTRUE(input$bo_remote))
   })
 
   # sample IDs among `ids` that are locked for this step
@@ -414,6 +435,24 @@ opts_handlers <- function(input, output, session, deps) {
       }
     })
   })
+
+  # BLAST source states, registered after the per-opts loop above so the generic
+  # "enable everything on Edit" handler runs first and this can override it.
+  sync_blast_states <- function() {
+    remote <- isTRUE(input$bo_remote)
+    # the Entrez filter reaches NCBI through an escalated scaffold too, so it is
+    # relevant whenever either route can leave the machine
+    shinyjs::toggle(id = "bo_entrez_group",
+      condition = remote || isTRUE(input$bo_fallback))
+    # with every search already remote there is nothing to fall back FROM, and
+    # blast.nf ignores the flag in that state; say so instead of offering it
+    shinyjs::toggle(id = "bo_fallback_moot", condition = remote)
+    shinyjs::toggleState("bo_fallback",
+      condition = !remote && isTRUE(input$bo_edit))
+  }
+  shiny::observeEvent(input$bo_remote, ignoreInit = TRUE, sync_blast_states())
+  shiny::observeEvent(input$bo_fallback, ignoreInit = TRUE, sync_blast_states())
+  shiny::observeEvent(input$bo_edit, ignoreInit = TRUE, sync_blast_states())
 
   # annotate kingdom choices follow the tool selection
   shiny::observeEvent(input$no_tool, ignoreInit = TRUE, {
