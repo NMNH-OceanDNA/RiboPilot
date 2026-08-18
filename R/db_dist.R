@@ -82,8 +82,15 @@ ribopilot_db_dir <- function() {
 RP_DB_RELEASE_BASE <- "https://github.com/dmacguigan/RiboPilot/releases/download"
 
 #' Default panel version
+#'
+#' `YYYY.MM.DD`, the date the panel was harvested. Dotted numbers only:
+#' `numeric_version()` returns NA for anything else, and discover_panel() then
+#' cannot see the panel at all. The date is the version because the source grows
+#' by roughly 370 records a day, so two builds are never the same content; a
+#' hand-bumped counter just gets forgotten, which is how two different panels
+#' both came to be called 2026.08.1.
 #' @noRd
-RP_DB_VERSION <- "2026.08.1"
+RP_DB_VERSION <- "2026.08.18"
 
 #' Fetch one URL, or stop naming the asset and the reason
 #'

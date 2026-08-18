@@ -96,7 +96,7 @@ RUN mamba install -y \
 FROM base AS db-0
 
 FROM base AS db-1
-ARG RP_DB_VERSION=2026.08.1
+ARG RP_DB_VERSION=2026.08.18
 ADD docker/ribopilot_rrna-${RP_DB_VERSION}.tar.gz /opt/ribopilot/blastdb/${RP_DB_VERSION}/
 ADD docker/decoys-${RP_DB_VERSION}.tar.gz         /opt/ribopilot/blastdb/${RP_DB_VERSION}/
 # ADD does not fail on a corrupt-but-gzip-shaped archive; it falls back to a

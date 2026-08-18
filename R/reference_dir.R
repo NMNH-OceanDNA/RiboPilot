@@ -92,7 +92,7 @@ validate_blastdb_prefix <- function(prefix) {
     return(list(ok = FALSE, msg = paste0(
       "No BLAST database at ", prefix,
       ". Give the prefix without a file extension, for example ",
-      "/data/blastdb/2026.08.1/ribopilot_rrna")))
+      "/data/blastdb/2026.08.18/ribopilot_rrna")))
   }
   list(ok = TRUE, msg = prefix)
 }

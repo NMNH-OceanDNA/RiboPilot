@@ -166,7 +166,7 @@ reference_settings_modal <- function(cfg, blastdb_version = "") {
       "variable RIBOPILOT_NO_LOCAL_BLAST=1 before launching the app."),
     shiny::textInput("ref_blastdb_path", NULL, width = "100%",
       value = cfg$blastdb %||% "",
-      placeholder = "/data/blastdb/2026.08.1/ribopilot_rrna"),
+      placeholder = "/data/blastdb/2026.08.18/ribopilot_rrna"),
     if (nzchar(blastdb_version %||% "")) {
       shiny::div(style = "font-size:0.85em; color:#666; margin-top:0.4em;",
         paste("Last run searched against:", blastdb_version))
