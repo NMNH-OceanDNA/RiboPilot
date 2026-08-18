@@ -167,6 +167,19 @@ rp_panel_key() {
 FETCH_ROUNDS=3
 MAX_UNAVAILABLE="${RP_MAX_UNAVAILABLE:-100}"
 
+# esearch's <Count> and the number of accessions the history actually yields are
+# NOT equal, and nothing in E-utilities promises they will be. Measured twice
+# against the live panel query: 892,364 reported, 891,825 and 891,876 returned,
+# a shortfall of ~0.06% that does not track network failures (the run with
+# hundreds of curl errors lost FEWER records than the run with three). The
+# historical build that produced the shipped panel never compared them: it took
+# its total from `wc -l` of the list it got (01_harvest.sh:53) and guarded only
+# against gross truncation. So does this one. The ceiling is on how far the two
+# may diverge before the harvest is considered broken rather than merely
+# incomplete; 5,000 is ten times the measured shortfall and far below any
+# truncation the floor would not already catch.
+MAX_UNRETURNED="${RP_MAX_UNRETURNED:-5000}"
+
 REQUIRED_TOOLS="esearch efetch epost esummary xtract update_blastdb.pl makeblastdb blastdbcmd seqkit jq curl sha256sum tar gzip zcat comm"
 ALL_STAGES="accessions taxidmap fetch build decoys package"
 MIN_FREE_GB=8
@@ -807,7 +820,7 @@ rp_shipped_bytes() {
 # reads IDENTIFIERS from a file, so handing it this envelope leaves efetch with
 # no database at all.
 stage_accessions() {
-  local xml raw filtered count
+  local xml raw filtered count harvested unreturned
   rp_require_build_dir
 
   mkdir -p "$BUILD_DIR"
@@ -860,8 +873,21 @@ stage_accessions() {
   efetch -format acc < "$xml" > "$raw"
 
   rp_assert_shape "accessions: harvested list" "$raw"
-  rp_assert_count "accessions: harvested line count vs esearch <Count>" "$(rp_line_count "$raw")" "$count"
   rp_assert_unique "accessions: harvested accession list" "$raw"
+
+  # The list that came back is the requested set, not <Count>. Guarded the way
+  # the historical build guarded it -- a floor against truncation -- plus a
+  # bound on how far the two may disagree, because a LARGE divergence means the
+  # replay died partway rather than that the source is merely inexact.
+  harvested="$(rp_line_count "$raw")"
+  rp_check_collapse "$harvested"
+  [ "$harvested" -le "$count" ] \
+    || rp_die "accessions: the history returned $harvested accession(s) but esearch reported only $count; the replayed result set is not the one that was searched"
+  unreturned=$((count - harvested))
+  [ "$unreturned" -le "$MAX_UNRETURNED" ] \
+    || rp_die "accessions: esearch reported $count record(s) but the history returned only $harvested, $unreturned short, above the ceiling of $MAX_UNRETURNED; the replay was truncated"
+  [ "$unreturned" -eq 0 ] \
+    || rp_log "accessions: esearch reported $count, the history returned $harvested ($unreturned not returned, within the ceiling of $MAX_UNRETURNED)"
 
   rp_filter_wgs_masters "$raw" "$BUILD_DIR/accessions.wgsfiltered.txt" \
     "$BUILD_DIR/dropped.accessions.tsv"
@@ -872,10 +898,13 @@ stage_accessions() {
   rm -f "$BUILD_DIR/accessions.wgsfiltered.txt"
 
   (cd "$BUILD_DIR" && sha256sum "$(basename "$filtered")" > accessions.sha256)
-  # Two distinctly named counts. They differ by the WGS masters, so a single
-  # ambiguous "count" lets a later stage chunk on records that are not in the
-  # list it is chunking.
+  # Three distinctly named counts, because conflating any two of them lets a
+  # later stage reconcile against records it never held. esearch_count is what
+  # the SOURCE claimed and drives the drift guards only; requested_count is what
+  # was actually harvested and is the ledger identity's `requested`;
+  # final_count is post-WGS-filter and is what the chunking divides.
   printf '%s\n' "$count" > "$BUILD_DIR/accessions.esearch_count"
+  printf '%s\n' "$harvested" > "$BUILD_DIR/accessions.requested_count"
   rp_line_count "$filtered" > "$BUILD_DIR/accessions.final_count"
   rp_marker_set accessions "$(rp_panel_key "$(cut -d' ' -f1 < "$BUILD_DIR/accessions.sha256")")"
   rp_log "accessions: wrote $(rp_line_count "$filtered") accession(s) to $filtered"
@@ -1188,7 +1217,7 @@ stage_build() {
 
   acc="$BUILD_DIR/accessions.txt"
   chunks="$BUILD_DIR/chunks"
-  for f in "$acc" "$BUILD_DIR/accessions.esearch_count" \
+  for f in "$acc" "$BUILD_DIR/accessions.requested_count" \
       "$BUILD_DIR/accessions.final_count" "$BUILD_DIR/taxidmap.tsv" \
       "$BUILD_DIR/dropped.accessions.tsv" "$BUILD_DIR/dropped.taxidmap.tsv" \
       "$BUILD_DIR/dropped.fetch.tsv"; do
@@ -1198,10 +1227,10 @@ stage_build() {
   # The pre-filter esearch <Count> is what the ledger reconciles against; the
   # post-filter count is what the chunks were cut from. They differ by the WGS
   # masters, so using one where the other belongs silently shifts the identity.
-  requested="$(tr -d '[:space:]' < "$BUILD_DIR/accessions.esearch_count")"
+  requested="$(tr -d '[:space:]' < "$BUILD_DIR/accessions.requested_count")"
   final_count="$(tr -d '[:space:]' < "$BUILD_DIR/accessions.final_count")"
   [[ "$requested" =~ ^[0-9]+$ ]] && [[ "$final_count" =~ ^[0-9]+$ ]] \
-    || rp_die "build: accessions.esearch_count ('$requested') and accessions.final_count ('$final_count') must both be numeric"
+    || rp_die "build: accessions.requested_count ('$requested') and accessions.final_count ('$final_count') must both be numeric"
 
   hex="$(sha256sum "$acc" | cut -d' ' -f1)"
   rp_marker_ok fetch "$(rp_panel_key "$hex")" \
@@ -1321,10 +1350,13 @@ stage_build() {
   [ -z "$(uniq -d "$tmp/dropped.acc" | head -1)" ] \
     || rp_die "build: the drop ledger records $(uniq -d "$tmp/dropped.acc" | head -1) more than once after collapsing by reason"
   # The requested set is the list the fetch worked from plus the masters
-  # filtered out before it, which is what accessions.esearch_count counts.
+  # filtered out before it -- i.e. what was actually harvested, which is what
+  # accessions.requested_count records. NOT esearch's <Count>: the source
+  # reports more matches than its history returns, so reconciling against it
+  # would demand rows for accessions that were never in any list.
   cut -f1 "$BUILD_DIR/dropped.accessions.tsv" > "$tmp/wgs.acc"
   sort -u "$tmp/wgs.acc" "$acc" > "$tmp/requested.acc"
-  rp_assert_count "build: reconstructed requested set vs accessions.esearch_count" \
+  rp_assert_count "build: reconstructed requested set vs accessions.requested_count" \
     "$(rp_line_count "$tmp/requested.acc")" "$requested"
   rp_fasta_accessions "$tmp/ribopilot_rrna.fasta" > "$tmp/kept.acc"
   sort -u "$tmp/kept.acc" "$tmp/dropped.acc" > "$tmp/accounted.acc"

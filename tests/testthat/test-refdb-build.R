@@ -573,7 +573,8 @@ write_accessions_stubs <- function(bindir) {
 }
 
 run_accessions_stage <- function(count, efetch_lines, extra_args = character(0),
-                                 min_accessions = 1L, build = NULL) {
+                                 min_accessions = 1L, build = NULL,
+                                 env_extra = character(0)) {
   # build = an existing tree re-runs the stage against it, which is the only way
   # to exercise the restart path the marker gate exists for
   if (is.null(build)) build <- withr::local_tempdir(.local_envir = parent.frame())
@@ -591,6 +592,7 @@ run_accessions_stage <- function(count, efetch_lines, extra_args = character(0),
   if (!is.null(min_accessions)) {
     env <- c(env, paste0("RP_MIN_ACCESSIONS=", min_accessions))
   }
+  env <- c(env, env_extra)
   out <- suppressWarnings(system2("bash",
     c(shQuote(refdb_sh), "--build-dir", shQuote(build), "--stage", "accessions", extra_args),
     stdout = TRUE, stderr = TRUE, env = env))
@@ -661,15 +663,18 @@ test_that("accessions stage writes accessions.txt/.sha256 and two distinctly nam
   got <- readLines(sha_file)
   expect_true(any(startsWith(got, want_hash)))
 
-  # The pre-filter esearch <Count> and the length of the list are DIFFERENT
-  # numbers by construction (the WGS masters are dropped between them), so
-  # each gets its own name. A single ambiguous "accessions.count" is what
-  # would let a chunking stage request records the list does not contain.
+  # Three DIFFERENT numbers by construction, so each gets its own name. A single
+  # ambiguous "accessions.count" is what would let a chunking stage request
+  # records the list does not contain. esearch_count is what the source CLAIMED
+  # matched; requested_count is what the history actually returned, and the two
+  # are not equal in reality; final_count is post-WGS-filter.
   esearch_n <- as.integer(readLines(file.path(r$build, "accessions.esearch_count")))
+  requested_n <- as.integer(readLines(file.path(r$build, "accessions.requested_count")))
   final_n <- as.integer(readLines(file.path(r$build, "accessions.final_count")))
   expect_equal(esearch_n, length(lines))
+  expect_equal(requested_n, length(lines))
   expect_equal(final_n, length(readLines(acc_file)))
-  expect_equal(esearch_n - final_n, 2L)
+  expect_equal(requested_n - final_n, 2L)
   expect_false(file.exists(file.path(r$build, "accessions.count")))
 
   # The WGS drop is a ledger row, not just a log line: the build stage's
@@ -788,16 +793,52 @@ test_that("a sourced stage function refuses to run rather than writing into a de
   expect_true(any(grepl("BUILD_DIR is not set", r$out, fixed = TRUE)))
 })
 
-test_that("accessions stage aborts on a truncated harvest and does not promote a partial accessions.txt", {
+# esearch's <Count> and the number of accessions its history returns are NOT
+# equal: measured 892,364 reported against 891,825 and 891,876 returned, and the
+# gap does not track network failures. So the harvest cannot assert equality --
+# the historical build never did, taking its total from the list it actually got
+# (01_harvest.sh:53). What it CAN do is bound the divergence, which is what
+# separates "the source is inexact" from "the replay was truncated".
+test_that("accessions stage aborts when the history returns fewer accessions than the ceiling allows", {
   skip_if_not(file.exists(refdb_sh))
   skip_if(Sys.which("bash") == "")
   full <- c("MZ000001", "AB123456", "KX999999", "OP111111",
             "QR222222", "ST333333", "UV444444", "WX555555")
   r <- run_accessions_stage(count = length(full), efetch_lines = full[-length(full)],
+    extra_args = "--accept-drift", env_extra = "RP_MAX_UNRETURNED=0")
+  expect_gt(r$status, 0L)
+  expect_false(file.exists(file.path(r$build, "accessions.txt")))
+  expect_false(file.exists(file.path(r$build, "accessions.requested_count")))
+  expect_true(any(grepl("1 short, above the ceiling of 0", r$out, fixed = TRUE)))
+})
+
+test_that("accessions stage accepts a shortfall inside the ceiling, records what it got, and says so", {
+  skip_if_not(file.exists(refdb_sh))
+  skip_if(Sys.which("bash") == "")
+  full <- c("MZ000001", "AB123456", "KX999999", "OP111111",
+            "QR222222", "ST333333", "UV444444", "WX555555")
+  got <- full[-length(full)]
+  r <- run_accessions_stage(count = length(full), efetch_lines = got,
+    extra_args = "--accept-drift", env_extra = "RP_MAX_UNRETURNED=5")
+  expect_equal(r$status, 0L, label = paste(r$out, collapse = "\n"))
+  # the ledger identity reconciles against what was HARVESTED, never against
+  # what the source claimed, or it would demand rows for records no list held
+  expect_equal(as.integer(readLines(file.path(r$build, "accessions.requested_count"))),
+    length(got))
+  expect_equal(as.integer(readLines(file.path(r$build, "accessions.esearch_count"))),
+    length(full))
+  expect_true(any(grepl("1 not returned", r$out, fixed = TRUE)))
+})
+
+test_that("accessions stage refuses a history that returns MORE than esearch reported", {
+  skip_if_not(file.exists(refdb_sh))
+  skip_if(Sys.which("bash") == "")
+  full <- c("MZ000001", "AB123456", "KX999999", "OP111111")
+  r <- run_accessions_stage(count = length(full) - 1L, efetch_lines = full,
     extra_args = "--accept-drift")
   expect_gt(r$status, 0L)
   expect_false(file.exists(file.path(r$build, "accessions.txt")))
-  expect_true(any(grepl("expected 8, got 7", r$out, fixed = TRUE)))
+  expect_true(any(grepl("is not the one that was searched", r$out, fixed = TRUE)))
 })
 
 test_that("accessions stage refuses a drifted count without --accept-drift, proceeds with it", {
@@ -2166,6 +2207,8 @@ make_panel_build <- function(records = panel_fixture_records(),
   writeLines(rows(unavailable, "efetch_unavailable"), file.path(build, "dropped.fetch.tsv"))
   writeLines(as.character(length(acc) + length(wgs)),
     file.path(build, "accessions.esearch_count"))
+  writeLines(as.character(length(acc) + length(wgs)),
+    file.path(build, "accessions.requested_count"))
   writeLines(as.character(length(acc)), file.path(build, "accessions.final_count"))
 
   wrap <- function(s) substring(s, seq(1L, nchar(s), 60L),
@@ -2422,7 +2465,7 @@ test_that("the build stage refuses a count file that is not a number rather than
   build <- make_panel_build()
   # bash arithmetic reads a non-numeric word as 0, which would silently make the
   # expected chunk count 0 and the ledger identity error out with no reason given
-  writeLines("QUERY FAILURE", file.path(build, "accessions.esearch_count"))
+  writeLines("QUERY FAILURE", file.path(build, "accessions.requested_count"))
   r <- run_build_sourced(build)
   expect_gt(r$status, 0L)
   expect_true(any(grepl("must both be numeric", r$out, fixed = TRUE)))
@@ -2582,7 +2625,7 @@ test_that("the reconstructed requested set is checked against the recorded esear
   r <- run_build_sourced(build)
   expect_gt(r$status, 0L)
   expect_true(any(grepl(
-    "reconstructed requested set vs accessions.esearch_count: expected 41, got 40",
+    "reconstructed requested set vs accessions.requested_count: expected 41, got 40",
     r$out, fixed = TRUE)))
   expect_false(dir.exists(r$out_dir))
 
@@ -2593,7 +2636,7 @@ test_that("the reconstructed requested set is checked against the recorded esear
   r2 <- run_build_sourced(build2)
   expect_gt(r2$status, 0L)
   expect_true(any(grepl(
-    "reconstructed requested set vs accessions.esearch_count: expected 41, got 40",
+    "reconstructed requested set vs accessions.requested_count: expected 41, got 40",
     r2$out, fixed = TRUE)))
   expect_false(dir.exists(r2$out_dir))
 })
