@@ -157,21 +157,41 @@ assemble_opts_modal <- function(cur, choices, n) {
 }
 
 blast_opts_modal <- function(cur, choices, n) {
-  opts_modal_shell("GenBank BLAST options", n,
+  remote <- (cur$remote_blast %|NA|% 0) == 1
+  opts_modal_shell("BLAST options", n,
     opts_name_row("bo_name", "bo_edit", choices, cur$blast_opts),
     shinyjs::disabled(shinyWidgets::prettyCheckbox("bo_run",
-      "Run GenBank BLAST (find the closest reference for review + curation)",
+      "Run BLAST (find the closest reference for review + curation)",
       value = (cur$run_blast %|NA|% 1) == 1, status = "primary")),
-    shinyjs::disabled(shiny::textAreaInput("bo_entrez",
-      shiny::tagList("Entrez query", tool_help_icon("blastn")),
-      value = cur$entrez_query %|NA|% "", width = "100%", height = "90px")),
-    opts_help("NCBI Entrez filter restricting the remote BLAST to nuclear ",
-      "ribosomal / ITS records."),
+    opts_help("Each scaffold is searched against the panel shipped with ",
+      "RiboPilot, which is metazoan nuclear rDNA."),
+    shiny::div(style = paste("border:1px solid #ddd; border-radius:6px;",
+        "padding:10px 14px; margin:8px 0 14px; font-size:0.9em;"),
+      cur$panel_note %|NA|% panel_note_text(NULL, "")),
+    shinyjs::disabled(shinyWidgets::prettyCheckbox("bo_remote",
+      "Search NCBI instead of the bundled panel", value = remote, status = "primary")),
+    opts_help("Searches core_nt over the network. Far slower and rate limited, ",
+      "and it needs an internet connection from wherever the pipeline runs; use ",
+      "it to reach sequences the panel does not contain."),
+    shinyjs::disabled(shinyWidgets::prettyCheckbox("bo_fallback",
+      "Fall back to NCBI when the panel names nothing",
+      value = (cur$remote_fallback %|NA|% 1) == 1, status = "primary")),
+    opts_help("A scaffold the panel cannot name is searched again at NCBI. This ",
+      "is what catches contaminants and off-target scaffolds, which are exactly ",
+      "the things a metazoan rDNA panel has no record of."),
+    shiny::div(id = "bo_entrez_group",
+      style = if (remote) NULL else "display:none;",
+      shinyjs::disabled(shiny::textAreaInput("bo_entrez",
+        shiny::tagList("Entrez query (remote BLAST only)", tool_help_icon("blastn")),
+        value = cur$entrez_query %|NA|% "", width = "100%", height = "90px")),
+      opts_help("NCBI Entrez filter, applied only to a search that goes to NCBI. ",
+        "The panel search cannot use it and ignores it.")),
     shiny::div(style = "display:flex; gap:2em;",
       shiny::div(style = "flex:2", shinyjs::disabled(shiny::textInput("bo_extra",
         "Extra blastn options:", value = cur$extra_opts %|NA|% "", width = "100%"))),
       shiny::div(style = "flex:1", shinyjs::disabled(shiny::numericInput("bo_mts",
         "Max target seqs:", value = cur$max_target_seqs %|NA|% 5, min = 1, width = "100%")))),
+    opts_help("Extra options and max target seqs apply to whichever search runs."),
     update_id = "update_bo")
 }
 
@@ -266,6 +286,12 @@ opts_handlers <- function(input, output, session, deps) {
     toggle_assembler_fields(input$ao_assembler)
   })
 
+  # the Entrez query is remote-only, so it is hidden while the panel search is
+  # the one that will run: a visible field nothing reads is a bug report waiting
+  shiny::observeEvent(input$bo_remote, ignoreInit = TRUE, {
+    shinyjs::toggle(id = "bo_entrez_group", condition = isTRUE(input$bo_remote))
+  })
+
   # sample IDs among `ids` that are locked for this step
   locked_ids <- function(ids, lock_col, tbl) {
     if (length(ids) == 0) return(character(0))
@@ -304,6 +330,12 @@ opts_handlers <- function(input, output, session, deps) {
         "SELECT clade_name FROM reference WHERE preset_name = ? LIMIT 1",
         params = list(cur[[sp$key]][1]))$clade_name[1], error = function(e) NA_character_)
     }
+    # the panel usually lives inside the container, so this is the run's record
+    # of it as often as it is a manifest this session could read
+    if (pfx == "bo" && nrow(cur) > 0) {
+      cur$panel_note <- tryCatch(project_panel_note(con, nf_blastdb(".")),
+        error = function(e) NA_character_)
+    }
     cur_row(cur)
     choices <- DBI::dbGetQuery(con, sprintf("SELECT %s FROM %s ORDER BY %s", sp$key, sp$table, sp$key))[[1]]
     shiny::showModal(sp$modal(as.list(cur), choices, length(ids)))
@@ -317,7 +349,7 @@ opts_handlers <- function(input, output, session, deps) {
     po = c("po_cpus", "po_mem", "po_fastp"),
     ao = c("ao_cpus", "ao_mem", "ao_getorg", "ao_minlen", "ao_maxpaths", "ao_maxscaf",
            "ao_assembler", "ao_bt2", "ao_spades", "ao_seeds", "ao_labels"),
-    bo = c("bo_run", "bo_entrez", "bo_extra", "bo_mts"),
+    bo = c("bo_run", "bo_remote", "bo_fallback", "bo_entrez", "bo_extra", "bo_mts"),
     no = c("no_cpus", "no_mem", "no_tool", "no_kingdom", "no_itsxtaxon", "no_itsxopts"),
     co = c("co_ruleset", "co_pid", "co_contam")
   )
@@ -431,7 +463,10 @@ opts_row <- function(pfx, nm, input, base) {
       bowtie2 = input$ao_bt2 %||% "--local", spades = input$ao_spades %||% "--isolate",
       stringsAsFactors = FALSE),
     bo = data.frame(blast_opts = nm, run_blast = as.integer(isTRUE(input$bo_run)),
-      entrez_query = input$bo_entrez %||% "", extra_opts = input$bo_extra %||% "",
+      entrez_query = input$bo_entrez %||% "",
+      remote_blast = as.integer(isTRUE(input$bo_remote)),
+      remote_fallback = as.integer(isTRUE(input$bo_fallback)),
+      extra_opts = input$bo_extra %||% "",
       max_target_seqs = as.integer(input$bo_mts), stringsAsFactors = FALSE),
     no = data.frame(annotate_opts = nm, cpus = as.integer(input$no_cpus),
       memory = as.integer(input$no_mem), rrna_tool = input$no_tool,

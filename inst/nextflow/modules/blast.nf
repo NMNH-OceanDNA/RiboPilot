@@ -34,6 +34,10 @@ process blast_genbank {
     EQ=\$(sqlite3 -cmd '.timeout 10000' '${params.db}' "SELECT COALESCE(b.entrez_query,'') FROM assemble a JOIN blast_opts b ON a.blast_opts = b.blast_opts WHERE a.ID = '${id}';")
     XO=\$(sqlite3 -cmd '.timeout 10000' '${params.db}' "SELECT COALESCE(b.extra_opts,'') FROM assemble a JOIN blast_opts b ON a.blast_opts = b.blast_opts WHERE a.ID = '${id}';")
     MTS=\$(sqlite3 -cmd '.timeout 10000' '${params.db}' "SELECT COALESCE(b.max_target_seqs,50) FROM assemble a JOIN blast_opts b ON a.blast_opts = b.blast_opts WHERE a.ID = '${id}';")
+    # 2>/dev/null || echo "": a project predating these columns errors here, and
+    # the task runs under `set -e`. Empty falls through to the defaults below.
+    RB=\$(sqlite3 -cmd '.timeout 10000' '${params.db}' "SELECT COALESCE(b.remote_blast,0) FROM assemble a JOIN blast_opts b ON a.blast_opts = b.blast_opts WHERE a.ID = '${id}';" 2>/dev/null || echo "")
+    RF=\$(sqlite3 -cmd '.timeout 10000' '${params.db}' "SELECT COALESCE(b.remote_fallback,1) FROM assemble a JOIN blast_opts b ON a.blast_opts = b.blast_opts WHERE a.ID = '${id}';" 2>/dev/null || echo "")
     EQ_OPT=""
     if [ -n "\${EQ}" ]; then EQ_OPT="-entrez_query"; fi
 
@@ -46,7 +50,9 @@ process blast_genbank {
 
     DBARG=""
     SRC="remote"
-    if [ -n '${params.blastdb}' ]; then
+    if [ "\${RB:-0}" = "1" ]; then
+        echo "remote BLAST selected in the options, skipping the local panel for ${id}"
+    elif [ -n '${params.blastdb}' ]; then
         if DBARG=\$(RIBOPILOT_SRC='${params.ribopilot_src}' rp_dbarg.R '${params.blastdb}'); then
             SRC="local"
         else
@@ -160,6 +166,25 @@ process blast_genbank {
                         mv hits_dc.txt hits.txt
                     fi
                 fi
+            fi
+        fi
+        # The panel is metazoan nuclear rDNA, so a contaminant, a symbiont or an
+        # off-target scaffold can be unnameable here and ordinary at NCBI. Send
+        # exactly those units on, and relabel the unit so the review pane credits
+        # the search that actually produced the hit.
+        if [ "\$UNIT_SRC" = "local" ] && [ "\${RF:-1}" = "1" ] && grep -q NO_SIGNIFICANT_HITS hits.txt; then
+            echo "panel named nothing for ${id} \$P.\$S, escalating to NCBI" >&2
+            if blastn -remote -db core_nt -query query.fa \
+                -outfmt "\$OUTFMT" \
+                -max_target_seqs "\${MTS:-50}" -max_hsps 5 -task megablast \
+                \${EQ_OPT:+\$EQ_OPT "\$EQ"} \${XO} > hits_rf.txt; then
+                if [ -s hits_rf.txt ]; then
+                    mv hits_rf.txt hits.txt
+                    UNIT_SRC="remote"
+                    UNIT_PANEL=""
+                fi
+            else
+                echo "remote fallback failed for ${id} \$P.\$S, keeping the local result" >&2
             fi
         fi
         RIBOPILOT_SRC='${params.ribopilot_src}' rp_blast.R '${params.db}' '${id}' "\$P" "\$S" hits.txt '${params.taxdump_dir}'

@@ -86,11 +86,15 @@ nf_process_body <- function(file, name) {
 
 test_that("blast_genbank passes the tunable options to both searches", {
   body <- nf_process_body("blast.nf", "blast_genbank")
-  # thresholds live in blast_opts.extra_opts so a user can retune them; the
-  # dc-megablast fallback must not silently search without them
-  expect_length(grep("blastn -remote", body), 2)
-  # local path also carries XO through its megablast and dc-megablast calls
-  expect_length(grep("\\$\\{XO\\}", body[!grepl("^\\s*#", body)]), 4)
+  # thresholds live in blast_opts.extra_opts so a user can retune them; no
+  # blastn call may silently search without them, including the dc-megablast
+  # retry and the remote escalation
+  nocom <- body[!grepl("^\\s*#", body)]
+  calls <- grep("blastn -", nocom)
+  expect_true(length(calls) >= 4)
+  expect_length(grep("\\$\\{XO\\}", nocom), length(calls))
+  expect_true(length(grep("blastn -remote", nocom)) >= 2)
+  expect_true(length(grep("blastn -db", nocom)) >= 2)
   expect_true(any(grepl("SELECT COALESCE\\(b.extra_opts", body)))
 })
 

@@ -284,7 +284,74 @@ record_blastdb_provenance <- function(con, prefix) {
       params = list(v))
     TRUE
   }, error = function(e) FALSE)
+  # The panel usually lives inside the container, where the app cannot read its
+  # manifest, so the run writes the display line out for the options modal.
+  tryCatch(DBI::dbExecute(con,
+    "UPDATE reference_config SET blastdb_info = ? WHERE rowid_key = 1",
+    params = list(panel_summary(m))), error = function(e) NULL)
   invisible(if (ok) as.character(m$db_version) else "")
+}
+
+#' Thousands-separated count, or "" for anything unusable
+#' @noRd
+fmt_count <- function(x) {
+  if (length(x) != 1) return("")
+  n <- suppressWarnings(as.numeric(x))
+  if (is.na(n)) return("")
+  formatC(n, format = "d", big.mark = ",")
+}
+
+#' One-line description of a panel, from its manifest
+#'
+#' Every part after the name and version is optional: an older manifest carries
+#' no counts block, and a note that reads "NA sequences" is worse than a short one.
+#' @return character(1); "" when there is no manifest.
+#' @noRd
+panel_summary <- function(m) {
+  if (!is.list(m)) return("")
+  out <- trimws(paste(m$db_name, m$db_version))
+  built <- substr(m$built_utc %||% "", 1, 10)
+  if (nzchar(built)) out <- paste0(out, ", built ", built)
+  n <- fmt_count(m$counts$records_after_dedup)
+  if (nzchar(n)) out <- paste0(out, ", ", n, " sequences")
+  tx <- fmt_count(m$counts$distinct_taxids)
+  if (nzchar(tx)) out <- paste0(out, " from ", tx, " taxa")
+  out
+}
+
+#' The modal's panel line: the manifest if the app can see it, else the last run's
+#' @param m Panel manifest, or NULL when the panel is not visible here.
+#' @param recorded `reference_config.blastdb_info`, written by the last local run.
+#' @noRd
+panel_note_text <- function(m, recorded = "") {
+  s <- panel_summary(m)
+  if (!nzchar(s)) s <- trimws(recorded %||% "")
+  if (!nzchar(s)) {
+    return(paste0("Bundled BLAST panel: which panel this project searches is ",
+      "recorded the first time a local search runs."))
+  }
+  paste0("Bundled BLAST panel ", s, ".")
+}
+
+#' What the last local run recorded about the panel; "" when nothing has run
+#' @noRd
+blastdb_info <- function(con) {
+  v <- tryCatch(DBI::dbGetQuery(con,
+    "SELECT blastdb_info FROM reference_config WHERE rowid_key = 1")$blastdb_info,
+    error = function(e) NULL)
+  if (length(v) < 1 || is.na(v[1])) "" else trimws(v[1])
+}
+
+#' Panel line for a project, preferring a panel this session can actually read
+#'
+#' `prefix` is the project's configured panel; empty means "whatever is
+#' discovered", which on the container path is nothing the app can see.
+#' @noRd
+project_panel_note <- function(con, prefix = "") {
+  prefix <- trimws(prefix %||% "")
+  if (!nzchar(prefix)) prefix <- discover_panel() %||% ""
+  m <- if (nzchar(prefix)) read_panel_manifest(dirname(path.expand(prefix))) else NULL
+  panel_note_text(m, blastdb_info(con))
 }
 
 #' The recorded panel, for display; "" when none
