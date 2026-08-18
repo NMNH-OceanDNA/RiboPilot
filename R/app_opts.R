@@ -156,6 +156,20 @@ assemble_opts_modal <- function(cur, choices, n) {
     update_id = "update_ao")
 }
 
+#' Attach the reference-database note to a blast_opts row
+#'
+#' Takes the project explicitly: the app is launched from wherever the user's R
+#' session happens to sit, so resolving the config relative to the working
+#' directory silently found nothing and left the modal showing its placeholder.
+#' @noRd
+with_panel_note <- function(cur, con, project = app_project()) {
+  if (NROW(cur) < 1) return(cur)
+  cur$panel_note <- tryCatch(
+    project_panel_note(con, nf_blastdb(project), project = project),
+    error = function(e) NA_character_)
+  cur
+}
+
 blast_opts_modal <- function(cur, choices, n) {
   remote <- (cur$remote_blast %|NA|% 0) == 1
   opts_modal_shell("BLAST options", n,
@@ -331,13 +345,7 @@ opts_handlers <- function(input, output, session, deps) {
         "SELECT clade_name FROM reference WHERE preset_name = ? LIMIT 1",
         params = list(cur[[sp$key]][1]))$clade_name[1], error = function(e) NA_character_)
     }
-    # the database usually lives inside the container, so this is the run's
-    # record of it, or the image's own answer, as often as a manifest this
-    # session could read
-    if (pfx == "bo" && nrow(cur) > 0) {
-      cur$panel_note <- tryCatch(project_panel_note(con, nf_blastdb(".")),
-        error = function(e) NA_character_)
-    }
+    if (pfx == "bo") cur <- with_panel_note(cur, con)
     cur_row(cur)
     choices <- DBI::dbGetQuery(con, sprintf("SELECT %s FROM %s ORDER BY %s", sp$key, sp$table, sp$key))[[1]]
     shiny::showModal(sp$modal(as.list(cur), choices, length(ids)))

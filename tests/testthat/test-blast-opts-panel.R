@@ -187,3 +187,22 @@ test_that("the user-facing wording says reference database, never panel", {
   expect_match(html, "BLAST reference database")
   expect_false(grepl("panel", RiboPilot:::panel_note_text(NULL, ""), ignore.case = TRUE))
 })
+
+test_that("the modal's note follows the project, not the session's working dir", {
+  skip_if_not_installed("withr")
+  proj <- withr::local_tempdir()
+  dbdir <- file.path(proj, "db"); dir.create(dbdir)
+  mk_manifest(dbdir)
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(proj, ".sqlite"))
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, RiboPilot:::REFERENCE_CONFIG_DDL)
+  DBI::dbExecute(con, "INSERT INTO reference_config (rowid_key, blastdb) VALUES (1, ?)",
+    params = list(file.path(dbdir, "ribopilot_rrna")))
+
+  # the app is normally launched from somewhere else entirely
+  elsewhere <- withr::local_tempdir()
+  withr::local_dir(elsewhere)
+  cur <- RiboPilot:::with_panel_note(
+    data.frame(blast_opts = "default", stringsAsFactors = FALSE), con, project = proj)
+  expect_match(cur$panel_note, "598,202")
+})
