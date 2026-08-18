@@ -545,8 +545,22 @@ write_accessions_stubs <- function(bindir) {
     'grep -q "<$pattern>" "$file"',
     'grep -o "<Count>[0-9]*</Count>" "$file" | head -1 | grep -oE "[0-9]+"'
   ))
+  # efetch resolves its database from -db, or from the ENTREZ_DIRECT envelope
+  # the previous command pipes in on STDIN. EDirect's -input means "read
+  # IDENTIFIERS from this file", so handing it the envelope leaves efetch with
+  # no database and it dies with "Missing -db argument" -- which is exactly how
+  # a real run failed while a stub that ignored its arguments stayed green.
   write_stub("efetch", c(
     'self_dir="$(cd "$(dirname "$0")" && pwd)"',
+    'db="" inp=""',
+    'while [ $# -gt 0 ]; do case "$1" in -db) db="$2"; shift 2 ;; -input) inp="$2"; shift 2 ;; *) shift ;; esac; done',
+    'if [ -z "$db" ]; then',
+    '  if [ -n "$inp" ]; then',
+    '    echo " ERROR:  Missing -db argument" >&2; exit 1',
+    '  fi',
+    '  env="$(head -c 4096)"',
+    '  case "$env" in *"<ENTREZ_DIRECT>"*) ;; *) echo " ERROR:  Missing -db argument" >&2; exit 1 ;; esac',
+    'fi',
     'cat "$self_dir/efetch_output.txt"'
   ))
   for (noop in c("epost", "esummary", "update_blastdb.pl", "makeblastdb", "blastdbcmd", "seqkit")) {

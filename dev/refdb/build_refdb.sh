@@ -801,9 +801,11 @@ rp_shipped_bytes() {
 
 # stage_accessions
 # One esearch against nuccore with the verbatim QUERY. The XML is captured
-# once and replayed into efetch (-input, not a second esearch), so the
+# once and replayed into efetch on STDIN (not a second esearch), so the
 # accession list and the <Count> it is checked against come from the same
-# history-server result set.
+# history-server result set. Stdin, because that is how EDirect chains: -input
+# reads IDENTIFIERS from a file, so handing it this envelope leaves efetch with
+# no database at all.
 stage_accessions() {
   local xml raw filtered count
   rp_require_build_dir
@@ -855,7 +857,7 @@ stage_accessions() {
   rp_check_drift "$count" "$ACCEPT_DRIFT"
 
   rp_log "accessions: replaying the same WebEnv/QueryKey into efetch -format acc ($count expected)"
-  efetch -input "$xml" -format acc > "$raw"
+  efetch -format acc < "$xml" > "$raw"
 
   rp_assert_shape "accessions: harvested list" "$raw"
   rp_assert_count "accessions: harvested line count vs esearch <Count>" "$(rp_line_count "$raw")" "$count"
