@@ -413,6 +413,16 @@ RNA[Title] OR internal transcribed spacer[Title]) NOT mitochondrion[Filter] NOT 
   limiting is excluded). EDirect's internal retries turn it into a slow partial success rather than a
   clean failure. Patched locally to `1.1`; backup at `~/edirect/nquire.bak`. Affects every EDirect
   caller on the host, not just this build.
+- **BLAST finds `taxonomy4blast.sqlite3` through `$BLASTDB` or the WORKING DIRECTORY, never through
+  the `-db` path.** Ship the file beside the panel and `-taxids` still fails from every cwd except
+  the panel dir, and per spec section 4 it fails by returning UNFILTERED rows, not by stopping.
+  Nextflow runs blastn from a task work dir, so the panel dir is exactly where it never is. The image
+  now sets `ENV BLASTDB` and verifies a real filtered search from `/` under its own shipped env.
+  This shipped once, in `macguigand/ribopilot:0.0.0.9008` (digest 81f01ab), and was republished
+  (digest d571d95).
+- **Verify from where production runs, not from where the files are.** The host-side check that
+  "proved" taxid filtering worked was run from inside the panel directory. It passed for a reason a
+  real run does not get. Same class as the stub below.
 - **A stub that ignores its arguments is not a stub, it is a hole.** The `efetch` stub for the
   accessions stage `cat`-ed a fixture regardless of how it was called, so the `-input` bug above
   survived implementation, task review, a whole-branch review, a fix wave, and two re-reviews. The
