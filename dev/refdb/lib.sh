@@ -129,6 +129,18 @@ rp_marker_ok() {
   [ "$(printf '%s' "$line" | cut -f2)" = "$hash" ]
 }
 
+# rp_marker_present STAGE
+# True when RP_STATE_FILE records STAGE at all, whatever hash it holds. Distinct
+# from rp_marker_ok, which conflates "no marker" with "marker disagrees": a stage
+# that must refuse on a DISAGREEING marker still has to run on a tree that has
+# none, so the two cases cannot share an answer.
+rp_marker_present() {
+  local stage="$1" tab
+  tab="$(printf '\t')"
+  [ -n "${RP_STATE_FILE:-}" ] && [ -f "$RP_STATE_FILE" ] || return 1
+  grep -q "^${stage}${tab}" "$RP_STATE_FILE"
+}
+
 # rp_marker_set STAGE INPUT_HASH
 # Record STAGE as complete for INPUT_HASH, replacing any prior line for STAGE.
 rp_marker_set() {

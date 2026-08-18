@@ -1016,6 +1016,22 @@ stage_fetch() {
   [ "$hex" = "$recorded" ] \
     || rp_die "fetch: $acc hashes to $hex but $sidecar records $recorded; the accession list changed after the accessions stage wrote it"
 
+  # The list's PROVENANCE, which no hash of the list can supply. rp_panel_key
+  # folds the CURRENT QUERY with the list hash, so recomputing it here says
+  # nothing about which panel definition the list was HARVESTED under --
+  # stage_accessions is the only stage that knows, and it records that in its
+  # own marker. Without this, editing QUERY and running --stage fetch directly
+  # re-stamps the PREVIOUS panel's chunks with the new key, stage_build's
+  # precondition then passes, and blastdb/<NEW_VER> ships the old record set
+  # under a manifest quoting the new query, exit 0. A full run is saved only
+  # incidentally, because stage_accessions re-harvests before this runs.
+  # rp_marker_present, not rp_marker_ok: a tree with no accessions marker has no
+  # provenance to contradict, and must still be fetchable.
+  if rp_marker_present accessions \
+      && ! rp_marker_ok accessions "$(rp_panel_key "$hex")"; then
+    rp_die "fetch: $acc was harvested under a different panel definition than the one in effect now, so the chunks beside it hold the previous panel's record set. Re-harvest under the current definition with --stage accessions --force, then --stage fetch."
+  fi
+
   # rp_panel_key, not the bare list hash: otherwise this marker inherits the
   # same staleness the accessions gate now refuses. An operator who edits QUERY
   # and runs --stage fetch would find a marker recorded under the previous panel

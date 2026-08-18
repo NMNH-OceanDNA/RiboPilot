@@ -1611,6 +1611,72 @@ test_that("a panel-definition change also stops the fetch stage skipping on its 
   expect_equal(marker(), panel_key(hex, query = newq))
 })
 
+# THE LAUNDERING GUARD. rp_panel_key folds the CURRENT QUERY with the accession
+# list hash, so recomputing it inside stage_fetch proves nothing about which
+# panel definition the list was HARVESTED under -- stage_accessions is the only
+# place that knows, and it records that in the accessions marker, which neither
+# stage_fetch nor stage_build ever read. Without this guard: complete a build
+# under QUERY A, edit QUERY to B, and `--stage fetch` re-stamps panel A's chunks
+# with key(B), after which stage_build's precondition PASSES and blastdb/<NEW>
+# ships panel A's records under a manifest quoting QUERY B, exit 0. The full-run
+# path is saved only incidentally, because stage_accessions re-harvests first.
+test_that("the fetch stage refuses a list harvested under a different panel definition", {
+  skip_if_not(file.exists(refdb_sh))
+  skip_if(Sys.which("bash") == "" || Sys.which("timeout") == "")
+  build <- make_fetch_build(c("AB000001.1", "AB000002.1", "AB000003.1", "AB000004.1"))
+  hex <- sub("\\s.*", "", readLines(file.path(build, "accessions.sha256"))[1])
+  marker <- function(stage) {
+    ln <- grep(paste0("^", stage, "\t"), readLines(file.path(build, "state.txt"),
+      warn = FALSE), value = TRUE)
+    if (!length(ln)) NA_character_ else sub("\t.*", "", sub(paste0("^", stage, "\t"), "", ln))
+  }
+  # a tree stage_accessions really produced: the list, its sidecar, and the
+  # marker recording the panel definition it was harvested under
+  f1 <- run_fetch_cli(build)
+  expect_equal(f1$status, 0L, label = paste(f1$out, collapse = "\n"))
+  seed_accessions_marker <- function(key) {
+    st <- readLines(file.path(build, "state.txt"), warn = FALSE)
+    st <- grep("^accessions\t", st, value = TRUE, invert = TRUE)
+    writeLines(c(st, paste("accessions", key, "2026-08-18T00:00:00Z", sep = "\t")),
+      file.path(build, "state.txt"))
+  }
+  seed_accessions_marker(panel_key(hex))
+  chunk_before <- readLines(file.path(build, "chunks", "fa_0000"))
+  fetch_marker_before <- marker("fetch")
+  requests_before <- fetch_requests(build)
+
+  # control: same panel definition, so the provenance agrees and the stage skips
+  f2 <- run_fetch_sourced(build)
+  expect_equal(f2$status, 0L, label = paste(f2$out, collapse = "\n"))
+  expect_true(any(grepl("already complete", f2$out, fixed = TRUE)))
+
+  # QUERY edited with the list untouched: the chunks belong to the PREVIOUS
+  # panel, and nothing may re-key them under the new one
+  newq <- "(txid7742[Organism:exp]) AND (18S ribosomal RNA[Title]) NOT mitochondrion[Filter]"
+  f3 <- run_fetch_sourced(build, query = newq)
+  expect_gt(f3$status, 0L)
+  expect_true(any(grepl("different panel definition", f3$out, fixed = TRUE)))
+  # the marker must NOT have been re-stamped, or stage_build's precondition
+  # accepts the previous panel's chunks under the new definition
+  expect_equal(marker("fetch"), fetch_marker_before)
+  expect_false(marker("fetch") == panel_key(hex, query = newq))
+  # and nothing was destroyed, or refetched, on the way to refusing
+  expect_equal(readLines(file.path(build, "chunks", "fa_0000")), chunk_before)
+  expect_equal(fetch_requests(build), requests_before)
+})
+
+test_that("the fetch stage still runs on a tree with no accessions marker to check against", {
+  skip_if_not(file.exists(refdb_sh))
+  skip_if(Sys.which("bash") == "" || Sys.which("timeout") == "")
+  # a hand-assembled tree has no provenance to contradict, so the guard must not
+  # turn into a blanket refusal
+  build <- make_fetch_build(c("AB000001.1", "AB000002.1"))
+  expect_false(file.exists(file.path(build, "state.txt")))
+  f <- run_fetch_cli(build)
+  expect_equal(f$status, 0L, label = paste(f$out, collapse = "\n"))
+  expect_true(file.exists(file.path(build, "chunks", "fa_0000")))
+})
+
 test_that("build_refdb.sh defaults --jobs to 4", {
   skip_if_not(file.exists(refdb_sh))
   lines <- readLines(refdb_sh, warn = FALSE)
