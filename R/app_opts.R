@@ -163,29 +163,30 @@ blast_opts_modal <- function(cur, choices, n) {
     shinyjs::disabled(shinyWidgets::prettyCheckbox("bo_run",
       "Run BLAST (find the closest reference for review + curation)",
       value = (cur$run_blast %|NA|% 1) == 1, status = "primary")),
-    opts_help("Each scaffold is searched against the panel shipped with ",
-      "RiboPilot, which is metazoan nuclear rDNA."),
+    opts_help("Each scaffold is searched against the BLAST reference database ",
+      "shipped with RiboPilot, which is metazoan nuclear rDNA."),
     shiny::div(style = paste("border:1px solid #ddd; border-radius:6px;",
         "padding:10px 14px; margin:8px 0 14px; font-size:0.9em;"),
       cur$panel_note %|NA|% panel_note_text(NULL, "")),
     shinyjs::disabled(shinyWidgets::prettyCheckbox("bo_remote",
-      "Search NCBI instead of the bundled panel", value = remote, status = "primary")),
+      "Search NCBI instead of the bundled BLAST reference database",
+      value = remote, status = "primary")),
     opts_help("Searches core_nt over the network. Far slower and rate limited, ",
       "and it needs an internet connection from wherever the pipeline runs; use ",
-      "it to reach sequences the panel does not contain."),
+      "it to reach sequences the bundled database does not contain."),
     shinyjs::disabled(shinyWidgets::prettyCheckbox("bo_fallback",
-      "Fall back to NCBI when the panel names nothing",
+      "Fall back to NCBI when the bundled database names nothing",
       value = (cur$remote_fallback %|NA|% 1) == 1, status = "primary")),
-    opts_help("A scaffold the panel cannot name is searched again at NCBI. This ",
-      "is what catches contaminants and off-target scaffolds, which are exactly ",
-      "the things a metazoan rDNA panel has no record of."),
+    opts_help("A scaffold the bundled database cannot name is searched again at ",
+      "NCBI. This is what catches contaminants and off-target scaffolds, which ",
+      "are exactly the things a metazoan rDNA database has no record of."),
     shiny::div(id = "bo_entrez_group",
       style = if (remote) NULL else "display:none;",
       shinyjs::disabled(shiny::textAreaInput("bo_entrez",
         shiny::tagList("Entrez query (remote BLAST only)", tool_help_icon("blastn")),
         value = cur$entrez_query %|NA|% "", width = "100%", height = "90px")),
       opts_help("NCBI Entrez filter, applied only to a search that goes to NCBI. ",
-        "The panel search cannot use it and ignores it.")),
+        "The bundled database search cannot use it and ignores it.")),
     shiny::div(style = "display:flex; gap:2em;",
       shiny::div(style = "flex:2", shinyjs::disabled(shiny::textInput("bo_extra",
         "Extra blastn options:", value = cur$extra_opts %|NA|% "", width = "100%"))),
@@ -286,7 +287,7 @@ opts_handlers <- function(input, output, session, deps) {
     toggle_assembler_fields(input$ao_assembler)
   })
 
-  # the Entrez query is remote-only, so it is hidden while the panel search is
+  # the Entrez query is remote-only, so it is hidden while the local search is
   # the one that will run: a visible field nothing reads is a bug report waiting
   shiny::observeEvent(input$bo_remote, ignoreInit = TRUE, {
     shinyjs::toggle(id = "bo_entrez_group", condition = isTRUE(input$bo_remote))
@@ -330,8 +331,9 @@ opts_handlers <- function(input, output, session, deps) {
         "SELECT clade_name FROM reference WHERE preset_name = ? LIMIT 1",
         params = list(cur[[sp$key]][1]))$clade_name[1], error = function(e) NA_character_)
     }
-    # the panel usually lives inside the container, so this is the run's record
-    # of it as often as it is a manifest this session could read
+    # the database usually lives inside the container, so this is the run's
+    # record of it, or the image's own answer, as often as a manifest this
+    # session could read
     if (pfx == "bo" && nrow(cur) > 0) {
       cur$panel_note <- tryCatch(project_panel_note(con, nf_blastdb(".")),
         error = function(e) NA_character_)

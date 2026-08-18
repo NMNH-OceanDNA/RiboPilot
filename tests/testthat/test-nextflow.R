@@ -497,7 +497,7 @@ test_that("nextflow.config still supplies NCBI_API_KEY from params", {
   # this pins the replacement so the key cannot be silently dropped again
   txt <- readLines(system.file("nextflow", "nextflow.config", package = "RiboPilot"),
     warn = FALSE)
-  line <- grep("NCBI_API_KEY\\s*=", txt, value = TRUE)
+  line <- grep("NCBI_API_KEY\\s*[:=]", txt, value = TRUE)
   expect_length(line, 1)
   expect_match(line, "ncbi_api_key", fixed = TRUE)
 })
@@ -507,14 +507,16 @@ test_that("nextflow.config forwards RIBOPILOT_NO_LOCAL_BLAST to tasks", {
   # shell-set opt-out reaches the container only if it is named in env{}
   txt <- readLines(system.file("nextflow", "nextflow.config", package = "RiboPilot"),
     warn = FALSE)
-  line <- grep("RIBOPILOT_NO_LOCAL_BLAST\\s*=", txt, value = TRUE)
+  line <- grep("RIBOPILOT_NO_LOCAL_BLAST\\s*:", txt, value = TRUE)
   expect_length(line, 1)
   expect_match(line, "System.getenv('RIBOPILOT_NO_LOCAL_BLAST')", fixed = TRUE)
-  # inside env{}, not somewhere the task never sees
-  env_open <- grep("^env \\{", txt)
-  env_close <- grep("^\\}", txt)
-  expect_gt(grep("RIBOPILOT_NO_LOCAL_BLAST\\s*=", txt), env_open[1])
-  expect_lt(grep("RIBOPILOT_NO_LOCAL_BLAST\\s*=", txt), min(env_close[env_close > env_open[1]]))
+  # part of the env map the task is launched with, not stranded elsewhere. The
+  # map form (env = [...]) is what lets the key be omitted entirely when unset:
+  # an empty or null value makes Nextflow warn once per task.
+  env_open <- grep("^env\\s*=\\s*\\[", txt)
+  expect_length(env_open, 1)
+  expect_gt(grep("RIBOPILOT_NO_LOCAL_BLAST\\s*:", txt), env_open)
+  expect_match(paste(txt, collapse = "\n"), "\\+ \\(System.getenv\\('RIBOPILOT_NO_LOCAL_BLAST'\\)")
 })
 
 test_that("blast.nf gates re-search on blast_searched.query_md5, not a blast_hits COUNT", {

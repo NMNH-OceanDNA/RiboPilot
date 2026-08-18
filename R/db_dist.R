@@ -316,6 +316,10 @@ panel_summary <- function(m) {
   if (nzchar(n)) out <- paste0(out, ", ", n, " sequences")
   tx <- fmt_count(m$counts$distinct_taxids)
   if (nzchar(tx)) out <- paste0(out, " from ", tx, " taxa")
+  mb <- suppressWarnings(as.numeric(m$counts$total_bases))
+  if (length(mb) == 1 && !is.na(mb)) {
+    out <- paste0(out, ", ", fmt_count(round(mb / 1e6)), " Mbp")
+  }
   out
 }
 
@@ -327,10 +331,58 @@ panel_note_text <- function(m, recorded = "") {
   s <- panel_summary(m)
   if (!nzchar(s)) s <- trimws(recorded %||% "")
   if (!nzchar(s)) {
-    return(paste0("Bundled BLAST panel: which panel this project searches is ",
-      "recorded the first time a local search runs."))
+    return(paste0("Bundled BLAST reference database: which database this ",
+      "project searches is recorded the first time a local search runs."))
   }
-  paste0("Bundled BLAST panel ", s, ".")
+  paste0("Bundled BLAST reference database ", s, ".")
+}
+
+#' The image named by a project config, or "" when it names none
+#' @noRd
+config_container_image <- function(cfg_lines) {
+  hit <- grep("^\\s*container\\s*=", cfg_lines, value = TRUE, perl = TRUE)
+  if (length(hit) < 1) return("")
+  v <- sub("^\\s*container\\s*=\\s*", "", hit[1], perl = TRUE)
+  # one capture, not two alternations: R's engine prefers the longest match, so
+  # a "strip a leading quote OR a trailing quote and the rest" pattern ate the
+  # whole string
+  trimws(sub("^['\"]?([^'\"]*).*$", "\\1", trimws(v)))
+}
+
+#' Ask the project's container image to describe the database it carries
+#'
+#' The database lives inside the image, where the app cannot read its manifest,
+#' so on the container path this is the only way to describe it before a run has
+#' happened. One short call, cached by the caller.
+#' @return character(1); "" when there is no image, no engine, or no answer.
+#' @noRd
+image_panel_summary <- function(project = ".") {
+  cfg <- file.path(project, ".config")
+  if (!file.exists(cfg)) return("")
+  lines <- readLines(cfg, warn = FALSE)
+  engine <- config_container_engine(lines)
+  img <- config_container_image(lines)
+  if (is.na(engine) || !nzchar(img)) return("")
+  bin <- if (identical(engine, "docker")) "docker" else {
+    w <- Sys.which(c("singularity", "apptainer"))
+    w <- w[nzchar(w)]
+    if (length(w) < 1) return("") else names(w)[1]
+  }
+  if (!nzchar(Sys.which(bin))) return("")
+  code <- paste0("p <- RiboPilot:::discover_panel(); ",
+    "if (!is.null(p)) cat(RiboPilot:::panel_summary(",
+    "RiboPilot:::read_panel_manifest(dirname(p))))")
+  args <- if (identical(engine, "docker")) {
+    c("run", "--rm", img, "Rscript", "-e", shQuote(code))
+  } else {
+    c("exec", img, "Rscript", "-e", shQuote(code))
+  }
+  # timeout: a missing image makes docker try to pull one, which on a slow link
+  # would hang the modal open
+  out <- tryCatch(suppressWarnings(
+    system2("timeout", c("60", bin, args), stdout = TRUE, stderr = FALSE)),
+    error = function(e) character(0))
+  if (length(out) < 1) "" else trimws(paste(out, collapse = " "))
 }
 
 #' What the last local run recorded about the panel; "" when nothing has run
@@ -347,11 +399,24 @@ blastdb_info <- function(con) {
 #' `prefix` is the project's configured panel; empty means "whatever is
 #' discovered", which on the container path is nothing the app can see.
 #' @noRd
-project_panel_note <- function(con, prefix = "") {
+project_panel_note <- function(con, prefix = "", project = ".",
+                               probe = image_panel_summary) {
   prefix <- trimws(prefix %||% "")
   if (!nzchar(prefix)) prefix <- discover_panel() %||% ""
   m <- if (nzchar(prefix)) read_panel_manifest(dirname(path.expand(prefix))) else NULL
-  panel_note_text(m, blastdb_info(con))
+  recorded <- blastdb_info(con)
+  # nothing here and nothing recorded: the database is inside the image, so ask
+  # it once and keep the answer, rather than showing a placeholder until the
+  # first run finishes
+  if (is.null(m) && !nzchar(recorded)) {
+    recorded <- tryCatch(probe(project), error = function(e) "")
+    if (nzchar(recorded)) {
+      tryCatch(DBI::dbExecute(con,
+        "UPDATE reference_config SET blastdb_info = ? WHERE rowid_key = 1",
+        params = list(recorded)), error = function(e) NULL)
+    }
+  }
+  panel_note_text(m, recorded)
 }
 
 #' The recorded panel, for display; "" when none

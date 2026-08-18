@@ -125,3 +125,65 @@ test_that("blast.nf honours both toggles", {
   # the escalation itself: a local unit with no usable hit retries remotely
   expect_match(txt, "RF\\b", info = "no remote-fallback variable in the script")
 })
+
+test_that("panel_summary reports the sequence volume as well as the counts", {
+  skip_if_not_installed("withr")
+  d <- withr::local_tempdir()
+  s <- RiboPilot:::panel_summary(RiboPilot:::read_panel_manifest(mk_manifest(d)))
+  expect_match(s, "689 Mbp")
+})
+
+test_that("config_container_image reads the image out of a project config", {
+  lines <- c("docker {", "  enabled = true", "}", "process {",
+    "    container = 'ribopilot:0.0.0.9011'", "}")
+  expect_equal(RiboPilot:::config_container_image(lines), "ribopilot:0.0.0.9011")
+  expect_equal(RiboPilot:::config_container_image(c("process {", "}")), "")
+})
+
+test_that("the note falls back to asking the image, and caches what it learns", {
+  skip_if_not_installed("withr")
+  d <- withr::local_tempdir()
+  writeLines(c("docker {", "  enabled = true", "}", "process {",
+    "  container = 'ribopilot:test'", "}"), file.path(d, ".config"))
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(d, ".sqlite"))
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, RiboPilot:::REFERENCE_CONFIG_DDL)
+  DBI::dbExecute(con, "INSERT INTO reference_config (rowid_key) VALUES (1)")
+
+  calls <- 0
+  probe <- function(...) { calls <<- calls + 1; "ribopilot_rrna 2026.08.18, 42 sequences" }
+  note <- RiboPilot:::project_panel_note(con, "", project = d, probe = probe)
+  expect_match(note, "42 sequences")
+  expect_equal(calls, 1)
+
+  # cached in the project, so opening the modal again does not re-run the image
+  note2 <- RiboPilot:::project_panel_note(con, "", project = d, probe = probe)
+  expect_match(note2, "42 sequences")
+  expect_equal(calls, 1)
+})
+
+test_that("a probe that cannot reach the image leaves the placeholder, not an error", {
+  skip_if_not_installed("withr")
+  d <- withr::local_tempdir()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(d, ".sqlite"))
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, RiboPilot:::REFERENCE_CONFIG_DDL)
+  DBI::dbExecute(con, "INSERT INTO reference_config (rowid_key) VALUES (1)")
+  note <- RiboPilot:::project_panel_note(con, "", project = d,
+    probe = function(...) stop("no docker here"))
+  expect_match(note, "first time a local search runs")
+})
+
+test_that("the user-facing wording says reference database, never panel", {
+  html <- as.character(shiny::withReactiveDomain(shiny::MockShinySession$new(),
+    RiboPilot:::blast_opts_modal(
+      cur = list(blast_opts = "default", run_blast = 1L, entrez_query = "",
+        extra_opts = "", max_target_seqs = 50L, remote_blast = 0L,
+        remote_fallback = 1L, panel_note = RiboPilot:::panel_note_text(NULL, "x")),
+      choices = "default", n = 1)))
+  # help_panel_* are popover element ids from tool_help_icon(), not wording
+  visible <- gsub("help_panel_[a-z]+", "", html)
+  expect_false(grepl("\\bpanel\\b", visible, ignore.case = TRUE))
+  expect_match(html, "BLAST reference database")
+  expect_false(grepl("panel", RiboPilot:::panel_note_text(NULL, ""), ignore.case = TRUE))
+})
