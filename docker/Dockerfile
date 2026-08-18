@@ -113,6 +113,24 @@ RUN blastdbcmd -db /opt/ribopilot/blastdb/${RP_DB_VERSION}/ribopilot_rrna -info 
     blastdbcmd -db /opt/ribopilot/blastdb/${RP_DB_VERSION}/SSU_eukaryote_rRNA -info > /dev/null && \
     blastdbcmd -db /opt/ribopilot/blastdb/${RP_DB_VERSION}/LSU_eukaryote_rRNA -info > /dev/null
 ENV RIBOPILOT_DB_DIR=/opt/ribopilot/blastdb
+# BLAST resolves taxonomy4blast.sqlite3 through $BLASTDB or the WORKING
+# DIRECTORY, never through the -db path. Without this, -taxids fails from every
+# cwd except the panel directory -- and per spec section 4 it does not fail
+# loudly, it returns UNFILTERED rows. Nextflow runs blastn from a task work
+# directory, so the panel dir is exactly where it never is.
+ENV BLASTDB=/opt/ribopilot/blastdb/${RP_DB_VERSION}
+# Verified from / and under the env the image actually ships with, because the
+# defect this catches is "all three taxonomy files present, BLASTDB unset" --
+# which every check above passes. A check that cannot fail the way production
+# fails is not a check. txid33208 is the panel's own root, so it cannot be
+# legitimately empty. Not folded into the RUN above: that one is extracted and
+# replayed against a synthetic panel by the test suite, which has no taxonomy
+# files. Does not start with `RUN blastdbcmd` for the same reason.
+RUN cd / && \
+    blastdbcmd -db /opt/ribopilot/blastdb/${RP_DB_VERSION}/ribopilot_rrna \
+      -taxids 33208 -outfmt "%a" > /tmp/taxids.check && \
+    test -s /tmp/taxids.check && \
+    rm -f /tmp/taxids.check
 
 FROM db-${RP_DB} AS final
 

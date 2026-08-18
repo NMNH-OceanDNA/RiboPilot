@@ -743,6 +743,37 @@ test_that("the panel verification sits in db-1, after both ADDs, with no pipe", 
   expect_false(grepl("|", dockerfile_db_check("/nowhere"), fixed = TRUE))
 })
 
+# THE REGRESSION GUARD for macguigand/ribopilot:0.0.0.9008, which shipped with
+# all three taxonomy files baked in beside the panel and -taxids still broken:
+# BLAST resolves taxonomy4blast.sqlite3 through $BLASTDB or the cwd, never
+# through the -db path, and the image set only RIBOPILOT_DB_DIR. Measured in the
+# published image: cwd=/ with BLASTDB unset returns rc=1 and 0 bytes; with
+# BLASTDB set, rc=0 and 212,857 bytes. Per spec section 4 a blastn -taxids search
+# in that state returns UNFILTERED rows rather than failing, so nothing downstream
+# would have noticed.
+test_that("the image sets BLASTDB and proves taxid filtering works from outside the panel dir", {
+  skip_without_docker_dir()
+  x <- readLines(RP_DOCKERFILE, warn = FALSE)
+  env <- grep("^ENV BLASTDB=", x)
+  expect_length(env, 1L)
+  # inside db-1 -- an image built with no panel must not point BLASTDB at a
+  # directory that does not exist
+  expect_gt(env, max(grep("^FROM base AS db-1", x)))
+  expect_lt(env, grep("^FROM db-\\$\\{RP_DB\\} AS final", x))
+  expect_match(x[env], "/opt/ribopilot/blastdb/${RP_DB_VERSION}", fixed = TRUE)
+
+  # the check runs AFTER the ENV, or it proves the files exist while saying
+  # nothing about whether the shipped image can find them
+  chk <- grep("^RUN cd / && \\\\$", x)
+  expect_length(chk, 1L)
+  expect_gt(chk, env)
+  body <- paste(x[chk:(chk + 4L)], collapse = " ")
+  expect_match(body, "-taxids 33208", fixed = TRUE)
+  expect_match(body, "test -s", fixed = TRUE)
+  # and it must not be swallowed by the extraction the synthetic-panel test uses
+  expect_length(grep("^RUN blastdbcmd ", x), 1L)
+})
+
 test_that("the Dockerfile's panel check accepts a real database and refuses a broken one", {
   skip_without_docker_dir()
   for (tool in c("makeblastdb", "blastdbcmd")) {
