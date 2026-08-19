@@ -85,30 +85,29 @@ check_container_image <- function(container) {
   invisible(container)
 }
 
-#' Check a GetOrganelle reference DB is resolvable, erroring early when it is not
+#' Check a GetOrganelle reference DB is resolvable, warning when it is not
 #'
 #' A missing seeds/labels DB otherwise surfaces hours into a run as an opaque
-#' GetOrganelle failure. A local path is definitive; a URL that cannot be
-#' reached for any reason other than 404/403 only warns, so an offline project
-#' setup still works.
+#' GetOrganelle failure. Warns rather than errors: the database can be fixed
+#' from the app's reference database step, so init should not die on it.
 #' @param x Path or URL. @param what "seeds" or "labels".
 #' @noRd
 check_reference_db <- function(x, what) {
   if (is.null(x) || is.na(x) || !nzchar(x)) return(invisible(x))
   hint <- paste0(
-    "Build a reference database for your clade and pass it to new_project():\n",
+    "Fix it from the app's reference database step, or build one and pass it to new_project():\n",
     "  db <- build_reference_db('\"Asteroidea\"[Organism]', \"asteroidea\")\n",
     "  new_project(..., custom_seeds_db = db$seeds, custom_labels_db = db$labels)")
   if (!grepl("^https?://", x)) {
     if (!file.exists(x)) {
-      stop(sprintf("%s reference database not found:\n  %s\n\n%s", what, x, hint),
+      warning(sprintf("%s reference database not found:\n  %s\n\n%s", what, x, hint),
         call. = FALSE)
     }
     return(invisible(x))
   }
   st <- url_status(x)
   if (identical(st, "missing")) {
-    stop(sprintf("%s reference database is not reachable (HTTP 404/403):\n  %s\n\n%s",
+    warning(sprintf("%s reference database is not reachable (HTTP 404/403):\n  %s\n\n%s",
       what, x, hint), call. = FALSE)
   }
   if (identical(st, "unknown")) {
