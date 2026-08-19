@@ -14,13 +14,8 @@
 
 suppressMessages(pkgload::load_all(".", quiet = TRUE))
 
-# Reuse an existing taxdump cache if you have one; else it downloads to ./.taxdump
-TAXDUMP <- Sys.getenv("RIBOPILOT_TAXDUMP",
-  unset = {
-    cached <- "~/.local/share/RiboPilot/taxdump"
-    if (file.exists(file.path(path.expand(cached), "names.dmp"))) path.expand(cached) else ".taxdump"
-  }
-)
+# Point RIBOPILOT_TAXDUMP at an existing cache; else it downloads to ./.taxdump
+TAXDUMP <- Sys.getenv("RIBOPILOT_TAXDUMP", unset = ".taxdump")
 
 cat("\n===========================================================\n")
 cat("PART A  -  composite scoring (no external tools)\n")

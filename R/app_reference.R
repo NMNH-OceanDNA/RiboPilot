@@ -134,8 +134,9 @@ SETTINGS_HEAD <- "font-weight:600; margin:2px 0 6px;"
 #' Settings modal: the reference folder, and the record window Propose groups uses
 #'
 #' @param cfg From [ref_config()].
+#' @param blastdb_version From [blastdb_provenance()]; "" when nothing has run yet.
 #' @noRd
-reference_settings_modal <- function(cfg) {
+reference_settings_modal <- function(cfg, blastdb_version = "") {
   shiny::modalDialog(
     title = "Reference settings", size = "l",
     shiny::h5("Reference database folder", style = SETTINGS_HEAD),
@@ -155,6 +156,22 @@ reference_settings_modal <- function(cfg) {
       "clade holding at least the minimum. Below that there is too little published ",
       "sequence to seed an assembly; past the maximum a clade is so broad that its ",
       "seeds stop being specific to your organism."),
+    shiny::h5("Local BLAST panel", style = SETTINGS_HEAD),
+    shiny::div(
+      style = "font-size:0.85em; color:#666; margin-bottom:0.4em;",
+      "Path prefix of a downloaded panel, without a file extension. ",
+      "Leave empty and RiboPilot uses a panel shipped with the image or ",
+      "installed locally if it finds one, otherwise it searches NCBI. ",
+      "To search NCBI instead, use Remote BLAST in the BLAST options; the ",
+      "environment variable RIBOPILOT_NO_LOCAL_BLAST=1 does the same for every ",
+      "project when set before launching the app."),
+    shiny::textInput("ref_blastdb_path", NULL, width = "100%",
+      value = cfg$blastdb %||% "",
+      placeholder = "/data/blastdb/2026.08.18/ribopilot_rrna"),
+    if (nzchar(blastdb_version %||% "")) {
+      shiny::div(style = "font-size:0.85em; color:#666; margin-top:0.4em;",
+        paste("Last run searched against:", blastdb_version))
+    },
     footer = shiny::tagList(
       shiny::actionButton("ref_dir_apply", "Save", class = "btn-primary btn-sm"),
       shiny::modalButton("Cancel")))
@@ -761,7 +778,8 @@ reference_handlers <- function(input, output, session, deps) {
 
   # ---- settings ----
   shiny::observeEvent(input$ref_dir_btn, {
-    res <- tryCatch(with_con(function(con) reference_settings_modal(ref_config(con))),
+    res <- tryCatch(with_con(function(con)
+        reference_settings_modal(ref_config(con), blastdb_provenance(con))),
       error = function(e) e)
     if (inherits(res, "error")) { notify(conditionMessage(res), "error"); return() }
     shiny::showModal(res)
@@ -769,8 +787,10 @@ reference_handlers <- function(input, output, session, deps) {
   shiny::observeEvent(input$ref_dir_apply, {
     v <- validate_ref_dir(input$ref_dir_path %||% "")
     if (!isTRUE(v$ok)) { notify(v$msg, "error"); return() }
+    b <- validate_blastdb_prefix(input$ref_blastdb_path %||% "")
+    if (!isTRUE(b$ok)) { notify(b$msg, "error"); return() }
     with_con(function(con) set_ref_config(con, ref_dir = v$msg,
-      min_records = input$ref_min, max_records = input$ref_max))
+      min_records = input$ref_min, max_records = input$ref_max, blastdb = b$msg))
     shiny::removeModal(); bump()
     notify(paste("Reference folder set to", v$msg))
   })

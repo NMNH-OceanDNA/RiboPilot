@@ -10,7 +10,7 @@
 #' Resolution order: the project setting, then `RIBOPILOT_REF_DIR`, then
 #' [ribopilot_ref_dir()].
 #' @param con Open project DB connection.
-#' @return list(ref_dir, min_records, max_records).
+#' @return list(ref_dir, min_records, max_records, blastdb).
 #' @noRd
 ref_config <- function(con) {
   d <- tryCatch(DBI::dbGetQuery(con, "SELECT * FROM reference_config WHERE rowid_key = 1"),
@@ -20,16 +20,21 @@ ref_config <- function(con) {
   list(
     ref_dir = path.expand(dir),
     min_records = if (nrow(d) > 0) as.integer(d$min_records[1] %|NA|% 1000L) else 1000L,
-    max_records = if (nrow(d) > 0) as.integer(d$max_records[1] %|NA|% 25000L) else 25000L
+    max_records = if (nrow(d) > 0) as.integer(d$max_records[1] %|NA|% 25000L) else 25000L,
+    blastdb = {
+      b <- if (nrow(d) > 0 && "blastdb" %in% names(d)) d$blastdb[1] else NA_character_
+      if (!is.na(b) && nzchar(trimws(b))) path.expand(trimws(b)) else ""
+    }
   )
 }
 
 #' Write project-level reference settings (only the arguments supplied)
 #' @param con Open project DB connection.
-#' @param ref_dir,min_records,max_records New values, or NULL to leave as is.
+#' @param ref_dir,min_records,max_records,blastdb New values, or NULL to leave as is.
 #' @return (invisibly) the resulting [ref_config()].
 #' @noRd
-set_ref_config <- function(con, ref_dir = NULL, min_records = NULL, max_records = NULL) {
+set_ref_config <- function(con, ref_dir = NULL, min_records = NULL, max_records = NULL,
+                           blastdb = NULL) {
   if (!is.null(ref_dir)) {
     DBI::dbExecute(con, "UPDATE reference_config SET ref_dir = ? WHERE rowid_key = 1",
       params = list(if (nzchar(trimws(ref_dir))) path.expand(trimws(ref_dir)) else NA_character_))
@@ -41,6 +46,10 @@ set_ref_config <- function(con, ref_dir = NULL, min_records = NULL, max_records 
   if (!is.null(max_records)) {
     DBI::dbExecute(con, "UPDATE reference_config SET max_records = ? WHERE rowid_key = 1",
       params = list(as.integer(max_records)))
+  }
+  if (!is.null(blastdb)) {
+    DBI::dbExecute(con, "UPDATE reference_config SET blastdb = ? WHERE rowid_key = 1",
+      params = list(if (nzchar(trimws(blastdb))) path.expand(trimws(blastdb)) else NA_character_))
   }
   invisible(ref_config(con))
 }
@@ -62,6 +71,30 @@ validate_ref_dir <- function(dir) {
     return(list(ok = FALSE, msg = paste0(dir, " is not writable.")))
   }
   list(ok = TRUE, msg = dir)
+}
+
+#' Is `prefix` usable as a local BLAST panel?
+#'
+#' Read-only on purpose: a panel is often on a shared read-only mount, so this
+#' must not reuse validate_ref_dir(), which requires write access and creates
+#' the directory. An empty prefix is valid and selects the remote search.
+#' @return list(ok, msg); on success msg is the normalised prefix.
+#' @noRd
+validate_blastdb_prefix <- function(prefix) {
+  if (length(prefix) > 1) return(list(ok = FALSE, msg = "Give a single panel path."))
+  prefix <- trimws(prefix %||% "")
+  if (!nzchar(prefix)) return(list(ok = TRUE, msg = ""))
+  prefix <- path.expand(prefix)
+  if (grepl("\\s", prefix)) {
+    return(list(ok = FALSE, msg = "Panel path cannot contain spaces; blastn cannot read it."))
+  }
+  if (!blast_db_exists(prefix)) {
+    return(list(ok = FALSE, msg = paste0(
+      "No BLAST database at ", prefix,
+      ". Give the prefix without a file extension, for example ",
+      "/data/blastdb/2026.08.18/ribopilot_rrna")))
+  }
+  list(ok = TRUE, msg = prefix)
 }
 
 #' Path to a reference folder's manifest

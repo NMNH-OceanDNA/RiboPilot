@@ -27,14 +27,18 @@ nf_command <- function(path, resume = TRUE,
   }
   raw_dir <- cfg_val("rawDir", "")
   min_depth <- cfg_val("minDepth", "0")
+  if (!nzchar(min_depth)) min_depth <- "0"
   api_key <- cfg_val("ncbi_api_key", "")
   if (!nzchar(raw_dir)) {
     stop("No rawDir set in ", cfg, ".\n",
       "Without it the pipeline has nowhere to look for reads and every sample ",
       "fails. Set params.rawDir in the project config.", call. = FALSE)
   }
-  src <- ribopilot_src %||% ribopilot_src_default()
+  src <- ribopilot_src %||% ""
+  if (!nzchar(src)) src <- ribopilot_src_default()
   taxdump <- file.path(path, ".taxonomy")
+  ref_dir <- nf_ref_dir(path)
+  blastdb <- nf_blastdb(path)
 
   c("run", main_nf, "-c", cfg, "-work-dir", work,
     if (isTRUE(resume)) "-resume",
@@ -44,12 +48,69 @@ nf_command <- function(path, resume = TRUE,
     "--minDepth", min_depth,
     "--ribopilot_src", src,
     "--taxdump_dir", taxdump,
+    if (nzchar(ref_dir)) c("--ref_dir", ref_dir),
+    if (nzchar(blastdb)) c("--blastdb", blastdb),
     if (nzchar(api_key)) c("--ncbi_api_key", api_key),
     # the config only mounts what project creation knew about; a database the
     # Reference tab wired later lives wherever the user put it, and the
     # assembler cannot read a staged symlink whose target is unmounted
     container_bind_opts(cfg_lines,
       reference_mount_dirs(path, c(path, raw_dir, config_mounted_dirs(cfg_lines)))))
+}
+
+#' The project's reference folder, used only when explicitly configured
+#'
+#' Reads reference_config.ref_dir directly rather than through ref_config(),
+#' whose fallback chain (project setting -> RIBOPILOT_REF_DIR ->
+#' ribopilot_ref_dir()) never yields an empty string: an unconfigured project
+#' would otherwise silently pick up whatever folder the running machine
+#' defaults to, and behave differently on another machine or in CI. A missing
+#' or unreadable project database, and an unset or blank ref_dir, all resolve
+#' to "" here, and priming/pushing degrade to a silent no-op from there.
+#' @noRd
+nf_ref_dir <- function(path) {
+  tryCatch({
+    con <- open_project_db(file.path(path, ".sqlite"))
+    on.exit(DBI::dbDisconnect(con), add = TRUE)
+    v <- DBI::dbGetQuery(con, "SELECT ref_dir FROM reference_config WHERE rowid_key = 1")$ref_dir
+    v <- if (length(v) > 0) v[1] else NA_character_
+    if (is.na(v) || !nzchar(trimws(v))) "" else path.expand(trimws(v))
+  }, error = function(e) "")
+}
+
+#' The project's local BLAST panel prefix, used only when explicitly configured
+#'
+#' Reads reference_config.blastdb directly, the same way nf_ref_dir() reads
+#' ref_dir: a missing or unreadable project database, and an unset or blank
+#' blastdb, all resolve to "" here.
+#' @noRd
+nf_blastdb <- function(path) {
+  tryCatch({
+    con <- open_project_db(file.path(path, ".sqlite"))
+    on.exit(DBI::dbDisconnect(con), add = TRUE)
+    v <- DBI::dbGetQuery(con, "SELECT blastdb FROM reference_config WHERE rowid_key = 1")$blastdb
+    v <- if (length(v) > 0) v[1] else NA_character_
+    if (is.na(v) || !nzchar(trimws(v))) "" else path.expand(trimws(v))
+  }, error = function(e) "")
+}
+
+#' Record which panel a real run searches against
+#'
+#' Call only from an actual launch (run_assembly(), the app's nf_start
+#' observer), never from nf_command() itself: nf_command() also backs the
+#' read-only command-preview text (app_server.R's nf_cmd_text), and recording
+#' there would credit a panel search that never ran, on every render.
+#' @noRd
+nf_record_blastdb_launch <- function(path) {
+  blastdb <- nf_blastdb(path)
+  if (!nzchar(blastdb)) return(invisible(NULL))
+  # local() so the connection closes here, not deferred to the caller's exit
+  local({
+    pcon <- tryCatch(open_project_db(file.path(path, ".sqlite")), error = function(e) NULL)
+    if (is.null(pcon)) return(invisible(NULL))
+    on.exit(DBI::dbDisconnect(pcon), add = TRUE)
+    tryCatch(record_blastdb_provenance(pcon, blastdb), error = function(e) NULL)
+  })
 }
 
 #' Where the pipeline's R processes should load RiboPilot from

@@ -14,7 +14,7 @@
 #' the ...`. That coverage is what tells a complete 18S from one missing its 3'
 #' V9 region (the terminus most metazoan eDNA assays target), so it is kept
 #' rather than discarded.
-#' @return data.frame(element, start, stop, strand, model_cov) for 18S/5.8S/28S,
+#' @return data.frame(seqid, element, start, stop, strand, model_cov) for 18S/5.8S/28S,
 #'   where `model_cov` is the percent of the model aligned (100 for a full hit,
 #'   NA when the tool reported partial without a percentage).
 #' @noRd
@@ -43,6 +43,7 @@ parse_barrnap <- function(gff_lines) {
     sub(".*aligned only ([0-9.]+) percent.*", "\\1", attrs[has_pct])))
   model_cov[!has_pct & !partial] <- 100 # full-length hit, no partial marker
   data.frame(
+    seqid = vapply(f, `[`, character(1), 1)[keep],
     element = el[keep],
     start = as.integer(vapply(f, `[`, character(1), 4))[keep],
     stop = as.integer(vapply(f, `[`, character(1), 5))[keep],
@@ -53,21 +54,27 @@ parse_barrnap <- function(gff_lines) {
 }
 
 #' Parse an ITSx `.positions.txt` into region features
-#' @return data.frame(element, start, stop) for SSU/ITS1/5.8S/ITS2/LSU found
+#' @return data.frame(seqid, element, start, stop) for SSU/ITS1/5.8S/ITS2/LSU found
 #' @noRd
 parse_itsx <- function(pos_lines) {
   if (length(pos_lines) == 0) {
     return(data.frame())
   }
-  fields <- strsplit(pos_lines[1], "\t")[[1]]
+  pos_lines <- pos_lines[nzchar(trimws(pos_lines))]
   labmap <- c("SSU" = "18S", "ITS1" = "ITS1", "5.8S" = "5.8S", "ITS2" = "ITS2", "LSU" = "28S")
   out <- list()
-  for (fd in fields) {
-    m <- regmatches(fd, regexec("^\\s*(SSU|ITS1|5\\.8S|ITS2|LSU):\\s*(\\d+)-(\\d+)", fd))[[1]]
-    if (length(m) == 4) {
-      out[[length(out) + 1]] <- data.frame(
-        element = unname(labmap[m[2]]), start = as.integer(m[3]), stop = as.integer(m[4]),
-        stringsAsFactors = FALSE)
+  for (ln in pos_lines) {
+    fields <- strsplit(ln, "\t")[[1]]
+    if (length(fields) == 0) next
+    sid <- fields[1]
+    for (fd in fields) {
+      m <- regmatches(fd, regexec("^\\s*(SSU|ITS1|5\\.8S|ITS2|LSU):\\s*(\\d+)-(\\d+)", fd))[[1]]
+      if (length(m) == 4) {
+        out[[length(out) + 1]] <- data.frame(
+          seqid = sid, element = unname(labmap[m[2]]),
+          start = as.integer(m[3]), stop = as.integer(m[4]),
+          stringsAsFactors = FALSE)
+      }
     }
   }
   if (length(out) == 0) data.frame() else do.call(rbind, out)
@@ -254,19 +261,47 @@ run_barrnap <- function(fasta, kingdom = "euk") {
   parse_barrnap(run_rrna_tool(bin, "barrnap", fasta, rrna_kingdom_for(kingdom, "barrnap")))
 }
 
-#' Run ITSx on a fasta and parse region positions
+#' Largest record ITSx will accept.
+#'
+#' ITSx runs HMMER's protein pipeline, which refuses a target over 100K and
+#' aborts the whole run rather than skipping the record, writing no positions
+#' file at all. pybarrnap has no such limit.
 #' @noRd
-run_itsx <- function(fasta, cpu = 2) {
+ITSX_MAX_BP <- 100000
+
+#' Run ITSx on a fasta and parse region positions
+#'
+#' @param complement NULL keeps ITSx's own default (`--complement T`, searches
+#'   both strands and reports sense-frame coordinates regardless of input
+#'   orientation). FALSE adds `--complement F`, for callers that have already
+#'   oriented the input and want "no coordinates" rather than mirrored ones on
+#'   an unanchored antisense record.
+#' @noRd
+run_itsx <- function(fasta, cpu = 2, taxon = "all", complement = NULL) {
   bin <- unname(Sys.which("ITSx"))
   if (!nzchar(bin)) {
     return(data.frame())
   }
   pre <- tempfile("rp_itsx_")
-  suppressWarnings(system2(bin, c("-i", shQuote(fasta), "-o", shQuote(pre),
-    "--save_regions", "none", "--graphical", "F", "--cpu", cpu, "-t", "all", "--preserve", "T"),
-  stdout = FALSE, stderr = FALSE))
+  err <- tempfile("rp_itsx_err_")
+  on.exit(unlink(err), add = TRUE)
+  comp_arg <- if (is.null(complement)) NULL else c("--complement", if (complement) "T" else "F")
+  st <- suppressWarnings(system2(bin, c("-i", shQuote(fasta), "-o", shQuote(pre),
+    "--save_regions", "none", "--graphical", "F", "--cpu", cpu,
+    "-t", taxon, "--preserve", "T", comp_arg),
+    stdout = FALSE, stderr = err))
+  tail_msg <- function() {
+    tryCatch(paste(utils::tail(readLines(err, warn = FALSE), 3L), collapse = " | "),
+      error = function(e) "")
+  }
+  if (!identical(as.integer(st), 0L)) {
+    warning(sprintf("ITSx failed on %s: %s", basename(fasta), tail_msg()), call. = FALSE)
+    return(data.frame())
+  }
   pf <- paste0(pre, ".positions.txt")
   if (!file.exists(pf)) {
+    warning(sprintf("ITSx wrote no positions file for %s: %s", basename(fasta), tail_msg()),
+      call. = FALSE)
     return(data.frame())
   }
   parse_itsx(readLines(pf, warn = FALSE))
@@ -338,4 +373,121 @@ orient_rrna_sense <- function(seq, kingdom = "euk") {
 #' @noRd
 annotate_seq <- function(fasta, cpu = 2) {
   reconcile_features(run_barrnap(fasta), run_itsx(fasta, cpu = cpu))
+}
+
+#' Sequence ids short enough for ITSx
+#' @param lens Named integer vector of sequence lengths.
+#' @noRd
+itsx_eligible <- function(lens) {
+  names(lens)[!is.na(lens) & lens <= ITSX_MAX_BP]
+}
+
+#' Map a seqid/start/stop frame between a sequence and its reverse complement
+#'
+#' Self-inverse: applying this twice with the same `lens` returns the original
+#' coordinates. Used both to move barrnap's input-frame anchors into the
+#' revcomp frame ITSx reports on for a minus-strand record, and to move a
+#' finished reconciled model back out of that frame.
+#' @param d A data.frame with seqid, start, stop columns (any other columns
+#'   are left untouched).
+#' @param lens Named integer vector of input-frame sequence lengths.
+#' @noRd
+flip_coords <- function(d, lens) {
+  if (is.null(d) || nrow(d) == 0) return(d)
+  L <- lens[d$seqid]
+  ok <- !is.na(L)
+  if (!any(ok)) return(d)
+  s <- d$start; e <- d$stop
+  d$start[ok] <- as.integer(L[ok] - e[ok] + 1L)
+  d$stop[ok] <- as.integer(L[ok] - s[ok] + 1L)
+  d
+}
+
+#' Reconcile per record
+#' @param bar,its parse_barrnap()/parse_itsx() output carrying a seqid column.
+#' @return reconcile_features() output with a leading seqid column.
+#' @noRd
+reconcile_records <- function(bar, its) {
+  ids <- unique(c(
+    if (!is.null(bar) && nrow(bar) > 0) bar$seqid else character(0),
+    if (!is.null(its) && nrow(its) > 0) its$seqid else character(0)))
+  if (length(ids) == 0) return(data.frame())
+  out <- list()
+  drop_seqid <- function(d) {
+    if (is.null(d) || nrow(d) == 0) return(data.frame())
+    d[, setdiff(names(d), "seqid"), drop = FALSE]
+  }
+  for (sid in ids) {
+    b <- drop_seqid(if (!is.null(bar) && nrow(bar) > 0) bar[bar$seqid == sid, , drop = FALSE] else NULL)
+    i <- drop_seqid(if (!is.null(its) && nrow(its) > 0) its[its$seqid == sid, , drop = FALSE] else NULL)
+    r <- reconcile_features(b, i)
+    if (is.null(r) || nrow(r) == 0) next
+    out[[length(out) + 1]] <- cbind(seqid = sid, r, stringsAsFactors = FALSE)
+  }
+  if (length(out) == 0) data.frame() else do.call(rbind, out)
+}
+
+#' Annotate every record in a multi-record fasta
+#'
+#' Runs the rRNA anchor caller once over the whole file and ITSx once per strand
+#' group, then reconciles per record. Records longer than [ITSX_MAX_BP] are kept
+#' but get anchors only, because ITSx aborts the entire run on an oversized
+#' target rather than skipping it.
+#'
+#' barrnap reports coordinates in the input frame; on a genuinely minus-strand
+#' record those anchors run 28S -> 5.8S -> 18S in ascending position, the
+#' opposite of the ascending order [reconcile_features()]'s spacer-clipping
+#' assumes. ITSx, run on a reverse-complemented copy of those records, reports
+#' its regions in the frame where the anchors DO ascend. So minus-strand
+#' records are reconciled in that revcomp frame -- barrnap's anchors are
+#' flipped into it, ITSx's output is used as reported -- and the finished
+#' model is flipped back to the input frame afterward.
+#'
+#' @param fasta Path to a multi-record fasta.
+#' @param kingdom Anchor-caller kingdom.
+#' @param cpu Threads for ITSx.
+#' @param taxon ITSx `-t` profile set.
+#' @return data.frame(seqid, element, type, start, stop, length, strand, model_cov, tool).
+#' @export
+annotate_records <- function(fasta, kingdom = "euk", cpu = 2, taxon = "all") {
+  seqs <- Biostrings::readDNAStringSet(fasta)
+  if (length(seqs) == 0) return(data.frame())
+  names(seqs) <- sub("\\s.*$", "", names(seqs))
+  lens <- stats::setNames(as.integer(Biostrings::width(seqs)), names(seqs))
+
+  caller <- rrna_caller()
+  bar <- data.frame()
+  if (!is.null(caller)) {
+    gff <- run_rrna_tool(caller$bin, caller$tool, fasta,
+      rrna_kingdom_for(kingdom, caller$tool), cpu = cpu)
+    bar <- parse_barrnap(gff)
+  }
+
+  minus <- if (nrow(bar) > 0) unique(bar$seqid[bar$strand == "-"]) else character(0)
+  plus <- setdiff(names(seqs), minus)
+  eligible <- itsx_eligible(lens)
+
+  run_on <- function(ids, revcomp) {
+    if (length(ids) == 0) return(data.frame())
+    sub <- seqs[ids]
+    if (revcomp) sub <- Biostrings::reverseComplement(sub)
+    f <- tempfile(fileext = ".fa")
+    on.exit(unlink(f), add = TRUE)
+    Biostrings::writeXStringSet(sub, f)
+    # both groups are already oriented by construction; sense-frame-only
+    # coordinates from ITSx are correct here (see run_itsx() complement doc)
+    run_itsx(f, cpu = cpu, taxon = taxon, complement = FALSE)
+  }
+  bar_by <- function(ids) if (nrow(bar) == 0) data.frame() else bar[bar$seqid %in% ids, , drop = FALSE]
+
+  its_plus <- run_on(intersect(plus, eligible), FALSE)
+  out_plus <- reconcile_records(bar_by(plus), its_plus)
+
+  its_minus <- run_on(intersect(minus, eligible), TRUE)     # ITSx's native revcomp frame
+  bar_minus_rc <- flip_coords(bar_by(minus), lens)           # barrnap -> revcomp frame
+  out_minus <- flip_coords(reconcile_records(bar_minus_rc, its_minus), lens) # -> input frame
+  # minus-set membership is barrnap's call; overrides reconcile's "+" default
+  if (nrow(out_minus) > 0) out_minus$strand <- "-"
+
+  rbind(out_plus, out_minus)
 }

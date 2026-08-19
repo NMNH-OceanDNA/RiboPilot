@@ -173,7 +173,7 @@ unit_evidence <- function(id) {
        b.pident AS screen_pident, b.qcovs AS screen_qcovs, b.bitscore AS screen_bitscore,
        b.lineage AS screen_lineage, b.lineage_taxids AS screen_taxids,
        b.rank_distance, b.is_nuclear_rrna,
-       sc.screen_verdict, sc.screen_class, sc.screen_confidence, sc.lca_taxon,
+       sc.screen_verdict, sc.screen_class, sc.screen_confidence, sc.screen_reason, sc.lca_taxon,
        sc.variant_class, sc.variant_group, sc.variant_identity,
        ROUND(ps.score, 3) AS path_score,
        s.lineage_taxids AS sample_taxids, s.sci_name,

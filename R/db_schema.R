@@ -30,10 +30,29 @@ BLAST_HITS_DDL <- "CREATE TABLE IF NOT EXISTS blast_hits (
   qend INTEGER,
   sstart INTEGER,
   send INTEGER,
+  slen INTEGER,
   is_nuclear_rrna INTEGER,
   hit_class TEXT,
   time_stamp INTEGER,
   PRIMARY KEY (ID, path, scaffold, hit_rank, hsp)
+);"
+
+#' DDL for blast_searched: which units have been searched, and by which search.
+#'
+#' Keyed on a hash of the query sequence, so a re-assembled or trimmed unit is
+#' searched again rather than inheriting the previous contig's hits. A unit that
+#' found nothing still gets a row, which is what stops it being re-searched on
+#' every retry and every re-run.
+#' @noRd
+BLAST_SEARCHED_DDL <- "CREATE TABLE IF NOT EXISTS blast_searched (
+  ID TEXT NOT NULL,
+  path INTEGER NOT NULL DEFAULT 1,
+  scaffold INTEGER NOT NULL DEFAULT 1,
+  query_md5 TEXT NOT NULL,
+  n_hits INTEGER,
+  source TEXT,
+  time_stamp INTEGER,
+  PRIMARY KEY (ID, path, scaffold)
 );"
 
 #' DDL for the triage_opts table (per-rule action presets).
@@ -129,6 +148,9 @@ REFERENCE_CONFIG_DDL <- "CREATE TABLE IF NOT EXISTS reference_config (
   ref_dir     TEXT,
   min_records INTEGER,
   max_records INTEGER,
+  blastdb     TEXT,
+  blastdb_version TEXT,
+  blastdb_info TEXT,
   PRIMARY KEY (rowid_key)
 );"
 

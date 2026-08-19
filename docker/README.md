@@ -23,11 +23,26 @@ From the repository root:
 ```bash
 docker/deploy-local.sh            # tags ribopilot:<DESCRIPTION Version>
 docker/deploy-local.sh v0.1.0     # tags ribopilot:v0.1.0
+docker/deploy-local.sh --no-db    # build without the rDNA panel
 ```
 
 Each script first builds the R package tarball into this directory
 (`devtools::build(path = "docker")`), then runs `docker build`. Note it does
 **not** run `devtools::document()`: RiboPilot's `NAMESPACE` is hand-maintained.
+
+## The baked-in rDNA panel
+
+By default both scripts stage the rDNA panel and its decoys from the
+`db-<RP_DB_VERSION>` GitHub release (with `gh`, since the repo is private) and
+bake them into the image at `RIBOPILOT_DB_DIR`, so a Docker run searches locally
+with no configuration. If that release does not exist yet, the scripts stop and
+name the commands that fix it.
+
+`--no-db` builds without the panel. That image leaves `RIBOPILOT_DB_DIR` unset,
+so nothing is discovered and every BLAST search goes to NCBI.
+
+Setting `RIBOPILOT_NO_LOCAL_BLAST=1` in the shell that launches a run forces the
+remote search even on an image that carries the panel.
 
 ## Push to Docker Hub
 
@@ -37,6 +52,7 @@ Publishes to `macguigand/ribopilot`.
 docker/deploy-dockerhub.sh                  # tag = the DESCRIPTION Version
 docker/deploy-dockerhub.sh v0.1.0           # explicit tag
 docker/deploy-dockerhub.sh --dry-run        # build and test, push nothing
+docker/deploy-dockerhub.sh --no-db          # build without the rDNA panel
 ```
 
 The tag defaults to the DESCRIPTION `Version` on purpose: `new_project()`
@@ -88,8 +104,8 @@ database lives outside the project directory, add another `-v` mount to
 
 ## Notes
 
-- Reference databases are not baked into the image. The default fish databases
-  are fetched from GitHub at run time; user-built databases are read from disk
-  (mount them, see above).
+- Clade reference databases are not baked into the image (the rDNA BLAST panel
+  is, see above). The default fish databases are fetched from GitHub at run
+  time; user-built databases are read from disk (mount them, see above).
 - Nextflow itself runs on the host (it launches the containers), so it is not
   installed in the image.

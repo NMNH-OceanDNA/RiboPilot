@@ -1,0 +1,184 @@
+# Composing the -db argument. blastn takes a space-separated list, and every
+# database in it must carry accession info or the search errors outright.
+
+mk_fake_db <- function(dir, prefix) {
+  for (ext in c("nhr", "nin", "nsq")) {
+    file.create(file.path(dir, paste0(prefix, ".", ext)))
+  }
+  file.path(dir, prefix)
+}
+
+test_that("a panel alone composes to itself", {
+  d <- withr::local_tempdir()
+  p <- mk_fake_db(d, "ribopilot_rrna")
+  expect_equal(RiboPilot:::local_blast_db_arg(p), p)
+})
+
+test_that("decoys present are appended in order", {
+  d <- withr::local_tempdir()
+  p <- mk_fake_db(d, "ribopilot_rrna")
+  dd <- withr::local_tempdir()
+  for (n in RiboPilot:::RP_DECOY_DBS) mk_fake_db(dd, n)
+  got <- RiboPilot:::local_blast_db_arg(p, dd)
+  parts <- strsplit(got, " ", fixed = TRUE)[[1]]
+  expect_equal(parts[1], p)
+  expected_decoys <- file.path(dd, RiboPilot:::RP_DECOY_DBS)
+  expect_equal(parts[-1], expected_decoys)
+})
+
+test_that("a missing decoy is skipped with a warning, not an error", {
+  d <- withr::local_tempdir()
+  p <- mk_fake_db(d, "ribopilot_rrna")
+  dd <- withr::local_tempdir()
+  mk_fake_db(dd, "16S_ribosomal_RNA")
+  expect_warning(got <- RiboPilot:::local_blast_db_arg(p, dd), "SSU_eukaryote_rRNA")
+  parts <- strsplit(got, " ", fixed = TRUE)[[1]]
+  expect_length(parts, 2L)
+})
+
+test_that("a blank or absent panel yields NULL", {
+  expect_null(RiboPilot:::local_blast_db_arg(""))
+  expect_null(RiboPilot:::local_blast_db_arg(NULL))
+  expect_null(RiboPilot:::local_blast_db_arg(NA_character_))
+  d <- withr::local_tempdir()
+  expect_null(RiboPilot:::local_blast_db_arg(file.path(d, "absent")))
+})
+
+test_that("no decoy directory means panel only, no warning", {
+  d <- withr::local_tempdir()
+  p <- mk_fake_db(d, "ribopilot_rrna")
+  expect_silent(got <- RiboPilot:::local_blast_db_arg(p, NULL))
+  expect_equal(got, p)
+})
+
+test_that("a stray .notes file without .nin is not a database", {
+  d <- withr::local_tempdir()
+  p <- file.path(d, "ribopilot_rrna")
+  file.create(paste0(p, ".notes"))
+  expect_null(RiboPilot:::local_blast_db_arg(p))
+})
+
+test_that("a prefix with .nin is detected as a database", {
+  d <- withr::local_tempdir()
+  p <- mk_fake_db(d, "ribopilot_rrna")
+  result <- RiboPilot:::local_blast_db_arg(p)
+  expect_equal(result, p)
+})
+
+test_that("a panel prefix containing a space warns and returns NULL", {
+  d <- withr::local_tempdir()
+  p <- file.path(d, "ribopilot rrna")
+  file.create(paste0(p, ".nhr"))
+  file.create(paste0(p, ".nin"))
+  file.create(paste0(p, ".nsq"))
+  expect_warning(got <- RiboPilot:::local_blast_db_arg(p), "whitespace")
+  expect_null(got)
+})
+
+test_that("unrelated stray file with space does not drop valid decoys", {
+  d <- withr::local_tempdir()
+  p <- mk_fake_db(d, "ribopilot_rrna")
+  dd <- withr::local_tempdir()
+  mk_fake_db(dd, "16S_ribosomal_RNA")
+  stray_with_space <- file.path(dd, "SSU eukaryote_rRNA")
+  file.create(paste0(stray_with_space, ".nhr"))
+  file.create(paste0(stray_with_space, ".nin"))
+  file.create(paste0(stray_with_space, ".nsq"))
+  got <- RiboPilot:::local_blast_db_arg(p, dd)
+  parts <- strsplit(got, " ", fixed = TRUE)[[1]]
+  expect_equal(parts[1], p)
+  expect_equal(basename(parts[2]), "16S_ribosomal_RNA")
+})
+
+test_that("decoy_dir path with space causes all decoys to skip with warnings", {
+  d <- withr::local_tempdir()
+  p <- mk_fake_db(d, "ribopilot_rrna")
+  dd <- withr::local_tempdir()
+  dd_with_space <- file.path(dirname(dd), "decoy dir")
+  dir.create(dd_with_space)
+  mk_fake_db(dd_with_space, "16S_ribosomal_RNA")
+  mk_fake_db(dd_with_space, "SSU_eukaryote_rRNA")
+  mk_fake_db(dd_with_space, "LSU_eukaryote_rRNA")
+  expect_warning(
+    got <- RiboPilot:::local_blast_db_arg(p, dd_with_space),
+    "whitespace"
+  )
+  parts <- strsplit(got, " ", fixed = TRUE)[[1]]
+  expect_equal(parts, p)
+})
+
+mk_panel <- function(root, ver, complete = TRUE) {
+  d <- file.path(root, ver); dir.create(d, recursive = TRUE)
+  ext <- if (complete) c("nin", "nsq", "nhr", "ndb") else c("nin")
+  for (e in ext) writeLines("x", file.path(d, paste0("ribopilot_rrna.", e)))
+  file.path(d, "ribopilot_rrna")
+}
+
+test_that("discover_panel finds a complete panel", {
+  r <- tempfile(); dir.create(r); on.exit(unlink(r, recursive = TRUE))
+  p <- mk_panel(r, "2026.08.1")
+  expect_equal(discover_panel(r), p)
+})
+
+test_that("discover_panel orders versions numerically, not as strings", {
+  r <- tempfile(); dir.create(r); on.exit(unlink(r, recursive = TRUE))
+  mk_panel(r, "2026.08.9")
+  newer <- mk_panel(r, "2026.08.10")
+  expect_equal(discover_panel(r), newer)
+})
+
+test_that("discover_panel returns the raw directory name, not a normalised version", {
+  r <- tempfile(); dir.create(r); on.exit(unlink(r, recursive = TRUE))
+  p <- mk_panel(r, "2026.08.1")
+  got <- discover_panel(r)
+  expect_true(file.exists(paste0(got, ".nin")))
+  expect_false(grepl("2026[.]8[.]1", got))
+})
+
+test_that("discover_panel skips an incomplete panel and falls through", {
+  r <- tempfile(); dir.create(r); on.exit(unlink(r, recursive = TRUE))
+  good <- mk_panel(r, "2026.08.1")
+  mk_panel(r, "2026.08.2", complete = FALSE)
+  expect_equal(discover_panel(r), good)
+})
+
+test_that("discover_panel returns NULL when there is nothing usable", {
+  r <- tempfile(); dir.create(r); on.exit(unlink(r, recursive = TRUE))
+  expect_null(discover_panel(r))
+  mk_panel(r, "2026.08.1", complete = FALSE)
+  expect_null(discover_panel(r))
+  expect_null(discover_panel(file.path(r, "absent")))
+})
+
+test_that("discover_panel ignores install leftovers", {
+  r <- tempfile(); dir.create(r); on.exit(unlink(r, recursive = TRUE))
+  good <- mk_panel(r, "2026.08.1")
+  mk_panel(r, "2026.08.2.old-123")
+  mk_panel(r, ".stage-2026.08.3-99")
+  expect_equal(discover_panel(r), good)
+})
+
+test_that("discover_panel refuses a path containing whitespace", {
+  r <- file.path(tempfile(), "has space"); dir.create(r, recursive = TRUE)
+  on.exit(unlink(dirname(r), recursive = TRUE))
+  mk_panel(r, "2026.08.1")
+  expect_null(discover_panel(r))
+})
+
+test_that("RIBOPILOT_NO_LOCAL_BLAST forces discovery to find nothing", {
+  r <- tempfile(); dir.create(r); on.exit(unlink(r, recursive = TRUE))
+  p <- mk_panel(r, "2026.08.1")
+  expect_equal(discover_panel(r), p)
+  withr::with_envvar(c(RIBOPILOT_NO_LOCAL_BLAST = "1"), {
+    expect_null(discover_panel(r))
+  })
+})
+
+test_that("the opt-out does not affect an explicitly configured panel", {
+  # an explicit prefix bypasses discovery entirely
+  r <- tempfile(); dir.create(r); on.exit(unlink(r, recursive = TRUE))
+  p <- mk_panel(r, "2026.08.1")
+  withr::with_envvar(c(RIBOPILOT_NO_LOCAL_BLAST = "1"), {
+    expect_type(local_blast_db_arg(p, dirname(p)), "character")
+  })
+})

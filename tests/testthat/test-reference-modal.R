@@ -12,7 +12,7 @@ mk_tab_db <- function(paths = tab_db_paths()) {
   con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
   DBI::dbExecute(con, RiboPilot:::REFERENCE_DDL)
   DBI::dbExecute(con, RiboPilot:::REFERENCE_CONFIG_DDL)
-  DBI::dbExecute(con, "INSERT INTO reference_config VALUES(1, NULL, 1000, 25000)")
+  DBI::dbExecute(con, "INSERT INTO reference_config VALUES(1, NULL, 1000, 25000, NULL, NULL, NULL)")
   DBI::dbExecute(con, "INSERT INTO reference (ref_id, clade_taxid, clade_name, clade_rank,
     query, n_samples, n_records, reference_switch, source, seeds_db, labels_db, time_stamp)
     VALUES ('asteroidea', 7588, 'Asteroidea', 'class', '\"Asteroidea\"[Organism]', 4, 4102,
@@ -158,7 +158,7 @@ mk_split_db <- function(dir) {
   con <- DBI::dbConnect(RSQLite::SQLite(), dbfile)
   DBI::dbExecute(con, RiboPilot:::REFERENCE_DDL)
   DBI::dbExecute(con, RiboPilot:::REFERENCE_CONFIG_DDL)
-  DBI::dbExecute(con, "INSERT INTO reference_config VALUES(1, ?, 1000, 25000)", params = list(ref_dir))
+  DBI::dbExecute(con, "INSERT INTO reference_config VALUES(1, ?, 1000, 25000, NULL, NULL, NULL)", params = list(ref_dir))
   DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT PRIMARY KEY, lineage TEXT, lineage_taxids TEXT, ref_id TEXT)")
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S1',
     'Metazoa;Echinodermata;Asteroidea;Forcipulatida;Asteriidae;Asterias;Asterias rubens',

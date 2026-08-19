@@ -1,4 +1,7 @@
-# The Dockerfile only COPYs the package tarball, so exclude everything else to
-# keep the build context tiny (the repo holds multi-GB test/work dirs).
+# The Dockerfile only COPYs/ADDs the package tarball and the db panel tarballs,
+# so exclude everything else to keep the build context tiny (the repo holds
+# multi-GB test/work dirs).
 *
 !docker/RiboPilot_*.tar.gz
+!docker/ribopilot_rrna-*.tar.gz
+!docker/decoys-*.tar.gz

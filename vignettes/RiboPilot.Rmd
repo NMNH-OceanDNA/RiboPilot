@@ -62,9 +62,30 @@ Before your first project, three things need to be installed. This is usually
 done once, and lab or institutional computing staff can help if any of it is
 unfamiliar.
 
+<div class="alert alert-warning">
+<strong>Supported execution: Docker or Singularity.</strong> The analysis steps
+are supported only inside the RiboPilot container image, published on Docker Hub
+as <a href="https://hub.docker.com/r/macguigand/ribopilot"><code>macguigand/ribopilot</code></a>
+and tagged with the RiboPilot version. It carries every analysis tool the pipeline
+calls, so with a container you can skip the conda step below. On a workstation,
+create projects with <code>executor = "docker"</code>; on a cluster, use
+Singularity (the <code>NMNH_Hydra</code> and <code>NOAA_SEDNA</code> profiles
+already do, and <code>generate_config()</code> writes one for any other
+scheduler). The pipeline commands later in this guide are written for the
+container, and carry a commented <code>conda_env = "ribopilot"</code> line for a
+self-installed conda setup; <strong>leave that argument off</strong> in a
+container, because the image already supplies the tools. The one exception is
+Step 2, which is a console command rather than a pipeline step and is explained
+there. Installing the
+tools yourself, including with conda, is <strong>no longer supported</strong>.
+Those instructions are kept below because they still work, but they are not
+tested.
+</div>
+
 - **R** (version 4.4.0 or newer): the environment you will type commands into.
 - **Nextflow**: the engine that runs the analysis steps.
-- **The analysis tools** RiboPilot relies on. The simplest way to get all of them
+- **The analysis tools** RiboPilot relies on, and only if you are not using a
+  container. The simplest way to get all of them
   is with **conda**, which installs a self-contained bundle of programs (called an
   "environment") that will not interfere with anything else on your computer.
   After installing conda, run these two lines in a terminal to create the
@@ -85,7 +106,9 @@ remotes::install_github("dmacguigan/RiboPilot")
 <strong>Tip.</strong> Start R from a terminal where you have already run
 <code>conda activate ribopilot</code>. That way RiboPilot can find all the tools
 it needs. Alternatively, tell each command which environment to use by adding
-<code>conda_env = "ribopilot"</code>, as shown throughout this guide.
+<code>conda_env = "ribopilot"</code>, which each pipeline command below shows as
+a commented line, if you are not using a container. In a container, leave
+<code>conda_env</code> off entirely.
 </div>
 
 <div class="alert alert-note">
@@ -102,8 +125,11 @@ before using your own data. One command downloads the samples and sets up a read
 -to-run project:
 
 ```{r, purl = FALSE}
-RiboPilot::new_test_project(path = "~/ribopilot_test", executor = "conda")
+RiboPilot::new_test_project(path = "~/ribopilot_test", executor = "docker")
 ```
+
+`executor` is passed explicitly here because `new_test_project()` still defaults to
+`executor = "conda"`, which is no longer a supported way to run.
 
 This downloads a few gigabytes of data, so it can take a while. When it finishes,
 you have a working project you can practice on using the steps below. We strongly
@@ -138,6 +164,12 @@ The first value in quotes is a standard NCBI search. Replace `Gastropoda` with
 your group's name. The [reference database guide](Reference-Databases.html) has
 more detail and tips for groups with few available sequences.
 
+<div class="alert alert-note">
+This console command runs on your own machine, so it needs the conda tools and is
+the unsupported path. In a container, build the same reference data from the app's
+<strong>Reference</strong> tab instead, which runs the work inside the image.
+</div>
+
 # Step 3: Set up your project
 
 A project starts with a **mapping file** and one command. The mapping file is a
@@ -157,7 +189,7 @@ RiboPilot::new_project(
   path       = "~/my_project",       # where to create the project folder
   mapping_fn = "~/my_samples.csv",   # your mapping file
   data_path  = "~/my_reads",         # folder containing the read files
-  executor   = "conda",
+  executor   = "docker",
   ncbi_api_key = "PASTE_YOUR_KEY_HERE"
 )
 ```
@@ -174,28 +206,33 @@ This creates a project folder containing your sample list and RiboPilot's
 tracking file. From here on, everything refers to that folder.
 
 <div class="alert alert-note">
-<code>executor = "conda"</code> tells RiboPilot to run on your own computer using
-the tools you installed with conda. If your lab uses a shared computing cluster,
-there are other options; see the function help for
-<code>new_project()</code> and <code>generate_config()</code>, or ask your
-computing support staff.
+<code>executor = "docker"</code> runs every step inside the container image on your
+own computer. It is passed explicitly because <code>new_project()</code> still
+defaults to <code>executor = "conda"</code>, which runs on the tools you installed
+with conda and is <strong>no longer a supported way to run</strong> (see Step 0).
+If your lab uses a shared computing cluster, there are Singularity options; see
+the function help for <code>new_project()</code> and
+<code>generate_config()</code>, or ask your computing support staff.
 </div>
 
 # Step 4: Assemble your samples
 
-One command runs the assembly stage: it cleans the reads, assembles the
-ribosomal repeat for each sample, picks the best reconstruction, and prepares the
-review aids (a closest-match GenBank search and a sequencing-depth profile).
+One command runs the whole analysis: it cleans the reads, assembles the
+ribosomal repeat for each sample, picks the best reconstruction, **annotates
+every reconstruction it produces**, runs the automatic quality checks, and
+prepares the review aids (a closest-match GenBank search and a sequencing-depth
+profile).
 
 ```{r, purl = FALSE}
-RiboPilot::run_assembly("~/my_project", conda_env = "ribopilot")
+RiboPilot::run_assembly("~/my_project")
+# self-installed conda instead of a container? add conda_env = "ribopilot"
 ```
 
 This is the longest step, because it does real work for every sample. You can let
-it run and come back later. When it finishes, every sample has an assembly ready
-for your review. Annotation happens later, in a separate step, only after you
-have reviewed and approved the assemblies (this is deliberate: there is no point
-annotating a reconstruction you have not yet accepted).
+it run and come back later. When it finishes, every sample has an assembly *and*
+its annotation ready for your review. There is no separate annotation command:
+annotating is cheap next to assembling, so RiboPilot does it up front rather than
+making you run a second stage for it.
 
 <div class="alert alert-note">
 Part of this step tries to look up the closest published match on NCBI to help
@@ -212,7 +249,8 @@ first and then assembles only those. It is the same assembly step as before, so
 everything after it works exactly the same way:
 
 ```{r, purl = FALSE}
-RiboPilot::run_fallback("~/my_project", conda_env = "ribopilot")
+RiboPilot::run_fallback("~/my_project")
+# self-installed conda instead of a container? add conda_env = "ribopilot"
 ```
 
 You can skip this and come back to it later if you prefer.
@@ -230,31 +268,37 @@ The app opens in your web browser as a table with one row per sample, organized
 into three tabs that follow the workflow: **Assemble**, **Annotate**, and
 **Export**. Each row shows an icon for the sample's status and whether it is
 **locked**. Locking a sample "signs off" on it and moves it to the next stage: a
-sample must be locked in the Assemble tab before it can be annotated, and locked
-in the Annotate tab before it can be exported. You can select several rows and
-lock them together.
+sample must be locked in the Assemble tab before its annotation appears in the
+Annotate tab, and locked in the Annotate tab before it can be exported. You can
+select several rows and lock them together.
 
 Work in the **Assemble tab**: look at each sample's reconstruction (RiboPilot has
 already chosen what it thinks is the best one), check it against the sequencing
 depth and the closest GenBank match, switch to an alternative reconstruction or
 adjust the exact endpoints if needed, and **lock** each sample you are happy with.
 
-Annotation deliberately does not happen until you have locked an assembly, so the
-Annotate tab is empty until the next step.
+Locking is what fills the Annotate tab: the annotations already exist for every
+reconstruction (Step 4 made them), and the tab lists the ones you have signed off
+on. So it starts empty and fills as you lock.
 
-# Step 7: Annotate the locked assemblies
+# Step 7: Move to the Annotate tab
 
-Now run the annotation stage on the assemblies you locked. It marks the five
-features (18S, ITS1, 5.8S, ITS2, 28S) and runs the automatic quality checks.
+There is no annotation command to run. Step 4 annotated every reconstruction as
+it assembled it, so each sample you locked already has its five features (18S,
+ITS1, 5.8S, ITS2, 28S) marked and its automatic quality checks done. Switch to
+the **Annotate tab** and carry on with Step 8.
+
+The one case that needs anything re-run is changing your mind. If you go back and
+switch a sample to a different reconstruction, or adjust its endpoints, that
+sample has to be annotated again. Press **Update** on the **Assemble tab** (it
+shows a live progress display), or re-run the Step 4 command:
 
 ```{r, purl = FALSE}
-RiboPilot::run_annotate("~/my_project", conda_env = "ribopilot")
+RiboPilot::run_assembly("~/my_project")
+# self-installed conda instead of a container? add conda_env = "ribopilot"
 ```
 
-You can also launch this from inside the app: switch to the Annotate tab and use
-the **Update** button, which shows a live progress display. If you later go back
-and switch a sample to a different reconstruction, just run this step again; it
-re-annotates only the samples that changed.
+Either route re-does only what changed and leaves everything else alone.
 
 # Step 8: Review the annotations and curation flags
 
@@ -299,11 +343,10 @@ rest) are still appended automatically.
 
 ```{r, purl = FALSE}
 RiboPilot::new_project(...)          # Step 3: set up
-RiboPilot::run_assembly(project)     # Step 4: assemble (+ BLAST, coverage)
+RiboPilot::run_assembly(project)     # Step 4: assemble + annotate + curate (+ BLAST, coverage)
 RiboPilot::run_fallback(project)     # Step 5: rescue difficult samples (optional)
-RiboPilot(project)                   # Step 6: review + LOCK assemblies (Assemble tab)
-RiboPilot::run_annotate(project)     # Step 7: annotate + curate locked assemblies
-RiboPilot(project)                   # Step 8: review annotations + flags, lock (Annotate tab)
+RiboPilot(project)                   # Steps 6-8: review + LOCK assemblies (Assemble tab),
+                                     #   then review annotations + flags and lock (Annotate tab)
 RiboPilot::export_project(project)   # Step 9: export
 ```
 

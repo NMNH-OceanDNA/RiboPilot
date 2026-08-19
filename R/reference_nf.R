@@ -105,6 +105,22 @@ reference_mount_dirs <- function(project, mounted = character(0)) {
   # only what a preset actually names: the configured reference folder may hold
   # databases this project never uses, and mounting it would say otherwise
   dirs <- unique(dirname(path.expand(paths)))
+  # the cross-project reference store also lives under this folder, and the
+  # fetch step's priming/push calls need it mounted just like a seeds/labels db.
+  # Read reference_config.ref_dir directly, not through ref_config(), whose
+  # fallback chain would otherwise mount the running machine's default folder
+  # for a project that never set one (see nf_ref_dir()).
+  ref <- tryCatch(DBI::dbGetQuery(con, "SELECT ref_dir FROM reference_config WHERE rowid_key = 1")$ref_dir,
+    error = function(e) NA_character_)
+  ref <- if (length(ref) > 0) ref[1] else NA_character_
+  if (!is.na(ref) && nzchar(trimws(ref))) dirs <- c(dirs, path.expand(trimws(ref)))
+  # the local BLAST panel is a database PREFIX, not a directory; mount its
+  # containing folder, and only when a project has explicitly configured one
+  bdb <- tryCatch(DBI::dbGetQuery(con, "SELECT blastdb FROM reference_config WHERE rowid_key = 1")$blastdb,
+    error = function(e) NA_character_)
+  bdb <- if (length(bdb) > 0) bdb[1] else NA_character_
+  if (!is.na(bdb) && nzchar(trimws(bdb))) dirs <- c(dirs, dirname(path.expand(trimws(bdb))))
+  dirs <- unique(dirs)
   dirs <- dirs[dir.exists(dirs)]
   dirs <- drop_covered(dirs, path.expand(mounted[nzchar(mounted %||% "")]))
   # a folder and its own seeds/ and labels/ subfolders would be three mounts of

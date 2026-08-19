@@ -20,6 +20,8 @@
 ^RiboPilot_test_hydra\.R$
 ^tools$
 ^REVIEW_.*\.md$
+^BUG_.*\.MD$
 ^\.nextflow$
 ^work$
 ^tests/testthat/\.sqlite$
+^HANDOFF_.*\.MD$

@@ -32,6 +32,29 @@ test_that("set_ref_config writes only the arguments it is given", {
   expect_true(is.na(cfg$ref_dir[1]))
 })
 
+test_that("ref_config reports the stored panel prefix, empty when unset", {
+  con <- mk_cfg_db(); on.exit(DBI::dbDisconnect(con))
+  expect_equal(ref_config(con)$blastdb, "")
+  set_ref_config(con, blastdb = "/data/blastdb/2026.08.1/ribopilot_rrna")
+  expect_equal(ref_config(con)$blastdb, "/data/blastdb/2026.08.1/ribopilot_rrna")
+})
+
+test_that("set_ref_config clears the panel prefix when given an empty string", {
+  con <- mk_cfg_db(); on.exit(DBI::dbDisconnect(con))
+  set_ref_config(con, blastdb = "/data/p/ribopilot_rrna")
+  set_ref_config(con, blastdb = "")
+  expect_equal(ref_config(con)$blastdb, "")
+  expect_true(is.na(DBI::dbGetQuery(con,
+    "SELECT blastdb FROM reference_config WHERE rowid_key = 1")$blastdb[1]))
+})
+
+test_that("set_ref_config leaves the panel prefix alone when not supplied", {
+  con <- mk_cfg_db(); on.exit(DBI::dbDisconnect(con))
+  set_ref_config(con, blastdb = "/data/p/ribopilot_rrna")
+  set_ref_config(con, min_records = 500)
+  expect_equal(ref_config(con)$blastdb, "/data/p/ribopilot_rrna")
+})
+
 test_that("validate_ref_dir rejects a path that is not a writable directory", {
   f <- withr::local_tempfile()
   writeLines("x", f)
@@ -76,4 +99,39 @@ test_that("appending twice keeps one row per clade, the newest", {
   expect_equal(nrow(m), 1L)
   expect_equal(m$n_records[1], 20L)
   expect_equal(m$seeds[1], "s2")
+})
+
+test_that("an empty panel prefix is valid and means remote", {
+  r <- validate_blastdb_prefix("")
+  expect_true(r$ok); expect_equal(r$msg, "")
+  expect_true(validate_blastdb_prefix(NULL)$ok)
+})
+
+test_that("a non-scalar prefix is rejected rather than erroring", {
+  expect_false(validate_blastdb_prefix(c("a", "b"))$ok)
+})
+
+test_that("a prefix with no volume files is rejected", {
+  r <- validate_blastdb_prefix(file.path(tempdir(), "nope", "ribopilot_rrna"))
+  expect_false(r$ok)
+  expect_match(r$msg, "No BLAST database")
+})
+
+test_that("a prefix with volume files is accepted without needing write access", {
+  d <- tempfile(); dir.create(d)
+  on.exit({Sys.chmod(d, "0755"); unlink(d, recursive = TRUE)})
+  file.create(file.path(d, "ribopilot_rrna.nin"))
+  Sys.chmod(d, "0555")  # read-only, as on a shared HPC mount
+  skip_if(unname(file.access(d, 2)) == 0, "cannot drop write permission here")
+  r <- validate_blastdb_prefix(file.path(d, "ribopilot_rrna"))
+  expect_true(r$ok)
+  expect_equal(r$msg, file.path(d, "ribopilot_rrna"))
+})
+
+test_that("a whitespace prefix is rejected, since blastn cannot express it", {
+  d <- tempfile("has space"); dir.create(d); on.exit(unlink(d, recursive = TRUE))
+  file.create(file.path(d, "ribopilot_rrna.nin"))
+  r <- validate_blastdb_prefix(file.path(d, "ribopilot_rrna"))
+  expect_false(r$ok)
+  expect_match(r$msg, "space")
 })

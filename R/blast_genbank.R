@@ -18,11 +18,35 @@ is_nuclear_rrna_title <- function(title) {
 #'
 #' Applied to the reference panel only, never to the search or to the screen's
 #' hit distribution. rDNA anchors are conserved well above 85 percent within a
-#' phylum, and a subject covering under half the query is a fragment rather than
-#' a comparable record.
+#' phylum. Below-half query coverage usually means a fragment rather than a
+#' comparable record, but REF_CANDIDATE_MIN_ALN_BP below admits the exception:
+#' a long absolute alignment against a full rDNA repeat, where low qcovs comes
+#' from recovered spacer rather than a short match.
 #' @noRd
 REF_CANDIDATE_MIN_PIDENT <- 85
 REF_CANDIDATE_MIN_QCOVS <- 50
+
+#' Absolute aligned length that admits a subject regardless of query coverage.
+#'
+#' qcovs against a full rDNA repeat measures recovered intergenic spacer, not
+#' match quality, so it falls as an assembly improves. 1500 bp is most of an 18S
+#' and well under a 28S. NOT yet calibrated outside Actinopterygii: confirm on a
+#' clade with shorter elements before treating it as settled.
+#' @noRd
+REF_CANDIDATE_MIN_ALN_BP <- 1500
+
+#' Does this subject qualify as a reference the sample is aligned to?
+#'
+#' @param x data.frame with hit_class, pident, qcovs, aln_len.
+#' @return logical vector, one element per row.
+#' @noRd
+ref_candidate_ok <- function(x) {
+  aln <- if ("aln_len" %in% names(x)) x$aln_len else rep(NA_integer_, nrow(x))
+  !is.na(x$hit_class) & x$hit_class == "rdna" &
+    !is.na(x$pident) & x$pident >= REF_CANDIDATE_MIN_PIDENT &
+    ((!is.na(x$qcovs) & x$qcovs >= REF_CANDIDATE_MIN_QCOVS) |
+      (!is.na(aln) & aln >= REF_CANDIDATE_MIN_ALN_BP))
+}
 
 #' Parse remote blastn hits into ranked reference candidates + a contamination
 #' screen
@@ -51,17 +75,17 @@ parse_blast_candidates <- function(con, id, path = 1L, scaffold = 1L, hits_file,
   ts <- as.integer(Sys.time())
   path <- as.integer(path); scaffold <- as.integer(scaffold)
   clear_unit <- function() {
-    for (tbl in c("blast_hits", "blast_ref_candidates", "blast_screen")) {
-      DBI::dbExecute(con,
-        sprintf("DELETE FROM %s WHERE ID = ? AND path = ? AND scaffold = ?", tbl),
-        params = list(id, path, scaffold))
-    }
+    DBI::dbExecute(con,
+      "DELETE FROM blast_hits WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = list(id, path, scaffold))
   }
 
   h <- parse_blast_hits_file(hits_file)
   if (nrow(h) == 0) {
     DBI::dbWithTransaction(con, clear_unit())
-    return(invisible(data.frame()))
+    # blast_hits is now empty for this unit; let derive_blast_products clear
+    # the derived tables (and any now-stale assemblies.blast_*) too.
+    return(derive_blast_products(con, id, path, scaffold, ts = ts))
   }
   h$species <- extract_species(h$title)
   h$is_nuclear_rrna <- as.integer(is_nuclear_rrna_title(h$title))
@@ -111,60 +135,103 @@ parse_blast_candidates <- function(con, id, path = 1L, scaffold = 1L, hits_file,
     lineage_taxids = h$lineage_taxids, rank_distance = h$rank_distance,
     pident = h$pident, qcovs = h$qcovs, evalue = h$evalue, bitscore = h$bitscore,
     aln_len = h$aln_len, qstart = h$qstart, qend = h$qend, sstart = h$sstart,
-    send = h$send, is_nuclear_rrna = h$is_nuclear_rrna, hit_class = h$hit_class,
+    send = h$send, slen = h$slen, is_nuclear_rrna = h$is_nuclear_rrna, hit_class = h$hit_class,
     time_stamp = ts, stringsAsFactors = FALSE)
-  # one row per subject, best HSP first, for the two derived tables
-  subj <- h[!duplicated(h$hit_rank), , drop = FALSE]
-
-  # --- reference panel: nuclear rDNA only ---
-  # equivalent to the old is_nuclear_rrna filter, since that predicate now
-  # delegates to the same classifier. Written against hit_class directly so the
-  # intent stays explicit and survives if the legacy wrapper is retired.
-  # Identity/coverage floor belongs HERE, not on the search: blast_screen above
-  # is written from the unfiltered distribution, so flooring the search would
-  # blind the contamination screen to the distant hits it exists to catch. A
-  # reference the sample is aligned against, by contrast, has to be a real match.
-  ref <- subj[subj$hit_class == "rdna" &
-    !is.na(subj$pident) & subj$pident >= REF_CANDIDATE_MIN_PIDENT &
-    !is.na(subj$qcovs) & subj$qcovs >= REF_CANDIDATE_MIN_QCOVS, , drop = FALSE]
-  df <- NULL
-  if (nrow(ref) > 0) {
-    ref$rank <- seq_len(nrow(ref))
-    df <- data.frame(ID = id, path = path, scaffold = scaffold, rank = ref$rank, accession = ref$accession,
-      species = ref$species, title = ref$title, pident = ref$pident,
-      qcovs = ref$qcovs, evalue = ref$evalue, bitscore = ref$bitscore, time_stamp = ts,
-      stringsAsFactors = FALSE)
-  }
-
-  # one transaction, and the delete moved in with it: this unit's stored hits are
-  # replaced wholesale, and a failure partway would leave it with none
   DBI::dbWithTransaction(con, {
     clear_unit()
     DBI::dbAppendTable(con, "blast_hits", hits)
-    # --- contamination screen: top subject over everything, before any filtering ---
+  })
+  derive_blast_products(con, id, path, scaffold, ts = ts)
+}
+
+#' Derive a unit's reference panel and contamination screen from stored hits
+#'
+#' Reads `blast_hits` rather than a hits file, so thresholds can change without
+#' re-running a remote search. Replaces the unit's rows in
+#' `blast_ref_candidates` and `blast_screen` and updates `assemblies.blast_*`.
+#'
+#' @param con Open project DB connection.
+#' @param id Sample ID.
+#' @param path,scaffold Assembly unit within the sample.
+#' @param ts Timestamp to stamp the written rows with.
+#' @return (invisibly) the ranked candidate data.frame.
+#' @export
+derive_blast_products <- function(con, id, path = 1L, scaffold = 1L,
+                                  ts = as.integer(Sys.time())) {
+  path <- as.integer(path); scaffold <- as.integer(scaffold)
+  clear <- function() {
+    for (tbl in c("blast_ref_candidates", "blast_screen")) {
+      DBI::dbExecute(con,
+        sprintf("DELETE FROM %s WHERE ID = ? AND path = ? AND scaffold = ?", tbl),
+        params = list(id, path, scaffold))
+    }
+  }
+  clear_assembly_ref <- function() {
+    DBI::dbExecute(con,
+      "UPDATE assemblies SET blast_accession = NULL, blast_species = NULL, blast_pident = NULL,
+         blast_qcovs = NULL, blast_evalue = NULL, blast_source = NULL
+       WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = list(id, path, scaffold))
+  }
+  h <- DBI::dbGetQuery(con,
+    "SELECT * FROM blast_hits WHERE ID = ? AND path = ? AND scaffold = ?
+     ORDER BY hit_rank, hsp",
+    params = list(id, path, scaffold))
+  if (nrow(h) == 0) {
+    DBI::dbWithTransaction(con, { clear(); clear_assembly_ref() })
+    return(invisible(data.frame()))
+  }
+
+  subj <- h[!duplicated(h$hit_rank), , drop = FALSE]
+  ref <- subj[ref_candidate_ok(subj), , drop = FALSE]
+  df <- NULL
+  if (nrow(ref) > 0) {
+    ref$rank <- seq_len(nrow(ref))
+    df <- data.frame(ID = id, path = path, scaffold = scaffold, rank = ref$rank,
+      accession = ref$accession, species = ref$species, title = ref$title,
+      pident = ref$pident, qcovs = ref$qcovs, evalue = ref$evalue,
+      bitscore = ref$bitscore, time_stamp = ts, stringsAsFactors = FALSE)
+  }
+
+  DBI::dbWithTransaction(con, {
+    clear()
     write_blast_screen(con, id, path, scaffold, subj[1, ], hits = h, ts = ts)
     if (!is.null(df)) {
       DBI::dbAppendTable(con, "blast_ref_candidates", df)
       top <- ref[1, ]
+      searched_source <- tryCatch(
+        DBI::dbGetQuery(con,
+          "SELECT source FROM blast_searched WHERE ID = ? AND path = ? AND scaffold = ?",
+          params = list(id, path, scaffold))$source,
+        error = function(e) NA_character_)
+      # a missing row (or table, for a DB that predates blast_searched) means
+      # remote, which preserves current behaviour for every existing project.
+      blast_source <- if (length(searched_source) > 0 && identical(searched_source[1], "local")) {
+        "local_rrna"
+      } else {
+        "core_nt"
+      }
       DBI::dbExecute(con,
         "UPDATE assemblies SET blast_accession = ?, blast_species = ?, blast_pident = ?, blast_qcovs = ?,
-           blast_evalue = ?, blast_source = 'core_nt'
+           blast_evalue = ?, blast_source = ?
          WHERE ID = ? AND path = ? AND scaffold = ?",
-        params = list(top$accession, top$species, top$pident, top$qcovs, top$evalue, id, path, scaffold))
+        params = list(top$accession, top$species, top$pident, top$qcovs, top$evalue,
+          blast_source, id, path, scaffold))
+    } else {
+      clear_assembly_ref()
     }
   })
-  if (is.null(df)) {
-    return(invisible(data.frame()))
-  }
-  invisible(df)
+  invisible(df %||% data.frame())
 }
 
 #' Parse a blastn outfmt-6 hits file into one row per HSP
 #'
 #' Tolerates both the pre-v9 six-column format and the current
 #' `saccver stitle pident qcovs evalue staxids bitscore length qstart qend
-#' sstart send`, so a re-parse of an older run still works (with the extra
-#' columns NA and ranking falling back to pident*qcovs).
+#' sstart send slen qseqid` (slen parsed at column 13; qseqid, column 14, is
+#' captured by the search but not read here), so a re-parse of an older run
+#' still works (with the extra columns NA and ranking falling back to
+#' pident*qcovs).
 #' @param hits_file Path to the blastn output.
 #' @return data.frame, one row per HSP; empty when there are no hits.
 #' @noRd
@@ -189,7 +256,7 @@ parse_blast_hits_file <- function(hits_file) {
       staxid = int(strsplit(g(6) %|NA|% "", ";")[[1]][1]),
       bitscore = num(g(7)), aln_len = int(g(8)),
       qstart = int(g(9)), qend = int(g(10)),
-      sstart = int(g(11)), send = int(g(12)),
+      sstart = int(g(11)), send = int(g(12)), slen = int(g(13)),
       stringsAsFactors = FALSE)
   })
   rows <- Filter(Negate(is.null), rows)
@@ -236,6 +303,60 @@ write_blast_screen <- function(con, id, path, scaffold, top, hits,
     time_stamp = ts, stringsAsFactors = FALSE)
   DBI::dbAppendTable(con, "blast_screen", row[, intersect(names(row), cols), drop = FALSE])
   invisible(row$lineage)
+}
+
+#' Re-derive stored BLAST products for every unit that has hits
+#'
+#' Replays [derive_blast_products()] over `blast_hits`, so a changed threshold or
+#' a fixed filter reaches existing projects without re-running a remote search.
+#'
+#' Changing which candidate ranks 1 invalidates `blast_ref_alignment`
+#' (`compute_ref_alignment()` always aligns against the rank-1 candidate) and any
+#' curation derived from it; this function does not mark those stale.
+#' `inst/nextflow/bin/rp_rederive.R` is a manual tool wired into no `.nf`
+#' process, so after running it the operator must re-run the reference-fetch and
+#' alignment steps by hand.
+#'
+#' @param con Open project DB connection.
+#' @param ids Optional character vector of sample IDs; default is every sample.
+#' @return (invisibly) the number of units re-derived.
+#' @export
+rederive_blast_products <- function(con, ids = NULL) {
+  sql <- "SELECT DISTINCT ID, path, scaffold FROM blast_hits"
+  units <- if (is.null(ids)) {
+    DBI::dbGetQuery(con, paste(sql, "ORDER BY ID, path, scaffold"))
+  } else {
+    ph <- paste(rep("?", length(ids)), collapse = ",")
+    DBI::dbGetQuery(con, sprintf("%s WHERE ID IN (%s) ORDER BY ID, path, scaffold", sql, ph),
+      params = as.list(ids))
+  }
+  if (nrow(units) == 0) return(invisible(0L))
+  for (i in seq_len(nrow(units))) {
+    derive_blast_products(con, units$ID[i], units$path[i], units$scaffold[i])
+  }
+  invisible(nrow(units))
+}
+
+#' Record that a unit was searched, and by which search
+#'
+#' @param con Open project DB connection.
+#' @param id Sample ID.
+#' @param path,scaffold Assembly unit within the sample.
+#' @param query_md5 md5 of the exact query sequence submitted.
+#' @param n_hits Number of hits the search returned.
+#' @param source Which search produced the hits, "local" or "remote".
+#' @return (invisibly) TRUE.
+#' @export
+mark_unit_searched <- function(con, id, path = 1L, scaffold = 1L, query_md5,
+                               n_hits = 0L, source = "remote") {
+  source <- match.arg(source, c("remote", "local"))
+  DBI::dbExecute(con,
+    "INSERT OR REPLACE INTO blast_searched
+       (ID, path, scaffold, query_md5, n_hits, source, time_stamp)
+     VALUES (?, ?, ?, ?, ?, ?, ?)",
+    params = list(id, as.integer(path), as.integer(scaffold), query_md5,
+      as.integer(n_hits), source, as.integer(Sys.time())))
+  invisible(TRUE)
 }
 
 #' Best-effort species name from a GenBank defline title

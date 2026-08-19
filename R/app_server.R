@@ -158,9 +158,10 @@ app_server <- function(input, output, session) {
         "SELECT an.annotate_lock, an.annotate_switch, s.ID, an.path, an.scaffold, s.Taxon, s.sci_name, s.taxid,
            asm.length, an.n_features, an.missing,
            -- blast_source says WHICH search named the species: the local seed
-           -- BLAST or the remote core_nt one. Without it a seed hint reads as a
-           -- GenBank identification. blast_qcovs is written by the remote path
-           -- only and its column was already defined but never selected.
+           -- BLAST, the local panel BLAST, or the remote core_nt one. Without
+           -- it a seed or panel hit reads as a GenBank identification.
+           -- blast_qcovs is written by the remote and local-panel paths only
+           -- and its column was already defined but never selected.
            asm.blast_species, asm.blast_accession, asm.blast_pident, asm.blast_qcovs,
            asm.blast_source,
            an.n_flags, an.reviewed,
@@ -780,6 +781,7 @@ app_server <- function(input, output, session) {
     nf_env <- c("current", COLUMNS = "500", NXF_ANSI_SUMMARY = "true")
     nxf_pin <- nf_pin_version()
     if (!is.na(nxf_pin)) nf_env <- c(nf_env, NXF_VER = nxf_pin)
+    nf_record_blastdb_launch(app_project())
     p <- processx::process$new("nextflow",
       args = c(nf_command(app_project(), resume = isTRUE(input$nf_resume %||% TRUE)),
         "-ansi-log"),
@@ -1050,7 +1052,7 @@ app_server <- function(input, output, session) {
     # reactable renders in data-frame column order, so the row identifier has to
     # lead here; colDef(sticky=) alone does not move it.
     lead <- c("unit", "triage", "length", "path_score", "depth", "depth_track", "elements",
-      "screen_verdict", "variant_class")
+      "screen_verdict", "screen_reason", "variant_class")
     d <- d[, c(intersect(lead, names(d)), setdiff(names(d), lead)), drop = FALSE]
     reactable::reactable(d, compact = TRUE, resizable = TRUE, filterable = TRUE,
       searchable = TRUE, sortable = TRUE, wrap = FALSE, defaultPageSize = 20,
@@ -1094,6 +1096,12 @@ app_server <- function(input, output, session) {
         screen_verdict = reactable::colDef(name = "Screen", width = 100, show = TRUE, html = TRUE,
           header = rt_help_header("Screen", SCAFFOLD_COL_HELP$screen_verdict),
           cell = rt_screen_badge()),
+        # advisory only, not a primary column: tells a curator why a scaffold has
+        # no reference to judge against, including when a local panel search
+        # came back empty and a remote search might still resolve it
+        screen_reason = reactable::colDef(name = "Screen why", width = 140, show = TRUE, html = TRUE,
+          header = rt_help_header("Screen why", SCAFFOLD_COL_HELP$screen_reason),
+          cell = rt_longtext()),
         # Information, not a flag: neither an isomer nor a paralog is a defect.
         variant_class = reactable::colDef(name = "Variant", width = 115, show = TRUE, html = TRUE,
           header = rt_help_header("Variant", SCAFFOLD_COL_HELP$variant_class),

@@ -12,7 +12,7 @@ mk_ref_db <- function() {
     max_scaffolds INT, min_assembly_length INT, assembler TEXT, bowtie2 TEXT, spades TEXT)")
   DBI::dbExecute(con, RiboPilot:::REFERENCE_DDL)
   DBI::dbExecute(con, RiboPilot:::REFERENCE_CONFIG_DDL)
-  DBI::dbExecute(con, "INSERT INTO reference_config VALUES(1, NULL, 1000, 25000)")
+  DBI::dbExecute(con, "INSERT INTO reference_config VALUES(1, NULL, 1000, 25000, NULL, NULL, NULL)")
   DBI::dbExecute(con, "INSERT INTO assemble_opts VALUES('default',4,16,'--flag','old_s.fa','old_l.fa',NULL,10,10,1000,'getorganelle','--local','--isolate')")
   for (id in c("S1", "S2")) {
     DBI::dbExecute(con, "INSERT INTO samples VALUES(?,NULL,NULL,NULL,1,2,NULL)", params = list(id))
@@ -514,6 +514,17 @@ test_that("a queued job with no output yet keeps waiting, it is not failed", {
   r <- DBI::dbGetQuery(con, "SELECT * FROM reference")
   expect_equal(r$reference_switch[1], 4L)
   expect_true(is.na(r$fail_reason[1]))
+})
+
+# ---- shipped builder script ------------------------------------------------
+# efilter -molecule genomic drops every RefSeq rRNA record (MolType rna, not
+# genomic), silently starving every clade DB built through this script.
+
+test_that("download_rrna.sh does not filter out RefSeq records", {
+  script <- RiboPilot:::app_sys("ref_dbs/getOrganelle/GenBankDownload/download_rrna.sh")
+  skip_if_not(nzchar(script) && file.exists(script))
+  s <- paste(readLines(script, warn = FALSE), collapse = "\n")
+  expect_false(grepl("efilter", s, fixed = TRUE))
 })
 
 test_that("a submitted build wires itself once the job writes its FASTAs", {

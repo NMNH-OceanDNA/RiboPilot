@@ -50,3 +50,22 @@ test_that("no stored hit renders nothing", {
     data.frame(blast_species = "", blast_accession = "", blast_pident = NA_real_,
       blast_source = "")))
 })
+
+test_that("a local reference-panel hit is not shown as a seed hit", {
+  r <- data.frame(blast_species = "Danio rerio", blast_accession = "MW829490.1",
+    blast_pident = 99.5, blast_source = "local_rrna", stringsAsFactors = FALSE)
+  html <- as.character(RiboPilot:::seed_hit_block(r))
+  expect_match(html, "local reference panel search")
+  expect_false(grepl("NOT a GenBank identification", html, fixed = TRUE))
+  expect_false(grepl("seed file", html, fixed = TRUE))
+})
+
+test_that("rt_blast_source_badge labels all three sources distinctly", {
+  js <- as.character(RiboPilot:::rt_blast_source_badge())
+  expect_true(grepl("v === 'core_nt'", js, fixed = TRUE))
+  expect_true(grepl(">GenBank<", js, fixed = TRUE))
+  expect_true(grepl("v === 'local_rrna'", js, fixed = TRUE))
+  expect_true(grepl(">local panel<", js, fixed = TRUE))
+  expect_true(grepl("v === 'seeds'", js, fixed = TRUE))
+  expect_true(grepl(">seed file<", js, fixed = TRUE))
+})

@@ -339,6 +339,27 @@ screen_one <- function(con, id, path = 1L, scaffold = 1L, force = FALSE) {
     "SELECT lineage_taxids t FROM samples WHERE ID = ?", params = list(id))$t[1],
     error = function(e) NA_character_)
   r <- screen_channel_taxonomy(hits, samp, params = screen_params(con, id))
+  # unresolved_sample_lineage and no_taxdump are excluded on purpose: those are
+  # about the sample's own taxonomy or a missing taxdump, and a remote search
+  # would not help either one.
+  if (r$reason_code %in% c("no_hits", "unresolved_hit_lineages")) {
+    # a missing row (or table, for a project that predates blast_searched) means
+    # remote, which preserves current behaviour for every existing project.
+    searched_source <- tryCatch(
+      DBI::dbGetQuery(con,
+        "SELECT source FROM blast_searched WHERE ID = ? AND path = ? AND scaffold = ?",
+        params = list(id, path, scaffold))$source,
+      error = function(e) NA_character_)
+    if (length(searched_source) > 0 && identical(searched_source[1], "local")) {
+      r$reason <- if (identical(r$reason_code, "no_hits")) {
+        paste("the local reference panel returned no usable hit for this",
+          "scaffold; a remote BLAST search may identify it")
+      } else {
+        paste("the local reference panel returned no hit that resolved to a",
+          "usable lineage; a remote BLAST search may identify it")
+      }
+    }
+  }
   # one transaction: a failed append after a committed delete would leave the
   # unit with no verdict at all
   DBI::dbWithTransaction(con, {

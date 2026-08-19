@@ -18,5 +18,6 @@ compute_ref_alignment(con, id, path = 1L, scaffold = 1L)
 }
 \description{
 Aligns each rRNA/ITS element that both the sample and its top reference
-annotate, writing aligned strings + percent identity to `blast_ref_alignment`.
+annotate, writing percent identity and alignment coverage/length (not the
+aligned strings themselves) to `blast_ref_alignment`.
 }

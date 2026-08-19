@@ -20,11 +20,13 @@ status_badge <- function(label, state, invert = FALSE, neutral_no = FALSE) {
 
 #' The stored per-scaffold BLAST hit, labelled with the search that produced it
 #'
-#' Two searches write `assemblies.blast_*`: the remote core_nt one, and the local
-#' one against the GetOrganelle seed file. The seed file is the same set of
+#' Three searches can write `assemblies.blast_*`: the remote core_nt one, the
+#' local one against a configured rDNA reference panel, and the local one
+#' against the GetOrganelle seed file. The seed file is the same set of
 #' sequences that baited the assembly, so its hit answers "which seed does this
-#' scaffold resemble", not "what is this". Shown where no GenBank screen exists,
-#' and never without saying which search it came from.
+#' scaffold resemble", not "what is this"; the other two are real reference
+#' searches. Shown where no GenBank screen exists, and never without saying
+#' which search it came from.
 #' @param r One row of [unit_evidence()].
 #' @noRd
 seed_hit_block <- function(r) {
@@ -33,10 +35,15 @@ seed_hit_block <- function(r) {
     return(NULL)
   }
   acc <- r$blast_accession %|NA|% ""
-  from_seeds <- !identical(r$blast_source %|NA|% "", "core_nt")
+  src <- r$blast_source %|NA|% ""
+  # a legacy row has no source recorded; it is a seed hit, so it keeps the caveat
+  from_seeds <- identical(src, "seeds") || !nzchar(src)
+  from_local <- identical(src, "local_rrna")
   div(style = "margin-top:8px;",
     tags$span(style = "color:#555;", if (from_seeds) {
       "Closest sequence in the local seed file (a hint, NOT a GenBank identification):"
+    } else if (from_local) {
+      "Best nuclear rDNA reference from the local reference panel search:"
     } else {
       "Best nuclear rDNA reference from the GenBank search:"
     }),

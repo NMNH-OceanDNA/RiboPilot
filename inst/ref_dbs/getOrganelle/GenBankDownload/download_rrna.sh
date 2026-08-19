@@ -59,7 +59,7 @@ Output:
   <outdir>/<prefix>_seeds.fasta   read-recruiting sequences for GetOrganelle
   <outdir>/<prefix>_labels.fasta  per-gene label sequences for GetOrganelle
 
-Dependencies (conda): Entrez Direct (esearch, efilter, efetch), python, biopython
+Dependencies (conda): Entrez Direct (esearch, efetch), python, biopython
 EOF
 }
 
@@ -119,11 +119,11 @@ if [[ -n "${NCBI_API_KEY:-}" ]]; then
 fi
 echo ""
 
-# A clade GenBank has nothing for is an answer, not a failure: esearch returns
-# "Empty result", efilter then exits non-zero, and pipefail would abort the run.
-# Only that specific case becomes 0; anything else still fails loudly.
-SEARCH_OUT=$( { esearch -db nuccore -query "${QUERY}" \
-  | efilter -molecule genomic; } 2>&1 || true )
+# A clade GenBank has nothing for is an answer, not a failure. esearch exits
+# 0 in every case tested (empty result, bad query, network error), so N_REC
+# is decided from the output text below, not the exit code. `|| true` is a
+# safety net against a future EDirect version that exits non-zero here.
+SEARCH_OUT=$( { esearch -db nuccore -query "${QUERY}"; } 2>&1 || true )
 N_REC=$( printf '%s\n' "${SEARCH_OUT}" | grep "Count" | head -1 | cut -f2 -d">" | cut -f1 -d"<" || true )
 if [[ -z "${N_REC}" ]]; then
   if printf '%s\n' "${SEARCH_OUT}" | grep -q "Empty result"; then
@@ -147,7 +147,6 @@ echo "Downloading (fasta)..."
 echo ""
 
 esearch -db nuccore -query "${QUERY}" \
-  | efilter -molecule genomic \
   | efetch -format fasta > "${FULL_PREFIX}.raw.fasta"
 
 echo "Raw records written to ${FULL_PREFIX}.raw.fasta"

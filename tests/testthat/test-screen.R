@@ -478,3 +478,56 @@ test_that("SCREEN_VERSION is 5 so earlier rows recompute", {
   # hits joined the vote
   expect_equal(RiboPilot:::SCREEN_VERSION, 5L)
 })
+
+test_that("an unanswered local search suggests a remote one", {
+  con <- mk_screen_db()
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, RiboPilot:::BLAST_SEARCHED_DDL)
+  RiboPilot:::mark_unit_searched(con, "S1", 1, 1, "abc", 0L, source = "local")
+  RiboPilot:::screen_one(con, "S1", 1, 1)
+  r <- DBI::dbGetQuery(con, "SELECT screen_verdict, screen_reason FROM screen")
+  expect_equal(r$screen_verdict[1], "no_reference")
+  expect_match(r$screen_reason[1], "local")
+  expect_match(r$screen_reason[1], "remote")
+})
+
+test_that("an unanswered remote search does not suggest another remote one", {
+  con <- mk_screen_db()
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, RiboPilot:::BLAST_SEARCHED_DDL)
+  RiboPilot:::mark_unit_searched(con, "S1", 1, 1, "abc", 0L, source = "remote")
+  RiboPilot:::screen_one(con, "S1", 1, 1)
+  r <- DBI::dbGetQuery(con, "SELECT screen_reason FROM screen")
+  expect_false(grepl("remote search", r$screen_reason[1]))
+  # pins the wording itself, not just the absence of "remote search": a clause
+  # later widened to fire on remote too would still trip this
+  expect_equal(r$screen_reason[1], "no GenBank hits are stored for this scaffold")
+})
+
+test_that("a local search whose hits all fail to resolve suggests a remote one", {
+  con <- mk_screen_db()
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, RiboPilot:::BLAST_SEARCHED_DDL)
+  # every hit's deepest lineage field is a placeholder, so all are filtered
+  # out: reason_code "unresolved_hit_lineages", not the zero-hit short circuit
+  add_hits(con, 1, FISH_T, lin = "Eukaryota;Chordata;Actinopteri;o;f;g;uncultured organism")
+  RiboPilot:::mark_unit_searched(con, "S1", 1, 1, "abc", 3L, source = "local")
+  RiboPilot:::screen_one(con, "S1", 1, 1)
+  r <- DBI::dbGetQuery(con, "SELECT screen_verdict, screen_reason FROM screen")
+  expect_equal(r$screen_verdict[1], "no_reference")
+  expect_match(r$screen_reason[1], "local")
+  expect_match(r$screen_reason[1], "remote")
+})
+
+test_that("a remote search whose hits all fail to resolve does not suggest another remote one", {
+  con <- mk_screen_db()
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, RiboPilot:::BLAST_SEARCHED_DDL)
+  add_hits(con, 1, FISH_T, lin = "Eukaryota;Chordata;Actinopteri;o;f;g;uncultured organism")
+  RiboPilot:::mark_unit_searched(con, "S1", 1, 1, "abc", 3L, source = "remote")
+  RiboPilot:::screen_one(con, "S1", 1, 1)
+  r <- DBI::dbGetQuery(con, "SELECT screen_verdict, screen_reason FROM screen")
+  expect_equal(r$screen_verdict[1], "no_reference")
+  expect_false(grepl("remote search", r$screen_reason[1]))
+  expect_equal(r$screen_reason[1], "no hit resolved to a usable lineage")
+})

@@ -156,22 +156,102 @@ assemble_opts_modal <- function(cur, choices, n) {
     update_id = "update_ao")
 }
 
+# Where a BLAST search goes. Stored as two integers because that is what
+# blast.nf reads, but offered as one choice: as two checkboxes the user could
+# ask for "NCBI only" AND "fall back to NCBI", which blast.nf silently ignores.
+BLAST_SOURCE_CHOICES <- c(
+  "Bundled database only" = "bundled",
+  "Bundled database, then NCBI for anything it cannot name" = "escalate",
+  "NCBI only (core_nt)" = "remote")
+
+#' The stored columns as one choice
+#'
+#' remote wins over fallback for a row carrying both, because that is what the
+#' pipeline does with it.
+#' @noRd
+blast_source <- function(remote_blast, remote_fallback) {
+  r <- remote_blast %|NA|% 0
+  f <- remote_fallback %|NA|% 1
+  if (r == 1) "remote" else if (f == 1) "escalate" else "bundled"
+}
+
+#' The choice as the stored columns
+#' @noRd
+blast_source_cols <- function(source) {
+  switch(source %||% "escalate",
+    bundled  = list(remote_blast = 0L, remote_fallback = 0L),
+    remote   = list(remote_blast = 1L, remote_fallback = 0L),
+    list(remote_blast = 0L, remote_fallback = 1L))
+}
+
+#' The bundled-database note, rendered as a callout rather than a field
+#'
+#' A full border plus a radius is exactly what Bootstrap gives a form control,
+#' so in a column of disabled grey inputs the old box read as one more input the
+#' user could not type in. A tinted fill, a left accent bar and a lead-in INSIDE
+#' the block (every input in this app labels from outside and above) each say
+#' "this is text", and none of them relies on the user noticing a colour.
+#' @param note list(known, text) from panel_note().
+#' @noRd
+panel_note_box <- function(note) {
+  known <- isTRUE(note$known)
+  accent <- if (known) "#5b7fa6" else "#9a7b2e"
+  shiny::tags$div(role = "note",
+    style = paste0("background:#f5f7fa; border-left:3px solid ", accent, ";",
+      "border-radius:0 4px 4px 0; padding:9px 13px; margin:6px 0 14px;",
+      "font-size:0.9em; color:#333;"),
+    shiny::tags$strong(if (known) "Bundled database" else
+      "Bundled database: Not yet recorded"),
+    shiny::tags$br(),
+    note$text %||% "")
+}
+
+#' Attach the reference-database note to a blast_opts row
+#'
+#' Takes the project explicitly: the app is launched from wherever the user's R
+#' session happens to sit, so resolving the config relative to the working
+#' directory silently found nothing and left the modal showing its placeholder.
+#' @noRd
+with_panel_note <- function(cur, con, project = app_project()) {
+  if (NROW(cur) < 1) return(cur)
+  note <- tryCatch(project_panel_note(con, nf_blastdb(project), project = project),
+    error = function(e) panel_note(NULL, ""))
+  cur$panel_note <- note$text
+  cur$panel_known <- isTRUE(note$known)
+  cur
+}
+
 blast_opts_modal <- function(cur, choices, n) {
-  opts_modal_shell("GenBank BLAST options", n,
+  source <- blast_source(cur$remote_blast, cur$remote_fallback)
+  # the Entrez filter is passed to every search that leaves the machine, and an
+  # escalated scaffold is one of those
+  reaches_ncbi <- source != "bundled"
+  opts_modal_shell("BLAST options", n,
     opts_name_row("bo_name", "bo_edit", choices, cur$blast_opts),
     shinyjs::disabled(shinyWidgets::prettyCheckbox("bo_run",
-      "Run GenBank BLAST (find the closest reference for review + curation)",
+      "Run BLAST (find the closest reference for review + curation)",
       value = (cur$run_blast %|NA|% 1) == 1, status = "primary")),
-    shinyjs::disabled(shiny::textAreaInput("bo_entrez",
-      shiny::tagList("Entrez query", tool_help_icon("blastn")),
-      value = cur$entrez_query %|NA|% "", width = "100%", height = "90px")),
-    opts_help("NCBI Entrez filter restricting the remote BLAST to nuclear ",
-      "ribosomal / ITS records."),
+    panel_note_box(list(known = cur$panel_known %|NA|% FALSE,
+      text = cur$panel_note %|NA|% "")),
+    shinyjs::disabled(shiny::radioButtons("bo_source", "Search:",
+      choices = BLAST_SOURCE_CHOICES, selected = source, width = "100%")),
+    opts_help("The bundled database answers in milliseconds; NCBI is far slower, ",
+      "rate limited, and needs an internet connection from wherever the pipeline ",
+      "runs. Escalating catches contaminants and off-target scaffolds, the things ",
+      "a metazoan rDNA database has no record of."),
+    shiny::div(id = "bo_entrez_group",
+      style = if (reaches_ncbi) NULL else "display:none;",
+      shinyjs::disabled(shiny::textAreaInput("bo_entrez",
+        shiny::tagList("Entrez query", tool_help_icon("blastn")),
+        value = cur$entrez_query %|NA|% "", width = "100%", height = "90px")),
+      opts_help("NCBI filter, applied to any search that goes to NCBI, including ",
+        "an escalated scaffold. The bundled database cannot use it.")),
     shiny::div(style = "display:flex; gap:2em;",
       shiny::div(style = "flex:2", shinyjs::disabled(shiny::textInput("bo_extra",
         "Extra blastn options:", value = cur$extra_opts %|NA|% "", width = "100%"))),
       shiny::div(style = "flex:1", shinyjs::disabled(shiny::numericInput("bo_mts",
         "Max target seqs:", value = cur$max_target_seqs %|NA|% 5, min = 1, width = "100%")))),
+    opts_help("Both apply to whichever search runs."),
     update_id = "update_bo")
 }
 
@@ -304,6 +384,7 @@ opts_handlers <- function(input, output, session, deps) {
         "SELECT clade_name FROM reference WHERE preset_name = ? LIMIT 1",
         params = list(cur[[sp$key]][1]))$clade_name[1], error = function(e) NA_character_)
     }
+    if (pfx == "bo") cur <- with_panel_note(cur, con)
     cur_row(cur)
     choices <- DBI::dbGetQuery(con, sprintf("SELECT %s FROM %s ORDER BY %s", sp$key, sp$table, sp$key))[[1]]
     shiny::showModal(sp$modal(as.list(cur), choices, length(ids)))
@@ -317,7 +398,7 @@ opts_handlers <- function(input, output, session, deps) {
     po = c("po_cpus", "po_mem", "po_fastp"),
     ao = c("ao_cpus", "ao_mem", "ao_getorg", "ao_minlen", "ao_maxpaths", "ao_maxscaf",
            "ao_assembler", "ao_bt2", "ao_spades", "ao_seeds", "ao_labels"),
-    bo = c("bo_run", "bo_entrez", "bo_extra", "bo_mts"),
+    bo = c("bo_run", "bo_source", "bo_entrez", "bo_extra", "bo_mts"),
     no = c("no_cpus", "no_mem", "no_tool", "no_kingdom", "no_itsxtaxon", "no_itsxopts"),
     co = c("co_ruleset", "co_pid", "co_contam")
   )
@@ -371,6 +452,12 @@ opts_handlers <- function(input, output, session, deps) {
         opts_apply(p, sp, input, deps, targets(), cur_row())
       }
     })
+  })
+
+  # the Entrez filter only matters for a search that can reach NCBI
+  shiny::observeEvent(input$bo_source, ignoreInit = TRUE, {
+    shinyjs::toggle(id = "bo_entrez_group",
+      condition = !identical(input$bo_source, "bundled"))
   })
 
   # annotate kingdom choices follow the tool selection
@@ -431,7 +518,10 @@ opts_row <- function(pfx, nm, input, base) {
       bowtie2 = input$ao_bt2 %||% "--local", spades = input$ao_spades %||% "--isolate",
       stringsAsFactors = FALSE),
     bo = data.frame(blast_opts = nm, run_blast = as.integer(isTRUE(input$bo_run)),
-      entrez_query = input$bo_entrez %||% "", extra_opts = input$bo_extra %||% "",
+      entrez_query = input$bo_entrez %||% "",
+      remote_blast = blast_source_cols(input$bo_source)$remote_blast,
+      remote_fallback = blast_source_cols(input$bo_source)$remote_fallback,
+      extra_opts = input$bo_extra %||% "",
       max_target_seqs = as.integer(input$bo_mts), stringsAsFactors = FALSE),
     no = data.frame(annotate_opts = nm, cpus = as.integer(input$no_cpus),
       memory = as.integer(input$no_mem), rrna_tool = input$no_tool,

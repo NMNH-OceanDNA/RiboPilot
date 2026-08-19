@@ -106,12 +106,20 @@ RiboPilot::new_project(
   path       = "~/my_project",
   mapping_fn = "~/my_samples.csv",
   data_path  = "~/my_reads",
-  executor   = "conda",
+  executor   = "docker",
   ref_dir    = "~/ribopilot_refs"
 )
 ```
 
 If you do not set a folder, RiboPilot uses a default location on your computer.
+
+<div class="alert alert-note">
+The examples on this page pass <code>executor = "docker"</code> explicitly, because
+<code>new_project()</code> still defaults to <code>executor = "conda"</code>, which
+is <strong>no longer a supported way to run</strong>. Supported execution is Docker
+or Singularity; see the <a href="RiboPilot.html">Get started guide</a> for
+clusters.
+</div>
 
 # Building from the console
 
@@ -146,7 +154,9 @@ The second value, `"gastropoda"`, is just a short label used in the file names.
 <div class="alert alert-note">
 Running this needs the tools you installed with conda, so start R from a terminal
 where you have run <code>conda activate ribopilot</code>, or keep the
-<code>conda_env = "ribopilot"</code> setting shown above.
+<code>conda_env = "ribopilot"</code> setting shown above. That is the unsupported
+local-tools path: building from the app's Reference tab instead runs the same work
+inside the container, which is the supported route.
 </div>
 
 To use a database built this way in a project, point the project at it by adding
@@ -157,7 +167,7 @@ RiboPilot::new_project(
   path       = "~/my_project",
   mapping_fn = "~/my_samples.csv",
   data_path  = "~/my_reads",
-  executor   = "conda",
+  executor   = "docker",
   custom_seeds_db  = db$seeds,
   custom_labels_db = db$labels
 )

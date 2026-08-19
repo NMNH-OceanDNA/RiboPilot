@@ -279,6 +279,8 @@ new_db <- function(
       blast_opts TEXT NOT NULL,
       run_blast INTEGER,
       entrez_query TEXT,
+      remote_blast INTEGER,
+      remote_fallback INTEGER,
       extra_opts TEXT,
       max_target_seqs INTEGER,
       PRIMARY KEY (blast_opts)
@@ -297,6 +299,14 @@ new_db <- function(
         # parse_blast_candidates() instead. Setting this blinds the
         # contamination screen to anything outside the query.
         entrez_query = "",
+        # Local-first. The shipped panel answers most scaffolds in milliseconds,
+        # so going to NCBI by default would trade minutes per sample for hits the
+        # panel already has. Set this to search NCBI instead of the panel.
+        remote_blast = 0L,
+        # ...but the panel is metazoan nuclear rDNA only, so a contaminant or an
+        # off-target scaffold can be unnameable locally and still perfectly
+        # nameable at NCBI. Those scaffolds escalate unless this is turned off.
+        remote_fallback = 1L,
         # Significance floor for the remote search, shown and editable as "Extra
         # blastn options". blastn's own default (-evalue 10) keeps hits expected
         # by chance. Deliberately NO -perc_identity: this one search feeds both
@@ -347,6 +357,9 @@ new_db <- function(
 
   # blast_hits (full retained hit distribution per unit; see BLAST_HITS_DDL) ----
   DBI::dbExecute(con, BLAST_HITS_DDL)
+
+  # blast_searched (resume marker keyed on query hash; see BLAST_SEARCHED_DDL) ----
+  DBI::dbExecute(con, BLAST_SEARCHED_DDL)
 
   # assembly_blast (per-path BLAST hits) ----
   DBI::dbExecute(
@@ -457,8 +470,6 @@ new_db <- function(
       pid REAL,
       aln_cov REAL,
       aln_len INTEGER,
-      sample_aln TEXT,
-      ref_aln TEXT,
       time_stamp INTEGER,
       PRIMARY KEY (ID, path, scaffold, accession, element)
     );"

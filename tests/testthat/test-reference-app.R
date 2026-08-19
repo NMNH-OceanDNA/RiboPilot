@@ -50,6 +50,34 @@ test_that("the settings modal groups the folder and the record window", {
   expect_false(grepl("Maximum GenBank records", html, fixed = TRUE))
 })
 
+test_that("the settings modal exposes a panel path input carrying the current value", {
+  # distinct from the field's placeholder text (R/app_reference.R), so this can
+  # only pass via the value= wiring, not the placeholder rendering unconditionally
+  cfg <- list(ref_dir = "/refs", min_records = 1000, max_records = 25000,
+    blastdb = "/mnt/shared/panels/myclade_rrna")
+  html <- as.character(RiboPilot:::reference_settings_modal(cfg))
+  expect_match(html, "ref_blastdb_path")
+  expect_match(html, "/mnt/shared/panels/myclade_rrna", fixed = TRUE)
+})
+
+test_that("the settings modal renders when no panel is configured", {
+  cfg <- list(ref_dir = "/refs", min_records = 1000, max_records = 25000, blastdb = "")
+  expect_match(as.character(RiboPilot:::reference_settings_modal(cfg)), "ref_blastdb_path")
+})
+
+test_that("the settings modal names the panel a run last searched against", {
+  cfg <- list(ref_dir = "/refs", min_records = 1000, max_records = 25000, blastdb = "")
+  html <- as.character(RiboPilot:::reference_settings_modal(cfg, "ribopilot_rrna 2026.08.1"))
+  expect_match(html, "ribopilot_rrna 2026.08.1", fixed = TRUE)
+})
+
+test_that("the settings modal still renders, with no provenance line, when nothing was recorded", {
+  cfg <- list(ref_dir = "/refs", min_records = 1000, max_records = 25000, blastdb = "")
+  html <- as.character(RiboPilot:::reference_settings_modal(cfg))
+  expect_match(html, "ref_blastdb_path")
+  expect_false(grepl("Last run searched against", html, fixed = TRUE))
+})
+
 test_that("the row action modal names what skipping actually costs", {
   html <- as.character(RiboPilot:::reference_action_modal("asteroidea", "Asteroidea"))
   for (id in c("ref_act_build", "ref_act_existing", "ref_act_clade", "ref_act_skip")) {

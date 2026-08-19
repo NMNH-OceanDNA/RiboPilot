@@ -173,6 +173,25 @@ open_project_db <- function(db) {
   DBI::dbExecute(con, sprintf("PRAGMA journal_mode=%s;", sqlite_journal_mode(db)))
   con
 }
+
+#' Open a SQLite database read-only
+#'
+#' The shared reference store may live on a path the running user cannot write,
+#' which is the recommended cluster deployment. `journal_mode` takes an
+#' exclusive lock and fails there, so this deliberately sets only busy_timeout.
+#'
+#' @param path Path to an existing SQLite file.
+#' @return An open read-only DBI connection.
+#' @noRd
+open_sqlite_ro <- function(path) {
+  if (!file.exists(path)) {
+    stop("no such database: ", path, call. = FALSE)
+  }
+  con <- DBI::dbConnect(RSQLite::SQLite(), path, flags = RSQLite::SQLITE_RO)
+  DBI::dbExecute(con, "PRAGMA busy_timeout=10000;")
+  con
+}
+
 #' Was this sample's last assembly stopped by the max_paths / max_scaffolds gate
 #'
 #' Recognised from the state and the note the gate writes, so it stays true

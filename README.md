@@ -55,9 +55,9 @@ Starting from raw sequencing reads, RiboPilot:
     stage (the **Taxonomy** tab): samples must be reviewed and locked
     here before they move on to assembly, so the taxonomy that guides
     scoring and curation is one you have signed off on. The taxonomy
-    snapshot (~72 MB) downloads once per project and is indexed the first
-    time it is used, which takes about a minute and needs no software
-    beyond the R package.
+    snapshot (\~72 MB) downloads once per project and is indexed the
+    first time it is used, which takes about a minute and needs no
+    software beyond the R package.
 2.  **Assembles** the ribosomal repeat for each sample, cleaning up the
     reads and piecing the region back together, then picking the best
     reconstruction automatically.
@@ -79,7 +79,7 @@ Behind the scenes RiboPilot uses established bioinformatics tools
 stitches them together for you. You do not need to learn or run any of
 them yourself.
 
-# Taxonomic scope
+# Which organisms it works with
 
 RiboPilot was first built for ray-finned fishes and comes ready to use
 for them out of the box. For any other group of organisms, it can build
@@ -95,6 +95,22 @@ guide](https://dmacguigan.github.io/RiboPilot/articles/Curation-Flags.html).
 
 # Installation
 
+**Supported execution: Docker or Singularity.** The analysis steps are
+supported only inside the RiboPilot container image, which bundles every
+bioinformatics tool the pipeline calls at the versions it was tested
+with. The image is published on Docker Hub as
+[`macguigand/ribopilot`](https://hub.docker.com/r/macguigand/ribopilot),
+tagged with the RiboPilot version, and `new_project()` picks the
+matching tag for you. On a workstation, create projects with `executor =
+"docker"`. On a cluster, use Singularity: the built-in `NMNH_Hydra` and
+`NOAA_SEDNA` profiles already do, and `generate_config()` writes a
+Singularity config for any other scheduler.
+
+Installing the tools yourself, whether one at a time or through the
+`conda` environment described below, is **not supported going forward**.
+Those instructions are left in place because they still work, but they
+are not tested and problems that come from them cannot be supported.
+
 RiboPilot needs three things installed on your computer (or your lab’s
 server):
 
@@ -103,12 +119,16 @@ server):
     into R, but you do not need to know R.
 2.  **[Nextflow](https://www.nextflow.io/docs/latest/install.html)**
     (version 24.10.x through 25.10.x), which runs the heavy analysis
-    steps. RiboPilot refuses to load on an older Nextflow and prompts you
-    to update; on a newer, unverified Nextflow it automatically pins runs
-    to a supported version via `NXF_VER` (the `conda` environment below
-    already installs a compatible one).
-3.  **The bioinformatics tools** the pipeline uses. The easiest way to
-    get all of them at once is
+    steps. RiboPilot refuses to load on an older Nextflow and prompts
+    you to update; on a newer, unverified Nextflow it automatically pins
+    runs to a supported version via `NXF_VER` (the `conda` environment
+    below already installs a compatible one).
+3.  **The bioinformatics tools** the pipeline uses, and only if you are
+    not running in a container. The container already carries them, so
+    with Docker or Singularity you can skip this step. **This conda
+    route is no longer supported** (see above); it is kept for setups
+    that already rely on it. The easiest way to get all of the tools at
+    once is
     [conda](https://docs.conda.io/projects/miniconda/en/latest/), a tool
     that installs a bundle of programs into a self-contained
     “environment” without interfering with anything else on your
@@ -143,8 +163,12 @@ RiboPilot ships a small set of fish samples and a single command that
 downloads them and sets everything up:
 
 ``` r
-RiboPilot::new_test_project(path = "~/ribopilot_test", executor = "conda")
+RiboPilot::new_test_project(path = "~/ribopilot_test", executor = "docker")
 ```
+
+`executor` is passed explicitly here because `new_test_project()` still
+defaults to `executor = "conda"`, which is no longer a supported way to
+run.
 
 From there, the [Get started
 guide](https://dmacguigan.github.io/RiboPilot/articles/RiboPilot.html)
@@ -153,9 +177,9 @@ in the app, and exporting the results.
 
 ## On the NMNH Hydra cluster
 
-RStudio Server sessions on Hydra start without the grid engine or Java on
-`PATH`, so Nextflow cannot find `qsub` and every job fails at submission.
-Run this once per session, before launching the app:
+RStudio Server sessions on Hydra start without the grid engine or Java
+on `PATH`, so Nextflow cannot find `qsub` and every job fails at
+submission. Run this once per session, before launching the app:
 
 ``` r
 RiboPilot::hydra_setup()

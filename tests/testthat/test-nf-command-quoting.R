@@ -92,6 +92,32 @@ test_that("-ansi-log false stays two arguments", {
   expect_equal(utils::tail(words, 2), c("-ansi-log", "false"))
 })
 
+test_that("an unconfigured project passes no --blastdb or --ref_dir flag at all", {
+  skip_if_not_installed("withr")
+  proj <- withr::local_tempdir()
+  mk_cfg_project(proj, c("params {", "  rawDir = '/reads'", "}"))
+  args <- RiboPilot:::nf_command(proj, resume = FALSE)
+  expect_false("--blastdb" %in% args)
+  expect_false("--ref_dir" %in% args)
+  expect_false(any(args == ""))
+})
+
+test_that("a configured panel still passes --blastdb with its value", {
+  skip_if_not_installed("withr")
+  proj <- withr::local_tempdir()
+  mk_cfg_project(proj, c("params {", "  rawDir = '/reads'", "}"))
+  con <- RiboPilot:::open_project_db(file.path(proj, ".sqlite"))
+  DBI::dbExecute(con, RiboPilot:::REFERENCE_CONFIG_DDL)
+  DBI::dbExecute(con, "INSERT INTO reference_config (rowid_key, ref_dir, min_records, max_records)
+    VALUES (1, NULL, 1000, 25000)")
+  RiboPilot:::set_ref_config(con, blastdb = "/panels/2026.08.1/ribopilot_rrna")
+  DBI::dbDisconnect(con)
+  args <- RiboPilot:::nf_command(proj, resume = FALSE)
+  i <- which(args == "--blastdb")
+  expect_length(i, 1)
+  expect_equal(args[i + 1], "/panels/2026.08.1/ribopilot_rrna")
+})
+
 test_that("the reference submit script quotes per argument too", {
   skip_if_not_installed("withr")
   parent <- withr::local_tempdir()
