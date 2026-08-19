@@ -381,7 +381,13 @@ test_that("rp_searched.R records nothing for a panel prefix with no manifest, wi
   skip_if_not_installed("pkgload")
   skip_if_not_installed("withr")
   src <- RiboPilot:::ribopilot_src_default()
-  skip_if(!file.exists(file.path(src, "DESCRIPTION")), "not a source checkout")
+  # An INSTALLED package directory also has a DESCRIPTION and an R/, so under
+  # R CMD check this ran with a src that rp_env.R rightly refuses, and the
+  # refusal notice on stderr failed the assertion below. Same predicate as
+  # rp_env.R's rp_is_source_dir(): .R files under R/ are what tell them apart.
+  skip_if(!file.exists(file.path(src, "DESCRIPTION")) ||
+      length(list.files(file.path(src, "R"), pattern = "\\.[Rr]$")) == 0,
+    "not a source checkout")
   bin_dir <- system.file("nextflow", "bin", package = "RiboPilot")
   if (!nzchar(bin_dir)) bin_dir <- file.path(src, "inst", "nextflow", "bin")
   script <- file.path(bin_dir, "rp_searched.R")

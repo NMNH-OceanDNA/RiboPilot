@@ -10,6 +10,10 @@ refdb_lib <- file.path(refdb_dir, "lib.sh")
 # would key to.
 panel_key <- function(hash, query = NULL, expected_count = NULL,
                       .envir = parent.frame()) {
+  # dev/ is in .Rbuildignore, so under R CMD check the script this shells out to
+  # is not there. Guarding in the helper, not at every call site: a missing skip
+  # showed up as 14 opaque "error in running command" failures.
+  testthat::skip_if_not(file.exists(refdb_sh))
   work <- withr::local_tempdir(.local_envir = .envir)
   driver <- file.path(work, "key.sh")
   writeLines(c(
@@ -2188,6 +2192,7 @@ make_panel_build <- function(records = panel_fixture_records(),
                              unavailable = "MISS0001.1", unresolved = character(0),
                              wgs = c("AAAA000000", "BBBB000000"), chunk_size = 20L,
                              .envir = parent.frame()) {
+  testthat::skip_if_not(file.exists(refdb_sh))
   build <- withr::local_tempdir(.local_envir = .envir)
   dir.create(file.path(build, "chunks"))
   dir.create(file.path(build, "tmp"))
