@@ -18,11 +18,15 @@ test_that("element constants are internally consistent", {
 
 test_that("a connection failure is unknown even when the message contains 403", {
   # port 403 refuses the connection; the old substring test read the port number
-  # in the message as an HTTP status and reported the database as missing, which
-  # check_reference_db() escalates to an error.
+  # in the message as an HTTP status and reported the database as missing.
   expect_equal(RiboPilot:::url_status("http://127.0.0.1:403/nope"), "unknown")
   expect_warning(RiboPilot:::check_reference_db("http://127.0.0.1:403/nope.fa", "seeds"),
     "Could not verify")
+})
+
+test_that("a missing reference database warns instead of killing project init", {
+  expect_warning(RiboPilot:::check_reference_db("/no/such/dir/seeds.fasta", "seeds"),
+    "not found")
 })
 
 test_that("config_container_engine reads the enabled flag, not the block", {
