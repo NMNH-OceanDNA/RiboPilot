@@ -146,12 +146,17 @@ test_that("a taxon segment next to an NA-lineage high-identity segment cannot fi
 
 test_that("ribotyper short output is parsed into codes", {
   rt <- RiboPilot:::chimera_parse_ribotyper(test_path("fixtures/chimera/ribotyper.short.out"))
-  expect_equal(rt$target, c("u18S", "u28S"))
-  expect_equal(rt$pass, c(TRUE, FALSE))
+  expect_equal(rt$target, c("u18S", "u28S", "u5_8S"))
+  expect_equal(rt$pass, c(TRUE, FALSE, FALSE))
   expect_equal(rt$codes[[2]], c("InconsistentHits", "LowScoreDifference"))
   ch <- RiboPilot:::chimera_channel_ribotyper(rt, data.frame(target = c("u18S", "u28S"), start = c(1L, 3000L)))
   expect_equal(ch$score, 0.8)
   expect_match(ch$reason, "28S.*InconsistentHits")
+})
+
+test_that("a space inside the unexpected_features column does not drop codes", {
+  rt <- RiboPilot:::chimera_parse_ribotyper(test_path("fixtures/chimera/ribotyper.short.out"))
+  expect_equal(rt$codes[[3]], c("LowScoreDifference", "BothStrands"))
 })
 
 test_that("itsx chimeric alone is a weak ribotyper-channel signal", {

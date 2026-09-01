@@ -184,7 +184,7 @@ chimera_parse_ribotyper <- function(file) {
   f <- strsplit(trimws(ln), "\\s+")
   target <- vapply(f, `[`, character(1), 2)
   pass <- vapply(f, `[`, character(1), 5) == "PASS"
-  feat <- vapply(f, function(x) if (length(x) >= 6) x[6] else "-", character(1))
+  feat <- vapply(f, function(x) if (length(x) >= 6) paste(x[6:length(x)], collapse = "") else "-", character(1))
   codes <- lapply(feat, function(x) {
     if (x == "-") return(character(0))
     p <- strsplit(x, ";", fixed = TRUE)[[1]]

@@ -2,3 +2,4 @@
 #---  ------  ---------------------  -----  ---  -------------------
 1     u18S    SSU.Eukarya            plus   PASS  -
 2     u28S    LSU.Eukarya            plus   FAIL  *InconsistentHits:(2);*LowScoreDifference:(0.02<0.10);
+3     u5_8S   SSU.Eukarya            plus   FAIL  *LowScoreDifference:(0.30<0.50); *BothStrands;
