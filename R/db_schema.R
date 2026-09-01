@@ -66,6 +66,7 @@ TRIAGE_OPTS_DDL <- "CREATE TABLE IF NOT EXISTS triage_opts (
   rule_feat_non_rdna_hit TEXT,
   rule_odd_one_out       TEXT,
   rule_screen_off_target TEXT,
+  rule_chimeric          TEXT,
   PRIMARY KEY (triage_opts)
 );"
 
@@ -74,8 +75,8 @@ TRIAGE_OPTS_DDL <- "CREATE TABLE IF NOT EXISTS triage_opts (
 TRIAGE_OPTS_SEED <- "INSERT INTO triage_opts
   (triage_opts, rule_not_annotated, rule_no_screen, rule_no_feat_non_rdna,
    rule_no_feat_rdna_hit, rule_feat_non_rdna_hit, rule_odd_one_out,
-   rule_screen_off_target)
-  VALUES ('default', 'flag', 'flag', 'drop', 'flag', 'flag', 'flag', 'flag');"
+   rule_screen_off_target, rule_chimeric)
+  VALUES ('default', 'flag', 'flag', 'drop', 'flag', 'flag', 'flag', 'flag', 'flag');"
 
 #' DDL for the screen table (machine contamination verdict, one row per unit).
 #' @noRd

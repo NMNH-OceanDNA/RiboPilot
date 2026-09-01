@@ -135,6 +135,7 @@ mk_triage_state_db <- function() {
   DBI::dbExecute(con, "CREATE TABLE screen(ID TEXT, path INT, scaffold INT, screen_verdict TEXT,
     screen_class TEXT, screen_confidence REAL, lca_taxon TEXT)")
   DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT, sci_name TEXT, lineage_taxids TEXT)")
+  DBI::dbExecute(con, "CREATE TABLE chimera(ID TEXT, path INT, scaffold INT, label TEXT, reason TEXT)")
   DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, assemble_switch INT, triage_opts TEXT)")
   DBI::dbExecute(con, RiboPilot:::TRIAGE_OPTS_DDL)
   DBI::dbExecute(con, RiboPilot:::TRIAGE_OPTS_SEED)

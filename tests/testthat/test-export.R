@@ -97,6 +97,13 @@ test_that("submission_risks flags chimeric, in-span gaps, and misassembly", {
   expect_true(RiboPilot:::submission_risks(con, "BAD")$misassembly)
 })
 
+test_that("risk_flags reports suspect and likely chimera labels", {
+  r <- RiboPilot:::risk_flags(0L, NULL, NA_character_, chimera_label = "suspect", chimera_reason = "why")
+  expect_true(r$chimeric)
+  expect_match(r$note, "chimeric")
+  expect_false(RiboPilot:::risk_flags(0L, NULL, NA_character_, chimera_label = "clean")$chimeric)
+})
+
 test_that("feature_map_svg_text draws one arrow per element, in order, in palette colours", {
   d <- data.frame(
     element = c("18S", "ITS1", "5.8S", "ITS2", "28S"),
