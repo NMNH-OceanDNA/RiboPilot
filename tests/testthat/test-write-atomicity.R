@@ -45,7 +45,7 @@ test_that("a failed assemblies insert leaves the sample's scaffolds in place", {
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
   on.exit(DBI::dbDisconnect(con))
   DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, topology TEXT,
-    length INT, length_raw INT, sequence TEXT, ignore INT, edited INT, time_stamp INT,
+    length INT, length_raw INT, sequence TEXT, source_contig TEXT, ignore INT, edited INT, time_stamp INT,
     triage TEXT, triage_reason TEXT, triage_source TEXT, triage_rule TEXT)")
   DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, paths INT, scaffolds INT, length TEXT,
     topology TEXT, assemble_switch INT, assemble_notes TEXT, assemble_opts TEXT, time_stamp INT)")

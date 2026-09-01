@@ -349,6 +349,10 @@ new_db <- function(
       length INTEGER,
       length_raw INTEGER,
       sequence TEXT,
+      -- the contig name this unit had in the file it came from: the original
+      -- GetOrganelle/SPAdes header, or the user's own contig name when the
+      -- assembly was supplied. Only the latter is shown in the app.
+      source_contig TEXT,
       depth TEXT,
       gc TEXT,
       errors TEXT,

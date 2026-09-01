@@ -95,3 +95,44 @@ test_that("a mapping with no Assembly column still gets the column", {
   on.exit(DBI::dbDisconnect(con))
   expect_true("Assembly" %in% DBI::dbListFields(con, "samples"))
 })
+
+# The two app surfaces that exist only for a supplied assembly.
+
+mk_app_asmb_db <- function() {
+  dir <- withr::local_tempdir(.local_envir = parent.frame())
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  withr::defer(DBI::dbDisconnect(con), envir = parent.frame())
+  DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT, Assembly TEXT)")
+  DBI::dbExecute(con, RiboPilot:::RRNA_CANDIDATES_DDL)
+  DBI::dbExecute(con, "INSERT INTO samples VALUES('S1','S1.fa'), ('S2',NULL), ('S3','')")
+  DBI::dbExecute(con,
+    "INSERT INTO rrna_candidates VALUES
+       ('S1','ctg1',12000,'18S,28S',5300,1,1,NULL,1),
+       ('S1','ctg2',5000,'5.8S',150,2,0,'no 18S or 28S anchor',1)")
+  list(dir = dir, con = con)
+}
+
+test_that("only a sample that supplied an assembly is flagged as one", {
+  p <- mk_app_asmb_db()
+  withr::local_dir(p$dir)
+  expect_true(RiboPilot:::sample_has_user_assembly("S1"))
+  expect_false(RiboPilot:::sample_has_user_assembly("S2"))
+  expect_false(RiboPilot:::sample_has_user_assembly("S3"))
+  expect_false(RiboPilot:::sample_has_user_assembly("nope"))
+})
+
+test_that("only the contigs left behind are listed, with the reason", {
+  p <- mk_app_asmb_db()
+  withr::local_dir(p$dir)
+  d <- RiboPilot:::rejected_rrna_contigs("S1")
+  expect_equal(d$contig, "ctg2")
+  expect_equal(d$reason, "no 18S or 28S anchor")
+  expect_equal(nrow(RiboPilot:::rejected_rrna_contigs("S2")), 0L)
+})
+
+test_that("a sample that dropped nothing gets no section at all", {
+  p <- mk_app_asmb_db()
+  withr::local_dir(p$dir)
+  expect_null(RiboPilot:::rejected_contigs_section("S2"))
+  expect_false(is.null(RiboPilot:::rejected_contigs_section("S1")))
+})

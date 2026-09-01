@@ -109,8 +109,41 @@ assemble_modal <- function(id) {
 
     rp_details("Read coverage for the highlighted scaffold", open = FALSE,
       uiOutput("unit_coverage_label"),
-      plotOutput("unit_coverage_plot", height = "140px"))
+      plotOutput("unit_coverage_plot", height = "140px")),
+
+    # Only a supplied assembly has these: the contigs the rDNA search found but
+    # did not carry forward. They never become assembly units, so this is the
+    # one place they are visible at all.
+    rejected_contigs_section(id)
   )
+}
+
+#' The contigs the rDNA search left behind, or nothing at all
+#'
+#' Rendered inline rather than as a server output: the rows never change while
+#' the modal is open, and a sample that dropped nothing should not show an empty
+#' section.
+#' @param id Sample ID.
+#' @noRd
+rejected_contigs_section <- function(id) {
+  d <- rejected_rrna_contigs(id)
+  if (nrow(d) == 0) {
+    return(NULL)
+  }
+  names(d) <- c("Contig", "Length", "rRNA found", "Why it was left out")
+  rp_details(sprintf("Contigs not carried forward (%d)", nrow(d)), open = FALSE,
+    div(style = "color:#666; font-size:0.85em; margin-bottom:6px;",
+      paste("These contigs in the assembly you supplied had rRNA hits but did",
+        "not go on through the pipeline. A contig needs an 18S or 28S anchor to",
+        "be carried forward; 5.8S on its own is not enough. Contigs with no rRNA",
+        "hit at all are not listed.")),
+    reactable::reactable(d, compact = TRUE, sortable = TRUE, wrap = FALSE,
+      defaultPageSize = 10,
+      columns = list(
+        Contig = reactable::colDef(minWidth = 160),
+        Length = reactable::colDef(width = 90),
+        `rRNA found` = reactable::colDef(width = 110),
+        `Why it was left out` = reactable::colDef(minWidth = 200))))
 }
 
 #' Warn that locking would leave a sample with two locked assembly paths

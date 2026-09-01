@@ -120,11 +120,28 @@ failure note.
 
 ### 5. App
 
-- The Assemble table shows the sample's source: assembled from reads, or
-  user-supplied.
-- The finder result appears as an assemble note, with the `rrna_candidates`
-  evidence reachable from the sample.
+- The finder result appears as an assemble note, which is also what says the
+  sample came from a supplied assembly. There is no separate source column: the
+  note already carries it.
 - `find_rrna` joins the assemble options modal.
+
+Two things the existing assemble details modal cannot show, because both
+concern contigs that never became assembly units, are folded into it rather
+than given a viewer of their own. Both appear only for a sample that supplied
+an assembly:
+
+- A "Your contig" column in the scaffold table, from a new
+  `assemblies.source_contig`, so a unit can be traced back to the user's own
+  file. `load_assemblies()` fills it from the trailing field of the fasta
+  header, which the assembler was already writing and the loader was
+  discarding.
+- A collapsed "Contigs not carried forward" section listing each dropped
+  contig, its length, the rRNA it did carry, and why it was left behind. Hidden
+  entirely when a sample dropped nothing.
+
+The rest of `rrna_candidates` is deliberately not surfaced: for a kept contig
+the real annotation step re-derives the features properly, and the scaffold
+table already shows those alongside length and rank.
 
 ## Testing
 

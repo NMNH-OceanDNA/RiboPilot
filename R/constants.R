@@ -122,6 +122,8 @@ SCAFFOLD_COL_HELP <- list(
   triage = paste("Keep, drop, or leave undecided. This is the only decision that counts:",
     "dropped scaffolds are left out of annotation and export."),
   length = "Scaffold length in base pairs.",
+  source_contig = paste("What this contig was called in the assembly you supplied, so a",
+    "scaffold here can be traced back to your own file."),
   path_score = paste("Rates the whole candidate path this scaffold came from, from its length,",
     "depth, anchor genes and GenBank hit. The same value repeats across every",
     "scaffold of one path."),

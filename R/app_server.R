@@ -1057,7 +1057,7 @@ app_server <- function(input, output, session) {
     }
     # reactable renders in data-frame column order, so the row identifier has to
     # lead here; colDef(sticky=) alone does not move it.
-    lead <- c("unit", "triage", "length", "path_score", "depth", "depth_track", "elements",
+    lead <- c("unit", "source_contig", "triage", "length", "path_score", "depth", "depth_track", "elements",
       "screen_verdict", "screen_reason", "variant_class")
     d <- d[, c(intersect(lead, names(d)), setdiff(names(d), lead)), drop = FALSE]
     reactable::reactable(d, compact = TRUE, resizable = TRUE, filterable = TRUE,
@@ -1084,6 +1084,13 @@ app_server <- function(input, output, session) {
           html = TRUE, header = rt_help_header("Unit", SCAFFOLD_COL_HELP$unit)),
         length = reactable::colDef(name = "Length", width = 80, show = TRUE,
           html = TRUE, header = rt_help_header("Length", SCAFFOLD_COL_HELP$length)),
+        # only meaningful for a supplied assembly: for an assembled sample this
+        # holds the assembler's own scaffold header, which says nothing a
+        # reviewer can act on
+        source_contig = reactable::colDef(name = "Your contig", width = 150,
+          show = sample_has_user_assembly(sel_id()), html = TRUE,
+          header = rt_help_header("Your contig", SCAFFOLD_COL_HELP$source_contig),
+          cell = rt_longtext()),
         path_score = reactable::colDef(name = "Path score", width = 115, show = TRUE,
           html = TRUE, header = rt_help_header("Path score", SCAFFOLD_COL_HELP$path_score)),
         # The number is this scaffold's absolute median depth; the bar beside it

@@ -123,7 +123,7 @@ test_that("unit_evidence surfaces the screen reason", {
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
   DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT, sci_name TEXT, lineage_taxids TEXT)")
   DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, length INT, ignore INT,
-    triage TEXT, triage_reason TEXT, triage_source TEXT,
+    triage TEXT, triage_reason TEXT, triage_source TEXT, source_contig TEXT,
     blast_species TEXT, blast_accession TEXT, blast_pident REAL, blast_qcovs REAL, blast_source TEXT)")
   DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT, start INT)")
   DBI::dbExecute(con, "CREATE TABLE coverage(ID TEXT, path INT, scaffold INT, mean_depth REAL,
