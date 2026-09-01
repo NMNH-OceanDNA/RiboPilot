@@ -63,10 +63,97 @@ write_reference_groups <- function(con, groups, members) {
           if (is.null(keep)) NA_character_ else keep$fail_reason,
           now))
     }
-    DBI::dbExecute(con, "UPDATE samples SET ref_id = NULL")
+    DBI::dbExecute(con, "UPDATE samples SET ref_id = NULL, ref_source = NULL")
     if (nrow(members) > 0) bind_sample_ref(con, members$ref_id, members$ID)
+    DBI::dbExecute(con, "UPDATE samples SET ref_source = 'auto' WHERE ref_id IS NOT NULL")
   })
   invisible(nrow(groups))
+}
+
+#' User-group labels, as the named vector [suggest_reference_groups()] wants
+#' @noRd
+sample_user_groups <- function(con) {
+  d <- tryCatch(DBI::dbGetQuery(con,
+    "SELECT ID, user_group FROM samples
+     WHERE user_group IS NOT NULL AND TRIM(user_group) != ''"),
+    error = function(e) NULL)
+  if (is.null(d) || nrow(d) == 0) return(character(0))
+  stats::setNames(d$user_group, d$ID)
+}
+
+#' What a proposal would change, one row per sample that moves
+#'
+#' Shown before anything is written, so a hand-assigned sample the proposer
+#' wants to move is caught by the user rather than found later. Groups are
+#' compared by clade name because that is what the user reads; the ref_id is a
+#' slug of the same name, so the two can never disagree.
+#'
+#' @param con Open project DB connection.
+#' @param groups,members From [suggest_reference_groups()].
+#' @return data.frame(ID, from_group, to_group, hand_set, user_group).
+#' @noRd
+reference_group_diff <- function(con, groups, members) {
+  cur <- DBI::dbGetQuery(con,
+    "SELECT s.ID, COALESCE(r.clade_name, 'Unassigned') AS from_group,
+       COALESCE(s.ref_source, '') AS ref_source, COALESCE(s.user_group, '') AS user_group
+     FROM samples s LEFT JOIN reference r ON r.ref_id = s.ref_id ORDER BY s.ID")
+  if (nrow(cur) == 0) {
+    return(data.frame(ID = character(0), from_group = character(0), to_group = character(0),
+      hand_set = logical(0), user_group = character(0), stringsAsFactors = FALSE))
+  }
+  to <- groups$clade_name[match(members$ref_id, groups$ref_id)]
+  cur$to_group <- to[match(cur$ID, members$ID)]
+  cur$to_group[is.na(cur$to_group)] <- "Unassigned"
+  d <- cur[cur$from_group != cur$to_group, , drop = FALSE]
+  d$hand_set <- d$ref_source == "manual"
+  rownames(d) <- NULL
+  d[, c("ID", "from_group", "to_group", "hand_set", "user_group"), drop = FALSE]
+}
+
+#' Hand-assign samples to a reference group (or to nothing)
+#'
+#' Marked `manual` so a later proposal can flag the move instead of quietly
+#' undoing it.
+#' @param ref_id Group key, or NA to unassign.
+#' @noRd
+assign_samples_ref <- function(con, ids, ref_id) {
+  ids <- unique(as.character(ids))
+  if (length(ids) == 0) return(invisible(0L))
+  ref_id <- if (length(ref_id) == 0 || is.na(ref_id) || !nzchar(ref_id)) NA_character_ else ref_id[1]
+  ph <- paste(rep("?", length(ids)), collapse = ",")
+  n <- DBI::dbExecute(con,
+    # taking a sample OUT of a group is a hand edit too, so a later proposal
+    # putting it back is flagged like any other
+    sprintf("UPDATE samples SET ref_id = ?, ref_source = 'manual' WHERE ID IN (%s)", ph),
+    params = c(list(ref_id), as.list(ids)))
+  refresh_reference_counts(con, protect = if (is.na(ref_id)) character(0) else ref_id)
+  invisible(n)
+}
+
+#' Put samples in a user group, or take them out of one
+#' @param label Group label, or NA to dissolve the membership.
+#' @noRd
+set_user_group <- function(con, ids, label) {
+  ids <- unique(as.character(ids))
+  if (length(ids) == 0) return(invisible(0L))
+  label <- if (length(label) == 0 || is.na(label) || !nzchar(label)) NA_character_ else label[1]
+  ph <- paste(rep("?", length(ids)), collapse = ",")
+  invisible(DBI::dbExecute(con,
+    sprintf("UPDATE samples SET user_group = ? WHERE ID IN (%s)", ph),
+    params = c(list(label), as.list(ids))))
+}
+
+#' First user-group label nothing is using yet
+#' @noRd
+next_user_group_label <- function(con) {
+  used <- unique(stats::na.omit(tryCatch(
+    DBI::dbGetQuery(con, "SELECT DISTINCT user_group FROM samples")$user_group,
+    error = function(e) character(0))))
+  free <- setdiff(LETTERS, used)
+  if (length(free) > 0) return(free[1])
+  i <- 1L
+  while (paste0("G", i) %in% used) i <- i + 1L
+  paste0("G", i)
 }
 
 #' Point samples at reference groups with one prepared statement

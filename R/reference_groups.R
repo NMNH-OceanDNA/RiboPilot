@@ -113,6 +113,29 @@ group_ladder <- function(ladders, ids, count_fn = NULL) {
   out[, c("level", "rank", "taxid", "name", "n_samples", "n_records"), drop = FALSE]
 }
 
+#' The things the walk actually walks: loose samples and whole user groups
+#'
+#' A loose sample walks its own ladder. A user group walks the ladder its
+#' members share, so whatever clade it lands on covers all of them.
+#'
+#' @param ladders From [sample_ladders()].
+#' @param ids Sample IDs to cover.
+#' @param user_groups Named character vector, sample ID -> label; NULL for none.
+#' @return list of list(ids, rungs).
+#' @noRd
+unit_ladders <- function(ladders, ids, user_groups = NULL) {
+  ug <- user_groups[names(user_groups) %in% ids]
+  ug <- ug[!is.na(ug) & nzchar(ug)]
+  loose <- setdiff(ids, names(ug))
+  units <- lapply(loose, function(id)
+    list(ids = id, rungs = ladders[ladders$ID == id, , drop = FALSE]))
+  for (lab in unique(ug)) {
+    m <- names(ug)[ug == lab]
+    units <- c(units, list(list(ids = m, rungs = group_ladder(ladders, m))))
+  }
+  units
+}
+
 #' Every clade the walk could ask about, once each
 #'
 #' The walk starts at `start_rank` and climbs, so anything deeper is never
@@ -169,11 +192,15 @@ walk_to_clade <- function(rungs, count_fn, min_records, max_records, start_rank)
 #' @param count_fn function(taxid, name) -> integer GenBank record count.
 #' @param min_records,max_records Record window bounding the walk.
 #' @param start_rank Rank the walk starts from (default "family").
+#' @param user_groups Named character vector, sample ID -> user-group label.
+#'   Samples sharing a label walk as one unit and can never be split apart; the
+#'   clade they land on still floats to wherever the record window puts it.
 #' @return list(groups = data.frame(ref_id, clade_taxid, clade_name, clade_rank,
 #'   n_records, n_samples), members = data.frame(ID, ref_id)).
 #' @noRd
 suggest_reference_groups <- function(ladders, count_fn, min_records = 1000,
-                                     max_records = 25000, start_rank = "family") {
+                                     max_records = 25000, start_rank = "family",
+                                     user_groups = NULL) {
   ids <- unique(ladders$ID)
   empty <- list(
     groups = data.frame(ref_id = character(0), clade_taxid = integer(0),
@@ -182,11 +209,17 @@ suggest_reference_groups <- function(ladders, count_fn, min_records = 1000,
     members = data.frame(ID = character(0), ref_id = character(0), stringsAsFactors = FALSE))
   if (length(ids) == 0) return(empty)
 
-  picks <- lapply(ids, function(id) {
-    p <- walk_to_clade(ladders[ladders$ID == id, , drop = FALSE], count_fn,
-      min_records, max_records, start_rank)
+  # A user group walks as ONE unit, on the lineage its members share
+  # (group_ladder keeps only rungs every member passes through), so the walk can
+  # move it up or down the record window but never lands its members on two
+  # different clades. Members sharing no rung at all yield an empty ladder, the
+  # walk returns NULL, and they stay unassigned rather than being split.
+  units <- unit_ladders(ladders, ids, user_groups)
+
+  picks <- lapply(seq_along(units), function(k) {
+    p <- walk_to_clade(units[[k]]$rungs, count_fn, min_records, max_records, start_rank)
     if (is.null(p)) return(NULL)
-    p$ID <- id
+    p$unit <- k
     p
   })
   picks <- Filter(Negate(is.null), picks)
@@ -206,7 +239,7 @@ suggest_reference_groups <- function(ladders, count_fn, min_records = 1000,
     chosen <- unique(picks[, c("level", "rank", "taxid", "name", "n_records")])
     changed <- FALSE
     for (i in seq_len(nrow(picks))) {
-      anc <- ladders$taxid[ladders$ID == picks$ID[i]]
+      anc <- units[[picks$unit[i]]]$rungs$taxid
       up <- chosen[chosen$taxid %in% anc & chosen$level < picks$level[i] &
           chosen$n_records <= max_records, , drop = FALSE]
       if (nrow(up) > 0) {
@@ -227,7 +260,9 @@ suggest_reference_groups <- function(ladders, count_fn, min_records = 1000,
   uniq$ref_id <- ifelse(uniq$slug %in% dup, paste(uniq$slug, uniq$taxid, sep = "_"), uniq$slug)
   picks$ref_id <- uniq$ref_id[match(picks$taxid, uniq$taxid)]
 
-  members <- picks[, c("ID", "ref_id")]
+  members <- do.call(rbind, lapply(seq_len(nrow(picks)), function(i)
+    data.frame(ID = units[[picks$unit[i]]]$ids, ref_id = picks$ref_id[i],
+      stringsAsFactors = FALSE)))
   rownames(members) <- NULL
   g <- picks[!duplicated(picks$taxid), , drop = FALSE]
   groups <- data.frame(

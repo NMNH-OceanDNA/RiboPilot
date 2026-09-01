@@ -103,6 +103,9 @@ app_server <- function(input, output, session) {
       list(tbl = "assemble", pfx = "assemble"))
   }
 
+  # Which of the Reference tab's two views is showing.
+  ref_view <- reactive(input$ref_view %||% "Groups")
+
   # ---- samples table data (per mode; includes state + lock) ----
   samples_data <- reactive({
     refresh()
@@ -115,7 +118,7 @@ app_server <- function(input, output, session) {
          FROM samples s")
     } else if (mode == "Reference") {
       con <- app_con(); on.exit(DBI::dbDisconnect(con))
-      reference_table(con)
+      if (ref_view() == "Samples") reference_sample_table(con) else reference_table(con)
     } else if (mode == "Assemble") {
       app_query(
         "SELECT a.assemble_lock, a.assemble_switch, s.ID, s.Taxon, s.sci_name, s.taxid,
@@ -267,7 +270,16 @@ app_server <- function(input, output, session) {
           `2` = "fa fa-circle-check", `3` = "fa fa-triangle-exclamation",
           `4` = "fa fa-circle-half-stroke")))
     }
-    if (mode == "Reference") {
+    if (mode == "Reference" && ref_view() == "Samples") {
+      cols[["ID"]] <- reactable::colDef(name = "ID", sticky = "left", minWidth = 120)
+      cols[["Taxon"]] <- reactable::colDef(name = "Taxon", minWidth = 160)
+      cols[["sci_name"]] <- reactable::colDef(name = "Scientific Name", minWidth = 160)
+      cols[["ref_group"]] <- reactable::colDef(name = "Reference Group", minWidth = 160)
+      cols[["clade_rank"]] <- reactable::colDef(name = "Rank", width = 90)
+      cols[["user_group"]] <- reactable::colDef(name = "User Group", width = 110)
+      cols[["set_by"]] <- reactable::colDef(name = "Set By", width = 90)
+      cols[[state_col]] <- reactable::colDef(show = FALSE)
+    } else if (mode == "Reference") {
       # The group key is the clade name lowercased (ref_id_from_name), so showing
       # both is showing the same thing twice; the key stays in the data for the
       # selection, the CSV and the row classes, and stays visible in the database
@@ -299,9 +311,13 @@ app_server <- function(input, output, session) {
     # "No rows found" reads like a failed import.
     nodata <- switch(mode,
       Taxonomy = "No samples yet. Create the project with a mapping file (new_project()).",
-      Reference = paste("No reference groups yet. Until a group has its own database, its samples",
-        "assemble against RiboPilot's built-in ray-finned fish reference.",
-        "Press Propose groups to group your samples by clade from the assigned taxonomy."),
+      Reference = if (ref_view() == "Samples") {
+        "No samples yet. Create the project with a mapping file (new_project())."
+      } else {
+        paste("No reference groups yet. Until a group has its own database, its samples",
+          "assemble against RiboPilot's built-in ray-finned fish reference.",
+          "Press Propose groups to group your samples by clade from the assigned taxonomy.")
+      },
       Assemble = "No taxonomy-locked samples. Assign and lock taxonomy in Taxonomy mode first.",
       Annotate = "No assembly-locked samples. Review and lock assemblies in Assemble mode first.",
       Export   = "No annotation-locked samples. Review and lock annotations in Annotation Review first.",
@@ -321,8 +337,19 @@ app_server <- function(input, output, session) {
       for (cn in intersect(hidden, names(d))) keep_cols[[cn]] <- reactable::colDef(show = FALSE)
     }
 
+    # A group row expands to the samples it holds: the count alone never said
+    # which sample ended up where, which is the whole reason the tab was opaque.
+    ref_details <- NULL
+    if (mode == "Reference" && ref_view() == "Groups") {
+      con <- app_con(); mem <- reference_members(con); DBI::dbDisconnect(con)
+      ref_details <- function(index) {
+        reference_member_html(mem[mem$ref_id == d$ID[index], , drop = FALSE])
+      }
+    }
+
     reactable::reactable(
       d,
+      details = ref_details,
       resizable = TRUE, filterable = TRUE, striped = TRUE, compact = TRUE,
       searchable = TRUE, showPageSizeOptions = TRUE, wrap = FALSE, height = "100%",
       selection = "multiple", onClick = "select",
@@ -490,6 +517,10 @@ app_server <- function(input, output, session) {
   ref_h <- reference_handlers(input, output, session, list(
     con = app_con, project = app_project, refresh = refresh,
     selected_ids = selected_ids, table_data = samples_data))
+
+  observeEvent(input$ref_move_btn, ref_h$open_move(selected_ids()))
+  observeEvent(input$ref_keep_btn, ref_h$do_keep_together(selected_ids()))
+  observeEvent(input$ref_release_btn, ref_h$do_dissolve(selected_ids()))
 
   # A build runs in the background, so the app has to ask the DB for its state.
   # Not gated on the Reference tab being open: a cluster build finishes on its

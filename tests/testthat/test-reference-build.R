@@ -4,7 +4,7 @@
 mk_ref_db <- function() {
   con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
   DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT PRIMARY KEY, taxid INT, lineage TEXT,
-    lineage_taxids TEXT, taxonomy_lock INT, taxonomy_switch INT, ref_id TEXT)")
+    lineage_taxids TEXT, taxonomy_lock INT, taxonomy_switch INT, ref_id TEXT, user_group TEXT, ref_source TEXT)")
   DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT PRIMARY KEY, assemble_switch INT,
     assemble_lock INT, assemble_opts TEXT, blast_opts TEXT, time_stamp INT)")
   DBI::dbExecute(con, "CREATE TABLE assemble_opts(assemble_opts TEXT PRIMARY KEY, cpus INT,
@@ -15,7 +15,7 @@ mk_ref_db <- function() {
   DBI::dbExecute(con, "INSERT INTO reference_config VALUES(1, NULL, 1000, 25000, NULL, NULL, NULL)")
   DBI::dbExecute(con, "INSERT INTO assemble_opts VALUES('default',4,16,'--flag','old_s.fa','old_l.fa',NULL,10,10,1000,'getorganelle','--local','--isolate')")
   for (id in c("S1", "S2")) {
-    DBI::dbExecute(con, "INSERT INTO samples VALUES(?,NULL,NULL,NULL,1,2,NULL)", params = list(id))
+    DBI::dbExecute(con, "INSERT INTO samples VALUES(?,NULL,NULL,NULL,1,2,NULL,NULL,NULL)", params = list(id))
     DBI::dbExecute(con, "INSERT INTO assemble VALUES(?,2,0,'default','default',NULL)", params = list(id))
   }
   con
@@ -546,4 +546,49 @@ test_that("a submitted build wires itself once the job writes its FASTAs", {
   expect_equal(r$source[1], "built")
   expect_equal(DBI::dbGetQuery(con, "SELECT assemble_opts FROM assemble WHERE ID='S1'")$assemble_opts,
     "asteroidea")
+})
+
+# ---- hand assignment, user groups, and the proposal preview ----
+
+test_that("assign_samples_ref marks the move as the user's", {
+  con <- mk_ref_db(); on.exit(DBI::dbDisconnect(con))
+  RiboPilot:::write_reference_groups(con, grp, mem)
+  RiboPilot:::assign_samples_ref(con, "S1", NA_character_)
+  s <- DBI::dbGetQuery(con, "SELECT ID, ref_id, ref_source FROM samples ORDER BY ID")
+  expect_true(is.na(s$ref_id[s$ID == "S1"]))
+  expect_equal(s$ref_source[s$ID == "S1"], "manual")
+  expect_equal(s$ref_source[s$ID == "S2"], "auto")
+})
+
+test_that("write_reference_groups stamps membership as the proposer's", {
+  con <- mk_ref_db(); on.exit(DBI::dbDisconnect(con))
+  RiboPilot:::write_reference_groups(con, grp, mem)
+  src <- DBI::dbGetQuery(con, "SELECT DISTINCT ref_source FROM samples")$ref_source
+  expect_equal(src, "auto")
+})
+
+test_that("user group labels do not collide", {
+  con <- mk_ref_db(); on.exit(DBI::dbDisconnect(con))
+  expect_equal(RiboPilot:::next_user_group_label(con), "A")
+  RiboPilot:::set_user_group(con, c("S1", "S2"), "A")
+  expect_equal(RiboPilot:::next_user_group_label(con), "B")
+  expect_equal(RiboPilot:::sample_user_groups(con), c(S1 = "A", S2 = "A"))
+  RiboPilot:::set_user_group(con, "S1", NA_character_)
+  expect_equal(RiboPilot:::sample_user_groups(con), c(S2 = "A"))
+})
+
+test_that("the proposal diff lists only samples that move, flagging hand edits", {
+  con <- mk_ref_db(); on.exit(DBI::dbDisconnect(con))
+  RiboPilot:::write_reference_groups(con, grp, mem)
+  RiboPilot:::assign_samples_ref(con, "S1", NA_character_)
+
+  d <- RiboPilot:::reference_group_diff(con, grp, mem)
+  expect_equal(d$ID, "S1")
+  expect_equal(d$from_group, "Unassigned")
+  expect_equal(d$to_group, "Asteroidea")
+  expect_true(d$hand_set)
+
+  # re-running against what is already stored moves nothing
+  RiboPilot:::write_reference_groups(con, grp, mem)
+  expect_equal(nrow(RiboPilot:::reference_group_diff(con, grp, mem)), 0L)
 })

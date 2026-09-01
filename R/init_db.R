@@ -127,6 +127,10 @@ new_db <- function(
       lineage = NA_character_,
       lineage_taxids = NA_character_,
       ref_id = NA_character_,
+      # user_group: samples sharing a label must land in one reference group.
+      # ref_source: 'auto' (proposer) or 'manual' (hand-assigned).
+      user_group = NA_character_,
+      ref_source = NA_character_,
       taxonomy_switch = 1L,
       taxonomy_lock = 0L,
       export_group = NA_character_,

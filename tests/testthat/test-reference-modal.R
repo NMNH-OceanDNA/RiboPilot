@@ -159,11 +159,13 @@ mk_split_db <- function(dir) {
   DBI::dbExecute(con, RiboPilot:::REFERENCE_DDL)
   DBI::dbExecute(con, RiboPilot:::REFERENCE_CONFIG_DDL)
   DBI::dbExecute(con, "INSERT INTO reference_config VALUES(1, ?, 1000, 25000, NULL, NULL, NULL)", params = list(ref_dir))
-  DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT PRIMARY KEY, lineage TEXT, lineage_taxids TEXT, ref_id TEXT)")
-  DBI::dbExecute(con, "INSERT INTO samples VALUES('S1',
+  DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT PRIMARY KEY, Taxon TEXT, sci_name TEXT,
+    lineage TEXT, lineage_taxids TEXT, ref_id TEXT, user_group TEXT, ref_source TEXT,
+    time_stamp INTEGER)")
+  DBI::dbExecute(con, "INSERT INTO samples (ID, lineage, lineage_taxids, ref_id) VALUES('S1',
     'Metazoa;Echinodermata;Asteroidea;Forcipulatida;Asteriidae;Asterias;Asterias rubens',
     '33208;7586;7588;41692;7607;7608;7610', 'asteroidea')")
-  DBI::dbExecute(con, "INSERT INTO samples VALUES('S2',
+  DBI::dbExecute(con, "INSERT INTO samples (ID, lineage, lineage_taxids, ref_id) VALUES('S2',
     'Metazoa;Echinodermata;Asteroidea;Valvatida;Asterinidae;Patiria;Patiria miniata',
     '33208;7586;7588;41695;41693;104852;46514', 'asteroidea')")
   DBI::dbExecute(con, "INSERT INTO reference (ref_id, clade_taxid, clade_name, clade_rank, query,
@@ -272,6 +274,9 @@ test_that("Suggest counts only uncached clades and then walks offline", {
     session$setInputs(ref_suggest_btn = 1)
     session$flushReact()
     while (!later::loop_empty()) later::run_now()
+    # Suggest only previews now; Apply is what writes
+    session$setInputs(ref_diff_apply = 1)
+    session$flushReact()
   })
   con <- DBI::dbConnect(RSQLite::SQLite(), dbfile); on.exit(DBI::dbDisconnect(con))
   ref <- DBI::dbGetQuery(con, "SELECT ref_id, time_stamp FROM reference")
@@ -678,4 +683,35 @@ test_that("headless Build defers the submit so the wait popup paints first", {
   # the side effects that used to run inline still run after the deferral
   expect_equal(DBI::dbGetQuery(con,
     "SELECT reference_switch FROM reference WHERE ref_id = 'asteroidea'")$reference_switch, 4)
+})
+
+test_that("Suggest writes nothing until Apply", {
+  skip_if_not_installed("withr")
+  dir <- withr::local_tempdir()
+  dbfile <- mk_split_db(dir)
+  deps <- mk_split_deps(dbfile, dir)
+  withr::local_options(list(ribopilot.count_runner = function(project, args, log = NULL) 0L))
+  shiny::testServer(function(input, output, session) {
+    RiboPilot:::reference_handlers(input, output, session, deps)
+  }, {
+    session$setInputs(ref_suggest_btn = 1)
+    session$flushReact()
+    while (!later::loop_empty()) later::run_now()
+  })
+  con <- DBI::dbConnect(RSQLite::SQLite(), dbfile); on.exit(DBI::dbDisconnect(con))
+  # the fixture's row is stamped 1; a write would have re-stamped it
+  expect_equal(DBI::dbGetQuery(con, "SELECT time_stamp FROM reference")$time_stamp, 1L)
+})
+
+test_that("the sample view names each sample's group and who set it", {
+  skip_if_not_installed("withr")
+  dir <- withr::local_tempdir()
+  con <- DBI::dbConnect(RSQLite::SQLite(), mk_split_db(dir)); on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "UPDATE samples SET ref_source = 'manual', user_group = 'A' WHERE ID = 'S1'")
+  d <- RiboPilot:::reference_sample_table(con)
+  expect_equal(d$ID, c("S1", "S2"))
+  expect_equal(d$ref_group, c("Asteroidea", "Asteroidea"))
+  expect_equal(d$set_by, c("you", "auto"))
+  expect_equal(d$user_group, c("A", ""))
+  expect_equal(nrow(RiboPilot:::reference_members(con)), 2L)
 })

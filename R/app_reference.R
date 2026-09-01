@@ -49,6 +49,126 @@ reference_table <- function(con) {
   d
 }
 
+#' Reference-tab table data, sample view: one row per sample
+#'
+#' The group view answers "what will be built"; this one answers "where did my
+#' sample end up", which the group view can only show by expanding a row. It is
+#' also the surface bulk moves act on, because the app's selection machinery
+#' keys on the table's ID column and here that is a sample.
+#' @noRd
+reference_sample_table <- function(con) {
+  d <- tryCatch(DBI::dbGetQuery(con,
+    "SELECT COALESCE(r.reference_switch, 1) AS reference_switch, s.ID, s.Taxon, s.sci_name,
+       COALESCE(r.clade_name, 'Unassigned') AS ref_group,
+       COALESCE(r.clade_rank, '') AS clade_rank,
+       COALESCE(s.user_group, '') AS user_group,
+       CASE WHEN s.ref_id IS NULL THEN ''
+            WHEN s.ref_source = 'manual' THEN 'you' ELSE 'auto' END AS set_by,
+       s.time_stamp
+     FROM samples s LEFT JOIN reference r ON r.ref_id = s.ref_id
+     ORDER BY s.ID"), error = function(e) NULL)
+  if (is.null(d)) {
+    d <- data.frame(reference_switch = integer(0), ID = character(0), Taxon = character(0),
+      sci_name = character(0), ref_group = character(0), clade_rank = character(0),
+      user_group = character(0), set_by = character(0), time_stamp = integer(0),
+      stringsAsFactors = FALSE)
+  }
+  d
+}
+
+#' Every group's members, for the group view's expandable rows
+#' @noRd
+reference_members <- function(con) {
+  tryCatch(DBI::dbGetQuery(con,
+    "SELECT ref_id, ID, COALESCE(Taxon, '') AS Taxon, COALESCE(user_group, '') AS user_group,
+       COALESCE(ref_source, '') AS ref_source
+     FROM samples WHERE ref_id IS NOT NULL ORDER BY ID"),
+    error = function(e) data.frame(ref_id = character(0), ID = character(0), Taxon = character(0),
+      user_group = character(0), ref_source = character(0), stringsAsFactors = FALSE))
+}
+
+#' The member list shown when a group row is expanded
+#'
+#' Read-only on purpose: everything that changes an assignment lives in the
+#' sample view, so there is one place to look for it rather than two.
+#' @noRd
+reference_member_html <- function(m) {
+  if (nrow(m) == 0) {
+    return(shiny::div(style = "padding:0.5em 1em; color:#888;", "No samples in this group."))
+  }
+  tag <- function(txt, colour) shiny::span(txt,
+    style = sprintf("margin-left:0.6em; font-size:0.8em; color:%s;", colour))
+  shiny::div(style = "padding:0.4em 1em 0.8em 2.5em;",
+    lapply(seq_len(nrow(m)), function(i) shiny::div(
+      style = "padding:1px 0;",
+      shiny::strong(m$ID[i]),
+      shiny::span(m$Taxon[i], style = "margin-left:0.8em; color:#555;"),
+      if (nzchar(m$user_group[i])) tag(paste("User group", m$user_group[i]), "#1a7f5a"),
+      if (identical(m$ref_source[i], "manual")) tag("assigned by you", "#8a6d1a"))))
+}
+
+#' Preview modal: what Propose groups would change, before anything is written
+#'
+#' @param diff From [reference_group_diff()].
+#' @param n_old,n_new Group counts before and after.
+#' @param warn Character vector of warning lines (clades over the record ceiling).
+#' @noRd
+reference_diff_modal <- function(diff, n_old, n_new, warn = character(0)) {
+  hand <- diff$ID[diff$hand_set]
+  rows <- if (nrow(diff) == 0) {
+    shiny::helpText("No sample changes group.")
+  } else {
+    shiny::div(style = "max-height:45vh; overflow:auto; font-size:0.9em;",
+      shiny::tags$table(class = "table table-sm table-striped",
+        shiny::tags$thead(shiny::tags$tr(shiny::tags$th("Sample"), shiny::tags$th("Now"),
+          shiny::tags$th("Proposed"), shiny::tags$th(""))),
+        shiny::tags$tbody(lapply(seq_len(nrow(diff)), function(i) shiny::tags$tr(
+          shiny::tags$td(diff$ID[i]),
+          shiny::tags$td(diff$from_group[i]),
+          shiny::tags$td(shiny::strong(diff$to_group[i])),
+          shiny::tags$td(style = "color:#8a6d1a;",
+            if (diff$hand_set[i]) "you assigned this" else ""))))))
+  }
+  shiny::modalDialog(
+    title = "Proposed reference groups", size = "l",
+    rows,
+    shiny::div(style = "margin-top:0.6em;",
+      sprintf("%d group(s) now, %d proposed.", n_old, n_new)),
+    if (length(warn) > 0) {
+      shiny::div(style = "margin-top:0.6em; color:#a33;",
+        lapply(warn, function(w) shiny::div(w)))
+    },
+    if (length(hand) > 0) {
+      shiny::tagList(
+        shiny::hr(),
+        shiny::checkboxGroupInput("ref_diff_keep", "Keep any of these together instead:",
+          choices = hand, inline = TRUE),
+        opts_help("Making a user group out of them stops any future proposal from ",
+          "splitting them up. Nothing is applied; press Propose groups again after."),
+        shiny::actionButton("ref_diff_group", "Make a user group", class = "btn-sm"))
+    },
+    footer = shiny::tagList(
+      shiny::actionButton("ref_diff_apply", "Apply", class = "btn-primary btn-sm"),
+      shiny::modalButton("Cancel")))
+}
+
+#' Pick the group a bulk move sends samples to
+#' @param groups data.frame(ref_id, clade_name) of existing groups.
+#' @noRd
+reference_move_modal <- function(groups, n) {
+  choices <- c(stats::setNames(groups$ref_id, groups$clade_name), "Unassigned" = "")
+  shiny::modalDialog(
+    title = sprintf("Move %d sample(s) to a reference group", n),
+    shinyWidgets::prettyRadioButtons("ref_move_pick", NULL, choices = choices,
+      shape = "round", status = "primary"),
+    opts_help("The move is yours, not the proposer's, so the next Propose groups ",
+      "will flag it before changing it. To make it permanent, select the samples ",
+      "and press Keep together."),
+    footer = shiny::tagList(
+      shiny::actionButton("ref_move_apply", "Move", class = "btn-primary btn-sm"),
+      shiny::modalButton("Cancel")))
+}
+
 #' One rung of the clade ladder, as a radio choice label
 #' @noRd
 rung_label <- function(name, rank, n_samples, n_records, chosen) {
@@ -227,7 +347,8 @@ reference_action_modal <- function(ids, label) {
 #'
 #' @param deps list(con = fn -> DBI con, project = fn -> chr, refresh = reactiveVal,
 #'   selected_ids = fn -> chr, table_data = reactive -> data.frame).
-#' @return list(open_ladder, apply_clade, poll, do_build, do_skip, open_existing),
+#' @return list(open_ladder, apply_clade, poll, do_build, do_skip, open_existing,
+#'   open_move, do_keep_together, do_dissolve),
 #'   each taking the group key(s) it acts on.
 #' @noRd
 reference_handlers <- function(input, output, session, deps) {
@@ -245,6 +366,7 @@ reference_handlers <- function(input, output, session, deps) {
   submitted <- shiny::reactiveVal(character(0))     # groups with a cluster job out
   resubmit_ok <- shiny::reactiveVal(FALSE)
   ref_base <- shiny::reactiveVal(NULL)              # timestamp for one submission
+  proposal <- shiny::reactiveVal(NULL)              # suggestion awaiting Apply
 
   with_con <- function(fn) {
     con <- deps$con(); on.exit(DBI::dbDisconnect(con)); fn(con)
@@ -291,7 +413,7 @@ reference_handlers <- function(input, output, session, deps) {
         # bump() or the alert call itself) must still reach the "failed" branch, or the
         # user is stuck looking at a popup they cannot close.
         outcome <- tryCatch({
-          n <- with_con(function(con) {
+          res <- with_con(function(con) {
             cfg <- ref_config(con)
             l <- ladders_now(con)
             if (nrow(l) == 0) stop("No samples have a resolved lineage yet. Assign taxonomy first.",
@@ -302,7 +424,8 @@ reference_handlers <- function(input, output, session, deps) {
             counts <- run_clade_counts(deps$project(), cfg$ref_dir, candidate_rungs(l, start_rank),
               api_key = project_ncbi_key(deps$project()), runner = count_runner())
             s <- suggest_reference_groups(l, cache_count_fn(cfg$ref_dir),
-              cfg$min_records, cfg$max_records, start_rank = start_rank)
+              cfg$min_records, cfg$max_records, start_rank = start_rank,
+              user_groups = sample_user_groups(con))
             if (nrow(s$groups) == 0) {
               # the counting run is the only thing that could have failed here,
               # so its log is the message, not a pointer to a file. A task that
@@ -317,14 +440,20 @@ reference_handlers <- function(input, output, session, deps) {
                 if (nzchar(tail)) paste0(" Last lines: ", tail) else "",
                 call. = FALSE)
             }
-            write_reference_groups(con, s$groups, s$members)
-            nrow(s$groups)
+            # nothing is written yet: the user sees what would move first, and a
+            # sample they placed by hand gets flagged rather than quietly undone
+            over <- s$groups[!is.na(s$groups$n_records) &
+                s$groups$n_records > cfg$max_records, , drop = FALSE]
+            list(prop = s, diff = reference_group_diff(con, s$groups, s$members),
+              n_old = nrow(DBI::dbGetQuery(con, "SELECT ref_id FROM reference")),
+              warn = if (nrow(over) == 0) character(0) else sprintf(
+                "%s holds %s records, above the maximum of %s.", over$clade_name,
+                format(over$n_records, big.mark = ","), format(cfg$max_records, big.mark = ",")))
           })
-          bump()
-          shinyWidgets::sendSweetAlert(title = "Clades suggested",
-            text = sprintf(paste("Proposed %d reference group(s). Use the link at the end of",
-              "each row to give that group a database."), n),
-            type = "success")
+          proposal(res$prop)
+          shinyWidgets::closeSweetAlert(session = session)
+          shiny::showModal(reference_diff_modal(res$diff, res$n_old, nrow(res$prop$groups),
+            res$warn))
           NULL
         }, error = function(e) e)
         if (inherits(outcome, "error")) {
@@ -334,6 +463,95 @@ reference_handlers <- function(input, output, session, deps) {
       })
     }, delay = 0.1)
   })
+
+  # ---- apply / refuse a proposal ----
+  shiny::observeEvent(input$ref_diff_apply, {
+    s <- proposal()
+    if (is.null(s)) { notify("Nothing to apply.", "warning"); return() }
+    res <- tryCatch(with_con(function(con) write_reference_groups(con, s$groups, s$members)),
+      error = function(e) e)
+    if (inherits(res, "error")) { notify(conditionMessage(res), "error"); return() }
+    proposal(NULL)
+    shiny::removeModal(); bump()
+    notify(sprintf(paste("Applied %d reference group(s). Use the link at the end of each row",
+      "to give that group a database."), nrow(s$groups)))
+  })
+
+  shiny::observeEvent(input$ref_diff_group, {
+    ids <- input$ref_diff_keep %||% character(0)
+    if (length(ids) < 2) {
+      notify("Pick at least two samples: a user group is what keeps them together.", "warning")
+      return()
+    }
+    res <- tryCatch(with_con(function(con) {
+      lab <- next_user_group_label(con)
+      set_user_group(con, ids, lab)
+      lab
+    }), error = function(e) e)
+    if (inherits(res, "error")) { notify(conditionMessage(res), "error"); return() }
+    proposal(NULL)
+    shiny::removeModal(); bump()
+    notify(sprintf("User group %s created from %d sample(s). Press Propose groups again.",
+      res, length(ids)))
+  })
+
+  # ---- sample view: move, keep together, dissolve ----
+  move_target <- shiny::reactiveVal(character(0))
+  open_move <- function(ids) {
+    if (length(ids) == 0) { notify("Select the sample(s) to move.", "warning"); return() }
+    move_target(ids)
+    res <- tryCatch(with_con(function(con) DBI::dbGetQuery(con,
+      "SELECT ref_id, clade_name FROM reference ORDER BY clade_name")), error = function(e) e)
+    if (inherits(res, "error")) { notify(conditionMessage(res), "error"); return() }
+    if (nrow(res) == 0) {
+      notify("No reference groups yet. Press Propose groups first.", "warning"); return()
+    }
+    shiny::showModal(reference_move_modal(res, length(ids)))
+  }
+  shiny::observeEvent(input$ref_move_apply, {
+    ids <- move_target()
+    key <- input$ref_move_pick %||% ""
+    res <- tryCatch(with_con(function(con) {
+      assign_samples_ref(con, ids, if (nzchar(key)) key else NA_character_)
+      if (!nzchar(key)) return(0L)
+      # a clade that does not contain a sample makes a seed database that cannot
+      # match it, so say so; the move still stands, because the user asked for it
+      tid <- DBI::dbGetQuery(con, "SELECT clade_taxid FROM reference WHERE ref_id = ?",
+        params = list(key))$clade_taxid
+      if (length(tid) == 0 || is.na(tid[1])) return(0L)
+      length(setdiff(ids, ladder_coverage(ladders_now(con), tid[1])))
+    }), error = function(e) e)
+    if (inherits(res, "error")) { notify(conditionMessage(res), "error"); return() }
+    shiny::removeModal(); bump()
+    if (res > 0) {
+      notify(sprintf("Moved, but %d sample(s) are not inside that clade.", res), "warning")
+    } else {
+      notify(sprintf("Moved %d sample(s).", length(ids)))
+    }
+  })
+
+  do_keep_together <- function(ids) {
+    if (length(ids) < 2) {
+      notify("Select at least two samples to keep together.", "warning"); return()
+    }
+    res <- tryCatch(with_con(function(con) {
+      lab <- next_user_group_label(con)
+      set_user_group(con, ids, lab)
+      lab
+    }), error = function(e) e)
+    if (inherits(res, "error")) { notify(conditionMessage(res), "error"); return() }
+    bump()
+    notify(sprintf("User group %s: these %d sample(s) will not be split up.", res, length(ids)))
+  }
+
+  do_dissolve <- function(ids) {
+    if (length(ids) == 0) { notify("Select the sample(s) to release.", "warning"); return() }
+    res <- tryCatch(with_con(function(con) set_user_group(con, ids, NA_character_)),
+      error = function(e) e)
+    if (inherits(res, "error")) { notify(conditionMessage(res), "error"); return() }
+    bump()
+    notify(sprintf("Released %d sample(s); the next proposal may regroup them.", length(ids)))
+  }
 
   # ---- ladder modal ----
   # `picked` tracks whichever of the ladder radio or the search-result radio the
@@ -799,5 +1017,6 @@ reference_handlers <- function(input, output, session, deps) {
   # domain, no reactive context; the row actions are exposed so tests can drive
   # them without a button id, which is what the UI does now too
   list(open_ladder = open_ladder, apply_clade = apply_clade, poll = poll_now,
-    do_build = do_build, do_skip = do_skip, open_existing = open_existing)
+    do_build = do_build, do_skip = do_skip, open_existing = open_existing,
+    open_move = open_move, do_keep_together = do_keep_together, do_dissolve = do_dissolve)
 }

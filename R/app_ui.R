@@ -58,8 +58,17 @@ app_ui <- function(request) {
           # Only the two controls that act on the whole tab live here. Everything
           # that acts on ONE group is in that group's own row (see app_reference.R).
           shiny::conditionalPanel("input.mode == 'Reference'",
-            ctrls(bttn("ref_suggest_btn", "Propose groups", "wand-magic-sparkles"),
+            ctrls(
+              # Groups answers "what gets built", Samples answers "where did my
+              # sample go"; the second is also the only surface a bulk move can
+              # act on, since the app's selection keys on the table's ID column.
+              shinyWidgets::radioGroupButtons("ref_view", label = NULL, size = "sm",
+                choices = c("Groups", "Samples"), selected = "Groups"),
+              bttn("ref_suggest_btn", "Propose groups", "wand-magic-sparkles"),
               bttn("ref_dir_btn", "Settings", "gear"))),
+          shiny::conditionalPanel("input.mode == 'Reference' && input.ref_view == 'Samples'",
+            ctrls(bttn("ref_move_btn", "Move"), bttn("ref_keep_btn", "Keep together"),
+              bttn("ref_release_btn", "Release"))),
           shiny::conditionalPanel("input.mode == 'Assemble'",
             ctrls(bttn("state_btn", "State"), bttn("lock_btn", "Lock"),
               bttn("triage_btn", "Triage", "traffic-light"),
