@@ -148,3 +148,19 @@ existing `Build` action clears it.
 - No change to how databases are built, downloaded, or reused.
 - No change to the Assemble panel; assignment lives entirely on the References
   page.
+
+## Changed during implementation
+
+- `reference.origin` was dropped. Empty groups are already deleted by
+  `refresh_reference_counts()`, so the column would have carried no behavior.
+- The expanded member list in the Groups view is read-only. Every edit happens
+  in the Samples view, where the app's existing row selection already yields
+  sample IDs, so there is one place to look for assignment controls rather than
+  two and no custom selection code inside an expanded row.
+- The diff modal's per-row lock shortcut became a checkbox list of the
+  hand-assigned samples plus one `Make a user group` button. The user then
+  presses `Propose groups` again.
+- Taking a sample out of a group counts as a hand edit too, so a later proposal
+  putting it back is flagged.
+- The over-ceiling warning covers any proposed group, not only ones containing
+  a user group; the walk can land above the ceiling on its own.
