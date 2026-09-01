@@ -1299,3 +1299,39 @@ test_that("find_rrna emits the assembler's fasta contract", {
   expect_true(any(grepl("splitFasta\\(by: params\\.find_rrna_chunk_size", nf)))
   expect_true(any(grepl("params\\.find_rrna_chunk_size", main_nf)))
 })
+
+# ---- rawDir is only required by samples that actually have reads ----
+
+mk_rawdir_project <- function(dir, raw = "NA", r1 = NA_character_) {
+  writeLines(c("params {", paste0("  rawDir = '", raw, "'"), "}"), file.path(dir, ".config"))
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "CREATE TABLE preprocess (ID TEXT, R1 TEXT, R2 TEXT)")
+  if (!is.na(r1)) {
+    DBI::dbExecute(con, "INSERT INTO preprocess VALUES ('S1', ?, 'b.fq')", params = list(r1))
+  }
+  DBI::dbDisconnect(con)
+  dir
+}
+
+test_that("an assembly-only project runs without a rawDir", {
+  skip_if_not_installed("withr")
+  proj <- withr::local_tempdir()
+  mk_rawdir_project(proj)
+  a <- RiboPilot:::nf_command(proj, resume = FALSE)
+  expect_false("--rawDir" %in% a)
+})
+
+test_that("a project with reads still refuses to run without a rawDir", {
+  skip_if_not_installed("withr")
+  proj <- withr::local_tempdir()
+  mk_rawdir_project(proj, raw = "NA", r1 = "a.fq")
+  expect_error(RiboPilot:::nf_command(proj, resume = FALSE), "No rawDir set")
+})
+
+test_that("a project with reads and a rawDir passes it through", {
+  skip_if_not_installed("withr")
+  proj <- withr::local_tempdir()
+  mk_rawdir_project(proj, raw = "/data/raw", r1 = "a.fq")
+  a <- RiboPilot:::nf_command(proj, resume = FALSE)
+  expect_equal(a[which(a == "--rawDir") + 1], "/data/raw")
+})

@@ -29,7 +29,12 @@ nf_command <- function(path, resume = TRUE,
   min_depth <- cfg_val("minDepth", "0")
   if (!nzchar(min_depth)) min_depth <- "0"
   api_key <- cfg_val("ncbi_api_key", "")
-  if (!nzchar(raw_dir)) {
+  # rawDir is only ever pasted onto a read file name, and a sample that supplied
+  # its own assembly never reaches that channel, so a project holding no reads
+  # at all needs no read folder. new_project() writes the 'NA' sentinel for one,
+  # which cfg_val() resolves to "" -- refusing to run on that grounded the whole
+  # assembly-only workflow.
+  if (!nzchar(raw_dir) && project_has_reads(path)) {
     stop("No rawDir set in ", cfg, ".\n",
       "Without it the pipeline has nowhere to look for reads and every sample ",
       "fails. Set params.rawDir in the project config.", call. = FALSE)
@@ -44,7 +49,7 @@ nf_command <- function(path, resume = TRUE,
     if (isTRUE(resume)) "-resume",
     "--db", file.path(path, ".sqlite"),
     "--projectDir", path,
-    "--rawDir", raw_dir,
+    if (nzchar(raw_dir)) c("--rawDir", raw_dir),
     "--minDepth", min_depth,
     "--ribopilot_src", src,
     "--taxdump_dir", taxdump,
@@ -55,7 +60,28 @@ nf_command <- function(path, resume = TRUE,
     # Reference tab wired later lives wherever the user put it, and the
     # assembler cannot read a staged symlink whose target is unmounted
     container_bind_opts(cfg_lines,
-      reference_mount_dirs(path, c(path, raw_dir, config_mounted_dirs(cfg_lines)))))
+      reference_mount_dirs(path,
+        c(path, if (nzchar(raw_dir)) raw_dir, config_mounted_dirs(cfg_lines)))))
+}
+
+#' Does this project have any sample the pipeline must fetch reads for?
+#'
+#' `preprocess` holds a row only for a sample that named a read pair
+#' ([check_mapping_reads()] drops the rest), so an empty table means every
+#' sample supplied its own assembly and no read folder is needed.
+#' @noRd
+project_has_reads <- function(path) {
+  db <- file.path(path, ".sqlite")
+  if (!file.exists(db)) return(TRUE)
+  con <- tryCatch(DBI::dbConnect(RSQLite::SQLite(), db), error = function(e) NULL)
+  if (is.null(con)) return(TRUE)
+  on.exit(DBI::dbDisconnect(con))
+  n <- tryCatch(DBI::dbGetQuery(con,
+    "SELECT COUNT(*) AS n FROM preprocess
+     WHERE R1 IS NOT NULL AND TRIM(R1) != ''")$n, error = function(e) NA_integer_)
+  # an unreadable or missing table says nothing about the project, and refusing
+  # to run is the safe answer when the question cannot be answered
+  is.na(n) || n > 0
 }
 
 #' The project's reference folder, used only when explicitly configured
