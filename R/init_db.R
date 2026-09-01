@@ -13,8 +13,14 @@
 #'   file. Read files are resolved as `<data_path>/<R1>`, the same way the
 #'   Nextflow pipeline does it. When NULL, read files cannot be located and
 #'   only the paired-end check is applied.
+#' @param assembly_path Directory holding the assembly files named in the
+#'   mapping file's optional `Assembly` column. A sample with an assembly skips
+#'   read preprocessing and assembly: its nuclear rDNA contigs are found inside
+#'   the supplied file instead. Its `R1`/`R2` may be blank.
 #' @param check_reads (logical) Check that the read files named in the mapping
 #'   file exist (default TRUE). Set FALSE when the data will be staged later.
+#' @param check_assemblies (logical) Check that the assembly files named in the
+#'   mapping file exist under `assembly_path` (default TRUE).
 #' @param assemble_cpus Default number of CPUs for assembly.
 #' @param assemble_memory Default memory (GB) for assembly.
 #' @param seeds_db Path/URL to the GetOrganelle nr seeds database (built per
@@ -37,7 +43,9 @@ new_db <- function(
     mapping_id = "ID",
     mapping_taxon = "Taxon",
     data_path = NULL,
+    assembly_path = NULL,
     check_reads = TRUE,
+    check_assemblies = TRUE,
     assemble_cpus = 6,
     assemble_memory = 24,
     seeds_db = "https://raw.githubusercontent.com/dmacguigan/RiboPilot/main/ref_dbs/getOrganelle/seeds/actinopterygii_rrna_seeds.fasta",
@@ -82,8 +90,12 @@ new_db <- function(
 
   # Validate read files ----
   # Fail here, not per-task inside a work/ directory as an opaque fastp error.
+  mapping <- normalize_assembly_column(mapping, mapping_id, assembly_path)
   if (isTRUE(check_reads)) {
     check_mapping_reads(mapping, mapping_id, data_path)
+  }
+  if (isTRUE(check_assemblies)) {
+    check_mapping_assemblies(mapping, mapping_id, assembly_path)
   }
 
   # Default GetOrganelle nr databases (broad Actinopterygii) when unset ----
@@ -196,6 +208,7 @@ new_db <- function(
       paths INTEGER,
       scaffolds INTEGER,
       assemble_notes TEXT,
+      find_rrna_notes TEXT,
       assemble_switch INTEGER,
       assemble_lock INTEGER,
       hide_switch INTEGER,
@@ -222,6 +235,7 @@ new_db <- function(
           paths = NA_integer_,
           scaffolds = NA_integer_,
           assemble_notes = NA_character_,
+          find_rrna_notes = NA_character_,
           assemble_switch = 1,
           assemble_lock = 0,
           hide_switch = 0,
@@ -247,6 +261,7 @@ new_db <- function(
       max_scaffolds INTEGER,
       min_assembly_length INTEGER,
       assembler TEXT DEFAULT 'getorganelle',
+      find_rrna INTEGER DEFAULT 1,
       bowtie2 TEXT DEFAULT '--local',
       spades TEXT DEFAULT '--isolate',
       PRIMARY KEY (assemble_opts)
@@ -266,6 +281,7 @@ new_db <- function(
         max_scaffolds = max_scaffolds,
         min_assembly_length = min_assembly_length,
         assembler = "getorganelle",
+        find_rrna = 1L,
         bowtie2 = "--local",
         spades = "--isolate"
       ),
@@ -604,6 +620,9 @@ new_db <- function(
   DBI::dbExecute(con, TRIAGE_OPTS_DDL)
   DBI::dbExecute(con, TRIAGE_OPTS_SEED)
 
+  # rrna_candidates (user-assembly rDNA contig search; see RRNA_CANDIDATES_DDL) ----
+  DBI::dbExecute(con, RRNA_CANDIDATES_DDL)
+
   # screen (contamination verdict per unit; see SCREEN_DDL) ----
   DBI::dbExecute(con, SCREEN_DDL)
 
@@ -662,13 +681,33 @@ check_mapping_reads <- function(mapping, mapping_id = "ID", data_path = NULL) {
   ids <- as.character(mapping[[mapping_id]])
   blank <- function(x) is.na(x) | !nzchar(trimws(as.character(x)))
 
-  unpaired <- blank(mapping$R1) | blank(mapping$R2)
+  # A sample supplying its own assembly may name no reads at all. It may still
+  # name a pair, which is used for coverage only; half a pair is an error either
+  # way, since single-end reads are not supported.
+  has_asmb <- if ("Assembly" %in% colnames(mapping)) !blank(mapping$Assembly) else rep(FALSE, nrow(mapping))
+  no_reads <- blank(mapping$R1) & blank(mapping$R2)
+
+  missing_input <- no_reads & !has_asmb
+  if (any(missing_input)) {
+    stop(
+      "Every sample needs either paired reads or an assembly, but these have neither:\n",
+      paste(truncate_ids(ids[missing_input]), collapse = "\n")
+    )
+  }
+
+  unpaired <- (blank(mapping$R1) | blank(mapping$R2)) & !no_reads
   if (any(unpaired)) {
     stop(
-      "Every sample needs both an R1 and an R2 read file, but these are missing one:\n",
+      "Every sample with reads needs both an R1 and an R2 file, but these are missing one:\n",
       paste(truncate_ids(ids[unpaired]), collapse = "\n"),
       "\nSingle-end reads are not supported by the RiboPilot pipeline."
     )
+  }
+
+  mapping <- mapping[!no_reads, , drop = FALSE]
+  ids <- ids[!no_reads]
+  if (nrow(mapping) == 0) {
+    return(invisible())
   }
 
   if (length(data_path) != 1 || is.na(data_path) || !nzchar(data_path)) {
@@ -695,4 +734,59 @@ truncate_ids <- function(x, n = 10) {
     return(x)
   }
   c(x[seq_len(n)], sprintf("... and %d more", length(x) - n))
+}
+
+#' Ensure the mapping has an Assembly column, and that it is usable
+#'
+#' The column is optional in the user's file but always present in the samples
+#' table, so the pipeline's sample query can name it unconditionally.
+#'
+#' @param mapping Mapping data.frame.
+#' @param mapping_id ID column name.
+#' @param assembly_path Directory the assembly files live in, or NULL.
+#' @return the mapping, with a normalized `Assembly` column.
+#' @noRd
+normalize_assembly_column <- function(mapping, mapping_id = "ID", assembly_path = NULL) {
+  if (!("Assembly" %in% colnames(mapping))) {
+    mapping$Assembly <- NA_character_
+    return(mapping)
+  }
+  mapping$Assembly <- trimws(as.character(mapping$Assembly))
+  mapping$Assembly[!nzchar(mapping$Assembly)] <- NA_character_
+  named <- !is.na(mapping$Assembly)
+  if (any(named) && (length(assembly_path) != 1 || is.na(assembly_path) || !nzchar(assembly_path))) {
+    stop(
+      "The mapping file names assembly files, but no assembly_path was given.\n",
+      "Pass assembly_path = the directory holding them."
+    )
+  }
+  mapping
+}
+
+#' Check that the assembly files named in the mapping file exist
+#'
+#' Fail here, not per-task inside a work/ directory as a dangling symlink.
+#'
+#' @param mapping Mapping data.frame (already normalized).
+#' @param mapping_id ID column name.
+#' @param assembly_path Directory the assembly files live in, or NULL.
+#' @noRd
+check_mapping_assemblies <- function(mapping, mapping_id = "ID", assembly_path = NULL) {
+  if (!("Assembly" %in% colnames(mapping))) {
+    return(invisible())
+  }
+  named <- !is.na(mapping$Assembly) & nzchar(mapping$Assembly)
+  if (!any(named) || length(assembly_path) != 1 || !nzchar(assembly_path)) {
+    return(invisible())
+  }
+  ids <- as.character(mapping[[mapping_id]])[named]
+  paths <- file.path(assembly_path, mapping$Assembly[named])
+  bad <- !file.exists(paths)
+  if (any(bad)) {
+    stop(
+      "Assembly files named in the mapping file were not found in ", assembly_path, ":\n",
+      paste(truncate_ids(paste0(ids[bad], ": ", paths[bad])), collapse = "\n")
+    )
+  }
+  invisible()
 }

@@ -10,7 +10,7 @@ mk_app_project <- function(env = parent.frame()) {
     match_type TEXT, lineage TEXT, lineage_taxids TEXT, taxonomy_switch INT, taxonomy_lock INT,
     export_group TEXT, time_stamp INT)")
   DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, assemble_lock INT, assemble_switch INT,
-    assemble_opts TEXT, blast_opts TEXT, paths INT, scaffolds INT, length TEXT, assemble_notes TEXT, time_stamp INT)")
+    assemble_opts TEXT, blast_opts TEXT, paths INT, scaffolds INT, length TEXT, assemble_notes TEXT, find_rrna_notes TEXT, time_stamp INT)")
   DBI::dbExecute(con, "CREATE TABLE preprocess(ID TEXT, pre_opts TEXT)")
   DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, topology TEXT, length INT,
     sequence TEXT, ignore INT, blast_species TEXT, blast_accession TEXT, blast_pident REAL,
@@ -31,7 +31,7 @@ mk_app_project <- function(env = parent.frame()) {
   DBI::dbExecute(con, "INSERT INTO path_scores (ID,path,score,rank,auto_select) VALUES('S1',1,0.912,1,1)")
   DBI::dbExecute(con, "INSERT INTO path_scores (ID,path,score,rank,auto_select) VALUES('S1',2,0.431,2,0)")
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S1','Danio rerio','Danio rerio',7955,'species','exact',NULL,NULL,1,1,NULL,1)")
-  DBI::dbExecute(con, "INSERT INTO assemble VALUES('S1',1,2,'default','default',2,4,'100',NULL,1)")
+  DBI::dbExecute(con, "INSERT INTO assemble VALUES('S1',1,2,'default','default',2,4,'100',NULL,NULL,1)")
   DBI::dbExecute(con, "INSERT INTO preprocess VALUES('S1','default')")
   # four units; the SHORTEST is p2.s2, so a length-sorted view reorders the table
   for (u in list(c(1,1,6120), c(1,2,1442), c(2,1,5980), c(2,2,890))) {

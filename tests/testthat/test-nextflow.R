@@ -84,7 +84,7 @@ test_that("query_samples selects the assembler and declares it in the header", {
   # rows, so it and the select list must agree on column count or splitCsv
   # misreads every field.
   n_hdr <- length(strsplit(sub(".*printf '", "", sub("\\\\n' > .*", "", hdr)), "\\\\t")[[1]])
-  expect_equal(n_hdr, 12L)
+  expect_equal(n_hdr, 16L)
 })
 
 test_that("main.nf branches on the assembler and merges both arms into score", {
@@ -98,7 +98,13 @@ test_that("main.nf branches on the assembler and merges both arms into score", {
 
   expect_true(any(grepl("^\\s*assemble\\(asm_branched\\.go", main_nf)))
   expect_true(any(grepl("^\\s*fallback_assemble\\(asm_branched\\.fb", main_nf)))
-  expect_true(any(grepl("score\\(assemble\\.out\\.paths\\.mix\\(fallback_assemble\\.out\\.paths\\)\\)", main_nf)))
+  # every assembly source merges into one score() call
+  sc <- grep("score\\(assemble\\.out\\.paths", main_nf)
+  expect_length(sc, 1)
+  block <- paste(main_nf[sc:(sc + 3)], collapse = " ")
+  expect_match(block, "mix\\(fallback_assemble\\.out\\.paths\\)")
+  expect_match(block, "mix\\(find_rrna\\.out\\.paths\\)")
+  expect_match(block, "mix\\(stage_assembly\\.out\\.paths\\)")
 })
 
 test_that("main.nf includes fallback_assemble and still passes seeds to GetOrganelle", {
@@ -1246,4 +1252,50 @@ test_that("a local failure on one unit does not disable local search for the res
     info = "unit 1's local search failed, so it must fall back to remote")
   expect_equal(searched$source[searched$scaffold == 2], "local",
     info = "unit 2's local search would have succeeded; unit 1's failure must not leak into it")
+})
+
+# User-supplied assemblies enter WF1 where an assembly would, rather than as a
+# second workflow. See dev/design/20_USER_ASSEMBLIES.md.
+
+test_that("query_samples carries the columns the assembly branch reads", {
+  start <- grep("^process query_samples \\{", pipeline_r_nf)
+  end <- start - 1 + which(pipeline_r_nf[start:length(pipeline_r_nf)] == "}")[1]
+  body <- pipeline_r_nf[start:end]
+  hdr <- grep("printf 'ID", body, value = TRUE)
+
+  for (col in c("Assembly", "find_rrna", "rrna_tool", "rrna_kingdom")) {
+    expect_match(hdr, col)
+    expect_true(any(grepl(paste0("AS ", col), body)))
+  }
+  expect_true(any(grepl("JOIN samples s", body)))
+})
+
+test_that("main.nf routes supplied assemblies away from preprocess and assembly", {
+  br <- grep("sample_rows = rows\\.branch", main_nf)
+  expect_length(br, 1)
+  block <- paste(main_nf[br:(br + 4)], collapse = "\n")
+  expect_match(block, "user: r\\.Assembly")
+  expect_match(block, "asis: r\\.Assembly")
+  # `reads: true`, not an equality test, for the same reason the assembler
+  # branch uses it: branch silently drops an item matching no condition.
+  expect_match(block, "reads: true")
+
+  # preprocess only for rows that actually name reads
+  expect_true(any(grepl("filter \\{ r -> r\\.R1\\?\\.trim\\(\\) && r\\.R2\\?\\.trim\\(\\) \\}", main_nf)))
+  # ...and assembly only for rows assembling from reads, so a supplied assembly
+  # that also names reads (for coverage) is not assembled as well
+  expect_true(any(grepl("read_ids = sample_rows\\.reads", main_nf)))
+  expect_true(any(grepl("\\.join\\(read_ids\\)", main_nf)))
+})
+
+test_that("find_rrna emits the assembler's fasta contract", {
+  nf <- readLines(system.file("nextflow", "modules", "find_rrna.nf", package = "RiboPilot"))
+  # published where load_assemblies() globs, named what it expects
+  expect_true(any(grepl("\\$\\{params\\.publishDir\\}/\\$\\{id\\}/assemble", nf)))
+  expect_true(any(grepl("\\$\\{id\\}_assembly_\\*\\.fasta", nf)))
+  # the sentinel name load_assemblies() skips, for a sample with nothing found
+  expect_true(any(grepl("\\$\\{id\\}_assembly_0\\.fasta", nf)))
+  # chunked so a draft genome is never read whole
+  expect_true(any(grepl("splitFasta\\(by: params\\.find_rrna_chunk_size", nf)))
+  expect_true(any(grepl("params\\.find_rrna_chunk_size", main_nf)))
 })

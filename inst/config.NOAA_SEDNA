@@ -30,6 +30,7 @@ process {
 params {
     publishDir = 'out'                          // Directory to publish pipeline outputs
     rawDir = '<<RAW_DIR>>'                       // Directory containing raw read data
+    asmbDir = '<<ASMB_DIR>>'                     // Directory containing user-supplied assemblies
     minDepth = <<MIN_DEPTH>>                     // Skip samples with fewer than this many reads
     ncbi_api_key = '<<NCBI_API_KEY>>'            // Optional NCBI API key for BLAST + GenBank fetch
 }

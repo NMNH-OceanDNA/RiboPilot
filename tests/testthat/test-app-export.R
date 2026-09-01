@@ -8,7 +8,7 @@ mk_export_project <- function(env = parent.frame()) {
     match_type TEXT, lineage TEXT, lineage_taxids TEXT, taxonomy_switch INT, taxonomy_lock INT,
     export_group TEXT, time_stamp INT)")
   DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, assemble_lock INT, assemble_switch INT,
-    assemble_opts TEXT, blast_opts TEXT, paths INT, scaffolds INT, length TEXT, assemble_notes TEXT, time_stamp INT)")
+    assemble_opts TEXT, blast_opts TEXT, paths INT, scaffolds INT, length TEXT, assemble_notes TEXT, find_rrna_notes TEXT, time_stamp INT)")
   DBI::dbExecute(con, "CREATE TABLE preprocess(ID TEXT, pre_opts TEXT)")
   DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, topology TEXT, length INT,
     sequence TEXT, ignore INT, blast_species TEXT, blast_accession TEXT, blast_pident REAL,
@@ -28,7 +28,7 @@ mk_export_project <- function(env = parent.frame()) {
   DBI::dbExecute(con, "CREATE TABLE path_scores(ID TEXT, path INT, length INT, depth REAL, anchors TEXT,
     blast_pident REAL, hit_id TEXT, hit_species TEXT, score REAL, rank INT, auto_select INT)")
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S1','Danio rerio','Danio rerio',7955,'species','exact',NULL,NULL,1,1,NULL,1)")
-  DBI::dbExecute(con, "INSERT INTO assemble VALUES('S1',1,2,'default','default',1,1,'600',NULL,1)")
+  DBI::dbExecute(con, "INSERT INTO assemble VALUES('S1',1,2,'default','default',1,1,'600',NULL,NULL,1)")
   DBI::dbExecute(con, "INSERT INTO preprocess VALUES('S1','default')")
   DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',1,1,'linear',600,?,0,'Danio rerio','A1',99,88,'core_nt')",
     params = list(paste(rep("ACGT", 150), collapse = "")))

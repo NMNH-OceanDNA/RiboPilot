@@ -10,7 +10,9 @@ new_db(
   mapping_id = "ID",
   mapping_taxon = "Taxon",
   data_path = NULL,
+  assembly_path = NULL,
   check_reads = TRUE,
+  check_assemblies = TRUE,
   assemble_cpus = 6,
   assemble_memory = 24,
   seeds_db =
@@ -40,8 +42,16 @@ file. Read files are resolved as `<data_path>/<R1>`, the same way the
 Nextflow pipeline does it. When NULL, read files cannot be located and
 only the paired-end check is applied.}
 
+\item{assembly_path}{Directory holding the assembly files named in the
+mapping file's optional `Assembly` column. A sample with an assembly skips
+read preprocessing and assembly: its nuclear rDNA contigs are found inside
+the supplied file instead. Its `R1`/`R2` may be blank.}
+
 \item{check_reads}{(logical) Check that the read files named in the mapping
 file exist (default TRUE). Set FALSE when the data will be staged later.}
+
+\item{check_assemblies}{(logical) Check that the assembly files named in the
+mapping file exist under `assembly_path` (default TRUE).}
 
 \item{assemble_cpus}{Default number of CPUs for assembly.}
 

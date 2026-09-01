@@ -9,6 +9,7 @@ new_project(
   mapping_fn = NULL,
   mapping_id = "ID",
   data_path = NULL,
+  assembly_path = NULL,
   min_depth = 2e+06,
   executor = c("conda", "docker", "local", "awsbatch", "slurm", "pbs", "sge", "lsf",
     "NMNH_Hydra", "NOAA_SEDNA"),
@@ -20,6 +21,7 @@ new_project(
   profile_dir = ribopilot_config_dir(),
   ncbi_api_key = NULL,
   check_reads = TRUE,
+  check_assemblies = TRUE,
   Rproj = TRUE,
   force = FALSE,
   ...
@@ -34,7 +36,14 @@ inputs. Extra metadata columns are preserved.}
 
 \item{mapping_id}{Column in the mapping file with unique ids (default "ID").}
 
-\item{data_path}{Directory where the raw read data is located.}
+\item{data_path}{Directory where the raw read data is located. Not needed
+when every sample supplies its own assembly.}
+
+\item{assembly_path}{Directory holding the assembly files named in the
+mapping file's optional `Assembly` column. A sample with an assembly is
+searched for its nuclear rDNA contigs instead of being assembled from
+reads, and its `R1`/`R2` may be left blank. See
+dev/design/20_USER_ASSEMBLIES.md.}
 
 \item{min_depth}{Minimum trimmed paired reads to proceed with assembly.}
 
@@ -64,6 +73,9 @@ bare scheduler name is an error rather than a config Nextflow cannot parse.}
 \item{check_reads}{(logical) Check that the read files named in the mapping
 file exist under `data_path` (default TRUE). Set FALSE when the data will
 be staged later.}
+
+\item{check_assemblies}{(logical) Check that the assembly files named in the
+mapping file exist under `assembly_path` (default TRUE).}
 
 \item{Rproj}{(logical) Initialize/open an RStudio project (default TRUE).}
 

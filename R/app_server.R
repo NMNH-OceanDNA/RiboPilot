@@ -137,7 +137,13 @@ app_server <- function(input, output, session) {
               AND COALESCE(x.ignore,0) = 0) AS kept,
            (SELECT p.path FROM path_scores p WHERE p.ID = s.ID AND p.auto_select = 1) AS sel_path,
            (SELECT round(MAX(p.score),3) FROM path_scores p WHERE p.ID = s.ID) AS best_score,
-           a.assemble_notes AS notes, a.time_stamp,
+           -- the rDNA contig search writes its own column because
+           -- load_assemblies() overwrites assemble_notes right after it; both
+           -- are shown as one Notes cell
+           TRIM(COALESCE(a.assemble_notes,'') ||
+             CASE WHEN COALESCE(a.find_rrna_notes,'') = '' THEN ''
+                  WHEN COALESCE(a.assemble_notes,'') = '' THEN a.find_rrna_notes
+                  ELSE '; ' || a.find_rrna_notes END) AS notes, a.time_stamp,
            'Details' AS details, 'Output' AS output
          FROM samples s LEFT JOIN assemble a ON s.ID = a.ID
            LEFT JOIN preprocess pp ON s.ID = pp.ID

@@ -9,7 +9,13 @@
 #'   sample id), a `Taxon` column, and `R1`/`R2` columns naming the paired read
 #'   inputs. Extra metadata columns are preserved.
 #' @param mapping_id Column in the mapping file with unique ids (default "ID").
-#' @param data_path Directory where the raw read data is located.
+#' @param data_path Directory where the raw read data is located. Not needed
+#'   when every sample supplies its own assembly.
+#' @param assembly_path Directory holding the assembly files named in the
+#'   mapping file's optional `Assembly` column. A sample with an assembly is
+#'   searched for its nuclear rDNA contigs instead of being assembled from
+#'   reads, and its `R1`/`R2` may be left blank. See
+#'   dev/design/20_USER_ASSEMBLIES.md.
 #' @param min_depth Minimum trimmed paired reads to proceed with assembly.
 #' @param executor Executor for the Nextflow pipeline. Ready to use as-is:
 #'   "conda" (default) for a local conda env, and "docker"/"local" for the
@@ -29,6 +35,8 @@
 #' @param check_reads (logical) Check that the read files named in the mapping
 #'   file exist under `data_path` (default TRUE). Set FALSE when the data will
 #'   be staged later.
+#' @param check_assemblies (logical) Check that the assembly files named in the
+#'   mapping file exist under `assembly_path` (default TRUE).
 #' @param Rproj (logical) Initialize/open an RStudio project (default TRUE).
 #' @param force (logical) Recreate an existing project database (default FALSE).
 #' @param ... Additional default processing parameters passed to [new_db()].
@@ -39,6 +47,7 @@ new_project <- function(
     mapping_fn = NULL,
     mapping_id = "ID",
     data_path = NULL,
+    assembly_path = NULL,
     min_depth = 2000000,
     executor = c("conda", "docker", "local", "awsbatch", "slurm", "pbs", "sge", "lsf", "NMNH_Hydra", "NOAA_SEDNA"),
     container = paste0("macguigand/ribopilot:", utils::packageVersion("RiboPilot")),
@@ -49,6 +58,7 @@ new_project <- function(
     profile_dir = ribopilot_config_dir(),
     ncbi_api_key = NULL,
     check_reads = TRUE,
+    check_assemblies = TRUE,
     Rproj = TRUE,
     force = FALSE,
     ...) {
@@ -61,6 +71,9 @@ new_project <- function(
 
   if (length(data_path) == 1) {
     data_path <- normalizePath(data_path)
+  }
+  if (length(assembly_path) == 1) {
+    assembly_path <- normalizePath(assembly_path)
   }
 
   # Mapping file ----
@@ -107,7 +120,9 @@ new_project <- function(
     mapping_fn = mapping_out,
     mapping_id = mapping_id,
     data_path = data_path,
+    assembly_path = assembly_path,
     check_reads = check_reads,
+    check_assemblies = check_assemblies,
     seeds_db = custom_seeds_db,
     labels_db = custom_labels_db,
     ref_dir = ref_dir,
@@ -136,6 +151,9 @@ new_project <- function(
     }
     ref_dirs <- unique(c(local_ref_dir(custom_seeds_db), local_ref_dir(custom_labels_db)))
     mounted <- normalizePath(c(path, if (length(data_path)) data_path), mustWork = FALSE)
+    # the assembly folder is not mounted by the config template, so it joins the
+    # extra mounts alongside any local reference databases
+    ref_dirs <- unique(c(ref_dirs, if (length(assembly_path)) assembly_path))
     ref_dirs <- setdiff(ref_dirs, mounted)
     if (length(ref_dirs)) {
       mounts <- if (engine == "singularity") {
@@ -149,8 +167,11 @@ new_project <- function(
   out_lines <- cfg_lines |>
     fill_config(list(
       CONTAINER_ID = container,
-      RAW_DIR = data_path,
-      ASMB_DIR = "NA",
+      # 'NA' sentinel rather than an empty string: an assembly-only project has
+      # no read folder, and an empty rawDir makes the container bind mount
+      # unparsable.
+      RAW_DIR = if (length(data_path) == 1 && nzchar(data_path)) data_path else "NA",
+      ASMB_DIR = if (length(assembly_path) == 1) assembly_path else "NA",
       MIN_DEPTH = format(min_depth, scientific = FALSE),
       GENETIC_CODE = "1",
       NCBI_API_KEY = ncbi_api_key %||% "",

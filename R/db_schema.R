@@ -189,3 +189,23 @@ backfill_coverage_median <- function(con, limit = NULL) {
   }
   invisible(n)
 }
+
+#' DDL for rrna_candidates: the rDNA contig search evidence for user assemblies.
+#'
+#' One row per contig barrnap hit in a user-supplied assembly, kept or dropped,
+#' so the app can say what the search found rather than only that it failed.
+#' Contigs with no rRNA hit at all are not recorded: a draft genome would
+#' otherwise write a row per scaffold.
+#' @noRd
+RRNA_CANDIDATES_DDL <- "CREATE TABLE IF NOT EXISTS rrna_candidates (
+  ID TEXT NOT NULL,
+  contig TEXT NOT NULL,
+  length INTEGER,
+  rrna_features TEXT,
+  rrna_bases INTEGER,
+  rank INTEGER,
+  selected INTEGER,
+  reason TEXT,
+  time_stamp INTEGER,
+  PRIMARY KEY (ID, contig)
+);"
