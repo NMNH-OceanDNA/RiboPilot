@@ -38,8 +38,6 @@ params.db = ''
 params.projectDir = '.'
 params.rawDir = ''
 params.asmbDir = ''
-// contigs per chunk of a user-supplied assembly sent to one rRNA scan task
-params.find_rrna_chunk_size = 5000
 params.ribopilot_src = ''
 params.taxdump_dir = ''
 params.ref_dir = ''

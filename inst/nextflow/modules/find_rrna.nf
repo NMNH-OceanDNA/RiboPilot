@@ -7,6 +7,12 @@
 // the same out/<id>/assemble folder, so score() and the whole tail of WF1 need
 // no knowledge of where the sequences came from.
 
+// Contigs per chunk of a user-supplied assembly sent to one rRNA scan task.
+// Declared HERE, not in main.nf: includes are resolved before the including
+// script's body runs, so a params default set in main.nf is still null when
+// this module reads it. A config or --find_rrna_chunk_size value still wins.
+params.find_rrna_chunk_size = 5000
+
 // Scan one chunk of the assembly for rRNA genes. Chunked so a draft genome is
 // searched in parallel and never read whole.
 process find_rrna_scan {

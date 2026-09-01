@@ -1297,7 +1297,10 @@ test_that("find_rrna emits the assembler's fasta contract", {
   expect_true(any(grepl("\\$\\{id\\}_assembly_0\\.fasta", nf)))
   # chunked so a draft genome is never read whole
   expect_true(any(grepl("splitFasta\\(by: params\\.find_rrna_chunk_size", nf)))
-  expect_true(any(grepl("params\\.find_rrna_chunk_size", main_nf)))
+  # the default must live in THIS module: includes resolve before main.nf's body
+  # runs, so a default set there reaches the splitFasta above as null
+  expect_true(any(grepl("^params\\.find_rrna_chunk_size = [0-9]+", nf)))
+  expect_false(any(grepl("params\\.find_rrna_chunk_size", main_nf)))
 })
 
 # ---- rawDir is only required by samples that actually have reads ----

@@ -12,6 +12,11 @@
 // list (parse_blast_candidates), which keeps the reference panel identical
 // while letting the screen see the whole database.
 
+// Declared here, not only in main.nf: includes are resolved before the
+// including script's body runs, so a main.nf default is still null when this
+// module reads it, and a null interpolates into the shell as the word 'null'.
+params.blastdb = ''
+
 process blast_genbank {
     cache false
     tag "${id}"
