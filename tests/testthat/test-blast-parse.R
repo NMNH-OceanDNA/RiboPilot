@@ -274,6 +274,18 @@ test_that("slen is parsed when present and NA when absent", {
   expect_true(is.na(d2$slen[1]))
 })
 
+test_that("qseqid is parsed when present and NA when absent", {
+  new_fmt <- paste("BB1", "Danio rerio 18S ribosomal RNA gene", 99.0, 80, "1e-90",
+    7955, 1500, 1600, 1, 1600, 1, 1600, 6997, "w1_500", sep = "\t")
+  d <- RiboPilot:::parse_blast_hits_file(write_hits(new_fmt))
+  expect_equal(d$qseqid[1], "w1_500")
+
+  old_fmt <- paste("BB2", "Danio rerio 18S ribosomal RNA gene", 99.0, 80, "1e-90",
+    7955, 1500, 1600, 1, 1600, 1, 1600, sep = "\t")
+  d2 <- RiboPilot:::parse_blast_hits_file(write_hits(old_fmt))
+  expect_true(is.na(d2$qseqid[1]))
+})
+
 test_that("slen reaches blast_hits", {
   con <- mk_blast_db()
   on.exit(DBI::dbDisconnect(con))

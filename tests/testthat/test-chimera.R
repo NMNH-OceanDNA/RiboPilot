@@ -82,3 +82,47 @@ test_that("an element with too few covering hits is unresolved and does not vote
   expect_equal(ch$score, 0)
   expect_equal(ch$availability, "uninformative")
 })
+
+chim_win <- function(starts, lineage, lineage_taxids, pident = 99, species = "sp") {
+  data.frame(start = starts, stop = starts + 499L, accession = paste0("a", starts),
+    species = species, staxid = 1L, lineage = lineage, lineage_taxids = lineage_taxids,
+    rank_distance = NA_integer_, hit_class = "nuclear_rrna", pident = pident,
+    bitscore = 500, db_source = "panel", stringsAsFactors = FALSE)
+}
+
+test_that("segments collapse adjacent windows sharing a class", {
+  fish <- "33208;7711;186623;8030;8016;8017;8018"
+  fung <- "4751;4890;147545;5042;5043;5044;5045"
+  w <- rbind(
+    chim_win(seq(1, 2001, 250), "A;Chordata;Actinopterygii;o;f;g;Salmo salar", fish, species = "Salmo salar"),
+    chim_win(seq(2251, 4001, 250), "F;Ascomycota;Eurotiomycetes;o;f;g;Penicillium sp.", fung, 96, "Penicillium sp."))
+  s <- RiboPilot:::chimera_segments(w)
+  expect_equal(nrow(s), 2)
+  expect_equal(s$taxon, c("Actinopterygii", "Eurotiomycetes"))
+  expect_equal(s$start, c(1L, 2251L))
+  expect_equal(s$stop, c(2500L, 4500L))
+  ch <- RiboPilot:::chimera_channel_windows(s)
+  expect_equal(ch$score, 0.5)
+  expect_equal(ch$junctions, 2375L)
+  expect_match(ch$reason, "Actinopterygii")
+  expect_match(ch$reason, "Penicillium")
+})
+
+test_that("a sliver segment cannot fire the window channel", {
+  fish <- "33208;7711;186623;8030;8016;8017;8018"
+  fung <- "4751;4890;147545;5042;5043;5044;5045"
+  w <- rbind(
+    chim_win(seq(1, 5001, 250), "A;Chordata;Actinopterygii;o;f;g;s", fish),
+    chim_win(seq(5251, 5501, 250), "F;Ascomycota;Eurotiomycetes;o;f;g;s", fung))
+  ch <- RiboPilot:::chimera_channel_windows(RiboPilot:::chimera_segments(w))
+  expect_equal(ch$score, 0)
+})
+
+test_that("identity-only mode reports junctions but scores zero", {
+  w <- chim_win(seq(1, 3001, 250), NA_character_, NA_character_,
+    pident = c(rep(99, 6), rep(80, 7)))
+  s <- RiboPilot:::chimera_segments(w)
+  ch <- RiboPilot:::chimera_channel_windows(s, identity_only = TRUE)
+  expect_equal(ch$score, 0)
+  expect_length(ch$junctions, 1)
+})

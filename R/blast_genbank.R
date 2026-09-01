@@ -228,10 +228,9 @@ derive_blast_products <- function(con, id, path = 1L, scaffold = 1L,
 #'
 #' Tolerates both the pre-v9 six-column format and the current
 #' `saccver stitle pident qcovs evalue staxids bitscore length qstart qend
-#' sstart send slen qseqid` (slen parsed at column 13; qseqid, column 14, is
-#' captured by the search but not read here), so a re-parse of an older run
-#' still works (with the extra columns NA and ranking falling back to
-#' pident*qcovs).
+#' sstart send slen qseqid` (slen parsed at column 13; qseqid at column 14),
+#' so a re-parse of an older run still works (with the extra columns NA and
+#' ranking falling back to pident*qcovs).
 #' @param hits_file Path to the blastn output.
 #' @return data.frame, one row per HSP; empty when there are no hits.
 #' @noRd
@@ -257,6 +256,7 @@ parse_blast_hits_file <- function(hits_file) {
       bitscore = num(g(7)), aln_len = int(g(8)),
       qstart = int(g(9)), qend = int(g(10)),
       sstart = int(g(11)), send = int(g(12)), slen = int(g(13)),
+      qseqid = g(14),
       stringsAsFactors = FALSE)
   })
   rows <- Filter(Negate(is.null), rows)

@@ -82,3 +82,81 @@ chimera_channel_genes <- function(gene_taxa, feats = NULL) {
       a$element, a$taxon, a$species, a$pident, b$element, b$taxon, b$species, b$pident),
     availability = "available")
 }
+
+#' Best hit per tile from a parse_blast_hits_file() frame
+#' @noRd
+chimera_window_hits <- function(hits, tiles, sample_taxids = NA_character_,
+                                taxdump_dir = NULL, db_source = NA_character_) {
+  ids <- sprintf("w%d_%d", tiles$start, tiles$stop)
+  best <- if (nrow(hits)) hits[order(hits$qseqid, -hits$bitscore), , drop = FALSE] else hits
+  best <- best[!duplicated(best$qseqid), , drop = FALSE]
+  i <- match(ids, best$qseqid)
+  lin <- tryCatch(tk_ranked_lineage(best$staxid, taxdump_dir), error = function(e) data.frame())
+  li <- if (nrow(lin)) match(best$staxid[i], lin$taxid) else rep(NA_integer_, length(i))
+  lt <- if (nrow(lin)) lin$lineage_taxids[li] else rep(NA_character_, length(i))
+  rd <- if (!is.na(sample_taxids) && nzchar(sample_taxids)) {
+    vapply(lt, function(x) if (is.na(x)) NA_integer_ else as.integer(rank_distance(x, sample_taxids)),
+      integer(1), USE.NAMES = FALSE)
+  } else rep(NA_integer_, length(i))
+  data.frame(start = tiles$start, stop = tiles$stop,
+    accession = best$accession[i], species = extract_species(best$title[i]),
+    staxid = best$staxid[i], lineage = if (nrow(lin)) lin$lineage[li] else NA_character_,
+    lineage_taxids = lt, rank_distance = rd,
+    hit_class = classify_hit_title(best$title[i]),
+    pident = best$pident[i], bitscore = best$bitscore[i], db_source = db_source,
+    stringsAsFactors = FALSE)
+}
+
+#' Name at a rank from a ';'-joined 7-field lineage
+#' @noRd
+chimera_rank_name <- function(lineage, rank = "class") {
+  k <- match(rank, RRNA_LINEAGE_RANKS)
+  vapply(strsplit(lineage %||% NA_character_, ";", fixed = TRUE), function(p) {
+    if (length(p) >= k && nzchar(p[k])) p[k] else NA_character_
+  }, character(1))
+}
+
+#' Collapse windows into runs sharing a name at the deciding rank
+#' @noRd
+chimera_segments <- function(windows, deciding = "class") {
+  if (!nrow(windows)) return(data.frame())
+  key <- chimera_rank_name(windows$lineage, deciding)
+  key[is.na(key)] <- ifelse(is.na(windows$pident[is.na(key)]), "nohit",
+    ifelse(windows$pident[is.na(key)] >= CHIMERA_PID_DROP, "high_id", "low_id"))
+  run <- cumsum(c(TRUE, key[-1] != key[-length(key)]))
+  do.call(rbind, lapply(split(seq_along(run), run), function(ix) {
+    w <- windows[ix, , drop = FALSE]
+    top <- ix[which.max(w$bitscore %||% rep(0, nrow(w)))]
+    data.frame(start = w$start[1], stop = w$stop[nrow(w)],
+      taxon = key[ix[1]], rank = deciding,
+      species = windows$species[top] %||% NA_character_,
+      pident = mean(w$pident, na.rm = TRUE), n_windows = nrow(w),
+      db_source = w$db_source[1], lineage_taxids = windows$lineage_taxids[top] %||% NA_character_,
+      stringsAsFactors = FALSE)
+  }))
+}
+
+#' Channel 2: adjacent segments of comparable length in different classes
+#' @noRd
+chimera_channel_windows <- function(segments, identity_only = FALSE) {
+  if (!nrow(segments)) return(chimera_unavailable())
+  s <- segments[segments$n_windows >= 2, , drop = FALSE]
+  if (nrow(s) < 2) return(list(score = 0, junctions = integer(0),
+    reason = sprintf("one lineage along the scaffold: %s", segments$taxon[1]), availability = "available"))
+  best <- NULL
+  for (i in seq_len(nrow(s) - 1)) {
+    a <- s[i, ]; b <- s[i + 1, ]
+    if (identical(a$taxon, b$taxon)) next
+    if (a$taxon %in% c("nohit") || b$taxon %in% c("nohit")) next
+    la <- a$stop - a$start + 1; lb <- b$stop - b$start + 1
+    if (min(la, lb) < 0.25 * max(la, lb)) next
+    if (!identity_only && rank_distance(a$lineage_taxids, b$lineage_taxids) < 5) next
+    best <- list(a = a, b = b, junction = (a$stop + b$start) %/% 2L)
+  }
+  if (is.null(best)) return(list(score = 0, junctions = integer(0),
+    reason = "no class-level switch between comparable segments", availability = "available"))
+  desc <- function(x) sprintf("%d-%d %s (%s, %.1f%%)", x$start, x$stop, x$taxon, x$species %||% "", x$pident)
+  list(score = if (identity_only) 0 else 0.5, junctions = best$junction,
+    reason = paste(desc(best$a), desc(best$b), sep = "; "),
+    availability = if (identity_only) "identity_only" else "available")
+}
