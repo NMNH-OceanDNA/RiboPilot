@@ -47,7 +47,8 @@ RUN mamba install -y \
         'hmmer' \
         'entrez-direct' \
         'biopython' \
-        'ncbi-datasets-cli' && \
+        'ncbi-datasets-cli' \
+        'ribovore=1.0.5' && \
     mamba clean -a -y
 
 # --- R + the RiboPilot package dependencies (installed from conda so the package

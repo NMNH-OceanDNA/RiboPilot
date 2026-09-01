@@ -27,7 +27,7 @@ include { preprocess } from './modules/preprocess.nf'
 include { assemble } from './modules/assemble.nf'
 include { fallback_assemble } from './modules/fallback.nf'
 include { find_rrna; stage_assembly } from './modules/find_rrna.nf'
-include { query_samples; query_annotate_units; query_sample_units; score; annotate_tools; reconcile; curate; triage; screen } from './modules/pipeline_r.nf'
+include { query_samples; query_annotate_units; query_sample_units; score; annotate_tools; reconcile; curate; triage; screen; chimera } from './modules/pipeline_r.nf'
 include { blast_genbank } from './modules/blast.nf'
 include { blast_ref_fetch; blast_ref_align } from './modules/blast_ref.nf'
 include { coverage } from './modules/coverage.nf'
@@ -169,10 +169,23 @@ workflow {
     // BLAST failed, which is the same trap the ref_done sentinel above avoids.
     screen(blast_genbank.out)
 
-    // Propose keep/drop/undecided once ALL of a sample's units are curated, so
-    // sibling concordance and the within-sample depth ratio see the full set.
-    // groupTuple emits one entry per sample when the upstream channel closes.
-    triage(curate.out.map { id, upath, uscaf -> tuple(id, "${upath}.${uscaf}") }
+    // Chimera detection needs annotation (reconcile), and reads depth/clips and
+    // blast_hits from the db, so it waits on coverage and blast_genbank the same
+    // way reference alignment waits on blast_ref_fetch: a scalar barrier, not a
+    // per-unit join.
+    chim_done = coverage.out.collect().map { 'ready' }.ifEmpty('ready')
+        .combine(blast_genbank.out.collect().map { 'ready' }.ifEmpty('ready'))
+        .map { 'ready' }
+    chimera(reconcile.out.combine(chim_done).map { id, upath, uscaf, _r -> tuple(id, upath, uscaf) })
+
+    // Propose keep/drop/undecided once ALL of a sample's units are curated AND
+    // chimera-checked, so sibling concordance and the within-sample depth ratio
+    // see the full set. remainder: true keeps a unit whose chimera step was
+    // ignored (chimera carries errorStrategy 'ignore').
+    unit_done = curate.out.map { id, upath, uscaf -> tuple("${id}.${upath}.${uscaf}", id) }
+        .join(chimera.out.map { id, upath, uscaf -> tuple("${id}.${upath}.${uscaf}", true) }, remainder: true)
+        .map { _k, id, _c -> id }
+    triage(unit_done.map { id -> tuple(id, true) }
         .groupTuple()
         .map { id, _units -> tuple(id, true) }
         .join(screen.out.map { id -> tuple(id, true) }, remainder: true)

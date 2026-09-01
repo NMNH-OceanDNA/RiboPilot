@@ -316,11 +316,26 @@ chimera_run_ribotyper <- function(fasta, outdir, ribotyper = "ribotyper") {
   system2(ribotyper, c("-f", shQuote(fasta), shQuote(outdir)), stdout = FALSE, stderr = FALSE)
 }
 
+#' Turn a labels FASTA into a usable blastn -db argument, building the BLAST
+#' db when one is not already sitting beside the FASTA.
+#' @noRd
+chimera_label_prefix <- function(label_db, workdir) {
+  if (is.null(label_db) || !nzchar(label_db)) return(label_db)
+  if (!grepl("\\.(fasta|fa)$", label_db, ignore.case = TRUE)) return(label_db)
+  if (file.exists(paste0(label_db, ".nin"))) return(label_db)
+  dir.create(workdir, showWarnings = FALSE, recursive = TRUE)
+  prefix <- file.path(workdir, "labels")
+  system2("makeblastdb", c("-in", shQuote(label_db), "-dbtype", "nucl", "-out", shQuote(prefix)),
+    stdout = FALSE, stderr = FALSE)
+  prefix
+}
+
 #' Run every channel for one unit and write chimera + chimera_windows
 #' @noRd
 chimera_unit <- function(con, id, path = 1L, scaffold = 1L, dbarg = NULL, taxdump_dir = NULL,
                          label_db = NULL, threads = 1L, workdir = tempfile("chimera_")) {
   dir.create(workdir, showWarnings = FALSE, recursive = TRUE)
+  label_db <- chimera_label_prefix(label_db, workdir)
   seq <- DBI::dbGetQuery(con, "SELECT sequence FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
     params = list(id, path, scaffold))$sequence[1]
   if (is.na(seq %||% NA) || !nzchar(seq)) return(invisible(NULL))

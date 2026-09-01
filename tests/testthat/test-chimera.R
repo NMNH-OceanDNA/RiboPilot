@@ -243,6 +243,21 @@ test_that("chimera_unit writes lineage-bearing rows with mocked tools", {
   expect_match(DBI::dbGetQuery(con, "SELECT reason FROM chimera")$reason, "Penicillium")
 })
 
+test_that("chimera_label_prefix passes through a non-fasta label_db unchanged", {
+  expect_equal(RiboPilot:::chimera_label_prefix("labels", tempdir()), "labels")
+  expect_null(RiboPilot:::chimera_label_prefix(NULL, tempdir()))
+})
+
+test_that("chimera_label_prefix builds a blast db for a labels fasta", {
+  skip_if_not_installed("withr")
+  skip_if(!nzchar(Sys.which("makeblastdb")))
+  d <- withr::local_tempdir()
+  fa <- file.path(d, "labels.fasta")
+  writeLines(c(">L1", "ACGTACGTACGTACGTACGT"), fa)
+  prefix <- RiboPilot:::chimera_label_prefix(fa, d)
+  expect_true(file.exists(paste0(prefix, ".nin")))
+})
+
 test_that("chimera_unit falls back to label_db when dbarg is NULL, scoring identity-only", {
   con <- chimera_test_con()
   on.exit(DBI::dbDisconnect(con))

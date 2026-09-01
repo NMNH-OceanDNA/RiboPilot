@@ -237,3 +237,27 @@ process curate {
     RIBOPILOT_SRC='${params.ribopilot_src}' rp_curate.R '${params.db}' '${id}' ${upath} ${uscaf}
     """
 }
+
+// Chimera detection per unit: per-gene taxonomy from stored HSPs, windowed
+// local BLAST, ribotyper on 18S/28S, depth steps and clip pileups.
+process chimera {
+    cache false
+    tag "${id}.${upath}.${uscaf}"
+    errorStrategy 'ignore'
+    input:
+    tuple val(id), val(upath), val(uscaf)
+    output:
+    tuple val(id), val(upath), val(uscaf)
+    script:
+    """
+    DBARG=""
+    if [ -z "\${RIBOPILOT_NO_LOCAL_BLAST:-}" ]; then
+        DBARG=\$(RIBOPILOT_SRC='${params.ribopilot_src}' rp_dbarg.R '${params.blastdb}' 2>/dev/null || echo "")
+    fi
+    LABELS=\$(sqlite3 -cmd '.timeout 10000' '${params.db}' "
+      SELECT COALESCE(ao.labels_db,'') FROM assemble a JOIN assemble_opts ao ON a.assemble_opts = ao.assemble_opts
+      WHERE a.ID='${id}' LIMIT 1;" 2>/dev/null || echo "")
+    RP_THREADS=${task.cpus} RIBOPILOT_SRC='${params.ribopilot_src}' rp_chimera.R \
+      '${params.db}' '${id}' ${upath} ${uscaf} "\$DBARG" '${params.taxdump_dir}' "\$LABELS"
+    """
+}
