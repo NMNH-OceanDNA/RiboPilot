@@ -164,3 +164,12 @@ test_that("a container project mounts what exists and nothing else", {
   expect_false(grepl("NA:NA", run))
   expect_match(grep("rawDir", cfg, value = TRUE)[1], "'NA'")
 })
+
+test_that("a failed rDNA search writes its note to one column only", {
+  # the Assemble table joins assemble_notes and find_rrna_notes into one cell,
+  # so the same sentence in both prints twice
+  src <- readLines(system.file("nextflow", "bin", "rp_find_rrna.R", package = "RiboPilot"))
+  upd <- grep("assemble_switch=3", src, value = TRUE)
+  expect_length(upd, 1L)
+  expect_true(grepl("assemble_notes=NULL", upd, fixed = TRUE))
+})

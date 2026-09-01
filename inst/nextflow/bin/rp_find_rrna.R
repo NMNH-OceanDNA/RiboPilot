@@ -37,10 +37,13 @@ local({
     } else {
       sprintf("no rDNA contig confirmed: %d contig(s) had rRNA hits but no 18S or 28S anchor", n_hit)
     }
+    # only find_rrna_notes: the app shows the two note columns as one cell, so
+    # writing the same sentence to both printed it twice. Nothing assembled
+    # here, so any assemble_notes left by an earlier run is stale.
     DBI::dbExecute(con,
       "UPDATE assemble SET paths=NULL, scaffolds=NULL, length=NULL, topology=NULL,
-       assemble_switch=3, assemble_notes=?, find_rrna_notes=?, time_stamp=? WHERE ID=?",
-      params = list(note, note, ts, id))
+       assemble_switch=3, assemble_notes=NULL, find_rrna_notes=?, time_stamp=? WHERE ID=?",
+      params = list(note, ts, id))
     # a re-run that found nothing must not leave last run's units queued
     DBI::dbExecute(con,
       "UPDATE annotate SET annotate_switch = 0
