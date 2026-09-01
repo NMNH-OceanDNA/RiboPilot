@@ -171,3 +171,94 @@ chimera_channel_windows <- function(segments, identity_only = FALSE) {
     reason = paste(desc(best$a), desc(best$b), sep = "; "),
     availability = if (identity_only) "identity_only" else "available")
 }
+
+CHIMERA_RIBOTYPER_SCORES <- c(InconsistentHits = 0.8, DuplicateRegion = 0.8, BothStrands = 0.8,
+  MultipleFamilies = 0.6, LowScoreDifference = 0.2)
+
+#' @noRd
+chimera_parse_ribotyper <- function(file) {
+  if (is.null(file) || !file.exists(file)) return(NULL)
+  ln <- readLines(file, warn = FALSE)
+  ln <- ln[!grepl("^#", ln) & nzchar(trimws(ln))]
+  if (!length(ln)) return(data.frame(target = character(0), pass = logical(0), codes = I(list())))
+  f <- strsplit(trimws(ln), "\\s+")
+  target <- vapply(f, `[`, character(1), 2)
+  pass <- vapply(f, `[`, character(1), 5) == "PASS"
+  feat <- vapply(f, function(x) if (length(x) >= 6) x[6] else "-", character(1))
+  codes <- lapply(feat, function(x) {
+    if (x == "-") return(character(0))
+    p <- strsplit(x, ";", fixed = TRUE)[[1]]
+    p <- p[grepl("^\\*", p)]
+    sub("^\\*([A-Za-z]+).*$", "\\1", p)
+  })
+  data.frame(target = target, pass = pass, codes = I(codes), stringsAsFactors = FALSE)
+}
+
+#' Channel 3: ribotyper structural failures, ITSx chimeric as a weak add-on
+#' @noRd
+chimera_channel_ribotyper <- function(rt, spans, itsx_chimeric = FALSE) {
+  score <- if (isTRUE(itsx_chimeric)) 0.2 else 0
+  parts <- if (isTRUE(itsx_chimeric)) "ITSx chimeric" else character(0)
+  if (is.null(rt) || !nrow(rt)) {
+    if (score == 0) return(chimera_unavailable())
+    return(list(score = score, junctions = integer(0), reason = parts, availability = "available"))
+  }
+  for (i in seq_len(nrow(rt))) {
+    cd <- rt$codes[[i]]; cd <- cd[cd %in% names(CHIMERA_RIBOTYPER_SCORES)]
+    if (!length(cd)) next
+    score <- max(score, CHIMERA_RIBOTYPER_SCORES[cd])
+    parts <- c(parts, sprintf("%s %s", sub("^u", "", rt$target[i]), paste(cd, collapse = ";")))
+  }
+  list(score = unname(score), junctions = integer(0),
+    reason = if (length(parts)) paste(parts, collapse = "; ") else "ribotyper passed",
+    availability = "available")
+}
+
+#' @noRd
+chimera_depth_steps <- function(depths, feats, step = CHIMERA_STEP, ratio = CHIMERA_DEPTH_STEP, edge = 100L) {
+  n <- length(depths)
+  if (n < 2 * step) return(integer(0))
+  b <- seq.int(step, n - step, by = step)
+  med <- function(a, z) stats::median(depths[a:z], na.rm = TRUE)
+  out <- integer(0)
+  for (p in b) {
+    l <- med(max(1, p - step + 1), p); r <- med(p + 1, min(n, p + step))
+    if (is.na(l) || is.na(r) || min(l, r) <= 0) next
+    if (max(l, r) / min(l, r) < ratio) next
+    edges <- c(feats$start, feats$stop)
+    if (length(edges) && any(abs(edges - p) <= edge)) next
+    out <- c(out, as.integer(p))
+  }
+  out
+}
+
+#' @noRd
+chimera_clip_pileups <- function(depths, clips, min_depth = 10, frac = CHIMERA_CLIP_FRAC, end = 50L) {
+  n <- min(length(depths), length(clips))
+  if (n <= 2 * end) return(integer(0))
+  i <- (end + 1):(n - end)
+  ok <- depths[i] >= min_depth & clips[i] / pmax(depths[i], 1) >= frac
+  as.integer(i[which(ok)])
+}
+
+#' Channel 4: depth steps and clip pileups
+#' @noRd
+chimera_channel_reads <- function(depths, clips, feats) {
+  if (is.null(depths) || !length(depths)) return(chimera_unavailable())
+  steps <- chimera_depth_steps(depths, feats)
+  pile <- if (!is.null(clips) && length(clips)) chimera_clip_pileups(depths, clips) else integer(0)
+  pile <- chimera_merge_positions(pile, 50L)
+  score <- max(if (length(steps)) 0.4 else 0, if (length(pile)) 0.7 else 0)
+  parts <- c(if (length(steps)) sprintf("depth step at %s", paste(steps, collapse = ",")),
+             if (length(pile)) sprintf("clip pileup at %s", paste(pile, collapse = ",")))
+  list(score = score, junctions = sort(unique(c(steps, pile))),
+    reason = if (length(parts)) paste(parts, collapse = "; ") else "no read-evidence breakpoints",
+    availability = if (is.null(clips) || !length(clips)) "depth_only" else "available")
+}
+
+#' Collapse positions closer than `gap` into their first member
+#' @noRd
+chimera_merge_positions <- function(x, gap) {
+  if (!length(x)) return(integer(0))
+  x <- sort(unique(x)); keep <- c(TRUE, diff(x) > gap); x[keep]
+}

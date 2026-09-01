@@ -143,3 +143,33 @@ test_that("a taxon segment next to an NA-lineage high-identity segment cannot fi
   ch <- RiboPilot:::chimera_channel_windows(RiboPilot:::chimera_segments(w))
   expect_equal(ch$score, 0)
 })
+
+test_that("ribotyper short output is parsed into codes", {
+  rt <- RiboPilot:::chimera_parse_ribotyper(test_path("fixtures/chimera/ribotyper.short.out"))
+  expect_equal(rt$target, c("u18S", "u28S"))
+  expect_equal(rt$pass, c(TRUE, FALSE))
+  expect_equal(rt$codes[[2]], c("InconsistentHits", "LowScoreDifference"))
+  ch <- RiboPilot:::chimera_channel_ribotyper(rt, data.frame(target = c("u18S", "u28S"), start = c(1L, 3000L)))
+  expect_equal(ch$score, 0.8)
+  expect_match(ch$reason, "28S.*InconsistentHits")
+})
+
+test_that("itsx chimeric alone is a weak ribotyper-channel signal", {
+  ch <- RiboPilot:::chimera_channel_ribotyper(NULL, NULL, itsx_chimeric = TRUE)
+  expect_equal(ch$score, 0.2)
+})
+
+test_that("depth steps ignore feature edges", {
+  dep <- c(rep(10, 1000), rep(50, 1000))
+  feats <- data.frame(element = "18S", start = 1L, stop = 1000L)
+  expect_length(RiboPilot:::chimera_depth_steps(dep, feats), 0)
+  expect_equal(RiboPilot:::chimera_depth_steps(dep, data.frame(element = character(0), start = integer(0), stop = integer(0))), 1000L)
+})
+
+test_that("clip pileups need depth and fraction", {
+  dep <- rep(20, 500); cl <- integer(500); cl[300] <- 8; cl[10] <- 8
+  expect_equal(RiboPilot:::chimera_clip_pileups(dep, cl), 300L)
+  ch <- RiboPilot:::chimera_channel_reads(dep, cl, data.frame(element = character(0), start = integer(0), stop = integer(0)))
+  expect_equal(ch$score, 0.7)
+  expect_equal(ch$junctions, 300L)
+})
