@@ -1844,7 +1844,7 @@ app_server <- function(input, output, session) {
   output$trim_chimera_hint <- renderText({
     u <- sel_unit(); req(u)
     ch <- app_query("SELECT junctions FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())
-    req(nrow(ch) == 1, nzchar(ch$junctions[1] %||% ""))
+    req(nrow(ch) == 1, nzchar(ch$junctions[1] %|NA|% ""))
     sprintf("suggested junctions: %s", ch$junctions[1])
   })
   # Dragging a brush over the plot sets the custom window from the x-range.

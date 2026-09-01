@@ -314,3 +314,13 @@ test_that("plot_chimera builds from stored windows and segments", {
   expect_s3_class(g, "ggplot")
   expect_true(any(vapply(g$layers, function(l) inherits(l$geom, "GeomRect"), logical(1))))
 })
+
+test_that("plot_chimera with NULL junctions/segments has no junction line", {
+  con <- chimera_test_con()
+  db <- DBI::dbGetInfo(con)$dbname
+  DBI::dbExecute(con, "INSERT INTO chimera (ID, path, scaffold, score, label) VALUES ('S1',1,1,0.0,'clean')")
+  DBI::dbDisconnect(con)
+  g <- RiboPilot:::plot_chimera("S1", 1L, 1L, db = db)
+  expect_s3_class(g, "ggplot")
+  expect_false(any(vapply(g$layers, function(l) inherits(l$geom, "GeomVline"), logical(1))))
+})

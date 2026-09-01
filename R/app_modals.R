@@ -718,7 +718,7 @@ plot_chimera <- function(id, path = 1L, scaffold = 1L, db = NULL) {
   seg <- if (!is.na(ch$segments[1])) jsonlite::fromJSON(ch$segments[1]) else data.frame()
   win <- q("SELECT start, stop, pident, lineage FROM chimera_windows WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start", list(id, path, scaffold))
   feats <- q("SELECT element, start, stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?", list(id, path, scaffold))
-  junc <- if (nzchar(ch$junctions[1] %||% "")) as.integer(strsplit(ch$junctions[1], ",")[[1]]) else integer(0)
+  junc <- if (nzchar(ch$junctions[1] %|NA|% "")) as.integer(strsplit(ch$junctions[1], ",")[[1]]) else integer(0)
   chan <- if (!is.na(ch$channels[1])) jsonlite::fromJSON(ch$channels[1]) else list()
   jsrc <- vapply(junc, function(j) paste(names(chan)[vapply(chan, function(x)
     any(abs((unlist(x$junctions) %||% integer(0)) - j) <= CHIMERA_JUNCTION_TOL), logical(1))], collapse = ","), character(1))
@@ -726,7 +726,7 @@ plot_chimera <- function(id, path = 1L, scaffold = 1L, db = NULL) {
   if (nrow(feats)) g <- g + ggplot2::geom_rect(data = feats, ggplot2::aes(xmin = start, xmax = stop, ymin = 0, ymax = 3),
     fill = "grey92", inherit.aes = FALSE)
   if (nrow(seg)) {
-    seg$label <- sprintf("%s (%s, %.0f%%)", seg$taxon, seg$species %||% "NA", seg$pident)
+    seg$label <- sprintf("%s (%s; %s, %.0f%%)", seg$taxon, seg$rank, seg$species %||% "NA", seg$pident)
     samp <- q("SELECT lineage_taxids FROM samples WHERE ID = ?", list(id))
     sample_lt <- if (nrow(samp)) samp$lineage_taxids[1] else NA_character_
     seg_lt <- if (!is.null(seg$lineage_taxids)) seg$lineage_taxids else rep(NA_character_, nrow(seg))
