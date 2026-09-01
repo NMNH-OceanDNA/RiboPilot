@@ -1571,6 +1571,25 @@ app_server <- function(input, output, session) {
     edit_tick(); u <- sel_unit(); req(u); plot_coverage(u$ID, u$path, u$scaffold)
   }, height = 128)
 
+  output$chimera_plot <- renderPlot({
+    edit_tick(); u <- sel_unit(); req(u); plot_chimera(u$ID, u$path, u$scaffold)
+  }, height = 168)
+  output$chimera_segments <- reactable::renderReactable({
+    u <- sel_unit(); req(u)
+    ch <- app_query("SELECT segments FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", list(u$ID, u$path, u$scaffold))
+    req(nrow(ch) == 1, !is.na(ch$segments[1]))
+    s <- jsonlite::fromJSON(ch$segments[1])
+    reactable::reactable(s[, intersect(c("start", "stop", "taxon", "rank", "species", "pident", "n_windows", "db_source"), names(s))],
+      compact = TRUE, pagination = FALSE, defaultColDef = reactable::colDef(minWidth = 70))
+  })
+  output$chimera_windows <- reactable::renderReactable({
+    u <- sel_unit(); req(u)
+    w <- app_query("SELECT start, stop, species, lineage, pident, bitscore, rank_distance, depth_median, clip_frac FROM chimera_windows WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
+      list(u$ID, u$path, u$scaffold))
+    req(nrow(w) > 0)
+    reactable::reactable(w, compact = TRUE, pagination = TRUE, defaultPageSize = 15, searchable = TRUE)
+  })
+
   # Annotate modal header badges: reviewed / problem / partial (live via refresh()).
   output$modal_status_badges <- renderUI({
     refresh()
@@ -1822,6 +1841,12 @@ app_server <- function(input, output, session) {
   output$trim_plot <- renderPlot({
     edit_tick(); u <- sel_unit(); req(u); w <- trim_window(); plot_trim(u$ID, u$path, u$scaffold, w[1], w[2])
   }, height = 230)
+  output$trim_chimera_hint <- renderText({
+    u <- sel_unit(); req(u)
+    ch <- app_query("SELECT junctions FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())
+    req(nrow(ch) == 1, nzchar(ch$junctions[1] %||% ""))
+    sprintf("suggested junctions: %s", ch$junctions[1])
+  })
   # Dragging a brush over the plot sets the custom window from the x-range.
   observeEvent(input$trim_brush, {
     b <- input$trim_brush; u <- sel_unit(); req(b, u)

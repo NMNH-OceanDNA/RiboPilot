@@ -299,3 +299,18 @@ test_that("scaffold column help and badge exist", {
   expect_s3_class(js, "JS_EVAL")
   expect_match(as.character(js), "likely")
 })
+
+test_that("plot_chimera builds from stored windows and segments", {
+  con <- chimera_test_con()
+  db <- DBI::dbGetInfo(con)$dbname
+  DBI::dbExecute(con, "INSERT INTO annotations (ID, path, scaffold, element, start, stop) VALUES ('S1',1,1,'18S',1,1800)")
+  DBI::dbExecute(con, "INSERT INTO chimera (ID, path, scaffold, score, label, junctions, segments) VALUES ('S1',1,1,0.9,'likely','2375',
+    '[{\"start\":1,\"stop\":2500,\"taxon\":\"Actinopterygii\",\"rank\":\"class\",\"species\":\"Salmo salar\",\"pident\":99,\"n_windows\":10},
+      {\"start\":2251,\"stop\":4500,\"taxon\":\"Eurotiomycetes\",\"rank\":\"class\",\"species\":\"Penicillium sp.\",\"pident\":97,\"n_windows\":9}]')")
+  DBI::dbExecute(con, "INSERT INTO chimera_windows (ID, path, scaffold, start, stop, pident, lineage) VALUES ('S1',1,1,1,500,99,'a;b;Actinopterygii'), ('S1',1,1,2251,2750,97,'f;a;Eurotiomycetes')")
+  DBI::dbDisconnect(con)
+  withr::local_options(list(ribopilot.db = db))
+  g <- RiboPilot:::plot_chimera("S1", 1L, 1L, db = db)
+  expect_s3_class(g, "ggplot")
+  expect_true(any(vapply(g$layers, function(l) inherits(l$geom, "GeomRect"), logical(1))))
+})
