@@ -88,7 +88,15 @@ chimera_channel_genes <- function(gene_taxa, feats = NULL) {
 chimera_window_hits <- function(hits, tiles, sample_taxids = NA_character_,
                                 taxdump_dir = NULL, db_source = NA_character_) {
   ids <- sprintf("w%d_%d", tiles$start, tiles$stop)
-  best <- if (nrow(hits)) hits[order(hits$qseqid, -hits$bitscore), , drop = FALSE] else hits
+  if (!nrow(hits)) {
+    return(data.frame(start = tiles$start, stop = tiles$stop,
+      accession = NA_character_, species = NA_character_,
+      staxid = NA_integer_, lineage = NA_character_,
+      lineage_taxids = NA_character_, rank_distance = NA_integer_,
+      hit_class = NA_character_, pident = NA_real_, bitscore = NA_real_,
+      db_source = db_source, stringsAsFactors = FALSE))
+  }
+  best <- hits[order(hits$qseqid, -hits$bitscore), , drop = FALSE]
   best <- best[!duplicated(best$qseqid), , drop = FALSE]
   i <- match(ids, best$qseqid)
   lin <- tryCatch(tk_ranked_lineage(best$staxid, taxdump_dir), error = function(e) data.frame())
@@ -150,7 +158,10 @@ chimera_channel_windows <- function(segments, identity_only = FALSE) {
     if (a$taxon %in% c("nohit") || b$taxon %in% c("nohit")) next
     la <- a$stop - a$start + 1; lb <- b$stop - b$start + 1
     if (min(la, lb) < 0.25 * max(la, lb)) next
-    if (!identity_only && rank_distance(a$lineage_taxids, b$lineage_taxids) < 5) next
+    if (!identity_only) {
+      if (is.na(a$lineage_taxids) || is.na(b$lineage_taxids)) next
+      if (rank_distance(a$lineage_taxids, b$lineage_taxids) < 5) next
+    }
     best <- list(a = a, b = b, junction = (a$stop + b$start) %/% 2L)
   }
   if (is.null(best)) return(list(score = 0, junctions = integer(0),

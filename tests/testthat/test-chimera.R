@@ -126,3 +126,20 @@ test_that("identity-only mode reports junctions but scores zero", {
   expect_equal(ch$score, 0)
   expect_length(ch$junctions, 1)
 })
+
+test_that("chimera_window_hits with no hits returns NA rows, one per tile", {
+  tiles <- data.frame(start = c(1L, 251L), stop = c(500L, 750L))
+  w <- RiboPilot:::chimera_window_hits(data.frame(), tiles)
+  expect_equal(nrow(w), nrow(tiles))
+  expect_true(all(is.na(w$accession)))
+  expect_true(all(is.na(w$pident)))
+})
+
+test_that("a taxon segment next to an NA-lineage high-identity segment cannot fire", {
+  fish <- "33208;7711;186623;8030;8016;8017;8018"
+  w <- rbind(
+    chim_win(seq(1, 2001, 250), "A;Chordata;Actinopterygii;o;f;g;s", fish),
+    chim_win(seq(2251, 4001, 250), NA_character_, NA_character_, pident = 95))
+  ch <- RiboPilot:::chimera_channel_windows(RiboPilot:::chimera_segments(w))
+  expect_equal(ch$score, 0)
+})
