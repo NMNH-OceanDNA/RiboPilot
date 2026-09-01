@@ -17,3 +17,17 @@ test_that("new_db creates the chimera tables and coverage.clips", {
   expect_true("segments" %in% DBI::dbListFields(con, "chimera"))
   expect_true("lineage" %in% DBI::dbListFields(con, "chimera_windows"))
 })
+
+test_that("write_coverage_units stores an aligned clip track", {
+  skip_if_not_installed("withr")
+  con <- chimera_test_con()
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "INSERT INTO assemblies (ID, path, scaffold, sequence) VALUES ('S1', 1, 1, 'ACGTACGT')")
+  dep <- tempfile(); cl <- tempfile()
+  writeLines(sprintf("1.1\t%d\t%d", 1:8, c(5, 5, 6, 6, 20, 20, 20, 20)), dep)
+  writeLines(c("1.1\t5\t7", "1.1\t6\t1"), cl)
+  RiboPilot:::write_coverage_units(con, "S1", dep, cl)
+  r <- DBI::dbGetQuery(con, "SELECT depths, clips FROM coverage WHERE ID = 'S1'")
+  expect_equal(r$depths, "5,5,6,6,20,20,20,20")
+  expect_equal(r$clips, "0,0,0,0,7,1,0,0")
+})

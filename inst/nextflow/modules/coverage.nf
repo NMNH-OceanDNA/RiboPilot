@@ -32,6 +32,7 @@ process coverage {
        WHERE ID='${id}' AND COALESCE(ignore,0)=0 ORDER BY path;")
 
     : > depth.txt
+    : > clips.txt
     : > bowtie2.log
     for P in \$PATHS; do
         sqlite3 -cmd '.timeout 10000' '${params.db}' \
@@ -51,12 +52,38 @@ process coverage {
         # and write_coverage_units() wrote no row for it. "Covered by nothing"
         # and "never measured" then rendered identically in the app -- blank.
         samtools depth -aa aln.bam >> depth.txt
+
+        # per-position count of reads soft-clipped >= 20 bp at that end. Plain
+        # awk (mawk in the image), not gawk: no three-arg match(), CIGAR ops
+        # are pulled out with substr()/RSTART/RLENGTH instead.
+        samtools view aln.bam | awk -v OFS='\t' '{
+            cig = \$6; pos = \$4; ref = \$3
+            if (match(cig, /^[0-9]+S/)) {
+                len = substr(cig, RSTART, RLENGTH - 1) + 0
+                if (len >= 20) print ref, pos
+            }
+            if (match(cig, /[0-9]+S\$/)) {
+                len = substr(cig, RSTART, RLENGTH - 1) + 0
+                if (len >= 20) {
+                    n = 0; s = cig
+                    while (match(s, /^[0-9]+[MDN=X]/)) {
+                        n += substr(s, 1, RLENGTH - 1) + 0
+                        s = substr(s, RLENGTH + 1)
+                    }
+                    while (match(s, /[0-9]+[MDN=X]/)) {
+                        n += substr(s, RSTART, RLENGTH - 1) + 0
+                        s = substr(s, RSTART + RLENGTH)
+                    }
+                    print ref, pos + n - 1
+                }
+            }
+        }' | sort | uniq -c | awk -v OFS='\t' '{print \$2, \$3, \$1}' >> clips.txt
         # keep one readable log across the loop, not one file per path
         { echo "=== path \$P ==="; cat path.bt2.log; } >> bowtie2.log
     done
 
     if [ -s depth.txt ]; then
-        RIBOPILOT_SRC='${params.ribopilot_src}' rp_coverage.R '${params.db}' '${id}' depth.txt
+        RIBOPILOT_SRC='${params.ribopilot_src}' rp_coverage.R '${params.db}' '${id}' depth.txt clips.txt
     fi
     """
 }
