@@ -178,3 +178,67 @@ test_that("clip pileups need depth and fraction", {
   expect_equal(ch$score, 0.7)
   expect_equal(ch$junctions, 300L)
 })
+
+chim_ch <- function(score, junctions = integer(0), availability = "available") {
+  list(score = score, junctions = junctions, reason = "r", availability = availability)
+}
+
+test_that("taxonomy-only evidence caps at suspect", {
+  s <- RiboPilot:::chimera_score(list(genes = chim_ch(0.6, 2400L), windows = chim_ch(0.5, 2375L),
+    ribotyper = chim_ch(0, availability = "unavailable"), reads = chim_ch(0, availability = "unavailable")))
+  expect_equal(s$score, 0.7)
+  expect_equal(s$label, "suspect")
+})
+
+test_that("corroborated junctions add a bonus and read evidence can reach likely", {
+  s <- RiboPilot:::chimera_score(list(genes = chim_ch(0.6, 2400L), windows = chim_ch(0.5, 2375L),
+    ribotyper = chim_ch(0), reads = chim_ch(0.7, 2410L)))
+  expect_equal(s$score, 0.95)
+  expect_equal(s$label, "likely")
+  expect_equal(s$junctions, 2375L)
+})
+
+test_that("labels follow the thresholds", {
+  expect_equal(RiboPilot:::chimera_label(0.29), "clean")
+  expect_equal(RiboPilot:::chimera_label(0.3), "suspect")
+  expect_equal(RiboPilot:::chimera_label(0.7), "suspect")
+  expect_equal(RiboPilot:::chimera_label(0.71), "likely")
+})
+
+test_that("chimera_unit writes lineage-bearing rows with mocked tools", {
+  con <- chimera_test_con()
+  on.exit(DBI::dbDisconnect(con))
+  seq <- paste(rep("ACGT", 1000), collapse = "")
+  DBI::dbExecute(con, "INSERT INTO assemblies (ID, path, scaffold, sequence) VALUES ('S1', 1, 1, ?)", params = list(seq))
+  DBI::dbExecute(con, "UPDATE samples SET lineage_taxids = '33208;7711;186623;8030;8016;8017;8018' WHERE ID = 'S1'")
+  DBI::dbExecute(con, "INSERT INTO annotations (ID, path, scaffold, element, start, stop) VALUES ('S1',1,1,'18S',1,1800), ('S1',1,1,'28S',2500,4000)")
+  DBI::dbExecute(con, "INSERT INTO coverage (ID, path, scaffold, depths, clips) VALUES ('S1',1,1,?,?)",
+    params = list(paste(rep(20, 4000), collapse = ","), paste(c(rep(0, 2199), 9, rep(0, 1800)), collapse = ",")))
+  fake_blast <- function(query, dbarg, task, out, ...) {
+    ids <- sub("^>", "", grep("^>", readLines(query), value = TRUE))
+    lines <- vapply(ids, function(w) {
+      st <- as.integer(sub("^w(\\d+)_.*", "\\1", w))
+      if (st < 2200) sprintf("NC_1\tSalmo salar 18S\t99.0\t100\t0\t8030\t900\t500\t1\t500\t1\t500\t1800\t%s", w)
+      else sprintf("KX_1\tPenicillium sp. 28S\t97.0\t100\t0\t5073\t880\t500\t1\t500\t1\t500\t4000\t%s", w)
+    }, character(1))
+    writeLines(lines, out); 0L
+  }
+  fake_rt <- function(fasta, outdir, ...) {
+    writeLines(c("#idx target class strnd p/f unexpected_features", "1 u18S SSU.Eukarya plus PASS -",
+      "2 u28S LSU.Eukarya plus PASS -"), file.path(outdir, "rt.ribotyper.short.out")); 0L
+  }
+  fake_lin <- function(taxids, dir) data.frame(taxid = c(8030L, 5073L),
+    lineage = c("Animalia;Chordata;Actinopterygii;Salmoniformes;Salmonidae;Salmo;Salmo salar",
+                "Fungi;Ascomycota;Eurotiomycetes;Eurotiales;Aspergillaceae;Penicillium;Penicillium sp."),
+    lineage_taxids = c("33208;7711;186623;8030;8016;8017;8018", "4751;4890;147545;5042;5043;5044;5045"))
+  testthat::local_mocked_bindings(chimera_run_blastn = fake_blast, chimera_run_ribotyper = fake_rt,
+    tk_ranked_lineage = fake_lin, .package = "RiboPilot")
+  r <- RiboPilot:::chimera_unit(con, "S1", 1L, 1L, dbarg = "panel", taxdump_dir = NULL)
+  expect_equal(r$label, "likely")
+  w <- DBI::dbGetQuery(con, "SELECT start, lineage FROM chimera_windows WHERE ID='S1' ORDER BY start")
+  expect_gt(nrow(w), 10)
+  expect_match(w$lineage[1], "Actinopterygii")
+  seg <- jsonlite::fromJSON(DBI::dbGetQuery(con, "SELECT segments FROM chimera")$segments)
+  expect_equal(seg$taxon, c("Actinopterygii", "Eurotiomycetes"))
+  expect_match(DBI::dbGetQuery(con, "SELECT reason FROM chimera")$reason, "Penicillium")
+})

@@ -262,3 +262,159 @@ chimera_merge_positions <- function(x, gap) {
   if (!length(x)) return(integer(0))
   x <- sort(unique(x)); keep <- c(TRUE, diff(x) > gap); x[keep]
 }
+
+#' @noRd
+chimera_label <- function(score) {
+  if (is.na(score)) return(NA_character_)
+  if (score < 0.3) "clean" else if (score <= 0.7) "suspect" else "likely"
+}
+
+#' Combine channels: max, corroboration bonus, taxonomy-only cap
+#' @noRd
+chimera_score <- function(channels) {
+  sc <- vapply(channels, function(x) x$score %||% 0, numeric(1))
+  score <- max(sc, 0)
+  js <- lapply(channels, function(x) as.integer(x$junctions %||% integer(0)))
+  corroborated <- integer(0)
+  nm <- names(js)
+  for (i in seq_along(js)) for (j in seq_along(js)) if (i < j) for (a in js[[i]]) {
+    near <- js[[j]][abs(js[[j]] - a) <= CHIMERA_JUNCTION_TOL]
+    if (length(near)) corroborated <- c(corroborated, min(a, near))
+  }
+  if (length(corroborated)) score <- min(1, score + 0.25)
+  strong <- sc[setdiff(nm, c("genes", "windows"))]
+  if (!length(strong) || all(strong == 0)) score <- min(score, CHIMERA_TAXONOMY_CAP)
+  all_j <- sort(unique(unlist(js)))
+  list(score = score, label = chimera_label(score),
+    junctions = if (length(corroborated)) chimera_merge_positions(corroborated, CHIMERA_JUNCTION_TOL) else all_j)
+}
+
+#' @noRd
+chimera_reason <- function(segments, channels, junctions) {
+  segtxt <- if (!is.null(segments) && nrow(segments)) paste(sprintf("%d-%d %s (%s, %.1f%%)",
+    segments$start, segments$stop, segments$taxon, segments$species %||% "", segments$pident), collapse = "; ")
+    else "no window segments"
+  jtxt <- if (length(junctions)) {
+    who <- vapply(junctions, function(j) paste(names(channels)[vapply(channels, function(x)
+      any(abs((x$junctions %||% integer(0)) - j) <= CHIMERA_JUNCTION_TOL), logical(1))], collapse = ","), character(1))
+    paste(sprintf("junction near %d (%s)", junctions, who), collapse = "; ")
+  } else "no junction"
+  extra <- vapply(channels[c("ribotyper", "reads")], function(x) x$reason %||% NA_character_, character(1))
+  extra <- extra[!is.na(extra)]
+  paste(c(segtxt, jtxt, extra), collapse = "; ")
+}
+
+#' @noRd
+chimera_run_blastn <- function(query, dbarg, task, out, threads = 1L, blastn = "blastn") {
+  system2(blastn, c("-db", shQuote(dbarg), "-query", shQuote(query), "-task", task,
+    "-outfmt", shQuote("6 saccver stitle pident qcovs evalue staxids bitscore length qstart qend sstart send slen qseqid"),
+    "-max_target_seqs", "5", "-max_hsps", "1", "-num_threads", threads), stdout = out, stderr = FALSE)
+}
+
+#' @noRd
+chimera_run_ribotyper <- function(fasta, outdir, ribotyper = "ribotyper") {
+  system2(ribotyper, c("-f", shQuote(fasta), shQuote(outdir)), stdout = FALSE, stderr = FALSE)
+}
+
+#' Run every channel for one unit and write chimera + chimera_windows
+#' @noRd
+chimera_unit <- function(con, id, path = 1L, scaffold = 1L, dbarg = NULL, taxdump_dir = NULL,
+                         blastn = "blastn", ribotyper = "ribotyper", workdir = tempfile()) {
+  dir.create(workdir, showWarnings = FALSE, recursive = TRUE)
+  seq <- DBI::dbGetQuery(con, "SELECT sequence FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(id, path, scaffold))$sequence[1]
+  if (is.na(seq %||% NA) || !nzchar(seq)) return(invisible(NULL))
+  feats <- DBI::dbGetQuery(con, "SELECT element, start, stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
+    params = list(id, path, scaffold))
+  hits <- tryCatch(DBI::dbGetQuery(con, "SELECT accession, bitscore, qstart, qend, lineage_taxids, lineage, species, pident FROM blast_hits WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(id, path, scaffold)), error = function(e) data.frame())
+  samp <- tryCatch(DBI::dbGetQuery(con, "SELECT lineage_taxids FROM samples WHERE ID = ?", params = list(id))$lineage_taxids[1],
+    error = function(e) NA_character_)
+  cov <- tryCatch(DBI::dbGetQuery(con, "SELECT depths, clips FROM coverage WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(id, path, scaffold)), error = function(e) data.frame())
+  itsx <- tryCatch(DBI::dbGetQuery(con, "SELECT chimeric FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(id, path, scaffold))$chimeric[1], error = function(e) NA)
+  track <- function(x) if (length(x) && !is.na(x) && nzchar(x)) as.numeric(strsplit(x, ",", fixed = TRUE)[[1]]) else NULL
+
+  # channel 1
+  gene_taxa <- if (nrow(hits) && nrow(feats)) chimera_gene_lca(hits, feats) else NULL
+  ch_genes <- if (is.null(gene_taxa)) chimera_unavailable() else chimera_channel_genes(gene_taxa, feats)
+
+  # channel 2
+  tiles <- chimera_tile(nchar(seq))
+  qf <- file.path(workdir, "windows.fa"); chimera_windows_fasta(seq, tiles, qf)
+  identity_only <- is.null(dbarg) || !nzchar(dbarg)
+  db_use <- if (identity_only) NULL else dbarg
+  windows <- NULL; ch_windows <- chimera_unavailable(); segments <- NULL
+  if (!is.null(db_use) && nzchar(db_use)) {
+    out1 <- file.path(workdir, "mega.txt")
+    chimera_run_blastn(qf, db_use, "megablast", out1, threads = 1L, blastn = blastn)
+    h <- parse_blast_hits_file(out1)
+    missing <- setdiff(sprintf("w%d_%d", tiles$start, tiles$stop), unique(h$qseqid))
+    if (length(missing)) {
+      keep <- tiles[sprintf("w%d_%d", tiles$start, tiles$stop) %in% missing, , drop = FALSE]
+      qf2 <- file.path(workdir, "windows2.fa"); chimera_windows_fasta(seq, keep, qf2)
+      out2 <- file.path(workdir, "dc.txt")
+      chimera_run_blastn(qf2, db_use, "dc-megablast", out2, threads = 1L, blastn = blastn)
+      h <- rbind(h, parse_blast_hits_file(out2))
+    }
+    windows <- chimera_window_hits(h, tiles, samp, taxdump_dir, db_source = db_use)
+    segments <- chimera_segments(windows)
+    ch_windows <- chimera_channel_windows(segments, identity_only = identity_only)
+  }
+
+  # channel 3
+  ch_rt <- chimera_unavailable(); codes <- NA_character_
+  rt_feats <- feats[feats$element %in% c("18S", "28S"), , drop = FALSE]
+  if (nrow(rt_feats) && nzchar(Sys.which(ribotyper))) {
+    rf <- file.path(workdir, "rt.fa")
+    st <- pmax(1L, rt_feats$start - 50L); en <- pmin(nchar(seq), rt_feats$stop + 50L)
+    writeLines(as.vector(rbind(paste0(">u", rt_feats$element), substring(seq, st, en))), rf)
+    rdir <- file.path(workdir, "rt"); dir.create(rdir, showWarnings = FALSE)
+    chimera_run_ribotyper(rf, rdir, ribotyper = ribotyper)
+    rt <- chimera_parse_ribotyper(list.files(rdir, "ribotyper\\.short\\.out$", full.names = TRUE)[1])
+    ch_rt <- chimera_channel_ribotyper(rt, data.frame(target = paste0("u", rt_feats$element), start = st),
+      itsx_chimeric = isTRUE(itsx == 1L))
+    if (!is.null(rt)) codes <- paste(unlist(rt$codes), collapse = ";")
+  } else if (isTRUE(itsx == 1L)) {
+    ch_rt <- chimera_channel_ribotyper(NULL, NULL, itsx_chimeric = TRUE)
+  }
+
+  # channel 4
+  depths <- if (nrow(cov)) track(cov$depths[1]) else NULL
+  clips <- if (nrow(cov) && "clips" %in% names(cov)) track(cov$clips[1]) else NULL
+  ch_reads <- chimera_channel_reads(depths, clips, feats)
+
+  channels <- list(genes = ch_genes, windows = ch_windows, ribotyper = ch_rt, reads = ch_reads)
+  sc <- chimera_score(channels)
+  reason <- chimera_reason(segments, channels, sc$junctions)
+
+  if (!is.null(windows) && nrow(windows) && !is.null(depths)) {
+    windows$depth_median <- vapply(seq_len(nrow(windows)), function(i)
+      stats::median(depths[windows$start[i]:min(windows$stop[i], length(depths))], na.rm = TRUE), numeric(1))
+    windows$clip_frac <- if (!is.null(clips)) vapply(seq_len(nrow(windows)), function(i) {
+      ix <- windows$start[i]:min(windows$stop[i], length(clips))
+      max(clips[ix] / pmax(depths[ix], 1), na.rm = TRUE) }, numeric(1)) else NA_real_
+  } else if (!is.null(windows)) { windows$depth_median <- NA_real_; windows$clip_frac <- NA_real_ }
+
+  ts <- as.integer(Sys.time())
+  row <- data.frame(ID = id, path = path, scaffold = scaffold, score = sc$score, label = sc$label,
+    junctions = paste(sc$junctions, collapse = ","), reason = reason,
+    segments = if (!is.null(segments) && nrow(segments)) jsonlite::toJSON(segments, dataframe = "rows") else NA_character_,
+    gene_taxa = if (!is.null(gene_taxa)) jsonlite::toJSON(gene_taxa, dataframe = "rows") else NA_character_,
+    channels = jsonlite::toJSON(channels, auto_unbox = TRUE),
+    ribotyper_codes = codes, db_source = db_use %||% NA_character_, time_stamp = ts,
+    stringsAsFactors = FALSE)
+  DBI::dbWithTransaction(con, {
+    DBI::dbExecute(con, "DELETE FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", params = list(id, path, scaffold))
+    DBI::dbExecute(con, "DELETE FROM chimera_windows WHERE ID = ? AND path = ? AND scaffold = ?", params = list(id, path, scaffold))
+    DBI::dbAppendTable(con, "chimera", row)
+    if (!is.null(windows) && nrow(windows)) {
+      windows$ID <- id; windows$path <- path; windows$scaffold <- scaffold
+      DBI::dbAppendTable(con, "chimera_windows", windows[, c("ID", "path", "scaffold", "start", "stop", "accession",
+        "species", "staxid", "lineage", "lineage_taxids", "rank_distance", "hit_class", "pident", "bitscore",
+        "depth_median", "clip_frac", "db_source")])
+    }
+  })
+  as.list(row)
+}
