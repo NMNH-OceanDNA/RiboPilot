@@ -1,3 +1,7 @@
+test_that("chimera_unit is exported", {
+  expect_true("chimera_unit" %in% getNamespaceExports("RiboPilot"))
+})
+
 test_that("new_db creates the chimera tables and coverage.clips", {
   skip_if_not_installed("withr")
   d <- withr::local_tempdir()
@@ -291,6 +295,26 @@ test_that("chimera_unit falls back to label_db when dbarg is NULL, scoring ident
   ch <- jsonlite::fromJSON(r$channels)
   expect_equal(ch$windows$availability, "identity_only")
   expect_equal(ch$windows$score, 0)
+})
+
+test_that("channel 2 drops to no_taxonomy when nothing resolves, even with a real dbarg", {
+  con <- chimera_test_con()
+  on.exit(DBI::dbDisconnect(con))
+  seq <- paste(rep("ACGT", 1000), collapse = "")
+  DBI::dbExecute(con, "INSERT INTO assemblies (ID, path, scaffold, sequence) VALUES ('S1', 1, 1, ?)", params = list(seq))
+  DBI::dbExecute(con, "INSERT INTO annotations (ID, path, scaffold, element, start, stop) VALUES ('S1',1,1,'18S',1,1800), ('S1',1,1,'28S',2500,4000)")
+  fake_blast <- function(query, dbarg, task, out, ...) {
+    ids <- sub("^>", "", grep("^>", readLines(query), value = TRUE))
+    lines <- vapply(ids, function(w) sprintf("NC_1\thit\t99.0\t100\t0\t8030\t900\t500\t1\t500\t1\t500\t4000\t%s", w),
+      character(1))
+    writeLines(lines, out); 0L
+  }
+  fake_lin <- function(taxids, dir) data.frame(taxid = integer(0), lineage = character(0), lineage_taxids = character(0))
+  testthat::local_mocked_bindings(chimera_run_blastn = fake_blast, tk_ranked_lineage = fake_lin, .package = "RiboPilot")
+  r <- RiboPilot:::chimera_unit(con, "S1", 1L, 1L, dbarg = "panel", taxdump_dir = NULL)
+  channels <- jsonlite::fromJSON(r$channels)
+  expect_equal(channels$windows$availability, "no_taxonomy")
+  expect_equal(channels$windows$score, 0)
 })
 
 test_that("scaffold column help and badge exist", {

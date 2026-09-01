@@ -231,7 +231,9 @@ risk_flags <- function(chimeric, ann, seq, chimera_label = NA_character_, chimer
       (nrow(ann) > 1 && any(ann$start[-1] <= ann$stop[-nrow(ann)]))
   }
   chim_tag <- if (chim) {
-    if (!is.na(chimera_reason) && nzchar(chimera_reason)) sprintf("chimeric(%s)", chimera_reason) else "chimeric"
+    if (!is.na(chimera_reason) && nzchar(chimera_reason)) {
+      sprintf("chimeric(%s)", gsub(";", ",", chimera_reason, fixed = TRUE))
+    } else "chimeric"
   }
   flags <- c(chim_tag, if (gap_in_rdna) "gap_in_rDNA", if (misassembly) "misassembly")
   list(chimeric = chim, gap_in_rdna = gap_in_rdna, misassembly = misassembly,
@@ -280,7 +282,7 @@ submission_readme <- function(label) {
     "gapped between ITS regions, or misassembled. RiboPilot re-checks each",
     paste0("sequence the same way; see the submission_risk column in ", label, "_summary.csv."),
     "Flagged sequences are still exported (warn-only); review before submitting:",
-    "  chimeric     ITSx flagged mixed origins",
+    "  chimeric     the chimera detector or ITSx flagged mixed origins",
     "  gap_in_rDNA  an assembly-gap (N-run) falls inside the 18S..28S span",
     "  misassembly  features overlap or are out of 5'->3' order",
     ""), collapse = "\n")
@@ -308,6 +310,7 @@ export_summary_df <- function(con, units) {
      JOIN assemblies asm ON asm.ID = s.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
      WHERE s.ID IN (%s)")
   chi <- fetch("SELECT ID, path, scaffold, chimeric FROM annotate WHERE ID IN (%s)")
+  chm <- fetch("SELECT ID, path, scaffold, label, reason FROM chimera WHERE ID IN (%s)")
   ann <- fetch("SELECT ID, path, scaffold, element, start, stop FROM annotations
                 WHERE ID IN (%s) ORDER BY ID, path, scaffold, start")
   asm <- fetch("SELECT ID, path, scaffold, sequence FROM assemblies WHERE ID IN (%s)")
@@ -322,11 +325,15 @@ export_summary_df <- function(con, units) {
   anni <- if (nrow(ann)) split(seq_len(nrow(ann)), unit_key(ann$ID, ann$path, ann$scaffold)) else list()
   seqv <- if (nrow(asm)) asm$sequence[match(ukey, unit_key(asm$ID, asm$path, asm$scaffold))] else rep(NA_character_, n)
   chiv <- if (nrow(chi)) chi$chimeric[match(ukey, unit_key(chi$ID, chi$path, chi$scaffold))] else rep(NA_integer_, n)
+  cmi <- if (nrow(chm)) match(ukey, unit_key(chm$ID, chm$path, chm$scaffold)) else rep(NA_integer_, n)
+  chm_label <- if (nrow(chm)) chm$label[cmi] else rep(NA_character_, n)
+  chm_reason <- if (nrow(chm)) chm$reason[cmi] else rep(NA_character_, n)
   v <- unit_variant_facts_df(scr, units)
 
   organism <- pick(m, "organism", NA_character_)
   risk <- vapply(seq_len(n), function(i) {
-    note <- risk_flags(chiv[i], ann[anni[ukey[i]][[1]], , drop = FALSE], seqv[i])$note
+    note <- risk_flags(chiv[i], ann[anni[ukey[i]][[1]], , drop = FALSE], seqv[i],
+      chimera_label = chm_label[i], chimera_reason = chm_reason[i])$note
     # NCBI rejects a record with no [organism=]; flag it rather than drop the record
     if (is.na(organism[i]) || !nzchar(trimws(organism[i]))) {
       note <- paste(c(if (nzchar(note)) note, "missing_organism"), collapse = ";")

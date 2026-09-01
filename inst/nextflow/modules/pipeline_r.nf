@@ -238,6 +238,12 @@ process curate {
     """
 }
 
+// Declared here, not only in main.nf: includes are resolved before the
+// including script's body runs, so a main.nf default is still null when this
+// module reads it, and a null interpolates into the shell as the word 'null'.
+params.blastdb = ''
+params.taxdump_dir = ''
+
 // Chimera detection per unit: per-gene taxonomy from stored HSPs, windowed
 // local BLAST, ribotyper on 18S/28S, depth steps and clip pileups.
 process chimera {

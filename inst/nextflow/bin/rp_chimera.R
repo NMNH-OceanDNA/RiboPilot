@@ -13,4 +13,4 @@ r <- local({
     taxdump_dir = opt(6), label_db = opt(7), threads = as.integer(Sys.getenv("RP_THREADS", "1")),
     workdir = file.path(getwd(), "chimera_work"))
 })
-cat("chimera:", a[2], a[3], a[4], "-", r$label %||% "skipped", "\n")
+cat("chimera:", a[2], a[3], a[4], "-", if (is.null(r)) "skipped" else r$label, "\n")

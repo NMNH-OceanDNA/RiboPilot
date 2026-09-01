@@ -138,7 +138,7 @@ chimera_segments <- function(windows, deciding = "class") {
     data.frame(start = w$start[1], stop = w$stop[nrow(w)],
       taxon = key[ix[1]], rank = deciding,
       species = windows$species[top] %||% NA_character_,
-      pident = mean(w$pident, na.rm = TRUE), n_windows = nrow(w),
+      pident = if (all(is.na(w$pident))) NA_real_ else mean(w$pident, na.rm = TRUE), n_windows = nrow(w),
       db_source = w$db_source[1], lineage_taxids = windows$lineage_taxids[top] %||% NA_character_,
       stringsAsFactors = FALSE)
   }))
@@ -195,6 +195,7 @@ chimera_parse_ribotyper <- function(file) {
 }
 
 #' Channel 3: ribotyper structural failures, ITSx chimeric as a weak add-on
+#' spans is accepted for a future model-coordinate junction mapping; unused in v1.
 #' @noRd
 chimera_channel_ribotyper <- function(rt, spans, itsx_chimeric = FALSE) {
   score <- if (isTRUE(itsx_chimeric)) 0.2 else 0
@@ -331,7 +332,17 @@ chimera_label_prefix <- function(label_db, workdir) {
 }
 
 #' Run every channel for one unit and write chimera + chimera_windows
-#' @noRd
+#' @param con Open DBI connection.
+#' @param id Sample ID.
+#' @param path,scaffold Assembly unit within the sample.
+#' @param dbarg blastn -db argument for the windowed local BLAST channel, or
+#'   NULL/"" to fall back to `label_db` in identity-only mode.
+#' @param taxdump_dir Local NCBI taxdump directory (or NULL for the bundled one).
+#' @param label_db Path to a labels FASTA/BLAST db used when `dbarg` is absent.
+#' @param threads blastn thread count.
+#' @param workdir Scratch directory for intermediate files.
+#' @return (invisibly) the written `chimera` row, as a list.
+#' @export
 chimera_unit <- function(con, id, path = 1L, scaffold = 1L, dbarg = NULL, taxdump_dir = NULL,
                          label_db = NULL, threads = 1L, workdir = tempfile("chimera_")) {
   dir.create(workdir, showWarnings = FALSE, recursive = TRUE)
@@ -374,8 +385,11 @@ chimera_unit <- function(con, id, path = 1L, scaffold = 1L, dbarg = NULL, taxdum
       h <- rbind(h, parse_blast_hits_file(out2))
     }
     windows <- chimera_window_hits(h, tiles, samp, taxdump_dir, db_source = db_use)
+    no_taxonomy <- !identity_only && all(is.na(windows$lineage))
+    if (no_taxonomy) identity_only <- TRUE
     segments <- chimera_segments(windows)
     ch_windows <- chimera_channel_windows(segments, identity_only = identity_only)
+    if (no_taxonomy) ch_windows$availability <- "no_taxonomy"
   }
 
   # channel 3
