@@ -17,7 +17,7 @@ singularity {
     enabled = true
     autoMounts = true
     pullTimeout = '60 min'   // large image on Hydra's shared filesystem can exceed the 20 min default
-    runOptions = "-B ${params.projectDir} -B ${params.rawDir} -B /scratch02/<<EXTRA_MOUNTS>>"
+    runOptions = "-B ${params.projectDir} -B /scratch02/<<EXTRA_MOUNTS>>"
 }
 
 // Hydra has no h_rss or mem_free resources, and Nextflow adds

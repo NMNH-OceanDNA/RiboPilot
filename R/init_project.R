@@ -135,9 +135,13 @@ new_project <- function(
     stop("Config file not found.")
   }
   cfg_lines <- readLines(config)
-  # For container executors, bind-mount the directories holding any LOCAL
-  # seed/label reference DBs so Nextflow's staged symlinks resolve inside the
-  # container (the project + raw dirs are already mounted).
+  # For container executors, bind-mount every directory the pipeline reads that
+  # is not the project folder: the reads, the supplied assemblies, and the
+  # folders holding any LOCAL seed/label reference DBs (Nextflow stages those as
+  # symlinks, which resolve inside the container only if their target is
+  # mounted). The templates mount the project folder and nothing else, so a
+  # project with no reads has no unmountable path to name: "-v NA:NA" is not a
+  # mount docker or singularity accepts.
   extra_mounts <- ""
   engine <- config_container_engine(cfg_lines)
   if (!is.na(engine)) {
@@ -149,17 +153,16 @@ new_project <- function(
         NULL
       }
     }
-    ref_dirs <- unique(c(local_ref_dir(custom_seeds_db), local_ref_dir(custom_labels_db)))
-    mounted <- normalizePath(c(path, if (length(data_path)) data_path), mustWork = FALSE)
-    # the assembly folder is not mounted by the config template, so it joins the
-    # extra mounts alongside any local reference databases
-    ref_dirs <- unique(c(ref_dirs, if (length(assembly_path)) assembly_path))
-    ref_dirs <- setdiff(ref_dirs, mounted)
-    if (length(ref_dirs)) {
+    dirs <- unique(c(
+      if (length(data_path) == 1 && nzchar(data_path)) data_path,
+      if (length(assembly_path) == 1 && nzchar(assembly_path)) assembly_path,
+      local_ref_dir(custom_seeds_db), local_ref_dir(custom_labels_db)))
+    dirs <- setdiff(dirs, normalizePath(path, mustWork = FALSE))
+    if (length(dirs)) {
       mounts <- if (engine == "singularity") {
-        paste0("-B ", ref_dirs)
+        paste0("-B ", dirs)
       } else {
-        paste0("-v ", ref_dirs, ":", ref_dirs)
+        paste0("-v ", dirs, ":", dirs)
       }
       extra_mounts <- paste0(" ", paste(mounts, collapse = " "))
     }
@@ -167,9 +170,10 @@ new_project <- function(
   out_lines <- cfg_lines |>
     fill_config(list(
       CONTAINER_ID = container,
-      # 'NA' sentinel rather than an empty string: an assembly-only project has
-      # no read folder, and an empty rawDir makes the container bind mount
-      # unparsable.
+      # 'NA' sentinel rather than an empty string for a project with no reads:
+      # rawDir is only ever pasted onto a read file name, which never happens
+      # for a sample that supplied its own assembly, and a visible sentinel says
+      # so where an empty string would read as a missing setting.
       RAW_DIR = if (length(data_path) == 1 && nzchar(data_path)) data_path else "NA",
       ASMB_DIR = if (length(assembly_path) == 1) assembly_path else "NA",
       MIN_DEPTH = format(min_depth, scientific = FALSE),

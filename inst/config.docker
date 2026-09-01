@@ -4,11 +4,12 @@
 // rather than a local conda env.
 //
 // The shell / R-script processes open the project SQLite database directly by
-// path (RiboPilot does not use nf-sqldb), so the project directory and the raw
-// read directory are bind-mounted into the container via docker.runOptions.
-// Nextflow already mounts each task's work directory. new_project() also mounts
-// the directories holding any local seed/label reference databases (the
-// <<EXTRA_MOUNTS>> slot); add more -v mounts here if you need them.
+// path (RiboPilot does not use nf-sqldb), so the project directory is
+// bind-mounted into the container via docker.runOptions. Nextflow already
+// mounts each task's work directory. new_project() mounts everything else the
+// run reads -- the raw reads, any supplied assemblies, and the folders holding
+// local seed/label reference databases -- into the <<EXTRA_MOUNTS>> slot; add
+// more -v mounts here if you need them.
 
 // -u and fixOwnership keep container output owned by you. Without them SQLite
 // creates root-owned .sqlite-wal / .sqlite-shm files next to the project
@@ -16,7 +17,7 @@
 docker {
     enabled = true
     fixOwnership = true
-    runOptions = "-u \$(id -u):\$(id -g) -v ${params.projectDir}:${params.projectDir} -v ${params.rawDir}:${params.rawDir}<<EXTRA_MOUNTS>>"
+    runOptions = "-u \$(id -u):\$(id -g) -v ${params.projectDir}:${params.projectDir}<<EXTRA_MOUNTS>>"
 }
 
 process {

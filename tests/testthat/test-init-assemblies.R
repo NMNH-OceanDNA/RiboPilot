@@ -136,3 +136,31 @@ test_that("a sample that dropped nothing gets no section at all", {
   expect_null(RiboPilot:::rejected_contigs_section("S2"))
   expect_false(is.null(RiboPilot:::rejected_contigs_section("S1")))
 })
+
+test_that("a container project mounts what exists and nothing else", {
+  skip_on_os("windows")
+  p <- mk_asmb_project(
+    data.frame(ID = "S1", Taxon = "Danio rerio", R1 = "", R2 = "",
+      Assembly = "S1.fa", stringsAsFactors = FALSE),
+    assemblies = "S1.fa")
+  proj <- withr::local_tempdir()
+
+  suppressMessages(suppressWarnings(new_project(path = proj,
+    mapping_fn = p$mapping_fn, assembly_path = p$asmb_dir,
+    # an explicit registry skips the Docker Hub lookup
+    container = "ghcr.io/example/ribopilot:test",
+    executor = "docker", Rproj = FALSE, force = TRUE,
+    custom_seeds_db = p$mapping_fn, custom_labels_db = p$mapping_fn)))
+
+  cfg <- readLines(file.path(proj, ".config"))
+  run <- grep("^\\s*runOptions", cfg, value = TRUE)
+  expect_length(run, 1)
+  # the supplied assemblies are mounted...
+  expect_match(run, normalizePath(p$asmb_dir), fixed = TRUE)
+  # ...and the read folder that does not exist is not, in any form: "-v NA:NA"
+  # is not a mount docker accepts, and it used to be written for every project
+  # with no reads
+  expect_false(grepl("rawDir", run))
+  expect_false(grepl("NA:NA", run))
+  expect_match(grep("rawDir", cfg, value = TRUE)[1], "'NA'")
+})

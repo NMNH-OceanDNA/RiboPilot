@@ -16,7 +16,7 @@ executor {
 singularity {
     enabled = true
     autoMounts = true
-    runOptions = "-B ${params.projectDir} -B ${params.rawDir}<<EXTRA_MOUNTS>>"
+    runOptions = "-B ${params.projectDir}<<EXTRA_MOUNTS>>"
 }
 
 process {

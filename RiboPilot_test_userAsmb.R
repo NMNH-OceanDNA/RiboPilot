@@ -126,8 +126,10 @@ new_project(
   assembly_path    = asmb_dir,
   custom_seeds_db  = SEEDS,
   custom_labels_db = LABELS,
-  executor         = "conda",
-  Rproj            = FALSE
+  executor         = "docker",
+  container        = "ribopilot:userAsmb",   # built with docker/deploy-local.sh userAsmb
+  Rproj            = FALSE,
+  force            = TRUE
 )
 
 # Now run it from the app: Assemble tab, tick the samples, press Update.
