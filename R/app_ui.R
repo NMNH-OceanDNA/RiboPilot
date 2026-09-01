@@ -62,8 +62,12 @@ app_ui <- function(request) {
               # Groups answers "what gets built", Samples answers "where did my
               # sample go"; the second is also the only surface a bulk move can
               # act on, since the app's selection keys on the table's ID column.
-              shinyWidgets::radioGroupButtons("ref_view", label = NULL, size = "sm",
-                choices = c("Groups", "Samples"), selected = "Groups"),
+              # the form-group's bottom margin has no label above it to balance,
+              # so centering the row would sit the toggle above the buttons
+              htmltools::tagAppendAttributes(
+                shinyWidgets::radioGroupButtons("ref_view", label = NULL, size = "sm",
+                  choices = c("Groups", "Samples"), selected = "Groups"),
+                style = "margin-bottom:0;"),
               bttn("ref_suggest_btn", "Propose groups", "wand-magic-sparkles"),
               bttn("ref_dir_btn", "Settings", "gear"))),
           shiny::conditionalPanel("input.mode == 'Reference' && input.ref_view == 'Samples'",
