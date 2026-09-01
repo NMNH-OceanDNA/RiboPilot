@@ -133,6 +133,7 @@ test_that("unit_evidence surfaces the screen reason", {
     bitscore REAL, is_nuclear_rrna INT)")
   DBI::dbExecute(con, "CREATE TABLE path_scores(ID TEXT, path INT, score REAL)")
   DBI::dbExecute(con, RiboPilot:::SCREEN_DDL)
+  DBI::dbExecute(con, RiboPilot:::CHIMERA_DDL)
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S1','Danio rerio',NULL)")
   DBI::dbExecute(con, "INSERT INTO assemblies (ID,path,scaffold,length) VALUES('S1',1,1,500)")
   DBI::dbExecute(con,

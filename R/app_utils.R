@@ -177,6 +177,7 @@ unit_evidence <- function(id) {
        sc.variant_class, sc.variant_group, sc.variant_identity,
        ROUND(ps.score, 3) AS path_score,
        s.lineage_taxids AS sample_taxids, s.sci_name,
+       ch.label AS chimera_label, ch.reason AS chimera_reason,
        (SELECT GROUP_CONCAT(n.element) FROM
           (SELECT element FROM annotations WHERE ID = a.ID AND path = a.path
              AND scaffold = a.scaffold ORDER BY start) n) AS elements
@@ -187,6 +188,7 @@ unit_evidence <- function(id) {
      -- scored per path, shown per scaffold: the whole path is the thing scored
      LEFT JOIN path_scores ps ON ps.ID = a.ID AND ps.path = a.path
      LEFT JOIN samples s      ON s.ID = a.ID
+     LEFT JOIN chimera ch     ON ch.ID = a.ID AND ch.path = a.path AND ch.scaffold = a.scaffold
      WHERE a.ID = ? ORDER BY a.path, a.scaffold", params = list(id))
   if (nrow(d) == 0) {
     return(d)

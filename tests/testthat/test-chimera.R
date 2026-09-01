@@ -292,3 +292,10 @@ test_that("chimera_unit falls back to label_db when dbarg is NULL, scoring ident
   expect_equal(ch$windows$availability, "identity_only")
   expect_equal(ch$windows$score, 0)
 })
+
+test_that("scaffold column help and badge exist", {
+  expect_true(nzchar(RiboPilot:::SCAFFOLD_COL_HELP$chimera))
+  js <- RiboPilot:::rt_chimera_badge()
+  expect_s3_class(js, "JS_EVAL")
+  expect_match(as.character(js), "likely")
+})

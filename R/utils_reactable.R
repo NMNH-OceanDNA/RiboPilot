@@ -267,6 +267,24 @@ rt_screen_badge <- function() {
     }")
 }
 
+#' Render the chimera check verdict: clean, suspect, or likely, with the
+#' reason as a hover tooltip.
+#' @noRd
+rt_chimera_badge <- function() {
+  htmlwidgets::JS(
+    "function(cellInfo) {
+      var v = cellInfo.value;
+      if (v === null || v === undefined || v === '' || v === 'NA') return '';
+      var bg, fg;
+      if (v === 'clean')        { bg = '#d4edda'; fg = '#2d6a4f'; }
+      else if (v === 'likely')  { bg = '#f8d7da'; fg = '#842029'; }
+      else                      { bg = '#fde8d0'; fg = '#7d4a1e'; }
+      var tip = cellInfo.row.chimera_reason || '';
+      return '<span title=\"' + String(tip).replace(/\"/g, '&quot;') + '\" style=\"background:' + bg +
+        '; color:' + fg + '; padding:1px 6px; border-radius:8px; font-size:0.85em\">' + v + '</span>';
+    }")
+}
+
 #' Render the intragenomic variant class: is this scaffold one of several rDNA
 #' copies, or the same molecule assembled twice.
 #'
