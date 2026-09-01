@@ -308,7 +308,10 @@ sub-project produces the measurement those decisions need; it does not take them
 Broadening what the screen can catch. `human_on_fish` is recorded as a miss,
 not fixed. Fixing it needs the depth and cross-sample channels (doc 08
 sections 3.5(c) and 3.6), both of which are blocked, and this sub-project must
-not grow into them.
+not grow into them. The chimera detector (doc 21) now exists and its read-clip
+and depth-step channels overlap with what would catch this case, but its effect
+on `human_on_fish` has not been measured; that needs a pipeline run against
+this fixture, not yet done.
 
 `min_isomer_anchor_pid`, per section 1.
 

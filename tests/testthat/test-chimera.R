@@ -324,3 +324,30 @@ test_that("plot_chimera with NULL junctions/segments has no junction line", {
   expect_s3_class(g, "ggplot")
   expect_false(any(vapply(g$layers, function(l) inherits(l$geom, "GeomVline"), logical(1))))
 })
+
+test_that("synthetic fixtures get the expected label and a junction within tolerance", {
+  skip_if_not_installed("withr")
+  skip_if(!nzchar(Sys.which("blastn")) || !nzchar(Sys.which("makeblastdb")), "blast not installed")
+  panel <- Sys.getenv("RIBOPILOT_TEST_PANEL", "")
+  if (!nzchar(panel)) panel <- tryCatch(RiboPilot:::discover_panel(), error = function(e) NULL)
+  skip_if(is.null(panel) || !nzchar(panel), "no local panel")
+  # Channel 2's cross-taxon comparison needs a real pinned taxdump (see
+  # RiboPilot:::have_taxdump); without one every window falls back to
+  # identity-only buckets and host_fungal.fa cannot be told apart from
+  # clean.fa. RIBOPILOT_TEST_TAXDUMP points at one; skip otherwise.
+  taxdump <- Sys.getenv("RIBOPILOT_TEST_TAXDUMP", "")
+  skip_if(!nzchar(taxdump) || !RiboPilot:::have_taxdump(taxdump), "no local taxdump")
+  exp <- read.delim(test_path("fixtures/chimera/expected.tsv"), na.strings = "NA", stringsAsFactors = FALSE)
+  for (i in seq_len(nrow(exp))) {
+    seq <- paste(readLines(test_path("fixtures/chimera", exp$file[i]))[-1], collapse = "")
+    con <- chimera_test_con("F")
+    DBI::dbExecute(con, "INSERT INTO assemblies (ID, path, scaffold, sequence) VALUES ('F',1,1,?)", params = list(seq))
+    r <- RiboPilot:::chimera_unit(con, "F", 1L, 1L, dbarg = panel, taxdump_dir = taxdump)
+    DBI::dbDisconnect(con)
+    expect_equal(r$label, exp$label[i], info = exp$file[i])
+    if (!is.na(exp$junction[i])) {
+      got <- as.integer(strsplit(r$junctions, ",", fixed = TRUE)[[1]])
+      expect_true(length(got) > 0 && any(abs(got - exp$junction[i]) <= 300), info = exp$file[i])
+    }
+  }
+})
