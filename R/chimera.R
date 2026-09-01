@@ -319,7 +319,7 @@ chimera_run_ribotyper <- function(fasta, outdir, ribotyper = "ribotyper") {
 #' Run every channel for one unit and write chimera + chimera_windows
 #' @noRd
 chimera_unit <- function(con, id, path = 1L, scaffold = 1L, dbarg = NULL, taxdump_dir = NULL,
-                         blastn = "blastn", ribotyper = "ribotyper", workdir = tempfile()) {
+                         label_db = NULL, threads = 1L, workdir = tempfile("chimera_")) {
   dir.create(workdir, showWarnings = FALSE, recursive = TRUE)
   seq <- DBI::dbGetQuery(con, "SELECT sequence FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
     params = list(id, path, scaffold))$sequence[1]
@@ -344,18 +344,18 @@ chimera_unit <- function(con, id, path = 1L, scaffold = 1L, dbarg = NULL, taxdum
   tiles <- chimera_tile(nchar(seq))
   qf <- file.path(workdir, "windows.fa"); chimera_windows_fasta(seq, tiles, qf)
   identity_only <- is.null(dbarg) || !nzchar(dbarg)
-  db_use <- if (identity_only) NULL else dbarg
+  db_use <- if (identity_only) label_db else dbarg
   windows <- NULL; ch_windows <- chimera_unavailable(); segments <- NULL
   if (!is.null(db_use) && nzchar(db_use)) {
     out1 <- file.path(workdir, "mega.txt")
-    chimera_run_blastn(qf, db_use, "megablast", out1, threads = 1L, blastn = blastn)
+    chimera_run_blastn(qf, db_use, "megablast", out1, threads)
     h <- parse_blast_hits_file(out1)
     missing <- setdiff(sprintf("w%d_%d", tiles$start, tiles$stop), unique(h$qseqid))
     if (length(missing)) {
       keep <- tiles[sprintf("w%d_%d", tiles$start, tiles$stop) %in% missing, , drop = FALSE]
       qf2 <- file.path(workdir, "windows2.fa"); chimera_windows_fasta(seq, keep, qf2)
       out2 <- file.path(workdir, "dc.txt")
-      chimera_run_blastn(qf2, db_use, "dc-megablast", out2, threads = 1L, blastn = blastn)
+      chimera_run_blastn(qf2, db_use, "dc-megablast", out2, threads)
       h <- rbind(h, parse_blast_hits_file(out2))
     }
     windows <- chimera_window_hits(h, tiles, samp, taxdump_dir, db_source = db_use)
@@ -366,12 +366,12 @@ chimera_unit <- function(con, id, path = 1L, scaffold = 1L, dbarg = NULL, taxdum
   # channel 3
   ch_rt <- chimera_unavailable(); codes <- NA_character_
   rt_feats <- feats[feats$element %in% c("18S", "28S"), , drop = FALSE]
-  if (nrow(rt_feats) && nzchar(Sys.which(ribotyper))) {
+  if (nrow(rt_feats) && nzchar(Sys.which("ribotyper"))) {
     rf <- file.path(workdir, "rt.fa")
     st <- pmax(1L, rt_feats$start - 50L); en <- pmin(nchar(seq), rt_feats$stop + 50L)
     writeLines(as.vector(rbind(paste0(">u", rt_feats$element), substring(seq, st, en))), rf)
     rdir <- file.path(workdir, "rt"); dir.create(rdir, showWarnings = FALSE)
-    chimera_run_ribotyper(rf, rdir, ribotyper = ribotyper)
+    chimera_run_ribotyper(rf, rdir)
     rt <- chimera_parse_ribotyper(list.files(rdir, "ribotyper\\.short\\.out$", full.names = TRUE)[1])
     ch_rt <- chimera_channel_ribotyper(rt, data.frame(target = paste0("u", rt_feats$element), start = st),
       itsx_chimeric = isTRUE(itsx == 1L))

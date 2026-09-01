@@ -242,3 +242,38 @@ test_that("chimera_unit writes lineage-bearing rows with mocked tools", {
   expect_equal(seg$taxon, c("Actinopterygii", "Eurotiomycetes"))
   expect_match(DBI::dbGetQuery(con, "SELECT reason FROM chimera")$reason, "Penicillium")
 })
+
+test_that("chimera_unit falls back to label_db when dbarg is NULL, scoring identity-only", {
+  con <- chimera_test_con()
+  on.exit(DBI::dbDisconnect(con))
+  seq <- paste(rep("ACGT", 1000), collapse = "")
+  DBI::dbExecute(con, "INSERT INTO assemblies (ID, path, scaffold, sequence) VALUES ('S1', 1, 1, ?)", params = list(seq))
+  DBI::dbExecute(con, "UPDATE samples SET lineage_taxids = '33208;7711;186623;8030;8016;8017;8018' WHERE ID = 'S1'")
+  DBI::dbExecute(con, "INSERT INTO annotations (ID, path, scaffold, element, start, stop) VALUES ('S1',1,1,'18S',1,1800), ('S1',1,1,'28S',2500,4000)")
+  DBI::dbExecute(con, "INSERT INTO coverage (ID, path, scaffold, depths, clips) VALUES ('S1',1,1,?,?)",
+    params = list(paste(rep(20, 4000), collapse = ","), paste(c(rep(0, 2199), 9, rep(0, 1800)), collapse = ",")))
+  fake_blast <- function(query, dbarg, task, out, ...) {
+    ids <- sub("^>", "", grep("^>", readLines(query), value = TRUE))
+    lines <- vapply(ids, function(w) {
+      st <- as.integer(sub("^w(\\d+)_.*", "\\1", w))
+      if (st < 2200) sprintf("NC_1\tSalmo salar 18S\t99.0\t100\t0\t8030\t900\t500\t1\t500\t1\t500\t1800\t%s", w)
+      else sprintf("KX_1\tPenicillium sp. 28S\t97.0\t100\t0\t5073\t880\t500\t1\t500\t1\t500\t4000\t%s", w)
+    }, character(1))
+    writeLines(lines, out); 0L
+  }
+  fake_rt <- function(fasta, outdir, ...) {
+    writeLines(c("#idx target class strnd p/f unexpected_features", "1 u18S SSU.Eukarya plus PASS -",
+      "2 u28S LSU.Eukarya plus PASS -"), file.path(outdir, "rt.ribotyper.short.out")); 0L
+  }
+  fake_lin <- function(taxids, dir) data.frame(taxid = c(8030L, 5073L),
+    lineage = c("Animalia;Chordata;Actinopterygii;Salmoniformes;Salmonidae;Salmo;Salmo salar",
+                "Fungi;Ascomycota;Eurotiomycetes;Eurotiales;Aspergillaceae;Penicillium;Penicillium sp."),
+    lineage_taxids = c("33208;7711;186623;8030;8016;8017;8018", "4751;4890;147545;5042;5043;5044;5045"))
+  testthat::local_mocked_bindings(chimera_run_blastn = fake_blast, chimera_run_ribotyper = fake_rt,
+    tk_ranked_lineage = fake_lin, .package = "RiboPilot")
+  r <- RiboPilot:::chimera_unit(con, "S1", 1L, 1L, dbarg = NULL, taxdump_dir = NULL, label_db = "labels")
+  expect_equal(r$db_source, "labels")
+  ch <- jsonlite::fromJSON(r$channels)
+  expect_equal(ch$windows$availability, "identity_only")
+  expect_equal(ch$windows$score, 0)
+})
