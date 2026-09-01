@@ -47,9 +47,29 @@ RUN mamba install -y \
         'hmmer' \
         'entrez-direct' \
         'biopython' \
-        'ncbi-datasets-cli' \
-        'ribovore=1.0.5' && \
+        'ncbi-datasets-cli' && \
     mamba clean -a -y
+
+# --- ribovore is not on bioconda (checked: no ribovore or ribotyper package),
+#     so install its ribovore-1.0.5 release straight from GitHub instead.
+#     Only ribotyper is used here, which needs infernal but not blastn/ribosensor;
+#     the full "linux" install pulls those extra tools too but they sit unused.
+RUN mkdir -p /opt/ribovore && cd /opt/ribovore && \
+    wget -q https://raw.githubusercontent.com/ncbi/ribovore/ribovore-1.0.5/install.sh -O install.sh && \
+    sh install.sh linux && \
+    rm install.sh
+ENV RIBOINSTALLDIR=/opt/ribovore
+ENV RIBOSCRIPTSDIR=$RIBOINSTALLDIR/ribovore
+ENV RIBOINFERNALDIR=$RIBOINSTALLDIR/infernal/binaries
+ENV RIBOEASELDIR=$RIBOINSTALLDIR/infernal/binaries
+ENV RIBOSEQUIPDIR=$RIBOINSTALLDIR/sequip
+ENV RIBOTIMEDIR=/usr/bin
+ENV RIBOBLASTDIR=$RIBOINSTALLDIR/ncbi-blast/bin
+ENV RRNASENSORDIR=$RIBOINSTALLDIR/rRNA_sensor
+ENV VECPLUSDIR=$RIBOINSTALLDIR/vecscreen_plus_taxonomy
+ENV BLASTDB=$VECPLUSDIR/univec-files:$RRNASENSORDIR
+ENV PERL5LIB=$RIBOSCRIPTSDIR:$RIBOSEQUIPDIR:$VECPLUSDIR
+ENV PATH=$RIBOSCRIPTSDIR:$RIBOBLASTDIR:$RRNASENSORDIR:$PATH
 
 # --- R + the RiboPilot package dependencies (installed from conda so the package
 #     itself installs with dependencies = FALSE below). Biostrings is the one
