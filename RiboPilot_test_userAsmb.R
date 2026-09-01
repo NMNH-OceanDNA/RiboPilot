@@ -15,8 +15,8 @@ Sys.setenv(PATH = paste("<PATH_TO_CONDA>/envs/ribopilot/bin",
 Sys.which(c("nextflow", "pybarrnap", "ITSx"))
 
 REPO     <- "~/Documents/GitHub/RiboPilot"
-PROJECT  <- "~/RiboPilot_test/userAsmb_01"   # project folder to create
-DATA     <- "~/RiboPilot_test/userAsmb_data" # where the test assemblies are written
+PROJECT  <- "~/Desktop/temp/userAsmb_01"      # project folder to create
+DATA     <- "~/Desktop/temp/userAsmb_data"    # where the test assemblies are written
 
 SEEDS  <- file.path(REPO, "ref_dbs/getOrganelle/seeds/actinopterygii_rrna_seeds.fasta")
 LABELS <- file.path(REPO, "ref_dbs/getOrganelle/labels/actinopterygii_rrna_labels.fasta")
