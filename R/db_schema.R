@@ -101,6 +101,48 @@ SCREEN_DDL <- "CREATE TABLE IF NOT EXISTS screen (
   PRIMARY KEY (ID, path, scaffold)
 );"
 
+#' DDL for chimera: one row per unit, lineage kept as text at every level.
+#' @noRd
+CHIMERA_DDL <- "CREATE TABLE IF NOT EXISTS chimera (
+  ID TEXT NOT NULL,
+  path INTEGER NOT NULL DEFAULT 1,
+  scaffold INTEGER NOT NULL DEFAULT 1,
+  score REAL,
+  label TEXT,
+  junctions TEXT,
+  reason TEXT,
+  segments TEXT,
+  gene_taxa TEXT,
+  channels TEXT,
+  ribotyper_codes TEXT,
+  db_source TEXT,
+  time_stamp INTEGER,
+  PRIMARY KEY (ID, path, scaffold)
+);"
+
+#' DDL for chimera_windows: best local hit per sliding window.
+#' @noRd
+CHIMERA_WINDOWS_DDL <- "CREATE TABLE IF NOT EXISTS chimera_windows (
+  ID TEXT NOT NULL,
+  path INTEGER NOT NULL DEFAULT 1,
+  scaffold INTEGER NOT NULL DEFAULT 1,
+  start INTEGER NOT NULL,
+  stop INTEGER,
+  accession TEXT,
+  species TEXT,
+  staxid INTEGER,
+  lineage TEXT,
+  lineage_taxids TEXT,
+  rank_distance INTEGER,
+  hit_class TEXT,
+  pident REAL,
+  bitscore REAL,
+  depth_median REAL,
+  clip_frac REAL,
+  db_source TEXT,
+  PRIMARY KEY (ID, path, scaffold, start)
+);"
+
 #' DDL for the assembly_backup table (original pre-trim state, for undo/restore).
 #' @noRd
 ASSEMBLY_BACKUP_DDL <- "CREATE TABLE IF NOT EXISTS assembly_backup (

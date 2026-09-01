@@ -511,6 +511,7 @@ new_db <- function(
       min_depth INTEGER,
       max_depth INTEGER,
       depths TEXT,
+      clips TEXT,
       time_stamp INTEGER,
       PRIMARY KEY (ID, path, scaffold)
     );"
@@ -633,6 +634,8 @@ new_db <- function(
 
   # screen (contamination verdict per unit; see SCREEN_DDL) ----
   DBI::dbExecute(con, SCREEN_DDL)
+  DBI::dbExecute(con, CHIMERA_DDL)
+  DBI::dbExecute(con, CHIMERA_WINDOWS_DDL)
 
   # path_scores (taxonomy-aware candidate scoring + auto-select) ----
   DBI::dbExecute(
