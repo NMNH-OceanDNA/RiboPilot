@@ -68,7 +68,7 @@ ENV RIBOBLASTDIR=$RIBOINSTALLDIR/ncbi-blast/bin
 ENV RRNASENSORDIR=$RIBOINSTALLDIR/rRNA_sensor
 ENV VECPLUSDIR=$RIBOINSTALLDIR/vecscreen_plus_taxonomy
 ENV PERL5LIB=$RIBOSCRIPTSDIR:$RIBOSEQUIPDIR:$VECPLUSDIR
-ENV PATH=$RIBOSCRIPTSDIR:$RIBOBLASTDIR:$RRNASENSORDIR:$PATH
+ENV PATH=$RIBOSCRIPTSDIR:$PATH
 
 # --- R + the RiboPilot package dependencies (installed from conda so the package
 #     itself installs with dependencies = FALSE below). Biostrings is the one
