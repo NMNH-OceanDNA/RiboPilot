@@ -473,8 +473,20 @@ reference_handlers <- function(input, output, session, deps) {
     if (inherits(res, "error")) { notify(conditionMessage(res), "error"); return() }
     proposal(NULL)
     shiny::removeModal(); bump()
-    notify(sprintf(paste("Applied %d reference group(s). Use the link at the end of each row",
-      "to give that group a database."), nrow(s$groups)))
+    # land on the Groups view, then go straight to giving the new groups a
+    # database: one dialog for all of them, since one Build runs them together
+    shinyWidgets::updateRadioGroupButtons(session, "ref_view", selected = "Groups")
+    todo <- tryCatch(with_con(function(con) DBI::dbGetQuery(con,
+      "SELECT ref_id, clade_name FROM reference WHERE COALESCE(reference_switch, 1) = 1 ORDER BY ref_id")),
+      error = function(e) data.frame())
+    todo <- todo[todo$ref_id %in% s$groups$ref_id, , drop = FALSE]
+    if (nrow(todo) == 0) {
+      notify(sprintf("Applied %d reference group(s); every group already has a database.", nrow(s$groups)))
+      return()
+    }
+    lbl <- if (nrow(todo) == 1) todo$clade_name[1] else sprintf("%d new groups", nrow(todo))
+    action_label(lbl); action_target(todo$ref_id)
+    shiny::showModal(reference_action_modal(todo$ref_id, lbl))
   })
 
   shiny::observeEvent(input$ref_diff_group, {
