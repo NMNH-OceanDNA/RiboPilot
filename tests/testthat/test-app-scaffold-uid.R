@@ -363,7 +363,7 @@ test_that("clicking a row examines that scaffold in the panels below", {
     session$flushReact()
     expect_equal(sel_hit_unit(), list(path = 2L, scaffold = 2L))
     expect_match(output$unit_screen$html, "Scaffold p2.s2", fixed = TRUE)
-    expect_match(output$unit_coverage_label$html, "Scaffold p2.s2", fixed = TRUE)
+    expect_equal(output$hl_scaf_cov, "p2.s2")
 
     # keyed on the row's own uid, so display order cannot misdirect it
     session$setInputs(scaf_examine = "S1|1|2")

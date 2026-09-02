@@ -147,7 +147,7 @@ app_server <- function(input, output, session) {
              CASE WHEN COALESCE(a.find_rrna_notes,'') = '' THEN ''
                   WHEN COALESCE(a.assemble_notes,'') = '' THEN a.find_rrna_notes
                   ELSE '; ' || a.find_rrna_notes END) AS notes, a.time_stamp,
-           'Details' AS details, 'Output' AS output
+           'details' AS details, 'output' AS output
          FROM samples s LEFT JOIN assemble a ON s.ID = a.ID
            LEFT JOIN preprocess pp ON s.ID = pp.ID
          WHERE s.taxonomy_lock = 1")
@@ -173,13 +173,16 @@ app_server <- function(input, output, session) {
            -- and its column was already defined but never selected.
            asm.blast_species, asm.blast_accession, asm.blast_pident, asm.blast_qcovs,
            asm.blast_source,
-           an.n_flags, an.reviewed,
+           an.n_flags, an.annotate_notes, sc.screen_verdict,
+           ch.label AS chimera_label, ch.reason AS chimera_reason, an.reviewed,
            an.problematic, an.partial, an.time_stamp,
-           'Details' AS details, 'Output' AS output
+           'details' AS details, 'output' AS output
          FROM annotate an
            JOIN samples s ON s.ID = an.ID
            JOIN assemble a ON a.ID = an.ID
            JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
+           LEFT JOIN screen sc ON sc.ID = an.ID AND sc.path = an.path AND sc.scaffold = an.scaffold
+           LEFT JOIN chimera ch ON ch.ID = an.ID AND ch.path = an.path AND ch.scaffold = an.scaffold
          WHERE a.assemble_lock = 1 AND COALESCE(asm.ignore, 0) = 0")
     }
   })
@@ -219,8 +222,14 @@ app_server <- function(input, output, session) {
       reviewed = reactable::colDef(name = "Reviewed", html = TRUE, cell = rt_bool_badge(hide_no = TRUE)),
       problematic = reactable::colDef(name = "Problem", width = 90, html = TRUE, cell = rt_bool_badge(hide_no = TRUE)),
       partial = reactable::colDef(name = "Partial", width = 80, html = TRUE, cell = rt_bool_badge(hide_no = TRUE)),
-      n_flags = reactable::colDef(name = "Flags", width = 70, html = TRUE,
-        filterable = FALSE, cell = rt_flag_badge()),
+      n_flags = reactable::colDef(name = "Warnings", width = 100, html = TRUE, filterable = FALSE,
+        header = rt_help_header("Warnings", SCAFFOLD_COL_HELP$warnings), cell = rt_flag_badge()),
+      annotate_notes = reactable::colDef(show = FALSE),
+      screen_verdict = reactable::colDef(name = "Screen", width = 110, html = TRUE,
+        header = rt_help_header("Screen", SCAFFOLD_COL_HELP$screen_verdict), cell = rt_screen_badge()),
+      chimera_label = reactable::colDef(name = "Chimera", width = 100, html = TRUE,
+        header = rt_help_header("Chimera", SCAFFOLD_COL_HELP$chimera), cell = rt_chimera_badge()),
+      chimera_reason = reactable::colDef(show = FALSE),
       reference = reactable::colDef(name = "Reference", html = TRUE, cell = rt_ncbi_link()),
       blast_species = reactable::colDef(name = "BLAST Hit", minWidth = 160, html = TRUE, cell = rt_longtext()),
       blast_accession = reactable::colDef(name = "Accession", minWidth = 110, html = TRUE, cell = rt_ncbi_link()),
@@ -228,10 +237,10 @@ app_server <- function(input, output, session) {
       blast_qcovs = reactable::colDef(name = "BLAST Cov", width = 90),
       blast_source = reactable::colDef(name = "Hit source", width = 100, html = TRUE,
         cell = rt_blast_source_badge()),
-      details = reactable::colDef(name = "", width = 55, align = "center", filterable = FALSE, html = TRUE,
-        cell = rt_icon_link(det_input, "fa fa-up-right-from-square", det_tip)),
-      output = reactable::colDef(name = "", width = 55, align = "center", filterable = FALSE, html = TRUE,
-        cell = rt_icon_link(out_input, "fa fa-folder-open", "Work / output directories")),
+      details = reactable::colDef(name = "", width = 80, align = "center", filterable = FALSE, html = TRUE,
+        cell = rt_icon_bttn_text(det_input, "fas fa-square-arrow-up-right fa-xs", det_tip)),
+      output = reactable::colDef(name = "", width = 80, align = "center", filterable = FALSE, html = TRUE,
+        cell = rt_icon_bttn_text(out_input, "fas fa-folder-open fa-xs", "Work / output directories")),
       n_features = reactable::colDef(name = "Features", width = 90, html = TRUE),
       missing = reactable::colDef(name = "Missing", minWidth = 120, html = TRUE, cell = rt_longtext()),
       length = reactable::colDef(name = "Length", width = 90),
@@ -1216,6 +1225,7 @@ app_server <- function(input, output, session) {
   # push the highlight without re-rendering, which would drop sort and filters
   examine_unit <- function(path, scaffold) {
     sel_hit_unit(list(path = path, scaffold = scaffold))
+    shinyjs::runjs("document.querySelectorAll('#asm_unit_panels details').forEach(function(d){ d.open = false; });")
     reactable::updateReactable("assemble_scaffolds",
       meta = list(examined = paste(sel_id(), path, scaffold, sep = "|")))
   }
@@ -1313,14 +1323,17 @@ app_server <- function(input, output, session) {
         bitscore = reactable::colDef(name = "Bits", width = 70),
         evalue = reactable::colDef(name = "E", width = 80)))
   })
-  output$unit_coverage_label <- renderUI({
-    h <- sel_hit_unit()
-    if (is.null(h)) return(NULL)
-    tags$b(sprintf("Scaffold p%s.s%s", h$path, h$scaffold))
+  # Panel titles name the highlighted scaffold; one output per title since an
+  # output id can render in only one place.
+  for (o in c("hl_scaf_ev", "hl_scaf_cov", "hl_scaf_chim")) local({
+    oid <- o
+    output[[oid]] <- renderText({
+      h <- sel_hit_unit(); req(!is.null(h)); sprintf("p%s.s%s", h$path, h$scaffold)
+    })
   })
   output$unit_coverage_plot <- renderPlot({
     h <- sel_hit_unit(); id <- sel_id(); req(!is.null(h), id)
-    plot_coverage(id, h$path, h$scaffold)
+    grid::grid.draw(fixed_gutter(plot_coverage(id, h$path, h$scaffold)))
   }, height = 130)
   # Triage one scaffold: keep / drop / undecided. `assemblies.ignore` is derived
   # from the verdict by set_unit_triage(), so nothing downstream changes.
@@ -1571,17 +1584,22 @@ app_server <- function(input, output, session) {
     edit_tick(); u <- sel_unit(); req(u); plot_coverage(u$ID, u$path, u$scaffold)
   }, height = 128)
 
+  # Chimera panels live in the assemble modal and follow its highlighted scaffold.
+  hit_unit <- reactive({
+    h <- sel_hit_unit(); id <- sel_id(); req(!is.null(h), id)
+    list(ID = id, path = h$path, scaffold = h$scaffold)
+  })
   output$chimera_plot <- renderPlot({
-    edit_tick(); u <- sel_unit(); req(u); plot_chimera(u$ID, u$path, u$scaffold)
+    u <- hit_unit(); grid::grid.draw(fixed_gutter(plot_chimera(u$ID, u$path, u$scaffold)))
   }, height = 296)
   output$chimera_db_source <- renderText({
-    u <- sel_unit(); req(u)
+    u <- hit_unit()
     ch <- app_query("SELECT db_source FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", list(u$ID, u$path, u$scaffold))
     req(nrow(ch) == 1, !is.na(ch$db_source[1]))
     paste("windows searched against:", paste(basename(strsplit(ch$db_source[1], " ", fixed = TRUE)[[1]]), collapse = ", "))
   })
   output$chimera_segments <- reactable::renderReactable({
-    u <- sel_unit(); req(u)
+    u <- hit_unit()
     ch <- app_query("SELECT segments FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", list(u$ID, u$path, u$scaffold))
     req(nrow(ch) == 1, !is.na(ch$segments[1]))
     s <- jsonlite::fromJSON(ch$segments[1])
@@ -1590,7 +1608,7 @@ app_server <- function(input, output, session) {
     s <- s[, intersect(c("start", "stop", "taxon", "species", "pident", "n_windows"), names(s))]
     reactable::reactable(s, compact = TRUE, pagination = FALSE,
       defaultColDef = reactable::colDef(minWidth = 70),
-      rowStyle = function(index) list(background = cols[index]),
+      rowStyle = function(index) list(background = grDevices::adjustcolor(cols[index], alpha.f = CHIMERA_SEG_ALPHA)),
       columns = list(
         start = reactable::colDef(width = 80, html = TRUE, header = rt_help_header("Start", CHIMERA_COL_HELP$start)),
         stop = reactable::colDef(width = 80, html = TRUE, header = rt_help_header("Stop", CHIMERA_COL_HELP$stop)),
@@ -1601,7 +1619,7 @@ app_server <- function(input, output, session) {
         n_windows = reactable::colDef(width = 100, html = TRUE, header = rt_help_header("Windows", CHIMERA_COL_HELP$n_windows))))
   })
   output$chimera_windows <- reactable::renderReactable({
-    u <- sel_unit(); req(u)
+    u <- hit_unit()
     w <- app_query("SELECT start, stop, species, lineage, pident, bitscore, rank_distance, depth_median, clip_frac FROM chimera_windows WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
       list(u$ID, u$path, u$scaffold))
     req(nrow(w) > 0)
@@ -1620,7 +1638,7 @@ app_server <- function(input, output, session) {
     } else rep("#FFFFFF", nrow(w))
     reactable::reactable(w, compact = TRUE, pagination = TRUE, defaultPageSize = 15, searchable = TRUE,
       defaultColDef = reactable::colDef(na = "", minWidth = 70, headerStyle = list(whiteSpace = "nowrap")),
-      rowStyle = function(index) list(background = cols[index]),
+      rowStyle = function(index) list(background = grDevices::adjustcolor(cols[index], alpha.f = CHIMERA_SEG_ALPHA)),
       columns = list(
         start = reactable::colDef(width = 75, html = TRUE, header = rt_help_header("Start", CHIMERA_COL_HELP$start)),
         stop = reactable::colDef(width = 75, html = TRUE, header = rt_help_header("Stop", CHIMERA_COL_HELP$stop)),
@@ -1741,7 +1759,7 @@ app_server <- function(input, output, session) {
         length = reactable::colDef(name = "Length", width = 70),
         strand = reactable::colDef(name = "Strand", width = 70),
         status = reactable::colDef(name = "Status", width = 70),
-        flags = reactable::colDef(name = "Flags", html = TRUE, cell = rt_longtext())),
+        flags = reactable::colDef(name = "Warnings", html = TRUE, cell = rt_longtext())),
       rowStyle = function(index) {
         el <- d$element[index]
         st <- list(background = tints[[el]] %||% "#ffffff")   # row tinted by gene color
@@ -1768,23 +1786,23 @@ app_server <- function(input, output, session) {
     u <- sel_unit(); req(u)
     a <- app_query("SELECT n_flags, annotate_notes FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())
     if (nrow(a) == 0 || is.na(a$n_flags[1]) || a$n_flags[1] == 0) {
-      return(span(style = "color:#2d6a4f;", HTML("&#10003; No curation flags for this sample.")))
+      return(span(style = "color:#2d6a4f;", HTML("&#10003; No curation warnings for this sample.")))
     }
     tagList(
-      span(sprintf("%d sample flag(s): ", a$n_flags[1]), style = "color:#7d4a1e; font-weight:bold;"),
+      span(sprintf("%d sample warning(s): ", a$n_flags[1]), style = "color:#7d4a1e; font-weight:bold;"),
       span(a$annotate_notes[1] %||% "", style = "color:#7d4a1e;"))
   })
   output$flag_tbl <- reactable::renderReactable({
     d <- flag_rows()
     if (nrow(d) == 0) {
-      return(reactable::reactable(data.frame(` ` = "No flagged features.", check.names = FALSE), compact = TRUE))
+      return(reactable::reactable(data.frame(` ` = "No features with warnings.", check.names = FALSE), compact = TRUE))
     }
     d$jump <- "select"
     reactable::reactable(d[, c("element", "flags", "jump")],
       compact = TRUE, resizable = TRUE, defaultPageSize = 10,
       columns = list(
         element = reactable::colDef(name = "Feature"),
-        flags = reactable::colDef(name = "Flags", html = TRUE, cell = rt_longtext()),
+        flags = reactable::colDef(name = "Warnings", html = TRUE, cell = rt_longtext()),
         jump = reactable::colDef(name = "", width = 70, html = TRUE, cell = rt_link("flag_jump"))))
   })
   observeEvent(input$flag_jump, {
@@ -1873,19 +1891,45 @@ app_server <- function(input, output, session) {
     showModal(trim_modal(s$length[1], a_from, a_to))
   })
 
-  # Interactive trim plot: coverage + features with the kept window shaded. The
-  # window is the annotated span (annotated mode) or the From/To inputs (custom).
-  trim_window <- reactive({
+  # From/To are the single source of truth for the kept window. The annotated
+  # and flank modes are presets that fill them in; they are editable only in
+  # custom mode (brushing the plot switches to custom).
+  trim_span <- reactive({
     u <- sel_unit(); req(u)
-    if ((input$trim_mode %||% "annotated") == "annotated") {
-      sp <- app_query("SELECT MIN(start) AS a, MAX(stop) AS b FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())
-      n <- app_query("SELECT length FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())$length
-      lo <- if (nrow(sp) && !is.na(sp$a[1])) sp$a[1] else 1L
-      hi <- if (nrow(sp) && !is.na(sp$b[1])) sp$b[1] else if (length(n)) n[1] else NA
-      c(lo, hi)
-    } else {
-      c(suppressWarnings(as.integer(input$trim_from)), suppressWarnings(as.integer(input$trim_to)))
-    }
+    sp <- app_query("SELECT MIN(start) AS a, MAX(stop) AS b FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())
+    n <- app_query("SELECT length FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())$length
+    n <- if (length(n)) n[1] else NA_integer_
+    c(a = if (nrow(sp) && !is.na(sp$a[1])) sp$a[1] else 1L,
+      b = if (nrow(sp) && !is.na(sp$b[1])) sp$b[1] else n, n = n)
+  })
+  trim_preset <- reactive({
+    mode <- input$trim_mode %||% "annotated"
+    if (mode == "custom") return(NULL)
+    sp <- trim_span()
+    x <- if (mode == "flank") suppressWarnings(as.integer(input$trim_flank)) else 0L
+    if (is.na(x) || x < 0) x <- 0L
+    c(max(1L, sp[["a"]] - x), min(sp[["n"]], sp[["b"]] + x))
+  })
+  observeEvent(trim_preset(), {
+    p <- trim_preset(); req(p)
+    updateNumericInput(session, "trim_from", value = p[1])
+    updateNumericInput(session, "trim_to", value = p[2])
+  })
+  observeEvent(input$trim_mode, {
+    shinyjs::toggleState("trim_from", condition = input$trim_mode == "custom")
+    shinyjs::toggleState("trim_to", condition = input$trim_mode == "custom")
+  })
+  output$trim_flank_hint <- renderText({
+    req((input$trim_mode %||% "annotated") == "flank")
+    sp <- trim_span(); p <- trim_preset(); req(p)
+    x <- suppressWarnings(as.integer(input$trim_flank))
+    if (is.na(x) || x < 1) return("Enter a flank of at least 1 bp.")
+    clipped <- c(if (p[1] > sp[["a"]] - x) sprintf("upstream clipped to %d bp (scaffold start)", sp[["a"]] - p[1]),
+      if (p[2] < sp[["b"]] + x) sprintf("downstream clipped to %d bp (scaffold end)", p[2] - sp[["b"]]))
+    if (length(clipped)) paste0("Flank ", paste(clipped, collapse = "; "), ".") else ""
+  })
+  trim_window <- reactive({
+    c(suppressWarnings(as.integer(input$trim_from)), suppressWarnings(as.integer(input$trim_to)))
   })
   output$trim_plot <- renderPlot({
     edit_tick(); u <- sel_unit(); req(u); w <- trim_window(); plot_trim(u$ID, u$path, u$scaffold, w[1], w[2])
@@ -1912,13 +1956,8 @@ app_server <- function(input, output, session) {
   observeEvent(input$trim_apply, {
     u <- sel_unit(); req(u)
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    if ((input$trim_mode %||% "annotated") == "annotated") {
-      span <- DBI::dbGetQuery(con, "SELECT MIN(start) AS a, MAX(stop) AS b FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())
-      from <- span$a[1]; to <- span$b[1]
-    } else {
-      from <- suppressWarnings(as.integer(input$trim_from)); to <- suppressWarnings(as.integer(input$trim_to))
-    }
-    if (is.na(from) || is.na(to) || from > to) {
+    w <- trim_window(); from <- w[1]; to <- w[2]; n <- trim_span()[["n"]]
+    if (is.na(from) || is.na(to) || from < 1 || from > to || (!is.na(n) && to > n)) {
       rp_alert("Invalid trim range.", type = "error"); return()
     }
     ok <- tryCatch({

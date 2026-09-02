@@ -150,6 +150,9 @@ SCAFFOLD_COL_HELP <- list(
   screen_pident = paste("How closely the matched stretch resembles the best GenBank record,",
     "as a percentage of identical bases."),
   triage_reason = "Why triage decided the way it did, or what left it undecided.",
+  warnings = paste("Number of sample-level curation warnings (feature order, overlaps, strand,",
+    "contamination). Hover for the list. Per-feature warnings such as length or",
+    "truncation are listed in the details view."),
   chimera = paste("Chimera check: whether different parts of this scaffold match different",
     "lineages or show read-level breakpoints. clean, suspect, or likely. Hover for the",
     "lineage segments and junction positions. Warns only; never blocks export.")

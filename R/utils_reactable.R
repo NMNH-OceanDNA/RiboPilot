@@ -84,7 +84,8 @@ rt_flag_badge <- function() {
       if (n === null || n === undefined || n === '' ) return ''
       n = Number(n)
       if (n === 0) return '<span style=\"color:#2d6a4f;\">&#10003;</span>'
-      return '<span style=\"background:#fde8d0; color:#7d4a1e; border-radius:3px; padding:1px 6px; font-size:0.85em;\">' + n + '</span>'
+      var tip = cellInfo.row.annotate_notes || ''
+      return '<span title=\"' + String(tip).replace(/\"/g, '&quot;') + '\" style=\"background:#fde8d0; color:#7d4a1e; border-radius:3px; padding:1px 6px; font-size:0.85em;\">' + n + '</span>'
     }")
 }
 
@@ -417,18 +418,17 @@ rt_confidence_badge <- function() {
     }")
 }
 
-#' Cell: a clickable Font Awesome icon that reports the row (like rt_link but an
-#' icon instead of the cell value). Used for the Assemble Details/Output buttons.
+#' Pill button with an icon and the cell value as its label (MitoPilot style).
+#' Used for the Details/Output columns.
 #' @noRd
-rt_icon_link <- function(InputId, icon, title = "") {
+rt_icon_bttn_text <- function(inputId, icon, title = "") {
   sprintf(
     "function(cellInfo) {
-      var clickid = '%s';
-      var sampid = cellInfo.index + 1;
-      return `<a href='#' id=${sampid} class='grow' title='%s' ` +
-        `onclick='event.stopPropagation(); Shiny.setInputValue(&#39;${clickid}&#39;, this.id, {priority: &#39;event&#39;})'>` +
-        `<i class='%s'></i></a>`;
-    }", InputId, title, icon
+      if (cellInfo.value == null || cellInfo.value === '') return;
+      return `<button class='icon-bttn-text grow' id='${cellInfo.index + 1}' title='%s' ` +
+        `onclick='event.stopPropagation(); Shiny.setInputValue(&#39;%s&#39;, this.id, {priority: &#39;event&#39;})'>` +
+        `<i class='%s' style='margin-right: 4px;'></i><small>${cellInfo.value}</small></button>`;
+    }", title, inputId, icon
   ) |> htmlwidgets::JS()
 }
 
