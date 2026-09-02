@@ -93,6 +93,14 @@
   invisible(NULL)
 }
 
+#' Keep the first `n` downloadable samples; bundled (Local) rows are always kept.
+#' @noRd
+.select_test_samples <- function(mapping, n = Inf) {
+  local <- (mapping$Local %||% rep(FALSE, nrow(mapping))) %in% TRUE
+  if (!is.finite(n)) return(mapping)
+  rbind(utils::head(mapping[!local, , drop = FALSE], n), mapping[local, , drop = FALSE])
+}
+
 #' Initialize a RiboPilot test project
 #'
 #' Sets up a ready-to-run test project from the bundled 10-sample test set (USNM
@@ -106,7 +114,8 @@
 #' valid read files are skipped, so an interrupted run resumes cleanly.
 #'
 #' @param path Project directory (created if missing; default current dir).
-#' @param n Number of samples to include (default all 10).
+#' @param n Number of downloaded samples to include (default all 10). The
+#'   bundled synthetic samples CHIM00 and CHIM01 are always included.
 #' @param executor Executor / config profile (default "conda").
 #' @param container Container image for the pipeline.
 #' @param min_depth Minimum trimmed paired reads to proceed with assembly.
@@ -129,7 +138,7 @@ new_test_project <- function(path = ".", n = Inf, executor = "conda",
 
   mapping <- utils::read.csv(app_sys(file.path("test_data", "mapping_test.csv")),
     stringsAsFactors = FALSE)
-  if (is.finite(n)) mapping <- utils::head(mapping, n)
+  mapping <- .select_test_samples(mapping, n)
 
   data_dir <- file.path(path, "data")
   dir.create(data_dir, showWarnings = FALSE)

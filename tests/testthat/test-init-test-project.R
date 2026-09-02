@@ -16,3 +16,10 @@ test_that("the bundled chimera samples are present and mapped", {
   expect_true(all(chim$Local))
   for (f in c(chim$R1, chim$R2)) expect_true(file.exists(system.file("test_data", f, package = "RiboPilot")))
 })
+
+test_that("n limits downloaded samples but bundled ones are always kept", {
+  map <- read.csv(system.file("test_data", "mapping_test.csv", package = "RiboPilot"))
+  kept <- RiboPilot:::.select_test_samples(map, 1)
+  expect_equal(kept$ID, c(map$ID[!(map$Local %in% TRUE)][1], "CHIM00", "CHIM01"))
+  expect_equal(nrow(RiboPilot:::.select_test_samples(map, Inf)), nrow(map))
+})
