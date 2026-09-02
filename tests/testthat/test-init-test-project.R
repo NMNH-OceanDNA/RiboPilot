@@ -23,3 +23,11 @@ test_that("n limits downloaded samples but bundled ones are always kept", {
   expect_equal(kept$ID, c(map$ID[!(map$Local %in% TRUE)][1], "CHIM00", "CHIM01"))
   expect_equal(nrow(RiboPilot:::.select_test_samples(map, Inf)), nrow(map))
 })
+
+test_that("bundled reads are unambiguously Phred+33", {
+  for (id in c("CHIM00", "CHIM01")) {
+    f <- system.file("test_data", paste0(id, "_R1.fastq.gz"), package = "RiboPilot")
+    q <- readLines(gzfile(f), n = 4)[4]
+    expect_lt(min(utf8ToInt(q)), 64L)
+  }
+})
