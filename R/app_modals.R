@@ -724,13 +724,18 @@ plot_chimera <- function(id, path = 1L, scaffold = 1L, db = NULL) {
   # identity track occupies y 0.2..1.6 for 70..100%, segment bar 1.9..2.9, features 3.0..3.3
   id_y <- function(p) 0.2 + (pmin(pmax(p, 70), 100) - 70) / 30 * 1.4
   g <- ggplot2::ggplot() +
-    ggplot2::annotate("segment", x = 1, xend = xmax, y = id_y(c(80, 90, 100)), yend = id_y(c(80, 90, 100)),
-      colour = "grey85", linewidth = 0.3)
+    ggplot2::annotate("segment", x = 1, xend = xmax, y = id_y(c(70, 80, 90, 100)), yend = id_y(c(70, 80, 90, 100)),
+      colour = "grey65", linewidth = 0.3) +
+    ggplot2::annotate("text", x = 1, y = id_y(100) + 0.1, label = "window identity to best hit", hjust = 0, vjust = 0,
+      size = 3, colour = "grey40")
   if (nrow(feats)) {
     dark <- darken_colors(RRNA_ELEMENT_COLORS)
-    g <- g + ggplot2::geom_rect(data = feats, ggplot2::aes(xmin = start, xmax = stop, ymin = 3.0, ymax = 3.3, fill = element),
-      inherit.aes = FALSE) +
-      ggplot2::scale_fill_manual(values = dark, guide = "none", na.value = "grey70")
+    g <- g + ggplot2::geom_rect(data = feats, ggplot2::aes(xmin = start, xmax = stop, ymin = 3.0, ymax = 3.45, fill = element),
+      inherit.aes = FALSE, alpha = 0.28) +
+      ggplot2::scale_fill_manual(values = dark, guide = "none", na.value = "grey70") +
+      ggplot2::geom_text(data = feats, ggplot2::aes(x = (start + stop) / 2, y = 3.22, label = element, colour = element),
+        size = 3.2, fontface = "bold") +
+      ggplot2::scale_colour_manual(values = dark, guide = "none", na.value = "grey40")
   }
   if (nrow(seg)) {
     samp <- q("SELECT lineage_taxids FROM samples WHERE ID = ?", list(id))
@@ -743,10 +748,17 @@ plot_chimera <- function(id, path = 1L, scaffold = 1L, db = NULL) {
     pal <- stats::setNames(grDevices::hcl(h = seq(15, 375, length.out = length(other) + 1)[seq_along(other)], c = 100, l = 60), other)
     seg$col <- ifelse(seg$nohit, "white", ifelse(seg$host, "grey60", pal[seg$taxon]))
     seg$lab <- ifelse(seg$nohit, "no hit", sprintf("%s %.0f%%", seg$taxon, seg$pident))
+    # windows overlap, so a later segment hides the tail of the one before it:
+    # label each segment at the centre of what is actually visible
+    seg <- seg[order(seg$start), ]
+    seg$vis_start <- pmax(seg$start, c(0, utils::head(seg$stop, -1)) + 1)
+    seg$vis_mid <- (seg$vis_start + seg$stop) / 2
+    seg$vis_w <- seg$stop - seg$vis_start
+    lab_ok <- seg$vis_w > 0.07 * xmax
     g <- g + ggplot2::geom_rect(data = seg, ggplot2::aes(xmin = start, xmax = stop, ymin = 1.9, ymax = 2.9),
         fill = seg$col, colour = "grey40", linewidth = 0.3, linetype = ifelse(seg$nohit, "dotted", "solid")) +
-      ggplot2::geom_text(data = seg[seg$stop - seg$start > 0.09 * xmax, ], ggplot2::aes(x = (start + stop) / 2, y = 2.4, label = lab),
-        size = 3.6, colour = ifelse(seg$nohit[seg$stop - seg$start > 0.09 * xmax], "grey40", "black"))
+      ggplot2::geom_text(data = seg[lab_ok, ], ggplot2::aes(x = vis_mid, y = 2.4, label = lab),
+        size = 3.6, colour = ifelse(seg$nohit[lab_ok], "grey40", "black"))
   }
   if (nrow(win)) {
     w <- win[!is.na(win$pident), ]
@@ -755,13 +767,15 @@ plot_chimera <- function(id, path = 1L, scaffold = 1L, db = NULL) {
   }
   if (length(junc)) g <- g +
     ggplot2::geom_vline(xintercept = junc, colour = "#c0392b", linetype = "dashed", linewidth = 0.7) +
-    ggplot2::annotate("text", x = junc, y = 3.45, label = paste("junction", junc), size = 3.2, colour = "#c0392b")
-  g + ggplot2::scale_y_continuous(breaks = c(id_y(c(70, 100)), 2.4), labels = c("70%", "100%", "lineage"),
-      limits = c(0, 3.6), expand = c(0, 0)) +
+    ggplot2::annotate("label", x = junc, y = 3.62, label = sprintf("suspected chimera junction at %d bp", junc),
+      size = 3.2, colour = "#c0392b", fill = "white", linewidth = 0)
+  g + ggplot2::scale_y_continuous(breaks = c(id_y(c(70, 100)), 2.4, 3.22), labels = c("70%", "100%", "lineage", "genes"),
+      limits = c(0, 3.8), expand = c(0, 0)) +
     ggplot2::scale_x_continuous(limits = c(1, xmax)) +
-    ggplot2::labs(x = NULL, y = "identity") +
+    ggplot2::labs(x = NULL, y = "depth") +
     ggplot2::theme_minimal(base_size = 11) +
-    ggplot2::theme(panel.grid = ggplot2::element_blank(), plot.margin = ggplot2::margin(14, 6, 6, 6))
+    ggplot2::theme(panel.grid = ggplot2::element_blank(), plot.margin = ggplot2::margin(14, 6, 6, 6),
+      axis.title.y = ggplot2::element_text(colour = "transparent"))
 }
 
 #' Synteny map: the sample's annotations over its BLAST reference's
