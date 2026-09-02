@@ -15,5 +15,5 @@ new_test_project(
   sra_bin = "~/miniconda3/envs/SRA_toolkit/bin"
 )
 
-# RiboPilot::RiboPilot(proj)
+RiboPilot::RiboPilot(proj)
 
