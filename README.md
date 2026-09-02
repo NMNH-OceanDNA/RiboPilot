@@ -170,6 +170,10 @@ RiboPilot::new_test_project(path = "~/ribopilot_test", executor = "docker")
 defaults to `executor = "conda"`, which is no longer a supported way to
 run.
 
+By default this fetches small rDNA-filtered read subsets published with
+the RiboPilot releases, so setup takes seconds. Pass `full_size = TRUE`
+to download the complete read sets from ENA/SRA instead (several GB).
+
 From there, the [Get started
 guide](https://dmacguigan.github.io/RiboPilot/articles/RiboPilot.html)
 walks you through assembling the samples, reviewing and cleaning them up

@@ -31,3 +31,27 @@ test_that("bundled reads are unambiguously Phred+33", {
     expect_lt(min(utf8ToInt(q)), 64L)
   }
 })
+
+test_that("the small path fetches filtered reads from the release and skips present ones", {
+  d <- withr::local_tempdir()
+  out <- file.path(d, "data"); dir.create(out)
+  fetched <- character(0)
+  fake_fetch <- function(base_url, tag, asset, dir) {
+    fetched <<- c(fetched, paste(tag, asset))
+    f <- file.path(dir, asset); con <- gzfile(f, "w"); writeLines(c("@r", "A", "+", "?"), con); close(con)
+    f
+  }
+  testthat::local_mocked_bindings(fetch_verified = fake_fetch, .package = "RiboPilot")
+  map <- data.frame(ID = "SRR1", Taxon = "t", R1 = "SRR1_R1.fastq.gz", R2 = "SRR1_R2.fastq.gz", Local = FALSE)
+  RiboPilot:::.stage_test_reads(map, out, full_size = FALSE)
+  expect_equal(fetched, paste(RiboPilot:::RP_TEST_READS_TAG, c("SRR1_R1.fastq.gz", "SRR1_R2.fastq.gz")))
+  expect_true(RiboPilot:::.gz_ok(file.path(out, "SRR1_R1.fastq.gz")))
+  RiboPilot:::.stage_test_reads(map, out, full_size = FALSE)
+  expect_length(fetched, 2)
+})
+
+test_that("a failed small-path download names the full_size escape hatch", {
+  d <- withr::local_tempdir()
+  testthat::local_mocked_bindings(fetch_verified = function(...) stop("HTTP 404"), .package = "RiboPilot")
+  expect_error(RiboPilot:::.fetch_small_reads("SRR1", "a.gz", "b.gz", d), "full_size = TRUE")
+})

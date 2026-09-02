@@ -41,7 +41,7 @@
 #' Fetch a run's paired reads via NCBI SRA (fasterq-dump), gzip to R1/R2 names
 #' @noRd
 .fetch_sra_pair <- function(acc, r1_dest, r2_dest, dir, sra_bin = "", scratch = tempdir()) {
-  fqd <- if (nzchar(sra_bin)) file.path(sra_bin, "fasterq-dump") else Sys.which("fasterq-dump")
+  fqd <- if (nzchar(sra_bin)) file.path(path.expand(sra_bin), "fasterq-dump") else Sys.which("fasterq-dump")
   if (!nzchar(fqd) || !file.exists(fqd)) return(FALSE)
   dir.create(scratch, showWarnings = FALSE, recursive = TRUE)
   try(system2(fqd, c("--split-files", "-e", "4", "-O", shQuote(dir),
@@ -76,18 +76,45 @@
     "is on PATH or pass sra_bin=.", call. = FALSE)
 }
 
+#' Release tag holding the rDNA-filtered test reads (built by
+#' dev/make_test_reads.R and published as GitHub release assets, one
+#' `<acc>_R1.fastq.gz` / `_R2` pair per sample plus `.sha256` sidecars).
+#' @noRd
+RP_TEST_READS_TAG <- "test-reads-2026.09.02"
+
+#' Fetch one sample's rDNA-filtered reads from the release, verified by checksum
+#' @noRd
+.fetch_small_reads <- function(acc, r1_name, r2_name, dir) {
+  if (.gz_ok(file.path(dir, r1_name)) && .gz_ok(file.path(dir, r2_name))) {
+    message("    already present, skipping")
+    return(invisible(TRUE))
+  }
+  for (f in c(r1_name, r2_name)) {
+    tryCatch(fetch_verified(RP_DB_RELEASE_BASE, RP_TEST_READS_TAG, f, dir),
+      error = function(e) stop("Could not download the filtered test reads for ", acc, ": ",
+        conditionMessage(e), "\nIf the RiboPilot release is not reachable, use ",
+        "new_test_project(full_size = TRUE) to fetch the complete reads from ENA/SRA instead.",
+        call. = FALSE))
+  }
+  unlink(file.path(dir, paste0(c(r1_name, r2_name), ".sha256")))
+  invisible(TRUE)
+}
+
 #' Stage each mapping row's reads into `dir`: bundled (Local) rows are copied
-#' from the package, the rest downloaded.
+#' from the package, the rest downloaded (filtered release assets, or the full
+#' ENA/SRA read sets when `full_size`).
 #' @noRd
 .stage_test_reads <- function(mapping, dir, local_dir = app_sys("test_data"),
-                              sra_bin = "", scratch = tempdir()) {
+                              sra_bin = "", scratch = tempdir(), full_size = TRUE) {
   local <- (mapping$Local %||% rep(FALSE, nrow(mapping))) %in% TRUE
   for (i in seq_len(nrow(mapping))) {
     message(sprintf("  [%d/%d] %s - %s", i, nrow(mapping), mapping$ID[i], mapping$Taxon[i]))
     if (local[i]) {
       for (f in c(mapping$R1[i], mapping$R2[i])) file.copy(file.path(local_dir, f), file.path(dir, f), overwrite = TRUE)
-    } else {
+    } else if (full_size) {
       .download_test_reads(mapping$ID[i], mapping$R1[i], mapping$R2[i], dir, sra_bin, scratch)
+    } else {
+      .fetch_small_reads(mapping$ID[i], mapping$R1[i], mapping$R2[i], dir)
     }
   }
   invisible(NULL)
@@ -107,15 +134,20 @@
 #' fish genome skims, study SRP313821): downloads each sample's paired reads,
 #' writes the mapping file, and initializes the project database + config.
 #'
-#' Reads are fetched from ENA when reachable, falling back to NCBI SRA
-#' (`fasterq-dump`, which must be on `PATH` or given via `sra_bin`) on networks
-#' where the ENA fastq mirror is blocked. The full set is several GB and takes a
-#' while; use `n` to fetch fewer samples for a quicker setup. Already-downloaded,
-#' valid read files are skipped, so an interrupted run resumes cleanly.
+#' By default the reads are the rDNA-filtered subsets published with the
+#' RiboPilot GitHub releases (a few MB per sample, seconds to fetch). With
+#' `full_size = TRUE` the complete read sets are fetched instead, from ENA when
+#' reachable and falling back to NCBI SRA (`fasterq-dump`, which must be on
+#' `PATH` or given via `sra_bin`) on networks where the ENA fastq mirror is
+#' blocked; that is several GB and takes a while. Use `n` to fetch fewer
+#' samples. Already-downloaded, valid read files are skipped, so an interrupted
+#' run resumes cleanly.
 #'
 #' @param path Project directory (created if missing; default current dir).
 #' @param n Number of downloaded samples to include (default all 10). The
 #'   bundled synthetic samples CHIM00 and CHIM01 are always included.
+#' @param full_size Fetch the complete read sets from ENA/SRA (TRUE) instead of
+#'   the small rDNA-filtered subsets (default FALSE).
 #' @param executor Executor / config profile (default "conda").
 #' @param container Container image for the pipeline.
 #' @param min_depth Minimum trimmed paired reads to proceed with assembly.
@@ -127,7 +159,7 @@
 #' @param ... Passed to [new_project()] (e.g. `custom_seeds_db`).
 #' @return (invisibly) the project path.
 #' @export
-new_test_project <- function(path = ".", n = Inf, executor = "conda",
+new_test_project <- function(path = ".", n = Inf, full_size = FALSE, executor = "conda",
                              container = paste0("macguigand/ribopilot:", utils::packageVersion("RiboPilot")),
                              min_depth = 500, sra_bin = NULL, Rproj = TRUE, force = FALSE, ...) {
   if (!dir.exists(path)) {
@@ -145,9 +177,10 @@ new_test_project <- function(path = ".", n = Inf, executor = "conda",
   scratch <- file.path(tempdir(), "ribopilot_sra")
   sra_bin <- sra_bin %||% ""
 
-  message("Fetching ", nrow(mapping), " test sample(s). This downloads several GB ",
-    "and may take a while (go grab a coffee)...")
-  .stage_test_reads(mapping, data_dir, sra_bin = sra_bin, scratch = scratch)
+  message("Fetching ", nrow(mapping), " test sample(s)", if (full_size)
+    ". This downloads several GB and may take a while (go grab a coffee)..." else
+    " (rDNA-filtered reads from the RiboPilot release)...")
+  .stage_test_reads(mapping, data_dir, sra_bin = sra_bin, scratch = scratch, full_size = full_size)
   unlink(scratch, recursive = TRUE)
 
   mapping$Local <- NULL
