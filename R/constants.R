@@ -159,3 +159,21 @@ SCAFFOLD_COL_HELP <- list(
 #' the "lock anyway" answer to the two-paths warning).
 #' @noRd
 LOCK_UNIT_SQL <- "UPDATE annotate SET annotate_lock = 1 - COALESCE(annotate_lock, 0) WHERE ID = ?"
+
+#' Column help for the chimera segment and window tables (annotate modal)
+#' @noRd
+CHIMERA_COL_HELP <- list(
+  start = "First base of this stretch of the scaffold (1-based).",
+  stop = "Last base of this stretch of the scaffold.",
+  taxon = "Best-hit lineage at class rank, shared by every window in the segment. 'nohit' means no window in the stretch matched the local rDNA panel or decoys.",
+  species = "Species of the strongest single hit inside the segment.",
+  pident = "Mean percent identity of the windows' best hits.",
+  n_windows = "Number of 500 bp windows (step 250) collapsed into this segment.",
+  win_species = "Species of the best hit for this window.",
+  lineage = "Best-hit lineage, last three ranks shown; hover for the full ranked lineage.",
+  win_pident = "Percent identity of the window's best hit.",
+  bitscore = "BLAST bit score of the best hit.",
+  rank_distance = "Ranks between the hit and this sample's own lineage: 0 = same species, 7 = nothing shared.",
+  depth_median = "Median read depth across the window.",
+  clip_frac = "Largest fraction of reads soft-clipped at one position in the window; high values mark a read-level breakpoint."
+)

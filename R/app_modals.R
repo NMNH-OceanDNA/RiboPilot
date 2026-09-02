@@ -317,9 +317,16 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
     rp_details("Read coverage", plotOutput("coverage_plot", height = "130px")),
 
     rp_details("Chimera check", plotOutput("chimera_plot", height = "220px"),
+      div(style = "color:#666; font-size:0.85em; margin:2px 0 4px;",
+        "The scaffold is cut into overlapping 500 bp windows, each searched against the local rDNA panel. ",
+        "Adjacent windows whose best hits share a class are merged into the lineage segments below. ",
+        "A scaffold whose segments belong to different classes, or whose reads pile up clipped at one position, is a chimera candidate; the call only warns, never blocks export."),
       div(style = "color:#666; font-size:0.85em; margin:2px 0 4px;", textOutput("chimera_db_source", inline = TRUE)),
       reactable::reactableOutput("chimera_segments"),
-      rp_details("All windows", reactable::reactableOutput("chimera_windows"), open = FALSE)),
+      rp_details("All windows",
+        div(style = "color:#666; font-size:0.85em; margin:2px 0 4px;",
+          "One row per window: the best local hit, its identity, and the read evidence over that stretch."),
+        reactable::reactableOutput("chimera_windows"), open = FALSE)),
 
     rp_details("Edit active feature boundaries",
       # normalize control heights so the step box, +/- buttons, and Save/Reset

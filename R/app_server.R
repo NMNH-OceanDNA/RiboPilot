@@ -1589,10 +1589,13 @@ app_server <- function(input, output, session) {
     reactable::reactable(s, compact = TRUE, pagination = FALSE, fullWidth = FALSE,
       defaultColDef = reactable::colDef(minWidth = 70),
       columns = list(
-        start = reactable::colDef(width = 80), stop = reactable::colDef(width = 80),
-        taxon = reactable::colDef(minWidth = 140), species = reactable::colDef(minWidth = 220, na = ""),
-        pident = reactable::colDef(name = "identity %", width = 100, format = reactable::colFormat(digits = 1)),
-        n_windows = reactable::colDef(name = "windows", width = 90)))
+        start = reactable::colDef(width = 80, html = TRUE, header = rt_help_header("start", CHIMERA_COL_HELP$start)),
+        stop = reactable::colDef(width = 80, html = TRUE, header = rt_help_header("stop", CHIMERA_COL_HELP$stop)),
+        taxon = reactable::colDef(minWidth = 140, html = TRUE, header = rt_help_header("taxon", CHIMERA_COL_HELP$taxon)),
+        species = reactable::colDef(minWidth = 220, na = "", html = TRUE, header = rt_help_header("species", CHIMERA_COL_HELP$species)),
+        pident = reactable::colDef(width = 100, format = reactable::colFormat(digits = 1), html = TRUE,
+          header = rt_help_header("identity %", CHIMERA_COL_HELP$pident)),
+        n_windows = reactable::colDef(width = 90, html = TRUE, header = rt_help_header("windows", CHIMERA_COL_HELP$n_windows))))
   })
   output$chimera_windows <- reactable::renderReactable({
     u <- sel_unit(); req(u)
@@ -1608,16 +1611,21 @@ app_server <- function(input, output, session) {
     reactable::reactable(w, compact = TRUE, pagination = TRUE, defaultPageSize = 15, searchable = TRUE,
       defaultColDef = reactable::colDef(na = "", minWidth = 70),
       columns = list(
-        start = reactable::colDef(width = 70), stop = reactable::colDef(width = 70),
-        species = reactable::colDef(minWidth = 180),
-        lineage_short = reactable::colDef(name = "lineage", minWidth = 240, html = TRUE,
+        start = reactable::colDef(width = 70, html = TRUE, header = rt_help_header("start", CHIMERA_COL_HELP$start)),
+        stop = reactable::colDef(width = 70, html = TRUE, header = rt_help_header("stop", CHIMERA_COL_HELP$stop)),
+        species = reactable::colDef(minWidth = 180, html = TRUE, header = rt_help_header("species", CHIMERA_COL_HELP$win_species)),
+        lineage_short = reactable::colDef(minWidth = 240, html = TRUE, header = rt_help_header("lineage", CHIMERA_COL_HELP$lineage),
           cell = htmlwidgets::JS("function(c){ if (c.value == null) return ''; var full = c.row.lineage || ''; return '<span title=\"' + String(full).replace(/\"/g, '&quot;') + '\">' + c.value + '</span>'; }")),
         lineage = reactable::colDef(show = FALSE),
-        pident = reactable::colDef(name = "identity %", width = 90, format = reactable::colFormat(digits = 1)),
-        bitscore = reactable::colDef(width = 80, format = reactable::colFormat(digits = 0)),
-        rank_distance = reactable::colDef(name = "rank dist", width = 80),
-        depth_median = reactable::colDef(name = "depth", width = 70, format = reactable::colFormat(digits = 0)),
-        clip_frac = reactable::colDef(name = "clip frac", width = 80, format = reactable::colFormat(digits = 2))))
+        pident = reactable::colDef(width = 90, format = reactable::colFormat(digits = 1), html = TRUE,
+          header = rt_help_header("identity %", CHIMERA_COL_HELP$win_pident)),
+        bitscore = reactable::colDef(width = 80, format = reactable::colFormat(digits = 0), html = TRUE,
+          header = rt_help_header("bitscore", CHIMERA_COL_HELP$bitscore)),
+        rank_distance = reactable::colDef(width = 80, html = TRUE, header = rt_help_header("rank dist", CHIMERA_COL_HELP$rank_distance)),
+        depth_median = reactable::colDef(width = 70, format = reactable::colFormat(digits = 0), html = TRUE,
+          header = rt_help_header("depth", CHIMERA_COL_HELP$depth_median)),
+        clip_frac = reactable::colDef(width = 80, format = reactable::colFormat(digits = 2), html = TRUE,
+          header = rt_help_header("clip frac", CHIMERA_COL_HELP$clip_frac))))
   })
 
   # Annotate modal header badges: reviewed / problem / partial (live via refresh()).

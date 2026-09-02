@@ -375,3 +375,10 @@ test_that("synthetic fixtures get the expected label and a junction within toler
     }
   }
 })
+
+test_that("chimera table column help covers every displayed column", {
+  h <- RiboPilot:::CHIMERA_COL_HELP
+  expect_true(all(c("start", "stop", "taxon", "species", "pident", "n_windows", "win_species", "lineage",
+    "win_pident", "bitscore", "rank_distance", "depth_median", "clip_frac") %in% names(h)))
+  expect_true(all(nzchar(unlist(h))))
+})
