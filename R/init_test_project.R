@@ -76,6 +76,23 @@
     "is on PATH or pass sra_bin=.", call. = FALSE)
 }
 
+#' Stage each mapping row's reads into `dir`: bundled (Local) rows are copied
+#' from the package, the rest downloaded.
+#' @noRd
+.stage_test_reads <- function(mapping, dir, local_dir = app_sys("test_data"),
+                              sra_bin = "", scratch = tempdir()) {
+  local <- (mapping$Local %||% rep(FALSE, nrow(mapping))) %in% TRUE
+  for (i in seq_len(nrow(mapping))) {
+    message(sprintf("  [%d/%d] %s - %s", i, nrow(mapping), mapping$ID[i], mapping$Taxon[i]))
+    if (local[i]) {
+      for (f in c(mapping$R1[i], mapping$R2[i])) file.copy(file.path(local_dir, f), file.path(dir, f), overwrite = TRUE)
+    } else {
+      .download_test_reads(mapping$ID[i], mapping$R1[i], mapping$R2[i], dir, sra_bin, scratch)
+    }
+  }
+  invisible(NULL)
+}
+
 #' Initialize a RiboPilot test project
 #'
 #' Sets up a ready-to-run test project from the bundled 10-sample test set (USNM
@@ -121,12 +138,10 @@ new_test_project <- function(path = ".", n = Inf, executor = "conda",
 
   message("Fetching ", nrow(mapping), " test sample(s). This downloads several GB ",
     "and may take a while (go grab a coffee)...")
-  for (i in seq_len(nrow(mapping))) {
-    message(sprintf("  [%d/%d] %s - %s", i, nrow(mapping), mapping$ID[i], mapping$Taxon[i]))
-    .download_test_reads(mapping$ID[i], mapping$R1[i], mapping$R2[i], data_dir, sra_bin, scratch)
-  }
+  .stage_test_reads(mapping, data_dir, sra_bin = sra_bin, scratch = scratch)
   unlink(scratch, recursive = TRUE)
 
+  mapping$Local <- NULL
   readr::write_csv(mapping, file.path(path, "mapping.csv"), quote = "none", na = "")
 
   new_project(

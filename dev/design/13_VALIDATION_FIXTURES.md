@@ -348,3 +348,11 @@ categories, and any change to the weights must bump `SCREEN_VERSION`.
   a chordate. See section 4.1.
 - Record in doc 12 that `min_isomer_anchor_pid` is still unvalidated after this
   sub-project, and why spike-ins cannot reach it.
+
+**Synthetic chimera samples (2026-09-01).** `new_test_project()` now bundles
+two read sets simulated by `dev/make_chimera_reads.R` from the doc 21 fixtures:
+`CHIM00` (clean fish rDNA, SRR22396758 scaffold 1.3) and `CHIM01` (the same
+molecule with fungal 5.8S-ITS2-28S spliced in at 2650 bp). Both carry the
+Taxon `Upeneus parvus`. Expected after a pipeline run: `CHIM00` chimera label
+`clean`; `CHIM01` label `likely` with a junction within 300 bp of 2650.
+Not yet measured; record the observed labels here after the first run.
