@@ -104,7 +104,7 @@ app_server <- function(input, output, session) {
   }
 
   # Which of the Reference tab's two views is showing.
-  ref_view <- reactive(input$ref_view %||% "Groups")
+  ref_view <- reactive(input$ref_view %||% "Samples")
 
   # ---- samples table data (per mode; includes state + lock) ----
   samples_data <- reactive({

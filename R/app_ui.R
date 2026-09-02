@@ -66,7 +66,7 @@ app_ui <- function(request) {
               # so centering the row would sit the toggle above the buttons
               htmltools::tagAppendAttributes(
                 shinyWidgets::radioGroupButtons("ref_view", label = NULL, size = "sm",
-                  choices = c("Groups", "Samples"), selected = "Groups"),
+                  choices = c("Samples", "Groups"), selected = "Samples"),
                 style = "margin-bottom:0;"),
               bttn("ref_suggest_btn", "Propose groups", "wand-magic-sparkles"),
               bttn("ref_dir_btn", "Settings", "gear"))),
