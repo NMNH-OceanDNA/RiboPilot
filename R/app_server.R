@@ -1573,21 +1573,52 @@ app_server <- function(input, output, session) {
 
   output$chimera_plot <- renderPlot({
     edit_tick(); u <- sel_unit(); req(u); plot_chimera(u$ID, u$path, u$scaffold)
-  }, height = 168)
+  }, height = 216)
+  output$chimera_db_source <- renderText({
+    u <- sel_unit(); req(u)
+    ch <- app_query("SELECT db_source FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", list(u$ID, u$path, u$scaffold))
+    req(nrow(ch) == 1, !is.na(ch$db_source[1]))
+    paste("windows searched against:", paste(basename(strsplit(ch$db_source[1], " ", fixed = TRUE)[[1]]), collapse = ", "))
+  })
   output$chimera_segments <- reactable::renderReactable({
     u <- sel_unit(); req(u)
     ch <- app_query("SELECT segments FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", list(u$ID, u$path, u$scaffold))
     req(nrow(ch) == 1, !is.na(ch$segments[1]))
     s <- jsonlite::fromJSON(ch$segments[1])
-    reactable::reactable(s[, intersect(c("start", "stop", "taxon", "rank", "species", "pident", "n_windows", "db_source"), names(s))],
-      compact = TRUE, pagination = FALSE, defaultColDef = reactable::colDef(minWidth = 70))
+    s <- s[, intersect(c("start", "stop", "taxon", "species", "pident", "n_windows"), names(s))]
+    reactable::reactable(s, compact = TRUE, pagination = FALSE, fullWidth = FALSE,
+      defaultColDef = reactable::colDef(minWidth = 70),
+      columns = list(
+        start = reactable::colDef(width = 80), stop = reactable::colDef(width = 80),
+        taxon = reactable::colDef(minWidth = 140), species = reactable::colDef(minWidth = 220, na = ""),
+        pident = reactable::colDef(name = "identity %", width = 100, format = reactable::colFormat(digits = 1)),
+        n_windows = reactable::colDef(name = "windows", width = 90)))
   })
   output$chimera_windows <- reactable::renderReactable({
     u <- sel_unit(); req(u)
     w <- app_query("SELECT start, stop, species, lineage, pident, bitscore, rank_distance, depth_median, clip_frac FROM chimera_windows WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
       list(u$ID, u$path, u$scaffold))
     req(nrow(w) > 0)
-    reactable::reactable(w, compact = TRUE, pagination = TRUE, defaultPageSize = 15, searchable = TRUE)
+    w$lineage_short <- vapply(w$lineage, function(l) {
+      if (is.na(l)) return(NA_character_)
+      p <- strsplit(l, ";", fixed = TRUE)[[1]]; p <- p[nzchar(p)]
+      paste(utils::tail(p, 3), collapse = " > ")
+    }, character(1), USE.NAMES = FALSE)
+    w <- w[, c("start", "stop", "species", "lineage_short", "pident", "bitscore", "rank_distance", "depth_median", "clip_frac", "lineage")]
+    reactable::reactable(w, compact = TRUE, pagination = TRUE, defaultPageSize = 15, searchable = TRUE,
+      defaultColDef = reactable::colDef(na = "", minWidth = 70),
+      columns = list(
+        start = reactable::colDef(width = 70), stop = reactable::colDef(width = 70),
+        species = reactable::colDef(minWidth = 180),
+        lineage_short = reactable::colDef(name = "lineage", minWidth = 240, html = TRUE,
+          cell = htmlwidgets::JS("function(c){ if (c.value == null) return ''; var full = c.row.lineage || ''; return '<span title=\"' + String(full).replace(/\"/g, '&quot;') + '\">' + c.value + '</span>'; }")),
+        lineage = reactable::colDef(show = FALSE),
+        pident = reactable::colDef(name = "identity %", width = 140, html = TRUE,
+          cell = htmlwidgets::JS("function(c){ if (c.value == null) return ''; var w = Math.max(0, Math.min(100, (c.value - 70) / 30 * 100)); return '<div style=\"display:flex;align-items:center;gap:6px\"><div style=\"flex:1;height:8px;background:#eee\"><div style=\"width:' + w + '%;height:8px;background:#3a5a8c\"></div></div><span>' + Number(c.value).toFixed(1) + '</span></div>'; }")),
+        bitscore = reactable::colDef(width = 80, format = reactable::colFormat(digits = 0)),
+        rank_distance = reactable::colDef(name = "rank dist", width = 80),
+        depth_median = reactable::colDef(name = "depth", width = 70, format = reactable::colFormat(digits = 0)),
+        clip_frac = reactable::colDef(name = "clip frac", width = 80, format = reactable::colFormat(digits = 2))))
   })
 
   # Annotate modal header badges: reviewed / problem / partial (live via refresh()).

@@ -69,7 +69,7 @@ modal_taxon_header <- function(id) {
   name <- if (!is.na(s$sci_name[1]) && nzchar(s$sci_name[1])) s$sci_name[1] else s$Taxon[1]
   meta <- c(
     if (!is.na(s$taxid[1]) && nzchar(as.character(s$taxid[1])))
-      sprintf("<a href='https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=%s' target='_blank'>taxid %s</a>",
+      sprintf("<a href='https://www.ncbi.nlm.nih.gov/datasets/taxonomy/%s/' target='_blank'>taxid %s</a>",
         s$taxid[1], s$taxid[1]),
     if (!is.na(s$rank[1]) && nzchar(s$rank[1])) s$rank[1])
   div(style = "margin:-6px 0 8px; color:#333; font-size:0.92em;",
@@ -316,7 +316,8 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
     # ---- collapsible detail panels (coverage above synteny, per request) ----
     rp_details("Read coverage", plotOutput("coverage_plot", height = "130px")),
 
-    rp_details("Chimera check", plotOutput("chimera_plot", height = "170px"),
+    rp_details("Chimera check", plotOutput("chimera_plot", height = "220px"),
+      div(style = "color:#666; font-size:0.85em; margin:2px 0 4px;", textOutput("chimera_db_source", inline = TRUE)),
       reactable::reactableOutput("chimera_segments"),
       rp_details("All windows", reactable::reactableOutput("chimera_windows"), open = FALSE)),
 
@@ -719,38 +720,48 @@ plot_chimera <- function(id, path = 1L, scaffold = 1L, db = NULL) {
   win <- q("SELECT start, stop, pident, lineage FROM chimera_windows WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start", list(id, path, scaffold))
   feats <- q("SELECT element, start, stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?", list(id, path, scaffold))
   junc <- if (nzchar(ch$junctions[1] %|NA|% "")) as.integer(strsplit(ch$junctions[1], ",")[[1]]) else integer(0)
-  chan <- if (!is.na(ch$channels[1])) jsonlite::fromJSON(ch$channels[1]) else list()
-  jsrc <- vapply(junc, function(j) paste(names(chan)[vapply(chan, function(x)
-    any(abs((unlist(x$junctions) %||% integer(0)) - j) <= CHIMERA_JUNCTION_TOL), logical(1))], collapse = ","), character(1))
-  g <- ggplot2::ggplot()
-  if (nrow(feats)) g <- g + ggplot2::geom_rect(data = feats, ggplot2::aes(xmin = start, xmax = stop, ymin = 0, ymax = 3),
-    fill = "grey92", inherit.aes = FALSE)
+  xmax <- max(c(feats$stop, win$stop, seg$stop, 1), na.rm = TRUE)
+  # identity track occupies y 0.2..1.6 for 70..100%, segment bar 1.9..2.9, features 3.0..3.3
+  id_y <- function(p) 0.2 + (pmin(pmax(p, 70), 100) - 70) / 30 * 1.4
+  g <- ggplot2::ggplot() +
+    ggplot2::annotate("segment", x = 1, xend = xmax, y = id_y(c(80, 90, 100)), yend = id_y(c(80, 90, 100)),
+      colour = "grey85", linewidth = 0.3)
+  if (nrow(feats)) {
+    dark <- darken_colors(RRNA_ELEMENT_COLORS)
+    g <- g + ggplot2::geom_rect(data = feats, ggplot2::aes(xmin = start, xmax = stop, ymin = 3.0, ymax = 3.3, fill = element),
+      inherit.aes = FALSE) +
+      ggplot2::scale_fill_manual(values = dark, guide = "none", na.value = "grey70")
+  }
   if (nrow(seg)) {
-    seg$label <- sprintf("%s (%s; %s, %.0f%%)", seg$taxon, seg$rank, seg$species %||% "NA", seg$pident)
     samp <- q("SELECT lineage_taxids FROM samples WHERE ID = ?", list(id))
     sample_lt <- if (nrow(samp)) samp$lineage_taxids[1] else NA_character_
     seg_lt <- if (!is.null(seg$lineage_taxids)) seg$lineage_taxids else rep(NA_character_, nrow(seg))
+    seg$nohit <- seg$taxon %in% c("nohit", "high_id", "low_id")
     seg$host <- !is.na(sample_lt) & vapply(seg_lt, function(x)
       !is.na(x) && rank_distance(x, sample_lt) < 5, logical(1))
-    # grey for host-concordant segments (derivable only when both sides have
-    # ranked lineage_taxids); distinct hues for everything else
-    uniq <- unique(seg$label)
-    host_lab <- vapply(uniq, function(l) any(seg$host[seg$label == l]), logical(1))
-    n_other <- sum(!host_lab)
-    pal <- if (n_other > 0) grDevices::hcl(h = seq(15, 375, length.out = n_other + 1)[seq_len(n_other)], c = 100, l = 65) else character(0)
-    cols <- stats::setNames(character(length(uniq)), uniq)
-    cols[host_lab] <- "grey60"
-    cols[!host_lab] <- pal
-    g <- g + ggplot2::geom_rect(data = seg, ggplot2::aes(xmin = start, xmax = stop, ymin = 1.6, ymax = 2.8, fill = label)) +
-      ggplot2::scale_fill_manual(values = cols) +
-      ggplot2::geom_text(data = seg[seg$stop - seg$start > 600, ], ggplot2::aes(x = (start + stop) / 2, y = 2.2, label = taxon), size = 3)
+    other <- unique(seg$taxon[!seg$host & !seg$nohit])
+    pal <- stats::setNames(grDevices::hcl(h = seq(15, 375, length.out = length(other) + 1)[seq_along(other)], c = 100, l = 60), other)
+    seg$col <- ifelse(seg$nohit, "white", ifelse(seg$host, "grey60", pal[seg$taxon]))
+    seg$lab <- ifelse(seg$nohit, "no hit", sprintf("%s %.0f%%", seg$taxon, seg$pident))
+    g <- g + ggplot2::geom_rect(data = seg, ggplot2::aes(xmin = start, xmax = stop, ymin = 1.9, ymax = 2.9),
+        fill = seg$col, colour = "grey40", linewidth = 0.3, linetype = ifelse(seg$nohit, "dotted", "solid")) +
+      ggplot2::geom_text(data = seg[seg$stop - seg$start > 0.09 * xmax, ], ggplot2::aes(x = (start + stop) / 2, y = 2.4, label = lab),
+        size = 3.6, colour = ifelse(seg$nohit[seg$stop - seg$start > 0.09 * xmax], "grey40", "black"))
   }
-  if (nrow(win)) g <- g + ggplot2::geom_rect(data = win, ggplot2::aes(xmin = start, xmax = stop, ymin = 0.2, ymax = 1.2, alpha = pident), fill = "#3a5a8c") +
-    ggplot2::scale_alpha_continuous(range = c(0.15, 1), guide = "none")
-  if (length(junc)) g <- g + ggplot2::geom_vline(data = data.frame(x = junc, src = jsrc), ggplot2::aes(xintercept = x, colour = src), linetype = "dashed")
-  g + ggplot2::scale_y_continuous(breaks = c(0.7, 2.2), labels = c("window identity", "lineage segment"), limits = c(0, 3)) +
-    ggplot2::labs(x = NULL, y = NULL, fill = NULL, colour = "junction") +
-    ggplot2::theme_minimal(base_size = 10) + ggplot2::theme(legend.position = "bottom", panel.grid = ggplot2::element_blank())
+  if (nrow(win)) {
+    w <- win[!is.na(win$pident), ]
+    if (nrow(w)) g <- g + ggplot2::geom_step(data = w, ggplot2::aes(x = (start + stop) / 2, y = id_y(pident)),
+      colour = "#3a5a8c", linewidth = 0.7, direction = "mid")
+  }
+  if (length(junc)) g <- g +
+    ggplot2::geom_vline(xintercept = junc, colour = "#c0392b", linetype = "dashed", linewidth = 0.7) +
+    ggplot2::annotate("text", x = junc, y = 3.45, label = paste("junction", junc), size = 3.2, colour = "#c0392b")
+  g + ggplot2::scale_y_continuous(breaks = c(id_y(c(70, 100)), 2.4), labels = c("70%", "100%", "lineage"),
+      limits = c(0, 3.6), expand = c(0, 0)) +
+    ggplot2::scale_x_continuous(limits = c(1, xmax)) +
+    ggplot2::labs(x = NULL, y = "identity") +
+    ggplot2::theme_minimal(base_size = 11) +
+    ggplot2::theme(panel.grid = ggplot2::element_blank(), plot.margin = ggplot2::margin(14, 6, 6, 6))
 }
 
 #' Synteny map: the sample's annotations over its BLAST reference's

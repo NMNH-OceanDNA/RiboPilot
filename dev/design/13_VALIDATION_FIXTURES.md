@@ -354,5 +354,8 @@ two read sets simulated by `dev/make_chimera_reads.R` from the doc 21 fixtures:
 `CHIM00` (clean fish rDNA, SRR22396758 scaffold 1.3) and `CHIM01` (the same
 molecule with fungal 5.8S-ITS2-28S spliced in at 2650 bp). Both carry the
 Taxon `Upeneus parvus`. Expected after a pipeline run: `CHIM00` chimera label
-`clean`; `CHIM01` label `likely` with a junction within 300 bp of 2650.
-Not yet measured; record the observed labels here after the first run.
+`clean`; `CHIM01` label `suspect` with a junction within 300 bp of 2650. Not
+`likely`: the reads are simulated from the spliced molecule itself, so nothing
+is soft-clipped at the junction and ribotyper passes; only the taxonomy
+channels fire and the taxonomy-only cap holds. Measured 2026-09-02 on the
+userAsmb image: `CHIM00` clean 0.0; `CHIM01` suspect 0.6, junction 2625.
