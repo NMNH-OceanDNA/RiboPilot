@@ -1573,7 +1573,7 @@ app_server <- function(input, output, session) {
 
   output$chimera_plot <- renderPlot({
     edit_tick(); u <- sel_unit(); req(u); plot_chimera(u$ID, u$path, u$scaffold)
-  }, height = 216)
+  }, height = 296)
   output$chimera_db_source <- renderText({
     u <- sel_unit(); req(u)
     ch <- app_query("SELECT db_source FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", list(u$ID, u$path, u$scaffold))
@@ -1585,17 +1585,20 @@ app_server <- function(input, output, session) {
     ch <- app_query("SELECT segments FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", list(u$ID, u$path, u$scaffold))
     req(nrow(ch) == 1, !is.na(ch$segments[1]))
     s <- jsonlite::fromJSON(ch$segments[1])
+    samp <- app_query("SELECT lineage_taxids FROM samples WHERE ID = ?", list(u$ID))
+    cols <- chimera_seg_colors(s, if (nrow(samp)) samp$lineage_taxids[1] else NA_character_)
     s <- s[, intersect(c("start", "stop", "taxon", "species", "pident", "n_windows"), names(s))]
-    reactable::reactable(s, compact = TRUE, pagination = FALSE, fullWidth = FALSE,
+    reactable::reactable(s, compact = TRUE, pagination = FALSE,
       defaultColDef = reactable::colDef(minWidth = 70),
+      rowStyle = function(index) list(background = cols[index]),
       columns = list(
-        start = reactable::colDef(width = 80, html = TRUE, header = rt_help_header("start", CHIMERA_COL_HELP$start)),
-        stop = reactable::colDef(width = 80, html = TRUE, header = rt_help_header("stop", CHIMERA_COL_HELP$stop)),
-        taxon = reactable::colDef(minWidth = 140, html = TRUE, header = rt_help_header("taxon", CHIMERA_COL_HELP$taxon)),
-        species = reactable::colDef(minWidth = 220, na = "", html = TRUE, header = rt_help_header("species", CHIMERA_COL_HELP$species)),
+        start = reactable::colDef(width = 80, html = TRUE, header = rt_help_header("Start", CHIMERA_COL_HELP$start)),
+        stop = reactable::colDef(width = 80, html = TRUE, header = rt_help_header("Stop", CHIMERA_COL_HELP$stop)),
+        taxon = reactable::colDef(minWidth = 140, html = TRUE, header = rt_help_header("Taxon", CHIMERA_COL_HELP$taxon)),
+        species = reactable::colDef(minWidth = 220, na = "", html = TRUE, header = rt_help_header("Species", CHIMERA_COL_HELP$species)),
         pident = reactable::colDef(width = 100, format = reactable::colFormat(digits = 1), html = TRUE,
-          header = rt_help_header("identity %", CHIMERA_COL_HELP$pident)),
-        n_windows = reactable::colDef(width = 90, html = TRUE, header = rt_help_header("windows", CHIMERA_COL_HELP$n_windows))))
+          header = rt_help_header("Identity %", CHIMERA_COL_HELP$pident)),
+        n_windows = reactable::colDef(width = 100, html = TRUE, header = rt_help_header("Windows", CHIMERA_COL_HELP$n_windows))))
   })
   output$chimera_windows <- reactable::renderReactable({
     u <- sel_unit(); req(u)
@@ -1608,24 +1611,32 @@ app_server <- function(input, output, session) {
       paste(utils::tail(p, 3), collapse = " > ")
     }, character(1), USE.NAMES = FALSE)
     w <- w[, c("start", "stop", "species", "lineage_short", "pident", "bitscore", "rank_distance", "depth_median", "clip_frac", "lineage")]
+    # each window belongs to the segment whose start is the last one at or before its own
+    ch <- app_query("SELECT segments FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", list(u$ID, u$path, u$scaffold))
+    samp <- app_query("SELECT lineage_taxids FROM samples WHERE ID = ?", list(u$ID))
+    cols <- if (nrow(ch) == 1 && !is.na(ch$segments[1])) {
+      s <- jsonlite::fromJSON(ch$segments[1])
+      chimera_seg_colors(s, if (nrow(samp)) samp$lineage_taxids[1] else NA_character_)[findInterval(w$start, s$start)]
+    } else rep("#FFFFFF", nrow(w))
     reactable::reactable(w, compact = TRUE, pagination = TRUE, defaultPageSize = 15, searchable = TRUE,
-      defaultColDef = reactable::colDef(na = "", minWidth = 70),
+      defaultColDef = reactable::colDef(na = "", minWidth = 70, headerStyle = list(whiteSpace = "nowrap")),
+      rowStyle = function(index) list(background = cols[index]),
       columns = list(
-        start = reactable::colDef(width = 70, html = TRUE, header = rt_help_header("start", CHIMERA_COL_HELP$start)),
-        stop = reactable::colDef(width = 70, html = TRUE, header = rt_help_header("stop", CHIMERA_COL_HELP$stop)),
-        species = reactable::colDef(minWidth = 180, html = TRUE, header = rt_help_header("species", CHIMERA_COL_HELP$win_species)),
-        lineage_short = reactable::colDef(minWidth = 240, html = TRUE, header = rt_help_header("lineage", CHIMERA_COL_HELP$lineage),
+        start = reactable::colDef(width = 75, html = TRUE, header = rt_help_header("Start", CHIMERA_COL_HELP$start)),
+        stop = reactable::colDef(width = 75, html = TRUE, header = rt_help_header("Stop", CHIMERA_COL_HELP$stop)),
+        species = reactable::colDef(minWidth = 150, html = TRUE, header = rt_help_header("Species", CHIMERA_COL_HELP$win_species)),
+        lineage_short = reactable::colDef(minWidth = 180, html = TRUE, header = rt_help_header("Lineage", CHIMERA_COL_HELP$lineage),
           cell = htmlwidgets::JS("function(c){ if (c.value == null) return ''; var full = c.row.lineage || ''; return '<span title=\"' + String(full).replace(/\"/g, '&quot;') + '\">' + c.value + '</span>'; }")),
         lineage = reactable::colDef(show = FALSE),
-        pident = reactable::colDef(width = 90, format = reactable::colFormat(digits = 1), html = TRUE,
-          header = rt_help_header("identity %", CHIMERA_COL_HELP$win_pident)),
-        bitscore = reactable::colDef(width = 80, format = reactable::colFormat(digits = 0), html = TRUE,
-          header = rt_help_header("bitscore", CHIMERA_COL_HELP$bitscore)),
-        rank_distance = reactable::colDef(width = 80, html = TRUE, header = rt_help_header("rank dist", CHIMERA_COL_HELP$rank_distance)),
-        depth_median = reactable::colDef(width = 70, format = reactable::colFormat(digits = 0), html = TRUE,
-          header = rt_help_header("depth", CHIMERA_COL_HELP$depth_median)),
-        clip_frac = reactable::colDef(width = 80, format = reactable::colFormat(digits = 2), html = TRUE,
-          header = rt_help_header("clip frac", CHIMERA_COL_HELP$clip_frac))))
+        pident = reactable::colDef(width = 100, format = reactable::colFormat(digits = 1), html = TRUE,
+          header = rt_help_header("Identity %", CHIMERA_COL_HELP$win_pident)),
+        bitscore = reactable::colDef(width = 90, format = reactable::colFormat(digits = 0), html = TRUE,
+          header = rt_help_header("Bitscore", CHIMERA_COL_HELP$bitscore)),
+        rank_distance = reactable::colDef(width = 95, html = TRUE, header = rt_help_header("Rank dist", CHIMERA_COL_HELP$rank_distance)),
+        depth_median = reactable::colDef(width = 80, format = reactable::colFormat(digits = 0), html = TRUE,
+          header = rt_help_header("Depth", CHIMERA_COL_HELP$depth_median)),
+        clip_frac = reactable::colDef(width = 90, format = reactable::colFormat(digits = 2), html = TRUE,
+          header = rt_help_header("Clip frac", CHIMERA_COL_HELP$clip_frac))))
   })
 
   # Annotate modal header badges: reviewed / problem / partial (live via refresh()).

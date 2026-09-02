@@ -316,16 +316,16 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
     # ---- collapsible detail panels (coverage above synteny, per request) ----
     rp_details("Read coverage", plotOutput("coverage_plot", height = "130px")),
 
-    rp_details("Chimera check", plotOutput("chimera_plot", height = "220px"),
+    rp_details("Chimera check",
       div(style = "color:#666; font-size:0.85em; margin:2px 0 4px;",
-        "The scaffold is cut into overlapping 500 bp windows, each searched against the local rDNA panel. ",
-        "Adjacent windows whose best hits share a class are merged into the lineage segments below. ",
-        "A scaffold whose segments belong to different classes, or whose reads pile up clipped at one position, is a chimera candidate; the call only warns, never blocks export."),
-      div(style = "color:#666; font-size:0.85em; margin:2px 0 4px;", textOutput("chimera_db_source", inline = TRUE)),
+        "Overlapping 500 bp windows are BLASTed against the local rDNA panel. ",
+        "Neighbouring windows whose best hits share a class form one lineage segment. ",
+        "Segments from different classes, or reads clipped at one position, flag a chimera candidate. Warns only; never blocks export."),
+      plotOutput("chimera_plot", height = "300px"),
       reactable::reactableOutput("chimera_segments"),
       rp_details("All windows",
         div(style = "color:#666; font-size:0.85em; margin:2px 0 4px;",
-          "One row per window: the best local hit, its identity, and the read evidence over that stretch."),
+          "One row per window: its best BLAST hit in the local panel, the hit identity, and the read evidence over that stretch."),
         reactable::reactableOutput("chimera_windows"), open = FALSE)),
 
     rp_details("Edit active feature boundaries",
@@ -713,6 +713,25 @@ plot_trim <- function(id, path = 1L, scaffold = 1L, from = NA, to = NA) {
   g
 }
 
+#' Colorblind-safe fills for lineage segments, distinct from the feature colors
+#' (Tol light palette minus blue, orange, and pink). Shared by the chimera track
+#' and the segments table, which doubles as the legend.
+#' @noRd
+CHIMERA_LINEAGE_COLORS <- c("#EEDD88", "#99DDFF", "#BBCC33", "#AAAA00", "#44BB99")
+
+#' One fill per segment: white for no hit, grey for the sample's own lineage,
+#' palette color per foreign taxon in order of first appearance.
+#' @noRd
+chimera_seg_colors <- function(seg, sample_lt) {
+  seg_lt <- if (!is.null(seg$lineage_taxids)) seg$lineage_taxids else rep(NA_character_, nrow(seg))
+  nohit <- seg$taxon %in% c("nohit", "high_id", "low_id")
+  host <- !is.na(sample_lt) & vapply(seg_lt, function(x)
+    !is.na(x) && rank_distance(x, sample_lt) < 5, logical(1))
+  other <- unique(seg$taxon[!host & !nohit])
+  pal <- stats::setNames(rep_len(CHIMERA_LINEAGE_COLORS, length(other)), other)
+  ifelse(nohit, "#FFFFFF", ifelse(host, "#B3B3B3", pal[seg$taxon]))
+}
+
 #' Lineage segments, window identity, and junctions under the depth track
 #' @noRd
 plot_chimera <- function(id, path = 1L, scaffold = 1L, db = NULL) {
@@ -728,61 +747,60 @@ plot_chimera <- function(id, path = 1L, scaffold = 1L, db = NULL) {
   feats <- q("SELECT element, start, stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?", list(id, path, scaffold))
   junc <- if (nzchar(ch$junctions[1] %|NA|% "")) as.integer(strsplit(ch$junctions[1], ",")[[1]]) else integer(0)
   xmax <- max(c(feats$stop, win$stop, seg$stop, 1), na.rm = TRUE)
-  # identity track occupies y 0.2..1.6 for 70..100%, segment bar 1.9..2.9, features 3.0..3.3
-  id_y <- function(p) 0.2 + (pmin(pmax(p, 70), 100) - 70) / 30 * 1.4
+  # one facet per row; the two bar rows span 0..12 so facet heights come out
+  # roughly 1:1:3 against the 68..102 identity panel
+  rows <- c("genes", "lineage", "ident")
+  fr <- function(df, r) { df$row <- factor(r, levels = rows); df }
   g <- ggplot2::ggplot() +
-    ggplot2::annotate("segment", x = 1, xend = xmax, y = id_y(c(70, 80, 90, 100)), yend = id_y(c(70, 80, 90, 100)),
-      colour = "grey65", linewidth = 0.3) +
-    ggplot2::annotate("text", x = 1, y = id_y(100) + 0.1, label = "window identity to best hit", hjust = 0, vjust = 0,
-      size = 3, colour = "grey40")
+    ggplot2::geom_blank(data = fr(data.frame(y = c(0, 12, 0, 12, 68, 102)), rep(rows, each = 2)), ggplot2::aes(y = y))
   if (nrow(feats)) {
     dark <- darken_colors(RRNA_ELEMENT_COLORS)
-    g <- g + ggplot2::geom_rect(data = feats, ggplot2::aes(xmin = start, xmax = stop, ymin = 3.0, ymax = 3.45, fill = element),
-      inherit.aes = FALSE, alpha = 0.28) +
+    g <- g + ggplot2::geom_rect(data = fr(feats, "genes"), ggplot2::aes(xmin = start, xmax = stop, ymin = 1, ymax = 9, fill = element),
+      alpha = 0.28) +
       ggplot2::scale_fill_manual(values = dark, guide = "none", na.value = "grey70") +
-      ggplot2::geom_text(data = feats, ggplot2::aes(x = (start + stop) / 2, y = 3.22, label = element, colour = element),
+      ggplot2::geom_text(data = fr(feats, "genes"), ggplot2::aes(x = (start + stop) / 2, y = 5, label = element, colour = element),
         size = 3.2, fontface = "bold") +
       ggplot2::scale_colour_manual(values = dark, guide = "none", na.value = "grey40")
   }
   if (nrow(seg)) {
     samp <- q("SELECT lineage_taxids FROM samples WHERE ID = ?", list(id))
-    sample_lt <- if (nrow(samp)) samp$lineage_taxids[1] else NA_character_
-    seg_lt <- if (!is.null(seg$lineage_taxids)) seg$lineage_taxids else rep(NA_character_, nrow(seg))
-    seg$nohit <- seg$taxon %in% c("nohit", "high_id", "low_id")
-    seg$host <- !is.na(sample_lt) & vapply(seg_lt, function(x)
-      !is.na(x) && rank_distance(x, sample_lt) < 5, logical(1))
-    other <- unique(seg$taxon[!seg$host & !seg$nohit])
-    pal <- stats::setNames(grDevices::hcl(h = seq(15, 375, length.out = length(other) + 1)[seq_along(other)], c = 100, l = 60), other)
-    seg$col <- ifelse(seg$nohit, "white", ifelse(seg$host, "grey60", pal[seg$taxon]))
-    seg$lab <- ifelse(seg$nohit, "no hit", sprintf("%s %.0f%%", seg$taxon, seg$pident))
-    # windows overlap, so a later segment hides the tail of the one before it:
-    # label each segment at the centre of what is actually visible
-    seg <- seg[order(seg$start), ]
-    seg$vis_start <- pmax(seg$start, c(0, utils::head(seg$stop, -1)) + 1)
-    seg$vis_mid <- (seg$vis_start + seg$stop) / 2
-    seg$vis_w <- seg$stop - seg$vis_start
-    lab_ok <- seg$vis_w > 0.07 * xmax
-    g <- g + ggplot2::geom_rect(data = seg, ggplot2::aes(xmin = start, xmax = stop, ymin = 1.9, ymax = 2.9),
-        fill = seg$col, colour = "grey40", linewidth = 0.3, linetype = ifelse(seg$nohit, "dotted", "solid")) +
-      ggplot2::geom_text(data = seg[lab_ok, ], ggplot2::aes(x = vis_mid, y = 2.4, label = lab),
-        size = 3.6, colour = ifelse(seg$nohit[lab_ok], "grey40", "black"))
+    seg$col <- chimera_seg_colors(seg, if (nrow(samp)) samp$lineage_taxids[1] else NA_character_)
+    g <- g + ggplot2::geom_rect(data = fr(seg, "lineage"), ggplot2::aes(xmin = start, xmax = stop, ymin = 0.5, ymax = 11.5),
+      fill = seg$col, alpha = 0.85, colour = "grey40", linewidth = 0.3, linetype = ifelse(seg$col == "#FFFFFF", "dotted", "solid"))
   }
   if (nrow(win)) {
-    w <- win[!is.na(win$pident), ]
-    if (nrow(w)) g <- g + ggplot2::geom_step(data = w, ggplot2::aes(x = (start + stop) / 2, y = id_y(pident)),
-      colour = "#3a5a8c", linewidth = 0.7, direction = "mid")
+    # one range line per window at its identity, dot at the midpoint filled by
+    # lineage segment; no-hit windows sit hollow just under the 70% floor
+    win$nohit <- is.na(win$pident)
+    win$y <- ifelse(win$nohit, 68, pmax(win$pident, 70))
+    win$col <- if (nrow(seg)) seg$col[findInterval(win$start, seg$start)] else "#B3B3B3"
+    win$col[win$nohit] <- "#FFFFFF"
+    g <- g + ggplot2::geom_segment(data = fr(win, "ident"), ggplot2::aes(x = start, xend = stop, y = y, yend = y),
+        colour = ifelse(win$nohit, "grey70", "grey30"), linewidth = 0.5,
+        linetype = ifelse(win$nohit, "dotted", "solid")) +
+      ggplot2::geom_point(data = fr(win, "ident"), ggplot2::aes(x = (start + stop) / 2, y = y),
+        shape = 21, size = 2.2, fill = win$col, colour = ifelse(win$nohit, "grey60", "grey30"))
   }
   if (length(junc)) g <- g +
     ggplot2::geom_vline(xintercept = junc, colour = "#c0392b", linetype = "dashed", linewidth = 0.7) +
-    ggplot2::annotate("label", x = junc, y = 3.62, label = sprintf("suspected chimera junction at %d bp", junc),
-      size = 3.2, colour = "#c0392b", fill = "white", linewidth = 0)
-  g + ggplot2::scale_y_continuous(breaks = c(id_y(c(70, 100)), 2.4, 3.22), labels = c("70%", "100%", "lineage", "genes"),
-      limits = c(0, 3.8), expand = c(0, 0)) +
-    ggplot2::scale_x_continuous(limits = c(1, xmax)) +
-    ggplot2::labs(x = NULL, y = "depth") +
+    ggplot2::geom_label(data = fr(data.frame(x = junc, y = 11.5), "genes"), ggplot2::aes(x = x, y = y),
+      label = sprintf("suspected chimera junction at %d bp", junc), vjust = 1, size = 3.0,
+      colour = "#c0392b", fill = "white", linewidth = 0)
+  g + ggplot2::facet_grid(row ~ ., scales = "free_y", space = "free_y", switch = "y",
+      labeller = ggplot2::as_labeller(c(genes = "", lineage = "lineage", ident = "% identity"))) +
+    ggplot2::scale_x_continuous(breaks = seq(0, xmax, 1000), minor_breaks = seq(0, xmax, 500), expand = c(0, 0)) +
+    ggplot2::scale_y_continuous(breaks = c(70, 80, 90, 100), expand = c(0, 0)) +
+    ggplot2::coord_cartesian(xlim = c(0, xmax), clip = "off") +
+    ggplot2::labs(x = "position (bp)", y = NULL) +
     ggplot2::theme_minimal(base_size = 11) +
-    ggplot2::theme(panel.grid = ggplot2::element_blank(), plot.margin = ggplot2::margin(14, 6, 6, 6),
-      axis.title.y = ggplot2::element_text(colour = "transparent"))
+    ggplot2::theme(panel.grid.major.y = ggplot2::element_line(colour = "grey88", linewidth = 0.3),
+      panel.grid.minor.y = ggplot2::element_blank(),
+      panel.grid.major.x = ggplot2::element_line(colour = "grey88", linewidth = 0.3),
+      panel.grid.minor.x = ggplot2::element_line(colour = "grey93", linewidth = 0.2),
+      strip.placement = "outside",
+      strip.text.y.left = ggplot2::element_text(angle = 0, hjust = 1, face = "bold", colour = "grey30", size = 9.5),
+      axis.text = ggplot2::element_text(size = 10), panel.spacing.y = grid::unit(3, "pt"),
+      plot.margin = ggplot2::margin(14, 6, 6, 6))
 }
 
 #' Synteny map: the sample's annotations over its BLAST reference's
