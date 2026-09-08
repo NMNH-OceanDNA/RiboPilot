@@ -673,8 +673,15 @@ plot_coverage <- function(id, path = 1L, scaffold = 1L) {
   cov <- app_query("SELECT depths FROM coverage WHERE ID = ? AND path = ? AND scaffold = ?",
     params = list(id, path, scaffold))
   if (nrow(cov) == 0 || is.na(cov$depths[1]) || !nzchar(cov$depths[1])) {
+    # a supplied-assembly sample with no reads will never have coverage
+    r1 <- app_query("SELECT R1 FROM preprocess WHERE ID = ?", params = list(id))$R1
+    msg <- if (length(r1) && (is.na(r1[1]) || !nzchar(r1[1]))) {
+      "coverage not measured (no reads for this sample)"
+    } else {
+      "no coverage data (run WF1)"
+    }
     return(ggplot2::ggplot() +
-      ggplot2::annotate("text", 0, 0, label = "no coverage data (run WF1)") +
+      ggplot2::annotate("text", 0, 0, label = msg) +
       ggplot2::theme_void())
   }
   dep <- as.numeric(strsplit(cov$depths[1], ",")[[1]])
