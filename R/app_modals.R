@@ -69,7 +69,7 @@ modal_taxon_header <- function(id) {
   name <- if (!is.na(s$sci_name[1]) && nzchar(s$sci_name[1])) s$sci_name[1] else s$Taxon[1]
   meta <- c(
     if (!is.na(s$taxid[1]) && nzchar(as.character(s$taxid[1])))
-      sprintf("<a href='https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=%s' target='_blank'>taxid %s</a>",
+      sprintf("<a href='https://www.ncbi.nlm.nih.gov/datasets/taxonomy/%s/' target='_blank'>taxid %s</a>",
         s$taxid[1], s$taxid[1]),
     if (!is.na(s$rank[1]) && nzchar(s$rank[1])) s$rank[1])
   div(style = "margin:-6px 0 8px; color:#333; font-size:0.92em;",
@@ -101,16 +101,64 @@ assemble_modal <- function(id) {
     # blast_screen and blast_ref_candidates are both written per unit by WF1 and
     # neither was rendered anywhere: when they name different organisms, that is
     # the contamination signal.
-    rp_details("GenBank evidence for the highlighted scaffold",
-      uiOutput("unit_screen"),
-      div(style = "margin-top:8px; color:#555;",
-        "Best matches among records whose title says nuclear rDNA:"),
-      reactable::reactableOutput("unit_candidates")),
+    # All start collapsed, and collapse again when another scaffold is picked
+    # (examine_unit), so the modal opens short for every scaffold.
+    div(id = "asm_unit_panels",
+      rp_details(tagList("GenBank evidence for ", textOutput("hl_scaf_ev", inline = TRUE)), open = FALSE,
+        uiOutput("unit_screen"),
+        div(style = "margin-top:8px; color:#555;",
+          "Best matches among records whose title says nuclear rDNA:"),
+        reactable::reactableOutput("unit_candidates")),
 
-    rp_details("Read coverage for the highlighted scaffold", open = FALSE,
-      uiOutput("unit_coverage_label"),
-      plotOutput("unit_coverage_plot", height = "140px"))
+      rp_details(tagList("Read coverage for ", textOutput("hl_scaf_cov", inline = TRUE)), open = FALSE,
+        plotOutput("unit_coverage_plot", height = "140px")),
+
+      rp_details(tagList("Chimera check for ", textOutput("hl_scaf_chim", inline = TRUE)), open = FALSE,
+        div(style = "color:#666; font-size:0.85em; margin:2px 0 4px;",
+          "Overlapping 500 bp windows are BLASTed against the local rDNA panel. ",
+          "Neighbouring windows whose best hits share a class form one lineage segment. ",
+          "Segments from different classes, or reads clipped at one position, flag a chimera candidate. Warns only; never blocks export."),
+        div(style = "color:#666; font-size:0.85em; margin:2px 0 4px;", textOutput("chimera_db_source", inline = TRUE)),
+        plotOutput("chimera_plot", height = "300px"),
+        reactable::reactableOutput("chimera_segments"),
+        rp_details("All windows",
+          div(style = "color:#666; font-size:0.85em; margin:2px 0 4px;",
+            "One row per window: its best BLAST hit in the local panel, the hit identity, and the read evidence over that stretch."),
+          reactable::reactableOutput("chimera_windows"), open = FALSE))),
+
+    # Only a supplied assembly has these: the contigs the rDNA search found but
+    # did not carry forward. They never become assembly units, so this is the
+    # one place they are visible at all.
+    rejected_contigs_section(id)
   )
+}
+
+#' The contigs the rDNA search left behind, or nothing at all
+#'
+#' Rendered inline rather than as a server output: the rows never change while
+#' the modal is open, and a sample that dropped nothing should not show an empty
+#' section.
+#' @param id Sample ID.
+#' @noRd
+rejected_contigs_section <- function(id) {
+  d <- rejected_rrna_contigs(id)
+  if (nrow(d) == 0) {
+    return(NULL)
+  }
+  names(d) <- c("Contig", "Length", "rRNA found", "Why it was left out")
+  rp_details(sprintf("Contigs not carried forward (%d)", nrow(d)), open = FALSE,
+    div(style = "color:#666; font-size:0.85em; margin-bottom:6px;",
+      paste("These contigs in the assembly you supplied had rRNA hits but did",
+        "not go on through the pipeline. A contig needs an 18S or 28S anchor to",
+        "be carried forward; 5.8S on its own is not enough. Contigs with no rRNA",
+        "hit at all are not listed.")),
+    reactable::reactable(d, compact = TRUE, sortable = TRUE, wrap = FALSE,
+      defaultPageSize = 10,
+      columns = list(
+        Contig = reactable::colDef(minWidth = 160),
+        Length = reactable::colDef(width = 90),
+        `rRNA found` = reactable::colDef(width = 110),
+        `Why it was left out` = reactable::colDef(minWidth = 200))))
 }
 
 #' Warn that locking would leave a sample with two locked assembly paths
@@ -318,7 +366,7 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
       uiOutput("msa_header"),
       uiOutput("feat_align_ui")),
 
-    rp_details("Curation flags", open = FALSE,
+    rp_details("Curation warnings", open = FALSE,
       uiOutput("curate_notes"),
       reactable::reactableOutput("flag_tbl")),
 
@@ -455,18 +503,21 @@ trim_modal <- function(n, a_from, a_to) {
     tags$p(class = "text-muted", style = "font-size:0.85em;",
       sprintf("Current assembly length: %d bp. Annotated span: %d..%d bp.", n, a_from, a_to)),
     shinyWidgets::prettyRadioButtons("trim_mode", "Trim to:",
-      choices = c("Annotated feature boundaries" = "annotated", "Custom range" = "custom"),
+      choices = c("Annotated feature boundaries" = "annotated", "Annotated + flank" = "flank", "Custom range" = "custom"),
       selected = "annotated", status = "primary", inline = TRUE),
     tags$p(class = "text-muted", style = "font-size:0.8em; margin:2px 0;",
       "Drag across the plot to set the kept window (grey = trimmed); drag the box ",
-      "edges to adjust. The From/To values track your selection."),
+      "edges to adjust. From/To always show the window that will be kept; choose Custom range to edit them."),
     plotOutput("trim_plot", height = "230px",
       brush = brushOpts(id = "trim_brush", direction = "x", resetOnNew = FALSE,
         fill = "#4C9BE8", opacity = 0.15)),
-    conditionalPanel("input.trim_mode == 'custom'",
-      div(style = "display:flex; gap:1em; margin-top:6px;",
-        numericInput("trim_from", "From (bp)", value = a_from, min = 1, max = n),
-        numericInput("trim_to", "To (bp)", value = a_to, min = 1, max = n))),
+    div(style = "display:flex; gap:1em; margin-top:6px; align-items:flex-end;",
+      conditionalPanel("input.trim_mode == 'flank'",
+        numericInput("trim_flank", "Flank (bp)", value = 100, min = 1, step = 50)),
+      shinyjs::disabled(numericInput("trim_from", "From (bp)", value = a_from, min = 1, max = n)),
+      shinyjs::disabled(numericInput("trim_to", "To (bp)", value = a_to, min = 1, max = n))),
+    div(style = "color:#c0392b; font-weight:bold; margin:6px 0 14px;", textOutput("trim_flank_hint")),
+    textOutput("trim_chimera_hint"),
     opts_help("Trimming cuts the flanks off the scaffold and shifts every ",
       "feature coordinate + the coverage track to match. Features that fall entirely ",
       "outside the kept range are removed. Use \"Restore assembly\" to undo."),
@@ -603,6 +654,18 @@ tint_colors <- function(cols, f = 0.80) {
 
 #' Read-coverage track for one assembly unit, with feature regions shaded
 #' @noRd
+#' Pad a plot's left gutter (y title, axis text, strips) to a fixed width so
+#' plots stacked in a modal share one x axis. Returns a gtable; draw it with
+#' grid::grid.draw().
+#' @noRd
+fixed_gutter <- function(g, left_cm = 3.2) {
+  gt <- ggplot2::ggplotGrob(g)
+  l <- min(gt$layout$l[grepl("panel", gt$layout$name)])
+  have <- sum(grid::convertWidth(gt$widths[seq_len(l - 1)], "cm", valueOnly = TRUE))
+  gt$widths[1] <- gt$widths[1] + grid::unit(max(0, left_cm - have), "cm")
+  gt
+}
+
 plot_coverage <- function(id, path = 1L, scaffold = 1L) {
   if (is.null(id)) {
     return(NULL)
@@ -610,8 +673,15 @@ plot_coverage <- function(id, path = 1L, scaffold = 1L) {
   cov <- app_query("SELECT depths FROM coverage WHERE ID = ? AND path = ? AND scaffold = ?",
     params = list(id, path, scaffold))
   if (nrow(cov) == 0 || is.na(cov$depths[1]) || !nzchar(cov$depths[1])) {
+    # a supplied-assembly sample with no reads will never have coverage
+    r1 <- app_query("SELECT R1 FROM preprocess WHERE ID = ?", params = list(id))$R1
+    msg <- if (length(r1) && (is.na(r1[1]) || !nzchar(r1[1]))) {
+      "coverage not measured (no reads for this sample)"
+    } else {
+      "no coverage data (run WF1)"
+    }
     return(ggplot2::ggplot() +
-      ggplot2::annotate("text", 0, 0, label = "no coverage data (run WF1)") +
+      ggplot2::annotate("text", 0, 0, label = msg) +
       ggplot2::theme_void())
   }
   dep <- as.numeric(strsplit(cov$depths[1], ",")[[1]])
@@ -636,12 +706,17 @@ plot_coverage <- function(id, path = 1L, scaffold = 1L) {
     g <- g + ggplot2::geom_text(data = feats, inherit.aes = FALSE,
       ggplot2::aes(x = mid, y = ymax * 1.06, label = element, colour = element),
       size = 3.2, fontface = "bold", vjust = 0) +
-      ggplot2::scale_colour_manual(values = dark, guide = "none") +
-      ggplot2::coord_cartesian(ylim = c(0, ymax * 1.16), clip = "off")
+      ggplot2::scale_colour_manual(values = dark, guide = "none")
   }
-  g + ggplot2::labs(x = "position (bp)", y = "depth") +
+  # same x extent and padding as plot_chimera so the two stack with aligned axes
+  n <- nrow(df)
+  g + ggplot2::scale_x_continuous(breaks = seq(0, n, 1000), minor_breaks = seq(0, n, 500), expand = c(0, 0)) +
+    ggplot2::coord_cartesian(xlim = c(0, n), ylim = c(0, ymax * 1.16), clip = "off") +
+    ggplot2::labs(x = "position (bp)", y = "depth") +
     ggplot2::theme_minimal(base_size = 11) +
-    ggplot2::theme(panel.grid.minor = ggplot2::element_blank(),
+    ggplot2::theme(panel.grid.major = ggplot2::element_line(colour = "grey78", linewidth = 0.45),
+      panel.grid.minor.x = ggplot2::element_line(colour = "grey86", linewidth = 0.3),
+      panel.grid.minor.y = ggplot2::element_blank(),
       plot.margin = ggplot2::margin(14, 6, 6, 6))
 }
 
@@ -665,6 +740,98 @@ plot_trim <- function(id, path = 1L, scaffold = 1L, from = NA, to = NA) {
         colour = "#111111", linewidth = 0.7)
   }
   g
+}
+
+#' Colorblind-safe fills for lineage segments, distinct from the feature colors
+#' (Tol light palette minus blue, orange, and pink). Shared by the chimera track
+#' and the segments table, which doubles as the legend.
+#' @noRd
+CHIMERA_LINEAGE_COLORS <- c("#EEDD88", "#99DDFF", "#BBCC33", "#AAAA00", "#44BB99")
+CHIMERA_SEG_ALPHA <- 0.6  # shared by the lineage bar and the table row fills
+
+#' One fill per segment: white for no hit, grey for the sample's own lineage,
+#' palette color per foreign taxon in order of first appearance.
+#' @noRd
+chimera_seg_colors <- function(seg, sample_lt) {
+  seg_lt <- if (!is.null(seg$lineage_taxids)) seg$lineage_taxids else rep(NA_character_, nrow(seg))
+  nohit <- seg$taxon %in% c("nohit", "high_id", "low_id")
+  host <- !is.na(sample_lt) & vapply(seg_lt, function(x)
+    !is.na(x) && rank_distance(x, sample_lt) < 5, logical(1))
+  other <- unique(seg$taxon[!host & !nohit])
+  pal <- stats::setNames(rep_len(CHIMERA_LINEAGE_COLORS, length(other)), other)
+  ifelse(nohit, "#FFFFFF", ifelse(host, "#B3B3B3", pal[seg$taxon]))
+}
+
+#' Lineage segments, window identity, and junctions under the depth track
+#' @noRd
+plot_chimera <- function(id, path = 1L, scaffold = 1L, db = NULL) {
+  q <- if (is.null(db)) app_query else {
+    con <- open_project_db(db); on.exit(DBI::dbDisconnect(con))
+    function(sql, params = NULL) DBI::dbGetQuery(con, sql, params = params)
+  }
+  empty <- function(msg) ggplot2::ggplot() + ggplot2::annotate("text", 0, 0, label = msg) + ggplot2::theme_void()
+  ch <- q("SELECT label, junctions, segments, channels FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", list(id, path, scaffold))
+  if (nrow(ch) == 0) return(empty("no chimera check yet (run WF1)"))
+  seg <- if (!is.na(ch$segments[1])) jsonlite::fromJSON(ch$segments[1]) else data.frame()
+  win <- q("SELECT start, stop, pident, lineage FROM chimera_windows WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start", list(id, path, scaffold))
+  feats <- q("SELECT element, start, stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?", list(id, path, scaffold))
+  junc <- if (nzchar(ch$junctions[1] %|NA|% "")) as.integer(strsplit(ch$junctions[1], ",")[[1]]) else integer(0)
+  n <- q("SELECT length FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?", list(id, path, scaffold))$length
+  xmax <- max(c(n, feats$stop, win$stop, seg$stop, 1), na.rm = TRUE)
+  # one facet per row; the two bar rows span 0..12 so facet heights come out
+  # roughly 1:1:3 against the 68..102 identity panel
+  rows <- c("genes", "lineage", "ident")
+  fr <- function(df, r) { df$row <- factor(r, levels = rows); df }
+  g <- ggplot2::ggplot() +
+    ggplot2::geom_blank(data = fr(data.frame(y = c(0, 12, 0, 12, 68, 102)), rep(rows, each = 2)), ggplot2::aes(y = y))
+  if (nrow(feats)) {
+    dark <- darken_colors(RRNA_ELEMENT_COLORS)
+    g <- g + ggplot2::geom_rect(data = fr(feats, "genes"), ggplot2::aes(xmin = start, xmax = stop, ymin = 1, ymax = 9, fill = element),
+      alpha = 0.28) +
+      ggplot2::scale_fill_manual(values = dark, guide = "none", na.value = "grey70") +
+      ggplot2::geom_text(data = fr(feats, "genes"), ggplot2::aes(x = (start + stop) / 2, y = 5, label = element, colour = element),
+        size = 3.2, fontface = "bold") +
+      ggplot2::scale_colour_manual(values = dark, guide = "none", na.value = "grey40")
+  }
+  if (nrow(seg)) {
+    samp <- q("SELECT lineage_taxids FROM samples WHERE ID = ?", list(id))
+    seg$col <- chimera_seg_colors(seg, if (nrow(samp)) samp$lineage_taxids[1] else NA_character_)
+    g <- g + ggplot2::geom_rect(data = fr(seg, "lineage"), ggplot2::aes(xmin = start, xmax = stop, ymin = 0.5, ymax = 11.5),
+      fill = seg$col, alpha = CHIMERA_SEG_ALPHA, colour = "grey40", linewidth = 0.3, linetype = ifelse(seg$col == "#FFFFFF", "dotted", "solid"))
+  }
+  if (nrow(win)) {
+    # one range line per window at its identity, dot at the midpoint filled by
+    # lineage segment; no-hit windows sit hollow just under the 70% floor
+    win$nohit <- is.na(win$pident)
+    win$y <- ifelse(win$nohit, 68, pmax(win$pident, 70))
+    win$col <- if (nrow(seg)) seg$col[findInterval(win$start, seg$start)] else "#B3B3B3"
+    win$col[win$nohit] <- "#FFFFFF"
+    g <- g + ggplot2::geom_segment(data = fr(win, "ident"), ggplot2::aes(x = start, xend = stop, y = y, yend = y),
+        colour = ifelse(win$nohit, "grey70", "grey30"), linewidth = 0.5,
+        linetype = ifelse(win$nohit, "dotted", "solid")) +
+      ggplot2::geom_point(data = fr(win, "ident"), ggplot2::aes(x = (start + stop) / 2, y = y),
+        shape = 21, size = 3, fill = win$col, colour = ifelse(win$nohit, "grey60", "grey30"))
+  }
+  if (length(junc)) g <- g +
+    ggplot2::geom_vline(xintercept = junc, colour = "#c0392b", linetype = "dashed", linewidth = 0.7) +
+    ggplot2::geom_label(data = fr(data.frame(x = junc, y = 12), "genes"), ggplot2::aes(x = x, y = y),
+      label = sprintf("suspected chimera\njunction at %d bp", junc), vjust = 0, size = 3.8, lineheight = 0.9,
+      colour = "#c0392b", fill = "white", linewidth = 0)
+  g + ggplot2::facet_grid(row ~ ., scales = "free_y", space = "free_y", switch = "y",
+      labeller = ggplot2::as_labeller(c(genes = "", lineage = "lineage", ident = "% identity"))) +
+    ggplot2::scale_x_continuous(breaks = seq(0, xmax, 1000), minor_breaks = seq(0, xmax, 500), expand = c(0, 0)) +
+    ggplot2::scale_y_continuous(breaks = c(70, 80, 90, 100), expand = c(0, 0)) +
+    ggplot2::coord_cartesian(xlim = c(0, xmax), clip = "off") +
+    ggplot2::labs(x = "position (bp)", y = NULL) +
+    ggplot2::theme_minimal(base_size = 11) +
+    ggplot2::theme(panel.grid.major.y = ggplot2::element_line(colour = "grey78", linewidth = 0.45),
+      panel.grid.minor.y = ggplot2::element_blank(),
+      panel.grid.major.x = ggplot2::element_line(colour = "grey78", linewidth = 0.45),
+      panel.grid.minor.x = ggplot2::element_line(colour = "grey86", linewidth = 0.3),
+      strip.placement = "outside",
+      strip.text.y.left = ggplot2::element_text(angle = 0, hjust = 1, face = "bold", colour = "grey30", size = 9.5),
+      axis.text = ggplot2::element_text(size = 10), panel.spacing.y = grid::unit(3, "pt"),
+      plot.margin = ggplot2::margin(36, 6, 6, 6))
 }
 
 #' Synteny map: the sample's annotations over its BLAST reference's

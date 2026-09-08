@@ -3,7 +3,8 @@
 // container, use executor "conda".
 //
 // The processes open the project SQLite DB directly by path, so the project and
-// raw-read directories are bind-mounted into the container via docker.runOptions.
+// directory is bind-mounted into the container via docker.runOptions; the reads,
+// supplied assemblies and local reference databases go into <<EXTRA_MOUNTS>>.
 // Nextflow already mounts each task's work directory. new_project() also mounts
 // the directories holding any local seed/label reference databases (the
 // <<EXTRA_MOUNTS>> slot); add more -v mounts here if you need them.
@@ -14,7 +15,7 @@
 docker {
     enabled = true
     fixOwnership = true
-    runOptions = "-u \$(id -u):\$(id -g) -v ${params.projectDir}:${params.projectDir} -v ${params.rawDir}:${params.rawDir}<<EXTRA_MOUNTS>>"
+    runOptions = "-u \$(id -u):\$(id -g) -v ${params.projectDir}:${params.projectDir}<<EXTRA_MOUNTS>>"
 }
 
 process {
@@ -25,6 +26,7 @@ process {
 params {
     publishDir = 'out'                          // Directory to publish pipeline outputs
     rawDir = '<<RAW_DIR>>'                       // Directory containing raw read data
+    asmbDir = '<<ASMB_DIR>>'                     // Directory containing user-supplied assemblies
     minDepth = <<MIN_DEPTH>>                     // Skip samples with fewer than this many reads
     ncbi_api_key = '<<NCBI_API_KEY>>'            // Optional NCBI API key for BLAST + GenBank fetch
 }

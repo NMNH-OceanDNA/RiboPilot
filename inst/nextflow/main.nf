@@ -26,7 +26,8 @@
 include { preprocess } from './modules/preprocess.nf'
 include { assemble } from './modules/assemble.nf'
 include { fallback_assemble } from './modules/fallback.nf'
-include { query_samples; query_annotate_units; query_sample_units; score; annotate_tools; reconcile; curate; triage; screen } from './modules/pipeline_r.nf'
+include { find_rrna; stage_assembly } from './modules/find_rrna.nf'
+include { query_samples; query_annotate_units; query_sample_units; score; annotate_tools; reconcile; curate; triage; screen; chimera } from './modules/pipeline_r.nf'
 include { blast_genbank } from './modules/blast.nf'
 include { blast_ref_fetch; blast_ref_align } from './modules/blast_ref.nf'
 include { coverage } from './modules/coverage.nf'
@@ -36,6 +37,7 @@ params.minDepth = 0
 params.db = ''
 params.projectDir = '.'
 params.rawDir = ''
+params.asmbDir = ''
 params.ribopilot_src = ''
 params.taxdump_dir = ''
 params.ref_dir = ''
@@ -56,17 +58,40 @@ workflow {
     // samples straight from the DB (tab-separated, with header)
     rows = query_samples().splitCsv(header: true, sep: '\t')
 
-    pre_in = rows.map { r -> tuple(r.ID, file(params.rawDir + '/' + r.R1), file(params.rawDir + '/' + r.R2), r.pre_cpus, r.pre_mem, r.fastp) }
+    // A sample supplying its own assembly skips preprocess + assembly: its rDNA
+    // contigs are found inside what it supplied. It still preprocesses when it
+    // named reads, because those reads are what coverage maps back.
+    sample_rows = rows.branch { r ->
+        user: r.Assembly?.trim() && r.find_rrna?.toString() != '0'
+        asis: r.Assembly?.trim()
+        reads: true
+    }
+
+    pre_in = rows
+        .filter { r -> r.R1?.trim() && r.R2?.trim() }
+        .map { r -> tuple(r.ID, file(params.rawDir + '/' + r.R1), file(params.rawDir + '/' + r.R2), r.pre_cpus, r.pre_mem, r.fastp) }
     preprocess(pre_in)
+
+    // Supplied assemblies: scan for rDNA contigs, or take the file as given when
+    // the sample has the search switched off (an ITS-only fragment carries no
+    // barrnap anchor and would otherwise be dropped).
+    find_rrna(sample_rows.user.map { r ->
+        tuple(r.ID, file(params.asmbDir + '/' + r.Assembly), r.asm_cpus, r.asm_mem, r.rrna_tool, r.rrna_kingdom) })
+    stage_assembly(sample_rows.asis.map { r -> tuple(r.ID, file(params.asmbDir + '/' + r.Assembly)) })
 
     // Seeds / labels stay strings here. sqlite3 renders a SQL NULL as '', and
     // assemble_opts.seeds_db is nullable, so file('') would throw for EVERY row
     // -- including fallback rows that never use seeds -- before a task is
     // submitted. Only the getOrganelle arm below turns them into files.
     asm_opts = rows.map { r -> tuple(r.ID, r.asm_cpus, r.asm_mem, r.getOrganelle, live_db(r.seeds_db), live_db(r.labels_db), r.assembler) }
+    // Only samples assembling from reads: a supplied assembly may also name
+    // reads (for coverage), and those must not be assembled as well.
+    read_ids = sample_rows.reads.map { r -> tuple(r.ID, true) }
     asm_in = preprocess.out.reads
         .filter { id, reads, after -> (after as Integer) >= (params.minDepth as Integer) }
         .map { id, reads, after -> tuple(id, reads) }
+        .join(read_ids)
+        .map { id, reads, _flag -> tuple(id, reads) }
         .join(asm_opts)
 
     // Per-sample assembler. The fallback arm is `true` rather than an equality
@@ -89,7 +114,10 @@ workflow {
     // Load assemblies + score paths (also seeds one annotate unit per scaffold).
     // Both assemblers emit the same fasta contract, so they merge here and
     // everything below is shared.
-    score(assemble.out.paths.mix(fallback_assemble.out.paths))
+    score(assemble.out.paths
+        .mix(fallback_assemble.out.paths)
+        .mix(find_rrna.out.paths)
+        .mix(stage_assembly.out.paths))
     // per-scaffold remote GenBank BLAST -> ranked reference candidates + screen,
     // then fetch each candidate reference (sequence + features) from NCBI
     blast_genbank(score.out)
@@ -141,10 +169,23 @@ workflow {
     // BLAST failed, which is the same trap the ref_done sentinel above avoids.
     screen(blast_genbank.out)
 
-    // Propose keep/drop/undecided once ALL of a sample's units are curated, so
-    // sibling concordance and the within-sample depth ratio see the full set.
-    // groupTuple emits one entry per sample when the upstream channel closes.
-    triage(curate.out.map { id, upath, uscaf -> tuple(id, "${upath}.${uscaf}") }
+    // Chimera detection needs annotation (reconcile), and reads depth/clips and
+    // blast_hits from the db, so it waits on coverage and blast_genbank the same
+    // way reference alignment waits on blast_ref_fetch: a scalar barrier, not a
+    // per-unit join.
+    chim_done = coverage.out.collect().map { 'ready' }.ifEmpty('ready')
+        .combine(blast_genbank.out.collect().map { 'ready' }.ifEmpty('ready'))
+        .map { 'ready' }
+    chimera(reconcile.out.combine(chim_done).map { id, upath, uscaf, _r -> tuple(id, upath, uscaf) })
+
+    // Propose keep/drop/undecided once ALL of a sample's units are curated AND
+    // chimera-checked, so sibling concordance and the within-sample depth ratio
+    // see the full set. remainder: true keeps a unit whose chimera step was
+    // ignored (chimera carries errorStrategy 'ignore').
+    unit_done = curate.out.map { id, upath, uscaf -> tuple("${id}.${upath}.${uscaf}", id) }
+        .join(chimera.out.map { id, upath, uscaf -> tuple("${id}.${upath}.${uscaf}", true) }, remainder: true)
+        .map { _k, id, _c -> id }
+    triage(unit_done.map { id -> tuple(id, true) }
         .groupTuple()
         .map { id, _units -> tuple(id, true) }
         .join(screen.out.map { id -> tuple(id, true) }, remainder: true)

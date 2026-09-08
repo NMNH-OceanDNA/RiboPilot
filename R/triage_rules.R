@@ -98,6 +98,17 @@ TRIAGE_RULE_DEFS <- list(
         ctx$sp[i], ctx$sib$sib_taxon[i] %|NA|% "the majority",
         ctx$sib$sib_rank[i] %|NA|% "an agreed rank")
     }
+  ),
+  list(
+    key = "chimeric",
+    label = "Likely chimeric assembly",
+    meaning = "Two or more independent signals place a junction between different lineages or array copies inside this scaffold.",
+    actions = c("off", "flag"),
+    default = "flag",
+    test = function(d, i, ctx) {
+      if (!identical(ctx$chimera[i], "likely")) return(NA_character_)
+      ctx$chimera_reason[i] %|NA|% "chimera detector scored this scaffold as likely"
+    }
   )
 )
 
@@ -159,7 +170,9 @@ triage_rule_ctx <- function(d) {
     sib = unit_concordance(data.frame(
       screen_taxids = d$screen_taxids %||% rep(NA_character_, n),
       screen_lineage = d$screen_lineage %||% rep(NA_character_, n),
-      stringsAsFactors = FALSE))
+      stringsAsFactors = FALSE)),
+    chimera = d$chimera_label %||% rep(NA_character_, n),
+    chimera_reason = d$chimera_reason %||% rep(NA_character_, n)
   )
 }
 

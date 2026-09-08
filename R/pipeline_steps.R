@@ -278,11 +278,14 @@ load_assemblies <- function(con, out_dir, ID) {
         next
       }
       topo <- if (length(parts) > 1) parts[2] else NA_character_
+      # whatever the source called this contig, kept so a supplied assembly can
+      # be cross-referenced back to the user's own file
+      src <- if (length(parts) > 2) paste(parts[-(1:2)], collapse = " ") else NA_character_
       s <- as.character(seqs[[i]])
       rows[[length(rows) + 1]] <- data.frame(
         ID = ID, path = pth, scaffold = scf,
         topology = topo, length = nchar(s), length_raw = nchar(s),
-        sequence = s, ignore = 0L, edited = 0L, time_stamp = ts,
+        sequence = s, source_contig = src, ignore = 0L, edited = 0L, time_stamp = ts,
         stringsAsFactors = FALSE
       )
     }

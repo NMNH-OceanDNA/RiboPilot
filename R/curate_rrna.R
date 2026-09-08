@@ -32,8 +32,8 @@
 #' @param hit_is_nuclear_rrna Optional 0/1 (`blast_screen.is_nuclear_rrna`):
 #'   whether that top hit is a nuclear rDNA record at all. 0 raises
 #'   `not_nuclear_rdna`.
-#' @param chimeric Optional 0/1/logical (`annotate.chimeric`): whether ITSx
-#'   flagged the sequence as chimeric. TRUE raises `chimeric`.
+#' @param chimeric Unused; chimera risk is now reported by [risk_flags()] from
+#'   the `chimera` table, not by this function.
 #' @return list(features, flags, n_flags, notes) where `features` gains `status`
 #'   ("ok"/"flag") and `flags` (comma-separated per-feature codes), and the
 #'   sample-level `flags`/`notes` summarize missing anchors, ordering, etc.
@@ -140,12 +140,6 @@ curate_rrna_core <- function(features, params = rrna_params(),
       # 16S, a genomic repeat, ...).
       sample_flags <- c(sample_flags, "not_nuclear_rdna")
     }
-  }
-
-  # 8. ITSx chimera call (detected at annotation; a chimeric sequence must not
-  # enter a reference database) ----
-  if (isTRUE(chimeric) || identical(chimeric, 1L)) {
-    sample_flags <- c(sample_flags, "chimeric")
   }
 
   # Assemble per-feature status ----
@@ -332,14 +326,9 @@ curate_one <- function(con, id, path = 1L, scaffold = 1L, ruleset = NULL) {
     "SELECT lineage_taxids t FROM blast_screen WHERE ID = ? AND path = ? AND scaffold = ?",
     params = list(id, path, scaffold))$t[1], error = function(e) NA_character_)
 
-  chimeric <- tryCatch(DBI::dbGetQuery(con,
-    "SELECT chimeric FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?",
-    params = list(id, path, scaffold))$chimeric[1],
-    error = function(e) NA_integer_)
-
   res <- curate_rrna_core(feats, params, ref_pid = ref_pid, ref_cov = ref_cov,
     sample_lineage = sample_lineage, hit_lineage = hit_lineage,
-    hit_is_nuclear_rrna = hit_is_nuc, chimeric = chimeric,
+    hit_is_nuclear_rrna = hit_is_nuc,
     sample_taxids = sample_taxids, hit_taxids = hit_taxids)
 
   if (!is.na(ruleset_note)) {

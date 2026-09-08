@@ -45,7 +45,7 @@ test_that("a failed assemblies insert leaves the sample's scaffolds in place", {
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
   on.exit(DBI::dbDisconnect(con))
   DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, topology TEXT,
-    length INT, length_raw INT, sequence TEXT, ignore INT, edited INT, time_stamp INT,
+    length INT, length_raw INT, sequence TEXT, source_contig TEXT, ignore INT, edited INT, time_stamp INT,
     triage TEXT, triage_reason TEXT, triage_source TEXT, triage_rule TEXT)")
   DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, paths INT, scaffolds INT, length TEXT,
     topology TEXT, assemble_switch INT, assemble_notes TEXT, assemble_opts TEXT, time_stamp INT)")
@@ -81,10 +81,10 @@ test_that("a failed reference insert leaves the groups and their membership in p
   con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
   on.exit(DBI::dbDisconnect(con))
   DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT PRIMARY KEY, taxid INT, lineage TEXT,
-    lineage_taxids TEXT, taxonomy_lock INT, taxonomy_switch INT, ref_id TEXT)")
+    lineage_taxids TEXT, taxonomy_lock INT, taxonomy_switch INT, ref_id TEXT, user_group TEXT, ref_source TEXT)")
   DBI::dbExecute(con, RiboPilot:::REFERENCE_DDL)
   for (id in c("S1", "S2")) {
-    DBI::dbExecute(con, "INSERT INTO samples VALUES(?,NULL,NULL,NULL,1,2,NULL)", params = list(id))
+    DBI::dbExecute(con, "INSERT INTO samples VALUES(?,NULL,NULL,NULL,1,2,NULL,NULL,NULL)", params = list(id))
   }
   grp <- data.frame(ref_id = "asteroidea", clade_taxid = 7588L, clade_name = "Asteroidea",
     clade_rank = "class", n_records = 4102L, n_samples = 2L, stringsAsFactors = FALSE)

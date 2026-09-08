@@ -75,12 +75,6 @@ test_that("contamination checks use the screen, not silence", {
   expect_true("not_nuclear_rdna" %in% r3$flags)
 })
 
-test_that("chimeric flag is surfaced", {
-  r <- RiboPilot:::curate_rrna_core(good_feats(), RiboPilot:::rrna_params(),
-    sample_lineage = FISH, hit_lineage = FISH, hit_is_nuclear_rrna = 1L, chimeric = 1L)
-  expect_true("chimeric" %in% r$flags)
-})
-
 test_that("lineages_conflict and lineage_known behave", {
   expect_true(RiboPilot:::lineages_conflict("Metazoa; Cnidaria", "Bacteria; Escherichia"))
   # two animals in different phyla: the case the shared-token test could not fire on

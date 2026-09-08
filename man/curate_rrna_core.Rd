@@ -42,8 +42,8 @@ rather than passing silently.}
 whether that top hit is a nuclear rDNA record at all. 0 raises
 `not_nuclear_rdna`.}
 
-\item{chimeric}{Optional 0/1/logical (`annotate.chimeric`): whether ITSx
-flagged the sequence as chimeric. TRUE raises `chimeric`.}
+\item{chimeric}{Unused; chimera risk is now reported by [risk_flags()] from
+the `chimera` table, not by this function.}
 
 \item{sample_taxids, hit_taxids}{Optional rank-aligned taxid strings matching
 those lineages (`samples.lineage_taxids`, `blast_screen.lineage_taxids`).

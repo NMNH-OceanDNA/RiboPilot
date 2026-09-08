@@ -129,6 +129,20 @@ assemble_opts_modal <- function(cur, choices, n) {
           "the run is retried once with no extra flags.",
           href = "https://ablab.github.io/spades/",
           id = "help_ao_spades", nested = TRUE))),
+    # only reaches samples that supplied their own assembly; the assemblers
+    # above are what every other sample uses
+    shiny::div(style = paste("border:1px solid #ddd; border-radius:6px;",
+        "padding:12px 14px 4px; margin:8px 0 14px;"),
+      shiny::div(style = "font-weight:bold; margin-bottom:8px;", "Supplied assemblies"),
+      shinyjs::disabled(shiny::checkboxInput("ao_findrrna",
+        "Search the supplied assembly for nuclear rDNA contigs",
+        value = ((cur$find_rrna %||% 1) %|NA|% 1) == 1)),
+      opts_help("Applies only to samples with an assembly in the mapping file. ",
+        "The assembly is scanned for rRNA genes and the contigs carrying an 18S ",
+        "or 28S anchor go on through the pipeline; the rest are recorded and ",
+        "left behind. Turn this off to use the file exactly as supplied, which ",
+        "is what a single ITS-only fragment needs, since it carries no anchor ",
+        "to find.", id = "help_ao_findrrna")),
     # the Reference tab writes these two paths when it wires a clade database;
     # showing them here is the only place a preset's database is visible
     shiny::div(style = paste("border:1px solid #ddd; border-radius:6px;",
@@ -397,7 +411,8 @@ opts_handlers <- function(input, output, session, deps) {
   field_ids <- list(
     po = c("po_cpus", "po_mem", "po_fastp"),
     ao = c("ao_cpus", "ao_mem", "ao_getorg", "ao_minlen", "ao_maxpaths", "ao_maxscaf",
-           "ao_assembler", "ao_bt2", "ao_spades", "ao_seeds", "ao_labels"),
+           "ao_assembler", "ao_bt2", "ao_spades", "ao_seeds", "ao_labels",
+           "ao_findrrna"),
     bo = c("bo_run", "bo_source", "bo_entrez", "bo_extra", "bo_mts"),
     no = c("no_cpus", "no_mem", "no_tool", "no_kingdom", "no_itsxtaxon", "no_itsxopts"),
     co = c("co_ruleset", "co_pid", "co_contam")
@@ -515,6 +530,7 @@ opts_row <- function(pfx, nm, input, base) {
       max_scaffolds = as.integer(input$ao_maxscaf),
       min_assembly_length = as.integer(input$ao_minlen),
       assembler = input$ao_assembler %||% "getorganelle",
+      find_rrna = as.integer(isTRUE(input$ao_findrrna)),
       bowtie2 = input$ao_bt2 %||% "--local", spades = input$ao_spades %||% "--isolate",
       stringsAsFactors = FALSE),
     bo = data.frame(blast_opts = nm, run_blast = as.integer(isTRUE(input$bo_run)),

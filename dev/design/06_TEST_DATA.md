@@ -71,7 +71,18 @@ keeps `filter_reads.sh`.
 - Target shipped size budget per sample (MitoPilot's mito subsets are ~0.5-1 MB
   each; rDNA subsets will be similar or a bit larger given higher copy number).
 
-## Status (2026-08-10): NOT IMPLEMENTED - future update
+## Status (2026-09-02): small path implemented, assets pending
+
+`new_test_project(full_size = FALSE)` (the default) now fetches per-sample
+`<acc>_R1/_R2.fastq.gz` from the GitHub release tagged `RP_TEST_READS_TAG`
+(`R/init_test_project.R`), checksum-verified via `fetch_verified()`. The
+subsets are built by `dev/make_test_reads.R`: reads are mapped with minimap2
+to the sample's own assembled scaffolds (from a full-size project database)
+plus the GetOrganelle seed FASTA, pairs with either mate mapped are kept, and
+the pool is capped. Until the repo is public the release assets are not
+reachable, so `full_size = TRUE` remains the working path.
+
+## Earlier status (2026-08-10): NOT IMPLEMENTED
 
 The shippable subset above was never built. Current `R/init_test_project.R`
 always downloads the **full** read sets (several GB) and there is no

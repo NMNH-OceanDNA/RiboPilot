@@ -10,11 +10,11 @@ mk_app_project <- function(env = parent.frame()) {
     match_type TEXT, lineage TEXT, lineage_taxids TEXT, taxonomy_switch INT, taxonomy_lock INT,
     export_group TEXT, time_stamp INT)")
   DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, assemble_lock INT, assemble_switch INT,
-    assemble_opts TEXT, blast_opts TEXT, paths INT, scaffolds INT, length TEXT, assemble_notes TEXT, time_stamp INT)")
+    assemble_opts TEXT, blast_opts TEXT, paths INT, scaffolds INT, length TEXT, assemble_notes TEXT, find_rrna_notes TEXT, time_stamp INT)")
   DBI::dbExecute(con, "CREATE TABLE preprocess(ID TEXT, pre_opts TEXT)")
   DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, topology TEXT, length INT,
     sequence TEXT, ignore INT, blast_species TEXT, blast_accession TEXT, blast_pident REAL,
-    blast_qcovs REAL, blast_source TEXT)")
+    blast_qcovs REAL, blast_source TEXT, source_contig TEXT)")
   DBI::dbExecute(con, "CREATE TABLE annotate(ID TEXT, path INT, scaffold INT, annotate_switch INT,
     annotate_lock INT, annotate_opts TEXT, curate_opts TEXT, reviewed TEXT, problematic TEXT,
     partial TEXT, n_features INT, missing TEXT, n_flags INT, annotate_notes TEXT, export_group TEXT, time_stamp INT)")
@@ -31,11 +31,11 @@ mk_app_project <- function(env = parent.frame()) {
   DBI::dbExecute(con, "INSERT INTO path_scores (ID,path,score,rank,auto_select) VALUES('S1',1,0.912,1,1)")
   DBI::dbExecute(con, "INSERT INTO path_scores (ID,path,score,rank,auto_select) VALUES('S1',2,0.431,2,0)")
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S1','Danio rerio','Danio rerio',7955,'species','exact',NULL,NULL,1,1,NULL,1)")
-  DBI::dbExecute(con, "INSERT INTO assemble VALUES('S1',1,2,'default','default',2,4,'100',NULL,1)")
+  DBI::dbExecute(con, "INSERT INTO assemble VALUES('S1',1,2,'default','default',2,4,'100',NULL,NULL,1)")
   DBI::dbExecute(con, "INSERT INTO preprocess VALUES('S1','default')")
   # four units; the SHORTEST is p2.s2, so a length-sorted view reorders the table
   for (u in list(c(1,1,6120), c(1,2,1442), c(2,1,5980), c(2,2,890))) {
-    DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',?,?,'linear',?,'ACGT',0,'Danio rerio','A1',99,88,'core_nt')",
+    DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',?,?,'linear',?,'ACGT',0,'Danio rerio','A1',99,88,'core_nt',NULL)",
       params = list(u[1], u[2], u[3]))
     DBI::dbExecute(con, "INSERT INTO annotate VALUES('S1',?,?,1,0,'default','default','no','no','no',3,'',0,NULL,NULL,1)",
       params = list(u[1], u[2]))
@@ -363,7 +363,7 @@ test_that("clicking a row examines that scaffold in the panels below", {
     session$flushReact()
     expect_equal(sel_hit_unit(), list(path = 2L, scaffold = 2L))
     expect_match(output$unit_screen$html, "Scaffold p2.s2", fixed = TRUE)
-    expect_match(output$unit_coverage_label$html, "Scaffold p2.s2", fixed = TRUE)
+    expect_equal(output$hl_scaf_cov, "p2.s2")
 
     # keyed on the row's own uid, so display order cannot misdirect it
     session$setInputs(scaf_examine = "S1|1|2")

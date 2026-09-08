@@ -4,7 +4,8 @@
 fixture_fill_schema <- function(con) {
   for (ddl in list(RiboPilot:::BLAST_HITS_DDL, RiboPilot:::TRIAGE_OPTS_DDL,
                    RiboPilot:::SCREEN_DDL, RiboPilot:::ASSEMBLY_BACKUP_DDL,
-                   RiboPilot:::REFERENCE_DDL, RiboPilot:::REFERENCE_CONFIG_DDL)) {
+                   RiboPilot:::REFERENCE_DDL, RiboPilot:::REFERENCE_CONFIG_DDL,
+                   RiboPilot:::CHIMERA_DDL, RiboPilot:::CHIMERA_WINDOWS_DDL)) {
     DBI::dbExecute(con, ddl)
   }
   DBI::dbExecute(con, RiboPilot:::TRIAGE_OPTS_SEED)

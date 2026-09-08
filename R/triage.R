@@ -75,6 +75,7 @@ unit_triage_state <- function(con, id) {
        b.rank_distance, b.is_nuclear_rrna,
        sc.screen_verdict, sc.screen_class, sc.screen_confidence, sc.lca_taxon,
        s.lineage_taxids AS sample_taxids, s.sci_name,
+       ch.label AS chimera_label, ch.reason AS chimera_reason,
        (SELECT COUNT(*) FROM annotations n
           WHERE n.ID = a.ID AND n.path = a.path AND n.scaffold = a.scaffold) AS n_features,
        (SELECT an.n_features FROM annotate an
@@ -88,6 +89,7 @@ unit_triage_state <- function(con, id) {
      LEFT JOIN blast_screen b ON b.ID = a.ID AND b.path = a.path AND b.scaffold = a.scaffold
      LEFT JOIN screen sc      ON sc.ID = a.ID AND sc.path = a.path AND sc.scaffold = a.scaffold
      LEFT JOIN samples s      ON s.ID = a.ID
+     LEFT JOIN chimera ch     ON ch.ID = a.ID AND ch.path = a.path AND ch.scaffold = a.scaffold
      WHERE a.ID = ? ORDER BY a.path, a.scaffold", params = list(id))
 }
 

@@ -308,7 +308,10 @@ sub-project produces the measurement those decisions need; it does not take them
 Broadening what the screen can catch. `human_on_fish` is recorded as a miss,
 not fixed. Fixing it needs the depth and cross-sample channels (doc 08
 sections 3.5(c) and 3.6), both of which are blocked, and this sub-project must
-not grow into them.
+not grow into them. The chimera detector (doc 21) now exists and its read-clip
+and depth-step channels overlap with what would catch this case, but its effect
+on `human_on_fish` has not been measured; that needs a pipeline run against
+this fixture, not yet done.
 
 `min_isomer_anchor_pid`, per section 1.
 
@@ -345,3 +348,14 @@ categories, and any change to the weights must bump `SCREEN_VERSION`.
   a chordate. See section 4.1.
 - Record in doc 12 that `min_isomer_anchor_pid` is still unvalidated after this
   sub-project, and why spike-ins cannot reach it.
+
+**Synthetic chimera samples (2026-09-01).** `new_test_project()` now bundles
+two read sets simulated by `dev/make_chimera_reads.R` from the doc 21 fixtures:
+`CHIM00` (clean fish rDNA, SRR22396758 scaffold 1.3) and `CHIM01` (the same
+molecule with fungal 5.8S-ITS2-28S spliced in at 2650 bp). Both carry the
+Taxon `Upeneus parvus`. Expected after a pipeline run: `CHIM00` chimera label
+`clean`; `CHIM01` label `suspect` with a junction within 300 bp of 2650. Not
+`likely`: the reads are simulated from the spliced molecule itself, so nothing
+is soft-clipped at the junction and ribotyper passes; only the taxonomy
+channels fire and the taxonomy-only cap holds. Measured 2026-09-02 on the
+userAsmb image: `CHIM00` clean 0.0; `CHIM01` suspect 0.6, junction 2625.

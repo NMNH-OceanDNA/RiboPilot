@@ -213,3 +213,51 @@ test_that("candidate_rungs on an empty ladder returns the empty shape", {
   expect_equal(nrow(r), 0L)
   expect_true(all(c("ref_id", "taxid", "clade_name", "query") %in% names(r)))
 })
+
+# ---- user groups: samples the proposer may not split ----
+
+test_that("a user group lands on one clade even when its members would not", {
+  con <- mk_ladder_db(list(F1 = FISH, S1 = STAR)); on.exit(DBI::dbDisconnect(con))
+  l <- RiboPilot:::sample_ladders(con)
+  # each family clears the floor on its own, so untouched they split in two
+  cnt <- counter(list(`1002673` = 5000, `7607` = 5000, `33208` = 8000))
+  apart <- RiboPilot:::suggest_reference_groups(l, cnt, 1000, 25000)
+  expect_equal(nrow(apart$groups), 2L)
+
+  together <- RiboPilot:::suggest_reference_groups(l, cnt, 1000, 25000,
+    user_groups = c(F1 = "A", S1 = "A"))
+  expect_equal(nrow(together$groups), 1L)
+  expect_equal(together$groups$clade_name, "Metazoa")
+  expect_setequal(together$members$ID, c("F1", "S1"))
+})
+
+test_that("a user group's clade still floats to the record window", {
+  con <- mk_ladder_db(list(S1 = STAR, S2 = STAR2)); on.exit(DBI::dbDisconnect(con))
+  l <- RiboPilot:::sample_ladders(con)
+  # nothing at class; the walk has to climb to phylum for either of them
+  g <- RiboPilot:::suggest_reference_groups(l,
+    counter(list(`7588` = 10, `7586` = 4000)), 1000, 25000,
+    user_groups = c(S1 = "A", S2 = "A"))
+  expect_equal(nrow(g$groups), 1L)
+  expect_equal(g$groups$clade_name, "Echinodermata")
+  expect_equal(g$groups$n_samples, 2L)
+})
+
+test_that("a user group can sweep in a loose sample that walks to its clade", {
+  con <- mk_ladder_db(list(S1 = STAR, S2 = STAR2, F1 = FISH)); on.exit(DBI::dbDisconnect(con))
+  l <- RiboPilot:::sample_ladders(con)
+  g <- RiboPilot:::suggest_reference_groups(l,
+    counter(list(`33208` = 5000)), 1000, 25000, user_groups = c(S1 = "A", S2 = "A"))
+  expect_equal(nrow(g$groups), 1L)
+  expect_setequal(g$members$ID, c("S1", "S2", "F1"))
+})
+
+test_that("loose samples are unaffected by somebody else's user group", {
+  con <- mk_ladder_db(list(F1 = FISH, S1 = STAR, S2 = STAR2)); on.exit(DBI::dbDisconnect(con))
+  l <- RiboPilot:::sample_ladders(con)
+  g <- RiboPilot:::suggest_reference_groups(l,
+    counter(list(`1002673` = 5000, `7586` = 5000)), 1000, 25000,
+    user_groups = c(S1 = "A", S2 = "A"))
+  expect_equal(nrow(g$groups), 2L)
+  expect_equal(g$members$ref_id[g$members$ID == "F1"], "danionidae")
+})

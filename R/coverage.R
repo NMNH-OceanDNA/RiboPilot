@@ -54,15 +54,29 @@ write_coverage <- function(con, id, path = 1L, scaffold = 1L, depth_file) {
 #' @param con Open project DB connection.
 #' @param id Sample ID.
 #' @param depth_file `samtools depth -a` output (ref, pos, depth), ref = path.scaffold.
+#' @param clips_file Optional per-position soft-clip counts (ref, pos, n), tab-separated.
 #' @return (invisibly) the number of units written.
 #' @export
-write_coverage_units <- function(con, id, depth_file) {
+write_coverage_units <- function(con, id, depth_file, clips_file = NULL) {
   DBI::dbExecute(con, "DELETE FROM coverage WHERE ID = ?", params = list(id))
   if (!file.exists(depth_file) || file.info(depth_file)$size == 0) {
     return(invisible(0L))
   }
   d <- utils::read.table(depth_file, sep = "\t", header = FALSE,
     col.names = c("ref", "pos", "depth"), stringsAsFactors = FALSE)
+  clips <- NULL
+  if (!is.null(clips_file) && file.exists(clips_file) && file.size(clips_file) > 0) {
+    clips <- utils::read.table(clips_file, sep = "\t", col.names = c("ref", "pos", "n"),
+      colClasses = c("character", "integer", "integer"), quote = "", comment.char = "")
+  }
+  clip_track <- function(ref, len) {
+    v <- integer(len)
+    if (!is.null(clips)) {
+      c1 <- clips[clips$ref == ref & clips$pos >= 1 & clips$pos <= len, , drop = FALSE]
+      if (nrow(c1)) v[c1$pos] <- v[c1$pos] + c1$n
+    }
+    paste(v, collapse = ",")
+  }
   ts <- as.integer(Sys.time())
   n <- 0L
   for (r in unique(d$ref)) {
@@ -75,7 +89,8 @@ write_coverage_units <- function(con, id, depth_file) {
       path = as.integer(ps[1]), scaffold = as.integer(ps[2]),
       mean_depth = round(mean(dep), 2), median_depth = round(stats::median(dep), 2),
       min_depth = as.integer(min(dep)), max_depth = as.integer(max(dep)),
-      depths = paste(dep, collapse = ","), time_stamp = ts, stringsAsFactors = FALSE))
+      depths = paste(dep, collapse = ","), clips = clip_track(as.character(r), length(dep)),
+      time_stamp = ts, stringsAsFactors = FALSE))
     n <- n + 1L
   }
   invisible(n)

@@ -24,6 +24,7 @@ mk_triage_db <- function() {
   DBI::dbExecute(con, "CREATE TABLE screen(ID TEXT, path INT, scaffold INT, screen_verdict TEXT,
     screen_class TEXT, screen_confidence REAL, lca_taxon TEXT)")
   DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT, sci_name TEXT, lineage_taxids TEXT)")
+  DBI::dbExecute(con, "CREATE TABLE chimera(ID TEXT, path INT, scaffold INT, label TEXT, reason TEXT)")
   # assemble_switch: triage settles the sample's state, so the column it writes
   # has to be here or the fixture stops resembling a project database
   DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, assemble_switch INT, triage_opts TEXT)")
@@ -113,7 +114,7 @@ test_that("preview reports per-rule counts alongside the totals", {
 
   p <- triage_preview(con, "S1")
   expect_true(is.data.frame(p$by_rule))
-  expect_equal(nrow(p$by_rule), 7L)
+  expect_equal(nrow(p$by_rule), 8L)
   expect_equal(sum(p$by_rule$n_decided), p$n_units)
   expect_true(all(p$by_rule$n_matching >= p$by_rule$n_decided))
   expect_equal(p$by_rule$n_decided[p$by_rule$key == "no_feat_non_rdna"], 3L)

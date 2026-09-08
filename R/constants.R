@@ -122,6 +122,8 @@ SCAFFOLD_COL_HELP <- list(
   triage = paste("Keep, drop, or leave undecided. This is the only decision that counts:",
     "dropped scaffolds are left out of annotation and export."),
   length = "Scaffold length in base pairs.",
+  source_contig = paste("What this contig was called in the assembly you supplied, so a",
+    "scaffold here can be traced back to your own file."),
   path_score = paste("Rates the whole candidate path this scaffold came from, from its length,",
     "depth, anchor genes and GenBank hit. The same value repeats across every",
     "scaffold of one path."),
@@ -147,10 +149,34 @@ SCAFFOLD_COL_HELP <- list(
   screen_accession = "GenBank accession of the best match. Click it to open the record at NCBI.",
   screen_pident = paste("How closely the matched stretch resembles the best GenBank record,",
     "as a percentage of identical bases."),
-  triage_reason = "Why triage decided the way it did, or what left it undecided."
+  triage_reason = "Why triage decided the way it did, or what left it undecided.",
+  warnings = paste("Number of sample-level curation warnings (feature order, overlaps, strand,",
+    "contamination). Hover for the list. Per-feature warnings such as length or",
+    "truncation are listed in the details view."),
+  chimera = paste("Chimera check: whether different parts of this scaffold match different",
+    "lineages or show read-level breakpoints. clean, suspect, or likely. Hover for the",
+    "lineage segments and junction positions. Warns only; never blocks export.")
 )
 
 #' Toggle the annotation lock on one unit (used by the bulk lock button and by
 #' the "lock anyway" answer to the two-paths warning).
 #' @noRd
 LOCK_UNIT_SQL <- "UPDATE annotate SET annotate_lock = 1 - COALESCE(annotate_lock, 0) WHERE ID = ?"
+
+#' Column help for the chimera segment and window tables (annotate modal)
+#' @noRd
+CHIMERA_COL_HELP <- list(
+  start = "First base of this stretch of the scaffold (1-based).",
+  stop = "Last base of this stretch of the scaffold.",
+  taxon = "Best-hit lineage at class rank, shared by every window in the segment. 'nohit' means no window in the stretch matched the local rDNA panel or decoys.",
+  species = "Species of the strongest single hit inside the segment.",
+  pident = "Mean percent identity of the windows' best hits.",
+  n_windows = "Number of 500 bp windows (step 250) collapsed into this segment.",
+  win_species = "Species of the best hit for this window.",
+  lineage = "Best-hit lineage, last three ranks shown; hover for the full ranked lineage.",
+  win_pident = "Percent identity of the window's best hit.",
+  bitscore = "BLAST bit score of the best hit.",
+  rank_distance = "Ranks between the hit and this sample's own lineage: 0 = same species, 7 = nothing shared.",
+  depth_median = "Median read depth across the window.",
+  clip_frac = "Largest fraction of reads soft-clipped at one position in the window; high values mark a read-level breakpoint."
+)

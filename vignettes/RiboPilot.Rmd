@@ -131,7 +131,9 @@ RiboPilot::new_test_project(path = "~/ribopilot_test", executor = "docker")
 `executor` is passed explicitly here because `new_test_project()` still defaults to
 `executor = "conda"`, which is no longer a supported way to run.
 
-This downloads a few gigabytes of data, so it can take a while. When it finishes,
+This fetches small rDNA-filtered read subsets from the RiboPilot releases, so it
+only takes a moment (pass `full_size = TRUE` for the complete multi-gigabyte read
+sets). When it finishes,
 you have a working project you can practice on using the steps below. We strongly
 recommend doing this once before starting with your own samples.
 
@@ -204,6 +206,31 @@ it by adding these two lines inside the parentheses:
 
 This creates a project folder containing your sample list and RiboPilot's
 tracking file. From here on, everything refers to that folder.
+
+## Already have an assembly?
+
+If you have a genome assembly for a sample, or just the one contig holding its
+ribosomal repeat, you can use it instead of assembling from reads. Add an
+`Assembly` column to your mapping file naming that sample's FASTA file, and
+point the project at the folder holding them:
+
+```{r, purl = FALSE}
+  assembly_path = "~/my_assemblies"
+```
+
+RiboPilot searches each supplied assembly for rRNA genes and carries forward the
+contigs that carry an 18S or 28S anchor; the rest are recorded and left behind.
+A single ribosomal contig passes this search without doing anything special. If
+you supplied a fragment too short to carry an anchor (an ITS-only sequence, say),
+turn the search off in the app's assembly options and RiboPilot uses your file
+exactly as given.
+
+Those samples do not need reads: leave their `R1` and `R2` blank. You can mix
+them freely with samples that do have reads. The only thing a sample loses by
+having no reads is the sequencing-depth profile, since there is nothing to map
+back; every other step runs the same way. If you do have the reads, name them
+anyway and RiboPilot uses them for depth while still starting from your
+assembly.
 
 <div class="alert alert-note">
 <code>executor = "docker"</code> runs every step inside the container image on your

@@ -123,7 +123,7 @@ test_that("unit_evidence surfaces the screen reason", {
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
   DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT, sci_name TEXT, lineage_taxids TEXT)")
   DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, length INT, ignore INT,
-    triage TEXT, triage_reason TEXT, triage_source TEXT,
+    triage TEXT, triage_reason TEXT, triage_source TEXT, source_contig TEXT,
     blast_species TEXT, blast_accession TEXT, blast_pident REAL, blast_qcovs REAL, blast_source TEXT)")
   DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT, start INT)")
   DBI::dbExecute(con, "CREATE TABLE coverage(ID TEXT, path INT, scaffold INT, mean_depth REAL,
@@ -133,6 +133,7 @@ test_that("unit_evidence surfaces the screen reason", {
     bitscore REAL, is_nuclear_rrna INT)")
   DBI::dbExecute(con, "CREATE TABLE path_scores(ID TEXT, path INT, score REAL)")
   DBI::dbExecute(con, RiboPilot:::SCREEN_DDL)
+  DBI::dbExecute(con, RiboPilot:::CHIMERA_DDL)
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S1','Danio rerio',NULL)")
   DBI::dbExecute(con, "INSERT INTO assemblies (ID,path,scaffold,length) VALUES('S1',1,1,500)")
   DBI::dbExecute(con,

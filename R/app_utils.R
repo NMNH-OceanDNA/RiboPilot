@@ -163,7 +163,7 @@ unit_evidence <- function(id) {
     # TANDEM ARRAY does by construction. Nuclear rDNA is not a circular
     # molecule, and showing the word next to a scaffold said it was.
     "SELECT a.path, a.scaffold, a.length, COALESCE(a.ignore,0) AS ignore,
-       a.triage, a.triage_reason, a.triage_source,
+       a.triage, a.triage_reason, a.triage_source, a.source_contig,
        a.blast_species, a.blast_accession, a.blast_pident, a.blast_qcovs, a.blast_source,
        ROUND(COALESCE(c.median_depth, c.mean_depth), 1) AS depth,
        CASE WHEN c.median_depth IS NULL THEN 'mean' ELSE 'median' END AS depth_stat,
@@ -177,6 +177,7 @@ unit_evidence <- function(id) {
        sc.variant_class, sc.variant_group, sc.variant_identity,
        ROUND(ps.score, 3) AS path_score,
        s.lineage_taxids AS sample_taxids, s.sci_name,
+       ch.label AS chimera_label, ch.reason AS chimera_reason,
        (SELECT GROUP_CONCAT(n.element) FROM
           (SELECT element FROM annotations WHERE ID = a.ID AND path = a.path
              AND scaffold = a.scaffold ORDER BY start) n) AS elements
@@ -187,6 +188,7 @@ unit_evidence <- function(id) {
      -- scored per path, shown per scaffold: the whole path is the thing scored
      LEFT JOIN path_scores ps ON ps.ID = a.ID AND ps.path = a.path
      LEFT JOIN samples s      ON s.ID = a.ID
+     LEFT JOIN chimera ch     ON ch.ID = a.ID AND ch.path = a.path AND ch.scaffold = a.scaffold
      WHERE a.ID = ? ORDER BY a.path, a.scaffold", params = list(id))
   if (nrow(d) == 0) {
     return(d)
@@ -285,4 +287,39 @@ copy_to_clipboard <- function(text) {
       }
     })(%s);", js_str))
   invisible(text)
+}
+
+#' Did this sample supply its own assembly?
+#'
+#' Drives the two pieces of the app that only make sense for one: the source
+#' contig column and the list of contigs the rDNA search left behind. FALSE for
+#' a project whose mapping file never had an `Assembly` column.
+#'
+#' @param id Sample ID.
+#' @return TRUE when the sample names an assembly file.
+#' @noRd
+sample_has_user_assembly <- function(id) {
+  a <- tryCatch(
+    app_query("SELECT Assembly FROM samples WHERE ID = ?", params = list(id))$Assembly,
+    error = function(e) NULL)
+  length(a) > 0 && !is.na(a[1]) && nzchar(a[1])
+}
+
+#' Contigs the rDNA search found but did not carry forward
+#'
+#' The kept contigs become assembly units and are shown in the scaffold table;
+#' these are the ones that never got there, which is the only place a user can
+#' see that they existed at all.
+#'
+#' @param id Sample ID.
+#' @return data.frame(contig, length, rrna_features, reason), empty when the
+#'   sample dropped nothing.
+#' @noRd
+rejected_rrna_contigs <- function(id) {
+  d <- tryCatch(app_query(
+    "SELECT contig, length, rrna_features, reason FROM rrna_candidates
+     WHERE ID = ? AND COALESCE(selected,0) = 0 ORDER BY rank", params = list(id)),
+    error = function(e) NULL)
+  d %||% data.frame(contig = character(0), length = integer(0),
+    rrna_features = character(0), reason = character(0), stringsAsFactors = FALSE)
 }

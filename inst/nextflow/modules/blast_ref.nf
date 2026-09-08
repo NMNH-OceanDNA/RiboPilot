@@ -4,6 +4,11 @@
 // blast_ref_annotations. blast_ref_align then computes per-feature
 // sample-vs-reference nucleotide alignments (pure R).
 
+// Declared here, not only in main.nf: includes are resolved before the
+// including script's body runs, so a main.nf default is still null when this
+// module reads it, and a null interpolates into the shell as the word 'null'.
+params.ref_dir = ''
+
 process blast_ref_fetch {
     cache false
     tag "${id}"

@@ -5,7 +5,7 @@
 mk_asm_db <- function(dir) {
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
   DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, topology TEXT,
-                       length INT, length_raw INT, sequence TEXT, ignore INT, edited INT, time_stamp INT,
+                       length INT, length_raw INT, sequence TEXT, source_contig TEXT, ignore INT, edited INT, time_stamp INT,
                        triage TEXT, triage_reason TEXT, triage_source TEXT, triage_rule TEXT)")
   DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, paths INT, scaffolds INT, length TEXT,
                        topology TEXT, assemble_switch INT, assemble_notes TEXT,
@@ -375,4 +375,29 @@ test_that("the length filter wins over the previous run's ignore flags", {
 
   ig <- DBI::dbGetQuery(con, "SELECT ignore FROM assemblies ORDER BY scaffold")$ignore
   expect_equal(ig, c(1L, 1L, 1L, 0L, 0L))
+})
+
+test_that("the contig name from the source fasta is stored", {
+  dir <- withr::local_tempdir()
+  con <- mk_asm_db(dir)
+  on.exit(DBI::dbDisconnect(con))
+  write_asm_fasta(dir)
+
+  RiboPilot:::load_assemblies(con, dir, "S1")
+  src <- DBI::dbGetQuery(con,
+    "SELECT source_contig FROM assemblies ORDER BY path, scaffold")$source_contig
+  expect_equal(src, c("scaffold_1--101+,102+", "scaffold_2--103+"))
+})
+
+test_that("a header with no contig name leaves it empty", {
+  dir <- withr::local_tempdir()
+  con <- mk_asm_db(dir)
+  on.exit(DBI::dbDisconnect(con))
+  ad <- file.path(dir, "S1", "assemble")
+  dir.create(ad, recursive = TRUE, showWarnings = FALSE)
+  writeLines(c(">S1.1.1 linear", strrep("ACGT", 200)),
+    file.path(ad, "S1_assembly_1.fasta"))
+
+  RiboPilot:::load_assemblies(con, dir, "S1")
+  expect_true(is.na(DBI::dbGetQuery(con, "SELECT source_contig FROM assemblies")$source_contig))
 })

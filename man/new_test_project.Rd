@@ -7,6 +7,7 @@
 new_test_project(
   path = ".",
   n = Inf,
+  full_size = FALSE,
   executor = "conda",
   container = paste0("macguigand/ribopilot:", utils::packageVersion("RiboPilot")),
   min_depth = 500,
@@ -19,7 +20,11 @@ new_test_project(
 \arguments{
 \item{path}{Project directory (created if missing; default current dir).}
 
-\item{n}{Number of samples to include (default all 10).}
+\item{n}{Number of downloaded samples to include (default all 10). The
+bundled synthetic samples CHIM00 and CHIM01 are always included.}
+
+\item{full_size}{Fetch the complete read sets from ENA/SRA (TRUE) instead of
+the small rDNA-filtered subsets (default FALSE).}
 
 \item{executor}{Executor / config profile (default "conda").}
 
@@ -46,9 +51,12 @@ fish genome skims, study SRP313821): downloads each sample's paired reads,
 writes the mapping file, and initializes the project database + config.
 }
 \details{
-Reads are fetched from ENA when reachable, falling back to NCBI SRA
-(`fasterq-dump`, which must be on `PATH` or given via `sra_bin`) on networks
-where the ENA fastq mirror is blocked. The full set is several GB and takes a
-while; use `n` to fetch fewer samples for a quicker setup. Already-downloaded,
-valid read files are skipped, so an interrupted run resumes cleanly.
+By default the reads are the rDNA-filtered subsets published with the
+RiboPilot GitHub releases (a few MB per sample, seconds to fetch). With
+`full_size = TRUE` the complete read sets are fetched instead, from ENA when
+reachable and falling back to NCBI SRA (`fasterq-dump`, which must be on
+`PATH` or given via `sra_bin`) on networks where the ENA fastq mirror is
+blocked; that is several GB and takes a while. Use `n` to fetch fewer
+samples. Already-downloaded, valid read files are skipped, so an interrupted
+run resumes cleanly.
 }

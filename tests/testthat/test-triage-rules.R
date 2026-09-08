@@ -30,7 +30,7 @@ us <- function(...) {
 test_that("the rule keys and their order are fixed", {
   expect_equal(RiboPilot:::triage_rule_keys(),
     c("not_annotated", "no_screen", "no_feat_non_rdna",
-      "no_feat_rdna_hit", "feat_non_rdna_hit", "screen_off_target", "odd_one_out"))
+      "no_feat_rdna_hit", "feat_non_rdna_hit", "screen_off_target", "odd_one_out", "chimeric"))
 })
 
 test_that("annotation that never ran is flagged, never dropped", {
@@ -137,7 +137,7 @@ test_that("counts partition on Decided and overlap on Matching", {
     list(feats = 5, nuc = 0, sp = "Homo sapiens", tx = FISH_T),
     list(feats = 5, nuc = 1, sp = "Danio rerio", tx = FISH_T))
   cnt <- RiboPilot:::triage_rule_counts(d)
-  expect_equal(nrow(cnt), 7L)
+  expect_equal(nrow(cnt), 8L)
   expect_equal(sum(cnt$n_decided), 3L)          # the clean unit fires nothing
   expect_true(all(cnt$n_matching >= cnt$n_decided))
 
@@ -206,8 +206,18 @@ test_that("the screen rule claims a scaffold before the sibling rule sees it", {
 
 test_that("the screen rule sits after the combination rules and before odd_one_out", {
   k <- RiboPilot:::triage_rule_keys()
-  expect_equal(k[length(k) - 1], "screen_off_target")
-  expect_equal(k[length(k)], "odd_one_out")
+  expect_equal(k[length(k) - 2], "screen_off_target")
+  expect_equal(k[length(k) - 1], "odd_one_out")
+})
+
+test_that("triage rule chimeric fires on likely with the reason text", {
+  d <- data.frame(ID = "S1", chimera_label = c("likely", "suspect"),
+    chimera_reason = c("1-2500 A; 2600-4000 B", "x"),
+    annotated_n = 1L, is_nuclear_rrna = 1L, n_features = 3L, stringsAsFactors = FALSE)
+  ctx <- RiboPilot:::triage_rule_ctx(d)
+  rule <- Filter(function(r) r$key == "chimeric", RiboPilot:::TRIAGE_RULE_DEFS)[[1]]
+  expect_equal(rule$test(d, 1, ctx), "1-2500 A; 2600-4000 B")
+  expect_true(is.na(rule$test(d, 2, ctx)))
 })
 
 test_that("the screen rule may be set to drop but ships as flag", {

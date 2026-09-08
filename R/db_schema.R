@@ -66,6 +66,7 @@ TRIAGE_OPTS_DDL <- "CREATE TABLE IF NOT EXISTS triage_opts (
   rule_feat_non_rdna_hit TEXT,
   rule_odd_one_out       TEXT,
   rule_screen_off_target TEXT,
+  rule_chimeric          TEXT,
   PRIMARY KEY (triage_opts)
 );"
 
@@ -74,8 +75,8 @@ TRIAGE_OPTS_DDL <- "CREATE TABLE IF NOT EXISTS triage_opts (
 TRIAGE_OPTS_SEED <- "INSERT INTO triage_opts
   (triage_opts, rule_not_annotated, rule_no_screen, rule_no_feat_non_rdna,
    rule_no_feat_rdna_hit, rule_feat_non_rdna_hit, rule_odd_one_out,
-   rule_screen_off_target)
-  VALUES ('default', 'flag', 'flag', 'drop', 'flag', 'flag', 'flag', 'flag');"
+   rule_screen_off_target, rule_chimeric)
+  VALUES ('default', 'flag', 'flag', 'drop', 'flag', 'flag', 'flag', 'flag', 'flag');"
 
 #' DDL for the screen table (machine contamination verdict, one row per unit).
 #' @noRd
@@ -99,6 +100,48 @@ SCREEN_DDL <- "CREATE TABLE IF NOT EXISTS screen (
   variant_identity  REAL,
   time_stamp        INTEGER,
   PRIMARY KEY (ID, path, scaffold)
+);"
+
+#' DDL for chimera: one row per unit, lineage kept as text at every level.
+#' @noRd
+CHIMERA_DDL <- "CREATE TABLE IF NOT EXISTS chimera (
+  ID TEXT NOT NULL,
+  path INTEGER NOT NULL DEFAULT 1,
+  scaffold INTEGER NOT NULL DEFAULT 1,
+  score REAL,
+  label TEXT,
+  junctions TEXT,
+  reason TEXT,
+  segments TEXT,
+  gene_taxa TEXT,
+  channels TEXT,
+  ribotyper_codes TEXT,
+  db_source TEXT,
+  time_stamp INTEGER,
+  PRIMARY KEY (ID, path, scaffold)
+);"
+
+#' DDL for chimera_windows: best local hit per sliding window.
+#' @noRd
+CHIMERA_WINDOWS_DDL <- "CREATE TABLE IF NOT EXISTS chimera_windows (
+  ID TEXT NOT NULL,
+  path INTEGER NOT NULL DEFAULT 1,
+  scaffold INTEGER NOT NULL DEFAULT 1,
+  start INTEGER NOT NULL,
+  stop INTEGER,
+  accession TEXT,
+  species TEXT,
+  staxid INTEGER,
+  lineage TEXT,
+  lineage_taxids TEXT,
+  rank_distance INTEGER,
+  hit_class TEXT,
+  pident REAL,
+  bitscore REAL,
+  depth_median REAL,
+  clip_frac REAL,
+  db_source TEXT,
+  PRIMARY KEY (ID, path, scaffold, start)
 );"
 
 #' DDL for the assembly_backup table (original pre-trim state, for undo/restore).
@@ -189,3 +232,23 @@ backfill_coverage_median <- function(con, limit = NULL) {
   }
   invisible(n)
 }
+
+#' DDL for rrna_candidates: the rDNA contig search evidence for user assemblies.
+#'
+#' One row per contig barrnap hit in a user-supplied assembly, kept or dropped,
+#' so the app can say what the search found rather than only that it failed.
+#' Contigs with no rRNA hit at all are not recorded: a draft genome would
+#' otherwise write a row per scaffold.
+#' @noRd
+RRNA_CANDIDATES_DDL <- "CREATE TABLE IF NOT EXISTS rrna_candidates (
+  ID TEXT NOT NULL,
+  contig TEXT NOT NULL,
+  length INTEGER,
+  rrna_features TEXT,
+  rrna_bases INTEGER,
+  rank INTEGER,
+  selected INTEGER,
+  reason TEXT,
+  time_stamp INTEGER,
+  PRIMARY KEY (ID, contig)
+);"
