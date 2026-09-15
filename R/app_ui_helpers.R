@@ -78,16 +78,6 @@ mp_modal_title <- function(text, subtitle = NULL, close = TRUE) {
   )
 }
 
-#' The two table CSV download buttons.
-#' @noRd
-mp_csv_download_row <- function(ns) {
-  div(
-    class = "mp-csv-row",
-    downloadButton(ns("export_selected"), "Download selected rows", class = "btn-sm"),
-    downloadButton(ns("export_all"), "Download all rows", class = "btn-sm")
-  )
-}
-
 #' Count plus noun, pluralised: "1 sample", "3 samples", "2 assemblies".
 #'
 #' Errors on `NA` rather than putting "NA" on screen.
@@ -213,8 +203,7 @@ mp_state_modal <- function(ids, current = character(0), mode = "assemble") {
   choice_names <- lapply(codes, function(k) {
     tagList(
       tags$strong(MP_STATE_META[[k]]$label),
-      tags$span(class = "text-muted", style = "font-size: 0.85em;",
-                paste0(" - ", effect[[k]]))
+      tags$span(class = "mp-help-text", paste0(" - ", effect[[k]]))
     )
   })
   modalDialog(

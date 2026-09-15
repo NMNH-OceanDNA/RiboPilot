@@ -147,7 +147,12 @@ reference_diff_modal <- function(diff, n_old, n_new, warn = character(0)) {
           "splitting them up. Nothing is applied; press Propose groups again after."),
         shiny::actionButton("ref_diff_group", "Make a user group", class = "btn-sm"))
     },
-    footer = mp_footer(primary = shiny::actionButton("ref_diff_apply", "Apply")))
+    # Overwriting hand-set memberships is the irreversible part, so the button
+    # says so and reads as danger when it would.
+    footer = if (length(hand) > 0) {
+      mp_footer(danger = shiny::actionButton("ref_diff_apply",
+        sprintf("Apply, overwriting %s you assigned", mp_n(length(hand), "sample"))))
+    } else mp_footer(primary = shiny::actionButton("ref_diff_apply", "Apply")))
 }
 
 #' Pick the group a bulk move sends samples to
@@ -158,7 +163,7 @@ reference_move_modal <- function(groups, n) {
   shiny::modalDialog(
     title = paste("Move", mp_n(n, "sample"), "to a reference group"),
     shinyWidgets::prettyRadioButtons("ref_move_pick", NULL, choices = choices,
-      shape = "round", status = "primary"),
+      selected = character(0), shape = "round", status = "primary"),
     opts_help("The move is yours, not the proposer's, so the next Propose groups ",
       "will flag it before changing it. To make it permanent, select the samples ",
       "and press Keep together."),
@@ -167,9 +172,11 @@ reference_move_modal <- function(groups, n) {
 
 #' One rung of the clade ladder, as a radio choice label
 #' @noRd
-rung_label <- function(name, rank, n_samples, n_records, chosen) {
+rung_label <- function(name, rank, n_samples, n_records, chosen, min_records = NA, max_records = NA) {
   recs <- if (is.na(n_records)) "records unknown" else paste0(format(n_records, big.mark = ","), " records")
-  sprintf("%s [%s] - %d sample(s), %s%s", name, rank, n_samples, recs,
+  fit <- if (is.na(n_records)) "" else if (!is.na(min_records) && n_records < min_records) " (below minimum)"
+    else if (!is.na(max_records) && n_records > max_records) " (above maximum)" else ""
+  sprintf("%s [%s] - %d sample(s), %s%s%s", name, rank, n_samples, recs, fit,
     if (isTRUE(chosen)) "  (current)" else "")
 }
 
@@ -183,12 +190,12 @@ rung_label <- function(name, rank, n_samples, n_records, chosen) {
 #'   not, the first search pays for building it, which is worth saying up front.
 #' @noRd
 reference_ladder_modal <- function(ref_id, clade_name, ladder, chosen_taxid, n_group,
-                                   index_ready = TRUE) {
+                                   index_ready = TRUE, min_records = NA, max_records = NA) {
   ladder <- ladder[order(-ladder$level), , drop = FALSE]
   choices <- stats::setNames(as.character(ladder$taxid),
     vapply(seq_len(nrow(ladder)), function(i) rung_label(ladder$name[i], ladder$rank[i],
       ladder$n_samples[i], ladder$n_records[i],
-      !is.na(chosen_taxid) && ladder$taxid[i] == chosen_taxid), character(1)))
+      !is.na(chosen_taxid) && ladder$taxid[i] == chosen_taxid, min_records, max_records), character(1)))
   shiny::modalDialog(
     title = sprintf("Reference clade for %s (%s)", ref_id, mp_n(n_group, "sample")), size = "l",
     shinyWidgets::prettyRadioButtons("ref_rung", "Shared lineage (deepest first):",
@@ -512,7 +519,8 @@ reference_handlers <- function(input, output, session, deps) {
   }
   shiny::observeEvent(input$ref_move_apply, {
     ids <- move_target()
-    key <- input$ref_move_pick %||% ""
+    if (is.null(input$ref_move_pick)) { notify("Pick a group first.", "warning"); return() }
+    key <- input$ref_move_pick
     res <- tryCatch(with_con(function(con) {
       assign_samples_ref(con, ids, if (nzchar(key)) key else NA_character_)
       if (!nzchar(key)) return(0L)
@@ -577,7 +585,8 @@ reference_handlers <- function(input, output, session, deps) {
       # cache for these rungs; anything else renders as "records unknown"
       l <- group_ladder(ladders_now(con), ids, count_fn = cache_count_fn(cfg$ref_dir))
       reference_ladder_modal(ref_id, row$clade_name[1], l, row$clade_taxid[1], length(ids),
-        index_ready = file.exists(tax_index_path(project_taxdump_dir(deps$project()))))
+        index_ready = file.exists(tax_index_path(project_taxdump_dir(deps$project()))),
+        min_records = cfg$min_records, max_records = cfg$max_records)
     }), error = function(e) e)
     if (inherits(res, "error")) { notify(conditionMessage(res), "error"); return() }
     shiny::showModal(res)
@@ -976,6 +985,17 @@ reference_handlers <- function(input, output, session, deps) {
     kill_ref_nf(); idle_buttons(); poll_now(); bump()
   })
   shiny::observeEvent(input$ref_nf_close, {
+    p <- ref_proc()
+    if (!is.null(p) && p$is_alive()) {
+      mp_confirm("ref_nf_close_confirm", title = "Stop the build?",
+        text = "Closing this window stops the database build. Leave it open to keep running.",
+        action_label = "Stop and close", danger = TRUE)
+      return()
+    }
+    headless_open(FALSE); shiny::removeModal(); poll_now(); bump()
+  })
+  shiny::observeEvent(input$ref_nf_close_confirm, {
+    req(isTRUE(input$ref_nf_close_confirm))
     kill_ref_nf(); headless_open(FALSE); shiny::removeModal(); poll_now(); bump()
   })
 

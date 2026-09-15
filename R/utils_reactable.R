@@ -175,9 +175,9 @@ rt_flag_badge <- function() {
       var n = cellInfo.value
       if (n === null || n === undefined || n === '' ) return ''
       n = Number(n)
-      if (n === 0) return '<span style=\"color:#2d6a4f;\">&#10003;</span>'
+      if (n === 0) return '<span class=\"mp-fg-success\">&#10003;</span>'
       var tip = cellInfo.row.annotate_notes || ''
-      return '<span title=\"' + String(tip).replace(/\"/g, '&quot;') + '\" style=\"background:#fde8d0; color:#7d4a1e; border-radius:3px; padding:1px 6px; font-size:0.85em;\">' + n + '</span>'
+      return '<span title=\"' + String(tip).replace(/\"/g, '&quot;') + '\" class=\"mp-pill mp-pill-warning\">' + n + '</span>'
     }")
 }
 
@@ -192,9 +192,9 @@ rt_itsx_badge <- function() {
       v = String(v)
       var esc = v.replace(/\"/g, '&quot;')
       if (v.indexOf('not_run(') === 0) return '<span title=\"' + esc + '\" style=\"color:#999;\">not run</span>'
-      if (/^0 of /.test(v)) return '<span style=\"color:#2d6a4f;\">&#10003;</span>'
+      if (/^0 of /.test(v)) return '<span class=\"mp-fg-success\">&#10003;</span>'
       var txt = v.split(';').join('; ')
-      return '<span title=\"' + esc + '\" style=\"background:#fde8d0; color:#7d4a1e; border-radius:3px; padding:1px 6px; font-size:0.85em;\">' + txt + '</span>'
+      return '<span title=\"' + esc + '\" class=\"mp-pill mp-pill-warning\">' + txt + '</span>'
     }")
 }
 
@@ -209,7 +209,7 @@ rt_kept_count <- function() {
       var n = cellInfo.value
       if (n === null || n === undefined || n === '') return ''
       n = Number(n)
-      if (n === 0) return '<span style=\"background:#f8d7da; color:#842029; border-radius:3px; padding:1px 6px; font-size:0.85em;\">0</span>'
+      if (n === 0) return '<span class=\"mp-pill mp-pill-danger\">0</span>'
       return String(n)
     }")
 }
@@ -239,7 +239,7 @@ rt_link <- function(InputId, title = NULL, lock_col = NULL) {
   locked <- if (is.null(lock_col)) "" else sprintf(
     "var lk = (cellInfo.row || {})['%s'];
                 if (lk == 1) {
-                  return `<span class='mp-locked-cell' title='Locked - options are set to ${cellInfo.value}. Unlock this sample (Lock column) to change them.'>${cellInfo.value}</span>`;
+                  return `<span class='mp-locked-cell' title='Locked - options are set to ${cellInfo.value}. Unlock this sample with the Lock button to change them.'>${cellInfo.value}</span>`;
                 }",
     lock_col
   )
@@ -251,8 +251,8 @@ rt_link <- function(InputId, title = NULL, lock_col = NULL) {
                 %s
                 var clickid = '%s';
                 var sampid = cellInfo.index+1;
-                return `<a href='#' id=${sampid} class='grow' title='%s' ` +
-                `onclick='event.stopPropagation(); Shiny.setInputValue(&#39;${clickid}&#39;, this.id, {priority: &#39;event&#39;})'>` +
+                return `<a href='#' id='${clickid}_${sampid}' class='grow' title='%s' ` +
+                `onclick='event.stopPropagation(); Shiny.setInputValue(&#39;${clickid}&#39;, ${sampid}, {priority: &#39;event&#39;})'>` +
                 cellInfo.value +
                 `</a>`;
                 }",
@@ -331,14 +331,13 @@ rt_shares_badge <- function() {
         return '<span style=\"color:#999;\" title=\"no reference resolved for this scaffold\">no reference</span>'
       var close = {species:1, genus:1, family:1}
       var mid   = {order:1, class:1}
-      var bg, fg
-      if (close[v])      { bg = '#d4edda'; fg = '#2d6a4f' }
-      else if (mid[v])   { bg = '#eef7e6'; fg = '#40693f' }
-      else if (v === 'none') { bg = '#f8d7da'; fg = '#842029' }
-      else               { bg = '#fde8d0'; fg = '#7d4a1e' }
+      var tone
+      if (close[v])      { tone = 'success' }
+      else if (mid[v])   { tone = 'success' }
+      else if (v === 'none') { tone = 'danger' }
+      else               { tone = 'warning' }
       var t = cellInfo.row['screen_species'] ? cellInfo.row['screen_species'] : ''
-      return '<span title=\"top GenBank hit: ' + t + '\" style=\"background:' + bg +
-        '; color:' + fg + '; border-radius:3px; padding:1px 6px; font-size:0.85em;\">' + v + '</span>'
+      return '<span title=\"top GenBank hit: ' + t + '\" class=\"mp-pill mp-pill-' + tone + '\">' + v + '</span>'
     }")
 }
 
@@ -355,16 +354,13 @@ rt_blast_source_badge <- function() {
     "function(cellInfo) {
       var v = cellInfo.value
       if (v === 'core_nt')
-        return '<span title=\"remote megablast against NCBI core_nt\" style=\"background:#d4edda;' +
-          ' color:#2d6a4f; border-radius:3px; padding:1px 6px; font-size:0.85em;\">GenBank</span>'
+        return '<span title=\"remote megablast against NCBI core_nt\" class=\"mp-pill mp-pill-success\">GenBank</span>'
       if (v === 'local_rrna')
         return '<span title=\"local BLAST against the configured rDNA reference panel\"' +
-          ' style=\"background:#d4edda; color:#2d6a4f; border-radius:3px; padding:1px 6px;' +
-          ' font-size:0.85em;\">local panel</span>'
+          ' class=\"mp-pill mp-pill-success\">local panel</span>'
       if (v === 'seeds')
         return '<span title=\"local BLAST against the GetOrganelle seed file: the closest bait' +
-          ' sequence, NOT a GenBank identification\" style=\"background:#fde8d0; color:#7d4a1e;' +
-          ' border-radius:3px; padding:1px 6px; font-size:0.85em;\">seed file</span>'
+          ' sequence, NOT a GenBank identification\" class=\"mp-pill mp-pill-warning\">seed file</span>'
       if (v === null || v === undefined || v === '' || v === 'NA') {
         var sp = cellInfo.row['blast_species']
         if (sp === null || sp === undefined || sp === '') return ''
@@ -383,8 +379,7 @@ rt_odd_badge <- function() {
       var sib = cellInfo.row['sib_taxon'] ? cellInfo.row['sib_taxon'] : 'the others'
       var rk  = cellInfo.row['sib_rank'] ? cellInfo.row['sib_rank'] : ''
       return '<span title=\"this scaffold&#39;s top hit differs from the rest of the sample (' +
-        sib + ' at ' + rk + ')\" style=\"background:#fde8d0; color:#7d4a1e; border-radius:3px;' +
-        ' padding:1px 6px; font-size:0.85em;\">odd</span>'
+        sib + ' at ' + rk + ')\" class=\"mp-pill mp-pill-warning\">odd</span>'
     }")
 }
 
@@ -402,12 +397,11 @@ rt_screen_badge <- function() {
       var v = cellInfo.value
       if (v === null || v === undefined || v === '' || v === 'NA' || v === 'no_reference')
         return '<span style=\"color:#999;\">no_reference</span>'
-      var bg, fg
-      if (v === 'on_target')       { bg = '#d4edda'; fg = '#2d6a4f' }
-      else if (v === 'off_target') { bg = '#f8d7da'; fg = '#842029' }
-      else                          { bg = '#fde8d0'; fg = '#7d4a1e' }
-      return '<span style=\"background:' + bg + '; color:' + fg +
-        '; border-radius:3px; padding:1px 6px; font-size:0.85em;\">' + v + '</span>'
+      var tone
+      if (v === 'on_target')       { tone = 'success' }
+      else if (v === 'off_target') { tone = 'danger' }
+      else                          { tone = 'warning' }
+      return '<span class=\"mp-pill mp-pill-' + tone + '\">' + v + '</span>'
     }")
 }
 
@@ -419,13 +413,12 @@ rt_chimera_badge <- function() {
     "function(cellInfo) {
       var v = cellInfo.value;
       if (v === null || v === undefined || v === '' || v === 'NA') return '';
-      var bg, fg;
-      if (v === 'clean')        { bg = '#d4edda'; fg = '#2d6a4f'; }
-      else if (v === 'likely')  { bg = '#f8d7da'; fg = '#842029'; }
-      else                      { bg = '#fde8d0'; fg = '#7d4a1e'; }
+      var tone;
+      if (v === 'clean')        { tone = 'success'; }
+      else if (v === 'likely')  { tone = 'danger'; }
+      else                      { tone = 'warning'; }
       var tip = cellInfo.row.chimera_reason || '';
-      return '<span title=\"' + String(tip).replace(/\"/g, '&quot;') + '\" style=\"background:' + bg +
-        '; color:' + fg + '; padding:1px 6px; border-radius:8px; font-size:0.85em\">' + v + '</span>';
+      return '<span title=\"' + String(tip).replace(/\"/g, '&quot;') + '\" class=\"mp-pill mp-pill-' + tone + '\">' + v + '</span>';
     }")
 }
 
@@ -597,15 +590,15 @@ rt_icon_bttn_text <- function(inputId, icon, text = "", label = NULL,
       %s
       return `<button type='button' ` +
         `class='icon-bttn-text grow' ` +
-        `id='${index+1}'%s ` +
-        `onclick='event.stopPropagation(); Shiny.setInputValue(&#39;%s&#39;, this.id, {priority: &#39;event&#39;})'>` +
+        `id='%s_${index+1}'%s ` +
+        `onclick='event.stopPropagation(); Shiny.setInputValue(&#39;%s&#39;, ${index+1}, {priority: &#39;event&#39;})'>` +
         `<i class='%s' aria-hidden='true' ` +
         `style='margin-right: 4px;'></i>` +
         `<small>${value}</small>` +
         `</button>`
     }
     ",
-    mp_js_attr(text), relabel, tip, inputId, icon
+    mp_js_attr(text), relabel, inputId, tip, inputId, icon
   ) |>
     htmlwidgets::JS()
 }

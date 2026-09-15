@@ -30,12 +30,12 @@ rp_alert <- function(msg, type = "message", title = NULL,
                      session = shiny::getDefaultReactiveDomain()) {
   spec <- ALERT_TYPES[[type]] %||% ALERT_TYPES$message
   # pass a shiny tag as `msg` when one alert has to carry several paragraphs
-  shinyWidgets::sendSweetAlert(session = session, title = title %||% spec[2],
-    text = msg, type = spec[1], html = !is.character(msg))
+  mp_alert(title = title %||% spec[2], text = msg, type = spec[1],
+    html = !is.character(msg), session = session)
 }
 
-#' Bottom-right toast for incidental messages
+#' Bottom-right toast for incidental messages (same toast as mp_toast)
 #' @noRd
 rp_toast <- function(msg, type = "message", duration = 5) {
-  shiny::showNotification(msg, type = type, duration = duration)
+  mp_toast(msg, type = type, duration = duration)
 }
