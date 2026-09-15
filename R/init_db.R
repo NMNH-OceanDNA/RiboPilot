@@ -564,6 +564,7 @@ new_db <- function(
       curate_opts TEXT,
       n_flags INTEGER,
       annotate_notes TEXT,
+      itsx_warnings TEXT,
       reviewed TEXT,
       problematic TEXT,
       partial TEXT,

@@ -138,6 +138,13 @@ app_server <- function(input, output, session) {
            (SELECT COUNT(*) FROM assemblies x WHERE x.ID = s.ID) AS units,
            (SELECT COUNT(*) FROM assemblies x WHERE x.ID = s.ID
               AND COALESCE(x.ignore,0) = 0) AS kept,
+           -- per-sample roll-up of the stock-ITSx check: NULL until any unit
+           -- has been checked, else 'n of m units' flagged
+           (SELECT CASE WHEN COUNT(x.itsx_warnings) = 0 THEN NULL ELSE
+              SUM(CASE WHEN COALESCE(x.itsx_warnings,'') <> ''
+                       AND x.itsx_warnings NOT LIKE 'not_run(%' THEN 1 ELSE 0 END)
+              || ' of ' || COUNT(x.itsx_warnings) || ' units' END
+            FROM annotate x WHERE x.ID = s.ID) AS itsx_warnings,
            (SELECT p.path FROM path_scores p WHERE p.ID = s.ID AND p.auto_select = 1) AS sel_path,
            (SELECT round(MAX(p.score),3) FROM path_scores p WHERE p.ID = s.ID) AS best_score,
            -- the rDNA contig search writes its own column because
@@ -173,7 +180,7 @@ app_server <- function(input, output, session) {
            -- and its column was already defined but never selected.
            asm.blast_species, asm.blast_accession, asm.blast_pident, asm.blast_qcovs,
            asm.blast_source,
-           an.n_flags, an.annotate_notes, sc.screen_verdict,
+           an.n_flags, an.annotate_notes, an.itsx_warnings, sc.screen_verdict,
            ch.label AS chimera_label, ch.reason AS chimera_reason, an.reviewed,
            an.problematic, an.partial, an.time_stamp,
            'details' AS details, 'output' AS output
@@ -225,6 +232,8 @@ app_server <- function(input, output, session) {
       n_flags = reactable::colDef(name = "Warnings", width = 100, html = TRUE, filterable = FALSE,
         header = rt_help_header("Warnings", SCAFFOLD_COL_HELP$warnings), cell = rt_flag_badge()),
       annotate_notes = reactable::colDef(show = FALSE),
+      itsx_warnings = reactable::colDef(name = "ITSx Warnings", minWidth = 130, html = TRUE,
+        header = rt_help_header("ITSx Warnings", SCAFFOLD_COL_HELP$itsx_warnings), cell = rt_itsx_badge()),
       screen_verdict = reactable::colDef(name = "Screen", width = 110, html = TRUE,
         header = rt_help_header("Screen", SCAFFOLD_COL_HELP$screen_verdict), cell = rt_screen_badge()),
       chimera_label = reactable::colDef(name = "Chimera", width = 100, html = TRUE,
@@ -1037,7 +1046,12 @@ app_server <- function(input, output, session) {
     run_export(export_units_df(grp), grp)
   })
   run_export <- function(u, grp) {
-    gdir <- tryCatch(
+    detail <- if (isTRUE(input$export_itsx_check)) {
+      "Writing files and running the final ITSx check. Hold tight, this can take a few minutes."
+    } else {
+      "Writing files. Hold tight."
+    }
+    gdir <- withProgress(message = "Exporting...", detail = detail, value = 0.5, tryCatch(
       export_bundle(app_project(), units = u, group = grp,
         out_dir = file.path(app_project(), "out"), zip = FALSE,
         fasta_header = input$fasta_header,
@@ -1048,7 +1062,7 @@ app_server <- function(input, output, session) {
       error = function(e) {
         rp_alert(paste("Export failed:", conditionMessage(e)), type = "error")
         NULL
-      })
+      }))
     if (is.null(gdir)) return(invisible())
     export_done_dir(gdir)
     removeModal()
@@ -1164,6 +1178,8 @@ app_server <- function(input, output, session) {
         chimera_label = reactable::colDef(name = "Chimera", width = 90, show = TRUE, html = TRUE,
           header = rt_help_header("Chimera", SCAFFOLD_COL_HELP$chimera), cell = rt_chimera_badge()),
         chimera_reason = reactable::colDef(show = FALSE),
+        itsx_warnings = reactable::colDef(name = "ITSx Warnings", minWidth = 130, show = TRUE, html = TRUE,
+          header = rt_help_header("ITSx Warnings", SCAFFOLD_COL_HELP$itsx_warnings), cell = rt_itsx_badge()),
         screen_species = reactable::colDef(name = "Top GenBank hit", minWidth = 160, show = TRUE,
           html = TRUE, header = rt_help_header("Top GenBank hit", SCAFFOLD_COL_HELP$screen_species),
           cell = rt_longtext()),

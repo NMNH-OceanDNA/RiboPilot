@@ -132,6 +132,7 @@ test_that("unit_evidence surfaces the screen reason", {
     species TEXT, lineage TEXT, lineage_taxids TEXT, rank_distance INT, pident REAL, qcovs REAL,
     bitscore REAL, is_nuclear_rrna INT)")
   DBI::dbExecute(con, "CREATE TABLE path_scores(ID TEXT, path INT, score REAL)")
+  DBI::dbExecute(con, "CREATE TABLE annotate(ID TEXT, path INT, scaffold INT, itsx_warnings TEXT)")
   DBI::dbExecute(con, RiboPilot:::SCREEN_DDL)
   DBI::dbExecute(con, RiboPilot:::CHIMERA_DDL)
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S1','Danio rerio',NULL)")

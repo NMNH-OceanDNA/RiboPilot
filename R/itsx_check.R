@@ -109,18 +109,23 @@ run_itsx_check <- function(fasta, out_prefix, cpu = 2L, cmd) {
         collapse = " | "))
     return(empty)
   }
+  c(list(ok = TRUE), read_itsx_outputs(out_prefix), list(message = ""))
+}
+
+#' Read the files ITSx wrote under `out_prefix`
+#' @return list(positions, results, problematic, no_detections, chimeric)
+#' @noRd
+read_itsx_outputs <- function(out_prefix) {
   rd <- function(suffix) {
     f <- paste0(out_prefix, suffix)
     if (file.exists(f)) readLines(f, warn = FALSE) else character(0)
   }
   chim <- rd(".chimeric.fasta")
-  list(ok = TRUE,
-    positions = rd(".positions.txt"),
+  list(positions = rd(".positions.txt"),
     results = rd(".extraction.results"),
     problematic = rd(".problematic.txt"),
     no_detections = trimws(rd("_no_detections.txt")),
-    chimeric = sub("^>", "", chim[startsWith(chim, ">")]),
-    message = "")
+    chimeric = sub("^>", "", chim[startsWith(chim, ">")]))
 }
 
 #' Per-record notes from an ITSx positions file
@@ -276,47 +281,29 @@ itsx_check_flags <- function(seqid, seq, ann, its, notes, res, prob,
   list(flags = flags, note = paste(flags, collapse = ";"))
 }
 
-#' Run the final ITSx check over an export's records
+#' Flag rows for a set of units from stock-ITSx output
 #'
-#' Writes the ITSx output under `<gdir>/itsx_check/` and a per-record CSV
-#' `<gdir>/<label>_itsx_check.csv`, and returns one row per unit.
 #' @param con Project DB connection.
-#' @param units data.frame(ID, path, scaffold, seqid) as built by [export_bundle()].
-#' @param gdir Bundle directory.
-#' @param label Bundle label.
-#' @param cpu Threads for ITSx.
-#' @param project Project directory; its `.config` decides the container.
-#' @param cmd Override for [itsx_check_command()] (tests).
+#' @param units data.frame(ID, path, scaffold, seqid); `seqid` is the record ID
+#'   as written in the checked FASTA.
+#' @param out list from [run_itsx_check()] / [read_itsx_outputs()], plus `ok`
+#'   and `message` when the run itself failed.
 #' @return data.frame(seqid, itsx_check, itsx_origin, itsx_ITS1, itsx_5.8S,
 #'   itsx_ITS2, itsx_notes). `itsx_check` is "" when clean, the flag list when
 #'   not, or "not_run(<why>)" when ITSx could not be run.
 #' @noRd
-itsx_export_check <- function(con, units, gdir, label, cpu = 2L, project = ".", cmd = NULL) {
+itsx_check_units <- function(con, units, out) {
   n <- nrow(units)
   blank <- data.frame(seqid = units$seqid, itsx_check = rep("", n),
     itsx_origin = rep(NA_character_, n), itsx_ITS1 = rep(NA_character_, n),
     `itsx_5.8S` = rep(NA_character_, n), itsx_ITS2 = rep(NA_character_, n),
     itsx_notes = rep("", n), stringsAsFactors = FALSE, check.names = FALSE)
   if (n == 0) return(blank)
-
-  seqs <- vapply(seq_len(n), function(i) {
-    r <- DBI::dbGetQuery(con,
-      "SELECT sequence FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
-      params = list(units$ID[i], units$path[i], units$scaffold[i]))
-    if (nrow(r)) r$sequence[1] else NA_character_
-  }, character(1))
-  cdir <- file.path(gdir, "itsx_check")
-  dir.create(cdir, showWarnings = FALSE, recursive = TRUE)
-  fa <- file.path(cdir, "records.fasta")
-  ok <- !is.na(seqs) & nzchar(seqs)
-  writeLines(as.vector(rbind(paste0(">", units$seqid[ok]), seqs[ok])), fa)
-
-  if (is.null(cmd)) cmd <- itsx_check_command(project, cdir)
-  out <- run_itsx_check(fa, file.path(cdir, "itsx"), cpu = cpu, cmd = cmd)
-  if (!isTRUE(out$ok)) {
-    blank$itsx_check <- sprintf("not_run(%s)", out$message)
+  if (!isTRUE(out$ok %||% TRUE)) {
+    blank$itsx_check <- sprintf("not_run(%s)", out$message %||% "ITSx unavailable")
     return(blank)
   }
+  seqs <- unit_sequences(con, units)
   its <- parse_itsx(out$positions)
   if (nrow(its) == 0) {
     its <- data.frame(seqid = character(0), element = character(0),
@@ -354,6 +341,88 @@ itsx_export_check <- function(con, units, gdir, label, cpu = 2L, project = ".", 
     blank$itsx_notes[i] <- paste(c(notes$notes[notes$seqid == sid], prob$problem[prob$seqid == sid]),
       collapse = "; ")
   }
-  utils::write.csv(blank, file.path(gdir, paste0(label, "_itsx_check.csv")), row.names = FALSE)
   blank
+}
+
+#' Scaffold sequence of each unit (NA when absent)
+#' @noRd
+unit_sequences <- function(con, units) {
+  vapply(seq_len(nrow(units)), function(i) {
+    r <- DBI::dbGetQuery(con,
+      "SELECT sequence FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = list(units$ID[i], units$path[i], units$scaffold[i]))
+    if (nrow(r)) r$sequence[1] else NA_character_
+  }, character(1))
+}
+
+#' Record each unit's flags in annotate.itsx_warnings
+#'
+#' Silent when the column is absent (a project made before it existed).
+#' @noRd
+itsx_store_warnings <- function(con, units, chk) {
+  v <- chk$itsx_check[match(units$seqid, chk$seqid)]
+  for (i in seq_len(nrow(units))) {
+    tryCatch(DBI::dbExecute(con,
+      "UPDATE annotate SET itsx_warnings = ? WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = list(v[i], units$ID[i], units$path[i], units$scaffold[i])),
+      error = function(e) NULL)
+  }
+  invisible(v)
+}
+
+#' Pipeline-side check for one unit from ITSx output already on disk
+#'
+#' The annotation step runs stock ITSx next to its own tuned run and hands the
+#' `<out_prefix>.*` files to reconcile, which calls this after the unit's
+#' annotations are written.
+#' @param con Open DBI connection.
+#' @param id Sample ID.
+#' @param path,scaffold Assembly unit within the sample.
+#' @param out_prefix ITSx output prefix (files `<out_prefix>.positions.txt` etc.).
+#' @return one-row data.frame as from [itsx_check_units()], invisibly.
+#' @export
+itsx_check_one <- function(con, id, path = 1L, scaffold = 1L, out_prefix) {
+  units <- data.frame(ID = id, path = as.integer(path), scaffold = as.integer(scaffold),
+    seqid = paste(id, path, scaffold, sep = "."), stringsAsFactors = FALSE)
+  out <- if (file.exists(paste0(out_prefix, ".positions.txt"))) {
+    c(list(ok = TRUE), read_itsx_outputs(out_prefix))
+  } else {
+    list(ok = FALSE, message = "no ITSx output")
+  }
+  chk <- itsx_check_units(con, units, out)
+  itsx_store_warnings(con, units, chk)
+  invisible(chk)
+}
+
+#' Run the final ITSx check over an export's records
+#'
+#' Writes the ITSx output under `<gdir>/itsx_check/` and a per-record CSV
+#' `<gdir>/<label>_itsx_check.csv`, refreshes `annotate.itsx_warnings`, and
+#' returns one row per unit.
+#' @param con Project DB connection.
+#' @param units data.frame(ID, path, scaffold, seqid) as built by [export_bundle()].
+#' @param gdir Bundle directory.
+#' @param label Bundle label.
+#' @param cpu Threads for ITSx.
+#' @param project Project directory; its `.config` decides the container.
+#' @param cmd Override for [itsx_check_command()] (tests).
+#' @return data.frame as from [itsx_check_units()].
+#' @noRd
+itsx_export_check <- function(con, units, gdir, label, cpu = 2L, project = ".", cmd = NULL) {
+  if (nrow(units) == 0) return(itsx_check_units(con, units, list(ok = TRUE)))
+  seqs <- unit_sequences(con, units)
+  cdir <- file.path(gdir, "itsx_check")
+  dir.create(cdir, showWarnings = FALSE, recursive = TRUE)
+  fa <- file.path(cdir, "records.fasta")
+  ok <- !is.na(seqs) & nzchar(seqs)
+  writeLines(as.vector(rbind(paste0(">", units$seqid[ok]), seqs[ok])), fa)
+
+  if (is.null(cmd)) cmd <- itsx_check_command(project, cdir)
+  out <- run_itsx_check(fa, file.path(cdir, "itsx"), cpu = cpu, cmd = cmd)
+  chk <- itsx_check_units(con, units, out)
+  itsx_store_warnings(con, units, chk)
+  if (isTRUE(out$ok)) {
+    utils::write.csv(chk, file.path(gdir, paste0(label, "_itsx_check.csv")), row.names = FALSE)
+  }
+  chk
 }

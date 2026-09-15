@@ -89,6 +89,23 @@ rt_flag_badge <- function() {
     }")
 }
 
+#' Render the stock-ITSx check: tick when clean, grey when not run, amber pill
+#' with the flag list otherwise (or the 'n of m units' roll-up on a sample row)
+#' @noRd
+rt_itsx_badge <- function() {
+  htmlwidgets::JS(
+    "function(cellInfo) {
+      var v = cellInfo.value
+      if (v === null || v === undefined || v === '') return ''
+      v = String(v)
+      var esc = v.replace(/\"/g, '&quot;')
+      if (v.indexOf('not_run(') === 0) return '<span title=\"' + esc + '\" style=\"color:#999;\">not run</span>'
+      if (/^0 of /.test(v)) return '<span style=\"color:#2d6a4f;\">&#10003;</span>'
+      var txt = v.split(';').join('; ')
+      return '<span title=\"' + esc + '\" style=\"background:#fde8d0; color:#7d4a1e; border-radius:3px; padding:1px 6px; font-size:0.85em;\">' + txt + '</span>'
+    }")
+}
+
 #' Render a kept-scaffold count: red when nothing survives triage, else plain
 #'
 #' Zero kept units means the sample has no assembly to annotate or export, which

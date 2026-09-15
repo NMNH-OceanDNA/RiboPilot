@@ -178,6 +178,8 @@ unit_evidence <- function(id) {
        ROUND(ps.score, 3) AS path_score,
        s.lineage_taxids AS sample_taxids, s.sci_name,
        ch.label AS chimera_label, ch.reason AS chimera_reason,
+       (SELECT an.itsx_warnings FROM annotate an WHERE an.ID = a.ID AND an.path = a.path
+          AND an.scaffold = a.scaffold LIMIT 1) AS itsx_warnings,
        (SELECT GROUP_CONCAT(n.element) FROM
           (SELECT element FROM annotations WHERE ID = a.ID AND path = a.path
              AND scaffold = a.scaffold ORDER BY start) n) AS elements

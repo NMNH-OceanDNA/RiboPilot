@@ -17,7 +17,7 @@ mk_app_project <- function(env = parent.frame()) {
     blast_qcovs REAL, blast_source TEXT, source_contig TEXT)")
   DBI::dbExecute(con, "CREATE TABLE annotate(ID TEXT, path INT, scaffold INT, annotate_switch INT,
     annotate_lock INT, annotate_opts TEXT, curate_opts TEXT, reviewed TEXT, problematic TEXT,
-    partial TEXT, n_features INT, missing TEXT, n_flags INT, annotate_notes TEXT, export_group TEXT, time_stamp INT)")
+    partial TEXT, n_features INT, missing TEXT, n_flags INT, annotate_notes TEXT, itsx_warnings TEXT, export_group TEXT, time_stamp INT)")
   DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT, start INT)")
   DBI::dbExecute(con, "CREATE TABLE coverage(ID TEXT, path INT, scaffold INT, mean_depth REAL,
     min_depth INT, max_depth INT, depths TEXT)")
@@ -37,7 +37,7 @@ mk_app_project <- function(env = parent.frame()) {
   for (u in list(c(1,1,6120), c(1,2,1442), c(2,1,5980), c(2,2,890))) {
     DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',?,?,'linear',?,'ACGT',0,'Danio rerio','A1',99,88,'core_nt',NULL)",
       params = list(u[1], u[2], u[3]))
-    DBI::dbExecute(con, "INSERT INTO annotate VALUES('S1',?,?,1,0,'default','default','no','no','no',3,'',0,NULL,NULL,1)",
+    DBI::dbExecute(con, "INSERT INTO annotate VALUES('S1',?,?,1,0,'default','default','no','no','no',3,'',0,NULL,NULL,NULL,1)",
       params = list(u[1], u[2]))
     DBI::dbExecute(con, "INSERT INTO coverage (ID,path,scaffold,mean_depth) VALUES('S1',?,?,100)",
       params = list(u[1], u[2]))
@@ -692,4 +692,22 @@ test_that("a bulk drop refuses annotation-locked units and still drops the rest"
     expect_equal(ig$ignore[ig$path == 1 & ig$scaffold == 1], 0L)
     expect_equal(ig$ignore[ig$path == d$path[other] & ig$scaffold == d$scaffold[other]], 1L)
   })
+})
+
+test_that("ITSx warnings reach the annotate rows, the scaffold view, and the sample roll-up", {
+  dir <- mk_app_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE annotate SET itsx_warnings = 'itsx_chimeric' WHERE path = 1 AND scaffold = 1")
+  DBI::dbExecute(con, "UPDATE annotate SET itsx_warnings = '' WHERE path = 1 AND scaffold = 2")
+  DBI::dbDisconnect(con)
+  local_mocked_bindings(app_project = function() dir, .package = "RiboPilot")
+  ev <- RiboPilot:::unit_evidence("S1")
+  expect_equal(ev$itsx_warnings[ev$path == 1 & ev$scaffold == 1], "itsx_chimeric")
+  roll <- RiboPilot:::app_query(
+    "SELECT (SELECT CASE WHEN COUNT(x.itsx_warnings) = 0 THEN NULL ELSE
+        SUM(CASE WHEN COALESCE(x.itsx_warnings,'') <> ''
+                 AND x.itsx_warnings NOT LIKE 'not_run(%' THEN 1 ELSE 0 END)
+        || ' of ' || COUNT(x.itsx_warnings) || ' units' END
+      FROM annotate x WHERE x.ID = s.ID) AS itsx_warnings FROM samples s")
+  expect_equal(roll$itsx_warnings, "1 of 2 units")   # two checked, two not yet
 })

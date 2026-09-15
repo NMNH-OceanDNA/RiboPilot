@@ -274,3 +274,36 @@ test_that("itsx_check_command hands singularity a docker:// URI for a Docker Hub
   cmd <- RiboPilot:::itsx_check_command(dir, dir, which = fake_which("singularity"))
   expect_equal(cmd$prefix[6], "docker://macguigand/ribopilot:0.1")
 })
+
+test_that("itsx_check_one stores stock-ITSx flags on the unit's annotate row", {
+  dir <- mk_itsx_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "ALTER TABLE annotate ADD COLUMN itsx_warnings TEXT")
+  pre <- file.path(dir, "unit.itsx_check")
+  writeLines("S1.1.1\t400 bp.\tSSU: 1-200\tLSU: 201-400\tBroken or partial sequence, no 5.8S! ",
+    paste0(pre, ".positions.txt"))
+  writeLines("S1.1.1\t400\tM\t1\t2\tSSU\t\t\t\t\t\t\t\tSSU,LSU", paste0(pre, ".extraction.results"))
+  out <- RiboPilot:::itsx_check_one(con, "S1", 1L, 1L, pre)
+  expect_equal(out$itsx_check, "itsx_no_5.8S")
+  expect_equal(DBI::dbGetQuery(con, "SELECT itsx_warnings FROM annotate")$itsx_warnings, "itsx_no_5.8S")
+  # no ITSx output at all: recorded as not run, never an error
+  out <- RiboPilot:::itsx_check_one(con, "S1", 1L, 1L, file.path(dir, "missing"))
+  expect_match(out$itsx_check, "^not_run\\(")
+  expect_match(DBI::dbGetQuery(con, "SELECT itsx_warnings FROM annotate")$itsx_warnings, "^not_run\\(")
+})
+
+test_that("export refreshes itsx_warnings on the annotate row", {
+  skip_if_not_installed("withr")
+  dir <- mk_itsx_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "ALTER TABLE annotate ADD COLUMN itsx_warnings TEXT")
+  DBI::dbExecute(con, "UPDATE annotate SET itsx_warnings = 'itsx_chimeric'")
+  DBI::dbDisconnect(con)
+  withr::local_envvar(PATH = tempdir())
+  suppressWarnings(suppressMessages(export_bundle(dir, out_dir = file.path(dir, "out"),
+    markers = FALSE, report = FALSE, zip = FALSE)))
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  on.exit(DBI::dbDisconnect(con))
+  expect_match(DBI::dbGetQuery(con, "SELECT itsx_warnings FROM annotate")$itsx_warnings, "^not_run\\(")
+})

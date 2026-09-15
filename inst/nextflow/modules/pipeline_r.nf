@@ -140,7 +140,8 @@ process annotate_tools {
     input:
     tuple val(id), val(upath), val(uscaf), val(nthreads), val(mem)
     output:
-    tuple val(id), val(upath), val(uscaf), path("unit.barrnap.gff"), path("unit.itsx.positions.txt")
+    tuple val(id), val(upath), val(uscaf), path("unit.barrnap.gff"), path("unit.itsx.positions.txt"),
+          path("unit.itsx_check*")
     script:
     """
     # write this unit's scaffold sequence to a fasta straight from the DB
@@ -170,6 +171,12 @@ process annotate_tools {
     ITSx -i unit.fasta -o unit.itsx --save_regions none --graphical F \
         --cpu ${task.cpus} -t "\$ITSXT" --preserve T \$ITSXO || true
     [ -f unit.itsx.positions.txt ] || : > unit.itsx.positions.txt
+
+    # second, stock run (defaults, no organism group): what NCBI's Submission
+    # Portal will see. Reconcile turns its output into annotate.itsx_warnings.
+    ITSx -i unit.fasta -o unit.itsx_check --preserve T --detailed_results T \
+        --save_regions none --graphical F --cpu ${task.cpus} || true
+    [ -f unit.itsx_check.positions.txt ] || : > unit.itsx_check.positions.txt
     """
 }
 
@@ -180,12 +187,12 @@ process reconcile {
     // One unit's malformed GFF must not terminate the run, same as annotate_tools.
     errorStrategy 'ignore'
     input:
-    tuple val(id), val(upath), val(uscaf), path(gff), path(pos)
+    tuple val(id), val(upath), val(uscaf), path(gff), path(pos), path(chk)
     output:
     tuple val(id), val(upath), val(uscaf)
     script:
     """
-    RIBOPILOT_SRC='${params.ribopilot_src}' rp_reconcile.R '${params.db}' '${id}' ${upath} ${uscaf} ${gff} ${pos}
+    RIBOPILOT_SRC='${params.ribopilot_src}' rp_reconcile.R '${params.db}' '${id}' ${upath} ${uscaf} ${gff} ${pos} unit.itsx_check
     """
 }
 
