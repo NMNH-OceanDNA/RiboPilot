@@ -353,11 +353,24 @@ out/export/<group>/
     <group>.fasta          all records in one file
     <group>.tbl            their feature tables
     <group>_summary.csv    one row per record
+    <group>_itsx_check.csv what stock ITSx (the Portal's check) says about each record
     <group>_report.html    review report, with an alignment of every feature
     README.txt             how to submit
     samples/               one .fasta + .tbl per record
     markers/               one folder per marker (18S, ITS1, 5.8S, ITS2, 28S, ITS)
+    itsx_check/            raw ITSx output behind the check
 ```
+
+Before the bundle is written, RiboPilot runs stock ITSx over the exported
+records, default parameters and no organism group, which is how NCBI's
+Submission Portal evaluates rRNA-ITS submissions. Anything it would flag
+(chimeras, gaps inside the ITS, missing or partial 5.8S, an ITS boundary far
+from RiboPilot's own, an origin group that disagrees with the sample's lineage)
+lands in the `itsx_check` column of the summary CSV. Records are still exported;
+the column is there so you can look before you upload. ITSx runs inside the
+project's container (docker or singularity, whichever `.config` enables); a
+conda-executor project uses the ITSx on PATH. If neither is available the
+column reads `not_run(...)`.
 
 FASTA headers are yours to write. In the app's Export tab you edit two templates,
 one for the whole record and one for the per-marker files, referring to any

@@ -584,13 +584,53 @@ export_modal <- function(groups, n_locked, templates = "default", template = "de
       shinyWidgets::prettyCheckbox("export_markers", "Per-marker FASTA files",
         value = TRUE, status = "primary"),
       shinyWidgets::prettyCheckbox("export_report", "HTML report with alignments",
+        value = TRUE, status = "primary"),
+      shinyWidgets::prettyCheckbox("export_itsx_check", "Final ITSx check",
         value = TRUE, status = "primary")),
     tags$p(class = "text-muted", style = "font-size:0.82em; margin-top:0.6em;",
-      "Writes to the project's out/export folder: per-record FASTA + feature table under samples/, combined FASTA + feature table, per-marker fastas, summary CSV, and an HTML report."),
+      "Writes to the project's out/export folder: per-record FASTA + feature table under samples/, combined FASTA + feature table, per-marker fastas, summary CSV, and an HTML report. ",
+      "The ITSx check runs stock ITSx over the exported records the way the NCBI Submission Portal does and lists what it would flag (chimeras, gaps, misassemblies) in the summary CSV."),
     footer = tagList(
       actionButton("export_go", "Export", icon = icon("download"), class = "btn-primary btn-sm"),
       modalButton("Cancel"))
   )
+}
+
+#' One-paragraph verdict for the export-complete dialog
+#'
+#' Reads the summary attached to [export_bundle()]'s return value and says how
+#' many records the ITSx check and the submission-risk gate flagged, so a
+#' curator sees it before opening the CSV.
+#' @param smry data.frame from [export_summary_df()] (possibly with `itsx_check`).
+#' @noRd
+export_check_summary_ui <- function(smry) {
+  if (is.null(smry) || nrow(smry) == 0) return(NULL)
+  n <- nrow(smry)
+  risk <- sum(nzchar(smry$submission_risk %||% ""))
+  lines <- list()
+  if (!is.null(smry$itsx_check)) {
+    not_run <- startsWith(smry$itsx_check, "not_run(")
+    if (all(not_run)) {
+      lines[[length(lines) + 1]] <- tags$p(style = "color:#7d4a1e;",
+        "ITSx check not run: ", sub("^not_run\\((.*)\\)$", "\\1", smry$itsx_check[1]), ".")
+    } else {
+      flagged <- sum(nzchar(smry$itsx_check) & !not_run)
+      lines[[length(lines) + 1]] <- if (flagged == 0) {
+        tags$p(style = "color:#2d6a4f;", HTML("&#10003; "),
+          sprintf("Final ITSx check: nothing flagged on %d record(s).", n))
+      } else {
+        tags$p(style = "color:#7d4a1e; font-weight:bold;",
+          sprintf("Final ITSx check flagged %d of %d record(s): %s. See the itsx_check column in the summary CSV.",
+            flagged, n, paste(smry$seqid[nzchar(smry$itsx_check) & !not_run], collapse = ", ")))
+      }
+    }
+  }
+  if (risk > 0) {
+    lines[[length(lines) + 1]] <- tags$p(style = "color:#7d4a1e;",
+      sprintf("Submission-risk flags on %d record(s) (submission_risk column).", risk))
+  }
+  if (length(lines) == 0) return(NULL)
+  do.call(tagList, lines)
 }
 
 #' Coloured one-line verdict for a header template

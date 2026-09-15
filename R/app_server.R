@@ -1043,7 +1043,8 @@ app_server <- function(input, output, session) {
         fasta_header = input$fasta_header,
         fasta_header_marker = input$fasta_header_marker,
         markers = isTRUE(input$export_markers),
-        report = isTRUE(input$export_report)),
+        report = isTRUE(input$export_report),
+        itsx_check = isTRUE(input$export_itsx_check)),
       error = function(e) {
         rp_alert(paste("Export failed:", conditionMessage(e)), type = "error")
         NULL
@@ -1055,6 +1056,7 @@ app_server <- function(input, output, session) {
       title = "Export complete", size = "m", easyClose = TRUE,
       tags$p("Data exported to:"),
       div(class = "code-block", style = "white-space:normal; word-break:break-all;", gdir),
+      export_check_summary_ui(attr(gdir, "summary")),
       footer = tagList(
         actionButton("open_export_dir", "Open folder", icon = icon("folder-open"), class = "btn-sm"),
         modalButton("Close"))

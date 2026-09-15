@@ -30,7 +30,7 @@ mk_project <- function() {
 
 bundle <- function(dir, ...) {
   suppressWarnings(export_bundle(dir, out_dir = file.path(dir, "out"),
-    markers = FALSE, report = FALSE, zip = FALSE, ...))
+    markers = FALSE, report = FALSE, zip = FALSE, itsx_check = FALSE, ...))
 }
 
 test_that("export_bundle honours a per-unit selection", {
@@ -93,7 +93,7 @@ test_that("export records the variant fact for a paralog and does NOT gate", {
   warns <- character(0)
   g <- withCallingHandlers(
     suppressMessages(export_bundle(dir, out_dir = file.path(dir, "out"),
-      markers = FALSE, report = FALSE, zip = FALSE, ids = "S1")),
+      markers = FALSE, report = FALSE, zip = FALSE, itsx_check = FALSE, ids = "S1")),
     warning = function(w) {
       warns <<- c(warns, conditionMessage(w)); invokeRestart("muffleWarning")
     })
@@ -162,7 +162,7 @@ test_that("an empty Taxon is flagged, and never rendered as the word NA", {
   DBI::dbDisconnect(con)
 
   expect_warning(g <- suppressMessages(export_bundle(dir, out_dir = file.path(dir, "out"),
-    markers = TRUE, report = FALSE, zip = FALSE, label = "notax")), "missing_organism")
+    markers = TRUE, report = FALSE, zip = FALSE, itsx_check = FALSE, label = "notax")), "missing_organism")
   # glue renders an NA field as the characters "NA", which reads like a real
   # organism name. The header template cannot drop a field, so the value is
   # blanked and the unit is flagged instead.
