@@ -85,7 +85,7 @@ assemble_modal <- function(id) {
   modalDialog(
     title = paste0("Assemble - ", id),
     size = "l", easyClose = TRUE,
-    footer = modalButton("Close"),
+    footer = mp_footer(dismiss = "Close"),
     modal_taxon_header(id),
     h5("Scaffolds", style = "margin:2px 0 4px;"),
     div(style = "color:#888; font-size:0.82em; margin-bottom:4px;",
@@ -172,8 +172,7 @@ rejected_contigs_section <- function(id) {
 #' @noRd
 multi_path_lock_modal <- function(ids) {
   modalDialog(
-    title = tags$span(style = "color:#a04000;",
-      icon("triangle-exclamation"), " More than one assembly path would be locked"),
+    title = mp_modal_title("More than one assembly path would be locked"),
     size = "m", easyClose = FALSE,
     div(style = "font-size:1.02em; line-height:1.5;",
       tags$p(paste("Paths are competing reconstructions of the same rDNA repeat, so a",
@@ -183,9 +182,7 @@ multi_path_lock_modal <- function(ids) {
       tags$p(style = "color:#666;",
         paste("Unlock the other path first, or proceed if you mean to keep both",
           "(both will be annotated and exported)."))),
-    footer = tagList(
-      modalButton("Cancel"),
-      actionButton("lock_anyway", "Lock anyway", class = "btn-warning btn-sm"))
+    footer = mp_footer(danger = actionButton("lock_anyway", "Lock anyway"))
   )
 }
 
@@ -198,17 +195,14 @@ multi_path_lock_modal <- function(ids) {
 #' @noRd
 export_overwrite_modal <- function(dir, n) {
   modalDialog(
-    title = tags$span(style = "color:#a04000;",
-      icon("triangle-exclamation"), " This export already exists"),
+    title = mp_modal_title("This export already exists"),
     size = "m", easyClose = FALSE,
     div(style = "font-size:1.02em; line-height:1.5;",
       tags$p(sprintf("Exporting replaces this folder and the %d file(s) in it:", n)),
       div(class = "code-block", style = "white-space:normal; word-break:break-all;", dir),
       tags$p(style = "color:#666;",
         "Rename or move it first if you need to keep the earlier bundle.")),
-    footer = tagList(
-      modalButton("Cancel"),
-      actionButton("export_overwrite_go", "Replace it", class = "btn-warning btn-sm"))
+    footer = mp_footer(danger = actionButton("export_overwrite_go", "Replace it"))
   )
 }
 
@@ -248,7 +242,7 @@ triage_modal <- function(n_samples, actions = triage_actions_default()) {
         uiOutput(paste0("triage_n_", def$key), inline = TRUE)))
   })
   modalDialog(
-    title = sprintf("Triage scaffolds - %d selected sample(s)", n_samples),
+    title = paste("Triage scaffolds for", mp_n(n_samples, "sample")),
     size = "l", easyClose = TRUE,
     tags$p(class = "text-muted", style = "font-size:0.86em;",
       paste("Proposes keep / drop / undecided per scaffold from the evidence already",
@@ -271,9 +265,7 @@ triage_modal <- function(n_samples, actions = triage_actions_default()) {
         "Also re-decide scaffolds I set by hand", value = FALSE, status = "danger")),
     tags$hr(style = "margin:8px 0;"),
     uiOutput("triage_preview"),
-    footer = tagList(
-      actionButton("triage_apply", "Apply", class = "btn-danger btn-sm"),
-      modalButton("Cancel"))
+    footer = mp_footer(danger = actionButton("triage_apply", "Apply"))
   )
 }
 
@@ -308,12 +300,12 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
   modalDialog(
     title = paste0("Annotation Review - ", id, unit_lbl),
     size = "l", easyClose = FALSE,
-    footer = tagList(
-      actionButton("mark_reviewed", "Mark reviewed", class = "btn-sm"),
-      actionButton("mark_problematic", "Problem", class = "btn-sm"),
-      actionButton("mark_partial", "Partial", class = "btn-sm"),
-      actionButton("lock_and_close", "Lock & Close", class = "btn-primary btn-sm"),
-      modalButton("Close")
+    footer = mp_footer(
+      primary = actionButton("lock_and_close", "Lock & Close"), dismiss = "Close",
+      extra = tagList(
+        actionButton("mark_reviewed", "Mark reviewed", class = "btn-sm"),
+        actionButton("mark_problematic", "Problem", class = "btn-sm"),
+        actionButton("mark_partial", "Partial", class = "btn-sm"))
     ),
     modal_taxon_header(id),
     div(style = "margin:-2px 0 8px; display:flex; gap:6px; flex-wrap:wrap;",
@@ -408,15 +400,18 @@ run_modal <- function(n, headless = FALSE, sched = NULL, script = "") {
           textOutput("nf_prog_all", container = tags$code)))))
   }
   footer <- if (headless) {
-    tagList(
-      if (!is.null(sched)) actionButton("submit_job", "Submit as job", class = "btn-success btn-sm"),
-      actionButton("save_script", "Save script", class = "btn-sm"),
-      actionButton("nf_close", "Close", class = "btn-sm"))
+    mp_footer(
+      primary = if (!is.null(sched)) actionButton("submit_job", "Submit as job"),
+      dismiss = NULL,
+      extra = tagList(
+        actionButton("save_script", "Save script", class = "btn-sm"),
+        actionButton("nf_close", "Close", class = "btn-sm")))
   } else {
-    tagList(
-      actionButton("nf_start", "Run from App", class = "btn-success btn-sm"),
-      shinyjs::hidden(actionButton("nf_stop", "Stop / Interrupt", class = "btn-sm")),
-      actionButton("nf_close", "Close", class = "btn-sm"))
+    mp_footer(
+      primary = actionButton("nf_start", "Run from App"), dismiss = NULL,
+      extra = tagList(
+        shinyjs::hidden(actionButton("nf_stop", "Stop / Interrupt", class = "btn-sm")),
+        actionButton("nf_close", "Close", class = "btn-sm")))
   }
   modalDialog(
     title = div(style = "display:flex; justify-content:space-between; align-items:center; height:38px;",
@@ -463,15 +458,18 @@ reference_run_modal <- function(n, ref_dir, headless = FALSE, sched = NULL, scri
           textOutput("ref_nf_prog_all", container = tags$code)))))
   }
   footer <- if (headless) {
-    tagList(
-      if (!is.null(sched)) actionButton("ref_submit_job", "Submit as job", class = "btn-success btn-sm"),
-      actionButton("ref_save_script", "Save script", class = "btn-sm"),
-      actionButton("ref_nf_close", "Close", class = "btn-sm"))
+    mp_footer(
+      primary = if (!is.null(sched)) actionButton("ref_submit_job", "Submit as job"),
+      dismiss = NULL,
+      extra = tagList(
+        actionButton("ref_save_script", "Save script", class = "btn-sm"),
+        actionButton("ref_nf_close", "Close", class = "btn-sm")))
   } else {
-    tagList(
-      actionButton("ref_nf_start", "Run from App", class = "btn-success btn-sm"),
-      shinyjs::hidden(actionButton("ref_nf_stop", "Stop / Interrupt", class = "btn-sm")),
-      actionButton("ref_nf_close", "Close", class = "btn-sm"))
+    mp_footer(
+      primary = actionButton("ref_nf_start", "Run from App"), dismiss = NULL,
+      extra = tagList(
+        shinyjs::hidden(actionButton("ref_nf_stop", "Stop / Interrupt", class = "btn-sm")),
+        actionButton("ref_nf_close", "Close", class = "btn-sm")))
   }
   modalDialog(
     title = div(style = "display:flex; justify-content:space-between; align-items:center; height:38px;",
@@ -521,11 +519,11 @@ trim_modal <- function(n, a_from, a_to) {
     opts_help("Trimming cuts the flanks off the scaffold and shifts every ",
       "feature coordinate + the coverage track to match. Features that fall entirely ",
       "outside the kept range are removed. Use \"Restore assembly\" to undo."),
-    footer = tagList(
-      actionButton("trim_apply", "Trim", icon = icon("scissors"), class = "btn-danger btn-sm"),
+    footer = mp_footer(
+      danger = actionButton("trim_apply", "Trim", icon = icon("scissors")), dismiss = NULL,
       # actionButton (not modalButton) so Cancel reopens the annotate details
       # modal instead of dropping back to the main Annotate table.
-      actionButton("trim_cancel", "Cancel", class = "btn-sm"))
+      extra = actionButton("trim_cancel", "Cancel", class = "btn-sm"))
   )
 }
 
@@ -535,9 +533,7 @@ group_modal <- function() {
   modalDialog(
     title = "Assign export group", size = "s", easyClose = TRUE,
     textInput("group_name", "Group name", placeholder = "e.g. batch_2026_01"),
-    footer = tagList(
-      actionButton("assign_group_go", "Assign", class = "btn-primary btn-sm"),
-      modalButton("Cancel"))
+    footer = mp_footer(primary = actionButton("assign_group_go", "Assign"))
   )
 }
 
@@ -590,9 +586,7 @@ export_modal <- function(groups, n_locked, templates = "default", template = "de
     tags$p(class = "text-muted", style = "font-size:0.82em; margin-top:0.6em;",
       "Writes to the project's out/export folder: per-record FASTA + feature table under samples/, combined FASTA + feature table, per-marker fastas, summary CSV, and an HTML report. ",
       "The ITSx check runs stock ITSx over the exported records the way the NCBI Submission Portal does and lists what it would flag (chimeras, gaps, misassemblies) in the summary CSV."),
-    footer = tagList(
-      actionButton("export_go", "Export", icon = icon("download"), class = "btn-primary btn-sm"),
-      modalButton("Cancel"))
+    footer = mp_footer(primary = actionButton("export_go", "Export", icon = icon("download")))
   )
 }
 
@@ -644,27 +638,6 @@ header_status_ui <- function(chk) {
     list("#c0392b", "circle-xmark"))
   tags$p(style = sprintf("color:%s; font-size:0.8em; margin:0 0 2px;", style[[1]]),
     icon(style[[2]]), " ", chk$message)
-}
-
-#' State-picker modal: choose the state to set on the selected samples.
-#' Codes: 0 hold/wait (won't run), 1 ready to run, 2 complete, 3 failed,
-#' 4 in progress. Only 1 and 4 are picked up by the next pipeline run.
-#' @noRd
-state_modal <- function(mode, current = NULL) {
-  verb <- if (mode == "annotate") "annotate" else "assemble"
-  modalDialog(
-    title = "Set state for selected samples", size = "m",
-    shinyWidgets::prettyRadioButtons("new_state", label = NULL,
-      choices = c("Hold / wait (won't run)" = "0",
-        `Ready to run` = "1", "In progress" = "4",
-        "Complete" = "2", "Failed / problem" = "3"),
-      selected = as.character(current %||% 1L), shape = "square", status = "primary"),
-    opts_help("Only 'Ready to run' and 'In progress' samples are picked up the ",
-      paste0("next time you run ", verb, "; 'Hold / wait' keeps them out of the run.")),
-    footer = tagList(
-      actionButton("update_state", "Update", class = "btn-primary btn-sm"),
-      modalButton("Cancel"))
-  )
 }
 
 #' Element colors shared by the app feature map

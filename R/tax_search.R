@@ -95,7 +95,7 @@ taxon_review_modal <- function(samples_df, n) {
       else sprintf("%s [%s, %s]", r[["sci_name"]], r[["taxid"]], r[["rank"]] %||% "?"))
   }), collapse = "\n")
   modalDialog(
-    title = sprintf("Review taxonomy for %d sample(s)", n), size = "l",
+    title = paste("Review taxonomy for", mp_n(n, "sample")), size = "l",
     tags$pre(style = "max-height:150px; overflow:auto; font-size:12px; background:#f6f6f6; padding:8px; border-radius:4px;",
       rowsum),
     textInput("tax_query", "Search NCBI organism name (species or genus):",
@@ -103,9 +103,7 @@ taxon_review_modal <- function(samples_df, n) {
     opts_help("Type at least 2 letters; results come from the project's local NCBI ",
       "taxdump. Pick a species or genus row, then apply."),
     uiOutput("tax_results"),
-    footer = tagList(
-      actionButton("tax_apply", "Assign to selected sample(s)", class = "btn-primary btn-sm"),
-      modalButton("Cancel"))
+    footer = mp_footer(primary = actionButton("tax_apply", "Assign"))
   )
 }
 
@@ -165,9 +163,7 @@ taxonomy_handlers <- function(input, output, session, deps) {
   })
 
   function(ids) {
-    if (length(ids) == 0) {
-      rp_alert("No samples selected.", "warning", session = session); return()
-    }
+    if (!need_selection(length(ids))) return()
     targets(ids)
     shiny::showModal(taxon_review_modal(deps$samples_for(ids), length(ids)))
   }

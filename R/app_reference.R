@@ -147,9 +147,7 @@ reference_diff_modal <- function(diff, n_old, n_new, warn = character(0)) {
           "splitting them up. Nothing is applied; press Propose groups again after."),
         shiny::actionButton("ref_diff_group", "Make a user group", class = "btn-sm"))
     },
-    footer = shiny::tagList(
-      shiny::actionButton("ref_diff_apply", "Apply", class = "btn-primary btn-sm"),
-      shiny::modalButton("Cancel")))
+    footer = mp_footer(primary = shiny::actionButton("ref_diff_apply", "Apply")))
 }
 
 #' Pick the group a bulk move sends samples to
@@ -158,15 +156,13 @@ reference_diff_modal <- function(diff, n_old, n_new, warn = character(0)) {
 reference_move_modal <- function(groups, n) {
   choices <- c(stats::setNames(groups$ref_id, groups$clade_name), "Unassigned" = "")
   shiny::modalDialog(
-    title = sprintf("Move %d sample(s) to a reference group", n),
+    title = paste("Move", mp_n(n, "sample"), "to a reference group"),
     shinyWidgets::prettyRadioButtons("ref_move_pick", NULL, choices = choices,
       shape = "round", status = "primary"),
     opts_help("The move is yours, not the proposer's, so the next Propose groups ",
       "will flag it before changing it. To make it permanent, select the samples ",
       "and press Keep together."),
-    footer = shiny::tagList(
-      shiny::actionButton("ref_move_apply", "Move", class = "btn-primary btn-sm"),
-      shiny::modalButton("Cancel")))
+    footer = mp_footer(primary = shiny::actionButton("ref_move_apply", "Move")))
 }
 
 #' One rung of the clade ladder, as a radio choice label
@@ -194,7 +190,7 @@ reference_ladder_modal <- function(ref_id, clade_name, ladder, chosen_taxid, n_g
       ladder$n_samples[i], ladder$n_records[i],
       !is.na(chosen_taxid) && ladder$taxid[i] == chosen_taxid), character(1)))
   shiny::modalDialog(
-    title = sprintf("Reference clade for '%s' (%d sample(s))", ref_id, n_group), size = "l",
+    title = sprintf("Reference clade for %s (%s)", ref_id, mp_n(n_group, "sample")), size = "l",
     shinyWidgets::prettyRadioButtons("ref_rung", "Shared lineage (deepest first):",
       choices = choices,
       selected = if (!is.na(chosen_taxid)) as.character(chosen_taxid) else NULL,
@@ -209,9 +205,7 @@ reference_ladder_modal <- function(ref_id, clade_name, ladder, chosen_taxid, n_g
         "taxonomy, which takes a minute or two. Every search after that is instant.")
     },
     shiny::uiOutput("ref_search_results"),
-    footer = shiny::tagList(
-      shiny::actionButton("ref_clade_apply", "Use this clade", class = "btn-primary btn-sm"),
-      shiny::modalButton("Cancel")))
+    footer = mp_footer(primary = shiny::actionButton("ref_clade_apply", "Use this clade")))
 }
 
 #' Use-an-existing-database modal: manifest entries plus typed paths
@@ -241,9 +235,7 @@ reference_existing_modal <- function(manifest, label) {
     shiny::textInput("ref_existing_labels", "Label FASTA path:", width = "100%"),
     opts_help("Choosing a listed database fills these paths; you can also type ",
       "paths to a database built somewhere else."),
-    footer = shiny::tagList(
-      shiny::actionButton("ref_existing_apply", "Use this database", class = "btn-primary btn-sm"),
-      shiny::modalButton("Cancel")))
+    footer = mp_footer(primary = shiny::actionButton("ref_existing_apply", "Use this database")))
 }
 
 # Section headings in the settings modal. Bootstrap's h5 is lighter than a
@@ -292,9 +284,7 @@ reference_settings_modal <- function(cfg, blastdb_version = "") {
       shiny::div(style = "font-size:0.85em; color:#666; margin-top:0.4em;",
         paste("Last run searched against:", blastdb_version))
     },
-    footer = shiny::tagList(
-      shiny::actionButton("ref_dir_apply", "Save", class = "btn-primary btn-sm"),
-      shiny::modalButton("Cancel")))
+    footer = mp_footer(primary = shiny::actionButton("ref_dir_apply", "Save")))
 }
 
 #' Row action modal: everything that can be done to a reference group
@@ -336,7 +326,7 @@ reference_action_modal <- function(ids, label) {
     choice("ref_act_skip", "Leave these samples on the built-in fish database",
       paste("Nothing is built. These samples assemble against RiboPilot's",
         "ray-finned fish reference, which is usually wrong outside fish.")),
-    footer = shiny::modalButton("Cancel"))
+    footer = mp_footer(dismiss = "Cancel"))
   # This dialog is a short stack of buttons, so the app's 600px modal floor is
   # dead space that stretches every label across it. Narrow it and let the hints
   # wrap. modalDialog() takes no class argument, hence the tag surgery.
@@ -1003,7 +993,7 @@ reference_handlers <- function(input, output, session, deps) {
     shiny::showModal(shiny::modalDialog(title = paste("Build log:", ref_id), size = "l",
       easyClose = TRUE,
       shiny::tags$pre(style = "max-height:60vh; overflow:auto; font-size:12px;", txt),
-      footer = shiny::modalButton("Close")))
+      footer = mp_footer(dismiss = "Close")))
   })
 
   # ---- settings ----

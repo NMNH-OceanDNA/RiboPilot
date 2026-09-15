@@ -13,8 +13,8 @@ opts_name_row <- function(name_id, edit_id, choices, selected) {
     shiny::selectizeInput(name_id, "Parameter set name:", width = "100%",
       choices = choices, selected = selected,
       options = list(create = TRUE, maxItems = 1)),
-    shiny::div(class = "form-group shiny-input-container", style = "margin-top:39px;",
-      shinyWidgets::prettyCheckbox(edit_id, "Edit", value = FALSE, status = "primary")))
+    shiny::div(class = "form-group shiny-input-container mp-opts-checkbox",
+      mp_checkbox(edit_id, "Edit")))
 }
 
 # assembler values written to assemble_opts.assembler; main.nf routes anything
@@ -37,14 +37,13 @@ assembler_fields <- function(assembler) {
 
 opts_modal_shell <- function(title, n, name_row, ..., update_id) {
   shiny::modalDialog(
-    title = sprintf("%s for %d sample(s)", title, n), size = "m",
+    title = mp_modal_title(paste(title, "for", mp_n(n, "sample"))), size = "m",
     name_row,
     opts_help("Reusable named set applied to the selected samples; check Edit to ",
-      "change values, or type a new name to create a set."),
+      "change values, or type a new name to create a set.",
+      " Saving re-queues the selected samples: their state becomes Ready to run."),
     ...,
-    footer = shiny::tagList(
-      shiny::actionButton(update_id, "Update", class = "btn-primary btn-sm"),
-      shiny::modalButton("Cancel")))
+    footer = mp_footer(primary = shiny::actionButton(update_id, "Save")))
 }
 
 #' Where a preset's reference database came from, for the modal's help line
@@ -421,13 +420,10 @@ opts_handlers <- function(input, output, session, deps) {
     p <- pfx; sp <- specs[[p]]; fids <- field_ids[[p]]
     shiny::observeEvent(input[[paste0("set_", sp$table)]], {
       ids <- click_ids(input[[paste0("set_", sp$table)]])
-      if (length(ids) == 0) {
-        rp_alert("No sample selected.", "warning", session = session); return()
-      }
+      if (!need_selection(length(ids))) return()
       locked <- locked_ids(ids, sp$lock, sp$queue_tbl)
       if (length(locked) == length(ids)) {
-        rp_alert("Selected sample(s) are locked; unlock to change options.",
-          "warning", session = session); return()
+        need_unlocked(locked, "sample"); return()
       }
       targets(setdiff(ids, locked))
       open_modal(p)
@@ -454,9 +450,8 @@ opts_handlers <- function(input, output, session, deps) {
         return()
       }
       if (identical(chk$action, "confirm")) {
-        shinyWidgets::confirmSweetAlert(session, inputId = paste0(p, "_confirm_edit"),
-          title = "Edit beyond selection?", text = chk$msg, type = "warning",
-          btn_labels = c("Cancel", "Apply to all"), danger_mode = TRUE)
+        mp_confirm(paste0(p, "_confirm_edit"), title = "Edit beyond the selection",
+          text = chk$msg, action_label = "Continue", danger = TRUE)
         return()
       }
       opts_apply(p, sp, input, deps, targets(), cur_row())
@@ -599,11 +594,11 @@ opts_apply <- function(pfx, sp, input, deps, ids, cur) {
   }
   deps$refresh(deps$refresh() + 1)
   shiny::removeModal()
-  msg <- sprintf("Applied '%s' to %d sample(s); queued to (re)run.", nm, length(ids))
   # one alert, not one per warning: a second sweet alert replaces the first
   if (length(warns)) {
+    msg <- paste0(mp_n(length(ids), "sample"), " switched to ", nm, " and set to Ready to run.")
     rp_alert(shiny::tagList(shiny::tags$p(msg), lapply(warns, shiny::tags$p)), "warning")
   } else {
-    rp_alert(msg)
+    mp_opts_saved_toast(length(ids), nm)
   }
 }

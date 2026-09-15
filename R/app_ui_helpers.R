@@ -217,29 +217,27 @@ mp_state_modal <- function(ids, current = character(0), mode = "assemble") {
                 paste0(" - ", effect[[k]]))
     )
   })
-  showModal(
-    modalDialog(
-      title = mp_modal_title(paste("Set state for", mp_n(length(ids), MP_UNIT[[mode]]))),
-      tags$p(class = "text-muted", mp_id_list(ids)),
-      if (length(current) == 1 && current == "4") {
-        tags$p(class = "text-muted",
-               paste("These are In progress. The pipeline sets that state;",
-                     "choose another to take them out of it."))
-      } else if (length(current) == 0) {
-        tags$p(class = "text-muted", "The selected rows are not all in the same state.")
-      },
-      shinyWidgets::prettyRadioButtons(
-        "new_state",
-        label = "New state",
-        choiceValues = codes,
-        choiceNames = choice_names,
-        selected = if (length(current) == 1 && current %in% codes) current else character(0),
-        shape = "round",
-        status = "primary"
-      ),
-      size = "m",
-      easyClose = TRUE,
-      footer = mp_footer(primary = actionButton("update_state", "Set state"))
-    )
+  modalDialog(
+    title = mp_modal_title(paste("Set state for", mp_n(length(ids), MP_UNIT[[mode]]))),
+    tags$p(class = "text-muted", mp_id_list(ids)),
+    if (length(current) == 1 && current == "4") {
+      tags$p(class = "text-muted",
+             paste("These are In progress. The pipeline sets that state;",
+                   "choose another to take them out of it."))
+    } else if (length(current) == 0) {
+      tags$p(class = "text-muted", "The selected rows are not all in the same state.")
+    },
+    shinyWidgets::prettyRadioButtons(
+      "new_state",
+      label = "New state",
+      choiceValues = codes,
+      choiceNames = choice_names,
+      selected = if (length(current) == 1 && current %in% codes) current else character(0),
+      shape = "round",
+      status = "primary"
+    ),
+    size = "m",
+    easyClose = TRUE,
+    footer = mp_footer(primary = actionButton("update_state", "Set state"))
   )
 }

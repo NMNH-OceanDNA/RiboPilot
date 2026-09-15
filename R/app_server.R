@@ -35,7 +35,7 @@ app_server <- function(input, output, session) {
       shinyWidgets::pickerInput("wd_sample", "Sample", choices = ids, selected = presel,
         options = list(`live-search` = TRUE)),
       div(style = "max-height:60vh; overflow:auto;", reactable::reactableOutput("wd_tbl")),
-      footer = modalButton("Close")))
+      footer = mp_footer(dismiss = "Close")))
   }
   observeEvent(input$workdirs_btn, show_workdirs())
   wd_rows <- reactive({
@@ -555,10 +555,7 @@ app_server <- function(input, output, session) {
   set_flag <- function(sql) {
     if (identical(input$mode %||% "Assemble", "Annotate")) return(set_unit_flag(sql))
     ids <- selected_ids()
-    if (length(ids) == 0) {
-      rp_alert("No samples selected.", type = "warning")
-      return()
-    }
+    if (!need_selection(length(ids))) return()
     con <- app_con()
     on.exit(DBI::dbDisconnect(con))
     for (id in ids) DBI::dbExecute(con, sql, params = list(id))
@@ -569,13 +566,11 @@ app_server <- function(input, output, session) {
       idx <- which(isolate(samples_data())$ID %in% ids)
       if (length(idx) > 0) reactable::updateReactable("tbl", selected = idx)
     }, once = TRUE)
-    rp_alert(paste("Updated", length(ids), "sample(s)."), type = "message")
+    mp_toast(paste(mp_n(length(ids), "sample"), "updated."))
   }
   set_unit_flag <- function(sql) {
     u <- selected_units()
-    if (is.null(u) || nrow(u) == 0) {
-      rp_alert("No units selected.", type = "warning"); return()
-    }
+    if (!need_selection(NROW(u))) return()
     usql <- sub("WHERE ID = \\?", "WHERE ID = ? AND path = ? AND scaffold = ?", sql)
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
     for (i in seq_len(nrow(u))) DBI::dbExecute(con, usql, params = list(u$ID[i], u$path[i], u$scaffold[i]))
@@ -587,7 +582,7 @@ app_server <- function(input, output, session) {
       idx <- which(paste(d$ID, pp, ss) %in% paste(u$ID, u$path, u$scaffold))
       if (length(idx) > 0) reactable::updateReactable("tbl", selected = idx)
     }, once = TRUE)
-    rp_alert(paste("Updated", nrow(u), "unit(s)."), type = "message")
+    mp_toast(paste(mp_n(nrow(u), "unit"), "updated."))
   }
   observeEvent(input$lock_btn, {  # toggle lock on selected
     mm <- mode_meta(input$mode)
@@ -596,7 +591,7 @@ app_server <- function(input, output, session) {
     # Guard the bulk toggle against locking a second path.
     if (identical(input$mode %||% "Assemble", "Annotate")) {
       u <- selected_units()
-      if (is.null(u) || nrow(u) == 0) { rp_alert("No units selected.", type = "warning"); return() }
+      if (!need_selection(NROW(u))) return()
       con <- app_con(); on.exit(DBI::dbDisconnect(con))
       ids <- unique(u$ID)
       ph <- paste(rep("?", length(ids)), collapse = ",")
@@ -624,17 +619,19 @@ app_server <- function(input, output, session) {
   })
   observeEvent(input$state_btn, {  # open a picker to choose the target state
     ids <- selected_ids()
-    if (length(ids) == 0) {
-      rp_alert("No samples selected.", type = "warning"); return()
-    }
+    if (!need_selection(length(ids))) return()
     mm <- mode_meta(input$mode)
     cur <- app_query(sprintf("SELECT %s_switch AS s FROM %s WHERE ID = ?", mm$pfx, mm$tbl),
       params = list(ids[1]))$s[1]  # annotate has many rows per ID; take one for the default
-    showModal(state_modal(mm$pfx, cur))
+    showModal(mp_state_modal(ids, current = if (!is.na(cur)) as.character(cur) else character(0),
+      mode = mm$pfx))
   })
   observeEvent(input$update_state, {
+    if (is.null(input$new_state)) {
+      mp_toast("Choose a state first.", type = "warning"); return()
+    }
     mm <- mode_meta(input$mode)
-    st <- as.integer(input$new_state %||% "1")
+    st <- as.integer(input$new_state)
     set_flag(sprintf("UPDATE %s SET %s_switch = %d WHERE ID = ?", mm$tbl, mm$pfx, st))
     removeModal()
   })
@@ -646,9 +643,7 @@ app_server <- function(input, output, session) {
 
   # ---- Export group actions ----
   observeEvent(input$assign_group_btn, {
-    if (length(selected_ids()) == 0) {
-      rp_alert("No samples selected.", type = "warning"); return()
-    }
+    if (!need_selection(length(selected_ids()))) return()
     showModal(group_modal())
   })
   observeEvent(input$assign_group_go, {
@@ -659,16 +654,14 @@ app_server <- function(input, output, session) {
     }
     assign_export_group(app_project(), u, grp)
     removeModal(); refresh(refresh() + 1)
-    rp_alert(paste0("Assigned ", nrow(u), " unit(s) to group '", grp, "'."), type = "message")
+    mp_toast(paste0(mp_n(nrow(u), "unit"), " assigned to group '", grp, "'."))
   })
   observeEvent(input$clear_group_btn, {
     u <- selected_units()
-    if (is.null(u) || nrow(u) == 0) {
-      rp_alert("No units selected.", type = "warning"); return()
-    }
+    if (!need_selection(NROW(u))) return()
     clear_export_group(app_project(), u)
     refresh(refresh() + 1)
-    rp_alert(paste("Cleared group for", nrow(u), "unit(s)."), type = "message")
+    mp_toast(paste0("Group cleared for ", mp_n(nrow(u), "unit"), "."))
   })
 
   # ---- lock / state row filters (hide via CSS on rp-lock-/rp-state- classes) ----
@@ -1065,9 +1058,8 @@ app_server <- function(input, output, session) {
       tags$p("Data exported to:"),
       div(class = "code-block", style = "white-space:normal; word-break:break-all;", gdir),
       export_check_summary_ui(attr(gdir, "summary")),
-      footer = tagList(
-        actionButton("open_export_dir", "Open folder", icon = icon("folder-open"), class = "btn-sm"),
-        modalButton("Close"))
+      footer = mp_footer(dismiss = "Close",
+        extra = actionButton("open_export_dir", "Open folder", icon = icon("folder-open"), class = "btn-sm"))
     ))
     invisible()
   }
@@ -1440,9 +1432,7 @@ app_server <- function(input, output, session) {
             if (length(cls$ask) == 1) "has" else "have",
             if (nrow(cls$units) == 1) "excludes it" else
               sprintf("excludes %d scaffolds", nrow(cls$units)))),
-          footer = tagList(
-            actionButton("scaf_triage_ok", "Drop it", class = "btn-danger btn-sm"),
-            modalButton("Cancel"))))
+          footer = mp_footer(danger = actionButton("scaf_triage_ok", "Drop it"))))
         return()
       }
       units <- cls$units
@@ -1855,11 +1845,9 @@ app_server <- function(input, output, session) {
       edit_active(FALSE); shinyjs::hide("feat_edit_ctrls")
       if (isTRUE(edit_dirty())) {
         # MitoPilot-style prompt: keep or discard unsaved boundary edits
-        shinyWidgets::ask_confirmation("unsaved_confirm",
-          title = "Unsaved boundary edits",
-          text = "You have unsaved changes to this feature's boundaries. Keep them?",
-          type = "warning", btn_labels = c("Discard", "Save"),
-          btn_colors = c("#d9534f", "#5cb85c"))
+        mp_choice("unsaved_confirm", title = "Unsaved boundary edits",
+          text = "You have unsaved changes to this feature's boundaries.",
+          labels = c("Discard", "Save"))
       } else {
         edit_backup(NULL)
       }

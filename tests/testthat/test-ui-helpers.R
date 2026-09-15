@@ -127,3 +127,12 @@ test_that("app_ui has landmarks and gated toolbar buttons", {
   expect_match(html, "mp-toolbar-btn")
   expect_match(html, "mp-needs-selection")
 })
+
+test_that("mp_state_modal and group_modal footers follow the shared shape", {
+  html <- as.character(RiboPilot:::mp_state_modal(c("A", "B")))
+  expect_match(html, "Set state for 2 samples")
+  expect_match(html, "update_state")
+  expect_match(html, "On hold")
+  expect_match(html, "Failed")
+  expect_match(as.character(RiboPilot:::group_modal()), ">Cancel<.*>Assign<")
+})
