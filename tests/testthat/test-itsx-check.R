@@ -278,7 +278,7 @@ test_that("itsx_check_command hands singularity a docker:// URI for a Docker Hub
 test_that("itsx_check_one stores stock-ITSx flags on the unit's annotate row", {
   dir <- mk_itsx_project()
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
-  on.exit(DBI::dbDisconnect(con))
+  withr::defer(DBI::dbDisconnect(con))
   DBI::dbExecute(con, "ALTER TABLE annotate ADD COLUMN itsx_warnings TEXT")
   pre <- file.path(dir, "unit.itsx_check")
   writeLines("S1.1.1\t400 bp.\tSSU: 1-200\tLSU: 201-400\tBroken or partial sequence, no 5.8S! ",
@@ -304,6 +304,6 @@ test_that("export refreshes itsx_warnings on the annotate row", {
   suppressWarnings(suppressMessages(export_bundle(dir, out_dir = file.path(dir, "out"),
     markers = FALSE, report = FALSE, zip = FALSE)))
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
-  on.exit(DBI::dbDisconnect(con))
+  withr::defer(DBI::dbDisconnect(con))
   expect_match(DBI::dbGetQuery(con, "SELECT itsx_warnings FROM annotate")$itsx_warnings, "^not_run\\(")
 })
