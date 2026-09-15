@@ -275,6 +275,7 @@ MP_COL_NAMES <- c(
   screen_verdict   = "Screen",
   chimera_label    = "Chimera",
   chimera_reason   = "Chimera Reason",
+  reference        = "Reference",
   blast_species    = "BLAST Species",
   blast_accession  = "BLAST Accession",
   blast_pident     = "BLAST % Identity",

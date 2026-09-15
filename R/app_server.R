@@ -57,7 +57,8 @@ app_server <- function(input, output, session) {
       compact = TRUE, resizable = TRUE, defaultPageSize = 25, wrap = FALSE,
       columns = list(
         status = reactable::colDef(html = TRUE, width = 80, cell = rt_dynamicIcon(
-          c(success = "fa fa-circle-check", failed = "fa fa-triangle-exclamation"))),
+          c(success = "fa fa-circle-check mp-fg-success", failed = "fa fa-triangle-exclamation mp-fg-danger"),
+          labels = c(success = "Success", failed = "Failed"))),
         on_disk = reactable::colDef(name = "On disk", width = 80),
         open = reactable::colDef(name = "", width = 60, html = TRUE, cell = rt_link("wd_open")),
         workdir = reactable::colDef(name = "Work directory (select to copy)",
@@ -216,85 +217,84 @@ app_server <- function(input, output, session) {
     multi_unit <- all(c("path", "scaffold") %in% names(d)) &&
       nrow(unique(d[, c("ID", "path", "scaffold")])) > length(unique(d$ID))
 
+    cd <- function(f, ...) reactable::colDef(name = mp_col_name(f), header = mp_col_header(f), ...)
     cols <- list(
-      ID = reactable::colDef(name = "ID", minWidth = 130, sticky = "left", html = TRUE, cell = rt_link("open_detail")),
-      path = reactable::colDef(name = "Path", width = 60, show = multi_unit),
-      scaffold = reactable::colDef(name = "Scaf", width = 60, show = multi_unit),
-      Taxon = reactable::colDef(name = "Taxon", minWidth = 140, sticky = "left", html = TRUE, cell = rt_longtext()),
-      sci_name = reactable::colDef(name = "Assigned Taxon", minWidth = 200, html = TRUE,
-        cell = rt_taxid_link()),
+      ID = cd("ID", width = mp_fit_width(d$ID), sticky = "left", html = TRUE, cell = rt_link("open_detail")),
+      path = cd("path", width = 70, align = "center", show = multi_unit),
+      scaffold = cd("scaffold", width = 90, align = "center", show = multi_unit),
+      Taxon = cd("Taxon", minWidth = 140, sticky = "left", html = TRUE, cell = rt_longtext()),
+      sci_name = cd("sci_name", minWidth = 200, html = TRUE, cell = rt_taxid_link()),
       taxid = reactable::colDef(show = FALSE),
-      rank = reactable::colDef(name = "Rank", minWidth = 90, html = TRUE, cell = rt_longtext()),
-      match_type = reactable::colDef(name = "Confidence", minWidth = 110, html = TRUE,
+      rank = cd("rank", minWidth = 90, html = TRUE, cell = rt_longtext()),
+      match_type = cd("match_type", minWidth = 110, html = TRUE, align = "center",
         cell = rt_confidence_badge()),
-      reviewed = reactable::colDef(name = "Reviewed", html = TRUE, cell = rt_bool_badge(hide_no = TRUE)),
-      problematic = reactable::colDef(name = "Problem", width = 90, html = TRUE, cell = rt_bool_badge(hide_no = TRUE)),
-      partial = reactable::colDef(name = "Partial", width = 80, html = TRUE, cell = rt_bool_badge(hide_no = TRUE)),
-      n_flags = reactable::colDef(name = "Warnings", width = 100, html = TRUE, filterable = FALSE,
-        header = rt_help_header("Warnings", SCAFFOLD_COL_HELP$warnings), cell = rt_flag_badge()),
+      reviewed = cd("reviewed", html = TRUE, align = "center", cell = rt_bool_badge(hide_no = TRUE)),
+      problematic = cd("problematic", width = 110, html = TRUE, align = "center",
+        cell = rt_bool_badge(hide_no = TRUE, yes_tone = "warning")),
+      partial = cd("partial", width = 80, html = TRUE, align = "center",
+        cell = rt_bool_badge(hide_no = TRUE, yes_tone = "warning")),
+      n_flags = cd("n_flags", width = 100, html = TRUE, filterable = FALSE, align = "center",
+        cell = rt_flag_badge()),
       annotate_notes = reactable::colDef(show = FALSE),
-      screen_verdict = reactable::colDef(name = "Screen", width = 110, html = TRUE,
-        header = rt_help_header("Screen", SCAFFOLD_COL_HELP$screen_verdict), cell = rt_screen_badge()),
-      chimera_label = reactable::colDef(name = "Chimera", width = 100, html = TRUE,
-        header = rt_help_header("Chimera", SCAFFOLD_COL_HELP$chimera), cell = rt_chimera_badge()),
+      screen_verdict = cd("screen_verdict", width = 110, html = TRUE, align = "center",
+        cell = rt_screen_badge()),
+      chimera_label = cd("chimera_label", width = 100, html = TRUE, align = "center",
+        cell = rt_chimera_badge()),
       chimera_reason = reactable::colDef(show = FALSE),
-      reference = reactable::colDef(name = "Reference", html = TRUE, cell = rt_ncbi_link()),
-      blast_species = reactable::colDef(name = "BLAST Hit", minWidth = 160, html = TRUE, cell = rt_longtext()),
-      blast_accession = reactable::colDef(name = "Accession", minWidth = 110, html = TRUE, cell = rt_ncbi_link()),
-      blast_pident = reactable::colDef(name = "BLAST %ID", width = 90),
-      blast_qcovs = reactable::colDef(name = "BLAST Cov", width = 90),
-      blast_source = reactable::colDef(name = "Hit source", width = 100, html = TRUE,
+      reference = cd("reference", html = TRUE, cell = rt_ncbi_link()),
+      blast_species = cd("blast_species", minWidth = 160, html = TRUE, cell = rt_longtext()),
+      blast_accession = cd("blast_accession", minWidth = 130, html = TRUE, cell = rt_ncbi_link()),
+      blast_pident = cd("blast_pident", width = 130),
+      blast_qcovs = cd("blast_qcovs", width = 140),
+      blast_source = cd("blast_source", width = 100, html = TRUE, align = "center",
         cell = rt_blast_source_badge()),
-      details = reactable::colDef(name = "", width = 80, align = "center", filterable = FALSE, html = TRUE,
+      details = cd("details", width = 80, align = "center", filterable = FALSE, sortable = FALSE,
+        sticky = "right", class = "mp-actions-sticky", headerClass = "mp-actions-sticky", html = TRUE,
         cell = rt_icon_bttn_text(det_input, "fas fa-square-arrow-up-right fa-xs", title = det_tip)),
-      output = reactable::colDef(name = "", width = 80, align = "center", filterable = FALSE, html = TRUE,
+      output = cd("output", width = 80, align = "center", filterable = FALSE, sortable = FALSE,
+        sticky = "right", class = "mp-actions-sticky", headerClass = "mp-actions-sticky", html = TRUE,
         cell = rt_icon_bttn_text(out_input, "fas fa-folder-open fa-xs", title = "Work / output directories")),
-      n_features = reactable::colDef(name = "Features", width = 90, html = TRUE),
-      missing = reactable::colDef(name = "Missing", minWidth = 120, html = TRUE, cell = rt_longtext()),
-      length = reactable::colDef(name = "Length", width = 90),
-      paths = reactable::colDef(name = "Paths", width = 80),
-      units = reactable::colDef(name = "Units", width = 70),
-      kept = reactable::colDef(name = "Kept", width = 70, html = TRUE,
-        cell = rt_kept_count()),
-      sel_path = reactable::colDef(name = "Selected Path", width = 110),
-      best_score = reactable::colDef(name = "Best Score", width = 100),
-      export_group = reactable::colDef(name = "Group", minWidth = 110, html = TRUE, cell = rt_longtext()),
-      pre_opts = reactable::colDef(name = "Preprocess", minWidth = 100, html = TRUE,
-        filterable = FALSE, cell = rt_link("set_pre_opts")),
-      assemble_opts = reactable::colDef(name = "Assemble Opts", minWidth = 100, html = TRUE,
-        filterable = FALSE, cell = rt_link("set_assemble_opts")),
-      blast_opts = reactable::colDef(name = "BLAST", minWidth = 85, html = TRUE,
-        filterable = FALSE, cell = rt_link("set_blast_opts")),
-      annotate_opts = reactable::colDef(name = "Annotate Opts", minWidth = 100, html = TRUE,
-        filterable = FALSE, cell = rt_link("set_annotate_opts")),
-      curate_opts = reactable::colDef(name = "Curate", minWidth = 90, html = TRUE,
-        filterable = FALSE, cell = rt_link("set_curate_opts")),
-      annotate_lock = reactable::colDef(name = "", width = 34, align = "center", filterable = FALSE,
-        html = TRUE, cell = rt_dynamicIcon(c(`0` = "fa fa-lock-open", `1` = "fa fa-lock"))),
-      notes = reactable::colDef(name = "Notes", minWidth = 160, html = TRUE, cell = rt_longtext()),
-      time_stamp = reactable::colDef(name = "Last Updated", width = 150, filterable = FALSE,
-        cell = rt_ts_date())
+      n_features = cd("n_features", width = 90, html = TRUE),
+      missing = cd("missing", minWidth = 120, html = TRUE, cell = rt_longtext()),
+      length = cd("length", width = 100),
+      paths = cd("paths", width = 80),
+      units = cd("units", width = 70),
+      kept = cd("kept", width = 70, html = TRUE, cell = rt_kept_count()),
+      sel_path = cd("sel_path", width = 110),
+      best_score = cd("best_score", width = 100),
+      export_group = cd("export_group", minWidth = 110, html = TRUE, cell = rt_longtext()),
+      pre_opts = cd("pre_opts", minWidth = 120, html = TRUE, filterable = FALSE,
+        cell = rt_link("set_pre_opts", lock_col = "assemble_lock")),
+      assemble_opts = cd("assemble_opts", minWidth = 120, html = TRUE, filterable = FALSE,
+        cell = rt_link("set_assemble_opts", lock_col = "assemble_lock")),
+      blast_opts = cd("blast_opts", minWidth = 100, html = TRUE, filterable = FALSE,
+        cell = rt_link("set_blast_opts", lock_col = "assemble_lock")),
+      annotate_opts = cd("annotate_opts", minWidth = 120, html = TRUE, filterable = FALSE,
+        cell = rt_link("set_annotate_opts", lock_col = "assemble_lock")),
+      curate_opts = cd("curate_opts", minWidth = 100, html = TRUE, filterable = FALSE,
+        cell = rt_link("set_curate_opts", lock_col = "assemble_lock")),
+      annotate_lock = cd("annotate_lock", width = 34, align = "center", filterable = FALSE,
+        html = TRUE, cell = rt_lock_icon()),
+      notes = cd("notes", minWidth = 160, html = TRUE, class = "mp-note-cell", cell = rt_longtext()),
+      time_stamp = cd("time_stamp", width = 150, filterable = FALSE, cell = rt_ts_date())
     )
     if (lock_col %in% names(d)) {
-      cols[[lock_col]] <- reactable::colDef(name = "", sticky = "left", html = TRUE, width = 34,
-        align = "center", filterable = FALSE,
-        cell = rt_dynamicIcon(c(`0` = "fa fa-lock-open", `1` = "fa fa-lock")))
+      cols[[lock_col]] <- cd(lock_col, sticky = "left", html = TRUE, width = 34,
+        align = "center", filterable = FALSE, cell = rt_lock_icon())
     }
-    if (state_col %in% names(d)) {
-      cols[[state_col]] <- reactable::colDef(name = "", sticky = "left", html = TRUE, width = 32,
+    if (state_col %in% names(d) && mm$pfx %in% names(MP_STATE_CODES)) {
+      cols[[state_col]] <- cd(state_col, sticky = "left", html = TRUE, width = 32,
         align = "center", filterable = FALSE,
-        cell = rt_dynamicIcon(c(`0` = "fa fa-hourglass", `1` = "fa fa-person-running",
-          `2` = "fa fa-circle-check", `3` = "fa fa-triangle-exclamation",
-          `4` = "fa fa-circle-half-stroke")))
+        cell = rt_dynamicIcon(icons = mp_state_icon_classes(mm$pfx), labels = mp_state_titles(mm$pfx)))
     }
     if (mode == "Reference" && ref_view() == "Samples") {
-      cols[["ID"]] <- reactable::colDef(name = "ID", sticky = "left", minWidth = 120)
-      cols[["Taxon"]] <- reactable::colDef(name = "Taxon", minWidth = 160)
-      cols[["sci_name"]] <- reactable::colDef(name = "Scientific Name", minWidth = 160)
-      cols[["ref_group"]] <- reactable::colDef(name = "Reference Group", minWidth = 160)
-      cols[["clade_rank"]] <- reactable::colDef(name = "Rank", width = 90)
-      cols[["user_group"]] <- reactable::colDef(name = "User Group", width = 110)
-      cols[["set_by"]] <- reactable::colDef(name = "Set By", width = 90)
+      cols[["ID"]] <- cd("ID", sticky = "left", width = mp_fit_width(d$ID))
+      cols[["Taxon"]] <- cd("Taxon", minWidth = 160)
+      cols[["sci_name"]] <- cd("sci_name", minWidth = 160)
+      cols[["ref_group"]] <- cd("ref_group", minWidth = 160)
+      cols[["clade_rank"]] <- cd("clade_rank", width = 90)
+      cols[["user_group"]] <- cd("user_group", width = 110)
+      cols[["set_by"]] <- cd("set_by", width = 90)
       cols[[state_col]] <- reactable::colDef(show = FALSE)
     } else if (mode == "Reference") {
       # The group key is the clade name lowercased (ref_id_from_name), so showing
@@ -302,18 +302,18 @@ app_server <- function(input, output, session) {
       # selection, the CSV and the row classes, and stays visible in the database
       # path, which is named after it.
       cols[["ID"]] <- reactable::colDef(show = FALSE)
-      cols[["status"]] <- reactable::colDef(name = "Status", sticky = "left", minWidth = 150)
-      cols[["clade_name"]] <- reactable::colDef(name = "Clade", minWidth = 160, sticky = "left",
+      cols[["status"]] <- cd("status", sticky = "left", minWidth = 150)
+      cols[["clade_name"]] <- cd("clade_name", minWidth = 160, sticky = "left",
         html = TRUE, cell = rt_link("ref_open_clade"))
-      cols[["clade_rank"]] <- reactable::colDef(name = "Rank", width = 90)
-      cols[["n_samples"]] <- reactable::colDef(name = "Samples", width = 90)
-      cols[["n_records"]] <- reactable::colDef(name = "GenBank records", width = 140)
-      cols[["database"]] <- reactable::colDef(name = "Database", minWidth = 240, html = TRUE,
-        cell = rt_longtext())
-      cols[["fail_reason"]] <- reactable::colDef(name = "Note", minWidth = 200, html = TRUE,
+      cols[["clade_rank"]] <- cd("clade_rank", width = 90)
+      cols[["n_samples"]] <- cd("n_samples", width = 100)
+      cols[["n_records"]] <- cd("n_records", width = 160)
+      cols[["database"]] <- cd("database", minWidth = 240, html = TRUE, cell = rt_longtext())
+      cols[["fail_reason"]] <- cd("fail_reason", minWidth = 200, html = TRUE,
         cell = rt_link("ref_open_log"))
       # the row's own verb, named for the state it is in
-      cols[["action"]] <- reactable::colDef(name = "", minWidth = 150, sticky = "right",
+      cols[["action"]] <- cd("action", minWidth = 150, sticky = "right", align = "center",
+        class = "mp-actions-sticky", headerClass = "mp-actions-sticky",
         html = TRUE, filterable = FALSE, cell = rt_link("ref_row_action"))
       # the state still drives the row class, so it stays in the data, unshown
       cols[[state_col]] <- reactable::colDef(show = FALSE)
@@ -376,6 +376,7 @@ app_server <- function(input, output, session) {
       # consistent header capitalization (Title Case names above) + left alignment
       defaultColDef = reactable::colDef(align = "left", headerVAlign = "center"),
       rowStyle = rt_highlight_row(), rowClass = rowclass,
+      # column order comes from samples_data()
       columns = keep_cols
     )
   })

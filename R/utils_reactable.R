@@ -40,6 +40,13 @@ mp_js_obj <- function(x) {
   )
 }
 
+#' Lock glyph shared by the main table lock columns
+#' @noRd
+rt_lock_icon <- function() {
+  rt_dynamicIcon(c(`0` = "fa fa-lock-open mp-fg-neutral", `1` = "fa fa-lock mp-fg-neutral"),
+    labels = c(`0` = "Unlocked", `1` = "Locked"))
+}
+
 #' Dynamic Icon
 #'
 #' @param icons a named character vector list of icons to use.

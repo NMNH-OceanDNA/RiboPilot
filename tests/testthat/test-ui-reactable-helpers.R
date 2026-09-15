@@ -67,3 +67,9 @@ test_that("rt_link renders locked cells as text", {
   expect_match(js, "\\['assemble_lock'\\]")
   expect_false(grepl("mp-locked-cell", as.character(rt_link("x"))))
 })
+
+test_that("mp_col_header names columns and carries tips from the registry", {
+  expect_match(as.character(RiboPilot:::mp_col_header("assemble_switch")), "mp-th-tip")
+  expect_identical(RiboPilot:::mp_col_header("ID"), "ID")
+  expect_equal(names(RiboPilot:::mp_state_icon_classes("assemble")), c("0", "1", "4", "2", "3"))
+})
