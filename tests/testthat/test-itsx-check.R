@@ -136,11 +136,12 @@ test_that("itsx_check_command runs ITSx through docker when .config enables it",
 
 test_that("itsx_check_command uses singularity or apptainer for a singularity config", {
   dir <- withr::local_tempdir()
-  write_cfg(dir, "singularity {", "  enabled = true", "}", "process {", "  container = 'rp.sif'", "}")
+  sif <- file.path(dir, "rp.sif"); file.create(sif)
+  write_cfg(dir, "singularity {", "  enabled = true", "}", "process {", paste0("  container = '", sif, "'"), "}")
   wd <- file.path(dir, "wd")
   cmd <- RiboPilot:::itsx_check_command(dir, wd, which = fake_which("apptainer"))
   expect_equal(cmd$bin, "/bin/apptainer")
-  expect_equal(cmd$prefix, c("exec", "--bind", wd, "--pwd", wd, "rp.sif", "ITSx"))
+  expect_equal(cmd$prefix, c("exec", "--bind", wd, "--pwd", wd, sif, "ITSx"))
   expect_match(RiboPilot:::itsx_check_command(dir, wd, which = fake_which("ITSx"))$message, "singularity")
 })
 
@@ -244,4 +245,32 @@ test_that("a real ITSx run in the project's container over a genuine rDNA record
   expect_equal(chk$itsx_origin, "Metazoa")
   expect_match(chk$itsx_ITS1, "^[0-9]+-[0-9]+$")
   expect_true(file.exists(file.path(g, "itsx_check", "itsx.positions.txt")))
+})
+
+test_that("singularity_image_ref turns a Docker Hub name into something singularity can open", {
+  dir <- withr::local_tempdir()
+  img <- "macguigand/ribopilot:0.0.0.9016"
+  # nothing cached: pull from Docker Hub
+  expect_equal(RiboPilot:::singularity_image_ref(img, dir, character(0)), paste0("docker://", img))
+  # a URI or an existing file is left alone
+  expect_equal(RiboPilot:::singularity_image_ref("docker://x/y:1", dir, character(0)), "docker://x/y:1")
+  sif <- file.path(dir, "rp.sif"); file.create(sif)
+  expect_equal(RiboPilot:::singularity_image_ref(sif, dir, character(0)), sif)
+  # Nextflow's cached SIF under work/singularity wins
+  wk <- file.path(dir, "work", "singularity"); dir.create(wk, recursive = TRUE)
+  cached <- file.path(wk, "macguigand-ribopilot-0.0.0.9016.img"); file.create(cached)
+  expect_equal(RiboPilot:::singularity_image_ref(img, dir, character(0)), cached)
+  # explicit cacheDir in .config is checked instead
+  cd <- file.path(dir, "cache"); dir.create(cd)
+  cfg <- c("singularity {", "  enabled = true", paste0("  cacheDir = '", cd, "'"), "}")
+  expect_equal(RiboPilot:::singularity_image_ref(img, dir, cfg), paste0("docker://", img))
+  file.create(file.path(cd, "macguigand-ribopilot-0.0.0.9016.img"))
+  expect_equal(RiboPilot:::singularity_image_ref(img, dir, cfg), file.path(cd, "macguigand-ribopilot-0.0.0.9016.img"))
+})
+
+test_that("itsx_check_command hands singularity a docker:// URI for a Docker Hub image", {
+  dir <- withr::local_tempdir()
+  write_cfg(dir, "singularity {", "  enabled = true", "}", "process {", "  container = 'macguigand/ribopilot:0.1'", "}")
+  cmd <- RiboPilot:::itsx_check_command(dir, dir, which = fake_which("singularity"))
+  expect_equal(cmd$prefix[6], "docker://macguigand/ribopilot:0.1")
 })

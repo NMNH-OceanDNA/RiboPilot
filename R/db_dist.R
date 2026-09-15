@@ -359,6 +359,23 @@ config_container_image <- function(cfg_lines) {
   trimws(sub("^['\"]?([^'\"]*).*$", "\\1", trimws(v)))
 }
 
+#' Image reference singularity/apptainer can open for a config's container
+#'
+#' Nextflow pulls a Docker Hub name into a SIF itself, but a direct
+#' `singularity exec` needs either that cached file or a `docker://` URI.
+#' @return The cached SIF path when Nextflow already pulled it (cacheDir from
+#'   the config, else `NXF_SINGULARITY_CACHEDIR`, else `<project>/work/singularity`),
+#'   otherwise `docker://<img>`; URIs and existing files are returned as is.
+#' @noRd
+singularity_image_ref <- function(img, project = ".", cfg_lines = character(0)) {
+  if (grepl("://", img, fixed = TRUE) || file.exists(img)) return(img)
+  hit <- grep("^\\s*cacheDir\\s*=", cfg_lines, value = TRUE)
+  cache <- if (length(hit)) trimws(gsub("['\"]", "", sub("^[^=]*=", "", hit[1]))) else
+    Sys.getenv("NXF_SINGULARITY_CACHEDIR", file.path(project, "work", "singularity"))
+  sif <- file.path(cache, paste0(gsub("[/:]", "-", img), ".img"))
+  if (file.exists(sif)) sif else paste0("docker://", img)
+}
+
 #' Ask the project's container image to describe the database it carries
 #'
 #' The database lives inside the image, where the app cannot read its manifest,
@@ -385,7 +402,7 @@ image_panel_summary <- function(project = ".") {
   args <- if (identical(engine, "docker")) {
     c("run", "--rm", img, "Rscript", "-e", shQuote(code))
   } else {
-    c("exec", img, "Rscript", "-e", shQuote(code))
+    c("exec", singularity_image_ref(img, project, lines), "Rscript", "-e", shQuote(code))
   }
   # timeout: a missing image makes docker try to pull one, which on a slow link
   # would hang the modal open

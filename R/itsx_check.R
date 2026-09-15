@@ -69,7 +69,7 @@ itsx_check_command <- function(project, workdir, which = Sys.which) {
   w <- w[nzchar(w)]
   if (length(w) < 1) return(none("singularity/apptainer not on PATH"))
   list(bin = unname(w[1]),
-    prefix = c("exec", "--bind", wd, "--pwd", wd, img, "ITSx"),
+    prefix = c("exec", "--bind", wd, "--pwd", wd, singularity_image_ref(img, project, lines), "ITSx"),
     message = "")
 }
 
