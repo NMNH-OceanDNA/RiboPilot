@@ -92,8 +92,7 @@ assemble_opts_modal <- function(cur, choices, n) {
     # assembler choice + only that assembler's tool options, boxed off. Each
     # help line is appended INSIDE its input's container, so hiding the input
     # takes its help with it; a standalone help paragraph would be left behind.
-    shiny::div(style = paste("border:1px solid #ddd; border-radius:6px;",
-        "padding:12px 14px 4px; margin:8px 0 14px;"),
+    shiny::div(class = "mp-opts-section",
       shiny::div(style = "font-weight:bold; margin-bottom:8px;", "Assembler"),
       shinyjs::disabled(shiny::selectInput("ao_assembler", label = NULL,
         choices = ASSEMBLER_CHOICES,
@@ -130,8 +129,7 @@ assemble_opts_modal <- function(cur, choices, n) {
           id = "help_ao_spades", nested = TRUE))),
     # only reaches samples that supplied their own assembly; the assemblers
     # above are what every other sample uses
-    shiny::div(style = paste("border:1px solid #ddd; border-radius:6px;",
-        "padding:12px 14px 4px; margin:8px 0 14px;"),
+    shiny::div(class = "mp-opts-section",
       shiny::div(style = "font-weight:bold; margin-bottom:8px;", "Supplied assemblies"),
       shinyjs::disabled(shiny::checkboxInput("ao_findrrna",
         "Search the supplied assembly for nuclear rDNA contigs",
@@ -144,8 +142,7 @@ assemble_opts_modal <- function(cur, choices, n) {
         "to find.", id = "help_ao_findrrna")),
     # the Reference tab writes these two paths when it wires a clade database;
     # showing them here is the only place a preset's database is visible
-    shiny::div(style = paste("border:1px solid #ddd; border-radius:6px;",
-        "padding:12px 14px 4px; margin:8px 0 14px;"),
+    shiny::div(class = "mp-opts-section",
       shiny::div(style = "font-weight:bold; margin-bottom:8px;", "Reference database"),
       shinyjs::disabled(shiny::textInput("ao_seeds", "Seed database:",
         value = cur$seeds_db %|NA|% "", width = "100%")),
@@ -427,6 +424,8 @@ opts_handlers <- function(input, output, session, deps) {
       }
       targets(setdiff(ids, locked))
       open_modal(p)
+      if (length(locked)) mp_toast(sprintf("Skipping %s locked for this step: %s.",
+        mp_n(length(locked), "sample"), mp_id_list(locked)), type = "warning")
     })
     # enable fields on Edit; auto-check Edit when a new (unknown) name is typed
     shiny::observeEvent(input[[paste0(p, "_edit")]], ignoreInit = TRUE, {

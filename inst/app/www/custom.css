@@ -84,9 +84,18 @@ textarea:focus-visible,
 }
 
 /* The shared inline help paragraph: 12.6px at 5.4:1, not 11.9px at 4.5:1. */
-p.mp-help-text {
+.mp-help-text {
   font-size: 0.9em;
   color: var(--mp-text-muted);
+}
+p.mp-help-text { margin: 2px 0 6px; }
+
+/* Options modal: one bordered section per tool. */
+.mp-opts-section {
+  border: 1px solid var(--mp-border);
+  border-radius: 6px;
+  padding: 12px 14px 4px;
+  margin: 8px 0 14px;
 }
 
 /* The grey "?" that opens a help popover. */

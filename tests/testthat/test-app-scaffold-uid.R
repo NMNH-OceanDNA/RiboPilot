@@ -492,7 +492,7 @@ test_that("locking two paths asks first, and 'lock anyway' goes through", {
     session$flushReact()
 
     # one unit from each path: the click must not write anything on its own
-    session$setInputs(lock_btn = 1)
+    session$setInputs(annot_lock_btn = 1)
     session$flushReact()
     lk <- RiboPilot:::app_query("SELECT COALESCE(annotate_lock,0) AS lock FROM annotate WHERE ID='S1'")
     expect_true(all(lk$lock == 0))

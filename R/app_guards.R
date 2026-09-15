@@ -26,7 +26,7 @@ need_unlocked <- function(locked_ids, noun = "sample",
   plural <- sub("^\\S+ ", "", mp_n(2, noun))
   mp_alert(
     title = paste("Locked", plural, "cannot be edited"),
-    text = paste0("Unlock these ", plural, " in the Lock column first: ",
+    text = paste0("Select these ", plural, " and press Lock to unlock them first: ",
                   mp_id_list(locked_ids), "."),
     type = "warning", session = session
   )

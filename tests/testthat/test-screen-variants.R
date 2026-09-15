@@ -441,8 +441,8 @@ test_that("a sample with one on-target unit is a singleton, not NA", {
 test_that("the variant badge never borrows the off-target red or warning language", {
   js <- as.character(RiboPilot:::rt_variant_badge())
   red <- as.character(RiboPilot:::rt_screen_badge())
-  expect_true(grepl("#f8d7da", red, fixed = TRUE))   # the off_target red exists
-  expect_false(grepl("#f8d7da", js, fixed = TRUE))   # and is not reused here
+  expect_true(grepl("tone = 'danger'", red, fixed = TRUE))   # the off_target red exists
+  expect_false(grepl("danger", js, fixed = TRUE))   # and is not reused here
   expect_false(grepl("warn", js, ignore.case = TRUE))
   # an isomer is neutral; a paralog is information, and the two differ
   expect_true(grepl("#eeeeee", js, fixed = TRUE))

@@ -1,5 +1,42 @@
 window.MP_SAMPLE_TABLES = '#tbl, .mp-sample-table';
 
+// Rows the main table is showing: reactable's filtered + sorted rows, minus the
+// ones the lock/state filter CSS hides. The server names the mode's lock/state
+// columns (rp_table_pfx) when it renders the table.
+window.RP_TBL_PFX = 'assemble';
+window.rpVisibleRows = function() {
+  var tbl = document.getElementById('tbl');
+  var st = window.Reactable ? Reactable.getState('tbl') : null;
+  var rows = (st && st.sortedData) || [];
+  if (!tbl) return rows;
+  var probe = document.createElement('div'); tbl.appendChild(probe);
+  rows = rows.filter(function(r) {
+    probe.className = 'rp-lock-' + r[RP_TBL_PFX + '_lock'] + ' rp-state-' + r[RP_TBL_PFX + '_switch'];
+    return getComputedStyle(probe).display !== 'none';
+  });
+  probe.remove();
+  return rows;
+};
+$( document ).ready(function(){
+  Shiny.addCustomMessageHandler('rp_table_pfx', function(pfx) {
+    window.RP_TBL_PFX = pfx;
+    setTimeout(rpReportVisible, 0);
+  });
+  // The status line above the table counts what is actually shown.
+  var pending = null;
+  function rpReportVisible() {
+    Shiny.setInputValue('tbl_visible_n', rpVisibleRows().length);
+  }
+  function queue() { clearTimeout(pending); pending = setTimeout(rpReportVisible, 50); }
+  function hook() {
+    if (!window.Reactable || !document.getElementById('tbl') || hook.done) return;
+    try { Reactable.onStateChange('tbl', queue); hook.done = true; } catch (e) {}
+  }
+  new MutationObserver(function() { hook(); queue(); })
+    .observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style'] });
+  $(document).on('shiny:value', function(e) { if (e.name === 'filter_css') queue(); });
+});
+
 // One help affordance: every [data-toggle="mp-popover"] on the page (modals
 // and dynamically rendered UI included) opens its data-content in a
 // Bootstrap 3 popover on click or keyboard focus.

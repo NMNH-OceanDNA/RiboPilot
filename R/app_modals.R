@@ -9,13 +9,9 @@
 status_badge <- function(label, state, invert = FALSE, neutral_no = FALSE) {
   val <- if (is.null(state) || length(state) == 0 || is.na(state)) "na" else as.character(state)
   color_val <- if (neutral_no && val == "no") "na" else val
-  bg <- if (color_val == "yes") { if (invert) "#fde8d0" else "#d4edda" }
-    else if (color_val == "no") { if (invert) "#d4edda" else "#fde8d0" } else "#e9ecef"
-  fg <- if (color_val == "yes") { if (invert) "#7d4a1e" else "#2d6a4f" }
-    else if (color_val == "no") { if (invert) "#2d6a4f" else "#7d4a1e" } else "#6c757d"
-  span(style = paste0("background:", bg, "; color:", fg,
-      "; border-radius:3px; padding:2px 8px; font-size:0.75em; font-weight:600; white-space:nowrap;"),
-    paste0(label, ": ", toupper(val)))
+  tone <- if (color_val == "yes") { if (invert) "warning" else "success" }
+    else if (color_val == "no") { if (invert) "success" else "warning" } else "neutral"
+  span(class = paste0("mp-pill mp-pill-", tone), paste0(label, ": ", toupper(val)))
 }
 
 #' The stored per-scaffold BLAST hit, labelled with the search that produced it
@@ -53,7 +49,7 @@ seed_hit_block <- function(r) {
           sprintf("<a href='https://www.ncbi.nlm.nih.gov/nuccore/%s' target='_blank'>%s</a>", acc, acc)
         } else "no accession",
         r$blast_pident %|NA|% "?"))),
-    if (from_seeds) div(style = "margin-top:3px; color:#7d4a1e; font-size:0.85em;",
+    if (from_seeds) tags$p(class = "mp-help-text mp-fg-warning", style = "margin-top:3px;",
       paste("These seeds are what GetOrganelle used to bait the assembly, so a high",
         "identity here says the scaffold looks like its own bait. A missing or",
         "distant relative in the seed file can put this name on the wrong genus.")))
@@ -69,7 +65,7 @@ modal_taxon_header <- function(id) {
   name <- if (!is.na(s$sci_name[1]) && nzchar(s$sci_name[1])) s$sci_name[1] else s$Taxon[1]
   meta <- c(
     if (!is.na(s$taxid[1]) && nzchar(as.character(s$taxid[1])))
-      sprintf("<a href='https://www.ncbi.nlm.nih.gov/datasets/taxonomy/%s/' target='_blank'>taxid %s</a>",
+      sprintf("<a href='https://www.ncbi.nlm.nih.gov/datasets/taxonomy/%s/' target='_blank' title='NCBI taxonomy ID'>taxid %s</a>",
         s$taxid[1], s$taxid[1]),
     if (!is.na(s$rank[1]) && nzchar(s$rank[1])) s$rank[1])
   div(style = "margin:-6px 0 8px; color:#333; font-size:0.92em;",
@@ -89,22 +85,12 @@ modal_taxon_header <- function(id) {
 rp_sample_nav <- function(pfx) {
   tagList(
     uiOutput("sample_nav", inline = TRUE),
-    tags$script(HTML(sprintf(
+    tags$script(HTML(
       "setTimeout(function(){
-         var tbl = document.getElementById('tbl');
-         var st = window.Reactable ? Reactable.getState('tbl') : null;
-         var rows = (st && st.sortedData) || [];
-         if (tbl) {
-           var probe = document.createElement('div'); tbl.appendChild(probe);
-           rows = rows.filter(function(r){
-             probe.className = 'rp-lock-' + r['%s_lock'] + ' rp-state-' + r['%s_switch'];
-             return getComputedStyle(probe).display !== 'none';
-           });
-           probe.remove();
-         }
+         var rows = window.rpVisibleRows ? rpVisibleRows() : [];
          var col = function(k){ return rows.map(function(r){ return r[k] == null ? '1' : String(r[k]); }); };
          Shiny.setInputValue('nav_order', {ID: col('ID'), path: col('path'), scaffold: col('scaffold')}, {priority: 'event'});
-       }, 0);", pfx, pfx)))
+       }, 0);"))
   )
 }
 
@@ -115,15 +101,17 @@ rp_sample_nav <- function(pfx) {
 #' @noRd
 chimera_panel <- function() {
   tagList(
-    div(style = "color:#666; font-size:0.85em; margin:2px 0 4px;",
+    tags$p(class = "mp-help-text", style = "margin:2px 0 4px;",
+      "A chimera is one scaffold stitched from two organisms. ",
       "Overlapping 500 bp windows are BLASTed against the local rDNA panel. ",
       "Neighbouring windows whose best hits share a class form one lineage segment. ",
-      "Segments from different classes, or reads clipped at one position, flag a chimera candidate. Warns only; never blocks export."),
-    div(style = "color:#666; font-size:0.85em; margin:2px 0 4px;", textOutput("chimera_db_source", inline = TRUE)),
+      "Two segments from different classes, or reads clipped at one position, flag a candidate. ",
+      "This warns only; it never blocks export."),
+    tags$p(class = "mp-help-text", style = "margin:2px 0 4px;", textOutput("chimera_db_source", inline = TRUE)),
     plotOutput("chimera_plot", height = "300px"),
     reactable::reactableOutput("chimera_segments"),
     rp_details("All windows",
-      div(style = "color:#666; font-size:0.85em; margin:2px 0 4px;",
+      tags$p(class = "mp-help-text", style = "margin:2px 0 4px;",
         "One row per window: its best BLAST hit in the local panel, the hit identity, and the read evidence over that stretch."),
       reactable::reactableOutput("chimera_windows"), open = FALSE))
 }
@@ -137,7 +125,7 @@ assemble_modal <- function(id) {
     footer = div(class = "mp-sticky-foot", rp_sample_nav("assemble"), mp_footer(dismiss = "Close")),
     modal_taxon_header(id),
     h5("Scaffolds", style = "margin:2px 0 4px;"),
-    div(style = "color:#888; font-size:0.82em; margin-bottom:4px;",
+    tags$p(class = "mp-help-text", style = "margin-bottom:4px;",
       paste("Click on a scaffold row to examine GenBank evidence and coverage below")),
     reactable::reactableOutput("assemble_scaffolds"),
     div(style = "margin-top:6px;",
@@ -186,7 +174,7 @@ rejected_contigs_section <- function(id) {
   }
   names(d) <- c("Contig", "Length", "rRNA found", "Why it was left out")
   rp_details(sprintf("Contigs not carried forward (%d)", nrow(d)), open = FALSE,
-    div(style = "color:#666; font-size:0.85em; margin-bottom:6px;",
+    tags$p(class = "mp-help-text", style = "margin-bottom:6px;",
       paste("These contigs in the assembly you supplied had rRNA hits but did",
         "not go on through the pipeline. A contig needs an 18S or 28S anchor to",
         "be carried forward; 5.8S on its own is not enough. Contigs with no rRNA",
@@ -241,7 +229,9 @@ export_overwrite_modal <- function(dir, n) {
       div(class = "code-block", style = "white-space:normal; word-break:break-all;", dir),
       tags$p(style = "color:#666;",
         "Rename or move it first if you need to keep the earlier bundle.")),
-    footer = mp_footer(danger = actionButton("export_overwrite_go", "Replace it"))
+    footer = mp_footer(dismiss = NULL,
+      extra = actionButton("export_overwrite_back", "Cancel"),
+      danger = actionButton("export_overwrite_go", "Replace it"))
   )
 }
 
@@ -274,7 +264,7 @@ triage_modal <- function(n_samples, actions = triage_actions_default()) {
     tags$tr(
       tags$td(style = "padding:3px 8px 3px 0; vertical-align:top;",
         tags$div(style = "font-weight:600;", def$label),
-        tags$div(class = "text-muted", style = "font-size:0.8em;", def$meaning)),
+        tags$p(class = "mp-help-text", def$meaning)),
       tags$td(style = "padding:3px 8px; vertical-align:top; white-space:nowrap;",
         triage_rule_control(def, actions[[def$key]])),
       tags$td(style = "padding:3px 8px; vertical-align:top; text-align:right;",
@@ -283,7 +273,7 @@ triage_modal <- function(n_samples, actions = triage_actions_default()) {
   modalDialog(
     title = paste("Triage scaffolds for", mp_n(n_samples, "sample")),
     size = "l", easyClose = TRUE,
-    tags$p(class = "text-muted", style = "font-size:0.86em;",
+    tags$p(class = "mp-help-text",
       paste("Proposes keep / drop / undecided per scaffold from the evidence already",
         "in the database. Depth is shown in the scaffold table but never decides:",
         "high depth is often k-mer collapse across the conserved core or IGS",
@@ -294,7 +284,7 @@ triage_modal <- function(n_samples, actions = triage_actions_default()) {
         tags$th(style = "text-align:left;", "Action"),
         tags$th(style = "text-align:right;", "Decided / Matching"))),
       tags$tbody(rows)),
-    tags$p(class = "text-muted", style = "font-size:0.8em; margin-top:6px;",
+    tags$p(class = "mp-help-text", style = "margin-top:6px;",
       paste("Rules are applied top to bottom and the first one that matches decides",
         "whether to drop or flag the scaffold. \"Decided\" counts scaffolds this rule",
         "will drop or flag. \"Matching\" counts every scaffold that meets the rule,",
@@ -310,8 +300,8 @@ triage_modal <- function(n_samples, actions = triage_actions_default()) {
 
 #' 5'/3' nucleotide-boundary nudge control (mirrors MitoPilot rRNA nudge)
 #' @noRd
-nt_nudge <- function(id, sym) {
-  actionButton(id, sym, class = "btn-sm",
+nt_nudge <- function(id, sym, label) {
+  actionButton(id, sym, class = "btn-sm", title = label, `aria-label` = label,
     style = "min-width:34px; padding:1px 8px; font-weight:bold;")
 }
 
@@ -345,12 +335,14 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
         uiOutput("modal_status_badges", inline = TRUE, style = "display: contents;"),
         uiOutput("modal_status_toggles", inline = TRUE, style = "display: contents;"))),
     size = "l", easyClose = FALSE,
+    # Close is a server button so unsaved boundary edits can stop it.
     footer = div(class = "mp-sticky-foot", rp_sample_nav("annotate"), mp_footer(
-      primary = actionButton("lock_and_close", "Lock & Close"), dismiss = "Close")),
+      primary = actionButton("lock_and_close", "Lock & Close"), dismiss = NULL,
+      extra = actionButton("annotate_close", "Close"))),
     modal_taxon_header(id),
     # ---- gene list (drives the active feature for the editor + alignment) ----
     h5("Feature model", style = "margin:2px 0 4px;"),
-    div(style = "color:#888; font-size:0.82em; margin-bottom:4px;",
+    tags$p(class = "mp-help-text", style = "margin-bottom:4px;",
       "Click a feature to make it active for editing + reference alignment below."),
     reactable::reactableOutput("feature_tbl"),
     div(style = "margin:6px 0; display:flex; gap:6px;",
@@ -358,7 +350,10 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
       actionButton("restore_btn", "Restore assembly", icon = icon("rotate-left"), class = "btn-sm")),
     tags$hr(style = "margin:10px 0;"),
 
-    # ---- collapsible detail panels (coverage above synteny, per request) ----
+    # ---- collapsible detail panels ----
+    # Coverage, boundary editing, and the alignment are the review itself, so
+    # they open by default; the Assemble window opens short because its panels
+    # are per-scaffold evidence the reviewer picks through.
     rp_details("Read coverage", plotOutput("coverage_plot", height = "130px")),
 
     rp_details("Edit active feature boundaries",
@@ -380,14 +375,16 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
           div(class = "rp-step-box", style = "width:70px;",
             numericInput("feat_step", "Step (nt)", value = 1, min = 1, max = 50, step = 1, width = "70px")),
           div(tags$label("5' end", class = "control-label"),
-            div(style = "display:flex; gap:4px;", nt_nudge("nt_5_out", "+"), nt_nudge("nt_5_in", "-"))),
+            div(style = "display:flex; gap:4px;", nt_nudge("nt_5_out", "+", "Extend 5' end"),
+              nt_nudge("nt_5_in", "-", "Trim 5' end"))),
           div(tags$label("3' end", class = "control-label"),
-            div(style = "display:flex; gap:4px;", nt_nudge("nt_3_in", "-"), nt_nudge("nt_3_out", "+"))),
+            div(style = "display:flex; gap:4px;", nt_nudge("nt_3_in", "-", "Trim 3' end"),
+              nt_nudge("nt_3_out", "+", "Extend 3' end"))),
           div(style = "display:flex; gap:6px; align-items:flex-end;",
             actionButton("feat_save", "Save", icon = icon("floppy-disk"), class = "btn-sm btn-success"),
             actionButton("feat_reset", "Reset", icon = icon("rotate-left"), class = "btn-sm"))))
       ),
-      div(style = "color:#888; font-size:0.82em; margin-top:4px;",
+      tags$p(class = "mp-help-text", style = "margin-top:4px;",
         "Check Edit to adjust boundaries; + extends outward, - trims inward. Save to keep, Reset to discard."),
       div(class = "code-block", style = "margin-top:6px; white-space:normal; word-break:break-all;",
         uiOutput("nudge_seq"))),
@@ -406,8 +403,17 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
       textAreaInput("annotate_notes", label = NULL, width = "100%",
         value = (notes %||% NA_character_) %|NA|% "",
         placeholder = "Notes for this annotation unit"),
+      tags$p(class = "mp-help-text", "Saved as you type. Deleting the text does not clear the stored note; use Clear notes."),
       actionButton("annotate_notes_clear", "Clear notes", class = "btn-sm"))
   )
+}
+
+#' Run-modal title: text on the left, an animated gears spinner on the right
+#' @noRd
+run_modal_title <- function(text, gears_id) {
+  div(class = "mp-sticky-head",
+    style = "display:flex; justify-content:space-between; align-items:center; height:38px;",
+    span(text), span(id = gears_id, class = "gears paused"))
 }
 
 #' Update / run modal: launch the Nextflow workflow with live progress
@@ -423,7 +429,7 @@ run_modal <- function(n, headless = FALSE, sched = NULL, script = "") {
     tagList(
       hr(style = "margin:10px 0;"),
       h5("Submit to cluster", style = "margin:6px 0 4px;"),
-      div(class = "text-muted", style = "font-size:0.82em; margin-bottom:4px;",
+      tags$p(class = "mp-help-text", style = "margin-bottom:4px;",
         if (is.null(sched)) {
           "No scheduler (sbatch/qsub/bsub) found on PATH. Save the script and submit it yourself; running from the login node is discouraged."
         } else {
@@ -444,19 +450,17 @@ run_modal <- function(n, headless = FALSE, sched = NULL, script = "") {
       primary = if (!is.null(sched)) actionButton("submit_job", "Submit as job"),
       dismiss = NULL,
       extra = tagList(
-        actionButton("save_script", "Save script", class = "btn-sm"),
-        actionButton("nf_close", "Close", class = "btn-sm")))
+        actionButton("save_script", "Save script"),
+        actionButton("nf_close", "Close")))
   } else {
     mp_footer(
       primary = actionButton("nf_start", "Run from App"), dismiss = NULL,
       extra = tagList(
-        shinyjs::hidden(actionButton("nf_stop", "Stop / Interrupt", class = "btn-sm")),
-        actionButton("nf_close", "Close", class = "btn-sm")))
+        shinyjs::hidden(actionButton("nf_stop", "Stop / Interrupt")),
+        actionButton("nf_close", "Close")))
   }
   modalDialog(
-    title = div(style = "display:flex; justify-content:space-between; align-items:center; height:38px;",
-      span(sprintf("%s - %d sample(s) to update", wf, n)),
-      span(id = "rp_gears", class = "gears paused")),
+    title = run_modal_title(sprintf("%s - %d sample(s) to update", wf, n), "rp_gears"),
     size = "l",
     shinyWidgets::prettyCheckbox("nf_resume", "Resume previous run?", value = TRUE,
       status = "primary", inline = TRUE),
@@ -481,7 +485,7 @@ reference_run_modal <- function(n, ref_dir, headless = FALSE, sched = NULL, scri
     tagList(
       hr(style = "margin:10px 0;"),
       h5("Submit to cluster", style = "margin:6px 0 4px;"),
-      div(class = "text-muted", style = "font-size:0.82em; margin-bottom:4px;",
+      tags$p(class = "mp-help-text", style = "margin-bottom:4px;",
         if (is.null(sched)) {
           "No scheduler (sbatch/qsub/bsub) found on PATH. Save the script and submit it yourself; running from the login node is discouraged."
         } else {
@@ -502,21 +506,19 @@ reference_run_modal <- function(n, ref_dir, headless = FALSE, sched = NULL, scri
       primary = if (!is.null(sched)) actionButton("ref_submit_job", "Submit as job"),
       dismiss = NULL,
       extra = tagList(
-        actionButton("ref_save_script", "Save script", class = "btn-sm"),
-        actionButton("ref_nf_close", "Close", class = "btn-sm")))
+        actionButton("ref_save_script", "Save script"),
+        actionButton("ref_nf_close", "Close")))
   } else {
     mp_footer(
       primary = actionButton("ref_nf_start", "Run from App"), dismiss = NULL,
       extra = tagList(
-        shinyjs::hidden(actionButton("ref_nf_stop", "Stop / Interrupt", class = "btn-sm")),
-        actionButton("ref_nf_close", "Close", class = "btn-sm")))
+        shinyjs::hidden(actionButton("ref_nf_stop", "Stop / Interrupt")),
+        actionButton("ref_nf_close", "Close")))
   }
   modalDialog(
-    title = div(style = "display:flex; justify-content:space-between; align-items:center; height:38px;",
-      span(sprintf("Reference databases - %d clade(s) to build", n)),
-      span(id = "ref_gears", class = "gears paused")),
+    title = run_modal_title(sprintf("Reference databases - %d clade(s) to build", n), "ref_gears"),
     size = "l",
-    div(class = "text-muted", style = "font-size:0.85em; margin-bottom:6px;",
+    tags$p(class = "mp-help-text", style = "margin-bottom:6px;",
       sprintf("Databases are written to %s", ref_dir)),
     textInput("ref_api_key", "NCBI API key (optional):", width = "100%",
       value = api_key),
@@ -538,12 +540,12 @@ reference_run_modal <- function(n, ref_dir, headless = FALSE, sched = NULL, scri
 trim_modal <- function(n, a_from, a_to) {
   modalDialog(
     title = "Trim assembly", size = "l",
-    tags$p(class = "text-muted", style = "font-size:0.85em;",
+    tags$p(class = "mp-help-text",
       sprintf("Current assembly length: %d bp. Annotated span: %d..%d bp.", n, a_from, a_to)),
     shinyWidgets::prettyRadioButtons("trim_mode", "Trim to:",
       choices = c("Annotated feature boundaries" = "annotated", "Annotated + flank" = "flank", "Custom range" = "custom"),
       selected = "annotated", status = "primary", inline = TRUE),
-    tags$p(class = "text-muted", style = "font-size:0.8em; margin:2px 0;",
+    tags$p(class = "mp-help-text", style = "margin:2px 0;",
       "Drag across the plot to set the kept window (grey = trimmed); drag the box ",
       "edges to adjust. From/To always show the window that will be kept; choose Custom range to edit them."),
     plotOutput("trim_plot", height = "230px",
@@ -563,7 +565,7 @@ trim_modal <- function(n, a_from, a_to) {
       danger = actionButton("trim_apply", "Trim", icon = icon("scissors")), dismiss = NULL,
       # actionButton (not modalButton) so Cancel reopens the annotate details
       # modal instead of dropping back to the main Annotate table.
-      extra = actionButton("trim_cancel", "Cancel", class = "btn-sm"))
+      extra = actionButton("trim_cancel", "Cancel"))
   )
 }
 
@@ -581,7 +583,7 @@ group_modal <- function() {
 #' write it to the project's "out/export" folder. Without this, assigned groups
 #' were ignored and every bundle collapsed into one undifferentiated "export".
 #' @noRd
-export_modal <- function(groups, n_locked, templates = "default", template = "default",
+export_modal <- function(groups, templates = "default", template = "default",
                          fasta_header = "", fasta_header_marker = "",
                          columns = character(0)) {
   choices <- c("All locked units (single bundle)" = "__all__",
@@ -589,8 +591,9 @@ export_modal <- function(groups, n_locked, templates = "default", template = "de
   modalDialog(
     title = "Export GenBank bundle", size = "l", easyClose = TRUE,
     if (length(groups) == 0) {
-      tags$p(class = "text-muted", style = "font-size:0.9em;",
-        sprintf("No export groups assigned. Exporting %d annotation-locked unit(s) as one bundle. Use \"Assign Group\" to batch submissions.", n_locked))
+      tags$p(class = "mp-help-text",
+        textOutput("export_modal_n", inline = TRUE),
+        " No export groups assigned. Use \"Assign Group\" to batch submissions.")
     } else {
       shinyWidgets::pickerInput("export_group_sel", "Export group:",
         choices = choices, selected = "__all__", width = "100%")
@@ -612,7 +615,7 @@ export_modal <- function(groups, n_locked, templates = "default", template = "de
       value = fasta_header_marker, width = "100%", height = "60px"),
     opts_help("Defline of each per-marker sequence. Same {column} syntax, plus ",
       "{element} and {product} for the marker itself."),
-    tags$p(class = "text-muted", style = "font-size:0.78em; word-break:break-word;",
+    tags$p(class = "mp-help-text", style = "word-break:break-word;",
       tags$b("Available columns: "),
       if (length(columns) == 0) "none (no exportable units yet)"
       else paste(columns, collapse = ", ")),
@@ -623,7 +626,7 @@ export_modal <- function(groups, n_locked, templates = "default", template = "de
         value = TRUE, status = "primary"),
       shinyWidgets::prettyCheckbox("export_itsx_check", "Final ITSx check",
         value = TRUE, status = "primary")),
-    tags$p(class = "text-muted", style = "font-size:0.82em; margin-top:0.6em;",
+    tags$p(class = "mp-help-text", style = "margin-top:0.6em;",
       "Writes to the project's out/export folder: per-record FASTA + feature table under samples/, combined FASTA + feature table, per-marker fastas, summary CSV, and an HTML report. ",
       "The ITSx check runs stock ITSx over the exported records the way the NCBI Submission Portal does and lists what it would flag (chimeras, gaps, misassemblies) in the summary CSV."),
     footer = mp_footer(primary = actionButton("export_go", "Export", icon = icon("download")))
@@ -645,22 +648,22 @@ export_check_summary_ui <- function(smry) {
   if (!is.null(smry$itsx_check)) {
     not_run <- startsWith(smry$itsx_check, "not_run(")
     if (all(not_run)) {
-      lines[[length(lines) + 1]] <- tags$p(style = "color:#7d4a1e;",
+      lines[[length(lines) + 1]] <- tags$p(class = "mp-fg-warning",
         "ITSx check not run: ", sub("^not_run\\((.*)\\)$", "\\1", smry$itsx_check[1]), ".")
     } else {
       flagged <- sum(nzchar(smry$itsx_check) & !not_run)
       lines[[length(lines) + 1]] <- if (flagged == 0) {
-        tags$p(style = "color:#2d6a4f;", HTML("&#10003; "),
+        tags$p(class = "mp-fg-success", HTML("&#10003; "),
           sprintf("Final ITSx check: nothing flagged on %d record(s).", n))
       } else {
-        tags$p(style = "color:#7d4a1e; font-weight:bold;",
+        tags$p(class = "mp-fg-warning", style = "font-weight:bold;",
           sprintf("Final ITSx check flagged %d of %d record(s): %s. See the itsx_check column in the summary CSV.",
             flagged, n, paste(smry$seqid[nzchar(smry$itsx_check) & !not_run], collapse = ", ")))
       }
     }
   }
   if (risk > 0) {
-    lines[[length(lines) + 1]] <- tags$p(style = "color:#7d4a1e;",
+    lines[[length(lines) + 1]] <- tags$p(class = "mp-fg-warning",
       sprintf("Submission-risk flags on %d record(s) (submission_risk column).", risk))
   }
   if (length(lines) == 0) return(NULL)
@@ -673,10 +676,10 @@ export_check_summary_ui <- function(smry) {
 header_status_ui <- function(chk) {
   if (is.null(chk)) return(NULL)
   style <- switch(chk$level,
-    ok = list("#1a7f37", "circle-check"),
-    warn = list("#b26a00", "triangle-exclamation"),
-    list("#c0392b", "circle-xmark"))
-  tags$p(style = sprintf("color:%s; font-size:0.8em; margin:0 0 2px;", style[[1]]),
+    ok = list("success", "circle-check"),
+    warn = list("warning", "triangle-exclamation"),
+    list("danger", "circle-xmark"))
+  tags$p(class = paste0("mp-help-text mp-fg-", style[[1]]), style = "margin:0 0 2px;",
     icon(style[[2]]), " ", chk$message)
 }
 
@@ -731,7 +734,7 @@ plot_coverage <- function(id, path = 1L, scaffold = 1L) {
     msg <- if (length(r1) && (is.na(r1[1]) || !nzchar(r1[1]))) {
       "coverage not measured (no reads for this sample)"
     } else {
-      "no coverage data (run WF1)"
+      "no coverage data (run the pipeline from Assemble > Update)"
     }
     return(ggplot2::ggplot() +
       ggplot2::annotate("text", 0, 0, label = msg) +
@@ -824,7 +827,7 @@ plot_chimera <- function(id, path = 1L, scaffold = 1L, db = NULL) {
   }
   empty <- function(msg) ggplot2::ggplot() + ggplot2::annotate("text", 0, 0, label = msg) + ggplot2::theme_void()
   ch <- q("SELECT label, junctions, segments, channels FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", list(id, path, scaffold))
-  if (nrow(ch) == 0) return(empty("no chimera check yet (run WF1)"))
+  if (nrow(ch) == 0) return(empty("no chimera check yet (run the pipeline from Assemble > Update)"))
   seg <- if (!is.na(ch$segments[1])) jsonlite::fromJSON(ch$segments[1]) else data.frame()
   win <- q("SELECT start, stop, pident, lineage FROM chimera_windows WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start", list(id, path, scaffold))
   feats <- q("SELECT element, start, stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?", list(id, path, scaffold))

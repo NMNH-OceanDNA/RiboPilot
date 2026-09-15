@@ -19,7 +19,6 @@ filter_pickers <- function(mode) {
 #' @noRd
 app_ui <- function(request) {
   btn <- mp_toolbar_button
-  ctrls <- function(...) shiny::div(class = "mp-toolbar", ...)
   step <- function(n, lab) shiny::HTML(sprintf("<span class='mp-step-n'>%d</span> %s", n, lab))
   h1 <- function(mode, lab) shiny::conditionalPanel(sprintf("input.mode == '%s'", mode),
     shiny::tags$h1(class = "mp-module-h1 sr-only", lab))
@@ -46,10 +45,12 @@ app_ui <- function(request) {
             btn("refresh", label = NULL, icon = mp_icon("arrows-rotate"),
               title = "Reload the table from the database"),
             shiny::conditionalPanel("input.mode == 'Taxonomy'", id = "tax_ctrls", class = "mp-toolbar",
-              btn("state_btn", "State", title = "Set the pipeline state of the selected samples",
+              # Toolbar ids are per mode: every conditionalPanel stays in the DOM, so
+              # a shared id would bind several buttons to one input.
+              btn("tax_state_btn", "State", title = "Set the pipeline state of the selected samples",
                 needs_selection = TRUE),
-              btn("lock_btn", "Lock", title = MP_LOCK_DEF("taxonomy"), needs_selection = TRUE),
-              btn("run_btn", "Assign Taxonomy", icon = mp_icon("circle-play"), emphasis = "primary",
+              btn("tax_lock_btn", "Lock", title = MP_LOCK_DEF("taxonomy"), needs_selection = TRUE),
+              btn("tax_run_btn", "Assign Taxonomy", icon = mp_icon("circle-play"), emphasis = "primary",
                 title = "Assign taxonomy to every unlocked sample that is Ready to run"),
               btn("edit_taxon_btn", "Edit Taxonomy", icon = mp_icon("pen-to-square"),
                 title = "Search the NCBI taxonomy and assign a taxon to the selected samples",
@@ -74,22 +75,22 @@ app_ui <- function(request) {
               btn("ref_release_btn", "Release",
                 title = "Return the selected samples to automatic grouping", needs_selection = TRUE)),
             shiny::conditionalPanel("input.mode == 'Assemble'", id = "asmb_ctrls", class = "mp-toolbar",
-              btn("state_btn", "State", title = "Set the pipeline state of the selected samples",
+              btn("asmb_state_btn", "State", title = "Set the pipeline state of the selected samples",
                 needs_selection = TRUE),
-              btn("lock_btn", "Lock", title = MP_LOCK_DEF("assemble"), needs_selection = TRUE),
+              btn("asmb_lock_btn", "Lock", title = MP_LOCK_DEF("assemble"), needs_selection = TRUE),
               btn("triage_btn", "Triage", icon = mp_icon("traffic-light"),
                 title = "Re-run automatic scaffold triage on the selected samples",
                 needs_selection = TRUE),
-              btn("run_btn", "Update", icon = mp_icon("circle-play"), emphasis = "primary",
+              btn("asmb_run_btn", "Update", icon = mp_icon("circle-play"), emphasis = "primary",
                 title = "Review and launch the RiboPilot pipeline")),
             # No Update button here: one workflow, launched from Assemble.
             shiny::conditionalPanel("input.mode == 'Annotate'", id = "annot_ctrls", class = "mp-toolbar",
-              btn("state_btn", "State", title = "Set the pipeline state of the selected units",
+              btn("annot_state_btn", "State", title = "Set the pipeline state of the selected units",
                 needs_selection = TRUE),
-              btn("lock_btn", "Lock", title = MP_LOCK_DEF("annotate"), needs_selection = TRUE),
-              btn("reviewed_btn", "Reviewed", title = "Mark the selected units reviewed",
+              btn("annot_lock_btn", "Lock", title = MP_LOCK_DEF("annotate"), needs_selection = TRUE),
+              btn("reviewed_btn", "Reviewed", title = "Mark or clear reviewed on the selected units",
                 needs_selection = TRUE),
-              btn("problematic_btn", "Problem",
+              btn("problematic_btn", "Problematic",
                 title = "Mark or clear problematic on the selected units", needs_selection = TRUE),
               btn("partial_btn", "Partial", title = "Mark or clear partial on the selected units",
                 needs_selection = TRUE)),
@@ -106,8 +107,8 @@ app_ui <- function(request) {
               shiny::span(class = "mp-needs-selection-wrap",
                 title = "Select one or more rows in the table first",
                 shiny::downloadButton("table_csv_selected", "Download selected rows",
-                  class = "btn-sm mp-needs-selection")),
-              shiny::downloadButton("table_csv", "Download all rows", class = "btn-sm"),
+                  class = "btn-sm mp-toolbar-btn mp-needs-selection")),
+              shiny::downloadButton("table_csv", "Download all rows", class = "btn-sm mp-toolbar-btn"),
               # per-SAMPLE Nextflow task dirs: only meaningful on Assemble
               shiny::conditionalPanel("input.mode == 'Assemble'",
                 btn("workdirs_btn", "Work Dirs", icon = mp_icon("folder-tree"),
@@ -125,7 +126,10 @@ app_ui <- function(request) {
               shiny::div(class = "mp-filter-cols",
                 mp_filter_picker("col_groups", "Columns:", c("Stats", "Options"), width = "170px")))),
           shiny::conditionalPanel("input.mode == 'Annotate'",
-            shiny::div(class = "mp-filter-row", filter_pickers("Annotate"))),
+            shiny::div(class = "mp-filter-row",
+              filter_pickers("Annotate"),
+              shiny::div(class = "mp-filter-cols",
+                mp_filter_picker("ann_col_groups", "Columns:", c("BLAST", "Checks"), width = "170px")))),
           shiny::uiOutput("table_status"),
           shiny::div(class = "mp-table-resize", reactable::reactableOutput("tbl", height = "100%"))
         )
