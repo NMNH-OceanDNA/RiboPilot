@@ -52,8 +52,9 @@ for (i in seq_len(nrow(map))) {
   message(sprintf("[%s] %s", acc, map$Taxon[i]))
   fa <- bait_for(acc); names <- tempfile(fileext = ".txt")
   # PAF lists mapped reads only: pairs with either mate mapped, capped in file
-  # order (shotgun order is random)
-  cmd <- sprintf("%s -t %d -x sr %s %s %s 2>/dev/null | cut -f1 | sort -u | head -n %d > %s",
+  # order (shotgun order is random). minimap2 appends /1 /2 when both mates
+  # share a name, which SRA-style headers do; strip it or nothing matches.
+  cmd <- sprintf("%s -t %d -x sr %s %s %s 2>/dev/null | cut -f1 | sed 's#/[12]$##' | sort -u | head -n %d > %s",
     shQuote(minimap2), threads, shQuote(fa), shQuote(r1), shQuote(r2), max_pairs, shQuote(names))
   system(cmd)  # head closes the pipe early, so the exit status is not informative
   n <- length(readLines(names))
