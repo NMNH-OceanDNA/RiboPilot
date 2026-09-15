@@ -711,3 +711,24 @@ test_that("ITSx warnings reach the annotate rows, the scaffold view, and the sam
       FROM annotate x WHERE x.ID = s.ID) AS itsx_warnings FROM samples s")
   expect_equal(roll$itsx_warnings, "1 of 2 units")   # two checked, two not yet
 })
+
+test_that("Download selected rows writes only the ticked visible rows", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Annotate")
+    session$flushReact()
+    n <- nrow(samples_data())
+    expect_gt(n, 1)
+    expect_equal(selected_rows(), integer(0))
+    session$setInputs(tbl__reactable__selected = c(2L, 99L))   # 99 is off the table
+    session$flushReact()
+    expect_equal(selected_rows(), 2L)
+    expect_equal(nrow(samples_data()[selected_rows(), , drop = FALSE]), 1)
+    got <- utils::read.csv(output$table_csv_selected, stringsAsFactors = FALSE)
+    expect_equal(nrow(got), 1)
+    expect_equal(got$scaffold, samples_data()$scaffold[2])
+    expect_equal(nrow(utils::read.csv(output$table_csv)), n)
+  })
+})

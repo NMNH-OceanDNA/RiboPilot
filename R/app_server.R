@@ -93,15 +93,17 @@ app_server <- function(input, output, session) {
   })
   observe(shinyjs::toggleState(selector = ".mp-needs-selection",
     condition = length(selected_ids()) > 0))
-  output$table_csv <- downloadHandler(
+  table_csv_handler <- function(suffix, rows) downloadHandler(
     filename = function() paste0(basename(app_project()), "_",
-      tolower(input$mode %||% "table"), ".csv"),
+      tolower(input$mode %||% "table"), suffix, ".csv"),
     content = function(file) {
       d <- samples_data()
-      d <- d[, setdiff(names(d), c("details", "output", "action")), drop = FALSE]
+      d <- d[rows(), setdiff(names(d), c("details", "output", "action")), drop = FALSE]
       utils::write.csv(d, file, row.names = FALSE)
     }
   )
+  output$table_csv <- table_csv_handler("", function() TRUE)
+  output$table_csv_selected <- table_csv_handler("_selected", selected_rows)
 
   # mode -> (table, prefix) for lock/state columns and updates
   mode_meta <- function(mode) {
@@ -287,11 +289,11 @@ app_server <- function(input, output, session) {
       time_stamp = cd("time_stamp", width = 150, filterable = FALSE, cell = rt_ts_date())
     )
     if (lock_col %in% names(d)) {
-      cols[[lock_col]] <- cd(lock_col, sticky = "left", html = TRUE, width = 34,
+      cols[[lock_col]] <- cd(lock_col, sticky = "left", html = TRUE, width = 52,
         align = "center", filterable = FALSE, cell = rt_lock_icon())
     }
     if (state_col %in% names(d) && mm$pfx %in% names(MP_STATE_CODES)) {
-      cols[[state_col]] <- cd(state_col, sticky = "left", html = TRUE, width = 32,
+      cols[[state_col]] <- cd(state_col, sticky = "left", html = TRUE, width = 54,
         align = "center", filterable = FALSE,
         cell = rt_dynamicIcon(icons = mp_state_icon_classes(mm$pfx), labels = mp_state_titles(mm$pfx)))
     }
@@ -479,22 +481,17 @@ app_server <- function(input, output, session) {
   # Bulk actions must only ever touch VISIBLE samples. Rows filtered out are
   # hidden with CSS but stay in reactable's row model, so intersect the selection
   # with the visible mask here (and prune it in the observer below).
-  selected_ids <- function() {
+  selected_rows <- function() {
     sel <- reactable::getReactableState("tbl", "selected")
-    if (is.null(sel) || length(sel) == 0) {
-      return(character(0))
-    }
+    if (is.null(sel) || length(sel) == 0) return(integer(0))
     vis <- visible_mask()
-    sel <- sel[sel >= 1 & sel <= length(vis) & vis[sel]]
-    samples_data()$ID[sel]
+    sel[sel >= 1 & sel <= length(vis) & vis[sel]]
   }
+  selected_ids <- function() samples_data()$ID[selected_rows()]
   # Visible selected rows as (ID, path, scaffold) units (path/scaffold = 1 when the
   # active table has no unit columns).
   selected_units <- function() {
-    sel <- reactable::getReactableState("tbl", "selected")
-    if (is.null(sel) || length(sel) == 0) return(NULL)
-    vis <- visible_mask()
-    sel <- sel[sel >= 1 & sel <= length(vis) & vis[sel]]
+    sel <- selected_rows()
     if (!length(sel)) return(NULL)
     d <- samples_data()
     data.frame(ID = d$ID[sel],

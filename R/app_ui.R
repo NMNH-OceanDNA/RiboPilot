@@ -103,6 +103,10 @@ app_ui <- function(request) {
               shiny::span(shiny::textOutput("export_sel_n", inline = TRUE),
                 style = "color:#888; font-size:0.85em;")),
             shiny::div(style = "margin-left:auto; display:flex; gap:0.9em; align-items:center;",
+              shiny::span(class = "mp-needs-selection-wrap",
+                title = "Select one or more rows in the table first",
+                shiny::downloadButton("table_csv_selected", "Download selected rows",
+                  class = "btn-sm mp-needs-selection")),
               shiny::downloadButton("table_csv", "Download all rows", class = "btn-sm"),
               # per-SAMPLE Nextflow task dirs: only meaningful on Assemble
               shiny::conditionalPanel("input.mode == 'Assemble'",
