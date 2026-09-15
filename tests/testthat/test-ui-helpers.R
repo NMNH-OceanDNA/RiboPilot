@@ -119,3 +119,11 @@ test_that("mp_checkbox names its input and shows a tick", {
   expect_match(html, 'aria-label="Edit set"')
   expect_match(html, "fa-check|icon")
 })
+
+test_that("app_ui has landmarks and gated toolbar buttons", {
+  html <- as.character(app_ui(NULL))
+  expect_match(html, 'id="mp-content"')
+  expect_match(html, "mp-module-h1")
+  expect_match(html, "mp-toolbar-btn")
+  expect_match(html, "mp-needs-selection")
+})

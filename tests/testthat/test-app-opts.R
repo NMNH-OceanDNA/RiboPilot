@@ -137,9 +137,10 @@ test_that("the Annotate tab has no Update button", {
 test_that("the mode picker shows Annotation Review but keys on Annotate", {
   # Renaming the tab must not rename the mode: every branch in app_server keys
   # on the VALUE, so a label-only change keeps them working.
-  ui <- paste(deparse(RiboPilot:::app_ui), collapse = " ")
-  # deparse backtick-quotes the name, so match on the pairing, not the source text
-  expect_true(grepl("`Annotation Review` = \"Annotate\"", ui, fixed = TRUE))
+  ui <- as.character(RiboPilot:::app_ui(NULL))
+  expect_true(grepl("Annotation Review", ui, fixed = TRUE))
+  expect_true(grepl('"Annotate"', ui, fixed = TRUE))
+  expect_lt(regexpr("Annotation Review", ui, fixed = TRUE), regexpr("\"Export\"", ui, fixed = TRUE))
   srv <- paste(deparse(RiboPilot:::app_server), collapse = " ")
   expect_true(grepl('mode == "Annotate"', srv, fixed = TRUE))
 })

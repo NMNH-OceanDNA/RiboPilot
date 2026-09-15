@@ -77,13 +77,21 @@ app_server <- function(input, output, session) {
     }
   })
 
-  # selection count (feedback before a bulk action) + CSV export of the table
-  output$n_selected <- renderText({
-    n <- length(selected_ids())
-    # Reference rows are clade groups, not samples, so say which
-    unit <- if (identical(input$mode, "Reference")) "group(s) selected" else "selected"
-    if (n == 0) "" else paste(n, unit)
+  output$app_header <- renderUI(div(class = "mp-header",
+    span(class = "mp-app-name", "RiboPilot"),
+    span(class = "mp-app-ver", paste0("v", utils::packageVersion("RiboPilot"))),
+    span(class = "mp-proj", title = app_project(), basename(app_project())),
+    a(class = "mp-help", href = "https://github.com/dmacguigan/RiboPilot",
+      target = "_blank", rel = "noopener", "Help")))
+  # row-count line above the table + CSV export of the table
+  output$table_status <- renderUI({
+    d <- samples_data()
+    mode <- input$mode %||% "Taxonomy"
+    noun <- if (mode == "Reference" && ref_view() == "Groups") "group" else MP_UNIT[[tolower(mode)]]
+    mp_table_status(sum(visible_mask()), nrow(d), length(selected_ids()), noun)
   })
+  observe(shinyjs::toggleState(selector = ".mp-needs-selection",
+    condition = length(selected_ids()) > 0))
   output$table_csv <- downloadHandler(
     filename = function() paste0(basename(app_project()), "_",
       tolower(input$mode %||% "table"), ".csv"),
