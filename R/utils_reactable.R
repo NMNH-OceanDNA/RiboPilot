@@ -235,7 +235,7 @@ rt_link <- function(InputId, title = NULL, lock_col = NULL) {
                 var clickid = '%s';
                 var sampid = cellInfo.index+1;
                 return `<a href='#' id=${sampid} class='grow' title='%s' ` +
-                `onclick='event.stopPropagation(); Shiny.onInputChange(&#39;${clickid}&#39;, this.id, {priority: &#39;event&#39;})'>` +
+                `onclick='event.stopPropagation(); Shiny.setInputValue(&#39;${clickid}&#39;, this.id, {priority: &#39;event&#39;})'>` +
                 cellInfo.value +
                 `</a>`;
                 }",
