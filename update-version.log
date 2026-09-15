@@ -1,0 +1,188 @@
+Version 0.0.0.9015 -> 0.0.0.9016
+[main 78918c2] chore: bump version to 0.0.0.9016
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+WARNING: the working tree is dirty. This image will not match any commit.
+Image:  macguigand/ribopilot:0.0.0.9016
+Commit: 78918c2-dirty
+── R CMD build ─────────────────────────────────────────────────────────────────
+* checking for file ‘/home/dmacguig/Documents/GitHub/RiboPilot/DESCRIPTION’ ... OK
+* preparing ‘RiboPilot’:
+* checking DESCRIPTION meta-information ... OK
+* checking for LF line-endings in source and make files and shell scripts
+* checking for empty or unneeded directories
+Removed empty directory ‘RiboPilot/.claude/worktrees’
+Removed empty directory ‘RiboPilot/inst/nextflow/.nextflow/plr’
+Removed empty directory ‘RiboPilot/inst/nextflow/.nextflow’
+Removed empty directory ‘RiboPilot/tests/testthat/_snaps’
+Omitted ‘LazyData’ from DESCRIPTION
+* building ‘RiboPilot_0.0.0.9016.tar.gz’
+
+[1] "docker/RiboPilot_0.0.0.9016.tar.gz"
+ribopilot_rrna-2026.08.18.tar.gz: OK
+decoys-2026.08.18.tar.gz: OK
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 8.08kB done
+#1 DONE 0.1s
+
+#2 [internal] load metadata for docker.io/condaforge/mambaforge:24.9.2-0
+#2 DONE 0.0s
+
+#3 [base 1/6] FROM docker.io/condaforge/mambaforge:24.9.2-0
+#3 DONE 0.0s
+
+#4 [internal] load build context
+#4 transferring context:
+#4 transferring context: 1.40MB 0.0s done
+#4 DONE 0.2s
+
+#5 [base 2/6] RUN apt-get update &&     apt-get install -y         jq         parallel         default-jre         build-essential         procps &&     rm -rf /var/lib/apt/lists/*
+#5 CACHED
+
+#6 [base 4/6] RUN mamba install -y         'sqlite'         'fastp=0.23.4'         'fastqc'         'getorganelle=1.7.7.1'         'spades=4.1.0'         'blast>=2.12'         'bowtie2=2.5.4'         'minimap2=2.28'         'samtools=1.21'         'seqtk'         'seqkit'         'pybarrnap'         'barrnap'         'itsx'         'hmmer'         'entrez-direct'         'biopython'         'ncbi-datasets-cli' &&     mamba clean -a -y
+#6 CACHED
+
+#7 [base 5/6] RUN mkdir -p /opt/ribovore && cd /opt/ribovore &&     wget -q https://raw.githubusercontent.com/ncbi/ribovore/ribovore-1.0.5/install.sh -O install.sh &&     sh install.sh linux &&     rm install.sh
+#7 CACHED
+
+#8 [db-1 2/4] ADD docker/decoys-2026.08.18.tar.gz         /opt/ribopilot/blastdb/2026.08.18/
+#8 CACHED
+
+#9 [db-1 3/4] RUN blastdbcmd -db /opt/ribopilot/blastdb/2026.08.18/ribopilot_rrna -info > /dev/null &&     test -s /opt/ribopilot/blastdb/2026.08.18/manifest.json &&     blastdbcmd -db /opt/ribopilot/blastdb/2026.08.18/16S_ribosomal_RNA -info > /dev/null &&     blastdbcmd -db /opt/ribopilot/blastdb/2026.08.18/SSU_eukaryote_rRNA -info > /dev/null &&     blastdbcmd -db /opt/ribopilot/blastdb/2026.08.18/LSU_eukaryote_rRNA -info > /dev/null
+#9 CACHED
+
+#10 [db-1 1/4] ADD docker/ribopilot_rrna-2026.08.18.tar.gz /opt/ribopilot/blastdb/2026.08.18/
+#10 CACHED
+
+#11 [base 3/6] RUN conda config --set channel_priority strict &&     conda config --add channels bioconda &&     conda config --add channels conda-forge
+#11 CACHED
+
+#12 [base 6/6] RUN mamba install -y         'r-base=4.4.*'         'r-remotes'         'bioconductor-biostrings'         'bioconductor-pwalign'         'bioconductor-decipher'         'r-cli'         'r-config'         'r-crayon'         'r-dbi'         'r-dbplyr'         'r-dplyr'         'r-gggenes'         'r-ggplot2'         'r-glue'         'r-golem'         'r-jsonlite'         'r-later'         'r-msar'         'r-processx'         'r-purrr'         'r-reactable'         'r-readr'         'r-rsqlite'         'r-shiny'         'r-shinyjs'         'r-shinywidgets'         'r-stringr'         'r-htmlwidgets'         'r-svglite' &&     mamba clean -a -y
+#12 CACHED
+
+#13 [db-1 4/4] RUN cd / &&     blastdbcmd -db /opt/ribopilot/blastdb/2026.08.18/ribopilot_rrna       -taxids 33208 -outfmt "%a" > /tmp/taxids.check &&     test -s /tmp/taxids.check &&     rm -f /tmp/taxids.check
+#13 CACHED
+
+#14 [final 1/2] COPY docker/RiboPilot_*.tar.gz /pkg.tar.gz
+#14 DONE 0.3s
+
+#15 [final 2/2] RUN R -e 'remotes::install_local("/pkg.tar.gz", dependencies = FALSE, upgrade = "never")' &&     R -e 'library(RiboPilot)' &&     rm /pkg.tar.gz
+#15 0.677 
+#15 0.677 R version 4.4.3 (2025-02-28) -- "Trophy Case"
+#15 0.677 Copyright (C) 2025 The R Foundation for Statistical Computing
+#15 0.677 Platform: x86_64-conda-linux-gnu
+#15 0.677 
+#15 0.677 R is free software and comes with ABSOLUTELY NO WARRANTY.
+#15 0.677 You are welcome to redistribute it under certain conditions.
+#15 0.677 Type 'license()' or 'licence()' for distribution details.
+#15 0.677 
+#15 0.677 R is a collaborative project with many contributors.
+#15 0.677 Type 'contributors()' for more information and
+#15 0.677 'citation()' on how to cite R or R packages in publications.
+#15 0.677 
+#15 0.677 Type 'demo()' for some demos, 'help()' for on-line help, or
+#15 0.677 'help.start()' for an HTML browser interface to help.
+#15 0.677 Type 'q()' to quit R.
+#15 0.677 
+#15 0.767 > remotes::install_local("/pkg.tar.gz", dependencies = FALSE, upgrade = "never")
+#15 1.565 Running `R CMD build`...
+#15 2.076 * checking for file ‘/tmp/RtmpMkmMHJ/remotes756b79781/RiboPilot/DESCRIPTION’ ... OK
+#15 2.076 * preparing ‘RiboPilot’:
+#15 2.076 * checking DESCRIPTION meta-information ... OK
+#15 2.076 * checking for LF line-endings in source and make files and shell scripts
+#15 2.076 * checking for empty or unneeded directories
+#15 2.076 * building ‘RiboPilot_0.0.0.9016.tar.gz’
+#15 2.389 * installing *source* package ‘RiboPilot’ ...
+#15 2.389 ** using staged installation
+#15 2.396 ** R
+#15 2.428 ** inst
+#15 2.433 ** byte-compile and prepare package for lazy loading
+#15 5.928 ** help
+#15 5.967 *** installing help indices
+#15 5.995 *** copying figures
+#15 5.995 ** building package indices
+#15 6.116 ** installing vignettes
+#15 6.118 ** testing if installed package can be loaded from temporary location
+#15 6.522 ** testing if installed package can be loaded from final location
+#15 7.031 ** testing if installed package keeps a record of temporary installation path
+#15 7.037 * DONE (RiboPilot)
+#15 7.056 > 
+#15 7.056 > 
+#15 7.103 
+#15 7.103 R version 4.4.3 (2025-02-28) -- "Trophy Case"
+#15 7.103 Copyright (C) 2025 The R Foundation for Statistical Computing
+#15 7.103 Platform: x86_64-conda-linux-gnu
+#15 7.103 
+#15 7.103 R is free software and comes with ABSOLUTELY NO WARRANTY.
+#15 7.103 You are welcome to redistribute it under certain conditions.
+#15 7.103 Type 'license()' or 'licence()' for distribution details.
+#15 7.103 
+#15 7.103 R is a collaborative project with many contributors.
+#15 7.103 Type 'contributors()' for more information and
+#15 7.103 'citation()' on how to cite R or R packages in publications.
+#15 7.103 
+#15 7.103 Type 'demo()' for some demos, 'help()' for on-line help, or
+#15 7.103 'help.start()' for an HTML browser interface to help.
+#15 7.103 Type 'q()' to quit R.
+#15 7.103 
+#15 7.149 > library(RiboPilot)
+#15 7.461 Welcome to {RiboPilot}!
+#15 7.461 A Nextflow installation is needed to run the RiboPilot pipeline.
+#15 7.461 Please install Nextflow (>= 24.10.0) from https://www.nextflow.io/
+#15 7.462 > 
+#15 7.462 > 
+#15 DONE 7.6s
+
+#16 exporting to image
+#16 exporting layers
+#16 exporting layers 0.2s done
+#16 writing image sha256:c23f6ce5a7feb3ca9bc4a751cbb912c6cbba860b85d04e3abb9d371377bbb6fc 0.0s done
+#16 naming to docker.io/library/ribopilot:0.0.0.9016 0.0s done
+#16 DONE 0.3s
+Testing ribopilot:0.0.0.9016...
+RiboPilot 0.0.0.9016 loads OK
+Image looks sane (rDNA panel 2026.08.18 baked in).
+The push refers to repository [docker.io/macguigand/ribopilot]
+768bd32a5493: Preparing
+4593583f8320: Preparing
+b8bb27ea6f42: Preparing
+5f70bf18a086: Preparing
+154ac1eb2c68: Preparing
+2cb3b45676b0: Preparing
+ac0c254ac7f7: Preparing
+3185a2f53115: Preparing
+4b987224e273: Preparing
+e54e886a52c8: Preparing
+c402b11e9de2: Preparing
+b5f47452f722: Preparing
+d62b099191b8: Preparing
+fffe76c64ef2: Preparing
+2cb3b45676b0: Waiting
+ac0c254ac7f7: Waiting
+4b987224e273: Waiting
+3185a2f53115: Waiting
+d62b099191b8: Waiting
+e54e886a52c8: Waiting
+fffe76c64ef2: Waiting
+c402b11e9de2: Waiting
+b5f47452f722: Waiting
+b8bb27ea6f42: Layer already exists
+5f70bf18a086: Layer already exists
+154ac1eb2c68: Layer already exists
+2cb3b45676b0: Layer already exists
+ac0c254ac7f7: Layer already exists
+3185a2f53115: Layer already exists
+4b987224e273: Layer already exists
+e54e886a52c8: Layer already exists
+c402b11e9de2: Layer already exists
+b5f47452f722: Layer already exists
+d62b099191b8: Layer already exists
+fffe76c64ef2: Layer already exists
+768bd32a5493: Pushed
+4593583f8320: Pushed
+0.0.0.9016: digest: sha256:c4d97f62f961b99d1f53d00934785c1681941a99e57d18ffa1f745cb3662fec1 size: 3268
+Pushed macguigand/ribopilot:0.0.0.9016
+
+Projects can use it with:
+  new_project(..., executor = "docker", container = "macguigand/ribopilot:0.0.0.9016")
