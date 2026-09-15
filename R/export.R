@@ -242,7 +242,7 @@ risk_flags <- function(chimeric, ann, seq, chimera_label = NA_character_, chimer
 
 #' README text mapping the bundle to NCBI's two submission routes
 #' @noRd
-submission_readme <- function(label) {
+submission_readme <- function(label, itsx_check = TRUE) {
   paste(c(
     paste0("RiboPilot GenBank submission bundle: ", label),
     paste0("Generated ", format(Sys.time(), "%Y-%m-%d %H:%M")),
@@ -285,7 +285,25 @@ submission_readme <- function(label) {
     "  chimeric     the chimera detector or ITSx flagged mixed origins",
     "  gap_in_rDNA  an assembly-gap (N-run) falls inside the 18S..28S span",
     "  misassembly  features overlap or are out of 5'->3' order",
-    ""), collapse = "\n")
+    "",
+    if (itsx_check) c(
+    "FINAL ITSx CHECK",
+    "----------------",
+    "Stock ITSx (default parameters, no organism group, the Portal's setup) was",
+    paste0("run over ", label, ".fasta; see the itsx_check column in ", label, "_summary.csv"),
+    paste0("and the per-record detail in ", label, "_itsx_check.csv (raw ITSx output in"),
+    "itsx_check/). Empty means ITSx saw nothing to flag; not_run(...) means",
+    "ITSx was unavailable. Flags, and the Portal problem each maps to:",
+    "  itsx_chimeric             chimera: 5.8S overlaps SSU/LSU, or domains out of order",
+    "  itsx_gap_in_ITS           gap: an N-run inside the ITSx-detected ITS span",
+    "  itsx_no_5.8S / itsx_partial_5.8S   misassembly: 5.8S missing or truncated",
+    "  itsx_5.8S_overlaps_SSU / _LSU      misassembly: conserved domains collide",
+    "  itsx_ITS_too_long         misassembly: ITS region longer than ITSx allows",
+    "  itsx_no_ITS1 / itsx_no_ITS2        misassembly: a spacer could not be placed",
+    "  itsx_boundary_shift(...)  ITSx places an ITS boundary >25 bp from RiboPilot's",
+    "  itsx_origin(<group>)      ITSx assigns the record to a group other than the sample's lineage",
+    "  itsx_not_detected         ITSx found no ITS; the Portal cannot annotate it",
+    "")), collapse = "\n")
 }
 
 #' Per-unit export summary data.frame
@@ -470,7 +488,7 @@ feature_map_svg_text <- function(d, width = 900, height = 110) {
 #' `smry` is the already-computed [export_summary_df()] for those units.
 #' @noRd
 export_report_html <- function(con, units, out_html, label, smry = export_summary_df(con, units)) {
-  hdr <- c("seqid", "ID", "organism", "length", "n_features", "missing", "reviewed", "submission_risk")
+  hdr <- c("seqid", "ID", "organism", "length", "n_features", "missing", "reviewed", "submission_risk", "itsx_check")
   rows <- apply(smry[, intersect(hdr, names(smry)), drop = FALSE], 1, function(r) {
     paste0("<tr>", paste0("<td>", ifelse(is.na(r), "", r), "</td>", collapse = ""), "</tr>")
   })
@@ -517,14 +535,22 @@ export_report_html <- function(con, units, out_html, label, smry = export_summar
 #' @param export_opts Name of the saved FASTA-header configuration to use.
 #' @param fasta_header,fasta_header_marker Optional header templates
 #'   (\code{\{token\}} glue syntax) overriding the saved configuration.
-#' @return (invisibly) the group output directory.
+#' @param itsx_check Run stock ITSx (default parameters, no organism group) over
+#'   the exported records, the way NCBI's Submission Portal does, and report
+#'   what it would flag in the `itsx_check` column of the summary CSV and in
+#'   `<label>_itsx_check.csv`. Warn-only; needs ITSx on PATH (or in a conda env
+#'   named `ribopilot`), otherwise the column reads `not_run(...)`.
+#' @param itsx_cpu Threads for the ITSx check.
+#' @return (invisibly) the group output directory, with the summary data.frame
+#'   attached as attribute `summary`.
 #' @export
 export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
                           out_dir = file.path(path, "out"),
                           label = NULL, markers = TRUE, report = TRUE, template = NULL,
                           run_table2asn = FALSE, zip = TRUE,
                           export_opts = "default", fasta_header = NULL,
-                          fasta_header_marker = NULL) {
+                          fasta_header_marker = NULL, itsx_check = TRUE,
+                          itsx_cpu = 2L) {
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(path, ".sqlite"))
   on.exit(DBI::dbDisconnect(con), add = TRUE)
 
@@ -664,8 +690,24 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
       paste(sprintf("%s[%s]", smry$seqid[risky], smry$submission_risk[risky]), collapse = ", "),
       call. = FALSE)
   }
+  # final ITSx check: stock run, as the Portal does it (warn-only)
+  if (isTRUE(itsx_check)) {
+    chk <- itsx_export_check(con, units, gdir, label, cpu = itsx_cpu)
+    smry$itsx_check <- chk$itsx_check[match(smry$seqid, chk$seqid)]
+    not_run <- startsWith(smry$itsx_check, "not_run(")
+    if (any(not_run)) {
+      message("ITSx check skipped: ", sub("^not_run\\((.*)\\)$", "\\1", smry$itsx_check[not_run][1]))
+    }
+    flagged <- which(nzchar(smry$itsx_check) & !not_run)
+    if (length(flagged) > 0) {
+      warning("ITSx check flags on ", length(flagged), " of ", nrow(smry),
+        " unit(s) (still exported; see itsx_check column): ",
+        paste(sprintf("%s[%s]", smry$seqid[flagged], smry$itsx_check[flagged]), collapse = ", "),
+        call. = FALSE)
+    }
+  }
   utils::write.csv(smry, file.path(gdir, paste0(label, "_summary.csv")), row.names = FALSE)
-  writeLines(submission_readme(label), file.path(gdir, "README.txt"))
+  writeLines(submission_readme(label, itsx_check = isTRUE(itsx_check)), file.path(gdir, "README.txt"))
   # HTML report
   if (isTRUE(report)) {
     tryCatch(export_report(con, units,
@@ -703,6 +745,7 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
     on.exit(setwd(old), add = TRUE)
     utils::zip(zf, label, flags = "-rq")
   }
+  attr(gdir, "summary") <- smry
   invisible(gdir)
 }
 

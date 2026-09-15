@@ -18,7 +18,9 @@ export_bundle(
   zip = TRUE,
   export_opts = "default",
   fasta_header = NULL,
-  fasta_header_marker = NULL
+  fasta_header_marker = NULL,
+  itsx_check = TRUE,
+  itsx_cpu = 2L
 )
 }
 \arguments{
@@ -51,9 +53,18 @@ copied into the bundle as `<label>.sbt` so table2asn picks it up.}
 
 \item{fasta_header, fasta_header_marker}{Optional header templates
 (\code{\{token\}} glue syntax) overriding the saved configuration.}
+
+\item{itsx_check}{Run stock ITSx (default parameters, no organism group) over
+the exported records, the way NCBI's Submission Portal does, and report
+what it would flag in the `itsx_check` column of the summary CSV and in
+`<label>_itsx_check.csv`. Warn-only; needs ITSx on PATH (or in a conda env
+named `ribopilot`), otherwise the column reads `not_run(...)`.}
+
+\item{itsx_cpu}{Threads for the ITSx check.}
 }
 \value{
-(invisibly) the group output directory.
+(invisibly) the group output directory, with the summary data.frame
+  attached as attribute `summary`.
 }
 \description{
 Build a GenBank submission bundle for a set of samples (one export group)
