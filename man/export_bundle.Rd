@@ -57,8 +57,9 @@ copied into the bundle as `<label>.sbt` so table2asn picks it up.}
 \item{itsx_check}{Run stock ITSx (default parameters, no organism group) over
 the exported records, the way NCBI's Submission Portal does, and report
 what it would flag in the `itsx_check` column of the summary CSV and in
-`<label>_itsx_check.csv`. Warn-only; needs ITSx on PATH (or in a conda env
-named `ribopilot`), otherwise the column reads `not_run(...)`.}
+`<label>_itsx_check.csv`. Warn-only. ITSx runs inside the project's
+container (docker / singularity per `.config`); a conda-executor project
+uses the ITSx on PATH. Otherwise the column reads `not_run(...)`.}
 
 \item{itsx_cpu}{Threads for the ITSx check.}
 }

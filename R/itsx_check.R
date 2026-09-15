@@ -28,17 +28,49 @@ ITSX_LINEAGE_ORIGINS <- list(
   Euglenozoa = "E", Oomycota = "O", Rhizaria = "R", Bacillariophyta = "C",
   Phaeophyceae = "I", Haptophyta = "P", Apusozoa = "X", Parabasalia = "Y")
 
-#' Locate the ITSx binary
+#' How to invoke ITSx for a project: through its container, or from PATH
 #'
-#' PATH first; then a conda env named `ribopilot`, which is where the app is
-#' usually launched without the env active.
-#' @return Path to ITSx, or "" when not found.
+#' The pipeline's tools live in the project's container (docker / singularity
+#' per `.config`), so the check runs ITSx there. Only a project on the conda
+#' executor (no container enabled) falls back to an ITSx on PATH.
+#' @param project Project directory (holds `.config`).
+#' @param workdir Directory the container must see: the check's input FASTA
+#'   and output land here. Bind-mounted at the same path.
+#' @param which Lookup for executables (injectable for tests).
+#' @return list(bin, prefix, message): `bin` is the executable to call and
+#'   `prefix` the arguments that go before ITSx's own; `bin` is "" and
+#'   `message` says why when the check cannot run.
 #' @noRd
-itsx_check_bin <- function() {
-  bin <- unname(Sys.which("ITSx"))
-  if (nzchar(bin)) return(bin)
-  cand <- tryCatch(file.path(resolve_conda_bin("ribopilot"), "ITSx"), error = function(e) "")
-  if (nzchar(cand) && file.exists(cand)) cand else ""
+itsx_check_command <- function(project, workdir, which = Sys.which) {
+  cfg <- file.path(project, ".config")
+  lines <- if (file.exists(cfg)) readLines(cfg, warn = FALSE) else character(0)
+  engine <- config_container_engine(lines)
+  none <- function(msg) list(bin = "", prefix = character(0), message = msg)
+  if (is.na(engine)) {
+    bin <- unname(which("ITSx"))
+    if (!nzchar(bin)) return(none("ITSx not on PATH (no container enabled in .config)"))
+    return(list(bin = bin, prefix = character(0), message = ""))
+  }
+  img <- config_container_image(lines)
+  if (!nzchar(img)) return(none("no process.container image in .config"))
+  wd <- normalizePath(workdir, mustWork = FALSE)
+  if (identical(engine, "docker")) {
+    bin <- unname(which("docker"))
+    if (!nzchar(bin)) return(none("docker not on PATH"))
+    ids <- vapply(c("-u", "-g"), function(f) {
+      tryCatch(trimws(system2("id", f, stdout = TRUE, stderr = FALSE))[1], error = function(e) "")
+    }, character(1))
+    user <- if (all(nzchar(ids))) c("-u", paste(ids, collapse = ":")) else character(0)
+    return(list(bin = bin,
+      prefix = c("run", "--rm", user, "-v", paste0(wd, ":", wd), "-w", wd, img, "ITSx"),
+      message = ""))
+  }
+  w <- which(c("singularity", "apptainer"))
+  w <- w[nzchar(w)]
+  if (length(w) < 1) return(none("singularity/apptainer not on PATH"))
+  list(bin = unname(w[1]),
+    prefix = c("exec", "--bind", wd, "--pwd", wd, img, "ITSx"),
+    message = "")
 }
 
 #' Run stock ITSx on a FASTA
@@ -46,25 +78,28 @@ itsx_check_bin <- function() {
 #' Only output-shaping options are passed (`--preserve`, `--detailed_results`,
 #' `--save_regions`, `--graphical`, `--cpu`). Detection parameters are left at
 #' their defaults on purpose: that is what the Portal runs.
-#' @param fasta Input FASTA.
-#' @param out_prefix Output prefix (ITSx appends its own suffixes).
+#' @param fasta Input FASTA; must sit inside the directory `cmd` was built for.
+#' @param out_prefix Output prefix (ITSx appends its own suffixes); same rule.
 #' @param cpu Threads.
-#' @param bin ITSx binary.
+#' @param cmd list(bin, prefix, message) from [itsx_check_command()].
 #' @return list(ok, positions, results, problematic, no_detections, chimeric,
 #'   message); `ok = FALSE` and a message when ITSx could not run.
 #' @noRd
-run_itsx_check <- function(fasta, out_prefix, cpu = 2L, bin = itsx_check_bin()) {
+run_itsx_check <- function(fasta, out_prefix, cpu = 2L, cmd) {
   empty <- list(ok = FALSE, positions = character(0), results = character(0),
     problematic = character(0), no_detections = character(0), chimeric = character(0),
     message = "")
-  if (!nzchar(bin)) {
-    empty$message <- "ITSx not found on PATH"
+  if (!nzchar(cmd$bin %||% "")) {
+    empty$message <- cmd$message %||% "ITSx unavailable"
     return(empty)
   }
   dir.create(dirname(out_prefix), showWarnings = FALSE, recursive = TRUE)
   err <- tempfile("rp_itsx_check_err_")
   on.exit(unlink(err), add = TRUE)
-  st <- suppressWarnings(system2(bin, c("-i", shQuote(fasta), "-o", shQuote(out_prefix),
+  fasta <- normalizePath(fasta, mustWork = FALSE)
+  out_prefix <- file.path(normalizePath(dirname(out_prefix), mustWork = FALSE), basename(out_prefix))
+  st <- suppressWarnings(system2(cmd$bin, c(cmd$prefix,
+    "-i", shQuote(fasta), "-o", shQuote(out_prefix),
     "--preserve", "T", "--detailed_results", "T", "--save_regions", "none",
     "--graphical", "F", "--cpu", as.integer(cpu)),
     stdout = FALSE, stderr = err))
@@ -250,12 +285,13 @@ itsx_check_flags <- function(seqid, seq, ann, its, notes, res, prob,
 #' @param gdir Bundle directory.
 #' @param label Bundle label.
 #' @param cpu Threads for ITSx.
-#' @param bin ITSx binary ("" when unavailable).
+#' @param project Project directory; its `.config` decides the container.
+#' @param cmd Override for [itsx_check_command()] (tests).
 #' @return data.frame(seqid, itsx_check, itsx_origin, itsx_ITS1, itsx_5.8S,
 #'   itsx_ITS2, itsx_notes). `itsx_check` is "" when clean, the flag list when
 #'   not, or "not_run(<why>)" when ITSx could not be run.
 #' @noRd
-itsx_export_check <- function(con, units, gdir, label, cpu = 2L, bin = itsx_check_bin()) {
+itsx_export_check <- function(con, units, gdir, label, cpu = 2L, project = ".", cmd = NULL) {
   n <- nrow(units)
   blank <- data.frame(seqid = units$seqid, itsx_check = rep("", n),
     itsx_origin = rep(NA_character_, n), itsx_ITS1 = rep(NA_character_, n),
@@ -275,7 +311,8 @@ itsx_export_check <- function(con, units, gdir, label, cpu = 2L, bin = itsx_chec
   ok <- !is.na(seqs) & nzchar(seqs)
   writeLines(as.vector(rbind(paste0(">", units$seqid[ok]), seqs[ok])), fa)
 
-  out <- run_itsx_check(fa, file.path(cdir, "itsx"), cpu = cpu, bin = bin)
+  if (is.null(cmd)) cmd <- itsx_check_command(project, cdir)
+  out <- run_itsx_check(fa, file.path(cdir, "itsx"), cpu = cpu, cmd = cmd)
   if (!isTRUE(out$ok)) {
     blank$itsx_check <- sprintf("not_run(%s)", out$message)
     return(blank)

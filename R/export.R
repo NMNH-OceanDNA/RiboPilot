@@ -292,8 +292,9 @@ submission_readme <- function(label, itsx_check = TRUE) {
     "Stock ITSx (default parameters, no organism group, the Portal's setup) was",
     paste0("run over ", label, ".fasta; see the itsx_check column in ", label, "_summary.csv"),
     paste0("and the per-record detail in ", label, "_itsx_check.csv (raw ITSx output in"),
-    "itsx_check/). Empty means ITSx saw nothing to flag; not_run(...) means",
-    "ITSx was unavailable. Flags, and the Portal problem each maps to:",
+    "itsx_check/). It ran inside the project's container. Empty means ITSx saw",
+    "nothing to flag; not_run(...) means ITSx was unavailable. Flags, and the",
+    "Portal problem each maps to:",
     "  itsx_chimeric             chimera: 5.8S overlaps SSU/LSU, or domains out of order",
     "  itsx_gap_in_ITS           gap: an N-run inside the ITSx-detected ITS span",
     "  itsx_no_5.8S / itsx_partial_5.8S   misassembly: 5.8S missing or truncated",
@@ -538,8 +539,9 @@ export_report_html <- function(con, units, out_html, label, smry = export_summar
 #' @param itsx_check Run stock ITSx (default parameters, no organism group) over
 #'   the exported records, the way NCBI's Submission Portal does, and report
 #'   what it would flag in the `itsx_check` column of the summary CSV and in
-#'   `<label>_itsx_check.csv`. Warn-only; needs ITSx on PATH (or in a conda env
-#'   named `ribopilot`), otherwise the column reads `not_run(...)`.
+#'   `<label>_itsx_check.csv`. Warn-only. ITSx runs inside the project's
+#'   container (docker / singularity per `.config`); a conda-executor project
+#'   uses the ITSx on PATH. Otherwise the column reads `not_run(...)`.
 #' @param itsx_cpu Threads for the ITSx check.
 #' @return (invisibly) the group output directory, with the summary data.frame
 #'   attached as attribute `summary`.
@@ -692,7 +694,7 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
   }
   # final ITSx check: stock run, as the Portal does it (warn-only)
   if (isTRUE(itsx_check)) {
-    chk <- itsx_export_check(con, units, gdir, label, cpu = itsx_cpu)
+    chk <- itsx_export_check(con, units, gdir, label, cpu = itsx_cpu, project = path)
     smry$itsx_check <- chk$itsx_check[match(smry$seqid, chk$seqid)]
     not_run <- startsWith(smry$itsx_check, "not_run(")
     if (any(not_run)) {

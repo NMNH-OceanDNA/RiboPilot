@@ -367,8 +367,10 @@ Submission Portal evaluates rRNA-ITS submissions. Anything it would flag
 (chimeras, gaps inside the ITS, missing or partial 5.8S, an ITS boundary far
 from RiboPilot's own, an origin group that disagrees with the sample's lineage)
 lands in the `itsx_check` column of the summary CSV. Records are still exported;
-the column is there so you can look before you upload. It needs ITSx on PATH
-(or a conda env named `ribopilot`); otherwise the column reads `not_run(...)`.
+the column is there so you can look before you upload. ITSx runs inside the
+project's container (docker or singularity, whichever `.config` enables); a
+conda-executor project uses the ITSx on PATH. If neither is available the
+column reads `not_run(...)`.
 
 FASTA headers are yours to write. In the app's Export tab you edit two templates,
 one for the whole record and one for the per-marker files, referring to any

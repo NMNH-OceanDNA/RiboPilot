@@ -109,10 +109,50 @@ test_that("a record ITSx did not detect is reported as such and nothing else", {
     RiboPilot:::parse_itsx_notes(pos_clean), no_res, no_prob)$flags, "itsx_not_detected")
 })
 
-test_that("run_itsx_check reports not-run when the binary is missing", {
-  out <- RiboPilot:::run_itsx_check("x.fa", tempfile(), bin = "")
+test_that("run_itsx_check reports not-run when there is no way to call ITSx", {
+  out <- RiboPilot:::run_itsx_check("x.fa", tempfile(),
+    cmd = list(bin = "", prefix = character(0), message = "docker not on PATH"))
   expect_false(out$ok)
-  expect_match(out$message, "not found")
+  expect_equal(out$message, "docker not on PATH")
+})
+
+# fake executable lookup: everything named in `have` exists
+fake_which <- function(have) function(x) stats::setNames(ifelse(x %in% have, paste0("/bin/", x), ""), x)
+
+write_cfg <- function(dir, ...) writeLines(c(...), file.path(dir, ".config"))
+
+test_that("itsx_check_command runs ITSx through docker when .config enables it", {
+  dir <- withr::local_tempdir()
+  write_cfg(dir, "docker {", "  enabled = true", "}", "process {", "  container = 'ribopilot:test'", "}")
+  wd <- file.path(dir, "out", "itsx_check")
+  cmd <- RiboPilot:::itsx_check_command(dir, wd, which = fake_which("docker"))
+  expect_equal(cmd$bin, "/bin/docker")
+  expect_equal(cmd$prefix[1:2], c("run", "--rm"))
+  expect_true(any(grepl(paste0(":", wd, "$"), cmd$prefix)))   # workdir mounted at itself
+  expect_equal(utils::tail(cmd$prefix, 2), c("ribopilot:test", "ITSx"))
+  # engine enabled but nothing to run it with
+  expect_equal(RiboPilot:::itsx_check_command(dir, wd, which = fake_which("ITSx"))$bin, "")
+})
+
+test_that("itsx_check_command uses singularity or apptainer for a singularity config", {
+  dir <- withr::local_tempdir()
+  write_cfg(dir, "singularity {", "  enabled = true", "}", "process {", "  container = 'rp.sif'", "}")
+  wd <- file.path(dir, "wd")
+  cmd <- RiboPilot:::itsx_check_command(dir, wd, which = fake_which("apptainer"))
+  expect_equal(cmd$bin, "/bin/apptainer")
+  expect_equal(cmd$prefix, c("exec", "--bind", wd, "--pwd", wd, "rp.sif", "ITSx"))
+  expect_match(RiboPilot:::itsx_check_command(dir, wd, which = fake_which("ITSx"))$message, "singularity")
+})
+
+test_that("itsx_check_command falls back to PATH only for a container-less config", {
+  dir <- withr::local_tempdir()
+  write_cfg(dir, "process {", "  executor = 'local'", "}")
+  cmd <- RiboPilot:::itsx_check_command(dir, dir, which = fake_which("ITSx"))
+  expect_equal(cmd$bin, "/bin/ITSx")
+  expect_equal(cmd$prefix, character(0))
+  expect_match(RiboPilot:::itsx_check_command(dir, dir, which = fake_which("docker"))$message, "not on PATH")
+  # no .config at all behaves the same
+  expect_equal(RiboPilot:::itsx_check_command(tempfile(), dir, which = fake_which("ITSx"))$bin, "/bin/ITSx")
 })
 
 # Minimal project for the export wiring (same shape as test-export-units.R)
@@ -138,8 +178,7 @@ mk_itsx_project <- function() {
 test_that("export_bundle writes a not_run itsx_check column when ITSx is unavailable", {
   skip_if_not_installed("withr")
   dir <- mk_itsx_project()
-  withr::local_envvar(PATH = tempdir())   # no ITSx here
-  withr::local_envvar(HOME = tempdir())   # and no conda env to fall back to
+  withr::local_envvar(PATH = tempdir())   # no ITSx, docker, or singularity here
   g <- suppressWarnings(suppressMessages(export_bundle(dir, out_dir = file.path(dir, "out"),
     markers = FALSE, report = FALSE, zip = FALSE)))
   smry <- utils::read.csv(file.path(g, "export_summary.csv"), stringsAsFactors = FALSE)
@@ -160,14 +199,15 @@ test_that("itsx_check = FALSE leaves the column and README section out", {
   expect_false(grepl("FINAL ITSx CHECK", paste(readLines(file.path(g, "README.txt")), collapse = "\n")))
 })
 
-test_that("a real ITSx run over a genuine rDNA record produces a clean check", {
+test_that("a real ITSx run in the project's container over a genuine rDNA record is clean", {
   skip_if_not_installed("withr")
-  bin <- RiboPilot:::itsx_check_bin()
-  skip_if(!nzchar(bin), "ITSx not available")
   proj <- Sys.getenv("RIBOPILOT_TEST_PROJECT", "")
   skip_if(!nzchar(proj), "RIBOPILOT_TEST_PROJECT not set")
   src <- file.path(proj, ".sqlite")
   skip_if(!file.exists(src), "test project database not present")
+  skip_if(!file.exists(file.path(proj, ".config")), "test project has no .config")
+  probe <- RiboPilot:::itsx_check_command(proj, tempdir())
+  skip_if(!nzchar(probe$bin), probe$message)
   scon <- DBI::dbConnect(RSQLite::SQLite(), src)
   on.exit(DBI::dbDisconnect(scon), add = TRUE)
   u <- DBI::dbGetQuery(scon, "SELECT an.ID, an.path, an.scaffold FROM annotate an
@@ -180,6 +220,7 @@ test_that("a real ITSx run over a genuine rDNA record produces a clean check", {
     params = unname(as.list(u[1, ])))
 
   dir <- withr::local_tempdir()
+  file.copy(file.path(proj, ".config"), file.path(dir, ".config"))   # same container
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
   DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT, Taxon TEXT, lineage TEXT)")
   DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, sequence TEXT, length INT, topology TEXT, ignore INT)")
