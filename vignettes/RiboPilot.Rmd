@@ -367,7 +367,10 @@ Submission Portal evaluates rRNA-ITS submissions. Anything it would flag
 (chimeras, gaps inside the ITS, missing or partial 5.8S, an ITS boundary far
 from RiboPilot's own, an origin group that disagrees with the sample's lineage)
 lands in the `itsx_check` column of the summary CSV. Records are still exported;
-the column is there so you can look before you upload. ITSx runs inside the
+the column is there so you can look before you upload. The annotation step runs
+the same stock check on every scaffold, so the flags are already in the app's
+**ITSx Warnings** column (Assemble and Annotate tabs) long before export; the
+export run refreshes them against your curated annotation. ITSx runs inside the
 project's container (docker or singularity, whichever `.config` enables); a
 conda-executor project uses the ITSx on PATH. If neither is available the
 column reads `not_run(...)`.
@@ -375,9 +378,9 @@ column reads `not_run(...)`.
 FASTA headers are yours to write. In the app's Export tab you edit two templates,
 one for the whole record and one for the per-marker files, referring to any
 column of your mapping file as `{column_name}`. Templates are checked as you type
-and saved under a name, so a lab can keep one per submission style. Recognised
-GenBank metadata columns (specimen voucher, country, collection date and the
-rest) are still appended automatically.
+and saved under a name, so a lab can keep one per submission style. The template
+is the whole defline: GenBank source modifiers such as `[specimen_voucher={Voucher}]`
+or `[collection_date={collection_date}]` go in only if you write them.
 
 # The whole workflow at a glance
 

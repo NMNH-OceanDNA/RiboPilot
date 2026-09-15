@@ -62,46 +62,6 @@ set_export_group <- function(con, units, group) {
   invisible()
 }
 
-# Valid INSDC source modifiers that may be emitted as `[key=value]` deflines.
-# This is an ALLOWLIST, not a blocklist: only map-file columns whose (lowercased)
-# name is a real GenBank source modifier are emitted. A blocklist would leak the
-# internal bookkeeping columns on the `samples` table (taxonomy_switch,
-# taxonomy_lock, rank, ...) into every defline as bogus qualifiers, which
-# table2asn rejects. `organism`/`moltype` are emitted separately.
-SOURCE_MOD_ALLOW <- c(
-  # specimen / material
-  "specimen_voucher", "culture_collection", "bio_material", "isolate", "strain",
-  "clone", "cultivar", "ecotype", "haplotype", "breed", "variety", "serotype",
-  "serovar", "sub_species", "subspecies", "sub_strain", "isolation_source",
-  # geography / date
-  "country", "geo_loc_name", "lat_lon", "altitude", "collection_date",
-  "collected_by", "identified_by",
-  # organism biology
-  "host", "sex", "tissue_type", "dev_stage", "cell_type", "cell_line",
-  "organelle", "environmental_sample", "pop_variant", "biotype",
-  # free text
-  "note")
-
-#' Build GenBank source-modifier tags from a sample's metadata row
-#'
-#' Extra map-file columns are emitted as `[column=value]` defline modifiers, but
-#' only when the column name is a recognized INSDC source modifier
-#' ([SOURCE_MOD_ALLOW]); name the map-file columns after the source modifiers you
-#' want (e.g. `specimen_voucher`, `country`/`geo_loc_name`, `collection_date`).
-#' Unrecognized columns are ignored so internal columns cannot become qualifiers.
-#' @noRd
-source_modifiers <- function(row) {
-  mods <- character(0)
-  for (col in names(row)) {
-    key <- tolower(gsub("\\s+", "_", trimws(col)))
-    if (!(key %in% SOURCE_MOD_ALLOW)) next
-    v <- row[[col]][1]
-    if (is.null(v) || length(v) == 0 || is.na(v) || !nzchar(trimws(as.character(v)))) next
-    mods <- c(mods, sprintf("[%s=%s]", key, trimws(as.character(v))))
-  }
-  mods
-}
-
 # Minimum run of Ns annotated as an assembly_gap; shorter runs are treated as
 # ordinary ambiguous bases, not gaps (per INSDC convention).
 MIN_ASSEMBLY_GAP <- 10L
@@ -292,7 +252,8 @@ submission_readme <- function(label, itsx_check = TRUE) {
     "Stock ITSx (default parameters, no organism group, the Portal's setup) was",
     paste0("run over ", label, ".fasta; see the itsx_check column in ", label, "_summary.csv"),
     paste0("and the per-record detail in ", label, "_itsx_check.csv (raw ITSx output in"),
-    "itsx_check/). It ran inside the project's container. Empty means ITSx saw",
+    "itsx_check/). It ran inside the project's container, and the same flags",
+    "were written back to the app's ITSx Warnings column. Empty means ITSx saw",
     "nothing to flag; not_run(...) means ITSx was unavailable. Flags, and the",
     "Portal problem each maps to:",
     "  itsx_chimeric             chimera: 5.8S overlaps SSU/LSU, or domains out of order",
@@ -637,11 +598,10 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
 
   for (ui in seq_len(nrow(units))) {
     id <- units$ID[ui]; upath <- units$path[ui]; uscaf <- units$scaffold[ui]; seqid <- units$seqid[ui]
-    row <- DBI::dbGetQuery(con,
-      "SELECT asm.sequence AS seq, s.* FROM assemblies asm JOIN samples s ON asm.ID = s.ID
-       WHERE asm.ID = ? AND asm.path = ? AND asm.scaffold = ?", params = list(id, upath, uscaf))
-    seq <- row$seq[1]
-    defline <- paste(c(paste0(">", headers[ui]), source_modifiers(row)), collapse = " ")
+    seq <- DBI::dbGetQuery(con,
+      "SELECT sequence FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = list(id, upath, uscaf))$sequence[1]
+    defline <- paste0(">", headers[ui])
     writeLines(c(defline, seq), file.path(sdir, paste0(seqid, ".fasta")))
     is_partial <- identical(DBI::dbGetQuery(con,
       "SELECT partial FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?",

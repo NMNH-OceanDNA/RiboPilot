@@ -74,7 +74,7 @@ test_that("an extra mapping-file column is usable as a header token", {
   expect_true(all(grepl("site=Reef ", d, fixed = TRUE)))
 })
 
-test_that("source modifiers are still appended after the template", {
+test_that("the template is the whole defline: no metadata is appended", {
   dir <- mk_hdr_project()
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
   DBI::dbExecute(con, "ALTER TABLE samples ADD COLUMN specimen_voucher TEXT")
@@ -82,9 +82,8 @@ test_that("source modifiers are still appended after the template", {
   DBI::dbDisconnect(con)
   g <- hdr_bundle(dir, label = "mods", fasta_header = "{seqid}")
   d <- deflines(g, "mods")
-  expect_true(any(grepl(">S2 [specimen_voucher=USNM:1]", d, fixed = TRUE)))
-  # collection_site is not an INSDC modifier, so it must not leak into a defline
-  expect_false(any(grepl("collection_site", d, fixed = TRUE)))
+  expect_true(">S2" %in% d)
+  expect_false(any(grepl("specimen_voucher", d, fixed = TRUE)))
 })
 
 test_that("a template without {seqid} is rejected before anything is written", {
