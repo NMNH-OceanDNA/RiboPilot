@@ -1,8 +1,6 @@
 # Filter choices, shared by the pickers and the server-side visible-row mask so
 # the two cannot drift (that drift is what made "Hold" a no-op).
 LOCK_CHOICES <- c("Unlocked" = "0", "Locked" = "1")
-STATE_CHOICES <- c("Hold" = "0", "Ready" = "1", "In progress" = "4",
-  "Done" = "2", "Failed" = "3")
 
 #' Lock + state status filter pickers (mirrors MitoPilot); values match the
 #' assemble/annotate lock (0/1) and switch (0/1/2/3/4) codes. Each mode gets its
@@ -10,15 +8,9 @@ STATE_CHOICES <- c("Hold" = "0", "Ready" = "1", "In progress" = "4",
 #' and Annotate filters do not share a DOM id and leak across modes.
 #' @noRd
 filter_pickers <- function(mode) {
-  picker_opts <- list(`actions-box` = TRUE, `select-all-text` = "All",
-    `deselect-all-text` = "None", `selected-text-format` = "count > 0", width = "140px")
   shiny::tagList(
-    shinyWidgets::pickerInput(paste0(mode, "_lock_filter"), label = "Lock:", width = "140px",
-      choices = LOCK_CHOICES, selected = unname(LOCK_CHOICES),
-      multiple = TRUE, options = picker_opts),
-    shinyWidgets::pickerInput(paste0(mode, "_state_filter"), label = "State:", width = "140px",
-      choices = STATE_CHOICES, selected = unname(STATE_CHOICES),
-      multiple = TRUE, options = picker_opts)
+    mp_filter_picker(paste0(mode, "_lock_filter"), "Lock:", LOCK_CHOICES, width = "140px"),
+    mp_filter_picker(paste0(mode, "_state_filter"), "State:", STATE_CHOICES, width = "140px")
   )
 }
 
