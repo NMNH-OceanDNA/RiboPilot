@@ -79,13 +79,62 @@ modal_taxon_header <- function(id) {
       tags$span(style = "color:#999;", sprintf(" (input: %s)", s$Taxon[1])))
 }
 
+#' Prev / picker / next sample navigation for the detail modals
+#'
+#' The order is whatever the main table shows when the modal opens: sort,
+#' column filters, search, and the lock/state rows the filter CSS hides. The
+#' script snapshots it into input$nav_order; the server renders the controls.
+#' @param pfx "assemble" or "annotate": names the lock/state row classes.
+#' @noRd
+rp_sample_nav <- function(pfx) {
+  tagList(
+    uiOutput("sample_nav", inline = TRUE),
+    tags$script(HTML(sprintf(
+      "setTimeout(function(){
+         var tbl = document.getElementById('tbl');
+         var st = window.Reactable ? Reactable.getState('tbl') : null;
+         var rows = (st && st.sortedData) || [];
+         if (tbl) {
+           var probe = document.createElement('div'); tbl.appendChild(probe);
+           rows = rows.filter(function(r){
+             probe.className = 'rp-lock-' + r['%s_lock'] + ' rp-state-' + r['%s_switch'];
+             return getComputedStyle(probe).display !== 'none';
+           });
+           probe.remove();
+         }
+         var col = function(k){ return rows.map(function(r){ return r[k] == null ? '1' : String(r[k]); }); };
+         Shiny.setInputValue('nav_order', {ID: col('ID'), path: col('path'), scaffold: col('scaffold')}, {priority: 'event'});
+       }, 0);", pfx, pfx)))
+  )
+}
+
+#' Chimera check panel body, shared by the assemble and annotate modals
+#'
+#' Only one modal is open at a time, so both can render the same output ids;
+#' the server picks the unit from whichever modal is open.
+#' @noRd
+chimera_panel <- function() {
+  tagList(
+    div(style = "color:#666; font-size:0.85em; margin:2px 0 4px;",
+      "Overlapping 500 bp windows are BLASTed against the local rDNA panel. ",
+      "Neighbouring windows whose best hits share a class form one lineage segment. ",
+      "Segments from different classes, or reads clipped at one position, flag a chimera candidate. Warns only; never blocks export."),
+    div(style = "color:#666; font-size:0.85em; margin:2px 0 4px;", textOutput("chimera_db_source", inline = TRUE)),
+    plotOutput("chimera_plot", height = "300px"),
+    reactable::reactableOutput("chimera_segments"),
+    rp_details("All windows",
+      div(style = "color:#666; font-size:0.85em; margin:2px 0 4px;",
+        "One row per window: its best BLAST hit in the local panel, the hit identity, and the read evidence over that stretch."),
+      reactable::reactableOutput("chimera_windows"), open = FALSE))
+}
+
 #' Assemble details modal: scaffolds, their evidence, and keep/drop
 #' @noRd
 assemble_modal <- function(id) {
   modalDialog(
     title = paste0("Assemble - ", id),
     size = "l", easyClose = TRUE,
-    footer = mp_footer(dismiss = "Close"),
+    footer = tagList(rp_sample_nav("assemble"), mp_footer(dismiss = "Close")),
     modal_taxon_header(id),
     h5("Scaffolds", style = "margin:2px 0 4px;"),
     div(style = "color:#888; font-size:0.82em; margin-bottom:4px;",
@@ -114,17 +163,7 @@ assemble_modal <- function(id) {
         plotOutput("unit_coverage_plot", height = "140px")),
 
       rp_details(tagList("Chimera check for ", textOutput("hl_scaf_chim", inline = TRUE)), open = FALSE,
-        div(style = "color:#666; font-size:0.85em; margin:2px 0 4px;",
-          "Overlapping 500 bp windows are BLASTed against the local rDNA panel. ",
-          "Neighbouring windows whose best hits share a class form one lineage segment. ",
-          "Segments from different classes, or reads clipped at one position, flag a chimera candidate. Warns only; never blocks export."),
-        div(style = "color:#666; font-size:0.85em; margin:2px 0 4px;", textOutput("chimera_db_source", inline = TRUE)),
-        plotOutput("chimera_plot", height = "300px"),
-        reactable::reactableOutput("chimera_segments"),
-        rp_details("All windows",
-          div(style = "color:#666; font-size:0.85em; margin:2px 0 4px;",
-            "One row per window: its best BLAST hit in the local panel, the hit identity, and the read evidence over that stretch."),
-          reactable::reactableOutput("chimera_windows"), open = FALSE))),
+        chimera_panel())),
 
     # Only a supplied assembly has these: the contigs the rDNA search found but
     # did not carry forward. They never become assembly units, so this is the
@@ -300,13 +339,13 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
   modalDialog(
     title = paste0("Annotation Review - ", id, unit_lbl),
     size = "l", easyClose = FALSE,
-    footer = mp_footer(
+    footer = tagList(rp_sample_nav("annotate"), mp_footer(
       primary = actionButton("lock_and_close", "Lock & Close"), dismiss = "Close",
       extra = tagList(
         actionButton("mark_reviewed", "Mark reviewed", class = "btn-sm"),
         actionButton("mark_problematic", "Problem", class = "btn-sm"),
         actionButton("mark_partial", "Partial", class = "btn-sm"))
-    ),
+    )),
     modal_taxon_header(id),
     div(style = "margin:-2px 0 8px; display:flex; gap:6px; flex-wrap:wrap;",
       uiOutput("modal_status_badges", inline = TRUE)),
@@ -361,6 +400,8 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
     rp_details("Curation warnings", open = FALSE,
       uiOutput("curate_notes"),
       reactable::reactableOutput("flag_tbl")),
+
+    rp_details("Chimera check", open = FALSE, chimera_panel()),
 
     rp_details("Notes", open = FALSE,
       textAreaInput("annotate_notes", label = NULL, width = "100%",

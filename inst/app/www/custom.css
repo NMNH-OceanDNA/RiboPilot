@@ -691,3 +691,12 @@ a.mp-link:focus-visible {
   text-align: center;
   white-space: normal;
 }
+
+/* Footer sample navigation: prev, picker, next on one line, left of Close. */
+.mp-nav {
+  float: left;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.mp-nav select { width: 220px; }

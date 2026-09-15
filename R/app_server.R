@@ -451,6 +451,65 @@ app_server <- function(input, output, session) {
     show_workdirs(samples_data()$ID[i])
   })
 
+  # ---- sample navigation in the detail modals (prev / picker / next) ----
+  # Assemble rows have no path/scaffold; the modal script reports "1" for both.
+  nav_key <- function(d) paste(d$ID, d$path, d$scaffold, sep = "|")
+  nav_order <- reactive({
+    o <- input$nav_order
+    if (length(o$ID) == 0) return(NULL)
+    data.frame(ID = as.character(o$ID), path = as.character(o$path),
+      scaffold = as.character(o$scaffold), stringsAsFactors = FALSE)
+  })
+  nav_current <- function() {
+    if ((input$mode %||% "Assemble") == "Annotate") {
+      u <- sel_unit(); if (is.null(u)) NULL else nav_key(u)
+    } else {
+      id <- sel_id(); if (is.null(id)) NULL else paste(id, 1, 1, sep = "|")
+    }
+  }
+  output$sample_nav <- renderUI({
+    o <- nav_order(); cur <- nav_current(); req(o, cur)
+    keys <- nav_key(o); i <- match(cur, keys); req(!is.na(i))
+    labels <- if (any(duplicated(o$ID))) paste0(o$ID, " [", o$path, "/", o$scaffold, "]") else o$ID
+    arrow <- function(id, dir, off, title) {
+      b <- actionButton(id, NULL, icon = icon(paste0("chevron-", dir)), class = "btn-sm", title = title)
+      if (off) shinyjs::disabled(b) else b
+    }
+    # A plain select reported only on a user change: a bound input would
+    # re-send the old sample while the outgoing and incoming modals overlap.
+    picker <- tags$select(class = "form-control input-sm", `aria-label` = "Open another sample",
+      onchange = "Shiny.setInputValue('nav_pick', this.value, {priority: 'event'})",
+      lapply(seq_len(nrow(o)), function(k) {
+        tags$option(value = keys[k], selected = if (k == i) NA, labels[k])
+      }))
+    div(class = "mp-nav", title = sprintf("%d of %d in the table", i, nrow(o)),
+      arrow("nav_prev", "left", i == 1, "Previous sample in the table"),
+      picker,
+      arrow("nav_next", "right", i == nrow(o), "Next sample in the table"))
+  })
+  nav_to <- function(key) {
+    o <- nav_order(); req(o)
+    hit <- o[nav_key(o) == key, , drop = FALSE]
+    if (nrow(hit) != 1 || identical(key, nav_current())) return()
+    removeModal()
+    if ((input$mode %||% "Assemble") == "Annotate") {
+      u <- list(ID = hit$ID, path = as.integer(hit$path), scaffold = as.integer(hit$scaffold))
+      sel_id(u$ID); sel_unit(u)
+      showModal(annotate_modal(u$ID, u$path, u$scaffold))
+    } else {
+      sel_id(hit$ID)
+      showModal(assemble_modal(hit$ID))
+    }
+  }
+  nav_step <- function(by) {
+    o <- nav_order(); req(o)
+    i <- match(nav_current(), nav_key(o)) + by
+    if (!is.na(i) && i >= 1 && i <= nrow(o)) nav_to(nav_key(o[i, ]))
+  }
+  observeEvent(input$nav_prev, nav_step(-1L))
+  observeEvent(input$nav_next, nav_step(1L))
+  observeEvent(input$nav_pick, nav_to(input$nav_pick))
+
   # active mode's lock/state filter values (NULL for modes without pickers, i.e.
   # Taxonomy and Export)
   active_filters <- function() {
@@ -1597,8 +1656,12 @@ app_server <- function(input, output, session) {
     edit_tick(); u <- sel_unit(); req(u); plot_coverage(u$ID, u$path, u$scaffold)
   }, height = 128)
 
-  # Chimera panels live in the assemble modal and follow its highlighted scaffold.
+  # Chimera panels follow the annotate modal's unit, or the assemble modal's
+  # highlighted scaffold.
   hit_unit <- reactive({
+    if ((input$mode %||% "Assemble") == "Annotate") {
+      u <- sel_unit(); req(u); return(u)
+    }
     h <- sel_hit_unit(); id <- sel_id(); req(!is.null(h), id)
     list(ID = id, path = h$path, scaffold = h$scaffold)
   })

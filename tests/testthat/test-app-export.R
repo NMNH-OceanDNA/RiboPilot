@@ -165,3 +165,30 @@ test_that("exporting over an existing bundle asks before replacing it", {
     expect_true(file.exists(file.path(dir, "out", "export", "export", "export.fasta")))
   })
 })
+
+test_that("detail modal sample navigation steps through the table order", {
+  skip_if_not_installed("withr")
+  dir <- mk_export_project()
+  withr::local_dir(dir)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Annotate")
+    session$setInputs(ann_details = 1)
+    session$setInputs(nav_order = list(ID = c("S1", "S1"), path = c("1", "1"), scaffold = c("1", "2")))
+    settle(session)
+    expect_equal(sel_unit()$scaffold, 1L)
+    html <- output$sample_nav$html
+    expect_match(html, "chevron-left")
+    expect_match(html, "S1 [1/2]", fixed = TRUE)
+
+    session$setInputs(nav_next = 1)
+    settle(session)
+    expect_equal(sel_unit()$scaffold, 2L)
+    expect_match(output$sample_nav$html, "shinyjs-disabled\" id=\"nav_next\"")
+    expect_no_match(output$sample_nav$html, "shinyjs-disabled\" id=\"nav_prev\"")
+
+    session$setInputs(nav_pick = "S1|1|1")
+    settle(session)
+    expect_equal(sel_unit()$scaffold, 1L)
+  })
+})

@@ -39,6 +39,7 @@ fixture_fill_schema <- function(con) {
   add_col("assemblies", "triage_reason", "TEXT")
   add_col("assemblies", "triage_source", "TEXT")
   add_col("assemblies", "triage_rule", "TEXT")
+  add_col("assemblies", "source_contig", "TEXT")
   add_col("assemble", "triage_opts", "TEXT DEFAULT 'default'")
   add_col("annotate", "chimeric", "INTEGER")
   add_col("annotations", "model_coverage", "REAL")
