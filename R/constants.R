@@ -184,3 +184,186 @@ CHIMERA_COL_HELP <- list(
   depth_median = "Median read depth across the window.",
   clip_frac = "Largest fraction of reads soft-clipped at one position in the window; high values mark a read-level breakpoint."
 )
+
+# ---------------------------------------------------------------------------
+# Shared UI vocabularies (state registry, column names, colors, lock wording)
+# ---------------------------------------------------------------------------
+# constants.R collates last, so read these inside app_ui()/app_server() only;
+# never derive a top-level constant from them in another R/ file.
+
+#' Pipeline state registry. Order is lifecycle order, not numeric order.
+#' @noRd
+MP_STATE_META <- list(
+  `0` = list(label = "On hold",      icon = "fa fa-hourglass",
+             tip = "Skipped by the next run until you set it to Ready to run."),
+  `1` = list(label = "Ready to run", icon = "fa fa-play",
+             tip = "Queued: the next run will process it."),
+  `4` = list(label = "In progress",  icon = "fa fa-circle-half-stroke",
+             tip = "Being processed by the running pipeline, or queued for the next run."),
+  `2` = list(label = "Success",      icon = "fa fa-circle-check",
+             tip = "Finished without errors."),
+  `3` = list(label = "Failed",       icon = "fa fa-triangle-exclamation",
+             tip = "Stopped with an error - see Notes.")
+)
+
+#' Codes each module can display.
+#' @noRd
+MP_STATE_CODES <- list(
+  taxonomy = c("0", "1", "4", "2", "3"),
+  assemble = c("0", "1", "4", "2", "3"),
+  annotate = c("0", "1", "4", "2", "3")
+)
+
+#' Codes a user may set by hand.
+#' @noRd
+MP_STATE_SETTABLE <- c("0", "1", "4", "2", "3")
+
+#' Named code vector for a state picker: names are labels, values are codes.
+#' @noRd
+mp_state_choices <- function(module) {
+  mp_state_field(module, "label", named = TRUE)
+}
+
+#' Icon classes for a state column, in module code order.
+#' @noRd
+mp_state_icons <- function(module) mp_state_field(module, "icon")
+
+#' State labels, in module code order.
+#' @noRd
+mp_state_labels <- function(module) mp_state_field(module, "label")
+
+#' State tooltips, in module code order.
+#' @noRd
+mp_state_tips <- function(module) mp_state_field(module, "tip")
+
+#' Pull one field of MP_STATE_META for a module, keyed by code.
+#' @noRd
+mp_state_field <- function(module, field, named = FALSE) {
+  codes <- MP_STATE_CODES[[match.arg(module, names(MP_STATE_CODES))]]
+  out <- vapply(codes, function(k) MP_STATE_META[[k]][[field]], character(1))
+  if (!named) return(out)
+  names(codes) <- out
+  codes
+}
+
+#' State filter choices shared by the pickers and the visible-row mask.
+#' @noRd
+STATE_CHOICES <- mp_state_choices("assemble")
+
+#' Hex colors that cannot live in CSS because SweetAlert takes them as values.
+#' @noRd
+MP_COLORS <- c(primary = "#337ab7", danger = "#b02a37", grey = "#6c757d")
+
+#' Canonical table column headers, keyed by data-frame column name.
+#' @noRd
+MP_COL_NAMES <- c(
+  taxonomy_lock    = "Lock",
+  assemble_lock    = "Lock",
+  annotate_lock    = "Lock",
+  taxonomy_switch  = "State",
+  reference_switch = "State",
+  assemble_switch  = "State",
+  annotate_switch  = "State",
+  ID               = "ID",
+  path             = "Path #",
+  scaffold         = "Scaffold #",
+  Taxon            = "Taxon",
+  sci_name         = "Assigned Taxon",
+  taxid            = "TaxID",
+  rank             = "Rank",
+  match_type       = "Confidence",
+  reviewed         = "Reviewed",
+  problematic      = "Problematic",
+  partial          = "Partial",
+  n_flags          = "Warnings",
+  itsx_warnings    = "ITSx Warnings",
+  screen_verdict   = "Screen",
+  chimera_label    = "Chimera",
+  chimera_reason   = "Chimera Reason",
+  reference        = "Reference",
+  blast_species    = "BLAST Species",
+  blast_accession  = "BLAST Accession",
+  blast_pident     = "BLAST % Identity",
+  blast_qcovs      = "BLAST % Coverage",
+  blast_source     = "Hit Source",
+  details          = "Details",
+  output           = "Output",
+  n_features       = "# Features",
+  missing          = "Missing",
+  length           = "Length (bp)",
+  paths            = "# Paths",
+  units            = "# Units",
+  kept             = "# Kept",
+  sel_path         = "Selected Path",
+  best_score       = "Best Score",
+  export_group     = "Export Group",
+  pre_opts         = "Preprocess Opts.",
+  assemble_opts    = "Assembly Opts.",
+  blast_opts       = "BLAST Opts.",
+  annotate_opts    = "Annotate Opts.",
+  curate_opts      = "Curate Opts.",
+  notes            = "Notes",
+  annotate_notes   = "Notes",
+  time_stamp       = "Last Updated",
+  ref_group        = "Reference Group",
+  user_group       = "User Group",
+  set_by           = "Set By",
+  status           = "Status",
+  clade_name       = "Clade",
+  clade_rank       = "Rank",
+  n_samples        = "# Samples",
+  n_records        = "# GenBank Records",
+  database         = "Database",
+  fail_reason      = "Note",
+  action           = "Action"
+)
+
+#' Header tooltips for the columns whose name does not explain itself.
+#' Same keys as MP_COL_NAMES. Sentence case, no terminal period.
+#' @noRd
+MP_COL_TIPS <- c(
+  taxonomy_switch  = "Pipeline state; hover a row icon for its meaning",
+  assemble_switch  = "Pipeline state; hover a row icon for its meaning",
+  annotate_switch  = "Pipeline state; hover a row icon for its meaning",
+  taxonomy_lock    = "Locked rows are finished with this step",
+  assemble_lock    = "Locked rows are finished with this step",
+  annotate_lock    = "Locked rows are finished with this step",
+  path             = "Assembly path number for this unit",
+  scaffold         = "Scaffold number within the path",
+  sci_name         = "Taxon assigned from the NCBI taxdump",
+  match_type       = "How the taxon name was matched",
+  n_flags          = SCAFFOLD_COL_HELP$warnings,
+  itsx_warnings    = SCAFFOLD_COL_HELP$itsx_warnings,
+  screen_verdict   = SCAFFOLD_COL_HELP$screen_verdict,
+  chimera_label    = SCAFFOLD_COL_HELP$chimera,
+  pre_opts         = "Named set of read preprocessing parameters",
+  assemble_opts    = "Named set of assembly parameters",
+  blast_opts       = "Named set of BLAST search parameters",
+  annotate_opts    = "Named set of annotation parameters",
+  curate_opts      = "Named set of curation parameters",
+  kept             = "Scaffolds kept after triage; 0 means nothing to annotate",
+  sel_path         = "Assembly path chosen for annotation",
+  best_score       = "Highest scaffold score in this sample",
+  export_group     = "Named group this unit is exported with",
+  time_stamp       = "When this row was last changed",
+  n_records        = "GenBank records available for this clade"
+)
+
+# Lock vocabulary shared by the toolbar tooltip, the Lock column header and
+# the details-window banner.
+MP_UNIT <- c(taxonomy = "sample", reference = "group", assemble = "sample",
+             annotate = "unit", export = "unit")
+MP_UNITS <- c(taxonomy = "samples", reference = "groups", assemble = "samples",
+              annotate = "units", export = "units")
+MP_NEXT <- c(taxonomy = "Assemble", assemble = "Annotation Review", annotate = "Export")
+MP_LOCK_DEF <- function(mod = c("taxonomy", "assemble", "annotate")) {
+  mod <- match.arg(mod)
+  sprintf(
+    paste(
+      "Locked %s are finished with this step: their options cannot be changed,",
+      "the next update will not re-run them, and they move on to %s.",
+      "You can unlock at any time."
+    ),
+    MP_UNITS[[mod]], MP_NEXT[[mod]]
+  )
+}

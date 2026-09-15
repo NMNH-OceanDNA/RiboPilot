@@ -1,9 +1,25 @@
+window.MP_SAMPLE_TABLES = '#tbl, .mp-sample-table';
+
+// One help affordance: every [data-toggle="mp-popover"] on the page (modals
+// and dynamically rendered UI included) opens its data-content in a
+// Bootstrap 3 popover on click or keyboard focus.
+$( document ).ready(function(){
+  if (!$.fn.popover) return;
+  $(document.body).popover({
+    selector: '[data-toggle="mp-popover"]',
+    trigger: 'click focus',
+    placement: 'auto right',
+    container: 'body',
+    html: true
+  });
+});
+
 // Update horizontal scroll position
 $( document ).ready(function(){
   Shiny.addCustomMessageHandler('hScroll', function(params) {
     // console.log(params.id)
     var elmnt = document.getElementById(params.id);
-    elmnt.scrollLeft = params.px;
+    if (elmnt) elmnt.scrollLeft = params.px;
   });
 });
 
@@ -117,7 +133,7 @@ $( document ).ready(function(){
 // (shows every filtered row). A MutationObserver re-adds it after reactable
 // re-renders the select.
 $( document ).ready(function(){
-  var GATED_ALL = '#assemble-table, #annotate-table, #export-table';
+  var GATED_ALL = window.MP_SAMPLE_TABLES;
   var ALL_PAGE_SIZE = 1000000;
 
   function addAllOption(select) {
@@ -146,9 +162,7 @@ $( document ).ready(function(){
 // every row between the anchor and the clicked row by programmatically
 // clicking their selection checkboxes. Additive only (never deselects).
 $( document ).ready(function(){
-  // Restrict to the Assemble / Annotate / Export sample tables (output id
-  // "table" namespaced by module: assemble_server("assemble"), etc.).
-  var GATED = '#assemble-table, #annotate-table, #export-table';
+  var GATED = window.MP_SAMPLE_TABLES;
   var anchors = {}; // per-table anchor index, keyed by table element id
 
   // Rows on the current page that carry a selection checkbox, in visual
@@ -199,4 +213,12 @@ $( document ).ready(function(){
       anchors[id] = idx;                      // plain click sets a new anchor
     }
   }, true);
+});
+
+// Name the current step in the browser tab.
+$(document).on('shiny:inputchanged', function(e) {
+  if (e.name === 'mode' && e.value) document.title = 'RiboPilot - ' + e.value;
+});
+$(document).on('shiny:connected', function() {
+  document.title = 'RiboPilot - ' + ($('#mode input:checked').val() || $('#mode').val() || 'Taxonomy');
 });

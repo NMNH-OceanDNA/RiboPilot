@@ -18,8 +18,8 @@ opts_help <- function(..., href = NULL, link_text = "learn more", id = NULL,
   margin_top <- if (nested) "2px" else "-6px"
   shiny::tags$p(
     id = id,
-    class = "text-muted",
-    style = paste0("margin-top: ", margin_top, "; margin-bottom: 14px; font-size: 0.85em;"),
+    class = "text-muted mp-help-text",
+    style = paste0("margin-top: ", margin_top, "; margin-bottom: 14px;"),
     inner
   )
 }

@@ -35,7 +35,7 @@ app_server <- function(input, output, session) {
       shinyWidgets::pickerInput("wd_sample", "Sample", choices = ids, selected = presel,
         options = list(`live-search` = TRUE)),
       div(style = "max-height:60vh; overflow:auto;", reactable::reactableOutput("wd_tbl")),
-      footer = modalButton("Close")))
+      footer = mp_footer(dismiss = "Close")))
   }
   observeEvent(input$workdirs_btn, show_workdirs())
   wd_rows <- reactive({
@@ -57,7 +57,8 @@ app_server <- function(input, output, session) {
       compact = TRUE, resizable = TRUE, defaultPageSize = 25, wrap = FALSE,
       columns = list(
         status = reactable::colDef(html = TRUE, width = 80, cell = rt_dynamicIcon(
-          c(success = "fa fa-circle-check", failed = "fa fa-triangle-exclamation"))),
+          c(success = "fa fa-circle-check mp-fg-success", failed = "fa fa-triangle-exclamation mp-fg-danger"),
+          labels = c(success = "Success", failed = "Failed"))),
         on_disk = reactable::colDef(name = "On disk", width = 80),
         open = reactable::colDef(name = "", width = 60, html = TRUE, cell = rt_link("wd_open")),
         workdir = reactable::colDef(name = "Work directory (select to copy)",
@@ -77,13 +78,21 @@ app_server <- function(input, output, session) {
     }
   })
 
-  # selection count (feedback before a bulk action) + CSV export of the table
-  output$n_selected <- renderText({
-    n <- length(selected_ids())
-    # Reference rows are clade groups, not samples, so say which
-    unit <- if (identical(input$mode, "Reference")) "group(s) selected" else "selected"
-    if (n == 0) "" else paste(n, unit)
+  output$app_header <- renderUI(div(class = "mp-header",
+    span(class = "mp-app-name", "RiboPilot"),
+    span(class = "mp-app-ver", paste0("v", utils::packageVersion("RiboPilot"))),
+    span(class = "mp-proj", title = app_project(), basename(app_project())),
+    a(class = "mp-help", href = "https://github.com/dmacguigan/RiboPilot",
+      target = "_blank", rel = "noopener", "Help")))
+  # row-count line above the table + CSV export of the table
+  output$table_status <- renderUI({
+    d <- samples_data()
+    mode <- input$mode %||% "Taxonomy"
+    noun <- if (mode == "Reference" && ref_view() == "Groups") "group" else MP_UNIT[[tolower(mode)]]
+    mp_table_status(sum(visible_mask()), nrow(d), length(selected_ids()), noun)
   })
+  observe(shinyjs::toggleState(selector = ".mp-needs-selection",
+    condition = length(selected_ids()) > 0))
   output$table_csv <- downloadHandler(
     filename = function() paste0(basename(app_project()), "_",
       tolower(input$mode %||% "table"), ".csv"),
@@ -215,87 +224,85 @@ app_server <- function(input, output, session) {
     multi_unit <- all(c("path", "scaffold") %in% names(d)) &&
       nrow(unique(d[, c("ID", "path", "scaffold")])) > length(unique(d$ID))
 
+    cd <- function(f, ...) reactable::colDef(name = mp_col_name(f), header = mp_col_header(f), ...)
     cols <- list(
-      ID = reactable::colDef(name = "ID", minWidth = 130, sticky = "left", html = TRUE, cell = rt_link("open_detail")),
-      path = reactable::colDef(name = "Path", width = 60, show = multi_unit),
-      scaffold = reactable::colDef(name = "Scaf", width = 60, show = multi_unit),
-      Taxon = reactable::colDef(name = "Taxon", minWidth = 140, sticky = "left", html = TRUE, cell = rt_longtext()),
-      sci_name = reactable::colDef(name = "Assigned Taxon", minWidth = 200, html = TRUE,
-        cell = rt_taxid_link()),
+      ID = cd("ID", width = mp_fit_width(d$ID), sticky = "left", html = TRUE, cell = rt_link("open_detail")),
+      path = cd("path", width = 70, align = "center", show = multi_unit),
+      scaffold = cd("scaffold", width = 90, align = "center", show = multi_unit),
+      Taxon = cd("Taxon", minWidth = 140, sticky = "left", html = TRUE, cell = rt_longtext()),
+      sci_name = cd("sci_name", minWidth = 200, html = TRUE, cell = rt_taxid_link()),
       taxid = reactable::colDef(show = FALSE),
-      rank = reactable::colDef(name = "Rank", minWidth = 90, html = TRUE, cell = rt_longtext()),
-      match_type = reactable::colDef(name = "Confidence", minWidth = 110, html = TRUE,
+      rank = cd("rank", minWidth = 90, html = TRUE, cell = rt_longtext()),
+      match_type = cd("match_type", minWidth = 110, html = TRUE, align = "center",
         cell = rt_confidence_badge()),
-      reviewed = reactable::colDef(name = "Reviewed", html = TRUE, cell = rt_bool_badge(hide_no = TRUE)),
-      problematic = reactable::colDef(name = "Problem", width = 90, html = TRUE, cell = rt_bool_badge(hide_no = TRUE)),
-      partial = reactable::colDef(name = "Partial", width = 80, html = TRUE, cell = rt_bool_badge(hide_no = TRUE)),
-      n_flags = reactable::colDef(name = "Warnings", width = 100, html = TRUE, filterable = FALSE,
-        header = rt_help_header("Warnings", SCAFFOLD_COL_HELP$warnings), cell = rt_flag_badge()),
+      reviewed = cd("reviewed", html = TRUE, align = "center", cell = rt_bool_badge(hide_no = TRUE)),
+      problematic = cd("problematic", width = 110, html = TRUE, align = "center",
+        cell = rt_bool_badge(hide_no = TRUE, yes_tone = "warning")),
+      partial = cd("partial", width = 80, html = TRUE, align = "center",
+        cell = rt_bool_badge(hide_no = TRUE, yes_tone = "warning")),
+      n_flags = cd("n_flags", width = 100, html = TRUE, filterable = FALSE, align = "center",
+        cell = rt_flag_badge()),
       annotate_notes = reactable::colDef(show = FALSE),
-      itsx_warnings = reactable::colDef(name = "ITSx Warnings", minWidth = 130, html = TRUE,
-        header = rt_help_header("ITSx Warnings", SCAFFOLD_COL_HELP$itsx_warnings), cell = rt_itsx_badge()),
-      screen_verdict = reactable::colDef(name = "Screen", width = 110, html = TRUE,
-        header = rt_help_header("Screen", SCAFFOLD_COL_HELP$screen_verdict), cell = rt_screen_badge()),
-      chimera_label = reactable::colDef(name = "Chimera", width = 100, html = TRUE,
-        header = rt_help_header("Chimera", SCAFFOLD_COL_HELP$chimera), cell = rt_chimera_badge()),
+      itsx_warnings = cd("itsx_warnings", minWidth = 130, html = TRUE, cell = rt_itsx_badge()),
+      screen_verdict = cd("screen_verdict", width = 110, html = TRUE, align = "center",
+        cell = rt_screen_badge()),
+      chimera_label = cd("chimera_label", width = 100, html = TRUE, align = "center",
+        cell = rt_chimera_badge()),
       chimera_reason = reactable::colDef(show = FALSE),
-      reference = reactable::colDef(name = "Reference", html = TRUE, cell = rt_ncbi_link()),
-      blast_species = reactable::colDef(name = "BLAST Hit", minWidth = 160, html = TRUE, cell = rt_longtext()),
-      blast_accession = reactable::colDef(name = "Accession", minWidth = 110, html = TRUE, cell = rt_ncbi_link()),
-      blast_pident = reactable::colDef(name = "BLAST %ID", width = 90),
-      blast_qcovs = reactable::colDef(name = "BLAST Cov", width = 90),
-      blast_source = reactable::colDef(name = "Hit source", width = 100, html = TRUE,
+      reference = cd("reference", html = TRUE, cell = rt_ncbi_link()),
+      blast_species = cd("blast_species", minWidth = 160, html = TRUE, cell = rt_longtext()),
+      blast_accession = cd("blast_accession", minWidth = 130, html = TRUE, cell = rt_ncbi_link()),
+      blast_pident = cd("blast_pident", width = 130),
+      blast_qcovs = cd("blast_qcovs", width = 140),
+      blast_source = cd("blast_source", width = 100, html = TRUE, align = "center",
         cell = rt_blast_source_badge()),
-      details = reactable::colDef(name = "", width = 80, align = "center", filterable = FALSE, html = TRUE,
-        cell = rt_icon_bttn_text(det_input, "fas fa-square-arrow-up-right fa-xs", det_tip)),
-      output = reactable::colDef(name = "", width = 80, align = "center", filterable = FALSE, html = TRUE,
-        cell = rt_icon_bttn_text(out_input, "fas fa-folder-open fa-xs", "Work / output directories")),
-      n_features = reactable::colDef(name = "Features", width = 90, html = TRUE),
-      missing = reactable::colDef(name = "Missing", minWidth = 120, html = TRUE, cell = rt_longtext()),
-      length = reactable::colDef(name = "Length", width = 90),
-      paths = reactable::colDef(name = "Paths", width = 80),
-      units = reactable::colDef(name = "Units", width = 70),
-      kept = reactable::colDef(name = "Kept", width = 70, html = TRUE,
-        cell = rt_kept_count()),
-      sel_path = reactable::colDef(name = "Selected Path", width = 110),
-      best_score = reactable::colDef(name = "Best Score", width = 100),
-      export_group = reactable::colDef(name = "Group", minWidth = 110, html = TRUE, cell = rt_longtext()),
-      pre_opts = reactable::colDef(name = "Preprocess", minWidth = 100, html = TRUE,
-        filterable = FALSE, cell = rt_link("set_pre_opts")),
-      assemble_opts = reactable::colDef(name = "Assemble Opts", minWidth = 100, html = TRUE,
-        filterable = FALSE, cell = rt_link("set_assemble_opts")),
-      blast_opts = reactable::colDef(name = "BLAST", minWidth = 85, html = TRUE,
-        filterable = FALSE, cell = rt_link("set_blast_opts")),
-      annotate_opts = reactable::colDef(name = "Annotate Opts", minWidth = 100, html = TRUE,
-        filterable = FALSE, cell = rt_link("set_annotate_opts")),
-      curate_opts = reactable::colDef(name = "Curate", minWidth = 90, html = TRUE,
-        filterable = FALSE, cell = rt_link("set_curate_opts")),
-      annotate_lock = reactable::colDef(name = "", width = 34, align = "center", filterable = FALSE,
-        html = TRUE, cell = rt_dynamicIcon(c(`0` = "fa fa-lock-open", `1` = "fa fa-lock"))),
-      notes = reactable::colDef(name = "Notes", minWidth = 160, html = TRUE, cell = rt_longtext()),
-      time_stamp = reactable::colDef(name = "Last Updated", width = 150, filterable = FALSE,
-        cell = rt_ts_date())
+      details = cd("details", width = 80, align = "center", filterable = FALSE, sortable = FALSE,
+        sticky = "right", class = "mp-actions-sticky", headerClass = "mp-actions-sticky", html = TRUE,
+        cell = rt_icon_bttn_text(det_input, "fas fa-square-arrow-up-right fa-xs", title = det_tip)),
+      output = cd("output", width = 80, align = "center", filterable = FALSE, sortable = FALSE,
+        sticky = "right", class = "mp-actions-sticky", headerClass = "mp-actions-sticky", html = TRUE,
+        cell = rt_icon_bttn_text(out_input, "fas fa-folder-open fa-xs", title = "Work / output directories")),
+      n_features = cd("n_features", width = 90, html = TRUE),
+      missing = cd("missing", minWidth = 120, html = TRUE, cell = rt_longtext()),
+      length = cd("length", width = 100),
+      paths = cd("paths", width = 80),
+      units = cd("units", width = 70),
+      kept = cd("kept", width = 70, html = TRUE, cell = rt_kept_count()),
+      sel_path = cd("sel_path", width = 110),
+      best_score = cd("best_score", width = 100),
+      export_group = cd("export_group", minWidth = 110, html = TRUE, cell = rt_longtext()),
+      pre_opts = cd("pre_opts", minWidth = 120, html = TRUE, filterable = FALSE,
+        cell = rt_link("set_pre_opts", lock_col = "assemble_lock")),
+      assemble_opts = cd("assemble_opts", minWidth = 120, html = TRUE, filterable = FALSE,
+        cell = rt_link("set_assemble_opts", lock_col = "assemble_lock")),
+      blast_opts = cd("blast_opts", minWidth = 100, html = TRUE, filterable = FALSE,
+        cell = rt_link("set_blast_opts", lock_col = "assemble_lock")),
+      annotate_opts = cd("annotate_opts", minWidth = 120, html = TRUE, filterable = FALSE,
+        cell = rt_link("set_annotate_opts", lock_col = "assemble_lock")),
+      curate_opts = cd("curate_opts", minWidth = 100, html = TRUE, filterable = FALSE,
+        cell = rt_link("set_curate_opts", lock_col = "assemble_lock")),
+      annotate_lock = cd("annotate_lock", width = 34, align = "center", filterable = FALSE,
+        html = TRUE, cell = rt_lock_icon()),
+      notes = cd("notes", minWidth = 160, html = TRUE, class = "mp-note-cell", cell = rt_longtext()),
+      time_stamp = cd("time_stamp", width = 150, filterable = FALSE, cell = rt_ts_date())
     )
     if (lock_col %in% names(d)) {
-      cols[[lock_col]] <- reactable::colDef(name = "", sticky = "left", html = TRUE, width = 34,
-        align = "center", filterable = FALSE,
-        cell = rt_dynamicIcon(c(`0` = "fa fa-lock-open", `1` = "fa fa-lock")))
+      cols[[lock_col]] <- cd(lock_col, sticky = "left", html = TRUE, width = 34,
+        align = "center", filterable = FALSE, cell = rt_lock_icon())
     }
-    if (state_col %in% names(d)) {
-      cols[[state_col]] <- reactable::colDef(name = "", sticky = "left", html = TRUE, width = 32,
+    if (state_col %in% names(d) && mm$pfx %in% names(MP_STATE_CODES)) {
+      cols[[state_col]] <- cd(state_col, sticky = "left", html = TRUE, width = 32,
         align = "center", filterable = FALSE,
-        cell = rt_dynamicIcon(c(`0` = "fa fa-hourglass", `1` = "fa fa-person-running",
-          `2` = "fa fa-circle-check", `3` = "fa fa-triangle-exclamation",
-          `4` = "fa fa-circle-half-stroke")))
+        cell = rt_dynamicIcon(icons = mp_state_icon_classes(mm$pfx), labels = mp_state_titles(mm$pfx)))
     }
     if (mode == "Reference" && ref_view() == "Samples") {
-      cols[["ID"]] <- reactable::colDef(name = "ID", sticky = "left", minWidth = 120)
-      cols[["Taxon"]] <- reactable::colDef(name = "Taxon", minWidth = 160)
-      cols[["sci_name"]] <- reactable::colDef(name = "Scientific Name", minWidth = 160)
-      cols[["ref_group"]] <- reactable::colDef(name = "Reference Group", minWidth = 160)
-      cols[["clade_rank"]] <- reactable::colDef(name = "Rank", width = 90)
-      cols[["user_group"]] <- reactable::colDef(name = "User Group", width = 110)
-      cols[["set_by"]] <- reactable::colDef(name = "Set By", width = 90)
+      cols[["ID"]] <- cd("ID", sticky = "left", width = mp_fit_width(d$ID))
+      cols[["Taxon"]] <- cd("Taxon", minWidth = 160)
+      cols[["sci_name"]] <- cd("sci_name", minWidth = 160)
+      cols[["ref_group"]] <- cd("ref_group", minWidth = 160)
+      cols[["clade_rank"]] <- cd("clade_rank", width = 90)
+      cols[["user_group"]] <- cd("user_group", width = 110)
+      cols[["set_by"]] <- cd("set_by", width = 90)
       cols[[state_col]] <- reactable::colDef(show = FALSE)
     } else if (mode == "Reference") {
       # The group key is the clade name lowercased (ref_id_from_name), so showing
@@ -303,18 +310,18 @@ app_server <- function(input, output, session) {
       # selection, the CSV and the row classes, and stays visible in the database
       # path, which is named after it.
       cols[["ID"]] <- reactable::colDef(show = FALSE)
-      cols[["status"]] <- reactable::colDef(name = "Status", sticky = "left", minWidth = 150)
-      cols[["clade_name"]] <- reactable::colDef(name = "Clade", minWidth = 160, sticky = "left",
+      cols[["status"]] <- cd("status", sticky = "left", minWidth = 150)
+      cols[["clade_name"]] <- cd("clade_name", minWidth = 160, sticky = "left",
         html = TRUE, cell = rt_link("ref_open_clade"))
-      cols[["clade_rank"]] <- reactable::colDef(name = "Rank", width = 90)
-      cols[["n_samples"]] <- reactable::colDef(name = "Samples", width = 90)
-      cols[["n_records"]] <- reactable::colDef(name = "GenBank records", width = 140)
-      cols[["database"]] <- reactable::colDef(name = "Database", minWidth = 240, html = TRUE,
-        cell = rt_longtext())
-      cols[["fail_reason"]] <- reactable::colDef(name = "Note", minWidth = 200, html = TRUE,
+      cols[["clade_rank"]] <- cd("clade_rank", width = 90)
+      cols[["n_samples"]] <- cd("n_samples", width = 100)
+      cols[["n_records"]] <- cd("n_records", width = 160)
+      cols[["database"]] <- cd("database", minWidth = 240, html = TRUE, cell = rt_longtext())
+      cols[["fail_reason"]] <- cd("fail_reason", minWidth = 200, html = TRUE,
         cell = rt_link("ref_open_log"))
       # the row's own verb, named for the state it is in
-      cols[["action"]] <- reactable::colDef(name = "", minWidth = 150, sticky = "right",
+      cols[["action"]] <- cd("action", minWidth = 150, sticky = "right", align = "center",
+        class = "mp-actions-sticky", headerClass = "mp-actions-sticky",
         html = TRUE, filterable = FALSE, cell = rt_link("ref_row_action"))
       # the state still drives the row class, so it stays in the data, unshown
       cols[[state_col]] <- reactable::colDef(show = FALSE)
@@ -377,6 +384,7 @@ app_server <- function(input, output, session) {
       # consistent header capitalization (Title Case names above) + left alignment
       defaultColDef = reactable::colDef(align = "left", headerVAlign = "center"),
       rowStyle = rt_highlight_row(), rowClass = rowclass,
+      # column order comes from samples_data()
       columns = keep_cols
     )
   })
@@ -556,10 +564,7 @@ app_server <- function(input, output, session) {
   set_flag <- function(sql) {
     if (identical(input$mode %||% "Assemble", "Annotate")) return(set_unit_flag(sql))
     ids <- selected_ids()
-    if (length(ids) == 0) {
-      rp_alert("No samples selected.", type = "warning")
-      return()
-    }
+    if (!need_selection(length(ids))) return()
     con <- app_con()
     on.exit(DBI::dbDisconnect(con))
     for (id in ids) DBI::dbExecute(con, sql, params = list(id))
@@ -570,13 +575,11 @@ app_server <- function(input, output, session) {
       idx <- which(isolate(samples_data())$ID %in% ids)
       if (length(idx) > 0) reactable::updateReactable("tbl", selected = idx)
     }, once = TRUE)
-    rp_alert(paste("Updated", length(ids), "sample(s)."), type = "message")
+    mp_toast(paste(mp_n(length(ids), "sample"), "updated."))
   }
   set_unit_flag <- function(sql) {
     u <- selected_units()
-    if (is.null(u) || nrow(u) == 0) {
-      rp_alert("No units selected.", type = "warning"); return()
-    }
+    if (!need_selection(NROW(u))) return()
     usql <- sub("WHERE ID = \\?", "WHERE ID = ? AND path = ? AND scaffold = ?", sql)
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
     for (i in seq_len(nrow(u))) DBI::dbExecute(con, usql, params = list(u$ID[i], u$path[i], u$scaffold[i]))
@@ -588,7 +591,7 @@ app_server <- function(input, output, session) {
       idx <- which(paste(d$ID, pp, ss) %in% paste(u$ID, u$path, u$scaffold))
       if (length(idx) > 0) reactable::updateReactable("tbl", selected = idx)
     }, once = TRUE)
-    rp_alert(paste("Updated", nrow(u), "unit(s)."), type = "message")
+    mp_toast(paste(mp_n(nrow(u), "unit"), "updated."))
   }
   observeEvent(input$lock_btn, {  # toggle lock on selected
     mm <- mode_meta(input$mode)
@@ -597,7 +600,7 @@ app_server <- function(input, output, session) {
     # Guard the bulk toggle against locking a second path.
     if (identical(input$mode %||% "Assemble", "Annotate")) {
       u <- selected_units()
-      if (is.null(u) || nrow(u) == 0) { rp_alert("No units selected.", type = "warning"); return() }
+      if (!need_selection(NROW(u))) return()
       con <- app_con(); on.exit(DBI::dbDisconnect(con))
       ids <- unique(u$ID)
       ph <- paste(rep("?", length(ids)), collapse = ",")
@@ -625,17 +628,19 @@ app_server <- function(input, output, session) {
   })
   observeEvent(input$state_btn, {  # open a picker to choose the target state
     ids <- selected_ids()
-    if (length(ids) == 0) {
-      rp_alert("No samples selected.", type = "warning"); return()
-    }
+    if (!need_selection(length(ids))) return()
     mm <- mode_meta(input$mode)
     cur <- app_query(sprintf("SELECT %s_switch AS s FROM %s WHERE ID = ?", mm$pfx, mm$tbl),
       params = list(ids[1]))$s[1]  # annotate has many rows per ID; take one for the default
-    showModal(state_modal(mm$pfx, cur))
+    showModal(mp_state_modal(ids, current = if (!is.na(cur)) as.character(cur) else character(0),
+      mode = mm$pfx))
   })
   observeEvent(input$update_state, {
+    if (is.null(input$new_state)) {
+      mp_toast("Choose a state first.", type = "warning"); return()
+    }
     mm <- mode_meta(input$mode)
-    st <- as.integer(input$new_state %||% "1")
+    st <- as.integer(input$new_state)
     set_flag(sprintf("UPDATE %s SET %s_switch = %d WHERE ID = ?", mm$tbl, mm$pfx, st))
     removeModal()
   })
@@ -647,9 +652,7 @@ app_server <- function(input, output, session) {
 
   # ---- Export group actions ----
   observeEvent(input$assign_group_btn, {
-    if (length(selected_ids()) == 0) {
-      rp_alert("No samples selected.", type = "warning"); return()
-    }
+    if (!need_selection(length(selected_ids()))) return()
     showModal(group_modal())
   })
   observeEvent(input$assign_group_go, {
@@ -660,16 +663,14 @@ app_server <- function(input, output, session) {
     }
     assign_export_group(app_project(), u, grp)
     removeModal(); refresh(refresh() + 1)
-    rp_alert(paste0("Assigned ", nrow(u), " unit(s) to group '", grp, "'."), type = "message")
+    mp_toast(paste0(mp_n(nrow(u), "unit"), " assigned to group '", grp, "'."))
   })
   observeEvent(input$clear_group_btn, {
     u <- selected_units()
-    if (is.null(u) || nrow(u) == 0) {
-      rp_alert("No units selected.", type = "warning"); return()
-    }
+    if (!need_selection(NROW(u))) return()
     clear_export_group(app_project(), u)
     refresh(refresh() + 1)
-    rp_alert(paste("Cleared group for", nrow(u), "unit(s)."), type = "message")
+    mp_toast(paste0("Group cleared for ", mp_n(nrow(u), "unit"), "."))
   })
 
   # ---- lock / state row filters (hide via CSS on rp-lock-/rp-state- classes) ----
@@ -1071,9 +1072,8 @@ app_server <- function(input, output, session) {
       tags$p("Data exported to:"),
       div(class = "code-block", style = "white-space:normal; word-break:break-all;", gdir),
       export_check_summary_ui(attr(gdir, "summary")),
-      footer = tagList(
-        actionButton("open_export_dir", "Open folder", icon = icon("folder-open"), class = "btn-sm"),
-        modalButton("Close"))
+      footer = mp_footer(dismiss = "Close",
+        extra = actionButton("open_export_dir", "Open folder", icon = icon("folder-open"), class = "btn-sm"))
     ))
     invisible()
   }
@@ -1448,9 +1448,7 @@ app_server <- function(input, output, session) {
             if (length(cls$ask) == 1) "has" else "have",
             if (nrow(cls$units) == 1) "excludes it" else
               sprintf("excludes %d scaffolds", nrow(cls$units)))),
-          footer = tagList(
-            actionButton("scaf_triage_ok", "Drop it", class = "btn-danger btn-sm"),
-            modalButton("Cancel"))))
+          footer = mp_footer(danger = actionButton("scaf_triage_ok", "Drop it"))))
         return()
       }
       units <- cls$units
@@ -1863,11 +1861,9 @@ app_server <- function(input, output, session) {
       edit_active(FALSE); shinyjs::hide("feat_edit_ctrls")
       if (isTRUE(edit_dirty())) {
         # MitoPilot-style prompt: keep or discard unsaved boundary edits
-        shinyWidgets::ask_confirmation("unsaved_confirm",
-          title = "Unsaved boundary edits",
-          text = "You have unsaved changes to this feature's boundaries. Keep them?",
-          type = "warning", btn_labels = c("Discard", "Save"),
-          btn_colors = c("#d9534f", "#5cb85c"))
+        mp_choice("unsaved_confirm", title = "Unsaved boundary edits",
+          text = "You have unsaved changes to this feature's boundaries.",
+          labels = c("Discard", "Save"))
       } else {
         edit_backup(NULL)
       }
