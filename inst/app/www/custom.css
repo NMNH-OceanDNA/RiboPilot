@@ -453,6 +453,35 @@ details summary:hover {
   margin-left: 5px;
 }
 
+/* Details modals: title, flags, and toggles stay pinned at the top and the
+   footer buttons at the bottom while the body scrolls (the .modal element is
+   the scrollport). */
+.modal-header:has(.mp-sticky-head) {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--mp-surface);
+}
+.modal-footer:has(.mp-sticky-foot) {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+  background: var(--mp-surface);
+}
+.mp-sticky-head .mp-sticky-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+/* The alignment can never push the dialog wider than the viewport. */
+.rp-msa-box {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
 /* Toolbar and filter row: wrap instead of clipping at narrow widths. */
 .mp-toolbar {
   display: flex;

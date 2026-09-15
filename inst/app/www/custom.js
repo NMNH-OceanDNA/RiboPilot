@@ -97,35 +97,20 @@ $( document ).ready(function(){
   });
 });
 
-// Mousewheel -> horizontal scroll for the annotate-details alignment views.
-// The coverage map and synteny PNGs sit in overflow-x:auto containers
-// (coverageDiv / syntenyScrollDiv); the MSA viewer scrolls its own
-// .biojs_msa_rheader element. Translate vertical wheel delta into horizontal
-// scroll (down = right, up = left) and suppress page scroll over these views.
+// The alignment viewer uses native scrolling only: a vertical wheel scrolls
+// the page, horizontal input scrolls the view.
+
+// msa.js measures its container when it renders. A modal that is still fading
+// in can measure as zero width, and msa.js then falls back to the page width
+// and overflows the dialog. Once the modal is shown, ask the server to draw
+// again any alignment that overflowed.
 $( document ).ready(function(){
-  document.addEventListener('wheel', function(e) {
-    if (!e.target.closest) return;
-    var delta = e.deltaY;
-    if (!delta) return;
-
-    var box = e.target.closest('[id$="coverageDiv"], [id$="syntenyScrollDiv"]');
-    if (box) {
-      box.scrollLeft += delta;
-      e.preventDefault();
-      return;
-    }
-
-    var msa = e.target.closest('.msaR');
-    if (msa) {
-      var header = msa.querySelector('.biojs_msa_rheader')
-                || document.getElementsByClassName('biojs_msa_rheader')[0];
-      if (header) {
-        header.scrollLeft += delta;
-        header.dispatchEvent(new Event('scroll'));
-        e.preventDefault();
-      }
-    }
-  }, { passive: false });
+  $(document).on('shown.bs.modal', '#shiny-modal', function() {
+    var over = Array.prototype.some.call(this.querySelectorAll('.msaR'), function(el) {
+      return el.parentNode && el.scrollWidth > el.parentNode.clientWidth + 2;
+    });
+    if (over) Shiny.setInputValue('msa_relayout', Date.now(), {priority: 'event'});
+  });
 });
 
 // Add an "All" choice to the sample-table page-size dropdowns. reactable

@@ -132,9 +132,9 @@ chimera_panel <- function() {
 #' @noRd
 assemble_modal <- function(id) {
   modalDialog(
-    title = paste0("Assemble - ", id),
+    title = div(class = "mp-sticky-head", paste0("Assemble - ", id)),
     size = "l", easyClose = TRUE,
-    footer = tagList(rp_sample_nav("assemble"), mp_footer(dismiss = "Close")),
+    footer = div(class = "mp-sticky-foot", rp_sample_nav("assemble"), mp_footer(dismiss = "Close")),
     modal_taxon_header(id),
     h5("Scaffolds", style = "margin:2px 0 4px;"),
     div(style = "color:#888; font-size:0.82em; margin-bottom:4px;",
@@ -337,18 +337,17 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
     params = list(id, as.integer(path), as.integer(scaffold)))$annotate_notes[1],
     error = function(e) NA_character_)
   modalDialog(
-    title = paste0("Annotation Review - ", id, unit_lbl),
+    # Flags sit in the pinned header beside the badges they mirror, as in
+    # MitoPilot, so they stay in reach while the body scrolls.
+    title = div(class = "mp-sticky-head",
+      paste0("Annotation Review - ", id, unit_lbl),
+      div(class = "mp-sticky-row",
+        uiOutput("modal_status_badges", inline = TRUE, style = "display: contents;"),
+        uiOutput("modal_status_toggles", inline = TRUE, style = "display: contents;"))),
     size = "l", easyClose = FALSE,
-    footer = tagList(rp_sample_nav("annotate"), mp_footer(
-      primary = actionButton("lock_and_close", "Lock & Close"), dismiss = "Close",
-      extra = tagList(
-        actionButton("mark_reviewed", "Mark reviewed", class = "btn-sm"),
-        actionButton("mark_problematic", "Problem", class = "btn-sm"),
-        actionButton("mark_partial", "Partial", class = "btn-sm"))
-    )),
+    footer = div(class = "mp-sticky-foot", rp_sample_nav("annotate"), mp_footer(
+      primary = actionButton("lock_and_close", "Lock & Close"), dismiss = "Close")),
     modal_taxon_header(id),
-    div(style = "margin:-2px 0 8px; display:flex; gap:6px; flex-wrap:wrap;",
-      uiOutput("modal_status_badges", inline = TRUE)),
     # ---- gene list (drives the active feature for the editor + alignment) ----
     h5("Feature model", style = "margin:2px 0 4px;"),
     div(style = "color:#888; font-size:0.82em; margin-bottom:4px;",

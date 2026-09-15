@@ -1734,18 +1734,46 @@ app_server <- function(input, output, session) {
   })
 
   # Annotate modal header badges: reviewed / problem / partial (live via refresh()).
-  output$modal_status_badges <- renderUI({
+  # Header flags for the open annotate unit: passive pills mirrored by the
+  # toggle buttons beside them (MitoPilot's status_badges / status_toggles).
+  modal_flags <- reactive({
     refresh()
     u <- sel_unit(); req(u)
-    a <- app_query("SELECT reviewed, problematic, partial FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?",
+    a <- app_query("SELECT reviewed, problematic, partial, annotate_lock FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?",
       params = uargs())
-    if (nrow(a) == 0) {
-      return(NULL)
+    req(nrow(a) == 1)
+    a
+  })
+  output$modal_status_badges <- renderUI({
+    a <- modal_flags()
+    pill <- function(label, state, yes_tone = "success") {
+      val <- if (is.na(state)) "not set" else tolower(as.character(state))
+      tone <- if (identical(val, "yes")) yes_tone else "neutral"
+      span(class = paste0("mp-pill mp-pill-", tone), paste0(label, ": ", val))
     }
     tagList(
-      status_badge("Reviewed", a$reviewed[1]),
-      status_badge("Problem", a$problematic[1], invert = TRUE),
-      status_badge("Partial", a$partial[1], invert = TRUE, neutral_no = TRUE))
+      pill("Reviewed", a$reviewed[1]),
+      pill("Problematic", a$problematic[1], yes_tone = "warning"),
+      pill("Partial", a$partial[1], yes_tone = "warning"))
+  })
+  output$modal_status_toggles <- renderUI({
+    a <- modal_flags()
+    # mp_flag_next() picks the value the click writes and the label that names
+    # it, so the two never disagree. Coloured while the flag is set.
+    toggle_btn <- function(id, label, state, title, tone = "success") {
+      set <- identical(mp_flag_next(state), "yes")
+      btn <- actionButton(id, paste(if (set) "Mark" else "Clear", label),
+        icon = icon(if (set) "check" else "minus"),
+        class = paste("btn-sm btn-default", if (!set) paste0("mp-btn-", tone)), title = title)
+      if (isTRUE(a$annotate_lock[1] == 1)) shinyjs::disabled(btn) else btn
+    }
+    tagList(
+      toggle_btn("mark_reviewed", "Reviewed", a$reviewed[1],
+        "Record whether this annotation has been reviewed"),
+      toggle_btn("mark_problematic", "Problematic", a$problematic[1],
+        "Flag this annotation for another look", tone = "warning"),
+      toggle_btn("mark_partial", "Partial", a$partial[1],
+        "Flag this annotation as incomplete", tone = "warning"))
   })
 
   # active feature's unit-sequence coords + context
@@ -1801,9 +1829,10 @@ app_server <- function(input, output, session) {
       return(em(paste("No reference alignment for this feature. Needs GenBank BLAST hits +",
         "reference fetch (WF1); if those ran, re-run WF1.")))
     }
-    msaR::msaROutput("feat_msa", height = "auto")
+    div(class = "rp-msa-box", msaR::msaROutput("feat_msa", height = "auto"))
   })
   output$feat_msa <- msaR::renderMsaR({
+    input$msa_relayout  # redraw once the modal is laid out (custom.js)
     m <- active_msa(); req(!is.null(m))
     fa <- tempfile(fileext = ".fa")
     Biostrings::writeXStringSet(m, fa)
@@ -2123,14 +2152,7 @@ app_server <- function(input, output, session) {
     refresh(refresh() + 1)
     rp_toast(paste0("Toggled ", label, "."), type = "message")
   }
-  observeEvent(input$mark_reviewed, {
-    u <- sel_unit(); req(u)
-    con <- app_con()
-    on.exit(DBI::dbDisconnect(con))
-    DBI::dbExecute(con, "UPDATE annotate SET reviewed = 'yes' WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())
-    refresh(refresh() + 1)
-    rp_toast("Marked reviewed.", type = "message")
-  })
+  observeEvent(input$mark_reviewed, modal_flag_toggle("reviewed", "reviewed"))
   observeEvent(input$mark_problematic, modal_flag_toggle("problematic", "problematic"))
   observeEvent(input$mark_partial, modal_flag_toggle("partial", "partial"))
   observeEvent(input$lock_and_close, {
