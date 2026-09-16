@@ -176,10 +176,15 @@ app_server <- function(input, output, session) {
       # export shows annotation-locked UNITS (one row per (ID, path, scaffold))
       app_query(
         "SELECT s.ID, an.path, an.scaffold, s.Taxon, s.sci_name, s.taxid, asm.length,
-           an.n_features, an.missing, an.reviewed, an.problematic, an.partial,
+           an.n_features, an.missing,
+           an.n_flags, an.annotate_notes, an.itsx_warnings, sc.screen_verdict,
+           ch.label AS chimera_label, ch.reason AS chimera_reason,
+           an.reviewed, an.problematic, an.partial,
            an.export_group, an.time_stamp
          FROM annotate an JOIN samples s ON s.ID = an.ID
            JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
+           LEFT JOIN screen sc ON sc.ID = an.ID AND sc.path = an.path AND sc.scaffold = an.scaffold
+           LEFT JOIN chimera ch ON ch.ID = an.ID AND ch.path = an.path AND ch.scaffold = an.scaffold
          WHERE an.annotate_lock = 1")
     } else {
       # annotate shows one row per non-ignored assembly UNIT of an assembly-locked
@@ -376,6 +381,7 @@ app_server <- function(input, output, session) {
         Checks = c("n_flags", "itsx_warnings", "screen_verdict", "chimera_label")),
       NULL)
     keep_cols <- cols[intersect(names(cols), names(d))]
+    keep_cols[[".selection"]] <- reactable::colDef(sticky = "left")
     if (!is.null(col_groups)) {
       sel_g <- input[[if (mode == "Assemble") "col_groups" else "ann_col_groups"]] %||% names(col_groups)
       hidden <- unlist(col_groups[setdiff(names(col_groups), sel_g)], use.names = FALSE)
