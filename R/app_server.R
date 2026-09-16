@@ -1133,6 +1133,15 @@ app_server <- function(input, output, session) {
         type = "info")
       return()
     }
+    rc <- validate_fasta_header(input$fasta_header, export_hdr_data(), require_seqid = TRUE)
+    mc <- if (isTRUE(input$export_markers)) {
+      validate_fasta_header(input$fasta_header_marker, export_hdr_data_marker(), require_seqid = TRUE)
+    } else list(ok = TRUE)
+    if (!isTRUE(rc$ok) || !isTRUE(mc$ok)) {
+      mp_alert(title = "Invalid FASTA header template",
+        text = if (!isTRUE(rc$ok)) rc$message else mc$message, type = "error")
+      return()
+    }
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
     set_export_opts(con, input$fasta_header, input$fasta_header_marker, nm)
     updateSelectizeInput(session, "export_template", choices = list_export_templates(con),

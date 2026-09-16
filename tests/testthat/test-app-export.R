@@ -77,7 +77,7 @@ test_that("the header status lines pass the defaults and fail an unknown column"
   })
 })
 
-test_that("typing a new configuration name creates it from the current boxes", {
+test_that("Save template stores the current boxes under the typed name", {
   skip_if_not_installed("withr")
   dir <- mk_export_project()
   withr::local_dir(dir)
@@ -87,12 +87,17 @@ test_that("typing a new configuration name creates it from the current boxes", {
     session$setInputs(export_btn = 1)
     session$setInputs(
       fasta_header = "{seqid} {Taxon} custom",
-      fasta_header_marker = "{seqid}_{element}")
+      fasta_header_marker = "{seqid}_{element}", export_markers = TRUE)
     settle(session)
     session$setInputs(export_template = "mine")
     settle(session)
 
+    # typing a name alone writes nothing
     expect_equal(export_template(), "mine")
+    expect_equal(nrow(RiboPilot:::app_query("SELECT * FROM export_opts WHERE export_opts = 'mine'")), 0L)
+
+    session$setInputs(save_template = 1)
+    settle(session)
     row <- RiboPilot:::app_query("SELECT * FROM export_opts WHERE export_opts = 'mine'")
     expect_equal(nrow(row), 1L)
     expect_equal(row$fasta_header, "{seqid} {Taxon} custom")
@@ -103,7 +108,7 @@ test_that("typing a new configuration name creates it from the current boxes", {
   })
 })
 
-test_that("editing a box saves into the selected configuration, invalid text does not", {
+test_that("editing a box does not save until Save, and invalid text is never saved", {
   skip_if_not_installed("withr")
   dir <- mk_export_project()
   withr::local_dir(dir)
@@ -113,18 +118,26 @@ test_that("editing a box saves into the selected configuration, invalid text doe
     session$setInputs(export_btn = 1)
     session$setInputs(
       fasta_header = RiboPilot:::DEFAULT_FASTA_HEADER,
-      fasta_header_marker = RiboPilot:::DEFAULT_FASTA_HEADER_MARKER)
+      fasta_header_marker = RiboPilot:::DEFAULT_FASTA_HEADER_MARKER, export_markers = TRUE)
     settle(session)
     session$setInputs(export_template = "batch1")
+    session$setInputs(save_template = 1)
     settle(session)
 
     session$setInputs(fasta_header = "{seqid} edited {Taxon}")
+    settle(session)
+    saved <- RiboPilot:::app_query("SELECT fasta_header FROM export_opts WHERE export_opts = 'batch1'")
+    expect_equal(saved$fasta_header, RiboPilot:::DEFAULT_FASTA_HEADER)
+
+    session$setInputs(save_template = 2)
     settle(session)
     saved <- RiboPilot:::app_query("SELECT fasta_header FROM export_opts WHERE export_opts = 'batch1'")
     expect_equal(saved$fasta_header, "{seqid} edited {Taxon}")
 
     # a template naming a column that does not exist is never written
     session$setInputs(fasta_header = "{seqid} {nope}")
+    settle(session)
+    session$setInputs(save_template = 3)
     settle(session)
     saved <- RiboPilot:::app_query("SELECT fasta_header FROM export_opts WHERE export_opts = 'batch1'")
     expect_equal(saved$fasta_header, "{seqid} edited {Taxon}")
@@ -138,9 +151,13 @@ test_that("exporting over an existing bundle asks before replacing it", {
   dir <- mk_export_project()
   withr::local_dir(dir)
 
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE annotate SET export_group = 'g1'")
+  DBI::dbDisconnect(con)
+
   shiny::testServer(RiboPilot:::app_server, {
     session$setInputs(mode = "Export")
-    session$setInputs(export_group_sel = "__all__",
+    session$setInputs(export_group_sel = "g1",
       fasta_header = RiboPilot:::DEFAULT_FASTA_HEADER,
       fasta_header_marker = RiboPilot:::DEFAULT_FASTA_HEADER_MARKER,
       export_markers = FALSE, export_report = FALSE)
@@ -149,10 +166,10 @@ test_that("exporting over an existing bundle asks before replacing it", {
     # nothing there yet: the export just runs
     session$setInputs(export_go = 1)
     settle(session)
-    expect_true(file.exists(file.path(dir, "out", "export", "export", "export.fasta")))
+    expect_true(file.exists(file.path(dir, "out", "export", "g1", "g1.fasta")))
 
     # a marker of the earlier bundle, to prove the second run did not delete it
-    keep <- file.path(dir, "out", "export", "export", "keep_me.txt")
+    keep <- file.path(dir, "out", "export", "g1", "keep_me.txt")
     writeLines("mine", keep)
     session$setInputs(export_go = 2)
     settle(session)
@@ -162,7 +179,7 @@ test_that("exporting over an existing bundle asks before replacing it", {
     session$setInputs(export_overwrite_go = 1)
     settle(session)
     expect_false(file.exists(keep))
-    expect_true(file.exists(file.path(dir, "out", "export", "export", "export.fasta")))
+    expect_true(file.exists(file.path(dir, "out", "export", "g1", "g1.fasta")))
   })
 })
 
