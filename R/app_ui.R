@@ -104,11 +104,6 @@ app_ui <- function(request) {
               shiny::span(shiny::textOutput("export_sel_n", inline = TRUE),
                 style = "color:#888; font-size:0.85em;")),
             shiny::div(style = "margin-left:auto; display:flex; gap:0.9em; align-items:center;",
-              shiny::span(class = "mp-needs-selection-wrap",
-                title = "Select one or more rows in the table first",
-                shiny::downloadButton("table_csv_selected", "Download selected rows",
-                  class = "btn-sm mp-toolbar-btn mp-needs-selection")),
-              shiny::downloadButton("table_csv", "Download all rows", class = "btn-sm mp-toolbar-btn"),
               # per-SAMPLE Nextflow task dirs: only meaningful on Assemble
               shiny::conditionalPanel("input.mode == 'Assemble'",
                 btn("workdirs_btn", "Work Dirs", icon = mp_icon("folder-tree"),
@@ -131,7 +126,14 @@ app_ui <- function(request) {
               shiny::div(class = "mp-filter-cols",
                 mp_filter_picker("ann_col_groups", "Columns:", c("BLAST", "Checks"), width = "170px")))),
           shiny::uiOutput("table_status"),
-          shiny::div(class = "mp-table-resize", reactable::reactableOutput("tbl", height = "100%"))
+          shiny::div(class = "mp-table-resize", reactable::reactableOutput("tbl", height = "100%")),
+          # CSV downloads sit under the table, as in MitoPilot.
+          shiny::div(class = "mp-csv-row",
+            shiny::span(class = "mp-needs-selection-wrap",
+              title = "Select one or more rows in the table first",
+              shiny::downloadButton("table_csv_selected", "Download selected rows",
+                class = "btn-sm btn-default mp-needs-selection")),
+            shiny::downloadButton("table_csv", "Download all rows", class = "btn-sm btn-default"))
         )
       )
     )

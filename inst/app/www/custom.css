@@ -577,6 +577,13 @@ details summary:hover {
   gap: 6px;
 }
 
+/* CSV download row under the table. */
+.mp-csv-row {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+}
+
 .mp-table-status b {
   font-weight: 600;
   color: var(--mp-text);
