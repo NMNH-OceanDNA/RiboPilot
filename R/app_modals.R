@@ -585,51 +585,58 @@ group_modal <- function() {
 #' @noRd
 export_modal <- function(groups, templates = "default", template = "default",
                          fasta_header = "", fasta_header_marker = "",
-                         columns = character(0)) {
-  choices <- c("All locked units (single bundle)" = "__all__",
-    stats::setNames(groups, groups))
+                         columns = character(0), sample_cols = character(0)) {
+  yours <- sort(intersect(columns, sample_cols))
+  ours <- sort(setdiff(columns, yours))
+  hdr_box <- function(id, label, value) {
+    htmltools::tagQuery(textAreaInput(id, label, value, width = "100%", height = "60px"))$
+      find("textarea")$addAttrs(`aria-describedby` = paste0(id, "_status"))$allTags()
+  }
   modalDialog(
-    title = "Export GenBank bundle", size = "l", easyClose = TRUE,
-    if (length(groups) == 0) {
-      tags$p(class = "mp-help-text",
-        textOutput("export_modal_n", inline = TRUE),
-        " No export groups assigned. Use \"Assign Group\" to batch submissions.")
-    } else {
-      shinyWidgets::pickerInput("export_group_sel", "Export group:",
-        choices = choices, selected = "__all__", width = "100%")
-    },
-    tags$hr(style = "margin:0.9em 0 0.6em;"),
-    selectizeInput("export_template", "Header configuration:", width = "100%",
-      choices = templates, selected = template,
-      options = list(create = TRUE, maxItems = 1,
-        placeholder = "select or type a new name")),
-    opts_help("Named set of header templates. Edits are saved into the selected ",
-      "name; type a new name to keep the current headers as a separate set."),
+    title = mp_modal_title("Export data"), size = "l", class = "mp-modal-form",
+    div(style = "display:flex; flex-flow:row nowrap; gap:1em;",
+      div(style = "flex:1; min-width:0;",
+        shinyWidgets::pickerInput("export_group_sel", "Export group:",
+          choices = groups, width = "100%")),
+      div(style = "flex:1; min-width:0;",
+        selectizeInput("export_template", "Header template:", width = "100%",
+          choices = templates, selected = template,
+          options = list(create = TRUE, maxItems = 1,
+            placeholder = "select or type a new template name"))),
+      div(class = "mp-opts-checkbox",
+        actionButton("save_template", "Save template",
+          title = "Store the header text below under this template name"))),
+    opts_help("Export group bundles units into one output set. Header template is ",
+      "a reusable, named set of the FASTA header patterns below: export uses the ",
+      "text on screen, and Save template keeps it for next time."),
+    hdr_box("fasta_header", "Record FASTA header:", fasta_header),
     uiOutput("export_hdr_status"),
-    textAreaInput("fasta_header", "Record FASTA header", value = fasta_header,
-      width = "100%", height = "60px"),
-    opts_help("Defline of each exported record. {column} is replaced with that ",
-      "column's value for the record, e.g. {seqid} or {Taxon}."),
-    uiOutput("export_hdr_marker_status"),
-    textAreaInput("fasta_header_marker", "Per-marker FASTA header",
-      value = fasta_header_marker, width = "100%", height = "60px"),
-    opts_help("Defline of each per-marker sequence. Same {column} syntax, plus ",
-      "{element} and {product} for the marker itself."),
-    tags$p(class = "mp-help-text", style = "word-break:break-word;",
-      tags$b("Available columns: "),
-      if (length(columns) == 0) "none (no exportable units yet)"
-      else paste(columns, collapse = ", ")),
-    div(style = "display:flex; gap:2em; margin-top:0.4em;",
-      shinyWidgets::prettyCheckbox("export_markers", "Per-marker FASTA files",
-        value = TRUE, status = "primary"),
-      shinyWidgets::prettyCheckbox("export_report", "HTML report with alignments",
-        value = TRUE, status = "primary"),
-      shinyWidgets::prettyCheckbox("export_itsx_check", "Final ITSx check",
-        value = TRUE, status = "primary")),
-    tags$p(class = "mp-help-text", style = "margin-top:0.6em;",
-      "Writes to the project's out/export folder: per-record FASTA + feature table under samples/, combined FASTA + feature table, per-marker fastas, summary CSV, and an HTML report. ",
-      "The ITSx check runs stock ITSx over the exported records the way the NCBI Submission Portal does and lists what it would flag (chimeras, gaps, misassemblies) in the summary CSV."),
-    footer = mp_footer(primary = actionButton("export_go", "Export", icon = icon("download")))
+    tags$details(
+      tags$summary("Available columns"),
+      opts_help("Write a column name in braces to use its value, for example ",
+        tags$code("{Taxon}"), ". ", tags$code("{seqid}"), " is the record name ",
+        "RiboPilot gives this unit: the sample ID, or ",
+        tags$code("ID_p<path>_s<scaffold>"), " when one sample exports more than ",
+        "one record. Columns from your mapping file work here even when the ",
+        "table does not show them.", nested = TRUE),
+      tags$p(tags$b("Your columns: "), if (length(yours)) paste(yours, collapse = ", ") else "none"),
+      tags$p(tags$b("RiboPilot columns: "), if (length(ours)) paste(ours, collapse = ", ") else "none")),
+    mp_checkbox("export_markers", "Per-marker FASTA files", value = TRUE),
+    opts_help("Writes one FASTA per rRNA element (18S, ITS1, 5.8S, ITS2, 28S) into a ",
+      "markers folder beside the group files."),
+    conditionalPanel("input.export_markers == true",
+      hdr_box("fasta_header_marker", "Per-marker FASTA header:", fasta_header_marker),
+      uiOutput("export_hdr_marker_status"),
+      opts_help("Same {column} syntax, plus {element} and {product} for the marker itself.",
+        nested = TRUE)),
+    mp_checkbox("export_report", "HTML report with alignments", value = TRUE),
+    opts_help("One HTML page with per-element alignments across the group."),
+    mp_checkbox("export_itsx_check", "Final ITSx check", value = TRUE),
+    opts_help("Runs stock ITSx over the exported records the way the NCBI Submission ",
+      "Portal does and lists what it would flag in the summary CSV. Can take a few minutes."),
+    uiOutput("export_summary"),
+    footer = mp_footer(primary = actionButton("export_go", "Export", icon = icon("download")),
+      dismiss = "Cancel")
   )
 }
 
