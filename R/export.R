@@ -40,26 +40,48 @@ clear_export_group <- function(path, units) {
 }
 
 #' Write annotate.export_group for the given units (NA clears). Accepts a
-#' data.frame(ID,path,scaffold) or a character vector of sample IDs.
+#' data.frame(ID,path,scaffold) or a character vector of sample IDs. `group` is
+#' one name for all units, or one name per unit.
 #' @noRd
 set_export_group <- function(con, units, group) {
-  g <- if (length(group) == 0 || is.na(group)) NA_character_ else group
   n <- if (is.data.frame(units)) nrow(units) else length(units)
   if (n == 0) return(invisible())
+  g <- if (length(group) == 0) NA_character_ else as.character(group)
+  g <- if (length(g) == 1) rep(g, n) else g
+  stopifnot(length(g) == n)
   # all-or-nothing: a partial group assignment is worse than none
   DBI::dbBegin(con)
   done <- FALSE
   on.exit(if (!done) DBI::dbRollback(con))
   if (is.data.frame(units)) {
     DBI::dbExecute(con, "UPDATE annotate SET export_group = ? WHERE ID = ? AND path = ? AND scaffold = ?",
-      params = list(rep(g, n), as.character(units$ID), as.integer(units$path), as.integer(units$scaffold)))
+      params = list(g, as.character(units$ID), as.integer(units$path), as.integer(units$scaffold)))
   } else {
     DBI::dbExecute(con, "UPDATE annotate SET export_group = ? WHERE ID = ?",
-      params = list(rep(g, n), as.character(units)))
+      params = list(g, as.character(units)))
   }
   DBI::dbCommit(con)
   done <- TRUE
   invisible()
+}
+
+#' Assembler that produced each sample (assemble.assemble_opts -> assemble_opts.assembler)
+#'
+#' A GenBank submission carries one assembly method, so a group should not mix
+#' assemblers. Missing rows fall back to "getorganelle", the workflow default.
+#' @param path Project dir. @param ids Sample IDs.
+#' @return character vector aligned to `ids`.
+#' @noRd
+sample_assembler <- function(path, ids) {
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(path, ".sqlite"))
+  on.exit(DBI::dbDisconnect(con))
+  a <- tryCatch(DBI::dbGetQuery(con,
+    "SELECT a.ID, COALESCE(ao.assembler, 'getorganelle') AS assembler
+     FROM assemble a LEFT JOIN assemble_opts ao ON ao.assemble_opts = a.assemble_opts"),
+    error = function(e) data.frame(ID = character(0), assembler = character(0)))
+  out <- a$assembler[match(ids, a$ID)]
+  out[is.na(out)] <- "getorganelle"
+  out
 }
 
 # Minimum run of Ns annotated as an assembly_gap; shorter runs are treated as

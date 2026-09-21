@@ -209,3 +209,41 @@ test_that("detail modal sample navigation steps through the table order", {
     expect_equal(sel_unit()$scaffold, 1L)
   })
 })
+
+test_that("assigning a group across two assemblers offers a split", {
+  skip_if_not_installed("withr")
+  dir <- mk_export_project()
+  withr::local_dir(dir)
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "INSERT INTO samples (ID, Taxon) VALUES('S2','Danio rerio')")
+  DBI::dbExecute(con, "INSERT INTO assemble (ID, assemble_lock, assemble_opts) VALUES('S2',1,'default_bait')")
+  DBI::dbExecute(con, "INSERT INTO assemblies (ID, path, scaffold, topology, length, sequence, ignore)
+    VALUES('S2',1,1,'linear',600,?,0)", params = list(paste(rep("ACGT", 150), collapse = "")))
+  DBI::dbExecute(con, "INSERT INTO annotate (ID, path, scaffold, annotate_lock) VALUES('S2',1,1,1)")
+  DBI::dbExecute(con, "INSERT INTO assemble_opts (assemble_opts, assembler) VALUES ('default_bait','bait')")
+  DBI::dbDisconnect(con)
+  groups <- function() RiboPilot:::app_query(
+    "SELECT ID, export_group FROM annotate ORDER BY ID")$export_group
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Export")
+    session$flushReact()
+    session$setInputs(tbl__reactable__selected = 1:2, group_name = "g")
+    session$setInputs(assign_group_btn = 1)
+    session$setInputs(assign_group_go = 1)
+    session$flushReact()
+    # mixed assemblers: nothing written until the warning is answered
+    expect_true(all(is.na(groups())))
+
+    session$setInputs(group_split = 1)
+    session$flushReact()
+    expect_equal(groups(), c("g-getorganelle", "g-bait"))
+
+    # the override keeps one name for everything
+    session$setInputs(tbl__reactable__selected = 1:2, group_name = "one")
+    session$setInputs(assign_group_go = 2)
+    session$setInputs(group_keep_one = 1)
+    session$flushReact()
+    expect_equal(groups(), c("one", "one"))
+  })
+})

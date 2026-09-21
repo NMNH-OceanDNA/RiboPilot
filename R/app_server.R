@@ -764,14 +764,56 @@ app_server <- function(input, output, session) {
     if (!need_selection(length(selected_ids()))) return()
     showModal(group_modal())
   })
+  pending_group <- reactiveVal(NULL)
+  do_assign_group <- function(u, groups) {
+    assign_export_group(app_project(), u, groups)
+    removeModal(); refresh(refresh() + 1)
+    mp_toast(if (length(unique(groups)) == 1) {
+      paste0(mp_n(nrow(u), "unit"), " assigned to group '", groups[1], "'.")
+    } else {
+      paste0(mp_n(nrow(u), "unit"), " split into groups ",
+        paste0("'", unique(groups), "'", collapse = ", "), ".")
+    })
+  }
   observeEvent(input$assign_group_go, {
     grp <- trimws(input$group_name %||% "")
     u <- selected_units()
     if (is.null(u) || nrow(u) == 0) { removeModal(); return() }
     if (!nzchar(grp)) { mp_toast("Type a group name first.", type = "warning"); return() }
-    assign_export_group(app_project(), u, grp)
-    removeModal(); refresh(refresh() + 1)
-    mp_toast(paste0(mp_n(nrow(u), "unit"), " assigned to group '", grp, "'."))
+    # A GenBank submission records one assembly method, so a group should not
+    # mix assemblers. Offer to split "<name>-<assembler>" like MitoPilot's
+    # complete/partial split.
+    asm <- sample_assembler(app_project(), u$ID)
+    if (length(unique(asm)) > 1) {
+      pending_group(list(name = grp, units = u, assembler = asm))
+      counts <- table(asm)
+      showModal(modalDialog(
+        title = mp_modal_title("Mixed assemblers"), size = "m", easyClose = FALSE,
+        HTML(sprintf(paste0(
+          "A GenBank submission records one assembly method, so a group should ",
+          "hold samples from one assembler. This selection has %s. Split into %s, ",
+          "or keep them as one group?"),
+          paste(sprintf("%d from %s", as.integer(counts), names(counts)), collapse = " and "),
+          paste0("'", grp, "-", names(counts), "'", collapse = " and "))),
+        footer = mp_footer(
+          primary = actionButton("group_split", "Split by assembler"), dismiss = NULL,
+          extra = tagList(actionButton("group_back", "Cancel"),
+            actionButton("group_keep_one", "Keep as one mixed group")))))
+      return()
+    }
+    do_assign_group(u, grp)
+  })
+  observeEvent(input$group_split, {
+    p <- req(pending_group()); pending_group(NULL)
+    do_assign_group(p$units, paste0(p$name, "-", p$assembler))
+  })
+  observeEvent(input$group_keep_one, {
+    p <- req(pending_group()); pending_group(NULL)
+    do_assign_group(p$units, p$name)
+  })
+  observeEvent(input$group_back, {
+    pending_group(NULL)
+    showModal(group_modal())
   })
   observeEvent(input$clear_group_btn, {
     u <- selected_units()
