@@ -424,3 +424,52 @@ test_that("provenance reads degrade to empty on a project predating the column",
   expect_silent(record_blastdb_provenance(con, file.path(d, "ribopilot_rrna")))
   expect_equal(blastdb_provenance(con), "")
 })
+
+test_that("a GitHub token routes release downloads through the asset API", {
+  # the public releases/download link 404s on a private repo; the asset API
+  # serves the same file to a token
+  root <- withr::local_tempdir()
+  seen <- list()
+  local_mocked_bindings(
+    gh_release_asset_urls = function(tag, token, ...) {
+      seen$lookup <<- c(tag = tag, token = token)
+      c("a.txt" = "api://asset/1", "a.txt.sha256" = "api://asset/2")
+    },
+    download_or_stop = function(url, dest, what, quiet = TRUE, headers = NULL) {
+      seen$urls <<- c(seen$urls, url)
+      seen$auth <<- c(seen$auth, headers[["Authorization"]] %||% "none")
+      writeLines(if (grepl("sha256", dest)) paste(rp_sha256(sub(".sha256$", "", dest)), "a.txt")
+        else "payload", dest)
+      dest
+    })
+  withr::local_envvar(GITHUB_PAT = "tok", GITHUB_TOKEN = "")
+  fetch_verified(RP_DB_RELEASE_BASE, "t1", "a.txt", root)
+  expect_equal(seen$lookup, c(tag = "t1", token = "tok"))
+  expect_equal(seen$urls, c("api://asset/1", "api://asset/2"))
+  expect_equal(seen$auth, rep("Bearer tok", 2))
+
+  # a base_url that is not the GitHub release (tests, mirrors) never uses the API
+  seen <- list()
+  fetch_verified("file:///mirror", "t1", "a.txt", root)
+  expect_null(seen$lookup)
+  expect_equal(seen$auth, rep("none", 2))
+
+  # no token: the public link, no header
+  seen <- list()
+  withr::local_envvar(GITHUB_PAT = "", GITHUB_TOKEN = "")
+  fetch_verified(RP_DB_RELEASE_BASE, "t1", "a.txt", root)
+  expect_null(seen$lookup)
+  expect_equal(seen$urls[1], paste0(RP_DB_RELEASE_BASE, "/t1/a.txt"))
+  expect_equal(seen$auth, rep("none", 2))
+})
+
+test_that("the release asset lookup maps names to API urls and fails soft", {
+  root <- withr::local_tempdir()
+  d <- file.path(root, "repos", "o", "r", "releases", "tags")
+  dir.create(d, recursive = TRUE)
+  writeLines('{"assets":[{"name":"x.tar.gz","url":"https://api/1"},{"name":"x.tar.gz.sha256","url":"https://api/2"}]}',
+    file.path(d, "t1"))
+  got <- gh_release_asset_urls("t1", "tok", repo = "o/r", api = paste0("file://", root))
+  expect_equal(got, c("x.tar.gz" = "https://api/1", "x.tar.gz.sha256" = "https://api/2"))
+  expect_null(gh_release_asset_urls("missing", "tok", repo = "o/r", api = paste0("file://", root)))
+})

@@ -80,6 +80,8 @@ ribopilot_db_dir <- function() {
 #' Base URL of the panel release assets
 #' @noRd
 RP_DB_RELEASE_BASE <- "https://github.com/dmacguigan/RiboPilot/releases/download"
+RP_GH_REPO <- "dmacguigan/RiboPilot"
+RP_GH_API <- "https://api.github.com"
 
 #' Default panel version
 #'
@@ -99,7 +101,7 @@ RP_DB_VERSION <- "2026.08.18"
 #' the whole transfer rather than on idle time, and its 60s default cannot carry
 #' a 76 MB asset on any link slower than 1.3 MB/s, so it is raised here.
 #' @noRd
-download_or_stop <- function(url, dest, what, quiet = TRUE) {
+download_or_stop <- function(url, dest, what, quiet = TRUE, headers = NULL) {
   old <- options(timeout = max(getOption("timeout"), 3600))
   on.exit(options(old), add = TRUE)
   why <- ""
@@ -107,7 +109,7 @@ download_or_stop <- function(url, dest, what, quiet = TRUE) {
     why <<- conditionMessage(c)
     FALSE
   }
-  ok <- tryCatch(utils::download.file(url, dest, mode = "wb", quiet = quiet) == 0,
+  ok <- tryCatch(utils::download.file(url, dest, mode = "wb", quiet = quiet, headers = headers) == 0,
     error = note, warning = note)
   if (!isTRUE(ok) || !file.exists(dest)) {
     stop("Could not download ", what, if (nzchar(why)) paste0(": ", why),
@@ -117,14 +119,60 @@ download_or_stop <- function(url, dest, what, quiet = TRUE) {
   dest
 }
 
+#' GitHub token for the private release: GITHUB_PAT, then GITHUB_TOKEN, else ""
+#'
+#' The same variable remotes::install_github() reads, so anyone who installed
+#' the package from the private repo already has it set.
+#' @noRd
+gh_release_token <- function() {
+  t <- Sys.getenv("GITHUB_PAT", "")
+  if (!nzchar(t)) t <- Sys.getenv("GITHUB_TOKEN", "")
+  t
+}
+
+#' API download URL of every asset on a release, by asset name
+#'
+#' The public releases/download link needs a browser login on a private repo;
+#' the asset API serves the file to a token instead. NULL when the lookup fails,
+#' so the caller can fall back to the public link.
+#' @noRd
+gh_release_asset_urls <- function(tag, token, repo = RP_GH_REPO, api = RP_GH_API) {
+  tmp <- tempfile(fileext = ".json")
+  on.exit(unlink(tmp))
+  ok <- tryCatch(utils::download.file(sprintf("%s/repos/%s/releases/tags/%s", api, repo, tag),
+    tmp, quiet = TRUE, headers = c(Authorization = paste("Bearer", token),
+      Accept = "application/vnd.github+json")) == 0,
+    error = function(e) FALSE, warning = function(w) FALSE)
+  if (!ok) return(NULL)
+  j <- tryCatch(jsonlite::fromJSON(tmp, simplifyVector = FALSE), error = function(e) NULL)
+  if (is.null(j$assets)) return(NULL)
+  stats::setNames(vapply(j$assets, function(a) a$url, character(1)),
+    vapply(j$assets, function(a) a$name, character(1)))
+}
+
 #' Download one asset and check it against its published .sha256
+#'
+#' With a GitHub token in the environment and the real release base, the asset
+#' and its checksum come through the asset API (private repo); otherwise, or
+#' when the API lookup fails, the public link is used.
 #' @noRd
 fetch_verified <- function(base_url, tag, asset, dir) {
   url <- paste(base_url, tag, asset, sep = "/")
+  sum_url <- paste0(url, ".sha256")
+  headers <- NULL
+  token <- gh_release_token()
+  if (nzchar(token) && identical(base_url, RP_DB_RELEASE_BASE)) {
+    api <- gh_release_asset_urls(tag, token)
+    if (all(c(asset, paste0(asset, ".sha256")) %in% names(api))) {
+      url <- api[[asset]]
+      sum_url <- api[[paste0(asset, ".sha256")]]
+      headers <- c(Authorization = paste("Bearer", token), Accept = "application/octet-stream")
+    }
+  }
   # Progress on the asset itself: it is the part worth waiting on.
-  dest <- download_or_stop(url, file.path(dir, asset), url, quiet = FALSE)
-  sum_dest <- download_or_stop(paste0(url, ".sha256"), paste0(dest, ".sha256"),
-    paste0("the checksum for ", asset))
+  dest <- download_or_stop(url, file.path(dir, asset), asset, quiet = FALSE, headers = headers)
+  sum_dest <- download_or_stop(sum_url, paste0(dest, ".sha256"),
+    paste0("the checksum for ", asset), headers = headers)
   want <- parse_sha256_line(readLines(sum_dest, warn = FALSE)[1])
   got <- rp_sha256(dest)
   if (is.na(want) || is.na(got)) {

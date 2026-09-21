@@ -92,8 +92,10 @@ RP_TEST_READS_TAG <- "test-reads-2026.09.02"
   for (f in c(r1_name, r2_name)) {
     tryCatch(fetch_verified(RP_DB_RELEASE_BASE, RP_TEST_READS_TAG, f, dir),
       error = function(e) stop("Could not download the filtered test reads for ", acc, ": ",
-        conditionMessage(e), "\nIf the RiboPilot release is not reachable, use ",
-        "new_test_project(full_size = TRUE) to fetch the complete reads from ENA/SRA instead.",
+        conditionMessage(e), "\nWhile the RiboPilot repo is private, set GITHUB_PAT ",
+        "(the token used to install the package) so the release can be reached. ",
+        "Otherwise use new_test_project(full_size = TRUE) to fetch the complete reads ",
+        "from ENA/SRA instead.",
         call. = FALSE))
   }
   unlink(file.path(dir, paste0(c(r1_name, r2_name), ".sha256")))
