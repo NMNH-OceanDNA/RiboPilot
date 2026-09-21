@@ -200,3 +200,28 @@ test_that("a project with no screen table still exports, with NA variant columns
   expect_true(all(is.na(smry$variant_class)))
   expect_true(all(is.na(smry$n_variants)))
 })
+
+test_that("set_export_group takes one group per unit", {
+  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "CREATE TABLE annotate(ID TEXT, path INT, scaffold INT, export_group TEXT)")
+  DBI::dbExecute(con, "INSERT INTO annotate VALUES('A',1,1,NULL)")
+  DBI::dbExecute(con, "INSERT INTO annotate VALUES('B',1,1,NULL)")
+  u <- data.frame(ID = c("A", "B"), path = 1L, scaffold = 1L)
+  RiboPilot:::set_export_group(con, u, c("g-getorganelle", "g-bait"))
+  got <- DBI::dbGetQuery(con, "SELECT ID, export_group FROM annotate ORDER BY ID")
+  expect_equal(got$export_group, c("g-getorganelle", "g-bait"))
+  expect_error(RiboPilot:::set_export_group(con, u, c("x", "y", "z")))
+})
+
+test_that("sample_assembler follows assemble_opts and defaults to getorganelle", {
+  dir <- withr::local_tempdir()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, assemble_opts TEXT)")
+  DBI::dbExecute(con, "CREATE TABLE assemble_opts(assemble_opts TEXT, assembler TEXT)")
+  DBI::dbExecute(con, "INSERT INTO assemble VALUES('A','default'),('B','default_bait'),('C','gone')")
+  DBI::dbExecute(con, "INSERT INTO assemble_opts VALUES('default','getorganelle'),('default_bait','bait')")
+  DBI::dbDisconnect(con)
+  expect_equal(RiboPilot:::sample_assembler(dir, c("B", "A", "C", "D")),
+    c("bait", "getorganelle", "getorganelle", "getorganelle"))
+})

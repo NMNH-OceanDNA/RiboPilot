@@ -143,3 +143,21 @@ test_that("a saved configuration is used when named", {
     fasta_header = "{seqid} explicit")
   expect_true(all(grepl(" explicit", deflines(g2, "override"), fixed = TRUE)))
 })
+
+test_that("multi-unit samples get an automatic [isolate=seqid]; single-unit ones do not", {
+  dir <- mk_hdr_project()
+  d <- deflines(hdr_bundle(dir, label = "iso"), "iso")
+  expect_true(any(grepl("^>S1_p1_s1 .* \\[isolate=S1_p1_s1\\]$", d)))
+  expect_true(any(grepl("^>S1_p1_s2 .* \\[isolate=S1_p1_s2\\]$", d)))
+  expect_false(any(grepl("^>S2 .*isolate", d)))
+  # the marker files carry it too: same organism + voucher, several 18S records
+  m <- readLines(file.path(dir, "out", "export", "iso", "markers", "18S", "all_18S.fasta"))
+  expect_true(any(grepl("^>S1_p1_s1_18S .*\\[isolate=S1_p1_s1\\]$", m)))
+})
+
+test_that("isolate in a template is rejected: RiboPilot owns that modifier", {
+  dir <- mk_hdr_project()
+  expect_error(hdr_bundle(dir, label = "iso2", fasta_header = "{seqid} [isolate={ID}] {Taxon}"),
+    "isolate")
+  expect_equal(validate_fasta_header("{seqid} [Isolate=x]")$level, "error")
+})

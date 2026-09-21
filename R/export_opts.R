@@ -223,6 +223,10 @@ validate_fasta_header <- function(template, data = NULL, require_seqid = TRUE) {
       return(err(trimws(strsplit(bad, "\n")[[1]][1])))
     }
   }
+  if (grepl("isolate", template, ignore.case = TRUE)) {
+    return(err(paste("Do not put isolate in the template: RiboPilot fills [isolate=ID_pX_sX]",
+      "itself for samples that export more than one record.")))
+  }
   if (require_seqid && !grepl("{seqid}", template, fixed = TRUE)) {
     multi <- !is.null(data) && any(duplicated(data$ID))
     msg <- paste("No {seqid}. Records would not be named the way the feature table names them,",
@@ -234,11 +238,18 @@ validate_fasta_header <- function(template, data = NULL, require_seqid = TRUE) {
 
 #' Resolve a template against token data
 #'
+#' A sample that exports more than one record gets `[isolate=<seqid>]` appended:
+#' GenBank refuses several sequences with the same organism and voucher unless
+#' an isolate (or similar) modifier tells them apart. Not user-editable.
+#'
 #' @param template glue template. @param data rows from [export_header_data()].
 #' @return character vector of headers, one per row, without the leading ">".
 #' @noRd
 render_fasta_headers <- function(template, data) {
-  vapply(seq_len(nrow(data)), function(i) {
+  h <- vapply(seq_len(nrow(data)), function(i) {
     as.character(stringr::str_glue_data(data[i, , drop = FALSE], template))
   }, character(1))
+  multi <- !is.na(data$seqid) & data$seqid != data$ID
+  h[multi] <- paste0(h[multi], " [isolate=", data$seqid[multi], "]")
+  h
 }
