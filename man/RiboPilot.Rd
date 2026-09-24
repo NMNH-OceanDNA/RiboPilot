@@ -16,11 +16,15 @@ RiboPilot(
 \arguments{
 \item{project}{Path to the project directory (default: current dir).}
 
-\item{host, port, launch.browser}{Passed to Shiny (see [run_app()]).}
+\item{host, port, launch.browser}{Passed to Shiny (see [run_app()]). To reach
+the app from another computer, pass a `port` and `launch.browser = FALSE`,
+then open an SSH tunnel to that port; the console prints the command.}
 
-\item{headless}{Offer a cluster job script instead of running Nextflow where
-the app is served. Detected automatically (RStudio Server or a batch
-scheduler on PATH means yes); pass `TRUE`/`FALSE` to override.}
+\item{headless}{Offer a cluster job script (Save script, Submit as job)
+instead of Run from App. By default this is on when a batch scheduler
+(sbatch, qsub, or bsub) is on PATH or the session is RStudio Server, and
+off otherwise. Pass `TRUE` or `FALSE` to override; `FALSE` runs Nextflow on
+the machine that serves the app.}
 
 \item{...}{Additional arguments passed to `run_app()`.}
 }

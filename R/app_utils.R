@@ -13,17 +13,20 @@ add_external_resources <- function() {
 
 #' Enumerate Nextflow task work directories for one sample
 #'
-#' Parses the project's `.nextflow.log*` files (the app launches Nextflow from
-#' the project dir) for completed-task records, which Nextflow writes for every
-#' attempt (success or failure), each with its own work dir. Mirrors MitoPilot's
-#' work-dir browser.
+#' Parses the project's .nextflow.log* files (runs started from the app) and
+#' nextflow_logs/*.nextflow.log (submitted jobs) for completed-task records,
+#' which Nextflow writes for every attempt (success or failure), each with its
+#' own work dir. Mirrors MitoPilot's work-dir browser.
 #' @noRd
 find_workdirs <- function(project_dir, sample_id) {
   empty <- data.frame(process = character(0), status = character(0),
     modified = character(0), workdir = character(0), exists = logical(0),
     stringsAsFactors = FALSE)
   if (is.null(project_dir) || is.null(sample_id) || !nzchar(sample_id)) return(empty)
-  logs <- list.files(project_dir, pattern = "^\\.nextflow\\.log", full.names = TRUE, all.files = TRUE)
+  logs <- c(
+    list.files(project_dir, pattern = "^\\.nextflow\\.log", full.names = TRUE, all.files = TRUE),
+    list.files(file.path(project_dir, JOB_DIRS$nextflow), pattern = "\\.nextflow\\.log",
+      full.names = TRUE))
   if (length(logs) == 0) return(empty)
   lines <- unlist(lapply(logs, function(f) tryCatch(readLines(f, warn = FALSE), error = function(e) character(0))))
   th <- grep("Task completed > TaskHandler\\[", lines, value = TRUE)
@@ -58,18 +61,19 @@ find_workdirs <- function(project_dir, sample_id) {
 #'
 #' Two different situations, and the desktop assumption is wrong in one of them.
 #' On a desktop session the R process and the user are on the same machine, so
-#' the platform's file manager is the right answer. In an RStudio Server session
-#' (a cluster login node) the R process is on a host the user has no desktop on:
-#' `xdg-open` there reaches nothing, and RStudio Server intercepts it and serves
-#' a URL that 404s. The Files pane is the only file browser that session has in
-#' front of the user, so navigate that instead.
+#' the platform's file manager is the right answer. In an RStudio Server session,
+#' in cluster mode, or when the browser is on another computer, the R process is
+#' on a host the user has no desktop on: `xdg-open` there reaches nothing, and
+#' RStudio Server intercepts it and serves a URL that 404s. The Files pane is
+#' the only file browser that session has in front of the user, so navigate
+#' that instead.
 #'
 #' @return invisibly `TRUE` if a browser was opened, `FALSE` if this session has
 #'   no way to show a directory (the caller then has to say where it is).
 #' @noRd
 open_path <- function(path) {
   if (length(path) != 1 || is.na(path) || !nzchar(path)) return(invisible(FALSE))
-  if (app_headless()) {
+  if (app_headless() || !isTRUE(getOption("RiboPilot.local_browser", TRUE))) {
     return(invisible(rstudio_show_dir(path)))
   }
   cmd <- if (Sys.info()[["sysname"]] == "Darwin") "open" else

@@ -42,6 +42,21 @@ test_that("a work dir containing an 's' is parsed whole", {
   expect_false(any(grepl("^/tmp/[^/]*$", d$workdir)))
 })
 
+test_that("a submitted run's tasks are found in nextflow_logs/", {
+  skip_if_not_installed("withr")
+  dir <- withr::local_tempdir()
+  dir.create(file.path(dir, "nextflow_logs"))
+  wd <- file.path(dir, "work", "ab", "cdef12")
+  writeLines(paste0("Sep-24 10:00:00.000 [Task monitor] DEBUG n.processor.TaskPollingMonitor - ",
+    "Task completed > TaskHandler[jobId: 4242; id: 7; name: assemble (S1); status: COMPLETED; ",
+    "exit: 140; error: -; workDir: ", wd, " started: 1727172000000; exited: 2026-09-24T10:00:00Z; ]"),
+    file.path(dir, "nextflow_logs", "ribopilot_2026-09-24_10-00-00.nextflow.log"))
+  d <- RiboPilot:::find_workdirs(dir, "S1")
+  expect_equal(d$process, "assemble")
+  expect_equal(d$status, "failed")
+  expect_equal(d$workdir, wd)
+})
+
 test_that("open_path ignores an absent, empty or NA path", {
   skip_if_not_installed("withr")
   skip_on_os("windows")
@@ -115,6 +130,18 @@ test_that("a desktop session still opens the OS file manager", {
   for (i in 1:40) { if (file.exists(marker)) break; Sys.sleep(0.05) }
   expect_true(file.exists(marker))
   expect_equal(readLines(marker), "/tmp/ribopilot-desktop")
+})
+
+test_that("a browser on another computer never reaches for a desktop file manager", {
+  skip_if_not_installed("withr")
+  skip_on_os("windows")
+  marker <- mk_opener_probe(rlang::current_env())
+  withr::local_options(list(RiboPilot.headless = FALSE, RiboPilot.local_browser = FALSE))
+  testthat::local_mocked_bindings(rstudio_show_dir = function(path) FALSE, .package = "RiboPilot")
+
+  expect_false(RiboPilot:::open_path("/tmp/ribopilot-remote-browser"))
+  Sys.sleep(0.2)
+  expect_false(file.exists(marker))
 })
 
 test_that("unit_evidence surfaces the screen reason", {

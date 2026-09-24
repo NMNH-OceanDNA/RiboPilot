@@ -581,7 +581,7 @@ test_that("the in-app Build run pins NXF_VER and passes what the project config 
   expect_equal(unname(seen$env[["NXF_VER"]]), "25.10.6")
   expect_equal(seen$args[which(seen$args == "-entry") + 1], "BUILD")
   expect_equal(seen$args[which(seen$args == "--projectDir") + 1], path.expand(dir))
-  expect_equal(seen$args[which(seen$args == "--rawDir") + 1], "/data/raw")
+  expect_false("--rawDir" %in% seen$args)
 
   con <- DBI::dbConnect(RSQLite::SQLite(), dbfile); on.exit(DBI::dbDisconnect(con))
   log <- DBI::dbGetQuery(con, "SELECT log_file FROM reference WHERE ref_id = 'asteroidea'")$log_file[1]

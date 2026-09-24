@@ -86,8 +86,9 @@ test_that("off Hydra the generic SGE header is used", {
   s <- RiboPilot:::job_script("/tmp/proj", "nextflow run x",
     list(cmd = "qsub", name = "SGE/PBS"), "ribopilot")
   expect_false(grepl("lTWFM.sq", s, fixed = TRUE))
-  # Hydra has no "mpi" parallel environment, and neither do most SGE sites
-  expect_match(s, "#\\$ -pe mthread 2")
+  # no profile, so no parallel environment is guessed
+  expect_false(grepl("-pe", s, fixed = TRUE))
+  expect_match(s, "#$ -l h_rt=48:00:00", fixed = TRUE)
   expect_match(s, "#\\$ -S /bin/bash")
 })
 
@@ -157,4 +158,52 @@ test_that("a second submission does not overwrite the first one's log paths", {
   b <- RiboPilot:::build_submit_script(dir, sched = list(cmd = "qsub"),
     base = RiboPilot:::job_basename("ribopilot", t1 + 60))
   expect_false(identical(a, b))
+})
+
+test_that("the head job follows the project profile", {
+  skip_if_not_installed("withr")
+  testthat::local_mocked_bindings(is_hydra_cluster = function() FALSE,
+    nf_pin_version = function(...) NA_character_, .package = "RiboPilot")
+  prof <- withr::local_tempdir(); proj <- withr::local_tempdir()
+  job <- "ribopilot_2026-09-24_10-00-00"
+  hdr <- function(s) {
+    suppressMessages(generate_config(s, scheduler = s, queue = "q1", account = "a1",
+      container_cache = "/c", profile_dir = prof, overwrite = TRUE))
+    file.copy(file.path(prof, paste0("config.", s)), file.path(proj, ".config"), overwrite = TRUE)
+    RiboPilot:::job_script(proj, "nextflow run x", NULL, job)
+  }
+  s <- hdr("slurm")
+  expect_match(s, "#SBATCH -p q1", fixed = TRUE)
+  expect_match(s, "#SBATCH --account=a1", fixed = TRUE)
+  expect_match(s, paste0(job, "_%j.log"), fixed = TRUE)
+  expect_false(grepl("%%", s, fixed = TRUE))
+  s <- hdr("sge")
+  expect_match(s, "#$ -pe mthread 2", fixed = TRUE)
+  expect_match(s, "#$ -q q1", fixed = TRUE)
+  expect_match(s, "#$ -V", fixed = TRUE)
+  s <- hdr("pbs")
+  expect_match(s, "#PBS -l select=1:ncpus=2:mem=8gb", fixed = TRUE)
+  expect_match(s, "#PBS -l walltime=48:00:00", fixed = TRUE)
+  expect_match(s, "#PBS -A a1", fixed = TRUE)
+  expect_match(s, "#PBS -N ribopilot_2026-", fixed = TRUE)
+  expect_false(grepl("#$", s, fixed = TRUE))
+  s <- hdr("lsf")
+  expect_match(s, "#BSUB -q q1", fixed = TRUE)
+  expect_match(s, "#BSUB -W 48:00", fixed = TRUE)
+  expect_match(s, paste0(job, ".%J.log"), fixed = TRUE)
+  expect_false(grepl("%%", s, fixed = TRUE))
+  for (x in c("slurm", "sge", "pbs", "lsf")) {
+    expect_match(hdr(x), "export NXF_OPTS='-Xms512m -Xmx4g'", fixed = TRUE, info = x)
+  }
+})
+
+test_that("a closure clusterOptions is left out of the head job", {
+  skip_if_not_installed("withr")
+  testthat::local_mocked_bindings(is_hydra_cluster = function() FALSE,
+    nf_pin_version = function(...) NA_character_, .package = "RiboPilot")
+  proj <- withr::local_tempdir()
+  writeLines(c("process {", "  executor = 'slurm'",
+    "  clusterOptions = { \"--mem=${task.memory}\" }", "}"), file.path(proj, ".config"))
+  s <- RiboPilot:::job_script(proj, "nextflow run x", NULL, "ribopilot")
+  expect_false(grepl("{", s, fixed = TRUE))
 })

@@ -151,13 +151,7 @@ nf_reference_command <- function(project, entry, manifest, ref_dir, out_dir,
   entry <- match.arg(entry, c("COUNT", "BUILD"))
   main_nf <- app_sys("nextflow", "main_reference.nf")
   cfg <- file.path(project, ".config")
-  cfg_lines <- if (file.exists(cfg)) readLines(cfg) else character(0)
-  # every container executor template interpolates params.projectDir and
-  # params.rawDir into docker/singularity runOptions, so a run that omits them
-  # cannot even parse the project config (see nf_command())
   proj_dir <- path.expand(project)
-  raw_dir <- config_param(cfg_lines, "rawDir") %||% ""
-  if (length(raw_dir) == 0 || is.na(raw_dir) || !nzchar(raw_dir)) raw_dir <- proj_dir
   # ref_dir is deliberately not bind-mounted: the tasks write into their own
   # work directory and Nextflow publishes to the folder from the host, so the
   # mount only gave Singularity a missing path to refuse
@@ -165,8 +159,8 @@ nf_reference_command <- function(project, entry, manifest, ref_dir, out_dir,
     if (file.exists(cfg)) c("-c", cfg),
     "-work-dir", work,
     if (isTRUE(resume)) "-resume",
+    # the container runOptions interpolate params.projectDir
     "--projectDir", proj_dir,
-    "--rawDir", path.expand(raw_dir),
     "--clades", path.expand(manifest),
     "--refDir", path.expand(ref_dir),
     "--outDir", path.expand(out_dir),

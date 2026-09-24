@@ -16,6 +16,7 @@ executor {
 singularity {
     enabled = true
     autoMounts = true
+    pullTimeout = '60 min'
     runOptions = "-B ${params.projectDir}<<EXTRA_MOUNTS>>"
 }
 
