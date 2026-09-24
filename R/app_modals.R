@@ -75,6 +75,23 @@ modal_taxon_header <- function(id) {
       tags$span(style = "color:#999;", sprintf(" (input: %s)", s$Taxon[1])))
 }
 
+#' Why a failed sample failed and what to try next, or nothing
+#' @param id Sample ID.
+#' @noRd
+failure_banner <- function(id) {
+  r <- app_query("SELECT assemble_switch, TRIM(COALESCE(assemble_notes, '') || ' ' ||
+      COALESCE(find_rrna_notes, '')) AS note FROM assemble WHERE ID = ?", params = list(id))
+  if (nrow(r) == 0 || !identical(as.integer(r$assemble_switch[1]), 3L)) {
+    return(NULL)
+  }
+  h <- failure_hint(r$note[1])
+  div(class = "mp-fg-danger",
+    style = "border:1px solid currentColor; border-radius:4px; padding:8px 12px; margin:0 0 8px;",
+    tags$b("This sample failed. "), h$why, tags$br(), tags$b("Next step: "), h$next_step,
+    if (nzchar(r$note[1] %|NA|% "")) div(style = "margin-top:4px; color:#555;",
+      "Pipeline note: ", r$note[1]))
+}
+
 #' Prev / picker / next sample navigation for the detail modals
 #'
 #' The order is whatever the main table shows when the modal opens: sort,
@@ -124,6 +141,7 @@ assemble_modal <- function(id) {
     size = "l", easyClose = TRUE,
     footer = div(class = "mp-sticky-foot", rp_sample_nav("assemble"), mp_footer(dismiss = "Close")),
     modal_taxon_header(id),
+    failure_banner(id),
     h5("Scaffolds", style = "margin:2px 0 4px;"),
     tags$p(class = "mp-help-text", style = "margin-bottom:4px;",
       paste("Click on a scaffold row to examine GenBank evidence and coverage below")),
@@ -492,7 +510,7 @@ run_modal <- function(n, headless = FALSE, sched = NULL, script = "") {
         actionButton("nf_close", "Close")))
   }
   modalDialog(
-    title = run_modal_title(sprintf("%s - %d sample(s) to update", wf, n), "rp_gears"),
+    title = run_modal_title(sprintf("%s - %d sample(s) or unit(s) to update", wf, n), "rp_gears"),
     size = "l",
     shinyWidgets::prettyCheckbox("nf_resume", "Resume previous run?", value = TRUE,
       status = "primary", inline = TRUE),

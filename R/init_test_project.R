@@ -152,7 +152,9 @@ RP_TEST_READS_TAG <- "test-reads-2026.09.02"
 #'   the small rDNA-filtered subsets (default FALSE).
 #' @param executor Executor / config profile (default "docker").
 #' @param container Container image for the pipeline.
-#' @param min_depth Minimum trimmed paired reads to proceed with assembly.
+#' @param min_depth Minimum number of reads left after trimming, counting both
+#'   reads of a pair (2000000 is 1000000 pairs). A sample below it is not
+#'   assembled and is marked Failed with a note.
 #' @param sra_bin Directory holding `fasterq-dump` (for the SRA fallback);
 #'   default searches `PATH`.
 #' @param Rproj Initialize an RStudio project (default TRUE; no effect outside

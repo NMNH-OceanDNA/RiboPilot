@@ -67,6 +67,10 @@ run_assembly <- function(path = ".", nextflow = "nextflow", work = file.path(pat
   path <- normalizePath(path)
   stopifnot(file.exists(file.path(path, ".sqlite")), file.exists(file.path(path, ".config")))
   check_nextflow_version("run_assembly", nextflow = nextflow)
+  held <- run_lock_holder(path)
+  if (!is.null(held)) stop(run_lock_message(held, path), call. = FALSE)
+  marker <- run_lock_take(path, "console pipeline")
+  on.exit(run_lock_release(path, marker), add = TRUE)
 
   message("Running Nextflow assembly (WF1) - self-contained DB I/O...")
   args <- nf_command(path, resume = TRUE, work = work, ribopilot_src = ribopilot_src)

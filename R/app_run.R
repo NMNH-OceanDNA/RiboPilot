@@ -140,8 +140,9 @@ build_reference_submit_script <- function(project, manifest, ref_dir, api_key = 
   args <- nf_reference_command(project, "BUILD", manifest, ref_dir, ref_dir,
     api_key = api_key, refseq = refseq, resume = resume)
   args <- c(nf_log_opt(project, base), args, "-ansi-log", "false")
-  job_script(project, paste(c(shQuote("nextflow"), shQuote(args)), collapse = " "),
-    sched, base)
+  cmd <- c(paste("cd", shQuote(file.path(project, ".reference"))),
+    paste(c(shQuote("nextflow"), shQuote(args)), collapse = " "))
+  job_script(project, cmd, sched, base)
 }
 
 #' Open the RiboPilot GUI
@@ -206,4 +207,149 @@ run_app <- function(project = getwd(), onStart = NULL, options = list(),
     ),
     golem_opts = list(project = project, ...)
   )
+}
+#' Wire one Nextflow run window: start, live progress, graceful stop, close
+#'
+#' Shared by the Update window (`pfx = ""`) and the Reference build window
+#' (`pfx = "ref_"`). Inputs `<pfx>nf_start`, `<pfx>nf_stop`, `<pfx>nf_close`,
+#' `<pfx>nf_close_confirm`; outputs `<pfx>nf_prog_all` and the
+#' `<pfx>nf_progress` panel. A run holds the project's run lock until Nextflow
+#' and every task it started have exited.
+#' @param gears Id of the spinner in the window title.
+#' @param project function() -> project folder.
+#' @param kind Run kind named in the lock and the report.
+#' @param log_name Base name of the run's Nextflow log in nextflow_logs/.
+#' @param launch function(nflog) -> a running processx process, or NULL when
+#'   there is nothing to run. May stop() with a message for the user.
+#' @param on_lines function(lines) called with new output, or NULL.
+#' @param on_done function() called when the run has ended.
+#' @param on_close function() called after the window closes.
+#' @noRd
+nf_run_window <- function(input, output, session, pfx, gears, project, kind, log_name,
+                          launch, on_lines = NULL, on_done = function() NULL,
+                          on_close = function() NULL) {
+  id <- function(x) paste0(pfx, x)
+  proc <- shiny::reactiveVal(NULL)
+  state <- shiny::reactiveVal(nf_progress_empty())
+  run <- new.env()
+  output[[id("nf_prog_all")]] <- shiny::renderText(nf_progress_text(state()))
+
+  running <- function(on) {
+    shinyjs::toggle(id("nf_start"), condition = !on)
+    shinyjs::toggle(id("nf_stop"), condition = on)
+    if (on) shinyjs::removeClass(id = gears, class = "paused") else
+      shinyjs::addClass(id = gears, class = "paused")
+    shinyjs::runjs(if (on) "window.onbeforeunload = function() { return true; };" else
+      "window.onbeforeunload = null;")
+  }
+
+  shiny::observeEvent(input[[id("nf_start")]], {
+    if (!is.null(proc())) return()
+    held <- run_lock_holder(project())
+    if (!is.null(held)) {
+      rp_alert(run_lock_message(held, project()), type = "warning")
+      return()
+    }
+    marker <- NULL
+    nflog <- NULL
+    p <- tryCatch({
+      marker <- run_lock_take(project(), kind)
+      nflog <- nf_log_opt(project(), job_basename(log_name))[2]
+      launch(nflog)
+    }, error = function(e) e)
+    if (!is.null(marker)) Sys.unsetenv(marker)
+    if (is.null(p) || inherits(p, "error")) {
+      if (!is.null(marker)) run_lock_release(project(), marker)
+      if (inherits(p, "error")) {
+        rp_alert(paste("Could not start the run.", conditionMessage(p)), type = "error")
+      }
+      return()
+    }
+    run$marker <- marker; run$log <- nflog; run$started <- as.integer(Sys.time())
+    run$stop_at <- NULL; run$exit_at <- NULL; run$killed <- FALSE
+    state(nf_progress_empty())
+    shinyjs::show(id("nf_progress"))
+    running(TRUE)
+    proc(p)
+  })
+
+  waited <- function(t) !is.null(t) && difftime(Sys.time(), t, units = "secs") > NF_STOP_WAIT
+
+  shiny::observe({
+    p <- proc()
+    shiny::req(p)
+    shiny::invalidateLater(250)
+    lines <- tryCatch(c(p$read_output_lines(), p$read_error_lines()), error = function(e) character(0))
+    if (length(lines)) {
+      state(nf_progress_parse(shiny::isolate(state()), lines))
+      if (!is.null(on_lines)) on_lines(lines)
+    }
+    if (p$is_alive()) {
+      if (waited(run$stop_at) && !run$killed) {
+        p$kill()
+        run$killed <- TRUE
+      }
+      return()
+    }
+    if (is.null(run$exit_at)) run$exit_at <- Sys.time()
+    if (run_alive(run$marker) && !waited(run$exit_at)) return()
+    proc(NULL)
+    run_lock_release(project(), run$marker)
+    running(FALSE)
+    how <- if (run$killed) "killed" else if (!is.null(run$stop_at)) "stopped" else "done"
+    status <- tryCatch(p$get_exit_status() %||% NA_integer_, error = function(e) NA_integer_)
+    rep <- nf_run_report(project(), run$log, status, kind, run$started, how)
+    if (nzchar(rep$text)) try(writeLines(rep$text, sub("\\.nextflow\\.log$", "_report.txt", run$log)), silent = TRUE)
+    on_done()
+    rp_alert(run_report_ui(rep), type = rep$type, title = rep$title)
+  })
+
+  stop_run <- function() {
+    p <- proc()
+    if (is.null(p) || !is.null(run$stop_at)) return()
+    if (p$is_alive()) p$interrupt()
+    run$stop_at <- Sys.time()
+    shinyjs::hide(id("nf_stop"))
+    rp_toast("Stopping the run: Nextflow is stopping its tasks. This can take up to a minute.",
+      type = "warning", duration = 10)
+  }
+  shiny::observeEvent(input[[id("nf_stop")]], stop_run())
+  shiny::observeEvent(input[[id("nf_close")]], {
+    if (!is.null(proc()) && is.null(run$stop_at)) {
+      mp_confirm(id("nf_close_confirm"), title = "Stop the run?",
+        text = paste("Closing this window stops the run. Nextflow stops its tasks first,",
+          "which can take up to a minute."),
+        action_label = "Stop and close", danger = TRUE)
+      return()
+    }
+    shiny::removeModal()
+    on_close()
+  })
+  shiny::observeEvent(input[[id("nf_close_confirm")]], {
+    shiny::req(isTRUE(input[[id("nf_close_confirm")]]))
+    stop_run()
+    shiny::removeModal()
+    on_close()
+  })
+  session$onSessionEnded(function() {
+    p <- shiny::isolate(proc())
+    if (is.null(p)) return()
+    nf_stop_run(p, run$marker)
+    run_lock_release(shiny::isolate(project()), run$marker)
+  })
+  invisible(NULL)
+}
+
+#' Alert body for a run report: the lead line, the report, and a copy button
+#' @noRd
+run_report_ui <- function(rep) {
+  if (!nzchar(rep$text)) return(rep$lead)
+  shiny::tagList(
+    shiny::tags$p(rep$lead),
+    shiny::tags$pre(id = "rp_run_report",
+      style = "text-align:left; max-height:40vh; overflow:auto; white-space:pre-wrap; word-break:break-all; font-size:11px;",
+      rep$text),
+    shiny::tags$button(type = "button", class = "btn btn-default btn-sm",
+      onclick = "rpCopyEl('rp_run_report'); this.textContent = 'Copied';",
+      shiny::icon("clipboard"), " Copy report"))
 }

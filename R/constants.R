@@ -206,7 +206,7 @@ MP_STATE_META <- list(
   `2` = list(label = "Success",      icon = "fa fa-circle-check",
              tip = "Finished without errors."),
   `3` = list(label = "Failed",       icon = "fa fa-triangle-exclamation",
-             tip = "Stopped with an error - see Notes.")
+             tip = "Failed. Open the sample's details to see why and what to try next.")
 )
 
 #' Codes each module can display.

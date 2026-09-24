@@ -439,3 +439,21 @@ test_that("a re-assembly that changes a unit's sequence clears its old evidence 
   expect_equal(ev("annotations", 2), 1)
   expect_equal(ev("screen", 2), 1)
 })
+
+test_that("a failed assembly carries the assembler's reason into the note", {
+  dir <- withr::local_tempdir()
+  con <- mk_asm_db(dir); on.exit(DBI::dbDisconnect(con))
+  ad <- file.path(dir, "S1", "assemble")
+  dir.create(ad, recursive = TRUE)
+  writeLines(">No assembly found: SPAdes exit 21: Invalid kmer coverage histogram",
+    file.path(ad, "S1_assembly_0.fasta"))
+  RiboPilot::load_assemblies(con, dir, "S1")
+  r <- DBI::dbGetQuery(con, "SELECT assemble_switch, assemble_notes FROM assemble WHERE ID = 'S1'")
+  expect_equal(r$assemble_switch, 3L)
+  expect_equal(r$assemble_notes, "failed assembly: SPAdes exit 21: Invalid kmer coverage histogram")
+  # the supplied-assembly marker says nothing new; its reason is in find_rrna_notes
+  writeLines(">No rDNA contigs found", file.path(ad, "S1_assembly_0.fasta"))
+  RiboPilot::load_assemblies(con, dir, "S1")
+  expect_equal(DBI::dbGetQuery(con, "SELECT assemble_notes FROM assemble")$assemble_notes,
+    "failed assembly")
+})

@@ -23,7 +23,7 @@
 // paying for neither assembly nor a second remote BLAST. See
 // dev/design/15_WF2_DECOMMISSION.md.
 
-include { preprocess } from './modules/preprocess.nf'
+include { preprocess; below_min_depth } from './modules/preprocess.nf'
 include { assemble } from './modules/assemble.nf'
 include { fallback_assemble } from './modules/fallback.nf'
 include { find_rrna; stage_assembly } from './modules/find_rrna.nf'
@@ -93,6 +93,11 @@ workflow {
         .join(read_ids)
         .map { id, reads, _flag -> tuple(id, reads) }
         .join(asm_opts)
+    below_min_depth(preprocess.out.reads
+        .filter { id, reads, after -> (after as Integer) < (params.minDepth as Integer) }
+        .map { id, reads, after -> tuple(id, after) }
+        .join(read_ids)
+        .map { id, after, _flag -> tuple(id, after) })
 
     // Per-sample assembler. The fallback arm is `true` rather than an equality
     // test on purpose: branch DROPS an item matching no condition, silently, so

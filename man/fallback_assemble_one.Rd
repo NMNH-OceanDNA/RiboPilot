@@ -36,7 +36,8 @@ fallback_assemble_one(
 preset.}
 }
 \value{
-(invisibly) number of contigs recovered.
+(invisibly) number of contigs recovered. When SPAdes was killed for
+  memory, attribute `retry_status` holds its exit status.
 }
 \description{
 Writes `<out_dir>/<id>_assembly_<n>.fasta` (a `_0` sentinel if nothing is

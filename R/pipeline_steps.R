@@ -278,10 +278,13 @@ load_assemblies <- function(con, out_dir, ID) {
   ts <- as.integer(Sys.time())
 
   if (length(fas) == 0) {
+    s0 <- file.path(out_dir, ID, "assemble", paste0(ID, "_assembly_0.fasta"))
+    h <- if (file.exists(s0)) readLines(s0, n = 1L, warn = FALSE) else character(0)
+    why <- if (length(h) && startsWith(h, ">No assembly found: ")) substring(h, 21L) else ""
     DBI::dbExecute(con,
       "UPDATE assemble SET paths=NULL, scaffolds=NULL, length=NULL, topology=NULL,
-       assemble_switch=3, assemble_notes='failed assembly', time_stamp=? WHERE ID=?",
-      params = list(ts, ID))
+       assemble_switch=3, assemble_notes=?, time_stamp=? WHERE ID=?",
+      params = list(if (nzchar(why)) paste0("failed assembly: ", why) else "failed assembly", ts, ID))
     return(invisible(0L))
   }
 

@@ -19,7 +19,11 @@ mapfile -t files < <(
     done | sort -k1,1n -k2,2n -k3 | cut -d' ' -f3-
 )
 if [ ${#files[@]} -eq 0 ]; then
-    echo ">No assembly found" > "${id}_assembly_0.fasta"
+    why=$(grep -hE ' - (ERROR|WARNING): ' "$godir/get_org.log.txt" 2>/dev/null \
+        | grep -v 'still trying' \
+        | sed -E 's/^.* - (ERROR|WARNING): //; s/system call for: "[^"]*" //' \
+        | tail -n 3 | cut -c1-200 | awk 'NR > 1 { printf "; " } { printf "%s", $0 }' || true)
+    echo ">No assembly found${why:+: $why}" > "${id}_assembly_0.fasta"
     exit 0
 fi
 n=0

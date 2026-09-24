@@ -28,3 +28,38 @@ test_that("the SPAdes retry drops the preset flags", {
   expect_false(any(c("--careful", "--isolate") %in%
     spades_args("1.fq", "2.fq", "o", 4, opts = "--careful", retry = TRUE)))
 })
+
+# a stand-in spades.py that fails the way SPAdes does, writing spades.log first
+fake_spades <- function(status, env = parent.frame()) {
+  bin <- withr::local_tempdir(.local_envir = env)
+  writeLines(c("#!/bin/bash", 'out=""',
+    'while [ $# -gt 0 ]; do [ "$1" = "-o" ] && out=$2; shift; done', 'mkdir -p "$out"',
+    'echo "  0:00:01 ... Invalid kmer coverage histogram" > "$out/spades.log"',
+    sprintf("echo '== Error ==  system call for: \"[spades-core]\" finished abnormally, OS return value: %d' >> \"$out/spades.log\"", status),
+    sprintf("exit %d", status)), file.path(bin, "spades.py"))
+  Sys.chmod(file.path(bin, "spades.py"), "0755")
+  withr::local_path(bin, action = "prefix", .local_envir = env)
+}
+
+test_that("a SPAdes failure is written into the no-assembly marker with its exit status", {
+  skip_on_os("windows")
+  fake_spades(21L)
+  out <- withr::local_tempdir()
+  n <- suppressMessages(RiboPilot::fallback_assemble_one("S1", "r1.fq", "r2.fq", NA, NA,
+    out_dir = out, method = "denovo"))
+  expect_equal(as.integer(n), 0L)
+  expect_null(attr(n, "retry_status"))
+  head <- readLines(file.path(out, "S1_assembly_0.fasta"))[1]
+  expect_match(head, "^>No assembly found: SPAdes exit 21: ")
+  expect_match(head, "Invalid kmer coverage histogram", fixed = TRUE)
+  expect_false(dir.exists(file.path(out, "rp_spades_S1")))
+})
+
+test_that("a SPAdes memory kill hands its exit status back for a retry", {
+  skip_on_os("windows")
+  fake_spades(247L)
+  out <- withr::local_tempdir()
+  n <- suppressMessages(RiboPilot::fallback_assemble_one("S1", "r1.fq", "r2.fq", NA, NA,
+    out_dir = out, method = "denovo"))
+  expect_equal(attr(n, "retry_status"), 247L)
+})
