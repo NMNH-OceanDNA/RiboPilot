@@ -19,6 +19,10 @@ filter_pickers <- function(mode) {
 #' @noRd
 app_ui <- function(request) {
   btn <- mp_toolbar_button
+  # curator marks; app_server.R relabels them to what the next click does
+  mark <- function(col) btn(paste0(col, "_btn"), MP_FLAG_WORDS[[col]][["set"]],
+    title = paste(MP_FLAG_WORDS[[col]][["tip"]], "Acts on the selected units; locked units are skipped."),
+    needs_selection = TRUE)
   step <- function(n, lab) shiny::HTML(sprintf("<span class='mp-step-n'>%d</span> %s", n, lab))
   h1 <- function(mode, lab) shiny::conditionalPanel(sprintf("input.mode == '%s'", mode),
     shiny::tags$h1(class = "mp-module-h1 sr-only", lab))
@@ -88,12 +92,7 @@ app_ui <- function(request) {
               btn("annot_state_btn", "State", title = "Set the pipeline state of the selected units",
                 needs_selection = TRUE),
               btn("annot_lock_btn", "Lock", title = MP_LOCK_DEF("annotate"), needs_selection = TRUE),
-              btn("reviewed_btn", "Reviewed", title = "Mark or clear reviewed on the selected units",
-                needs_selection = TRUE),
-              btn("problematic_btn", "Problematic",
-                title = "Mark or clear problematic on the selected units", needs_selection = TRUE),
-              btn("partial_btn", "Partial", title = "Mark or clear partial on the selected units",
-                needs_selection = TRUE)),
+              mark("reviewed"), mark("problematic"), mark("partial")),
             shiny::conditionalPanel("input.mode == 'Export'", id = "export_ctrls", class = "mp-toolbar",
               btn("assign_group_btn", "Assign Group",
                 title = "Assign the selected units to an export group", needs_selection = TRUE),

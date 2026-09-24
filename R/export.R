@@ -393,6 +393,39 @@ unit_key <- function(id, path, scaffold) {
   paste(as.character(id), as.integer(path), as.integer(scaffold), sep = "\r")
 }
 
+#' WHERE clause for the units an export writes (aliases: an = annotate,
+#' a = assemble, asm = assemblies): both locks on, scaffold kept, not excluded.
+#' @noRd
+EXPORTABLE_WHERE <- "COALESCE(an.annotate_lock,0) = 1 AND COALESCE(a.assemble_lock,0) = 1
+  AND COALESCE(asm.ignore,0) = 0 AND COALESCE(an.problematic,'') != 'yes'"
+
+#' The units an export writes, with their export group
+#' @noRd
+exportable_units <- function(con) {
+  DBI::dbGetQuery(con, paste(
+    "SELECT an.ID, an.path, an.scaffold, an.export_group FROM annotate an
+     JOIN assemble a ON a.ID = an.ID
+     JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
+     WHERE", EXPORTABLE_WHERE, "ORDER BY an.ID, an.path, an.scaffold"))
+}
+
+#' Units of an export group that its export will leave out, and why
+#' @return data.frame(ID, path, scaffold, why)
+#' @noRd
+export_left_out <- function(con, group) {
+  DBI::dbGetQuery(con, paste(
+    "SELECT an.ID, an.path, an.scaffold,
+       CASE WHEN COALESCE(an.problematic,'') = 'yes' THEN 'marked Exclude from export'
+            WHEN COALESCE(a.assemble_lock,0) != 1 THEN 'assembly not locked'
+            WHEN COALESCE(an.annotate_lock,0) != 1 THEN 'annotation not locked'
+            ELSE 'scaffold dropped' END AS why
+     FROM annotate an
+     LEFT JOIN assemble a ON a.ID = an.ID
+     LEFT JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
+     WHERE an.export_group = ? AND NOT (", EXPORTABLE_WHERE, ")
+     ORDER BY an.ID, an.path, an.scaffold"), params = list(group))
+}
+
 #' The intragenomic variant facts for a set of exported units
 #'
 #' Records that a unit is one of N intragenomic variants detected in its sample
@@ -558,6 +591,9 @@ export_report_html <- function(con, units, out_html, label, smry = export_summar
 #' @param itsx_cpu Threads for the ITSx check.
 #' @return (invisibly) the group output directory, with the summary data.frame
 #'   attached as attribute `summary`.
+#' @details A unit is exported when its sample's assembly and the unit's
+#'   annotation are both locked, its scaffold is kept, and it is not marked
+#'   Exclude from export.
 #' @export
 export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
                           out_dir = file.path(path, "out"),
@@ -569,15 +605,9 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(path, ".sqlite"))
   on.exit(DBI::dbDisconnect(con), add = TRUE)
 
-  # Export annotation-locked, non-ignored, non-problematic UNITS (one GenBank
-  # record per (ID, path, scaffold)). Filtered by group / ids / units when given.
-  all_units <- DBI::dbGetQuery(con,
-    "SELECT an.ID, an.path, an.scaffold, an.export_group
-     FROM annotate an
-     JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
-     WHERE an.annotate_lock = 1 AND COALESCE(asm.ignore,0) = 0
-       AND COALESCE(an.problematic,'') != 'yes'
-     ORDER BY an.ID, an.path, an.scaffold")
+  # one GenBank record per exportable (ID, path, scaffold), filtered by group /
+  # ids / units when given
+  all_units <- exportable_units(con)
   sel <- all_units
   if (!is.null(group)) sel <- sel[!is.na(sel$export_group) & sel$export_group == group, , drop = FALSE]
   if (!is.null(ids)) sel <- sel[sel$ID %in% ids, , drop = FALSE]
@@ -586,7 +616,8 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
     sel <- sel[key(sel) %in% key(units), , drop = FALSE]
   }
   if (nrow(sel) == 0) {
-    stop("No annotation-locked units to export.", call. = FALSE)
+    stop("No units to export: a unit needs its assembly and its annotation locked, ",
+      "and must not be marked Exclude from export.", call. = FALSE)
   }
   # SeqID: the sample's ID when it exports a single unit, else ID_p<path>_s<scaffold>.
   # Counted over ALL exportable units of the sample, not over this bundle's

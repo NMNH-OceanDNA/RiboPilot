@@ -18,7 +18,7 @@ mk_app_project <- function(env = parent.frame()) {
   DBI::dbExecute(con, "CREATE TABLE annotate(ID TEXT, path INT, scaffold INT, annotate_switch INT,
     annotate_lock INT, annotate_opts TEXT, curate_opts TEXT, reviewed TEXT, problematic TEXT,
     partial TEXT, n_features INT, missing TEXT, n_flags INT, annotate_notes TEXT, itsx_warnings TEXT, export_group TEXT, time_stamp INT)")
-  DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT, start INT)")
+  DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT, start INT, stop INT)")
   DBI::dbExecute(con, "CREATE TABLE coverage(ID TEXT, path INT, scaffold INT, mean_depth REAL,
     min_depth INT, max_depth INT, depths TEXT)")
   DBI::dbExecute(con, "CREATE TABLE blast_screen(ID TEXT, path INT, scaffold INT, accession TEXT, title TEXT,
@@ -477,33 +477,80 @@ test_that("the Annotation Review title always names the unit", {
   expect_match(ttl("S1", 1L, 1L), "path 1 / scaffold 1")
 })
 
-test_that("locking two paths asks first, and 'lock anyway' goes through", {
+test_that("a second assembly path is refused from the toolbar and from Lock & Close", {
   skip_if_not_installed("withr")
   dir <- mk_app_project()
   withr::local_dir(dir)
+  locks <- function() RiboPilot:::app_query(
+    "SELECT COALESCE(annotate_lock,0) AS lock, reviewed FROM annotate WHERE ID='S1'
+      ORDER BY path, scaffold")
 
   shiny::testServer(RiboPilot:::app_server, {
     session$setInputs(mode = "Annotate")
     session$flushReact()
     d <- samples_data()
-    sel <- c(which(d$path == 1 & d$scaffold == 1)[1],
-             which(d$path == 2 & d$scaffold == 1)[1])
-    session$setInputs(tbl__reactable__selected = sel)
-    session$flushReact()
+    row <- function(p, s) which(d$path == p & d$scaffold == s)[1]
 
-    # one unit from each path: the click must not write anything on its own
+    # one unit from each path in one click: nothing is locked
+    session$setInputs(tbl__reactable__selected = c(row(1, 1), row(2, 1)))
     session$setInputs(annot_lock_btn = 1)
     session$flushReact()
-    lk <- RiboPilot:::app_query("SELECT COALESCE(annotate_lock,0) AS lock FROM annotate WHERE ID='S1'")
-    expect_true(all(lk$lock == 0))
+    expect_equal(locks()$lock, c(0L, 0L, 0L, 0L))
 
-    # answering the warning applies exactly the toggle that was asked for
-    session$setInputs(lock_anyway = 1)
+    # path 1 alone locks
+    session$setInputs(tbl__reactable__selected = row(1, 1))
+    session$setInputs(annot_lock_btn = 2)
     session$flushReact()
-    lk <- RiboPilot:::app_query(
-      "SELECT path, scaffold, COALESCE(annotate_lock,0) AS lock FROM annotate WHERE ID='S1'
-        ORDER BY path, scaffold")
-    expect_equal(lk$lock, c(1L, 0L, 1L, 0L))
+    expect_equal(locks()$lock, c(1L, 0L, 0L, 0L))
+
+    # Lock & Close locks another unit of the same path, and is not a review sign-off
+    sel_unit(list(ID = "S1", path = 1L, scaffold = 2L))
+    session$setInputs(lock_and_close = 1)
+    session$flushReact()
+    expect_equal(locks()$lock, c(1L, 1L, 0L, 0L))
+    expect_equal(locks()$reviewed[2], "no")
+
+    # ...and refuses a unit of the other path, as the toolbar does
+    sel_unit(list(ID = "S1", path = 2L, scaffold = 1L))
+    session$setInputs(lock_and_close = 2)
+    session$flushReact()
+    expect_equal(locks()$lock, c(1L, 1L, 0L, 0L))
+  })
+})
+
+test_that("toolbar marks skip locked units, and a mixed selection sets rather than clears", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE annotate SET problematic = 'yes' WHERE path = 1 AND scaffold = 2")
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_lock = 1 WHERE path = 1 AND scaffold = 1")
+  DBI::dbDisconnect(con)
+  col <- function(x) RiboPilot:::app_query(sprintf(
+    "SELECT %s AS v FROM annotate WHERE ID='S1' ORDER BY path, scaffold", x))$v
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Annotate")
+    session$flushReact()
+    d <- samples_data()
+    row <- function(p, s) which(d$path == p & d$scaffold == s)[1]
+
+    # locked p1.s1, excluded p1.s2, plain p2.s1: the unlocked two end up excluded
+    session$setInputs(tbl__reactable__selected = c(row(1, 1), row(1, 2), row(2, 1)))
+    session$setInputs(problematic_btn = 1)
+    session$flushReact()
+    expect_equal(col("problematic"), c("no", "yes", "yes", "no"))
+
+    # every unlocked unit in the selection is now set, so the next click clears them
+    session$setInputs(problematic_btn = 2)
+    session$flushReact()
+    expect_equal(col("problematic"), c("no", "no", "no", "no"))
+
+    # a Lock click over a locked and an unlocked unit locks, it does not unlock
+    session$setInputs(tbl__reactable__selected = c(row(1, 1), row(1, 2)))
+    session$setInputs(annot_lock_btn = 1)
+    session$flushReact()
+    expect_equal(col("COALESCE(annotate_lock,0)"), c(1L, 1L, 0L, 0L))
   })
 })
 

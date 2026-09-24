@@ -173,6 +173,8 @@ mk_itsx_project <- function() {
   DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,1,'18S','rRNA',1,200)")
   DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,1,'28S','rRNA',201,400)")
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S1','Genus species',NULL,NULL,'Metazoa;Chordata')")
+  DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, assemble_lock INT)")
+  DBI::dbExecute(con, "INSERT INTO assemble VALUES('S1',1)")
   dir
 }
 
@@ -231,6 +233,8 @@ test_that("a real ITSx run in the project's container over a genuine rDNA record
   DBI::dbExecute(con, "INSERT INTO samples VALUES('REAL','Fish sp.','Metazoa;Chordata')")
   DBI::dbExecute(con, "INSERT INTO assemblies VALUES('REAL',1,1,?,?,'linear',0)", params = list(seq, nchar(seq)))
   DBI::dbExecute(con, "INSERT INTO annotate VALUES('REAL',1,1,1,'no','no','yes',0,5,'',NULL)")
+  DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, assemble_lock INT)")
+  DBI::dbExecute(con, "INSERT INTO assemble VALUES('REAL',1)")
   for (i in seq_len(nrow(ann))) {
     DBI::dbExecute(con, "INSERT INTO annotations VALUES('REAL',1,1,?,?,?,?)",
       params = list(ann$element[i], ann$type[i], ann$start[i], ann$stop[i]))
