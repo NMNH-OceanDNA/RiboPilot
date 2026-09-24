@@ -101,13 +101,13 @@ TRIAGE_RULE_DEFS <- list(
   ),
   list(
     key = "chimeric",
-    label = "Likely chimeric assembly",
-    meaning = "Two or more independent signals place a junction between different lineages or array copies inside this scaffold.",
+    label = "Chimeric assembly (severe)",
+    meaning = "Parts of this scaffold match organisms from different phyla or kingdoms.",
     actions = c("off", "flag"),
     default = "flag",
     test = function(d, i, ctx) {
-      if (!identical(ctx$chimera[i], "likely")) return(NA_character_)
-      ctx$chimera_reason[i] %|NA|% "chimera detector scored this scaffold as likely"
+      if (!identical(ctx$chimera[i], "severe")) return(NA_character_)
+      ctx$chimera_reason[i] %|NA|% "parts of this scaffold match different phyla or kingdoms"
     }
   )
 )

@@ -44,7 +44,9 @@ process coverage {
         # -q 10 drops multi-mapping reads: the conserved 18S/28S core maps equally
         # well to every scaffold in the path and bowtie2 breaks those ties at
         # random, so unfiltered depths are not comparable between them.
-        bowtie2 -x ref -1 ${reads[0]} -2 ${reads[1]} -p ${task.cpus} --no-unal 2> path.bt2.log \
+        # --local: a read that runs past a join is soft-clipped, not dropped,
+        # which is what the clip count below measures.
+        bowtie2 --local -x ref -1 ${reads[0]} -2 ${reads[1]} -p ${task.cpus} --no-unal 2> path.bt2.log \
             | samtools view -b -q 10 - \
             | samtools sort -@ ${task.cpus} -o aln.bam -
         # -aa, not -a: -a omits reference sequences that have no alignments at

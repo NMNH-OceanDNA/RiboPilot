@@ -196,11 +196,12 @@ submission_risks <- function(con, id, path = 1L, scaffold = 1L) {
 #'
 #' `ann` is that unit's annotations ordered by start (or NULL/0 rows), `seq` its
 #' assembled sequence (length 1, may be NA). `chimera_label`/`chimera_reason`
-#' come from the `chimera` table ([chimera_unit()]); `suspect` and `likely` both
-#' raise the flag, warn-only, never blocking export.
+#' come from the `chimera` table ([chimera_unit()]); only `severe` raises the
+#' flag. ITSx's own chimeric call (`chimeric` = 1) raises it as `chimeric(ITSx)`.
 #' @noRd
 risk_flags <- function(chimeric, ann, seq, chimera_label = NA_character_, chimera_reason = NA_character_) {
-  chim <- isTRUE(chimeric[1] == 1L) || isTRUE(chimera_label %in% c("suspect", "likely"))
+  severe <- isTRUE(chimera_label[1] == "severe")
+  chim <- severe || isTRUE(chimeric[1] == 1L)
   gap_in_rdna <- FALSE
   misassembly <- FALSE
   if (!is.null(ann) && nrow(ann) > 0) {
@@ -214,11 +215,11 @@ risk_flags <- function(chimeric, ann, seq, chimera_label = NA_character_, chimer
     misassembly <- any(diff(idx) <= 0, na.rm = TRUE) ||
       (nrow(ann) > 1 && any(ann$start[-1] <= ann$stop[-nrow(ann)]))
   }
-  chim_tag <- if (chim) {
+  chim_tag <- if (severe) {
     if (!is.na(chimera_reason) && nzchar(chimera_reason)) {
       sprintf("chimeric(%s)", gsub(";", ",", chimera_reason, fixed = TRUE))
     } else "chimeric"
-  }
+  } else if (chim) "chimeric(ITSx)"
   flags <- c(chim_tag, if (gap_in_rdna) "gap_in_rDNA", if (misassembly) "misassembly")
   list(chimeric = chim, gap_in_rdna = gap_in_rdna, misassembly = misassembly,
     note = paste(flags, collapse = ";"))
@@ -232,11 +233,11 @@ is_truncated <- function(d) {
   grepl("(^|,)truncated(,|$)", ifelse(is.na(d$flags), "", d$flags))
 }
 
-#' TRUE where a submission_risk string carries a contamination tag
-#' (off_target or contaminant), the ones the export window asks about.
+#' TRUE where a submission_risk string carries a tag the export window asks
+#' about: off_target, contaminant, or chimeric.
 #' @noRd
 has_screen_risk <- function(risk) {
-  grepl("(^|;)(off_target\\(|contaminant(;|$))", ifelse(is.na(risk), "", risk))
+  grepl("(^|;)(off_target\\(|contaminant(;|$)|chimeric(\\(|;|$))", ifelse(is.na(risk), "", risk))
 }
 
 #' README text mapping the bundle to NCBI's two submission routes
@@ -281,7 +282,8 @@ submission_readme <- function(label, itsx_check = TRUE) {
     "gapped between ITS regions, or misassembled. RiboPilot re-checks each",
     paste0("sequence the same way; see the submission_risk column in ", label, "_summary.csv."),
     "Flagged sequences are still exported (warn-only); review before submitting:",
-    "  chimeric     the chimera detector or ITSx flagged mixed origins",
+    "  chimeric     parts of the sequence match different phyla or kingdoms",
+    "               (severe chimera call), or ITSx calls it chimeric (chimeric(ITSx))",
     "  gap_in_rDNA  an assembly-gap (N-run) falls inside the 18S..28S span",
     "  misassembly  features overlap or are out of 5'->3' order",
     "  off_target(<taxon>)  the contamination screen's GenBank hits agree on",
@@ -289,6 +291,9 @@ submission_readme <- function(label, itsx_check = TRUE) {
     "  contaminant  the best GenBank hit shares no phylum with the sample",
     "Check off_target and contaminant records before submitting: the sequence",
     "may be another organism's rDNA, exported under this sample's name.",
+    paste0("The chimera_warning column in ", label, "_summary.csv holds weaker chimera"),
+    "evidence (a class-level switch, a ribotyper code, or read evidence only).",
+    "It is not a submission risk; look at the unit's chimera check in the app.",
     "",
     if (itsx_check) c(
     "FINAL ITSx CHECK",
@@ -384,6 +389,7 @@ export_summary_df <- function(con, units) {
     variant_class = v$variant_class, variant_group = v$variant_group,
     variant_identity = v$variant_identity, n_variants = v$n_variants,
     submission_risk = risk,
+    chimera_warning = ifelse(chm_label %in% "minor", chm_reason, ""),
     stringsAsFactors = FALSE)
 }
 
@@ -502,7 +508,8 @@ feature_map_svg_text <- function(d, width = 900, height = 110) {
 #' `smry` is the already-computed [export_summary_df()] for those units.
 #' @noRd
 export_report_html <- function(con, units, out_html, label, smry = export_summary_df(con, units)) {
-  hdr <- c("seqid", "ID", "organism", "length", "n_features", "missing", "reviewed", "submission_risk", "itsx_check")
+  hdr <- c("seqid", "ID", "organism", "length", "n_features", "missing", "reviewed", "submission_risk",
+    "chimera_warning", "itsx_check")
   rows <- apply(smry[, intersect(hdr, names(smry)), drop = FALSE], 1, function(r) {
     paste0("<tr>", paste0("<td>", ifelse(is.na(r), "", r), "</td>", collapse = ""), "</tr>")
   })

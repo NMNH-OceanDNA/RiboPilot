@@ -561,6 +561,9 @@ trim_assembly <- function(con, id, path = 1L, scaffold = 1L, from, to) {
   if (length(dep) > 0 && from <= length(dep)) {
     write_coverage_summary(con, id, path, scaffold, dep[seq(from, min(length(dep), to))])
   }
+  DBI::dbExecute(con, "UPDATE coverage SET clips = NULL WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(id, path, scaffold))
+  chimera_shift(con, id, path, scaffold, from - 1L, new_len)
   invisible(new_len)
 }
 
@@ -658,6 +661,8 @@ restore_assembly <- function(con, id, path = 1L, scaffold = 1L) {
   if (nrow(bak) == 0 || is.na(bak$sequence[1])) {
     stop("No original assembly on record for this unit (nothing to restore).", call. = FALSE)
   }
+  cur <- DBI::dbGetQuery(con, "SELECT sequence FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(id, path, scaffold))$sequence[1]
   DBI::dbExecute(con, "UPDATE assemblies SET sequence = ?, length = ?, edited = 1 WHERE ID = ? AND path = ? AND scaffold = ?",
     params = list(bak$sequence[1], bak$length[1], id, path, scaffold))
 
@@ -676,5 +681,7 @@ restore_assembly <- function(con, id, path = 1L, scaffold = 1L) {
   })
 
   write_coverage_summary(con, id, path, scaffold, parse_depths(bak$coverage))
+  off <- if (is.na(cur)) -1L else as.integer(regexpr(cur, bak$sequence[1], fixed = TRUE))
+  if (off > 1L) chimera_shift(con, id, path, scaffold, 1L - off, bak$length[1])
   invisible(bak$length[1])
 }

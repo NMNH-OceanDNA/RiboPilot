@@ -102,11 +102,17 @@ rp_sample_nav <- function(pfx) {
 chimera_panel <- function() {
   tagList(
     tags$p(class = "mp-help-text", style = "margin:2px 0 4px;",
-      "A chimera is one scaffold stitched from two organisms. ",
-      "Overlapping 500 bp windows are BLASTed against the local rDNA panel. ",
-      "Neighbouring windows whose best hits share a class form one lineage segment. ",
-      "Two segments from different classes, or reads clipped at one position, flag a candidate. ",
-      "This warns only; it never blocks export."),
+      "A chimera is one scaffold built from pieces of different origin: two organisms, ",
+      "or rDNA copies joined in the wrong place. Four checks look for one: the 18S, 5.8S, and 28S ",
+      "GenBank hits must agree on a lineage; 500 bp windows BLASTed against the local rDNA panel ",
+      "are grouped into segments by class; ribotyper checks the 18S and 28S structure; and reads ",
+      "clipped at one position, or a lasting step in read depth, mark a possible join."),
+    tags$p(class = "mp-help-text", style = "margin:2px 0 4px;",
+      "Severe: two parts match different phyla or kingdoms. The export calls the record chimeric ",
+      "and asks before including it. Minor: weaker evidence, such as a class-level switch or read ",
+      "evidence alone. It is listed in the export report but not flagged to GenBank. Windows in ",
+      "conserved 18S or 28S that match several classes equally well are shown as unresolved and ",
+      "do not count."),
     tags$p(class = "mp-help-text", style = "margin:2px 0 4px;", textOutput("chimera_db_source", inline = TRUE)),
     plotOutput("chimera_plot", height = "300px"),
     reactable::reactableOutput("chimera_segments"),
@@ -244,17 +250,19 @@ export_screen_modal <- function(flagged) {
   why <- vapply(flagged$submission_risk, function(r) {
     tx <- regmatches(r, regexec("off_target\\(([^)]*)\\)", r))[[1]][2]
     paste(c(if (!is.na(tx)) sprintf("GenBank hits agree on %s", tx),
-      if (grepl("(^|;)contaminant(;|$)", r)) "the best GenBank hit is from another phylum"),
+      if (grepl("(^|;)contaminant(;|$)", r)) "the best GenBank hit is from another phylum",
+      if (grepl("(^|;)chimeric\\(ITSx\\)", r)) "ITSx, the tool NCBI runs on submissions, calls it chimeric"
+      else if (grepl("(^|;)chimeric", r)) "parts of the scaffold match organisms from different phyla or kingdoms"),
       collapse = "; ")
   }, character(1))
   items <- lapply(seq_len(nrow(flagged)), function(i) tags$li(
     tags$b(sprintf("%s p%s.s%s", flagged$ID[i], flagged$path[i], flagged$scaffold[i])),
     sprintf(" (%s): %s.", flagged$organism[i] %|NA|% "no Taxon", why[i])))
   modalDialog(
-    title = mp_modal_title("Possible contamination"),
+    title = mp_modal_title("Possible contamination or chimera"),
     size = "m", easyClose = FALSE,
     div(style = "font-size:1.02em; line-height:1.5;",
-      tags$p(sprintf("%s in this group may be another organism's rDNA, exported under the sample's name:",
+      tags$p(sprintf("%s in this group may contain another organism's rDNA, exported under the sample's name:",
         mp_n(nrow(flagged), "unit"))),
       tags$ul(items),
       tags$p(style = "color:#666;",
@@ -309,7 +317,8 @@ triage_modal <- function(n_samples, actions = triage_actions_default()) {
       paste("Proposes keep / drop / undecided per scaffold from the evidence already",
         "in the database. Depth is shown in the scaffold table but never decides:",
         "high depth is often k-mer collapse across the conserved core or IGS",
-        "subrepeats, and low depth is often isomer paths splitting reads.")),
+        "subrepeats, and low depth is often a repeat inside the scaffold, where reads",
+        "map to two places and are left out.")),
     tags$table(style = "width:100%; font-size:0.9em;",
       tags$thead(tags$tr(
         tags$th(style = "text-align:left;", "Rule"),
@@ -853,7 +862,7 @@ CHIMERA_SEG_ALPHA <- 0.6  # shared by the lineage bar and the table row fills
 #' @noRd
 chimera_seg_colors <- function(seg, sample_lt) {
   seg_lt <- if (!is.null(seg$lineage_taxids)) seg$lineage_taxids else rep(NA_character_, nrow(seg))
-  nohit <- seg$taxon %in% c("nohit", "high_id", "low_id")
+  nohit <- seg$taxon %in% c("nohit", "unresolved", "high_id", "low_id")
   host <- !is.na(sample_lt) & vapply(seg_lt, function(x)
     !is.na(x) && rank_distance(x, sample_lt) < 5, logical(1))
   other <- unique(seg$taxon[!host & !nohit])
@@ -911,11 +920,13 @@ plot_chimera <- function(id, path = 1L, scaffold = 1L, db = NULL) {
       ggplot2::geom_point(data = fr(win, "ident"), ggplot2::aes(x = (start + stop) / 2, y = y),
         shape = 21, size = 3, fill = win$col, colour = ifelse(win$nohit, "grey60", "grey30"))
   }
+  sev <- identical(ch$label[1], "severe")
+  jcol <- if (sev) "#c0392b" else "#b9770e"
   if (length(junc)) g <- g +
-    ggplot2::geom_vline(xintercept = junc, colour = "#c0392b", linetype = "dashed", linewidth = 0.7) +
+    ggplot2::geom_vline(xintercept = junc, colour = jcol, linetype = "dashed", linewidth = 0.7) +
     ggplot2::geom_label(data = fr(data.frame(x = junc, y = 12), "genes"), ggplot2::aes(x = x, y = y),
-      label = sprintf("suspected chimera\njunction at %d bp", junc), vjust = 0, size = 3.8, lineheight = 0.9,
-      colour = "#c0392b", fill = "white", linewidth = 0)
+      label = sprintf("%s\njunction at %d bp", if (sev) "chimera" else "possible", junc), vjust = 0,
+      size = 3.8, lineheight = 0.9, colour = jcol, fill = "white", linewidth = 0)
   g + ggplot2::facet_grid(row ~ ., scales = "free_y", space = "free_y", switch = "y",
       labeller = ggplot2::as_labeller(c(genes = "", lineage = "lineage", ident = "% identity"))) +
     ggplot2::scale_x_continuous(breaks = seq(0, xmax, 1000), minor_breaks = seq(0, xmax, 500), expand = c(0, 0)) +

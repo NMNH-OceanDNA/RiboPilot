@@ -150,8 +150,8 @@ test_that("bundle file contents are exactly as specified", {
   expect_equal(readLines(file.path(g, "exact_summary.csv")),
     c(paste0("\"seqid\",\"ID\",\"path\",\"scaffold\",\"organism\",\"length\",\"n_features\",",
         "\"missing\",\"reviewed\",\"partial\",\"problematic\",\"variant_class\",",
-        "\"variant_group\",\"variant_identity\",\"n_variants\",\"submission_risk\""),
-      "\"S2\",\"S2\",1,1,\"Genus speciesB\",400,2,\"\",\"yes\",\"no\",\"no\",NA,NA,NA,NA,\"\""))
+        "\"variant_group\",\"variant_identity\",\"n_variants\",\"submission_risk\",\"chimera_warning\""),
+      "\"S2\",\"S2\",1,1,\"Genus speciesB\",400,2,\"\",\"yes\",\"no\",\"no\",NA,NA,NA,NA,\"\",\"\""))
 })
 
 test_that("an empty Taxon is flagged, and never rendered as the word NA", {

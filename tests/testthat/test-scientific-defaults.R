@@ -106,7 +106,7 @@ test_that("coverage drops multi-mapping reads before depth is counted", {
   q <- as.numeric(sub("(?s).*samtools view[^|]*-q\\s+(\\d+).*", "\\1", txt, perl = TRUE))
   expect_true(!is.na(q) && q >= 10)
   # the filter has to sit inside the bowtie2 -> sort pipe, not after it
-  expect_match(txt, "bowtie2 -x ref(?s).*\\|\\s*samtools view[^|]*\\|\\s*samtools sort", perl = TRUE)
+  expect_match(txt, "bowtie2 --local -x ref(?s).*\\|\\s*samtools view[^|]*\\|\\s*samtools sort", perl = TRUE)
   expect_match(txt, "errorStrategy 'ignore'", fixed = TRUE)
   expect_match(txt, "sqlite3 -cmd '.timeout", fixed = TRUE)
 })
