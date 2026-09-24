@@ -653,7 +653,7 @@ new_db <- function(
 #'
 #' Compared ignoring case, as SQLite compares column names.
 #' @noRd
-SAMPLE_BUILTIN_COLS <- c("taxid", "sci_name", "rank", "match_type", "lineage",
+SAMPLE_BUILTIN_COLS <- c("taxid", "sci_name", "rank", "match_type", "tax_alternatives", "lineage",
   "lineage_taxids", "ref_id", "user_group", "ref_source", "taxonomy_switch",
   "taxonomy_lock", "export_group", "reference_support", "time_stamp")
 

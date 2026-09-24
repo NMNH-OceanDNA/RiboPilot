@@ -401,6 +401,7 @@ add_trim_cols <- function(dir) {
   DBI::dbExecute(con, "ALTER TABLE assemblies ADD COLUMN edited INT")
   DBI::dbExecute(con, "ALTER TABLE annotations ADD COLUMN length INT")
   DBI::dbExecute(con, "ALTER TABLE annotations ADD COLUMN edited INT")
+  DBI::dbExecute(con, "ALTER TABLE coverage ADD COLUMN clips TEXT")
 }
 
 test_that("a locked unit is read only in the annotation window", {
