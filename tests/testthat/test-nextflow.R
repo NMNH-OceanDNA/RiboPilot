@@ -1400,3 +1400,21 @@ test_that("a reference folder with a space stays one mount argument", {
     expect_equal(words[2], if (engine == "docker") paste0(d, ":", d) else d, info = engine)
   }
 })
+
+test_that("samples below minDepth are marked failed with their read count", {
+  pre_nf <- readLines(system.file("nextflow", "modules", "preprocess.nf", package = "RiboPilot"))
+  expect_true(any(grepl("include \\{ preprocess; below_min_depth \\}", main_nf)))
+  start <- grep("^\\s*below_min_depth\\(", main_nf)
+  expect_length(start, 1)
+  block <- paste(main_nf[start:(start + 4)], collapse = "\n")
+  expect_match(block, "(after as Integer) < (params.minDepth as Integer)", fixed = TRUE)
+  # only samples assembling from reads; a supplied assembly with shallow reads is fine
+  expect_match(block, ".join(read_ids)", fixed = TRUE)
+  p <- grep("^process below_min_depth \\{", pre_nf)
+  expect_length(p, 1)
+  body <- paste(pre_nf[p:length(pre_nf)], collapse = "\n")
+  expect_match(body, "assemble_switch=3", fixed = TRUE)
+  expect_match(body, "below min_depth: ${after} reads after trimming", fixed = TRUE)
+  expect_match(body, "cache false", fixed = TRUE)
+  expect_false(grepl("'terminate'", body, fixed = TRUE))
+})

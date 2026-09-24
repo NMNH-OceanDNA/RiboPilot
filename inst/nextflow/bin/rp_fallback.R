@@ -18,8 +18,10 @@ opt <- local({
        JOIN assemble_opts ao ON a.assemble_opts = ao.assemble_opts WHERE a.ID = ?",
     params = list(a[2]))
 })
-fallback_assemble_one(a[2], a[3], a[4],
+n <- fallback_assemble_one(a[2], a[3], a[4],
   reference = opt$seeds_db[1], labels_db = opt$labels_db[1],
   out_dir = ".", method = a[5], threads = as.integer(a[6]),
   bowtie2_opts = opt$bowtie2[1], spades_opts = opt$spades[1])
+st <- attr(n, "retry_status")
+if (!is.null(st)) quit(status = st, save = "no")
 cat("fallback done:", a[2], "\n")

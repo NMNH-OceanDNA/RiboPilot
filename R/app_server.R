@@ -3,9 +3,6 @@
 #' @noRd
 app_server <- function(input, output, session) {
 
-  # Stop the app when the last browser session closes (survives refresh).
-  register_app_lifecycle(session)
-
   refresh <- reactiveVal(0)
   observeEvent(input$refresh, refresh(refresh() + 1))
   sel_id <- reactiveVal(NULL)
@@ -880,8 +877,6 @@ app_server <- function(input, output, session) {
   })
 
   # ---- Update modal: run the workflow with live Nextflow progress ----
-  nf_process <- reactiveVal(NULL)
-  nf_state <- reactiveVal(nf_progress_empty())
   submit_base <- reactiveVal(NULL)   # timestamp shared by one submission's files
 
   output$nf_cmd_text <- renderText({
@@ -892,6 +887,15 @@ app_server <- function(input, output, session) {
   observeEvent(list(input$tax_run_btn, input$asmb_run_btn), ignoreInit = TRUE, {
     # Taxonomy runs locally in the app (lightweight taxdump lookup, no Nextflow).
     if ((input$mode %||% "") == "Taxonomy") { run_taxonomy_update(); return() }
+    held <- run_lock_holder(app_project())
+    if (!is.null(held)) { rp_alert(run_lock_message(held, app_project()), type = "warning"); return() }
+    n <- nf_pending_count(app_project())
+    if (n == 0) {
+      rp_alert(paste("No samples or annotation units are Ready to run. Samples need a locked",
+        "taxonomy, and locked or finished samples are skipped. Set the State of the rows you",
+        "want to Ready to run, then press Update."), type = "warning", title = "Nothing to update")
+      return()
+    }
     # block: a preset naming a database that is not there assembles nothing, and
     # the pipeline reports success while doing it (dangling symlink in, exit 0
     # out), so the run is pure wasted cluster time
@@ -915,7 +919,6 @@ app_server <- function(input, output, session) {
         "%d reference group(s) are not built or skipped (%s). Those samples will assemble with the database their options set already has.",
         length(pending), paste(pending, collapse = ", ")), type = "warning")
     }
-    nf_state(nf_progress_empty())
     hl <- app_headless()
     sched <- if (hl) detect_scheduler() else NULL
     # one timestamp per opening of the modal, so the script the user is looking
@@ -923,8 +926,7 @@ app_server <- function(input, output, session) {
     if (hl) submit_base(job_basename("ribopilot"))
     script <- if (hl) build_submit_script(app_project(), resume = TRUE, sched = sched,
       base = submit_base()) else ""
-    showModal(run_modal(nf_pending_count(app_project()),
-      headless = hl, sched = sched, script = script))
+    showModal(run_modal(n, headless = hl, sched = sched, script = script))
   })
 
   # Headless run modal: save / submit the cluster job script (instead of running
@@ -944,7 +946,18 @@ app_server <- function(input, output, session) {
     f <- write_submit_script()
     rp_alert(paste0("Saved job script to ", f), type = "message")
   })
+  job_sent <- reactiveVal(FALSE)
+  resubmit_ok <- reactiveVal(FALSE)
   observeEvent(input$submit_job, {
+    held <- run_lock_holder(app_project())
+    if (!is.null(held)) { rp_alert(run_lock_message(held, app_project()), type = "warning"); return() }
+    if (isTRUE(job_sent()) && !isTRUE(resubmit_ok())) {
+      resubmit_ok(TRUE)
+      rp_alert(paste("A job for this project was already submitted from this window and may",
+        "still be queued or running. Press Submit as job again to submit another."), type = "warning")
+      return()
+    }
+    resubmit_ok(FALSE)
     sched <- detect_scheduler()
     if (is.null(sched)) {
       rp_alert("No scheduler (sbatch/qsub/bsub) found on PATH.", type = "warning"); return()
@@ -963,6 +976,7 @@ app_server <- function(input, output, session) {
       shiny::withReactiveDomain(session, {
         out <- tryCatch(system2(sched$cmd, shQuote(f), stdout = TRUE, stderr = TRUE),
           error = function(e) conditionMessage(e))
+        job_sent(TRUE)
         rp_alert(paste0("Submitted via ", sched$cmd, ": ", paste(out, collapse = " ")),
           type = "message")
         removeModal()
@@ -1016,81 +1030,20 @@ app_server <- function(input, output, session) {
     }, delay = 0.1)
   }
 
-  progress_update <- function(lines) {
-    nf_state(nf_progress_parse(nf_state(), lines))
-  }
+  nf_run_window(input, output, session, pfx = "", gears = "rp_gears", project = app_project,
+    kind = "pipeline", log_name = "ribopilot",
+    launch = function(nflog) {
+      p <- nf_spawn("nextflow", c("-log", nflog,
+        nf_command(app_project(), resume = isTRUE(input$nf_resume %||% TRUE)), "-ansi-log"),
+        app_project(), nf_env())
+      nf_record_blastdb_launch(app_project())
+      p
+    },
+    on_done = function() refresh(isolate(refresh()) + 1))
 
-  observeEvent(input$nf_start, {
-    nf_state(nf_progress_empty())
-    shinyjs::hide("nf_start"); shinyjs::show("nf_stop"); shinyjs::show("nf_progress")
-    shinyjs::removeClass(id = "rp_gears", class = "paused")
-    # -ansi-log forces the redrawing progress board; wide COLUMNS keeps Nextflow
-    # from truncating process names so the parser's per-process keys stay stable.
-    nf_env <- c("current", COLUMNS = "500", NXF_ANSI_SUMMARY = "true")
-    nxf_pin <- nf_pin_version()
-    if (!is.na(nxf_pin)) nf_env <- c(nf_env, NXF_VER = nxf_pin)
-    nf_record_blastdb_launch(app_project())
-    p <- processx::process$new("nextflow",
-      args = c(nf_command(app_project(), resume = isTRUE(input$nf_resume %||% TRUE)),
-        "-ansi-log"),
-      stdout = "|", stderr = "|", wd = app_project(),
-      env = nf_env)
-    nf_process(p)
-  })
-
-  observe({
-    req(nf_process())
-    invalidateLater(250)
-    p <- nf_process()
-    grab <- function() {
-      out <- tryCatch(p$read_output_lines(), error = function(e) character(0))
-      err <- tryCatch(p$read_error_lines(), error = function(e) character(0))
-      if (length(c(out, err))) progress_update(c(out, err))
-    }
-    if (p$is_alive()) {
-      grab()
-    } else {
-      grab()
-      nf_process(NULL)
-      shinyjs::hide("nf_stop"); shinyjs::show("nf_start")
-      shinyjs::addClass(id = "rp_gears", class = "paused")
-      refresh(refresh() + 1)
-      rp_alert("Workflow run finished.", type = "message")
-    }
-  })
-
-  output$nf_prog_all <- renderText(nf_progress_text(nf_state()))
-
-  kill_nf <- function() {
-    p <- nf_process()
-    if (!is.null(p) && p$is_alive()) p$kill()
-    nf_process(NULL)
-  }
-  # don't leave an orphaned Nextflow process if the browser closes mid-run
-  session$onSessionEnded(function() {
-    p <- isolate(nf_process())
-    if (!is.null(p) && p$is_alive()) try(p$kill(), silent = TRUE)
-  })
-  observeEvent(input$nf_stop, {
-    kill_nf()
-    shinyjs::hide("nf_stop"); shinyjs::show("nf_start")
-    shinyjs::addClass(id = "rp_gears", class = "paused")
-    refresh(refresh() + 1)
-  })
-  observeEvent(input$nf_close, {
-    p <- nf_process()
-    if (!is.null(p) && p$is_alive()) {
-      mp_confirm("nf_close_confirm", title = "Stop the run?",
-        text = "Closing this window stops the pipeline. Leave it open to keep running.",
-        action_label = "Stop and close", danger = TRUE)
-      return()
-    }
-    removeModal()
-  })
-  observeEvent(input$nf_close_confirm, {
-    req(isTRUE(input$nf_close_confirm))
-    kill_nf(); removeModal()
-  })
+  # Stop the app when the last browser session closes (survives refresh). After
+  # the run windows, so the grace period starts once their runs have stopped.
+  register_app_lifecycle(session)
 
   # ---- Export ----
   output$export_sel_n <- renderText({
@@ -1545,8 +1498,13 @@ app_server <- function(input, output, session) {
         tags$b(lbl),
         div(style = "color:#888; margin-top:4px;",
           if (blast_enabled(sel_id())) {
-            paste("No GenBank screen for this scaffold. The remote BLAST is still",
-              "running, or it did not return (NCBI queue, network, or retries used up).")
+            if (is.null(run_lock_holder(app_project()))) {
+              paste("No GenBank screen for this scaffold. The remote BLAST did not return",
+                "(NCBI queue, network, or retries used up).")
+            } else {
+              paste("No GenBank screen for this scaffold yet. A run is going for this project,",
+                "and its remote BLAST may still be working on it.")
+            }
           } else {
             paste("GenBank BLAST is switched off for this sample (Assemble tab,",
               "BLAST options). Run the pipeline (Assemble > Update) with BLAST enabled to screen this scaffold.")

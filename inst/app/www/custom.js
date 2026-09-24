@@ -68,12 +68,15 @@ $( document ).ready(function(){
   });
 });
 
-// Clipboard helper
-$( document ).ready(function(){
-  Shiny.addCustomMessageHandler('copy_to_clipboard', function(params) {
-    navigator.clipboard.writeText(params.text)
-  });
-});
+// Copy an element's text (the run report's Copy button). Plain http off
+// localhost has no Clipboard API, so select the text and copy that instead.
+window.rpCopyEl = function(id) {
+  var el = document.getElementById(id), t = el.innerText;
+  if (navigator.clipboard && window.isSecureContext) { navigator.clipboard.writeText(t); return; }
+  var r = document.createRange(); r.selectNodeContents(el);
+  var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+  document.execCommand('copy'); s.removeAllRanges();
+};
 
 
 $( document ).ready(function(){

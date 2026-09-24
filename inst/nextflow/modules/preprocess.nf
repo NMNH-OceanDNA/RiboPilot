@@ -32,3 +32,23 @@ process preprocess {
        time_stamp=strftime('%s','now') WHERE ID='${id}';" || true
     """
 }
+
+// Fail a sample with too few reads left after trimming to assemble, with the count.
+process below_min_depth {
+    tag "${id}"
+    cache false
+    executor 'local'
+    errorStrategy { task.attempt <= 3 ? 'retry' : 'ignore' }
+    maxRetries 3
+
+    input:
+    tuple val(id), val(after)
+
+    script:
+    """
+    sqlite3 -cmd '.timeout 10000' '${params.db}' \
+      "UPDATE assemble SET assemble_switch=3,
+       assemble_notes='below min_depth: ${after} reads after trimming, both mates counted (minimum ${params.minDepth})',
+       time_stamp=strftime('%s','now') WHERE ID='${id}';"
+    """
+}

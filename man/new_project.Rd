@@ -48,7 +48,9 @@ searched for its nuclear rDNA contigs instead of being assembled from
 reads, and its `R1`/`R2` may be left blank. See
 dev/design/20_USER_ASSEMBLIES.md.}
 
-\item{min_depth}{Minimum trimmed paired reads to proceed with assembly.}
+\item{min_depth}{Minimum number of reads left after trimming, counting both
+reads of a pair (2000000 is 1000000 pairs). A sample below it is not
+assembled and is marked Failed with a note.}
 
 \item{executor}{Executor for the Nextflow pipeline. Ready to use as-is:
 "docker" (default) and "local" run the RiboPilot container on this

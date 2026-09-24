@@ -30,7 +30,9 @@ the small rDNA-filtered subsets (default FALSE).}
 
 \item{container}{Container image for the pipeline.}
 
-\item{min_depth}{Minimum trimmed paired reads to proceed with assembly.}
+\item{min_depth}{Minimum number of reads left after trimming, counting both
+reads of a pair (2000000 is 1000000 pairs). A sample below it is not
+assembled and is marked Failed with a note.}
 
 \item{sra_bin}{Directory holding `fasterq-dump` (for the SRA fallback);
 default searches `PATH`.}

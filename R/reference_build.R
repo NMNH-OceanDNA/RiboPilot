@@ -1,10 +1,10 @@
 # Clade groups in the project database: how they are stored, built, and wired
 # into the assembly presets the pipeline actually reads.
 #
-# A build is a detached process rather than an in-app wait: downloading tens of
-# thousands of GenBank records takes minutes, and the app has to stay usable.
-# The database row is the only state that survives a closed app, so the row
-# carries the pid and log path and the finishing logic is a poll, not a callback.
+# A build started in the app runs while its window and browser tab stay open;
+# closing either stops it. A build submitted as a cluster job runs on its own.
+# Either way the row carries the pid (none for a job) and the log path, and the
+# finishing logic is a poll, not a callback.
 
 #' Expected seed/label paths for a clade in a reference folder
 #'
@@ -366,7 +366,8 @@ use_existing_reference <- function(con, ref_id, seeds, labels) {
 #' @return the pid.
 #' @noRd
 processx_launcher <- function(cmd, args, log) {
-  p <- processx::process$new(cmd, args, stdout = log, stderr = "2>&1", cleanup = FALSE)
+  p <- processx::process$new(cmd, args, stdout = log, stderr = "2>&1", cleanup = FALSE,
+    wd = dirname(log))
   p$get_pid()
 }
 

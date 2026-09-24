@@ -465,3 +465,21 @@ test_that("a circular unit is rotated to start in the IGS before it is stored", 
   expect_equal(a$sequence[2], unit)
   expect_equal(a$length, c(1000L, 1000L))
 })
+
+test_that("a failed assembly carries the assembler's reason into the note", {
+  dir <- withr::local_tempdir()
+  con <- mk_asm_db(dir); on.exit(DBI::dbDisconnect(con))
+  ad <- file.path(dir, "S1", "assemble")
+  dir.create(ad, recursive = TRUE)
+  writeLines(">No assembly found: SPAdes exit 21: Invalid kmer coverage histogram",
+    file.path(ad, "S1_assembly_0.fasta"))
+  RiboPilot::load_assemblies(con, dir, "S1")
+  r <- DBI::dbGetQuery(con, "SELECT assemble_switch, assemble_notes FROM assemble WHERE ID = 'S1'")
+  expect_equal(r$assemble_switch, 3L)
+  expect_equal(r$assemble_notes, "failed assembly: SPAdes exit 21: Invalid kmer coverage histogram")
+  # the supplied-assembly marker says nothing new; its reason is in find_rrna_notes
+  writeLines(">No rDNA contigs found", file.path(ad, "S1_assembly_0.fasta"))
+  RiboPilot::load_assemblies(con, dir, "S1")
+  expect_equal(DBI::dbGetQuery(con, "SELECT assemble_notes FROM assemble")$assemble_notes,
+    "failed assembly")
+})

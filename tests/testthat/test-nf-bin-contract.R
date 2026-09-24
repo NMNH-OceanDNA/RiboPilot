@@ -133,3 +133,27 @@ test_that("format_assembly.sh numbers paths by GetOrganelle's path number", {
   expect_match(first[2], "scaffold_2--e1")
   expect_match(first[3], "scaffold_10--e1")
 })
+
+test_that("format_assembly.sh writes GetOrganelle's errors into the no-assembly marker", {
+  skip_on_os("windows")
+  sh <- file.path(bin_dir, "format_assembly.sh")
+  wd <- withr::local_tempdir()
+  go <- file.path(wd, "go_out")
+  dir.create(go)
+  writeLines(c(
+    "2026-09-23 16:47:12,102 - WARNING: Guessing that you are using too few data for assembling anonym!",
+    "2026-09-23 16:47:12,102 - WARNING: GetOrganelle is still trying ...",
+    "2026-09-23 16:48:00,020 - ERROR: Error with running SPAdes: == Error ==  system call for: \"['/opt/conda/bin/spades-core', '/w/K115/config.info']\" finished abnormally, OS return value: 21",
+    "2026-09-23 16:48:00,030 - ERROR: Assembling failed."), file.path(go, "get_org.log.txt"))
+  status <- withr::with_dir(wd,
+    system2("bash", c(shQuote(sh), "SAMP", "go_out"), stdout = FALSE, stderr = FALSE))
+  expect_equal(status, 0)
+  expect_equal(readLines(file.path(wd, "SAMP_assembly_0.fasta"))[1], paste0(
+    ">No assembly found: Guessing that you are using too few data for assembling anonym!; ",
+    "Error with running SPAdes: == Error ==  finished abnormally, OS return value: 21; ",
+    "Assembling failed."))
+  # no GetOrganelle log: the plain marker, as before
+  unlink(file.path(go, "get_org.log.txt"))
+  withr::with_dir(wd, system2("bash", c(shQuote(sh), "SAMP", "go_out"), stdout = FALSE, stderr = FALSE))
+  expect_equal(readLines(file.path(wd, "SAMP_assembly_0.fasta"))[1], ">No assembly found")
+})

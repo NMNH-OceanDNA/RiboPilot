@@ -193,17 +193,12 @@ project_ncbi_key <- function(project) {
 #' @param log Optional file the run's output is written to, so a failure has a
 #'   diagnostic instead of a discarded stream.
 #' @noRd
-nf_run_blocking <- function(project, args, log = NULL) {
+nf_run_blocking <- function(wd, args, log = NULL) {
   if (!nzchar(Sys.which("nextflow"))) {
     stop("Nextflow not found on PATH.", call. = FALSE)
   }
-  # unpinned, a Nextflow 26 install rejects -entry with "not supported with the
-  # strict parser", so every count run fails on an otherwise fine workflow
-  nf_env <- c("current", COLUMNS = "500")
-  pin <- nf_pin_version()
-  if (!is.na(pin)) nf_env <- c(nf_env, NXF_VER = pin)
-  p <- processx::run("nextflow", args, wd = project, error_on_status = FALSE,
-    env = nf_env, stdout = "|", stderr = "2>&1")
+  p <- processx::run("nextflow", args, wd = wd, error_on_status = FALSE,
+    env = nf_env(), stdout = "|", stderr = "2>&1")
   if (!is.null(log) && nzchar(log %||% "")) {
     append_run_log(log, strsplit(p$stdout %||% "", "\n", fixed = TRUE)[[1]])
   }
@@ -234,11 +229,7 @@ failed_task_errors <- function(log, work, n = 2L) {
     d <- list.dirs(file.path(work, p[1]), recursive = FALSE, full.names = TRUE)
     d <- d[startsWith(basename(d), p[2])]
     if (length(d) == 0) return("")
-    f <- file.path(d[1], ".command.err")
-    if (!file.exists(f)) return("")
-    y <- trimws(readLines(f, warn = FALSE))
-    y <- y[nzchar(y)]
-    if (length(y) == 0) "" else paste(utils::tail(y, n), collapse = " ")
+    task_err_tail(d[1], n)
   }, character(1), USE.NAMES = FALSE)
   unique(errs[nzchar(errs)])
 }
@@ -261,6 +252,10 @@ run_clade_counts <- function(project, ref_dir, clades, api_key = "", refseq = FA
   need$taxid <- as.integer(need$taxid)
   need <- need[!duplicated(need$taxid), , drop = FALSE]
   if (nrow(need) == 0) return(cache)
+  held <- run_lock_holder(project)
+  if (!is.null(held)) stop(run_lock_message(held, project), call. = FALSE)
+  marker <- run_lock_take(project, "reference count")
+  on.exit(run_lock_release(project, marker), add = TRUE)
   rundir <- file.path(project, ".reference")
   out <- file.path(rundir, "counts")
   unlink(out, recursive = TRUE)
@@ -273,7 +268,7 @@ run_clade_counts <- function(project, ref_dir, clades, api_key = "", refseq = FA
     api_key = api_key, refseq = refseq, resume = FALSE, work = work)
   # a non-zero status is not fatal: clades that did report are still worth
   # keeping, and the walk treats a missing count as unknown
-  status <- runner(project, args, log)
+  status <- runner(rundir, args, log)
   # ignored failures leave the run status at 0, so the errors are collected
   # whatever the status says
   errs <- tryCatch(failed_task_errors(log, work), error = function(e) character(0))

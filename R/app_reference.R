@@ -355,9 +355,7 @@ reference_handlers <- function(input, output, session, deps) {
   action_target <- shiny::reactiveVal(character(0))  # groups the row action applies to
   action_label <- shiny::reactiveVal(NULL)           # what to call them in a title
   picked <- shiny::reactiveVal(NULL)   # taxid chosen from the search box
-  ref_proc <- shiny::reactiveVal(NULL)
   ref_log <- shiny::reactiveVal("")
-  ref_state <- shiny::reactiveVal(nf_progress_empty())
   headless_open <- shiny::reactiveVal(FALSE)
   gen_scripts <- shiny::reactiveVal(character(0))   # scripts this session generated
   submitted <- shiny::reactiveVal(character(0))     # groups with a cluster job out
@@ -764,7 +762,6 @@ reference_handlers <- function(input, output, session, deps) {
   do_build <- function(ids) {
     if (length(ids) == 0) { notify("Select the group(s) to build.", "warning"); return() }
     build_targets(ids)
-    ref_state(nf_progress_empty())
     res <- tryCatch(with_con(function(con) {
       cfg <- ref_config(con)
       # count what will actually run: a group whose database is already on disk
@@ -784,6 +781,8 @@ reference_handlers <- function(input, output, session, deps) {
         length(ids)))
       return()
     }
+    held <- run_lock_holder(deps$project())
+    if (!is.null(held)) { notify(run_lock_message(held, deps$project()), "warning"); return() }
     hl <- app_headless()
     sched <- if (hl) detect_scheduler() else NULL
     # one timestamp per opening of the modal; see ref_submit_script()
@@ -863,6 +862,8 @@ reference_handlers <- function(input, output, session, deps) {
     notify(paste0("Saved job script to ", res, ". Run Build again once the job finishes to wire the databases."))
   })
   shiny::observeEvent(input$ref_submit_job, {
+    held <- run_lock_holder(deps$project())
+    if (!is.null(held)) { notify(run_lock_message(held, deps$project()), "warning"); return() }
     sched <- detect_scheduler()
     if (is.null(sched)) { notify("No scheduler (sbatch/qsub/bsub) found on PATH.", "warning"); return() }
     # two BUILD runs copy into the same seed FASTA, so a second job for a group
@@ -906,97 +907,33 @@ reference_handlers <- function(input, output, session, deps) {
     }, delay = 0.1)
   })
 
-  idle_buttons <- function() {
-    shinyjs::hide("ref_nf_stop"); shinyjs::show("ref_nf_start")
-    shinyjs::addClass(id = "ref_gears", class = "paused")
-  }
-
-  shiny::observeEvent(input$ref_nf_start, {
-    ids <- build_targets()
-    if (length(ids) == 0) { notify("Select the group(s) to build.", "warning"); return() }
-    ref_state(nf_progress_empty())
-    shinyjs::hide("ref_nf_start"); shinyjs::show("ref_nf_stop"); shinyjs::show("ref_nf_progress")
-    shinyjs::removeClass(id = "ref_gears", class = "paused")
-    # the process object is kept so its output can be streamed; the pid handed
-    # back is what the reference rows store
-    launcher <- function(cmd, args, log) {
-      nf_env <- c("current", COLUMNS = "500", NXF_ANSI_SUMMARY = "true")
-      pin <- nf_pin_version()
-      if (!is.na(pin)) nf_env <- c(nf_env, NXF_VER = pin)
-      p <- nf_spawn(cmd, c(args, "-ansi-log"), deps$project(), nf_env)
-      ref_proc(p); ref_log(log)
-      p$get_pid()
-    }
-    res <- tryCatch(with_con(function(con) start_reference_build(con, deps$project(), ids,
-      api_key = input$ref_api_key %||% "", refseq = isTRUE(input$ref_refseq),
-      resume = isTRUE(input$ref_nf_resume %||% TRUE), launcher = launcher)),
-      error = function(e) e)
-    if (inherits(res, "error")) {
-      # the launcher may already have spawned Nextflow; nothing stamped the rows,
-      # so leaving it running would produce results the poll never wires
-      kill_ref_nf(); idle_buttons(); notify(conditionMessage(res), "error"); return()
-    }
-    bump()
-    if (is.null(res)) {
-      idle_buttons()
-      notify("Every selected group already had a database; nothing to run.")
-    }
-  })
-
-  shiny::observe({
-    shiny::req(ref_proc())
-    shiny::invalidateLater(250)
-    p <- ref_proc()
-    grab <- function() {
-      out <- tryCatch(p$read_output_lines(), error = function(e) character(0))
-      err <- tryCatch(p$read_error_lines(), error = function(e) character(0))
-      if (length(c(out, err))) {
-        ref_state(nf_progress_parse(ref_state(), c(out, err)))
-        # the rows record a log path, so the piped stream is teed into it
-        append_run_log(ref_log(), c(out, err))
+  nf_run_window(input, output, session, pfx = "ref_", gears = "ref_gears",
+    project = deps$project, kind = "reference build", log_name = "ribopilot_ref",
+    launch = function(nflog) {
+      ids <- build_targets()
+      if (length(ids) == 0) stop("Select the group(s) to build.", call. = FALSE)
+      p <- NULL
+      launcher <- function(cmd, args, log) {
+        p <<- nf_spawn(cmd, c("-log", nflog, args, "-ansi-log"),
+          file.path(deps$project(), ".reference"), nf_env())
+        ref_log(log)
+        p$get_pid()
       }
-    }
-    if (p$is_alive()) {
-      grab()
-    } else {
-      grab()
-      ref_proc(NULL)
-      idle_buttons()
-      poll_now()
+      res <- tryCatch(with_con(function(con) start_reference_build(con, deps$project(), ids,
+        api_key = input$ref_api_key %||% "", refseq = isTRUE(input$ref_refseq),
+        resume = isTRUE(input$ref_nf_resume %||% TRUE), launcher = launcher)),
+        error = function(e) e)
+      if (inherits(res, "error")) {
+        if (!is.null(p)) p$kill()
+        stop(conditionMessage(res), call. = FALSE)
+      }
       bump()
-      notify("Reference build run finished.")
-    }
-  })
-
-  output$ref_nf_prog_all <- shiny::renderText(nf_progress_text(ref_state()))
-
-  kill_ref_nf <- function() {
-    p <- ref_proc()
-    if (!is.null(p) && p$is_alive()) p$kill()
-    ref_proc(NULL)
-  }
-  # don't leave an orphaned Nextflow process if the browser closes mid-run
-  session$onSessionEnded(function() {
-    p <- shiny::isolate(ref_proc())
-    if (!is.null(p) && p$is_alive()) try(p$kill(), silent = TRUE)
-  })
-  shiny::observeEvent(input$ref_nf_stop, {
-    kill_ref_nf(); idle_buttons(); poll_now(); bump()
-  })
-  shiny::observeEvent(input$ref_nf_close, {
-    p <- ref_proc()
-    if (!is.null(p) && p$is_alive()) {
-      mp_confirm("ref_nf_close_confirm", title = "Stop the build?",
-        text = "Closing this window stops the database build. Leave it open to keep running.",
-        action_label = "Stop and close", danger = TRUE)
-      return()
-    }
-    headless_open(FALSE); shiny::removeModal(); poll_now(); bump()
-  })
-  shiny::observeEvent(input$ref_nf_close_confirm, {
-    req(isTRUE(input$ref_nf_close_confirm))
-    kill_ref_nf(); headless_open(FALSE); shiny::removeModal(); poll_now(); bump()
-  })
+      if (is.null(res)) notify("Every selected group already had a database; nothing to run.")
+      p
+    },
+    on_lines = function(lines) append_run_log(shiny::isolate(ref_log()), lines),
+    on_done = function() { poll_now(); bump() },
+    on_close = function() { headless_open(FALSE); poll_now(); bump() })
 
   # ---- log tail ----
   shiny::observeEvent(input$ref_open_log, {
