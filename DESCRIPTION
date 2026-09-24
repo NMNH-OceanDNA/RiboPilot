@@ -19,7 +19,6 @@ Imports:
     DECIPHER,
     pwalign,
     cli,
-    crayon,
     DBI,
     processx,
     dbplyr,
@@ -41,7 +40,6 @@ Imports:
     shinyjs,
     shinyWidgets,
     stats,
-    stringr,
     tools,
     grDevices,
     utils

@@ -247,7 +247,7 @@ validate_fasta_header <- function(template, data = NULL, require_seqid = TRUE) {
     return(if (multi) err(msg) else warn(msg))
   }
   if (!is.null(data) && nrow(data) > 0) {
-    em <- empty_modifiers(tryCatch(as.character(stringr::str_glue_data(data, template)),
+    em <- empty_modifiers(tryCatch(as.character(glue::glue_data(data, template)),
       error = function(e) character(0)))
     hit <- lengths(em) > 0
     if (any(hit)) {

@@ -12,6 +12,12 @@ test_that("nf_version_status classifies against the supported range", {
   expect_equal(f("26.1.0"), "too_new")
 })
 
+test_that("nf_parse_version reads the version line and drops edge suffixes", {
+  expect_equal(RiboPilot:::nf_parse_version(c("  N E X T F L O W", "  version 25.10.6 build 10000")), "25.10.6")
+  expect_equal(RiboPilot:::nf_parse_version(c("version 24.10.0-edge build 1")), "24.10.0")
+  expect_true(is.na(RiboPilot:::nf_parse_version("no version here")))
+})
+
 test_that("nf_pin_for pins in-range to itself and out-of-range to the max", {
   f <- RiboPilot:::nf_pin_for
   expect_true(is.na(f(NA_character_)))

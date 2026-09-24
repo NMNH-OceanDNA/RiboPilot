@@ -65,8 +65,7 @@ nf_parse_version <- function(out) {
   if (length(out) == 0) {
     return(NA_character_)
   }
-  m <- stringr::str_match(out, "version\\s+([0-9]+\\.[0-9]+\\.[0-9]+)")
-  v <- stats::na.omit(m[, 2])
+  v <- sub(".*version\\s+([0-9]+\\.[0-9]+\\.[0-9]+).*", "\\1", out[grepl("version\\s+[0-9]+\\.[0-9]+\\.[0-9]+", out)])
   if (length(v) == 0) NA_character_ else v[1]
 }
 
@@ -158,20 +157,6 @@ nxf_ver_prefix <- function(nextflow = "nextflow") {
 #' @noRd
 nf_update_hint <- function() {
   "Update Nextflow, e.g. mamba install -n ribopilot 'bioconda::nextflow>=24.10,<26'"
-}
-
-#' Are we inside R's install / build / check / dev-load machinery?
-#'
-#' `R CMD INSTALL` / `check` attach the namespace in a load-test, so an
-#' unconditional `stop()` in `.onAttach` would break installation on any machine
-#' without a compatible Nextflow (including CI). `devtools::load_all()` likewise
-#' runs `.onAttach`. These env vars are set only by that machinery.
-#' @noRd
-in_r_build_context <- function() {
-  nzchar(Sys.getenv("R_INSTALL_PKG")) ||
-    nzchar(Sys.getenv("R_CMD")) ||
-    nzchar(Sys.getenv("_R_CHECK_PACKAGE_NAME_")) ||
-    nzchar(Sys.getenv("DEVTOOLS_LOAD"))
 }
 
 #' Check the installed Nextflow version at a pipeline entry point

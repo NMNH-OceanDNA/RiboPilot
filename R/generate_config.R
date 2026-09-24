@@ -71,7 +71,7 @@ fill_config <- function(lines, replacements) {
     val <- replacements[[nm]]
     if (is.null(val)) next
     token <- paste0("<<", nm, ">>")
-    lines <- stringr::str_replace_all(lines, stringr::fixed(token), as.character(val))
+    lines <- gsub(token, as.character(val), lines, fixed = TRUE)
   }
   lines
 }
