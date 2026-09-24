@@ -25,6 +25,8 @@ mk_project <- function() {
   }
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S1','Genus speciesA',NULL,NULL)")
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S2','Genus speciesB',NULL,NULL)")
+  DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, assemble_lock INT)")
+  DBI::dbExecute(con, "INSERT INTO assemble VALUES('S1',1),('S2',1)")
   dir
 }
 
@@ -66,6 +68,22 @@ test_that("ignored and problematic units are excluded from the bundle", {
   g <- bundle(dir, label = "kept")
   # S1 now has one exportable unit, so it loses the suffix too
   expect_setequal(basename(Sys.glob(file.path(g, "samples", "*.fasta"))), c("S1.fasta", "S2.fasta"))
+})
+
+test_that("units marked Exclude from export, or missing either lock, stay out of the bundle", {
+  dir <- mk_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE annotate SET problematic = 'yes' WHERE ID = 'S1' AND scaffold = 2")
+  DBI::dbExecute(con, "UPDATE assemble SET assemble_lock = 0 WHERE ID = 'S2'")
+  DBI::dbDisconnect(con)
+  g <- bundle(dir, label = "kept")
+  expect_equal(basename(Sys.glob(file.path(g, "samples", "*.fasta"))), "S1.fasta")
+  expect_equal(nrow(utils::read.csv(file.path(g, "kept_summary.csv"))), 1)
+
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_lock = 0 WHERE ID = 'S1' AND scaffold = 1")
+  DBI::dbDisconnect(con)
+  expect_error(bundle(dir, label = "none"), "No units to export")
 })
 
 # Add a screen table carrying a paralog pair for S1, as screen_sample() would.

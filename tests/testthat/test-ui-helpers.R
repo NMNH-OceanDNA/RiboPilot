@@ -99,10 +99,22 @@ test_that("lock vocabulary and flag toggle", {
   expect_match(MP_LOCK_DEF("assemble"), "^Locked samples .* move on to Annotation Review")
   expect_match(MP_LOCK_DEF("annotate"), "^Locked units .* move on to Export")
   expect_error(MP_LOCK_DEF("export"))
-  expect_equal(mp_flag_next(c("no", "yes")), "no")
+  expect_equal(mp_flag_next(c("no", "yes")), "yes")   # a mixed selection sets
+  expect_equal(mp_flag_next(c("yes", "yes")), "no")    # clears only when all are set
+  expect_equal(mp_flag_next(character(0)), "yes")
   expect_equal(mp_flag_next(c("no", NA)), "yes")
   expect_equal(mp_flag_next(c(NA_character_, NA_character_), off = NA_character_), "yes")
   expect_equal(mp_flag_next("yes", off = NA_character_), NA_character_)
+  expect_equal(mp_flag_next(c(1, 0), on = 1L, off = 0L), 1L)
+  expect_equal(mp_flag_next(c(1, 1), on = 1L, off = 0L), 0L)
+})
+
+test_that("need_unlocked names the locked ids and says how to unlock them", {
+  said <- NULL
+  local_mocked_bindings(mp_alert = function(title, text = NULL, ...) said <<- paste(title, "|", text))
+  expect_false(need_unlocked(c("S1", "S2"), how = "Unlock them in Annotation Review first"))
+  expect_equal(said,
+    "Locked samples cannot be edited | Locked: S1, S2. Unlock them in Annotation Review first.")
 })
 
 test_that("guards pass through and shorten id lists", {

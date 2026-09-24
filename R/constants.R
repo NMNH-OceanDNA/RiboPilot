@@ -168,11 +168,6 @@ SCAFFOLD_COL_HELP <- list(
     "evidence, listed in the export report only. clean: nothing found. Hover for the evidence.")
 )
 
-#' Toggle the annotation lock on one unit (used by the bulk lock button and by
-#' the "lock anyway" answer to the two-paths warning).
-#' @noRd
-LOCK_UNIT_SQL <- "UPDATE annotate SET annotate_lock = 1 - COALESCE(annotate_lock, 0) WHERE ID = ?"
-
 #' Column help for the chimera segment and window tables (annotate modal)
 #' @noRd
 CHIMERA_COL_HELP <- list(
@@ -279,7 +274,7 @@ MP_COL_NAMES <- c(
   rank             = "Rank",
   match_type       = "Confidence",
   reviewed         = "Reviewed",
-  problematic      = "Problematic",
+  problematic      = "Excluded",
   partial          = "Partial",
   n_flags          = "Warnings",
   itsx_warnings    = "ITSx Warnings",
@@ -335,6 +330,9 @@ MP_COL_TIPS <- c(
   taxonomy_lock    = "Locked rows are finished with this step",
   assemble_lock    = "Locked rows are finished with this step",
   annotate_lock    = "Locked rows are finished with this step",
+  reviewed         = "Checked by a curator; export does not ask again about its contamination flags",
+  problematic      = "Excluded units are left out of every export",
+  partial          = "Export writes the first and last gene of a partial unit as partial",
   path             = "Assembly path number for this unit",
   scaffold         = "Scaffold number within the path",
   sci_name         = "Taxon assigned from the NCBI taxdump",
@@ -368,10 +366,32 @@ MP_LOCK_DEF <- function(mod = c("taxonomy", "assemble", "annotate")) {
   mod <- match.arg(mod)
   sprintf(
     paste(
-      "Locked %s are finished with this step: their options cannot be changed,",
+      "Locked %s are finished with this step: their options for this step cannot be changed,",
       "the next update will not re-run them, and they move on to %s.",
       "You can unlock at any time."
     ),
     MP_UNITS[[mod]], MP_NEXT[[mod]]
   )
 }
+
+#' Why an annotation-locked unit cannot be edited, and how to change that
+#' @noRd
+MP_UNIT_LOCKED <- paste("This unit is locked, so it is read only here.",
+  "To change it, select it in the Annotation Review table and press Unlock.")
+
+#' Curator marks: what each toolbar button and window toggle says it will do,
+#' what the toast says it did, and what the mark means for export.
+#' @noRd
+MP_FLAG_WORDS <- list(
+  reviewed = c(set = "Mark Reviewed", clear = "Clear Reviewed",
+    did_set = "marked reviewed", did_clear = "cleared of reviewed",
+    tip = paste("Record that you checked this unit. Export does not ask again about",
+      "contamination flags on reviewed units.")),
+  problematic = c(set = "Exclude from export", clear = "Include in export",
+    did_set = "excluded from export", did_clear = "included in export again",
+    tip = paste("Excluded units are left out of every export. The unit stays in the",
+      "project; include it again to export it.")),
+  partial = c(set = "Mark Partial", clear = "Clear Partial",
+    did_set = "marked partial", did_clear = "cleared of partial",
+    tip = paste("Export writes the first and last gene of a partial unit as partial",
+      "(< and >, 'partial sequence').")))

@@ -391,3 +391,141 @@ test_that("locking a sample with no taxon asks first, and locks on Lock anyway",
     expect_equal(locks(), c(1L, 1L))
   })
 })
+})
+
+# trim_assembly() writes these; the export fixture was made without them
+add_trim_cols <- function(dir) {
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "ALTER TABLE assemblies ADD COLUMN edited INT")
+  DBI::dbExecute(con, "ALTER TABLE annotations ADD COLUMN length INT")
+  DBI::dbExecute(con, "ALTER TABLE annotations ADD COLUMN edited INT")
+}
+
+test_that("a locked unit is read only in the annotation window", {
+  skip_if_not_installed("withr")
+  dir <- mk_export_project()
+  add_trim_cols(dir)
+  withr::local_dir(dir)
+  snap <- function() RiboPilot:::app_query(
+    "SELECT asm.length, an.problematic, an.annotate_notes,
+       (SELECT stop FROM annotations WHERE element = '18S') AS stop18
+     FROM assemblies asm JOIN annotate an ON an.ID = asm.ID")
+
+  # the window says so, and offers Close instead of Lock & Close
+  html <- paste(as.character(RiboPilot:::annotate_modal("S1", 1L, 1L)), collapse = " ")
+  expect_match(html, "This unit is locked", fixed = TRUE)
+  expect_false(grepl("lock_and_close", html, fixed = TRUE))
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Annotate")
+    sel_unit(list(ID = "S1", path = 1L, scaffold = 1L))
+    session$flushReact()
+    before <- snap()
+    active_feature("18S")
+    session$setInputs(feat_edit = TRUE)
+    session$flushReact()
+    session$setInputs(nt_3_in = 1)
+    session$setInputs(trim_from = 10, trim_to = 420, trim_apply = 1)
+    session$setInputs(mark_problematic = 1)
+    session$setInputs(annotate_notes = "changed after sign-off")
+    session$flushReact()
+    expect_equal(snap(), before)
+  })
+})
+
+test_that("a second trim offers the unit's current span, not the first trim's", {
+  skip_if_not_installed("withr")
+  dir <- mk_export_project()
+  add_trim_cols(dir)
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_lock = 0")
+  DBI::dbDisconnect(con)
+  withr::local_dir(dir)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Annotate")
+    sel_unit(list(ID = "S1", path = 1L, scaffold = 1L))
+    session$setInputs(trim_mode = "annotated")
+    session$flushReact()
+    expect_equal(unname(trim_span()), c(10, 420, 600))
+    session$setInputs(trim_from = 10, trim_to = 420, trim_apply = 1)
+    session$flushReact()
+    expect_equal(unname(trim_span()), c(1, 411, 411))
+
+    # a 5 bp flank around the trimmed unit keeps every base of 18S
+    session$setInputs(trim_mode = "flank", trim_flank = 5)
+    session$flushReact()
+    expect_equal(trim_preset(), c(1, 411))
+    session$setInputs(trim_from = 1, trim_to = 411, trim_apply = 2)
+    session$flushReact()
+    expect_equal(RiboPilot:::app_query("SELECT start, stop FROM annotations WHERE element = '18S'"),
+      data.frame(start = 1L, stop = 191L))
+  })
+})
+
+test_that("export needs both locks, and the export window names what it leaves out", {
+  skip_if_not_installed("withr")
+  dir <- mk_export_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE annotate SET export_group = 'g1'")
+  DBI::dbExecute(con, "UPDATE assemble SET assemble_lock = 0")
+  DBI::dbDisconnect(con)
+  withr::local_dir(dir)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Export", export_group_sel = "g1")
+    session$flushReact()
+    expect_equal(nrow(samples_data()), 0)
+    expect_equal(nrow(export_units_df()), 0)
+    expect_match(output$export_summary$html, "S1 p1.s1 (assembly not locked)", fixed = TRUE)
+
+    con <- RiboPilot:::app_con()
+    DBI::dbExecute(con, "UPDATE assemble SET assemble_lock = 1")
+    DBI::dbExecute(con, "UPDATE annotate SET problematic = 'yes'")
+    DBI::dbDisconnect(con)
+    session$setInputs(refresh = 1)
+    session$flushReact()
+    expect_equal(nrow(export_units_df()), 0)
+    expect_match(output$export_summary$html, "S1 p1.s1 (marked Exclude from export)", fixed = TRUE)
+  })
+})
+
+test_that("annotation options on the Assemble tab answer to the annotation lock", {
+  skip_if_not_installed("withr")
+  dir <- mk_export_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_lock = 0, annotate_switch = 2")
+  DBI::dbDisconnect(con)
+  withr::local_dir(dir)
+  said <- character(0)
+  local_mocked_bindings(mp_alert = function(title, text = NULL, ...) said <<- c(said, paste(title, text)))
+  switch_now <- function() RiboPilot:::app_query("SELECT annotate_switch FROM annotate")$annotate_switch
+
+  # assembly locked, unit unlocked: the cell is a live link and Save re-queues annotation
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    session$flushReact()
+    j <- jsonlite::fromJSON(as.character(output$tbl), simplifyVector = FALSE)
+    cd <- Filter(function(c) identical(c$id, "annotate_opts"), j$x$tag$attribs$columns)[[1]]
+    expect_false(grepl("assemble_lock", paste(unlist(cd$cell), collapse = " "), fixed = TRUE))
+    session$setInputs(set_annotate_opts = 1)
+    session$flushReact()
+    session$setInputs(no_name = "default", no_edit = FALSE, update_no = 1)
+    session$flushReact()
+  })
+  expect_equal(switch_now(), 1L)
+
+  # unit annotation-locked: refused, naming that lock and the tab to unlock it in
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_lock = 1, annotate_switch = 2")
+  DBI::dbDisconnect(con)
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    session$flushReact()
+    session$setInputs(set_annotate_opts = 1)
+    session$flushReact()
+  })
+  expect_equal(switch_now(), 2L)
+  expect_true(any(grepl("annotation is locked.*Annotation Review", said)))
+})

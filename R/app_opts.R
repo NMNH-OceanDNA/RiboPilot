@@ -426,13 +426,18 @@ opts_handlers <- function(input, output, session, deps) {
       ids <- click_ids(input[[paste0("set_", sp$table)]])
       if (!need_selection(length(ids))) return()
       locked <- locked_ids(ids, sp$lock, sp$queue_tbl)
+      what <- if (identical(sp$lock, "annotate_lock")) "annotation" else "assembly"
       if (length(locked) == length(ids)) {
-        need_unlocked(locked, "sample"); return()
+        need_unlocked(locked, "sample", how = if (what == "annotation") {
+          paste("Their annotation is locked. Unlock their units in Annotation Review first;",
+            "a sample is listed there only while its assembly is locked")
+        } else "Their assembly is locked. Select them on this tab and press Unlock first")
+        return()
       }
       targets(setdiff(ids, locked))
       open_modal(p)
-      if (length(locked)) mp_toast(sprintf("Skipping %s locked for this step: %s.",
-        mp_n(length(locked), "sample"), mp_id_list(locked)), type = "warning")
+      if (length(locked)) mp_toast(sprintf("Skipping %s whose %s is locked: %s.",
+        mp_n(length(locked), "sample"), what, mp_id_list(locked)), type = "warning")
     })
     # enable fields on Edit; auto-check Edit when a new (unknown) name is typed
     shiny::observeEvent(input[[paste0(p, "_edit")]], ignoreInit = TRUE, {

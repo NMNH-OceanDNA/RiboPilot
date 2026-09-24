@@ -194,31 +194,6 @@ rejected_contigs_section <- function(id) {
         `Why it was left out` = reactable::colDef(minWidth = 200))))
 }
 
-#' Warn that locking would leave a sample with two locked assembly paths
-#'
-#' A corner-of-the-screen notification was too easy to miss for something that
-#' silently does nothing, so this blocks until the reviewer answers. Locking two
-#' paths is unusual rather than impossible -- alternative resolutions of the same
-#' repeat are normally competing answers, not both right -- so "Lock anyway"
-#' stays available.
-#' @param ids Sample IDs that would end up with more than one locked path.
-#' @noRd
-multi_path_lock_modal <- function(ids) {
-  modalDialog(
-    title = mp_modal_title("More than one assembly path would be locked"),
-    size = "m", easyClose = FALSE,
-    div(style = "font-size:1.02em; line-height:1.5;",
-      tags$p(paste("Paths are competing reconstructions of the same rDNA repeat, so a",
-        "sample normally carries one locked path. This would leave more than one",
-        "locked for:")),
-      tags$p(style = "font-weight:600; margin:6px 0;", paste(ids, collapse = ", ")),
-      tags$p(style = "color:#666;",
-        paste("Unlock the other path first, or proceed if you mean to keep both",
-          "(both will be annotated and exported)."))),
-    footer = mp_footer(danger = actionButton("lock_anyway", "Lock anyway"))
-  )
-}
-
 #' Warn that exporting will replace an export folder that already exists
 #'
 #' The group folder is rebuilt from scratch on every export, so a previous
@@ -363,10 +338,15 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
   # identical() value to sel_unit, which does not invalidate the reactiveVal, so
   # the server-side reset observer never fires; a value-less textAreaInput then
   # reports "" and the write observer persists it over the stored note.
-  notes <- tryCatch(app_query(
-    "SELECT annotate_notes FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?",
-    params = list(id, as.integer(path), as.integer(scaffold)))$annotate_notes[1],
-    error = function(e) NA_character_)
+  row <- tryCatch(app_query(
+    "SELECT annotate_notes, annotate_lock FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(id, as.integer(path), as.integer(scaffold))),
+    error = function(e) data.frame())
+  notes <- if (nrow(row)) row$annotate_notes[1] else NA_character_
+  # A locked unit is read only here, as in MitoPilot's details window; the
+  # server refuses the same edits (lock_blocked() in app_server.R).
+  locked <- isTRUE(row$annotate_lock[1] == 1)
+  off <- function(x) if (locked) shinyjs::disabled(x) else x
   modalDialog(
     # Flags sit in the pinned header beside the badges they mirror, as in
     # MitoPilot, so they stay in reach while the body scrolls.
@@ -377,18 +357,22 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
         uiOutput("modal_status_toggles", inline = TRUE, style = "display: contents;"))),
     size = "l", easyClose = FALSE,
     # Close is a server button so unsaved boundary edits can stop it.
-    footer = div(class = "mp-sticky-foot", rp_sample_nav("annotate"), mp_footer(
-      primary = actionButton("lock_and_close", "Lock & Close"), dismiss = NULL,
-      extra = actionButton("annotate_close", "Close"))),
+    footer = div(class = "mp-sticky-foot", rp_sample_nav("annotate"), if (locked) {
+      mp_footer(primary = actionButton("annotate_close", "Close"), dismiss = NULL)
+    } else {
+      mp_footer(primary = actionButton("lock_and_close", "Lock & Close"), dismiss = NULL,
+        extra = actionButton("annotate_close", "Close"))
+    }),
     modal_taxon_header(id),
+    if (locked) div(class = "alert alert-warning", role = "status", icon("lock"), " ", MP_UNIT_LOCKED),
     # ---- gene list (drives the active feature for the editor + alignment) ----
     h5("Feature model", style = "margin:2px 0 4px;"),
     tags$p(class = "mp-help-text", style = "margin-bottom:4px;",
       "Click a feature to make it active for editing + reference alignment below."),
     reactable::reactableOutput("feature_tbl"),
     div(style = "margin:6px 0; display:flex; gap:6px;",
-      actionButton("trim_btn", "Trim assembly...", icon = icon("scissors"), class = "btn-sm"),
-      actionButton("restore_btn", "Restore assembly", icon = icon("rotate-left"), class = "btn-sm")),
+      off(actionButton("trim_btn", "Trim assembly...", icon = icon("scissors"), class = "btn-sm")),
+      off(actionButton("restore_btn", "Restore assembly", icon = icon("rotate-left"), class = "btn-sm"))),
     tags$hr(style = "margin:10px 0;"),
 
     # ---- collapsible detail panels ----
@@ -409,8 +393,8 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
         div(style = "align-self:flex-end; padding-bottom:6px; font-weight:bold;",
           textOutput("feat_edit_active", inline = TRUE)),
         div(style = "align-self:flex-end; padding-bottom:6px;",
-          shinyWidgets::prettyCheckbox("feat_edit", "Edit", value = FALSE,
-            status = "primary", inline = TRUE)),
+          off(shinyWidgets::prettyCheckbox("feat_edit", "Edit", value = FALSE,
+            status = "primary", inline = TRUE))),
         shinyjs::hidden(div(id = "feat_edit_ctrls",
           style = "display:flex; flex-flow:row wrap; gap:1.2em; align-items:flex-end;",
           div(class = "rp-step-box", style = "width:70px;",
@@ -441,11 +425,11 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
     rp_details("Chimera check", open = FALSE, chimera_panel()),
 
     rp_details("Notes", open = FALSE,
-      textAreaInput("annotate_notes", label = NULL, width = "100%",
+      off(textAreaInput("annotate_notes", label = NULL, width = "100%",
         value = (notes %||% NA_character_) %|NA|% "",
-        placeholder = "Notes for this annotation unit"),
+        placeholder = "Notes for this annotation unit")),
       tags$p(class = "mp-help-text", "Saved as you type. Deleting the text does not clear the stored note; use Clear notes."),
-      actionButton("annotate_notes_clear", "Clear notes", class = "btn-sm"))
+      off(actionButton("annotate_notes_clear", "Clear notes", class = "btn-sm")))
   )
 }
 

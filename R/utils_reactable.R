@@ -239,7 +239,7 @@ rt_link <- function(InputId, title = NULL, lock_col = NULL) {
   locked <- if (is.null(lock_col)) "" else sprintf(
     "var lk = (cellInfo.row || {})['%s'];
                 if (lk == 1) {
-                  return `<span class='mp-locked-cell' title='Locked - options are set to ${cellInfo.value}. Unlock this sample with the Lock button to change them.'>${cellInfo.value}</span>`;
+                  return `<span class='mp-locked-cell' title='Locked - options are set to ${cellInfo.value}. Select the row and press Unlock to change them.'>${cellInfo.value}</span>`;
                 }",
     lock_col
   )
