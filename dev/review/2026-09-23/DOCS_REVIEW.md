@@ -238,6 +238,7 @@ The task named install prerequisites, troubleshooting, a glossary, NEWS, and cit
 - Problem: Every project, including the practice project, asks for 6 CPUs and 24 GB per assembly and 4 CPUs and 16 GB for read cleaning. A task that runs out of memory is retried with more (48, then 72 GB) up to 3 times and then quietly skipped. On the local executor that the docker profile uses, a task larger than the machine is refused ("Process requirement exceeds available memory"), and that ends the whole run, even under errorStrategy 'ignore' (the verifier re-ran this). No doc gives CPU, RAM, disk, or time figures.
 - Why it matters: On a typical 4-core, 16 GB laptop the practice project cannot run as shipped, and nobody can plan an 80-sample project.
 - Fix: Add a "Planning a project" table: minimum and recommended machine (for example 8 cores, 32 GB RAM, 20 GB free disk), per-sample needs, and measured times from this review (practice project about 16 min for 12 samples; order-level reference builds about 1.5 min; a Gastropoda-wide build about 8 min for 51,311 records). Say how to lower CPUs and Memory in the Assemble step's Assembly Options. Consider small defaults for the practice project, or `process.resourceLimits` in `config.docker`.
+- Status: the code half (PIPE-H2) is fixed: oversized requests are capped at the machine's size instead of ending the run. The hardware table is still to be written. See [Fixed on this branch](REVIEW_SUMMARY.md#fixed-on-this-branch-after-the-review).
 - See also: [CODE_REVIEW.md](CODE_REVIEW.md) PIPE-H2
 
 <a id="doc-04"></a>**DOC-04. No "Running on a cluster" page: opening the app on a login node, the head-job script, and shared storage.** Major. Confirmed. ids: D-hpc-6, D-intermediate-9, D-hpc-19, D-hpc-21. Seen by 2 (docs-hpc, docs-intermediate).
@@ -454,6 +455,7 @@ Items are grouped by the page they mostly affect; the Where line gives every pla
   - The README's conda link now redirects to an Anaconda concepts page, not install steps.
 - Why it matters: Novices follow the only concrete commands they see, which lead to the unsupported path, and a user who keeps the default gets a run where every sample fails (fastp not found).
 - Fix: Default `executor` to "docker" (or make it required) and warn once on conda; then delete the four notes. Change the Nextflow hint to `export NXF_VER=25.10.6`. Move all conda material into one "Installing tools without a container (unsupported)" article. Keep the README short and link to Get started for detail.
+- Status: partly fixed on `review/2026-09-full-review`. The default is now docker, conda warns, and the "still defaults to conda" sentences are gone from README, Get started, and Reference databases. Moving the conda material off the main path is still open. See [Fixed on this branch](REVIEW_SUMMARY.md#fixed-on-this-branch-after-the-review).
 - See also: [UX-04](USABILITY_REVIEW.md#ux-04); [CODE_REVIEW.md](CODE_REVIEW.md) PIPE-M11
 
 ### README (home page)
@@ -463,6 +465,7 @@ Items are grouped by the page they mostly affect; the Where line gives every pla
 - Problem: Biostrings, DECIPHER, and pwalign are Bioconductor packages in Imports. `remotes` adds the Bioconductor repositories only when DESCRIPTION has a `biocViews` field, and RiboPilot has none (MitoPilot does), so `remotes::install_github("dmacguigan/RiboPilot")` fails on any machine that lacks them. Get started also leaves out `install.packages("remotes")`.
 - Why it matters: The very first command fails for new users.
 - Fix: Add an empty `biocViews:` line to DESCRIPTION (tested on a copy; the three packages then resolve). Optionally show `BiocManager::install(c("Biostrings", "DECIPHER", "pwalign"))` or `pak::pak("dmacguigan/RiboPilot")`. Add the remotes line to Get started.
+- Status: the code fix is on `review/2026-09-full-review` (empty `biocViews:` line); the install instructions need no change. See [Fixed on this branch](REVIEW_SUMMARY.md#fixed-on-this-branch-after-the-review).
 - See also: [CODE_REVIEW.md](CODE_REVIEW.md) PKG-H1
 
 <a id="doc-18"></a>**DOC-18. The documented new_test_project() and new_project() calls crash outside RStudio.** Blocker (D-intermediate-2 rated major because RStudio users are not affected). Confirmed. ids: D-novice-3, D-intermediate-2, D-editor-2, D-api-1. Seen by 4 (docs-api, docs-editor, docs-intermediate, docs-novice).
@@ -470,6 +473,7 @@ Items are grouped by the page they mostly affect; the Where line gives every pla
 - Problem: `Sys.getenv("RSTUDIO", FALSE)` returns the string "FALSE", so `!isFALSE(...)` is always TRUE and `rstudioapi::initializeProject()` runs. In a terminal, Rscript, R.app, RGui, VS Code, or Positron (with rstudioapi installed) the call stops with "Error: RStudio not running". `new_test_project()` does this after downloading every read, leaving only `mapping.csv`. Inside RStudio it opens a new session without warning. The help says Rproj has "no effect outside RStudio".
 - Why it matters: Terminal and HPC users, the main audience for genome skims, fail at step one, and nothing mentions `Rproj = FALSE`.
 - Fix: Test `nzchar(Sys.getenv("RSTUDIO"))` or `rstudioapi::isAvailable()`, and fix both help pages. Until the fix ships, add `Rproj = FALSE` to every documented call, and say that `Rproj = TRUE` opens a new RStudio session.
+- Status: fixed on `review/2026-09-full-review`: no crash outside RStudio, and the `new_project()` help now matches `new_test_project()` ("no effect outside RStudio"). See [Fixed on this branch](REVIEW_SUMMARY.md#fixed-on-this-branch-after-the-review).
 - See also: [UX-01](USABILITY_REVIEW.md#ux-01); [CODE_REVIEW.md](CODE_REVIEW.md) PKG-H2
 
 <a id="doc-19"></a>**DOC-19. While the repo is private, three documented steps need a GitHub token, and the default fish reference fails even with one.** Blocker (D-novice-19 and D-editor-7 rated major, D-api-22 minor; the item takes D-hpc-3's blocker because no token fixes the seeds). Confirmed. ids: D-hpc-3, D-novice-19, D-editor-7, D-api-22, D-intermediate-31 (part), O-novel-7 (part). Seen by 6 (docs-api, docs-editor, docs-hpc, docs-intermediate, docs-novice, op-novel).
@@ -480,6 +484,7 @@ Items are grouped by the page they mostly affect; the Where line gives every pla
   - The site URL, every Source link, the GitHub navbar icon, BugReports, the issue links, and the in-app Help link all 404 as well.
 - Why it matters: Every pre-release tester stops here, and the first practice run looks as if it succeeded.
 - Fix: Treat "repo public and Pages deployed" as a release gate. Ship the fish seeds and labels as checksummed release assets, or inside the package or image, not as a main-branch raw URL. Until then, add a short "Private preview" note (set `GITHUB_PAT`; pass local seeds), and report 404s as "not found or private" rather than a slow connection.
+- Status: the fish-reference half is deferred by the author (2026-09-24): most users will build their own reference databases, so shipping the built-in fish reference is not a release gate. The repo-public half (site URL, Source links, BugReports, Help link) still applies.
 - See also: [UX-11](USABILITY_REVIEW.md#ux-11); [CODE_REVIEW.md](CODE_REVIEW.md) SCI-M9, REF-L4, REF-L9
 
 <a id="doc-20"></a>**DOC-20. The README says the taxonomy lock gates assembly; the pipeline does not check it.** Major. Confirmed. ids: D-intermediate-4, D-editor-5, D-appclaims-2, D-api-5 (part). Seen by 4 (docs-api, docs-appclaims, docs-editor, docs-intermediate).

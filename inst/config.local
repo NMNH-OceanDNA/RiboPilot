@@ -21,6 +21,7 @@ docker {
 process {
     executor = 'local'
     container = '<<CONTAINER_ID>>'
+    resourceLimits = [cpus: <<HOST_CPUS>>, memory: <<HOST_MEMORY>>.GB]   // this machine; bigger requests are capped, not fatal
 }
 
 params {

@@ -11,7 +11,7 @@ new_project(
   data_path = NULL,
   assembly_path = NULL,
   min_depth = 2e+06,
-  executor = c("conda", "docker", "local", "awsbatch", "slurm", "pbs", "sge", "lsf",
+  executor = c("docker", "conda", "local", "awsbatch", "slurm", "pbs", "sge", "lsf",
     "NMNH_Hydra", "NOAA_SEDNA"),
   container = paste0("macguigand/ribopilot:", utils::packageVersion("RiboPilot")),
   custom_seeds_db = NULL,
@@ -48,9 +48,10 @@ dev/design/20_USER_ASSEMBLIES.md.}
 \item{min_depth}{Minimum trimmed paired reads to proceed with assembly.}
 
 \item{executor}{Executor for the Nextflow pipeline. Ready to use as-is:
-"conda" (default) for a local conda env, and "docker"/"local" for the
-RiboPilot container. Every scheduler ("slurm", "sge", "pbs", "lsf",
-"awsbatch", "NMNH_Hydra", "NOAA_SEDNA") is a template, not a usable
+"docker" (default) or "local" for the RiboPilot container on this machine,
+and "conda" for a self-installed conda env (not supported; warns). Every
+scheduler ("slurm", "sge", "pbs", "lsf", "awsbatch", "NMNH_Hydra",
+"NOAA_SEDNA") is a template, not a usable
 executor: it needs a queue and cluster options that only [generate_config()]
 supplies, so build a profile there first and pass its name here. Passing a
 bare scheduler name is an error rather than a config Nextflow cannot parse.}
@@ -77,7 +78,8 @@ be staged later.}
 \item{check_assemblies}{(logical) Check that the assembly files named in the
 mapping file exist under `assembly_path` (default TRUE).}
 
-\item{Rproj}{(logical) Initialize/open an RStudio project (default TRUE).}
+\item{Rproj}{(logical) Initialize/open an RStudio project (default TRUE; no
+effect outside RStudio).}
 
 \item{force}{(logical) Recreate an existing project database (default FALSE).}
 

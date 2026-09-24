@@ -112,6 +112,10 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: the lookup joins `annotate` (one row per unit) to the options table with no `LIMIT`, so a sample with 3 units returns 3 rows. The modal then runs `cur$rrna_tool %|NA|% ...` on a length-3 vector, and `%|NA|%` is a bare `if (is.na(x))`, which errors.
 - Why it matters: the error happens inside an observer with no `tryCatch`, so Shiny closes the session (grey screen). Multi-unit samples are common: 3 of 12 in the test project.
 - Fix: add `ORDER BY x.path, x.scaffold LIMIT 1` to the lookup (the Assemble table subquery already does this), or take `cur[1, ]`.
+- Status: fixed on `review/2026-09-full-review`. `new_project()` and `new_test_project()` default to `docker`, and `executor = "conda"` warns that it is not supported. The C-pkg-30 ribotyper part is not addressed. See [Fixed on this branch](REVIEW_SUMMARY.md#fixed-on-this-branch-after-the-review).
+- Status: fixed on `review/2026-09-full-review`. `config.docker`, `config.local`, and `config.conda` carry `resourceLimits = [cpus: <<HOST_CPUS>>, memory: <<HOST_MEMORY>>.GB]`, which `new_project()` fills from `ps`. With Nextflow 25.10.6, a 1,000 GB, 64-CPU request now runs capped at the limit instead of stopping the run. Cluster profiles are unchanged. See [Fixed on this branch](REVIEW_SUMMARY.md#fixed-on-this-branch-after-the-review).
+- Status: fixed on `review/2026-09-full-review`. The RStudio step runs only when `rstudioapi::isAvailable()`; the Rproj help text says it has no effect outside RStudio. Test: `test-init-reads.R`. See [Fixed on this branch](REVIEW_SUMMARY.md#fixed-on-this-branch-after-the-review).
+- Status: fixed on `review/2026-09-full-review`. DESCRIPTION has an empty `biocViews:` line, and `remotes::dev_package_deps()` now resolves Biostrings, DECIPHER, and pwalign from Bioconductor (it returned NA before). See [Fixed on this branch](REVIEW_SUMMARY.md#fixed-on-this-branch-after-the-review).
 
 **APP-H2. A second trim reuses the old span and length, so a flank trim can delete 18S and ITS1**
 - Ids: C-shiny-5. Severity: high. Status: confirmed.

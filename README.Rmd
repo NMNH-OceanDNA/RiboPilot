@@ -101,8 +101,7 @@ The best way to learn RiboPilot is to run the built-in practice project. RiboPil
 RiboPilot::new_test_project(path = "~/ribopilot_test", executor = "docker")
 ```
 
-`executor` is passed explicitly here because `new_test_project()` still defaults to
-`executor = "conda"`, which is no longer a supported way to run.
+`executor = "docker"` (the default) runs every analysis step inside the RiboPilot container.
 
 From there, the [Get started guide](https://dmacguigan.github.io/RiboPilot/articles/RiboPilot.html) walks you through assembling the samples, reviewing and cleaning them up in the app, and exporting the results.
 

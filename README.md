@@ -166,9 +166,7 @@ downloads them and sets everything up:
 RiboPilot::new_test_project(path = "~/ribopilot_test", executor = "docker")
 ```
 
-`executor` is passed explicitly here because `new_test_project()` still
-defaults to `executor = "conda"`, which is no longer a supported way to
-run.
+`executor = "docker"` (the default) runs every analysis step inside the RiboPilot container.
 
 By default this fetches small rDNA-filtered read subsets published with
 the RiboPilot releases, so setup takes seconds. Pass `full_size = TRUE`

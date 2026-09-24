@@ -18,9 +18,10 @@
 #'   dev/design/20_USER_ASSEMBLIES.md.
 #' @param min_depth Minimum trimmed paired reads to proceed with assembly.
 #' @param executor Executor for the Nextflow pipeline. Ready to use as-is:
-#'   "conda" (default) for a local conda env, and "docker"/"local" for the
-#'   RiboPilot container. Every scheduler ("slurm", "sge", "pbs", "lsf",
-#'   "awsbatch", "NMNH_Hydra", "NOAA_SEDNA") is a template, not a usable
+#'   "docker" (default) or "local" for the RiboPilot container on this machine,
+#'   and "conda" for a self-installed conda env (not supported; warns). Every
+#'   scheduler ("slurm", "sge", "pbs", "lsf", "awsbatch", "NMNH_Hydra",
+#'   "NOAA_SEDNA") is a template, not a usable
 #'   executor: it needs a queue and cluster options that only [generate_config()]
 #'   supplies, so build a profile there first and pass its name here. Passing a
 #'   bare scheduler name is an error rather than a config Nextflow cannot parse.
@@ -37,7 +38,8 @@
 #'   be staged later.
 #' @param check_assemblies (logical) Check that the assembly files named in the
 #'   mapping file exist under `assembly_path` (default TRUE).
-#' @param Rproj (logical) Initialize/open an RStudio project (default TRUE).
+#' @param Rproj (logical) Initialize/open an RStudio project (default TRUE; no
+#'   effect outside RStudio).
 #' @param force (logical) Recreate an existing project database (default FALSE).
 #' @param ... Additional default processing parameters passed to [new_db()].
 #'
@@ -49,7 +51,7 @@ new_project <- function(
     data_path = NULL,
     assembly_path = NULL,
     min_depth = 2000000,
-    executor = c("conda", "docker", "local", "awsbatch", "slurm", "pbs", "sge", "lsf", "NMNH_Hydra", "NOAA_SEDNA"),
+    executor = c("docker", "conda", "local", "awsbatch", "slurm", "pbs", "sge", "lsf", "NMNH_Hydra", "NOAA_SEDNA"),
     container = paste0("macguigand/ribopilot:", utils::packageVersion("RiboPilot")),
     custom_seeds_db = NULL,
     custom_labels_db = NULL,
@@ -93,15 +95,16 @@ new_project <- function(
   if (!is.null(executor) && executor %in% CONTAINER_EXECUTORS) {
     check_container_image(container)
   }
+  if (identical(executor, "conda")) {
+    warning("executor = \"conda\" is not supported: it needs every pipeline tool ",
+      "installed by hand. Use executor = \"docker\" (or a Singularity profile on a cluster).",
+      call. = FALSE)
+  }
 
   # RStudio project (optional) ----
-  if (Rproj && !isFALSE(Sys.getenv("RSTUDIO", FALSE))) {
-    if (isFALSE(requireNamespace("rstudioapi", quietly = TRUE))) {
-      message("package 'rstudioapi' not available. Skipping RStudio project initialization.")
-    } else {
-      rstudioapi::initializeProject(path)
-      on.exit(rstudioapi::openProject(path, newSession = TRUE))
-    }
+  if (Rproj && requireNamespace("rstudioapi", quietly = TRUE) && rstudioapi::isAvailable()) {
+    rstudioapi::initializeProject(path)
+    on.exit(rstudioapi::openProject(path, newSession = TRUE))
   }
 
   # Database ----
@@ -179,7 +182,9 @@ new_project <- function(
       MIN_DEPTH = format(min_depth, scientific = FALSE),
       GENETIC_CODE = "1",
       NCBI_API_KEY = ncbi_api_key %||% "",
-      EXTRA_MOUNTS = extra_mounts
+      EXTRA_MOUNTS = extra_mounts,
+      HOST_CPUS = ps::ps_cpu_count(),
+      HOST_MEMORY = floor(ps::ps_system_memory()$total / 1024^3)
     ))
   # Scheduler templates carry tokens only generate_config() fills (queue,
   # cluster options, container engine). Writing them through produces a config

@@ -114,11 +114,9 @@ RiboPilot::new_project(
 If you do not set a folder, RiboPilot uses a default location on your computer.
 
 <div class="alert alert-note">
-The examples on this page pass <code>executor = "docker"</code> explicitly, because
-<code>new_project()</code> still defaults to <code>executor = "conda"</code>, which
-is <strong>no longer a supported way to run</strong>. Supported execution is Docker
-or Singularity; see the <a href="RiboPilot.html">Get started guide</a> for
-clusters.
+Supported execution is Docker (<code>executor = "docker"</code>, the default) or
+Singularity; see the <a href="RiboPilot.html">Get started guide</a> for clusters.
+The conda executor is <strong>no longer a supported way to run</strong>.
 </div>
 
 # Building from the console

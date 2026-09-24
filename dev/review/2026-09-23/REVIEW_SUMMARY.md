@@ -14,19 +14,21 @@ RiboPilot works end to end today, and a lot of it works well: two operators took
 
 ## Fixed on this branch after the review
 
-The three wrong-record problems at the top of the action list were fixed on `review/2026-09-full-review` after the review was written (uncommitted). The full test suite passes (1,106 tests, 0 failures). Each fix was also checked against the review's real projects.
+Actions 1 to 4 were worked on `review/2026-09-full-review` after the review was written. The full test suite passes (1,107 tests, 0 failures). Each fix was also checked against the review's real projects.
 
 | Problem | Items | What changed | Files | Tests |
 |---|---|---|---|---|
 | Contaminated records exported under the sample's name | UX-31, action 1 | `submission_risk` now carries `off_target(<taxon>)` from the contamination screen and `contaminant` from curation, so the summary CSV, HTML report, done dialog, console warning, and bundle README all show it. The Export window now lists every off_target or contaminant unit not marked Reviewed, and offers "Leave them out" (default), "Export anyway", or "Cancel". | `R/export.R`, `R/app_modals.R`, `R/app_server.R` | `test-export.R`, `test-app-export.R` |
 | Truncated genes exported as "complete sequence" | DB-H2, UX-32, action 2 | A feature the curation step flagged `truncated` is now partial at both ends in the `.tbl` (`<start >stop`) and in the definition line ("partial sequence"). | `R/export.R`, `R/export_opts.R` | `test-export.R` |
 | Old gene positions and screen results kept after re-assembly | DB-H1, SCI-H1 (sequence part), action 3 | When a re-assembly gives a surviving unit a different sequence, `load_assemblies()` deletes that unit's annotations, coverage, screen verdict, chimera call, BLAST results, reference alignments, and trim backup. It also clears its lock, Reviewed, Partial, Problematic, and export group, then re-queues it for annotation. Units whose sequence did not change keep everything. | `R/pipeline_steps.R` | `test-load-assemblies.R` |
+| First commands fail on a new machine | PKG-H1, PKG-H2, PIPE-M11, PIPE-H2, UX-01, UX-04, action 4 | DESCRIPTION gains an empty `biocViews:` line, so `install_github` finds the Bioconductor packages. The RStudio step runs only inside RStudio, so `new_project()` and `new_test_project()` work from a terminal, Rscript, or HPC session. Both default to `executor = "docker"`, and conda warns. The local, docker, and conda configs cap every task at this machine's CPUs and memory (`resourceLimits`, filled by `new_project()`), so an oversized request no longer ends the run. The README and vignette lines saying conda is the default are updated. | `DESCRIPTION`, `R/init_project.R`, `R/init_test_project.R`, `R/generate_config.R`, `inst/config.{docker,local,conda}`, `man/`, README, vignettes | `test-init-reads.R` |
 
 Checked on real data: Tret_01 now reads `off_target(Actiniaria);contaminant`, and the Export window asks about it ([screenshot](screenshots/fix_01_contamination_prompt.png)). "Leave them out" exported only the five *Euspira* records. SRR33849683_p1_s2 now exports as `<155 >1488` with "28S ribosomal RNA gene, partial sequence."
 
-Still open from the same actions:
+Still open from the same actions (action 5, shipping the fish reference, was deferred by the author on 2026-09-24):
 - **Action 1:** no prompt at Lock yet, and no Checks column in the Assemble or Annotation Review tables (UX-14, UX-22). Chimera calls reach `submission_risk` but not the Export prompt. The ITSx line in the done dialog can still be green next to the amber risk line.
 - **Action 2:** the Partial button still marks both ends. No doc explains the partial rule (DOC-42), and DB-L8 is open.
+- **Action 4:** hardware guidance in the docs (DOC-03), moving conda material off the main path (DOC-16), and a clean-machine CI check. Existing projects keep their old `.config` without the machine limits. Recreate them to get the limits.
 - **Action 3:** these are still open:
   - old path files in the publish folder (PIPE-H1);
   - triage decisions lost on re-assembly (SCI-M5);
@@ -134,6 +136,7 @@ Ranked by: wrong data reaching GenBank or the database first, then what stops ne
 - **Why it matters:** every new user hits at least one of these in the first hour, and terminal and HPC users are the main audience for genome skims.
 - **Fix:** add an empty `biocViews:` line; test `requireNamespace("rstudioapi", quietly = TRUE) && rstudioapi::isAvailable()` and fix the help text; default `executor` to "docker" and warn once on conda; add `process.resourceLimits` with the host's CPUs and memory, filled in by `new_project()`. Add a clean-machine check to CI (see theme 4).
 - **Read more:** [CODE 4.7](CODE_REVIEW.md#47-packaging) (PKG-H1, PKG-H2), [CODE 4.2](CODE_REVIEW.md#42-pipeline-and-containers) (PIPE-H2, PIPE-M11), [DOC-17](DOCS_REVIEW.md#doc-17), [DOC-18](DOCS_REVIEW.md#doc-18), [DOC-16](DOCS_REVIEW.md#doc-16), [DOC-03](DOCS_REVIEW.md#doc-03), [UX-01](USABILITY_REVIEW.md#ux-01), [UX-04](USABILITY_REVIEW.md#ux-04).
+- **Status:** fixed on this branch, except the hardware docs (DOC-03), moving conda material off the main path (DOC-16), and the clean-machine CI check (see [Fixed on this branch](#fixed-on-this-branch-after-the-review)).
 
 ### 5. Ship the built-in fish reference, and treat "repo public" as a release gate
 
@@ -144,6 +147,7 @@ Ranked by: wrong data reaching GenBank or the database first, then what stops ne
 - **Why it matters:** every pre-release tester stops here; after release, results can drift with no version change.
 - **Fix:** ship the fish seeds and labels inside the image, or as checksummed release assets pinned to the package version, and have `new_db()` use the constants. Wrap the seed download in `tryCatch` and return NA. Check URL databases before launch. Until the repo is public, add a short private-preview note, and report a 404 as "not found or private; set GITHUB_PAT".
 - **Read more:** [DOC-19](DOCS_REVIEW.md#doc-19), [UX-11](USABILITY_REVIEW.md#ux-11), [UX-56](USABILITY_REVIEW.md#ux-56), [CODE 4.5](CODE_REVIEW.md#45-reference-data-and-taxonomy) (REF-L4, REF-L9), [CODE 4.3](CODE_REVIEW.md#43-science-and-algorithms) (SCI-M9).
+- **Status:** deferred by the author (2026-09-24). Most users will build their own reference databases, so shipping the built-in fish reference is not a priority or a release gate.
 
 ### 6. Rewrite Get started around the app's five steps
 
@@ -293,8 +297,8 @@ Each should take under an hour (the reviewers' estimate; check the linked write-
 ### Before publishing the docs site
 
 1. **Get started describes a different app.** DOC-28 and UX-49 (action 6). The site's main walkthrough must match the five-step app.
-2. **The first commands on the site must work.** DOC-17 / PKG-H1, DOC-18 / PKG-H2 / UX-01, and DOC-16 / PIPE-M11 (quick wins 1 to 3).
-3. **The repo must be public and the fish reference must load.** DOC-19 and UX-11 (action 5). Until then the site URL, every Source link, BugReports, the in-app Help link, and the practice project all fail. Note that GitHub Pages from a private repo needs a paid plan and would be public anyway (DOC-96).
+2. **The first commands on the site must work.** DOC-17 / PKG-H1, DOC-18 / PKG-H2 / UX-01, and DOC-16 / PIPE-M11 (quick wins 1 to 3). Fixed on this branch (action 4).
+3. **The repo must be public and the fish reference must load.** DOC-19 and UX-11 (action 5). The fish-reference half is deferred by the author; the repo-public half still applies. Until then the site URL, every Source link, BugReports, the in-app Help link, and the practice project all fail. Note that GitHub Pages from a private repo needs a paid plan and would be public anyway (DOC-96).
 4. **"Already have an assembly?" must work on generated cluster profiles.** DOC-29 / PIPE-H3 (quick win 4).
 5. **Do not publish wrong science or GenBank guidance.** Either fix the code first or document what ships: the partial rule (DOC-42, DB-H2, UX-32), isomers that ignore the ITS (DOC-58, SCI-L5), "cannot be contamination" (DOC-59), the "GenBank screen" that is really a local panel by default (DOC-60), source modifiers and the organism name (DOC-44, DOC-45), and the out-of-date Curation guide (DOC-53 to DOC-56: missing flags, 2 of 5 rulesets, 7 of 8 triage rules, no chimera section).
 6. **Write the missing essentials.** Install prerequisites, supported computers, and hardware (DOC-01, DOC-02, DOC-03); Troubleshooting (DOC-08); mapping-file rules (DOC-09); the "keep the tab open" warning (DOC-36); and move all conda material off the main path (DOC-16). The rest of the missing-content list (DOC-04 to DOC-07, DOC-10 to DOC-14) can follow soon after.

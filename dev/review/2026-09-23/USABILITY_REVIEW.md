@@ -137,6 +137,7 @@ Each item gives its id(s), severity, status, location, the problem, why it matte
 - Problem: in a terminal, `Rscript`, VS Code, or HPC session, the call stops with "Error: RStudio not running". For the test project this happens after all reads have downloaded. Only mapping.csv (and data/) is left. The check `!isFALSE(Sys.getenv("RSTUDIO", FALSE))` is always TRUE, because `Sys.getenv()` returns the string "FALSE". It fails whenever rstudioapi is installed, which is common. The same line is in MitoPilot.
 - Why it matters: terminal and HPC users, the main audience for genome skims, fail at step one. The workaround (`Rproj = FALSE`) is not documented.
 - Fix: `if (Rproj && requireNamespace("rstudioapi", quietly = TRUE) && rstudioapi::isAvailable())`. Fix the help text. Until then, mention `Rproj = FALSE` in the guide.
+- Status: fixed on `review/2026-09-full-review`. See [Fixed on this branch](REVIEW_SUMMARY.md#fixed-on-this-branch-after-the-review).
 
 <a id="ux-02"></a>**UX-02. A failed setup leaves a half-made project, and running it again quietly does nothing.** Major. Confirmed. ids: O-edge-5 (major), O-edge-6 (major). Seen by 1 (op-edge). Screenshot: [ux_20](screenshots/ux_20_no_config_wrong_advice.png).
 - Where: `R/init_project.R`: `new_db()` runs before `resolve_config` and the placeholder check; the mapping is copied (line 86) before the existing-database check (line 108), which only calls `message()`. App Update modal.
@@ -165,6 +166,7 @@ Each item gives its id(s), severity, status, location, the problem, why it matte
 - Problem: no warning at setup. From the app, preprocess exits 127 ("fastp: command not found", visible only in the work folder), the progress text says "Error is ignored", the alert is a green Done, and samples stay "Ready to run" with no note.
 - Why it matters: a user who takes the default gets a silent failure.
 - Fix: default to "docker", or warn at setup that conda is unsupported. Remove the stale config comment.
+- Status: fixed on `review/2026-09-full-review`: docker is the default, and conda warns at setup. See [Fixed on this branch](REVIEW_SUMMARY.md#fixed-on-this-branch-after-the-review).
 
 <a id="ux-05"></a>**UX-05. A gzipped assembly mixed with plain ones aborts the run; a FASTQ given as an assembly fails silently.** Major. Confirmed. ids: O-edge-15 (major), O-edge-25 (minor). Seen by 1 (op-edge).
 - Where: the pipeline's splitFasta over user assemblies; `find_rrna.nf` (`errorStrategy 'ignore'`).

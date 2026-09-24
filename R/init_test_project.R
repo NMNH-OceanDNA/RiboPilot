@@ -150,7 +150,7 @@ RP_TEST_READS_TAG <- "test-reads-2026.09.02"
 #'   bundled synthetic samples CHIM00 and CHIM01 are always included.
 #' @param full_size Fetch the complete read sets from ENA/SRA (TRUE) instead of
 #'   the small rDNA-filtered subsets (default FALSE).
-#' @param executor Executor / config profile (default "conda").
+#' @param executor Executor / config profile (default "docker").
 #' @param container Container image for the pipeline.
 #' @param min_depth Minimum trimmed paired reads to proceed with assembly.
 #' @param sra_bin Directory holding `fasterq-dump` (for the SRA fallback);
@@ -161,7 +161,7 @@ RP_TEST_READS_TAG <- "test-reads-2026.09.02"
 #' @param ... Passed to [new_project()] (e.g. `custom_seeds_db`).
 #' @return (invisibly) the project path.
 #' @export
-new_test_project <- function(path = ".", n = Inf, full_size = FALSE, executor = "conda",
+new_test_project <- function(path = ".", n = Inf, full_size = FALSE, executor = "docker",
                              container = paste0("macguigand/ribopilot:", utils::packageVersion("RiboPilot")),
                              min_depth = 500, sra_bin = NULL, Rproj = TRUE, force = FALSE, ...) {
   if (!dir.exists(path)) {

@@ -8,7 +8,7 @@ new_test_project(
   path = ".",
   n = Inf,
   full_size = FALSE,
-  executor = "conda",
+  executor = "docker",
   container = paste0("macguigand/ribopilot:", utils::packageVersion("RiboPilot")),
   min_depth = 500,
   sra_bin = NULL,
@@ -26,7 +26,7 @@ bundled synthetic samples CHIM00 and CHIM01 are always included.}
 \item{full_size}{Fetch the complete read sets from ENA/SRA (TRUE) instead of
 the small rDNA-filtered subsets (default FALSE).}
 
-\item{executor}{Executor / config profile (default "conda").}
+\item{executor}{Executor / config profile (default "docker").}
 
 \item{container}{Container image for the pipeline.}
 
