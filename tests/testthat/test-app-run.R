@@ -124,6 +124,31 @@ test_that("closing the browser stops the run gracefully", {
   expect_true(isTRUE(seen$interrupted))
   expect_null(seen$killed)
   expect_false(file.exists(RiboPilot:::run_lock_path(d)))
+  expect_length(list.files(file.path(d, "nextflow_logs"), "_report\\.txt$"), 1)
+})
+
+test_that("the project stays locked while a task container of the run still runs", {
+  skip_if_not_installed("withr")
+  d <- mk_run_project()
+  withr::local_dir(d)
+  seen <- new.env(); mock_run(seen)
+  box <- new.env(); box$ids <- "c1"
+  testthat::local_mocked_bindings(
+    run_containers = function(project, all = FALSE) box$ids,
+    run_clear_containers = function(project) seen$cleared <- TRUE,
+    .package = "RiboPilot")
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    session$setInputs(asmb_run_btn = 1)
+    session$setInputs(nf_start = 1)
+    seen$p$finish()
+    session$elapse(300)
+    expect_true(file.exists(RiboPilot:::run_lock_path(d)))
+    box$ids <- character(0)
+    session$elapse(300)
+  })
+  expect_true(isTRUE(seen$cleared))
+  expect_false(file.exists(RiboPilot:::run_lock_path(d)))
 })
 
 test_that("a second window cannot start a run while one holds the project lock", {
@@ -160,4 +185,11 @@ test_that("a failed sample's details say why and what to try next", {
   DBI::dbExecute(con, "UPDATE assemble SET assemble_switch = 2")
   DBI::dbDisconnect(con)
   expect_null(RiboPilot:::failure_banner("S1"))
+})
+
+test_that("a scaffold of a failed sample says BLAST did not run, not that NCBI failed", {
+  expect_match(RiboPilot:::no_screen_note(failed = TRUE, blast_on = TRUE, running = FALSE),
+    "did not run because the assembly failed")
+  expect_match(RiboPilot:::no_screen_note(failed = FALSE, blast_on = TRUE, running = FALSE),
+    "did not return")
 })

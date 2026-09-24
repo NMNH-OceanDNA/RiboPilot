@@ -225,11 +225,12 @@ RiboPilot <- run_app
 #' @param launch function(nflog) -> a running processx process, or NULL when
 #'   there is nothing to run. May stop() with a message for the user.
 #' @param on_lines function(lines) called with new output, or NULL.
-#' @param on_done function() called when the run has ended.
+#' @param on_done function(how) called when the run has ended; `how` is "done",
+#'   "stopped", or "killed".
 #' @param on_close function() called after the window closes.
 #' @noRd
 nf_run_window <- function(input, output, session, pfx, gears, project, kind, log_name,
-                          launch, on_lines = NULL, on_done = function() NULL,
+                          launch, on_lines = NULL, on_done = function(how) NULL,
                           on_close = function() NULL) {
   id <- function(x) paste0(pfx, x)
   proc <- shiny::reactiveVal(NULL)
@@ -269,7 +270,7 @@ nf_run_window <- function(input, output, session, pfx, gears, project, kind, log
       return()
     }
     run$marker <- marker; run$log <- nflog; run$started <- as.integer(Sys.time())
-    run$stop_at <- NULL; run$exit_at <- NULL; run$killed <- FALSE
+    run$stop_at <- NULL; run$exit_at <- NULL; run$killed <- FALSE; run$termed <- FALSE
     state(nf_progress_empty())
     shinyjs::show(id("nf_progress"))
     running(TRUE)
@@ -277,6 +278,12 @@ nf_run_window <- function(input, output, session, pfx, gears, project, kind, log
   })
 
   waited <- function(t) !is.null(t) && difftime(Sys.time(), t, units = "secs") > NF_STOP_WAIT
+  report <- function(p, how) {
+    status <- tryCatch(p$get_exit_status() %||% NA_integer_, error = function(e) NA_integer_)
+    rep <- nf_run_report(shiny::isolate(project()), run$log, status, kind, run$started, how)
+    if (nzchar(rep$text)) try(writeLines(rep$text, sub("\\.nextflow\\.log$", "_report.txt", run$log)), silent = TRUE)
+    rep
+  }
 
   shiny::observe({
     p <- proc()
@@ -288,22 +295,18 @@ nf_run_window <- function(input, output, session, pfx, gears, project, kind, log
       if (!is.null(on_lines)) on_lines(lines)
     }
     if (p$is_alive()) {
-      if (waited(run$stop_at) && !run$killed) {
-        p$kill()
-        run$killed <- TRUE
-      }
+      if (!is.null(run$stop_at)) nf_escalate(p, run)
       return()
     }
     if (is.null(run$exit_at)) run$exit_at <- Sys.time()
-    if (run_alive(run$marker) && !waited(run$exit_at)) return()
+    if (run_busy(run$marker, project()) && !waited(run$exit_at)) return()
+    run_clear_containers(project())
     proc(NULL)
     run_lock_release(project(), run$marker)
     running(FALSE)
     how <- if (run$killed) "killed" else if (!is.null(run$stop_at)) "stopped" else "done"
-    status <- tryCatch(p$get_exit_status() %||% NA_integer_, error = function(e) NA_integer_)
-    rep <- nf_run_report(project(), run$log, status, kind, run$started, how)
-    if (nzchar(rep$text)) try(writeLines(rep$text, sub("\\.nextflow\\.log$", "_report.txt", run$log)), silent = TRUE)
-    on_done()
+    rep <- report(p, how)
+    on_done(how)
     rp_alert(run_report_ui(rep), type = rep$type, title = rep$title)
   })
 
@@ -337,8 +340,11 @@ nf_run_window <- function(input, output, session, pfx, gears, project, kind, log
   session$onSessionEnded(function() {
     p <- shiny::isolate(proc())
     if (is.null(p)) return()
-    nf_stop_run(p, run$marker)
+    clean <- nf_stop_run(p, run$marker, shiny::isolate(project()))
     run_lock_release(shiny::isolate(project()), run$marker)
+    how <- if (clean) "stopped" else "killed"
+    report(p, how)
+    try(on_done(how), silent = TRUE)
   })
   invisible(NULL)
 }

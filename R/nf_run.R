@@ -4,6 +4,13 @@
 #' @noRd
 NF_STOP_WAIT <- 60
 
+#' Seconds after an interrupt before Nextflow is sent SIGTERM
+#'
+#' A process started with SIGINT ignored (nohup, a non-interactive shell)
+#' cannot be interrupted; Nextflow stops its tasks on SIGTERM too.
+#' @noRd
+NF_TERM_WAIT <- 10
+
 #' Task exit codes nextflow.config retries with more memory
 #' @noRd
 NF_RETRY_CODES <- c(104L, 134L, 137L, 139L, 140L, 143L, 247L)
@@ -32,6 +39,47 @@ run_lock_path <- function(project) file.path(project, ".ribopilot_run.lock")
 #' @noRd
 run_alive <- function(marker) {
   isTRUE(nzchar(marker)) && length(suppressWarnings(ps::ps_find_tree(marker))) > 0
+}
+
+#' Output of a docker command, "" when docker is missing or fails
+#' @noRd
+docker_out <- function(args) {
+  if (!nzchar(Sys.which("docker"))) return("")
+  tryCatch(processx::run("docker", args, error_on_status = FALSE, timeout = 20)$stdout,
+    error = function(e) "")
+}
+
+#' Nextflow task containers of a project
+#'
+#' A project's containers are the nxf-* ones that mount a folder inside it. Only
+#' one run holds a project at a time, so these belong to that run.
+#' @param all Include stopped containers.
+#' @return Container ids.
+#' @noRd
+run_containers <- function(project, all = FALSE) {
+  ids <- strsplit(trimws(docker_out(c("ps", "-q", "--no-trunc", if (all) "-a",
+    "--filter", "name=nxf-"))), "\n")[[1]]
+  ids <- ids[nzchar(ids)]
+  if (!length(ids)) return(character(0))
+  x <- strsplit(strsplit(docker_out(c("inspect", "--format",
+    "{{.Id}}{{range .Mounts}}\t{{.Source}}{{end}}", ids)), "\n")[[1]], "\t")
+  root <- unique(paste0(c(project, normalizePath(project, mustWork = FALSE)), "/"))
+  hit <- vapply(x, function(m) any(startsWith(rep(m[-1], each = length(root)), root)), logical(1))
+  vapply(x[hit], `[`, "", 1)
+}
+
+#' Is a run still busy: any of its processes, or a task container of its project?
+#' @noRd
+run_busy <- function(marker, project = NULL) {
+  run_alive(marker) || (!is.null(project) && length(run_containers(project)) > 0)
+}
+
+#' Remove every task container a run left in its project
+#' @noRd
+run_clear_containers <- function(project) {
+  ids <- run_containers(project, all = TRUE)
+  if (length(ids)) docker_out(c("rm", "-f", ids))
+  invisible(ids)
 }
 
 #' Take a project's run lock
@@ -89,20 +137,42 @@ run_lock_message <- function(held, project) {
   }
 }
 
-#' Stop a run and wait for it: interrupt, wait, kill only if it hangs
+#' One step of stopping a run
+#'
+#' SIGTERM once NF_TERM_WAIT has passed since the interrupt, then the whole
+#' process tree once NF_STOP_WAIT has.
+#' @param run Environment with `stop_at`; `termed` and `killed` are set here.
+#' @noRd
+nf_escalate <- function(p, run, term_wait = NF_TERM_WAIT, wait = NF_STOP_WAIT) {
+  s <- difftime(Sys.time(), run$stop_at, units = "secs")
+  if (s > wait && !isTRUE(run$killed)) {
+    tryCatch(p$kill_tree(), error = function(e) p$kill())
+    run$killed <- TRUE
+  } else if (s > term_wait && !isTRUE(run$termed)) {
+    p$signal(tools::SIGTERM)
+    run$termed <- TRUE
+  }
+}
+
+#' Stop a run and wait for it: interrupt, then SIGTERM, kill only if it hangs
 #'
 #' SIGINT makes Nextflow stop its tasks, remove their containers, and close its
-#' cache so -resume works. SIGKILL does none of that.
+#' cache so -resume works. SIGKILL does none of that. Waits for the run's task
+#' processes and containers, then removes containers still left.
 #' @return TRUE when Nextflow stopped by itself.
 #' @noRd
-nf_stop_run <- function(p, marker, wait = NF_STOP_WAIT) {
+nf_stop_run <- function(p, marker, project = NULL, wait = NF_STOP_WAIT, term_wait = NF_TERM_WAIT) {
+  run <- new.env()
+  run$stop_at <- Sys.time()
   if (p$is_alive()) p$interrupt()
-  p$wait(wait * 1000)
-  clean <- !p$is_alive()
-  if (!clean) p$kill()
+  while (p$is_alive()) {
+    nf_escalate(p, run, term_wait, wait)
+    Sys.sleep(0.25)
+  }
   t0 <- Sys.time()
-  while (run_alive(marker) && difftime(Sys.time(), t0, units = "secs") < wait) Sys.sleep(0.25)
-  clean
+  while (run_busy(marker, project) && difftime(Sys.time(), t0, units = "secs") < wait) Sys.sleep(0.25)
+  if (!is.null(project)) run_clear_containers(project)
+  !isTRUE(run$killed)
 }
 
 #' Likely cause of a task exit status
@@ -245,7 +315,7 @@ nf_run_report <- function(project, log, status, kind, since, how = "done") {
   out <- if (how == "killed") {
     list(type = "error", title = "Run stopped",
       lead = paste("Nextflow did not stop within", NF_STOP_WAIT, "seconds and was killed,",
-        "so some task containers may still be running. Check them before you start a new run."))
+        "and the task containers it left were removed."))
   } else if (how == "stopped") {
     list(type = "warning", title = "Run stopped",
       lead = paste("Run stopped. Nextflow stopped its tasks.", if (kind == "pipeline")
@@ -255,8 +325,9 @@ nf_run_report <- function(project, log, status, kind, since, how = "done") {
       lead = paste0("The run stopped with an error: ", f$error %|NA|% "see the log", "."))
   } else if (n_t + n_s > 0) {
     list(type = "warning", title = "Run finished with failures",
-      lead = sprintf("Run finished, but %d task(s) and %d sample(s) failed. Copy the report below to send it to the developers.",
-        n_t, n_s))
+      lead = sprintf("Run finished, but %s failed. Copy the report below to send it to the developers.",
+        paste(c(if (n_t) sprintf("%d task(s)", n_t), if (n_s) sprintf("%d sample(s)", n_s)),
+          collapse = " and ")))
   } else {
     list(type = "message", title = "Run finished", lead = "Run finished with no failures.")
   }

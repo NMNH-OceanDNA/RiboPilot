@@ -103,6 +103,7 @@ test_that("the report lists the samples this run left Failed, with their notes",
   expect_equal(bad$ID, "NEW")
   r <- RiboPilot:::nf_run_report(d, file.path(d, "none.log"), 0L, "pipeline", 100)
   expect_equal(r$type, "warning")
+  expect_match(r$lead, "Run finished, but 1 sample(s) failed.", fixed = TRUE)
   expect_match(r$text, "NEW | below min_depth: 812", fixed = TRUE)
   expect_match(r$text, "Too few reads", fixed = TRUE)
 })
@@ -157,6 +158,25 @@ test_that("stopping a run interrupts it first and kills only a run that ignores 
   Sys.sleep(0.5)
   expect_false(RiboPilot:::nf_stop_run(stubborn, "RIBOPILOT_RUN_none", wait = 1))
   expect_false(stubborn$is_alive())
+})
+
+test_that("a run started with SIGINT ignored is stopped with SIGTERM, not killed", {
+  skip_on_os("windows")
+  skip_on_cran()
+  deaf <- processx::process$new("bash", c("-c", "trap '' INT; exec sleep 30"))
+  Sys.sleep(0.5)
+  expect_true(RiboPilot:::nf_stop_run(deaf, "RIBOPILOT_RUN_none", wait = 10, term_wait = 1))
+  expect_equal(deaf$get_exit_status(), -15L)
+})
+
+test_that("a project's task containers are the nxf ones mounting a folder inside it", {
+  d <- withr::local_tempdir()
+  testthat::local_mocked_bindings(docker_out = function(args) {
+    if (args[1] == "ps") return("c1\nc2\nc3\n")
+    paste0(c(sprintf("c1\t/data/refs\t%s/work/ab/cd", d), "c2\t/other/project/work/ab",
+      sprintf("c3\t%s2/work/ab", d)), collapse = "\n")
+  }, .package = "RiboPilot")
+  expect_equal(RiboPilot:::run_containers(d), "c1")
 })
 
 test_that("runs pin Nextflow and switch off its update check", {

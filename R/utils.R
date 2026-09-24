@@ -92,9 +92,9 @@ check_container_image <- function(container) {
 check_reference_db <- function(x, what) {
   if (is.null(x) || is.na(x) || !nzchar(x)) return(invisible(x))
   hint <- paste0(
-    "Fix it from the app's reference database step, or build one and pass it to new_project():\n",
-    "  db <- build_reference_db('\"Asteroidea\"[Organism]', \"asteroidea\")\n",
-    "  new_project(..., custom_seeds_db = db$seeds, custom_labels_db = db$labels)")
+    "Set up a database for your samples' group in the app's Reference step, or build one\n",
+    "with build_reference_db() and pass db$seeds and db$labels to new_project() as\n",
+    "custom_seeds_db and custom_labels_db.")
   if (!grepl("^https?://", x)) {
     if (!file.exists(x)) {
       warning(sprintf("%s reference database not found:\n  %s\n\n%s", what, x, hint),

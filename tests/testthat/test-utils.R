@@ -25,8 +25,11 @@ test_that("a connection failure is unknown even when the message contains 403", 
 })
 
 test_that("a missing reference database warns instead of killing project init", {
-  expect_warning(RiboPilot:::check_reference_db("/no/such/dir/seeds.fasta", "seeds"),
-    "not found")
+  w <- tryCatch(RiboPilot:::check_reference_db("/no/such/dir/seeds.fasta", "seeds"),
+    warning = conditionMessage)
+  expect_match(w, "not found")
+  expect_match(w, "Reference step", fixed = TRUE)
+  expect_no_match(w, "Asteroidea")
 })
 
 test_that("config_container_engine reads the enabled flag, not the block", {

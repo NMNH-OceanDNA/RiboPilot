@@ -932,7 +932,10 @@ reference_handlers <- function(input, output, session, deps) {
       p
     },
     on_lines = function(lines) append_run_log(shiny::isolate(ref_log()), lines),
-    on_done = function() { poll_now(); bump() },
+    on_done = function(how) {
+      if (how != "done") append_run_log(shiny::isolate(ref_log()), REF_STOPPED)
+      poll_now(); bump()
+    },
     on_close = function() { headless_open(FALSE); poll_now(); bump() })
 
   # ---- log tail ----

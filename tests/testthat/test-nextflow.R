@@ -514,6 +514,15 @@ test_that("nextflow.config still supplies NCBI_API_KEY from params", {
   expect_match(line, "ncbi_api_key", fixed = TRUE)
 })
 
+test_that("with no NCBI key the variable is left out, and tasks read it unset-safe", {
+  txt <- readLines(system.file("nextflow", "nextflow.config", package = "RiboPilot"), warn = FALSE)
+  k <- grep("NCBI_API_KEY\\s*:", txt)
+  expect_false(grepl("?: ''", txt[k], fixed = TRUE))
+  expect_match(txt[k + 1], "^\\].findAll \\{ it.value \\}")
+  nf <- readLines(system.file("nextflow", "modules/blast_ref.nf", package = "RiboPilot"), warn = FALSE)
+  expect_false(any(grepl("\\$NCBI_API_KEY\"", nf, fixed = TRUE)))
+})
+
 test_that("nextflow.config forwards RIBOPILOT_NO_LOCAL_BLAST to tasks", {
   # docker tasks are launched with only NXF_TASK_WORKDIR forwarded, so a
   # shell-set opt-out reaches the container only if it is named in env{}

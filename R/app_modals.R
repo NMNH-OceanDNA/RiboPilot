@@ -92,6 +92,23 @@ failure_banner <- function(id) {
       "Pipeline note: ", r$note[1]))
 }
 
+#' Why a scaffold has no GenBank screen
+#' @noRd
+no_screen_note <- function(failed, blast_on, running) {
+  if (failed) {
+    "No GenBank screen for this scaffold. BLAST did not run because the assembly failed."
+  } else if (!blast_on) {
+    paste("GenBank BLAST is switched off for this sample (Assemble tab,",
+      "BLAST options). Run the pipeline (Assemble > Update) with BLAST enabled to screen this scaffold.")
+  } else if (running) {
+    paste("No GenBank screen for this scaffold yet. A run is going for this project,",
+      "and its remote BLAST may still be working on it.")
+  } else {
+    paste("No GenBank screen for this scaffold. The remote BLAST did not return",
+      "(NCBI queue, network, or retries used up).")
+  }
+}
+
 #' Prev / picker / next sample navigation for the detail modals
 #'
 #' The order is whatever the main table shows when the modal opens: sort,
@@ -117,6 +134,7 @@ rp_sample_nav <- function() {
 #' @noRd
 chimera_panel <- function() {
   tagList(
+    tags$p(style = "margin:2px 0 4px; font-weight:600;", textOutput("chimera_result", inline = TRUE)),
     tags$p(class = "mp-help-text", style = "margin:2px 0 4px;",
       "A chimera is one scaffold built from pieces of different origin: two organisms, ",
       "or rDNA copies joined in the wrong place. Four checks look for one: the 18S, 5.8S, and 28S ",
@@ -878,6 +896,12 @@ chimera_seg_colors <- function(seg, sample_lt) {
 
 #' Lineage segments, window identity, and junctions under the depth track
 #' @noRd
+#' The chimera call for one unit, in words
+#' @noRd
+chimera_result_text <- function(label, reason) {
+  paste0("This unit: ", label, if (!is.na(reason) && nzchar(reason)) paste0(" (", reason, ")"))
+}
+
 plot_chimera <- function(id, path = 1L, scaffold = 1L, db = NULL) {
   q <- if (is.null(db)) app_query else {
     con <- open_project_db(db); on.exit(DBI::dbDisconnect(con))

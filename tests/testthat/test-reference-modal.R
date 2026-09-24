@@ -597,6 +597,40 @@ test_that("the in-app Build run pins NXF_VER and passes what the project config 
   expect_true(any(grepl("run finished ok", readLines(log), fixed = TRUE)))
 })
 
+test_that("a build stopped from its window records that the user stopped it", {
+  skip_if_not_installed("withr")
+  dir <- withr::local_tempdir()
+  dbfile <- mk_split_db(dir)
+  deps <- mk_split_deps(dbfile, dir)
+  deps$selected_ids <- function() "asteroidea"
+  writeLines(c(RiboPilot:::container_engine_block("docker"),
+    "process { executor = 'local' }"), file.path(dir, ".config"))
+  st <- new.env(); st$alive <- TRUE
+  fake <- list(get_pid = function() 424242L, is_alive = function() st$alive,
+    read_output_lines = function() "WARN: There's no process matching config selector: x",
+    read_error_lines = function() character(0), kill = function() TRUE,
+    interrupt = function() st$alive <- FALSE, wait = function(...) NULL, get_exit_status = function() 1L)
+  testthat::local_mocked_bindings(
+    nf_pin_version = function(...) "25.10.6",
+    nf_spawn = function(cmd, args, wd, env) fake,
+    process_alive = function(pid) st$alive, .package = "RiboPilot")
+  shiny::testServer(function(input, output, session) {
+    h <- RiboPilot:::reference_handlers(input, output, session, deps)
+    do_build <- h$do_build
+  }, {
+    do_build("asteroidea")
+    session$flushReact()
+    session$setInputs(ref_nf_start = 1)
+    session$elapse(300)
+    session$setInputs(ref_nf_stop = 1)
+    session$elapse(300)
+  })
+  con <- DBI::dbConnect(RSQLite::SQLite(), dbfile); on.exit(DBI::dbDisconnect(con))
+  r <- DBI::dbGetQuery(con, "SELECT reference_switch, fail_reason FROM reference WHERE ref_id = 'asteroidea'")
+  expect_equal(r$reference_switch, 3L)
+  expect_match(r$fail_reason, "Stopped by the user.", fixed = TRUE)
+})
+
 test_that("a hand-edited script is written as edited", {
   skip_if_not_installed("withr")
   dir <- withr::local_tempdir()

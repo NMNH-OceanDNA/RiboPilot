@@ -562,6 +562,31 @@ log_tail <- function(log, n = 3) {
   paste(utils::tail(x, n), collapse = " | ")
 }
 
+#' Line a stopped build's log ends with
+#' @noRd
+REF_STOPPED <- "Stopped by the user."
+
+#' Why a build failed, from its log
+#'
+#' The user's stop, else the first "Caused by" explanation, else the first
+#' ERROR line, else the last lines that are not warnings.
+#' @noRd
+log_cause <- function(log) {
+  if (is.null(log) || is.na(log) || !file.exists(log)) return("")
+  x <- trimws(cli::ansi_strip(tryCatch(readLines(log, warn = FALSE), error = function(e) character(0))))
+  x <- x[nzchar(x) & !grepl(nf_proc_rx, x, perl = TRUE) & !grepl("^executor\\s*>", x)]
+  if (REF_STOPPED %in% x) return(REF_STOPPED)
+  cb <- which(startsWith(x, "Caused by:"))
+  if (length(cb)) {
+    y <- trimws(sub("^Caused by:", "", x[cb[1]]))
+    if (!nzchar(y) && cb[1] < length(x)) y <- x[cb[1] + 1]
+    if (nzchar(y)) return(y)
+  }
+  e <- grep("^ERROR\\b", x, value = TRUE)
+  if (length(e)) return(sub("^ERROR\\s*~?\\s*", "", e[1]))
+  paste(utils::tail(x[!grepl("^WARN\\b", x)], 3), collapse = " | ")
+}
+
 #' Mark groups as building after their job went to a batch scheduler
 #'
 #' Deliberately no pid: the job belongs to the scheduler, not to this session.
@@ -621,7 +646,7 @@ poll_reference_builds <- function(con, alive_fn = process_alive) {
         "UPDATE reference SET reference_switch = 3, pid = NULL, fail_reason = ?, time_stamp = ?
          WHERE ref_id = ?",
         params = list(paste0("Build produced no fresh seed/label FASTAs. ",
-          log_tail(running$log_file[i])), as.integer(Sys.time()), ref_id))
+          log_cause(running$log_file[i])), as.integer(Sys.time()), ref_id))
     }
     n <- n + 1L
   }

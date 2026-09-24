@@ -179,6 +179,15 @@ taxonomy_handlers <- function(input, output, session, deps) {
       return()
     }
     ids <- targets()
+    con <- deps$con()
+    lk <- intersect(ids, DBI::dbGetQuery(con, "SELECT ID FROM samples WHERE taxonomy_lock = 1")$ID)
+    DBI::dbDisconnect(con)
+    if (length(lk)) {
+      mp_toast(sprintf("Left %s unchanged: unlock before changing the taxon.",
+        mp_n(length(lk), "locked sample")), type = "warning")
+      ids <- setdiff(ids, lk)
+      if (!length(ids)) return()
+    }
     td <- deps$taxdump()
     # "hold tight" popup, then defer the (blocking) taxdump lookup so it renders
     shinyWidgets::sendSweetAlert(

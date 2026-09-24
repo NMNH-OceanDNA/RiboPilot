@@ -129,7 +129,10 @@ test_that("the bundle uses the samples/ layout and README.txt", {
   expect_false(file.exists(file.path(g, "README_SUBMISSION.txt")))
   expect_true(file.exists(file.path(g, "layout.fasta")))
   expect_true(file.exists(file.path(g, "layout_summary.csv")))
-  expect_match(paste(readLines(file.path(g, "README.txt")), collapse = "\n"), "samples/")
+  readme <- paste(readLines(file.path(g, "README.txt")), collapse = "\n")
+  expect_match(readme, "samples/")
+  expect_match(readme, "asks whether to leave them out")
+  expect_no_match(readme, "warn-only")
 })
 
 test_that("a saved configuration is used when named", {
@@ -191,6 +194,9 @@ test_that("a header template is filled by lookup and never runs code", {
   tpl <- sprintf('{seqid} {file.create("%s")}', f)
   expect_equal(RiboPilot:::validate_fasta_header(tpl, d)$level, "error")
   expect_error(RiboPilot:::render_fasta_headers(tpl, d), "is not in the database")
+  expect_false(file.exists(f))
+  nested <- sprintf('{seqid} {file.create("%s"); {seqid}}', f)
+  RiboPilot:::validate_fasta_header(nested, d)
   expect_false(file.exists(f))
   expect_equal(RiboPilot:::render_fasta_headers("{seqid} [organism={Taxon}] site={collection_site}", d),
     "S2 [organism=Genus speciesB] site=Reef B")

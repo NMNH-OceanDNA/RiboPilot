@@ -439,3 +439,10 @@ test_that("chimera table column help covers every displayed column", {
     "win_pident", "bitscore", "rank_distance", "depth_median", "clip_frac") %in% names(h)))
   expect_true(all(nzchar(unlist(h))))
 })
+
+test_that("the chimera panel opens with the unit's own level and reason", {
+  expect_match(as.character(RiboPilot:::chimera_panel()), "chimera_result", fixed = TRUE)
+  expect_equal(RiboPilot:::chimera_result_text("minor", "18S resolves to Chordata: agree only to phylum"),
+    "This unit: minor (18S resolves to Chordata: agree only to phylum)")
+  expect_equal(RiboPilot:::chimera_result_text("clean", NA), "This unit: clean")
+})

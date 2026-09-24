@@ -253,6 +253,26 @@ test_that("a build that produced no FASTAs is recorded as failed", {
   expect_setequal(DBI::dbGetQuery(con, "SELECT assemble_opts FROM assemble")$assemble_opts, "default")
 })
 
+test_that("a failed build stores its cause, not Nextflow's warnings", {
+  warn <- "WARN: There's no process matching config selector: blast_genbank"
+  cause <- function(lines) {
+    con <- mk_ref_db(); on.exit(DBI::dbDisconnect(con))
+    RiboPilot:::set_ref_config(con, ref_dir = withr::local_tempdir())
+    RiboPilot:::write_reference_groups(con, grp, mem)
+    RiboPilot:::start_reference_build(con, withr::local_tempdir(), "asteroidea",
+      launcher = function(cmd, args, log) { RiboPilot:::append_run_log(log, lines); 7L })
+    RiboPilot:::poll_reference_builds(con, alive_fn = function(pid) FALSE)
+    DBI::dbGetQuery(con, "SELECT fail_reason FROM reference")$fail_reason[1]
+  }
+  r <- cause(c(warn, "executor >  local (1)", RiboPilot:::REF_STOPPED))
+  expect_match(r, "Stopped by the user.", fixed = TRUE)
+  expect_no_match(r, "WARN")
+  r <- cause(c(warn, "ERROR ~ Error executing process > 'BUILD_DB (a)'", "Caused by:",
+    "Process `BUILD_DB (a)` terminated with an error exit status (1)", warn))
+  expect_match(r, "terminated with an error exit status (1)", fixed = TRUE)
+  expect_no_match(r, "WARN")
+})
+
 test_that("a still-running build is left alone", {
   con <- mk_ref_db(); on.exit(DBI::dbDisconnect(con))
   RiboPilot:::set_ref_config(con, ref_dir = withr::local_tempdir())

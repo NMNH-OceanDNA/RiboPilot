@@ -702,7 +702,7 @@ app_server <- function(input, output, session) {
     n <- nrow(u)
     if (to == 0L) {
       lock_next(list(mm = mm, u = u))
-      mp_confirm("unlock_confirm", title = paste("Unlock", mp_n(n, MP_UNIT[[mm$pfx]]), "?"),
+      mp_confirm("unlock_confirm", title = paste0("Unlock ", mp_n(n, MP_UNIT[[mm$pfx]]), "?"),
         text = sprintf("Unlocked rows leave the %s table until locked again.", next_step[[mm$pfx]]),
         action_label = "Unlock", danger = TRUE)
       return()
@@ -1039,7 +1039,7 @@ app_server <- function(input, output, session) {
       nf_record_blastdb_launch(app_project())
       p
     },
-    on_done = function() refresh(isolate(refresh()) + 1))
+    on_done = function(how) refresh(isolate(refresh()) + 1))
 
   # Stop the app when the last browser session closes (survives refresh). After
   # the run windows, so the grace period starts once their runs have stopped.
@@ -1496,18 +1496,11 @@ app_server <- function(input, output, session) {
       return(tagList(
         tags$b(lbl),
         div(style = "color:#888; margin-top:4px;",
-          if (blast_enabled(sel_id())) {
-            if (is.null(run_lock_holder(app_project()))) {
-              paste("No GenBank screen for this scaffold. The remote BLAST did not return",
-                "(NCBI queue, network, or retries used up).")
-            } else {
-              paste("No GenBank screen for this scaffold yet. A run is going for this project,",
-                "and its remote BLAST may still be working on it.")
-            }
-          } else {
-            paste("GenBank BLAST is switched off for this sample (Assemble tab,",
-              "BLAST options). Run the pipeline (Assemble > Update) with BLAST enabled to screen this scaffold.")
-          }),
+          no_screen_note(
+            failed = identical(as.integer(app_query("SELECT assemble_switch FROM assemble WHERE ID = ?",
+              list(sel_id()))$assemble_switch[1]), 3L),
+            blast_on = blast_enabled(sel_id()),
+            running = !is.null(run_lock_holder(app_project())))),
         seed_hit_block(r)))
     }
     tagList(
@@ -1845,6 +1838,12 @@ app_server <- function(input, output, session) {
   output$chimera_plot <- renderPlot({
     u <- hit_unit(); grid::grid.draw(fixed_gutter(plot_chimera(u$ID, u$path, u$scaffold)))
   }, height = 296)
+  output$chimera_result <- renderText({
+    refresh(); u <- hit_unit()
+    ch <- app_query("SELECT label, reason FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", list(u$ID, u$path, u$scaffold))
+    req(nrow(ch) == 1, !is.na(ch$label[1]))
+    chimera_result_text(ch$label[1], ch$reason[1])
+  })
   output$chimera_db_source <- renderText({
     refresh(); u <- hit_unit()
     ch <- app_query("SELECT db_source FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", list(u$ID, u$path, u$scaffold))
