@@ -124,6 +124,7 @@ new_db <- function(
       sci_name = NA_character_,
       rank = NA_character_,
       match_type = NA_character_,
+      tax_alternatives = NA_character_,
       lineage = NA_character_,
       lineage_taxids = NA_character_,
       ref_id = NA_character_,

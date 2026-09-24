@@ -32,7 +32,7 @@ test_that("write_reference_groups stores groups and stamps membership", {
   expect_equal(nrow(r), 1L)
   expect_equal(r$clade_name[1], "Asteroidea")
   expect_equal(r$reference_switch[1], 1L)
-  expect_equal(r$query[1], "\"Asteroidea\"[Organism]")
+  expect_equal(r$query[1], "txid7588[Organism:exp]")
   expect_setequal(DBI::dbGetQuery(con, "SELECT ref_id FROM samples")$ref_id, "asteroidea")
 })
 
@@ -286,6 +286,10 @@ test_that("missing_assembly_dbs finds dead database paths on queued samples", {
   expect_length(RiboPilot:::missing_assembly_dbs(con), 0L)
   unlink(seeds)
   expect_equal(RiboPilot:::missing_assembly_dbs(con), seeds)
+  # a sample whose taxonomy is not locked is not part of the run
+  DBI::dbExecute(con, "UPDATE samples SET taxonomy_lock = 0")
+  expect_length(RiboPilot:::missing_assembly_dbs(con), 0L)
+  DBI::dbExecute(con, "UPDATE samples SET taxonomy_lock = 1")
   # a locked or already-assembled sample is not part of the run
   DBI::dbExecute(con, "UPDATE assemble SET assemble_lock = 1")
   expect_length(RiboPilot:::missing_assembly_dbs(con), 0L)

@@ -300,3 +300,30 @@ test_that("assigning a group across two assemblers offers a split", {
     expect_equal(groups(), c("one", "one"))
   })
 })
+
+test_that("locking a sample with no taxon asks first, and locks on Lock anyway", {
+  skip_if_not_installed("withr")
+  dir <- mk_export_project()
+  withr::local_dir(dir)
+  con <- DBI::dbConnect(RSQLite::SQLite(), ".sqlite")
+  DBI::dbExecute(con, "UPDATE samples SET taxonomy_lock = 0")
+  DBI::dbExecute(con, "INSERT INTO samples (ID, Taxon, match_type, taxonomy_switch, taxonomy_lock)
+    VALUES ('S2', 'Morus sp.', 'ambiguous', 2, 0)")
+  DBI::dbDisconnect(con)
+  locks <- function() {
+    c2 <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+    on.exit(DBI::dbDisconnect(c2))
+    DBI::dbGetQuery(c2, "SELECT taxonomy_lock FROM samples ORDER BY ID")$taxonomy_lock
+  }
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Taxonomy")
+    session$setInputs(tbl__reactable__selected = 1L)
+    session$setInputs(tax_lock_btn = 1)
+    expect_equal(locks(), c(1L, 0L))       # a resolved sample locks at once
+    session$setInputs(tbl__reactable__selected = 2L)
+    session$setInputs(tax_lock_btn = 2)
+    expect_equal(locks(), c(1L, 0L))       # no taxon: asked, not locked
+    session$setInputs(tax_lock_confirm = TRUE)
+    expect_equal(locks(), c(1L, 1L))
+  })
+})

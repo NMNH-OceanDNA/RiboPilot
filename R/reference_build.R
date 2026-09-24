@@ -51,7 +51,7 @@ write_reference_groups <- function(con, groups, members) {
            fail_reason, time_stamp)
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         params = list(groups$ref_id[i], as.integer(groups$clade_taxid[i]), groups$clade_name[i],
-          groups$clade_rank[i], clade_query(groups$clade_name[i]),
+          groups$clade_rank[i], clade_query(groups$clade_name[i], groups$clade_taxid[i]),
           as.integer(groups$n_samples[i]), as.integer(groups$n_records[i]),
           if (is.null(keep)) 1L else as.integer(keep$reference_switch),
           if (is.null(keep)) NA_character_ else keep$source,
@@ -238,7 +238,7 @@ set_reference_clade <- function(con, ref_id = NULL, clade_taxid, clade_name, cla
            labels_db = NULL, preset_name = NULL, fail_reason = NULL, time_stamp = ?
          WHERE ref_id = ?",
         params = list(new_key, as.integer(clade_taxid), clade_name, clade_rank,
-          clade_query(clade_name), as.integer(n_records), now, key))
+          clade_query(clade_name, clade_taxid), as.integer(n_records), now, key))
       DBI::dbExecute(con, "UPDATE samples SET ref_id = ? WHERE ref_id = ?",
         params = list(new_key, key))
       key <- new_key
@@ -249,7 +249,7 @@ set_reference_clade <- function(con, ref_id = NULL, clade_taxid, clade_name, cla
          n_records, reference_switch, time_stamp)
        VALUES (?,?,?,?,?,0,?,1,?)",
       params = list(key, as.integer(clade_taxid), clade_name, clade_rank,
-        clade_query(clade_name), as.integer(n_records), now))
+        clade_query(clade_name, clade_taxid), as.integer(n_records), now))
   }
   if (length(member_ids) > 0) {
     bind_sample_ref(con, rep(key, length(member_ids)), member_ids)
@@ -445,8 +445,10 @@ missing_assembly_dbs <- function(con) {
   d <- tryCatch(DBI::dbGetQuery(con,
     "SELECT ao.seeds_db, ao.labels_db FROM assemble a
        JOIN assemble_opts ao ON a.assemble_opts = ao.assemble_opts
+       JOIN samples s ON s.ID = a.ID
       WHERE a.assemble_switch IN (1, 4) AND COALESCE(a.assemble_lock, 0) = 0
-        AND COALESCE(ao.assembler, 'getorganelle') = 'getorganelle'"),
+        AND COALESCE(ao.assembler, 'getorganelle') = 'getorganelle'
+        AND s.taxonomy_lock = 1"),
     error = function(e) NULL)
   if (is.null(d)) return(character(0))
   # a blank path is a sample with no database, which assembles by the fallback

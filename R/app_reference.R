@@ -111,7 +111,7 @@ reference_member_html <- function(m) {
 #'
 #' @param diff From [reference_group_diff()].
 #' @param n_old,n_new Group counts before and after.
-#' @param warn Character vector of warning lines (clades over the record ceiling).
+#' @param warn Character vector of warning lines (samples left out, clades over the record ceiling).
 #' @noRd
 reference_diff_modal <- function(diff, n_old, n_new, warn = character(0)) {
   hand <- diff$ID[diff$hand_set]
@@ -443,9 +443,9 @@ reference_handlers <- function(input, output, session, deps) {
                 s$groups$n_records > cfg$max_records, , drop = FALSE]
             list(prop = s, diff = reference_group_diff(con, s$groups, s$members),
               n_old = nrow(DBI::dbGetQuery(con, "SELECT ref_id FROM reference")),
-              warn = if (nrow(over) == 0) character(0) else sprintf(
+              warn = c(unplaced_note(con, l), if (nrow(over) == 0) character(0) else sprintf(
                 "%s holds %s records, above the maximum of %s.", over$clade_name,
-                format(over$n_records, big.mark = ","), format(cfg$max_records, big.mark = ",")))
+                format(over$n_records, big.mark = ","), format(cfg$max_records, big.mark = ","))))
           })
           proposal(res$prop)
           shinyWidgets::closeSweetAlert(session = session)
@@ -605,8 +605,7 @@ reference_handlers <- function(input, output, session, deps) {
     r <- tax_search(project_taxdump_dir(deps$project()), query, 20)
     if (nrow(r) == 0) return(shiny::helpText("No matches in the local taxdump."))
     shinyWidgets::prettyRadioButtons("ref_search_pick", NULL,
-      choices = stats::setNames(as.character(r$taxid),
-        sprintf("%s   [%s]   (taxid %s)", r$name, ifelse(is.na(r$rank), "?", r$rank), r$taxid)),
+      choices = tax_search_choices(r),
       shape = "round", status = "primary")
   })
 
@@ -651,7 +650,7 @@ reference_handlers <- function(input, output, session, deps) {
       cfg <- ref_config(con)
       run_clade_counts(deps$project(), cfg$ref_dir,
         data.frame(ref_id = ref_id_from_name(info$name[1]), taxid = as.integer(tid),
-          clade_name = info$name[1], query = clade_query(info$name[1]),
+          clade_name = info$name[1], query = clade_query(info$name[1], tid),
           stringsAsFactors = FALSE),
         api_key = project_ncbi_key(deps$project()), runner = count_runner())
       n <- cache_count_fn(cfg$ref_dir)(tid, info$name[1])

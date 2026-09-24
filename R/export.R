@@ -763,17 +763,27 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
   invisible(gdir)
 }
 
-#' Export every assigned export group in a project
+#' Export a project's locked units as GenBank bundles
+#'
+#' Writes one bundle per export group made in the app's Export step, using the
+#' default header template. When no group was made, writes every
+#' annotation-locked unit into one bundle named "export".
 #' @param path Project directory.
 #' @param out_dir Project "out" directory; bundles land in `<out_dir>/export`.
-#' @return (invisibly) the export groups exported.
+#' @return (invisibly) the bundle names written.
 #' @export
 export_project <- function(path = ".", out_dir = file.path(path, "out")) {
-  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(path, ".sqlite"))
-  groups <- DBI::dbGetQuery(con, "SELECT DISTINCT export_group FROM annotate WHERE export_group IS NOT NULL")$export_group
-  DBI::dbDisconnect(con)
+  con <- open_project_db(file.path(path, ".sqlite"))
+  groups <- tryCatch(DBI::dbGetQuery(con,
+    "SELECT DISTINCT an.export_group FROM annotate an
+       JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
+      WHERE an.annotate_lock = 1 AND COALESCE(asm.ignore,0) = 0
+        AND COALESCE(an.problematic,'') != 'yes' AND COALESCE(an.export_group,'') != ''
+      ORDER BY an.export_group")$export_group,
+    finally = DBI::dbDisconnect(con))
   if (length(groups) == 0) {
-    stop("No export groups assigned. Assign samples to a group first.", call. = FALSE)
+    export_bundle(path, out_dir = out_dir, zip = TRUE)
+    return(invisible("export"))
   }
   for (g in groups) export_bundle(path, group = g, out_dir = out_dir, zip = TRUE)
   invisible(groups)

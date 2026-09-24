@@ -46,5 +46,6 @@ fixture_fill_schema <- function(con) {
   add_col("coverage", "median_depth", "REAL")
   add_col("samples", "reference_support", "INTEGER")
   add_col("samples", "ref_id", "TEXT")
+  add_col("samples", "tax_alternatives", "TEXT")
   invisible()
 }

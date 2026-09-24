@@ -214,6 +214,30 @@ test_that("set_export_group takes one group per unit", {
   expect_error(RiboPilot:::set_export_group(con, u, c("x", "y", "z")))
 })
 
+test_that("export_project exports every locked unit when no group was made", {
+  dir <- mk_project()
+  seen <- character(0)
+  testthat::local_mocked_bindings(export_bundle = function(path, group = NULL, ...) {
+    seen <<- c(seen, if (is.null(group)) "<all>" else group); invisible(path)
+  }, .package = "RiboPilot")
+  expect_equal(RiboPilot:::export_project(dir), "export")
+  expect_equal(seen, "<all>")
+})
+
+test_that("export_project skips a group with no exportable unit", {
+  dir <- mk_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE annotate SET export_group = 'g1' WHERE ID = 'S1'")
+  DBI::dbExecute(con, "UPDATE annotate SET export_group = 'g2', annotate_lock = 0 WHERE ID = 'S2'")
+  DBI::dbDisconnect(con)
+  seen <- character(0)
+  testthat::local_mocked_bindings(export_bundle = function(path, group = NULL, ...) {
+    seen <<- c(seen, if (is.null(group)) "<all>" else group); invisible(path)
+  }, .package = "RiboPilot")
+  expect_equal(RiboPilot:::export_project(dir), "g1")
+  expect_equal(seen, "g1")
+})
+
 test_that("sample_assembler follows assemble_opts and defaults to getorganelle", {
   dir <- withr::local_tempdir()
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))

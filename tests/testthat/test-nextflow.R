@@ -1270,6 +1270,39 @@ test_that("query_samples carries the columns the assembly branch reads", {
   expect_true(any(grepl("JOIN samples s", body)))
 })
 
+samples_sql <- function() {
+  start <- grep("^process query_samples \\{", pipeline_r_nf)
+  end <- start - 1 + which(pipeline_r_nf[start:length(pipeline_r_nf)] == "}")[1]
+  body <- pipeline_r_nf[start:end]
+  sql <- body[grep("SELECT p.ID", body):grep(";\" >> samplesheet.tsv", body, fixed = TRUE)]
+  sql <- sub(";\" >> samplesheet.tsv", "", paste(sql, collapse = "\n"), fixed = TRUE)
+  gsub("\\$\\{params\\.db\\}", "", sql)
+}
+
+test_that("query_samples skips samples whose taxonomy is not locked", {
+  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT, Assembly TEXT, taxonomy_lock INT)")
+  DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, assemble_switch INT, assemble_lock INT,
+    assemble_opts TEXT)")
+  DBI::dbExecute(con, "CREATE TABLE preprocess(ID TEXT, R1 TEXT, R2 TEXT, pre_opts TEXT)")
+  DBI::dbExecute(con, "CREATE TABLE pre_opts(pre_opts TEXT, cpus INT, memory INT, fastp TEXT)")
+  DBI::dbExecute(con, "CREATE TABLE assemble_opts(assemble_opts TEXT, cpus INT, memory INT,
+    getOrganelle TEXT, max_paths INT, seeds_db TEXT, labels_db TEXT, assembler TEXT, find_rrna INT)")
+  DBI::dbExecute(con, "CREATE TABLE annotate_opts(annotate_opts TEXT, rrna_tool TEXT, rrna_kingdom TEXT)")
+  DBI::dbExecute(con, "INSERT INTO pre_opts VALUES('default',4,8,'')")
+  DBI::dbExecute(con, "INSERT INTO assemble_opts VALUES('default',4,16,'--flag',10,NULL,NULL,'getorganelle',1)")
+  DBI::dbExecute(con, "INSERT INTO annotate_opts VALUES('default','pybarrnap','euk')")
+  for (id in c("LOCKED", "UNLOCKED")) {
+    DBI::dbExecute(con, "INSERT INTO samples VALUES(?,NULL,?)",
+      params = list(id, if (id == "LOCKED") 1L else 0L))
+    DBI::dbExecute(con, "INSERT INTO preprocess VALUES(?,'a.fq','b.fq','default')", params = list(id))
+    DBI::dbExecute(con, "INSERT INTO assemble VALUES(?,1,0,'default')", params = list(id))
+  }
+  got <- DBI::dbGetQuery(con, samples_sql())$ID
+  expect_equal(got, "LOCKED")
+})
+
 test_that("main.nf routes supplied assemblies away from preprocess and assembly", {
   br <- grep("sample_rows = rows\\.branch", main_nf)
   expect_length(br, 1)

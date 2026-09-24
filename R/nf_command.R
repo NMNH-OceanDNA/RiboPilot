@@ -159,12 +159,14 @@ ribopilot_src_default <- function() {
 #' what `query_samples` and `query_annotate_units` select. One button runs both,
 #' so it is one number: a sample queued for assembly is counted once even though
 #' its units will be annotated too, because assembly re-seeds them.
+#' Assembly counts only taxonomy-locked samples, as `query_samples` does.
 #' @noRd
 nf_pending_count <- function(path) {
-  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(path, ".sqlite"))
+  con <- open_project_db(file.path(path, ".sqlite"))
   on.exit(DBI::dbDisconnect(con))
   n_asm <- DBI::dbGetQuery(con,
-    "SELECT COUNT(*) n FROM assemble WHERE assemble_switch IN (1,4) AND assemble_lock = 0")$n
+    "SELECT COUNT(*) n FROM assemble a JOIN samples s ON s.ID = a.ID
+      WHERE a.assemble_switch IN (1,4) AND a.assemble_lock = 0 AND s.taxonomy_lock = 1")$n
   n_ann <- DBI::dbGetQuery(con,
     "SELECT COUNT(*) n FROM annotate an
        JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold

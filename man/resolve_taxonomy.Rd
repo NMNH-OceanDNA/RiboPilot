@@ -10,13 +10,15 @@ resolve_taxonomy(taxa, taxdump_dir = NULL)
 \item{taxa}{Character vector of Taxon strings (duplicates de-duplicated).}
 
 \item{taxdump_dir}{Directory of a pinned taxdump (see [ensure_taxdump()]). If
-it contains a taxdump, resolution is local; otherwise network `datasets` is
-used.}
+it contains a taxdump, resolution is local (an unreadable taxdump is an
+error); otherwise network `datasets` is used.}
 }
 \value{
 data.frame, one row per unique Taxon: `match_type` in
   "exact"/"ambiguous"/"fuzzy_species"/"fuzzy_genus"/"unresolved", plus `taxid`,
-  `sci_name`, `rank`, `lineage`, `alternatives`.
+  `sci_name`, `rank`, `lineage`, `alternatives`. An ambiguous name (several
+  taxa share it) gets no taxid; \code{alternatives} lists each candidate
+  with its kingdom.
 }
 \description{
 Prefers a pinned local taxdump (fast, offline, reproducible) when

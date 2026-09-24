@@ -548,7 +548,7 @@ rt_confidence_badge <- function() {
       var v = cellInfo.value;
       if (!v) v = 'unresolved';
       var colors = {exact:'#2d6a4f', manual:'#1f6feb', fuzzy_species:'#b8860b',
-                    fuzzy_genus:'#b8860b', unresolved:'#c0392b'};
+                    fuzzy_genus:'#b8860b', ambiguous:'#c0392b', unresolved:'#c0392b'};
       var c = colors[v] || '#888';
       return `<span style='background:${c}; color:#fff; padding:1px 7px; border-radius:10px; font-size:0.8em; white-space:nowrap;'>${v}</span>`;
     }")
