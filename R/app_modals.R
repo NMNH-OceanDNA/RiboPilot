@@ -235,6 +235,38 @@ export_overwrite_modal <- function(dir, n) {
   )
 }
 
+#' Ask before exporting units the contamination checks flagged
+#'
+#' `flagged` is rows of [export_summary_df()] whose submission_risk carries an
+#' off_target or contaminant tag and that no curator has marked Reviewed.
+#' @noRd
+export_screen_modal <- function(flagged) {
+  why <- vapply(flagged$submission_risk, function(r) {
+    tx <- regmatches(r, regexec("off_target\\(([^)]*)\\)", r))[[1]][2]
+    paste(c(if (!is.na(tx)) sprintf("GenBank hits agree on %s", tx),
+      if (grepl("(^|;)contaminant(;|$)", r)) "the best GenBank hit is from another phylum"),
+      collapse = "; ")
+  }, character(1))
+  items <- lapply(seq_len(nrow(flagged)), function(i) tags$li(
+    tags$b(sprintf("%s p%s.s%s", flagged$ID[i], flagged$path[i], flagged$scaffold[i])),
+    sprintf(" (%s): %s.", flagged$organism[i] %|NA|% "no Taxon", why[i])))
+  modalDialog(
+    title = mp_modal_title("Possible contamination"),
+    size = "m", easyClose = FALSE,
+    div(style = "font-size:1.02em; line-height:1.5;",
+      tags$p(sprintf("%s in this group may be another organism's rDNA, exported under the sample's name:",
+        mp_n(nrow(flagged), "unit"))),
+      tags$ul(items),
+      tags$p(style = "color:#666;",
+        "Leave them out unless you have checked them. Marking a unit Reviewed in",
+        "Annotation Review means it will not be asked about again.")),
+    footer = mp_footer(dismiss = NULL,
+      extra = actionButton("export_screen_back", "Cancel"),
+      danger = actionButton("export_screen_keep", "Export anyway"),
+      primary = actionButton("export_screen_skip", "Leave them out"))
+  )
+}
+
 #' One rule's three-way action control
 #'
 #' Off is the disable, so there is no separate tickbox. Drop is offered only on

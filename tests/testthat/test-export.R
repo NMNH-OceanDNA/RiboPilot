@@ -44,6 +44,32 @@ test_that("force_partial marks a curator-flagged partial record at both ends", {
   expect_match(partial, "300\t>460\trRNA")     # 3' partial on last feature
 })
 
+test_that("a truncated gene is exported partial, in the feature table and the defline", {
+  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT, Taxon TEXT)")
+  DBI::dbExecute(con, "CREATE TABLE annotate(ID TEXT, path INT, scaffold INT, n_features INT, missing TEXT,
+    partial TEXT, reviewed TEXT, export_group TEXT)")
+  DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT, type TEXT,
+    start INT, stop INT, flags TEXT)")
+  DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, sequence TEXT, length INT, topology TEXT)")
+  DBI::dbExecute(con, "INSERT INTO samples VALUES('S1','Genus species')")
+  DBI::dbExecute(con, "INSERT INTO annotate VALUES('S1',1,1,1,'','no','yes',NULL)")
+  DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',1,1, ?, 1694, 'linear')", params = list(strrep("A", 1694)))
+  # 28S well inside the scaffold, but only part of the gene model was found
+  DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,1,'28S','rRNA',155,1488,'length,truncated')")
+  expect_match(RiboPilot:::feature_table_text_con(con, "S1"), "<155\t>1488\trRNA")
+  units <- data.frame(ID = "S1", path = 1L, scaffold = 1L, seqid = "S1")
+  h <- RiboPilot:::export_header_data(con, units)
+  expect_equal(h$completeness, "partial sequence")
+  expect_match(h$rrna_definition, "28S ribosomal RNA gene, partial sequence")
+
+  # without the flag the same feature is complete
+  DBI::dbExecute(con, "UPDATE annotations SET flags = 'length'")
+  expect_match(RiboPilot:::feature_table_text_con(con, "S1"), "\n155\t1488\trRNA")
+  expect_equal(RiboPilot:::export_header_data(con, units)$completeness, "complete sequence")
+})
+
 test_that("submission_risks flags chimeric, in-span gaps, and misassembly", {
   con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
   on.exit(DBI::dbDisconnect(con))
@@ -109,6 +135,27 @@ test_that("export_summary_df reads the chimera table into submission_risk", {
   units <- data.frame(ID = "S1", path = 1L, scaffold = 1L, seqid = "S1", stringsAsFactors = FALSE)
   smry <- RiboPilot:::export_summary_df(con, units)
   expect_match(smry$submission_risk, "chimeric")
+})
+
+test_that("export_summary_df puts off_target and contaminant into submission_risk", {
+  con <- chimera_test_con()
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "INSERT INTO assemblies (ID, path, scaffold, sequence, length) VALUES ('S1',1,1,'ACGT',4)")
+  DBI::dbExecute(con, "INSERT OR IGNORE INTO annotate (ID, path, scaffold) VALUES ('S1',1,1)")
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_notes = 'missing_5.8S; contaminant' WHERE ID = 'S1'")
+  DBI::dbExecute(con, "INSERT INTO screen (ID, path, scaffold, screen_verdict, lca_taxon) VALUES ('S1',1,1,'off_target','Actiniaria')")
+  units <- data.frame(ID = "S1", path = 1L, scaffold = 1L, seqid = "S1", stringsAsFactors = FALSE)
+  risk <- RiboPilot:::export_summary_df(con, units)$submission_risk
+  expect_match(risk, "off_target(Actiniaria)", fixed = TRUE)
+  expect_match(risk, "(^|;)contaminant(;|$)")
+  expect_true(RiboPilot:::has_screen_risk(risk))
+
+  # an unchecked screen is not a contaminant call
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_notes = 'contaminant_unchecked'")
+  DBI::dbExecute(con, "UPDATE screen SET screen_verdict = 'on_target'")
+  risk <- RiboPilot:::export_summary_df(con, units)$submission_risk
+  expect_false(RiboPilot:::has_screen_risk(risk))
+  expect_false(any(RiboPilot:::has_screen_risk(c(NA, "", "chimeric", "missing_organism"))))
 })
 
 test_that("feature_map_svg_text draws one arrow per element, in order, in palette colours", {

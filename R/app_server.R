@@ -1231,24 +1231,52 @@ app_server <- function(input, output, session) {
         text = paste0(bad[[1]], ": ", bad[[2]]), type = "error")
       return()
     }
-    # export_bundle() rebuilds the group folder from scratch, so anything the
-    # curator put there (or an earlier export they have not submitted yet) goes
-    # with it. Say so before it happens, not after.
+    flagged <- screen_flagged(u)
+    export_pending(u)
+    if (nrow(flagged)) {
+      showModal(export_screen_modal(flagged))
+      return()
+    }
+    proceed_export(u, grp)
+  })
+  # Units the contamination checks flagged that no curator has signed off on.
+  screen_flagged <- function(u) {
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    s <- export_summary_df(con, cbind(u, seqid = u$ID))
+    s[has_screen_risk(s$submission_risk) & !(s$reviewed %in% "yes"), , drop = FALSE]
+  }
+  # export_bundle() rebuilds the group folder from scratch, so anything the
+  # curator put there (or an earlier export they have not submitted yet) goes
+  # with it. Say so before it happens, not after.
+  proceed_export <- function(u, grp) {
+    export_pending(u)
     target <- file.path(app_project(), "out", "export", grp)
     if (dir.exists(target)) {
       showModal(export_overwrite_modal(target,
         length(list.files(target, recursive = TRUE))))
-      return()
+      return(invisible())
     }
     run_export(u, grp)
-  })
-  observeEvent(input$export_overwrite_back, {
+  }
+  export_pending <- reactiveVal(NULL)
+  back_to_export <- function() {
     m <- export_modal_current()
     if (!is.null(m)) showModal(m)
-  })
-  observeEvent(input$export_overwrite_go, {
-    grp <- export_group_choice()
-    run_export(export_units_df(grp), grp)
+  }
+  observeEvent(input$export_overwrite_back, back_to_export())
+  observeEvent(input$export_screen_back, back_to_export())
+  observeEvent(input$export_overwrite_go, run_export(export_pending(), export_group_choice()))
+  observeEvent(input$export_screen_keep, proceed_export(export_pending(), export_group_choice()))
+  observeEvent(input$export_screen_skip, {
+    u <- export_pending()
+    f <- screen_flagged(u)
+    u <- u[!unit_key(u$ID, u$path, u$scaffold) %in% unit_key(f$ID, f$path, f$scaffold), , drop = FALSE]
+    if (nrow(u) == 0) {
+      back_to_export()
+      rp_alert("Every unit in this group was left out, so nothing was exported.", type = "warning")
+      return()
+    }
+    proceed_export(u, export_group_choice())
   })
   run_export <- function(u, grp) {
     detail <- if (isTRUE(input$export_itsx_check)) {

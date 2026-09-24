@@ -183,6 +183,59 @@ test_that("exporting over an existing bundle asks before replacing it", {
   })
 })
 
+test_that("export asks before shipping a unit flagged as a contaminant", {
+  skip_if_not_installed("withr")
+  dir <- mk_export_project()
+  withr::local_dir(dir)
+
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE annotate SET export_group = 'g1', reviewed = 'no', annotate_notes = 'contaminant'")
+  DBI::dbDisconnect(con)
+  fasta <- file.path(dir, "out", "export", "g1", "g1.fasta")
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Export")
+    session$setInputs(export_group_sel = "g1",
+      fasta_header = RiboPilot:::DEFAULT_FASTA_HEADER,
+      fasta_header_marker = RiboPilot:::DEFAULT_FASTA_HEADER_MARKER,
+      export_markers = FALSE, export_report = FALSE)
+    settle(session)
+
+    session$setInputs(export_go = 1)
+    settle(session)
+    expect_false(file.exists(fasta))          # asked, did not act
+
+    session$setInputs(export_screen_skip = 1)
+    settle(session)
+    expect_false(file.exists(fasta))          # the only unit was left out
+
+    session$setInputs(export_go = 2)
+    settle(session)
+    expect_warning(session$setInputs(export_screen_keep = 1), "contaminant")
+    settle(session)
+    expect_true(file.exists(fasta))
+    smry <- utils::read.csv(file.path(dir, "out", "export", "g1", "g1_summary.csv"))
+    expect_match(smry$submission_risk, "contaminant")
+  })
+
+  # a curator who marked it Reviewed is not asked again
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE annotate SET reviewed = 'yes'")
+  DBI::dbDisconnect(con)
+  unlink(file.path(dir, "out"), recursive = TRUE)
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Export")
+    session$setInputs(export_group_sel = "g1",
+      fasta_header = RiboPilot:::DEFAULT_FASTA_HEADER,
+      fasta_header_marker = RiboPilot:::DEFAULT_FASTA_HEADER_MARKER,
+      export_markers = FALSE, export_report = FALSE)
+    settle(session)
+    expect_warning(session$setInputs(export_go = 1), "contaminant")
+    settle(session)
+    expect_true(file.exists(fasta))
+  })
+})
+
 test_that("detail modal sample navigation steps through the table order", {
   skip_if_not_installed("withr")
   dir <- mk_export_project()

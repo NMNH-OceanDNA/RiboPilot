@@ -109,7 +109,7 @@ find_n_runs <- function(seq, min_len = MIN_ASSEMBLY_GAP) {
 #' @noRd
 feature_table_text_con <- function(con, id, path = 1L, scaffold = 1L, seqid = id, force_partial = FALSE) {
   d <- DBI::dbGetQuery(con,
-    "SELECT element, type, start, stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
+    "SELECT * FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
     params = list(id, path, scaffold))
   hdr <- paste0(">Feature ", seqid)
   if (nrow(d) == 0) {
@@ -123,9 +123,10 @@ feature_table_text_con <- function(con, id, path = 1L, scaffold = 1L, seqid = id
   gaps <- find_n_runs(seq)
   feats <- rbind(
     data.frame(start = d$start, stop = d$stop, type = d$type, element = d$element,
-      kind = "rna", stringsAsFactors = FALSE),
+      kind = "rna", trunc = is_truncated(d), stringsAsFactors = FALSE),
     if (nrow(gaps) > 0) data.frame(start = gaps$start, stop = gaps$stop,
-      type = "assembly_gap", element = NA_character_, kind = "gap", stringsAsFactors = FALSE))
+      type = "assembly_gap", element = NA_character_, kind = "gap", trunc = FALSE,
+      stringsAsFactors = FALSE))
   feats <- feats[order(feats$start), , drop = FALSE]
   rna <- which(feats$kind == "rna")
   first_rna <- if (length(rna)) min(rna) else NA_integer_
@@ -141,12 +142,13 @@ feature_table_text_con <- function(con, id, path = 1L, scaffold = 1L, seqid = id
         "\t\t\tlinkage_evidence\talign genus")
       next
     }
-    s <- if (i == first_rna && (feats$start[i] <= 1 || isTRUE(force_partial))) {
+    # a truncated gene is partial whichever end is missing, so it gets both marks
+    s <- if (feats$trunc[i] || (i == first_rna && (feats$start[i] <= 1 || isTRUE(force_partial)))) {
       paste0("<", feats$start[i])
     } else {
       as.character(feats$start[i])
     }
-    e <- if (i == last_rna && (feats$stop[i] >= seqlen || isTRUE(force_partial))) {
+    e <- if (feats$trunc[i] || (i == last_rna && (feats$stop[i] >= seqlen || isTRUE(force_partial)))) {
       paste0(">", feats$stop[i])
     } else {
       as.character(feats$stop[i])
@@ -222,6 +224,21 @@ risk_flags <- function(chimeric, ann, seq, chimera_label = NA_character_, chimer
     note = paste(flags, collapse = ";"))
 }
 
+#' Which annotation rows the curation step flagged truncated (too little of the
+#' rRNA model recovered). `d` is annotation rows; FALSE when it has no flags column.
+#' @noRd
+is_truncated <- function(d) {
+  if (is.null(d$flags)) return(rep(FALSE, nrow(d)))
+  grepl("(^|,)truncated(,|$)", ifelse(is.na(d$flags), "", d$flags))
+}
+
+#' TRUE where a submission_risk string carries a contamination tag
+#' (off_target or contaminant), the ones the export window asks about.
+#' @noRd
+has_screen_risk <- function(risk) {
+  grepl("(^|;)(off_target\\(|contaminant(;|$))", ifelse(is.na(risk), "", risk))
+}
+
 #' README text mapping the bundle to NCBI's two submission routes
 #' @noRd
 submission_readme <- function(label, itsx_check = TRUE) {
@@ -267,6 +284,11 @@ submission_readme <- function(label, itsx_check = TRUE) {
     "  chimeric     the chimera detector or ITSx flagged mixed origins",
     "  gap_in_rDNA  an assembly-gap (N-run) falls inside the 18S..28S span",
     "  misassembly  features overlap or are out of 5'->3' order",
+    "  off_target(<taxon>)  the contamination screen's GenBank hits agree on",
+    "               <taxon>, which is not on the sample's lineage",
+    "  contaminant  the best GenBank hit shares no phylum with the sample",
+    "Check off_target and contaminant records before submitting: the sequence",
+    "may be another organism's rDNA, exported under this sample's name.",
     "",
     if (itsx_check) c(
     "FINAL ITSx CHECK",
@@ -318,6 +340,8 @@ export_summary_df <- function(con, units) {
   asm <- fetch("SELECT ID, path, scaffold, sequence FROM assemblies WHERE ID IN (%s)")
   scr <- fetch("SELECT ID, path, scaffold, variant_class, variant_group, variant_identity
                 FROM screen WHERE ID IN (%s)")
+  sv <- fetch("SELECT ID, path, scaffold, screen_verdict, lca_taxon FROM screen WHERE ID IN (%s)")
+  nts <- fetch("SELECT ID, path, scaffold, annotate_notes FROM annotate WHERE ID IN (%s)")
 
   ukey <- unit_key(units$ID, units$path, units$scaffold)
   mi <- if (nrow(m)) match(ukey, unit_key(m$ID, m$path, m$scaffold)) else rep(NA_integer_, n)
@@ -331,16 +355,22 @@ export_summary_df <- function(con, units) {
   chm_label <- if (nrow(chm)) chm$label[cmi] else rep(NA_character_, n)
   chm_reason <- if (nrow(chm)) chm$reason[cmi] else rep(NA_character_, n)
   v <- unit_variant_facts_df(scr, units)
+  svi <- if (nrow(sv)) match(ukey, unit_key(sv$ID, sv$path, sv$scaffold)) else rep(NA_integer_, n)
+  nti <- if (nrow(nts)) match(ukey, unit_key(nts$ID, nts$path, nts$scaffold)) else rep(NA_integer_, n)
 
   organism <- pick(m, "organism", NA_character_)
   risk <- vapply(seq_len(n), function(i) {
     note <- risk_flags(chiv[i], ann[anni[ukey[i]][[1]], , drop = FALSE], seqv[i],
       chimera_label = chm_label[i], chimera_reason = chm_reason[i])$note
-    # NCBI rejects a record with no [organism=]; flag it rather than drop the record
-    if (is.na(organism[i]) || !nzchar(trimws(organism[i]))) {
-      note <- paste(c(if (nzchar(note)) note, "missing_organism"), collapse = ";")
-    }
-    note
+    # the sequence may be another organism's rDNA, exported under this sample's name
+    off <- isTRUE(sv$screen_verdict[svi[i]] == "off_target")
+    notes <- if (is.na(nti[i])) character(0) else strsplit(nts$annotate_notes[nti[i]] %|NA|% "", "; ", fixed = TRUE)[[1]]
+    paste(c(if (nzchar(note)) note,
+      if (off) sprintf("off_target(%s)", sv$lca_taxon[svi[i]] %|NA|% "other taxon"),
+      if ("contaminant" %in% notes) "contaminant",
+      # NCBI rejects a record with no [organism=]; flag it rather than drop the record
+      if (is.na(organism[i]) || !nzchar(trimws(organism[i]))) "missing_organism"),
+      collapse = ";")
   }, character(1))
 
   data.frame(seqid = units$seqid, ID = units$ID, path = units$path, scaffold = units$scaffold,

@@ -236,6 +236,31 @@ refresh_sample_state <- function(con, id) {
   invisible(st)
 }
 
+#' Per-unit tables whose rows describe one assembled sequence
+#' @noRd
+UNIT_EVIDENCE_TABLES <- c("annotations", "coverage", "screen", "chimera", "chimera_windows",
+  "blast_hits", "blast_screen", "blast_searched", "blast_ref_candidates",
+  "blast_ref_alignment", "assembly_backup")
+
+#' Forget everything known about a unit whose sequence was replaced
+#'
+#' A re-assembly can give a surviving (path, scaffold) key a different sequence.
+#' Its gene coordinates, BLAST hits, screen verdict, chimera call, and depth then
+#' describe another molecule, so they are deleted, and the unit's lock and
+#' curator marks are cleared so it is annotated and reviewed again.
+#' @noRd
+reset_unit_evidence <- function(con, id, path, scaffold) {
+  p <- list(id, as.integer(path), as.integer(scaffold))
+  for (tbl in intersect(UNIT_EVIDENCE_TABLES, DBI::dbListTables(con))) {
+    DBI::dbExecute(con, sprintf("DELETE FROM %s WHERE ID = ? AND path = ? AND scaffold = ?", tbl),
+      params = p)
+  }
+  DBI::dbExecute(con,
+    "UPDATE annotate SET annotate_switch = 1, annotate_lock = 0, reviewed = 'no',
+       partial = 'no', problematic = 'no', export_group = NULL
+     WHERE ID = ? AND path = ? AND scaffold = ?", params = p)
+}
+
 #' Load one sample's published assembly fastas into the database
 #'
 #' Parses `out/<ID>/assemble/<ID>_assembly_*.fasta` (headers
@@ -393,12 +418,17 @@ load_assemblies <- function(con, out_dir, ID) {
     i <- match(paste(df$path, df$scaffold), paste(prev$path, prev$scaffold))
     df$ignore <- ifelse(is.na(i), 0L, as.integer(prev$ignore[i]))
   }
+  old <- DBI::dbGetQuery(con, "SELECT path, scaffold, sequence FROM assemblies WHERE ID = ?",
+    params = list(ID))
+  j <- match(paste(df$path, df$scaffold), paste(old$path, old$scaffold))
+  changed <- which(!is.na(j) & (is.na(old$sequence[j]) | old$sequence[j] != df$sequence))
 
   # replace this sample's assemblies, in one transaction: a failed append after a
   # committed delete would destroy them with nothing to put back
   DBI::dbWithTransaction(con, {
     DBI::dbExecute(con, "DELETE FROM assemblies WHERE ID = ?", params = list(ID))
     DBI::dbAppendTable(con, "assemblies", df)
+    for (i in changed) reset_unit_evidence(con, ID, df$path[i], df$scaffold[i])
   })
 
   # Per-sample summary, described over the scaffolds that passed the length

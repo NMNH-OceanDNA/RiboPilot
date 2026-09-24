@@ -14,6 +14,7 @@ mk_asm_db <- function(dir) {
                        max_scaffolds INT, min_assembly_length INT)")
   DBI::dbExecute(con, "CREATE TABLE annotate(ID TEXT, path INT, scaffold INT, annotate_switch INT,
                        annotate_lock INT, annotate_opts TEXT, curate_opts TEXT, reviewed TEXT,
+                       partial TEXT, problematic TEXT, export_group TEXT,
                        PRIMARY KEY (ID, path, scaffold))")
   DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT)")
   DBI::dbExecute(con, "CREATE TABLE assembly_backup(ID TEXT, path INT, scaffold INT)")
@@ -400,4 +401,41 @@ test_that("a header with no contig name leaves it empty", {
 
   RiboPilot:::load_assemblies(con, dir, "S1")
   expect_true(is.na(DBI::dbGetQuery(con, "SELECT source_contig FROM assemblies")$source_contig))
+})
+
+test_that("a re-assembly that changes a unit's sequence clears its old evidence and lock", {
+  dir <- withr::local_tempdir()
+  con <- mk_asm_db(dir)
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, RiboPilot:::SCREEN_DDL)
+  write_asm_fasta(dir)
+  RiboPilot:::load_assemblies(con, dir, "S1")
+
+  # both units annotated, screened, locked, reviewed, and grouped for export
+  for (s in 1:2) {
+    DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,?,'18S')", params = list(s))
+    DBI::dbExecute(con, "INSERT INTO screen (ID,path,scaffold,screen_verdict) VALUES('S1',1,?,'on_target')",
+      params = list(s))
+  }
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_switch = 2, annotate_lock = 1, reviewed = 'yes',
+    partial = 'yes', export_group = 'g1'")
+
+  # scaffold 1 comes back as a different contig; scaffold 2 is unchanged
+  fa <- file.path(dir, "S1", "assemble", "S1_assembly_1.fasta")
+  writeLines(c(">S1.1.1 linear scaffold_1--101+", strrep("GATC", 120),
+    ">S1.1.2 linear scaffold_2--103+", strrep("TGCA", 150)), fa)
+  RiboPilot:::load_assemblies(con, dir, "S1")
+
+  ev <- function(tbl, s) DBI::dbGetQuery(con,
+    sprintf("SELECT COUNT(*) n FROM %s WHERE ID='S1' AND path=1 AND scaffold=%d", tbl, s))$n
+  an <- DBI::dbGetQuery(con, "SELECT * FROM annotate WHERE ID='S1' ORDER BY scaffold")
+  expect_equal(ev("annotations", 1), 0)
+  expect_equal(ev("screen", 1), 0)
+  expect_equal(an$annotate_lock, c(0L, 1L))
+  expect_equal(an$annotate_switch, c(1L, 2L))
+  expect_equal(an$reviewed, c("no", "yes"))
+  expect_equal(an$export_group, c(NA, "g1"))
+  # the unchanged unit keeps everything
+  expect_equal(ev("annotations", 2), 1)
+  expect_equal(ev("screen", 2), 1)
 })

@@ -128,15 +128,15 @@ export_header_data <- function(con, units) {
          FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?",
       params = list(id, p, s))
     feat <- DBI::dbGetQuery(con,
-      "SELECT element, start, stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
+      "SELECT * FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
       params = list(id, p, s))
     seq_len_bp <- if (nrow(asm)) asm$length[1] else NA_integer_
     unit_partial <- isTRUE(nrow(ann) > 0 && identical(ann$partial[1], "yes"))
     # A terminal feature that runs into the end of the scaffold is partial; so is
-    # everything on a unit the curator marked partial.
-    part <- rep(FALSE, nrow(feat))
+    # a truncated gene, and everything on a unit the curator marked partial.
+    part <- is_truncated(feat)
     if (nrow(feat) > 0) {
-      part[1] <- feat$start[1] <= 1
+      part[1] <- part[1] || feat$start[1] <= 1
       part[nrow(feat)] <- part[nrow(feat)] || (!is.na(seq_len_bp) && feat$stop[nrow(feat)] >= seq_len_bp)
       if (unit_partial) part[c(1, nrow(feat))] <- TRUE
     }
