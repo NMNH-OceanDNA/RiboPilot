@@ -180,6 +180,23 @@ reconcile_features <- function(bar, its) {
   out <- clip_spacer(out, "ITS2", "5.8S", "28S")
   out <- out[out$stop >= out$start, , drop = FALSE]
 
+  # A gene end up to 5 bp short of the ITSx spacer beside it is moved to meet
+  # it: ITSx places these boundaries, as it does at NCBI.
+  for (pr in list(c("18S", "ITS1"), c("ITS1", "5.8S"), c("5.8S", "ITS2"), c("ITS2", "28S"))) {
+    li <- which(out$element == pr[1])
+    ri <- which(out$element == pr[2])
+    if (length(li) != 1 || length(ri) != 1) next
+    gap <- out$start[ri] - out$stop[li] - 1L
+    if (gap < 1L || gap > 5L) next
+    if (pr[1] %in% RRNA_GENES) {
+      out$stop[li] <- out$start[ri] - 1L
+      out$tool[li] <- paste0(out$tool[li], "+ITSx")
+    } else {
+      out$start[ri] <- out$stop[li] + 1L
+      out$tool[ri] <- paste0(out$tool[ri], "+ITSx")
+    }
+  }
+
   out$length <- out$stop - out$start + 1
   out <- out[order(out$start),
     c("element", "type", "start", "stop", "length", "strand", "model_cov", "tool")]

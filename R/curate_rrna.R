@@ -63,12 +63,17 @@ curate_rrna_core <- function(features, params = rrna_params(),
     canon <- RRNA_ELEMENT_ORDER[RRNA_ELEMENT_ORDER %in% fo$element]
     if (!identical(fo$element, canon)) sample_flags <- c(sample_flags, "out_of_order")
 
-    # 3. Overlaps between adjacent features ----
+    # 3. Overlaps and gaps between adjacent features ----
     if (nrow(fo) > 1) {
       for (i in 2:nrow(fo)) {
-        if (!is.na(fo$start[i]) && !is.na(fo$stop[i - 1]) && fo$start[i] <= fo$stop[i - 1]) {
+        if (is.na(fo$start[i]) || is.na(fo$stop[i - 1])) next
+        if (fo$start[i] <= fo$stop[i - 1]) {
           add_feat_flag(fo$element[i], "overlap")
           sample_flags <- c(sample_flags, "overlap")
+        } else if (fo$start[i] > fo$stop[i - 1] + 1 && isTRUE(
+            match(fo$element[i], RRNA_ELEMENT_ORDER) == match(fo$element[i - 1], RRNA_ELEMENT_ORDER) + 1L)) {
+          add_feat_flag(fo$element[i], "gap")
+          sample_flags <- c(sample_flags, "gap")
         }
       }
     }

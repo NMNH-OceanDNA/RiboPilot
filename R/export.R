@@ -139,7 +139,7 @@ feature_table_text_con <- function(con, id, path = 1L, scaffold = 1L, seqid = id
         paste0(feats$start[i], "\t", feats$stop[i], "\tassembly_gap"),
         paste0("\t\t\testimated_length\t", feats$stop[i] - feats$start[i] + 1),
         "\t\t\tgap_type\twithin scaffold",
-        "\t\t\tlinkage_evidence\talign genus")
+        "\t\t\tlinkage_evidence\tunspecified")
       next
     }
     # a truncated gene is partial whichever end is missing, so it gets both marks
@@ -263,8 +263,10 @@ submission_readme <- function(label, itsx_check = TRUE) {
     "",
     paste0("  -> Portal route: upload ", label, ".fasta only; NCBI annotates for you."),
     "",
-    "The .tbl / .sbt / table2asn output are for the alternate table2asn / BankIt",
-    "route only, where a feature table IS accepted.",
+    "The .tbl files are only for NCBI's command-line tool table2asn",
+    "(https://www.ncbi.nlm.nih.gov/genbank/table2asn/). Run it with -V v, read",
+    "the .val file it writes, and send the .sqn file the way NCBI's GenBank",
+    "submission page says.",
     "",
     "WHAT IS IN THIS FOLDER",
     "----------------------",
@@ -287,6 +289,11 @@ submission_readme <- function(label, itsx_check = TRUE) {
     "  off_target(<taxon>)  the contamination screen's GenBank hits agree on",
     "               <taxon>, which is not on the sample's lineage",
     "  contaminant  the best GenBank hit shares no phylum with the sample",
+    "  taxon_differs(<name>)  your Taxon differs from <name>, the name set in",
+    "               the Taxonomy step. The organism column shows which one was",
+    "               exported: <name> when your Taxon matched it exactly or you",
+    "               picked a species there, otherwise your Taxon, so labels",
+    "               like 'Genus sp. A' are kept.",
     "Check off_target and contaminant records before submitting: the sequence",
     "may be another organism's rDNA, exported under this sample's name.",
     "",
@@ -327,7 +334,7 @@ export_summary_df <- function(con, units) {
   fetch <- function(sql) tryCatch(DBI::dbGetQuery(con, sprintf(sql, qs), params = as.list(ids)),
     error = function(e) data.frame())
   m <- fetch(
-    "SELECT s.ID, an.path, an.scaffold, s.Taxon AS organism, asm.length, an.n_features,
+    "SELECT s.ID, an.path, an.scaffold, asm.length, an.n_features,
        an.missing, an.reviewed, an.partial, an.problematic
      FROM samples s
      JOIN annotate an ON an.ID = s.ID
@@ -342,6 +349,7 @@ export_summary_df <- function(con, units) {
                 FROM screen WHERE ID IN (%s)")
   sv <- fetch("SELECT ID, path, scaffold, screen_verdict, lca_taxon FROM screen WHERE ID IN (%s)")
   nts <- fetch("SELECT ID, path, scaffold, annotate_notes FROM annotate WHERE ID IN (%s)")
+  smp <- fetch("SELECT * FROM samples WHERE ID IN (%s)")
 
   ukey <- unit_key(units$ID, units$path, units$scaffold)
   mi <- if (nrow(m)) match(ukey, unit_key(m$ID, m$path, m$scaffold)) else rep(NA_integer_, n)
@@ -358,7 +366,11 @@ export_summary_df <- function(con, units) {
   svi <- if (nrow(sv)) match(ukey, unit_key(sv$ID, sv$path, sv$scaffold)) else rep(NA_integer_, n)
   nti <- if (nrow(nts)) match(ukey, unit_key(nts$ID, nts$path, nts$scaffold)) else rep(NA_integer_, n)
 
-  organism <- pick(m, "organism", NA_character_)
+  si <- match(units$ID, smp$ID)
+  taxon <- (smp$Taxon %||% NA)[si]
+  sci <- (smp$sci_name %||% NA)[si]
+  organism <- export_organism(taxon, sci, (smp$match_type %||% NA)[si], (smp$rank %||% NA)[si])
+  differs <- !is.na(sci) & nzchar(sci) & !is.na(taxon) & trimws(taxon) != sci
   risk <- vapply(seq_len(n), function(i) {
     note <- risk_flags(chiv[i], ann[anni[ukey[i]][[1]], , drop = FALSE], seqv[i],
       chimera_label = chm_label[i], chimera_reason = chm_reason[i])$note
@@ -368,6 +380,7 @@ export_summary_df <- function(con, units) {
     paste(c(if (nzchar(note)) note,
       if (off) sprintf("off_target(%s)", sv$lca_taxon[svi[i]] %|NA|% "other taxon"),
       if ("contaminant" %in% notes) "contaminant",
+      if (differs[i]) sprintf("taxon_differs(%s)", sci[i]),
       # NCBI rejects a record with no [organism=]; flag it rather than drop the record
       if (is.na(organism[i]) || !nzchar(trimws(organism[i]))) "missing_organism"),
       collapse = ";")
@@ -627,6 +640,9 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
         do.call(rbind, lapply(seq_len(nrow(hdata)), function(i) marker_data(i, first_el[i]))))))) {
     if (identical(chk$res$level, "error")) {
       stop("The ", chk$what, " template cannot be used: ", chk$res$message, call. = FALSE)
+    }
+    if (identical(chk$res$level, "warn")) {
+      warning("The ", chk$what, " template: ", chk$res$message, call. = FALSE)
     }
   }
   headers <- render_fasta_headers(tpl_record, hdata)

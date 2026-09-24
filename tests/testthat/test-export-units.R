@@ -161,8 +161,10 @@ test_that("an empty Taxon is flagged, and never rendered as the word NA", {
   DBI::dbExecute(con, "UPDATE samples SET Taxon = '  ' WHERE ID = 'S1'")
   DBI::dbDisconnect(con)
 
-  expect_warning(g <- suppressMessages(export_bundle(dir, out_dir = file.path(dir, "out"),
-    markers = TRUE, report = FALSE, zip = FALSE, itsx_check = FALSE, label = "notax")), "missing_organism")
+  w <- testthat::capture_warnings(g <- suppressMessages(export_bundle(dir, out_dir = file.path(dir, "out"),
+    markers = TRUE, report = FALSE, zip = FALSE, itsx_check = FALSE, label = "notax")))
+  expect_true(any(grepl("missing_organism", w)))
+  expect_true(any(grepl("Empty [organism=] on 3 of 3", w, fixed = TRUE)))
   # glue renders an NA field as the characters "NA", which reads like a real
   # organism name. The header template cannot drop a field, so the value is
   # blanked and the unit is flagged instead.

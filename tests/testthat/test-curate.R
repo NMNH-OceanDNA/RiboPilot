@@ -112,3 +112,12 @@ test_that("the extracted ruleset resolver keeps curate_one's precedence", {
   expect_equal(r$ruleset, "metazoa_generic")
   expect_equal(r$note, "no_clade_ruleset")
 })
+
+test_that("a gap between neighbouring features is flagged; one between non-neighbours is not", {
+  f <- good_feats(); f$start[f$element == "ITS1"] <- 1805
+  r <- RiboPilot:::curate_rrna_core(f, RiboPilot:::rrna_params())
+  expect_true("gap" %in% r$flags)
+  expect_match(r$features$flags[r$features$element == "ITS1"], "gap")
+  f2 <- good_feats()[good_feats()$element %in% c("18S", "5.8S", "28S"), ]
+  expect_false("gap" %in% RiboPilot:::curate_rrna_core(f2, RiboPilot:::rrna_params())$flags)
+})

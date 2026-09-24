@@ -84,3 +84,20 @@ test_that("a single-record positions line still parses exactly as before", {
   expect_equal(d$element, c("18S", "ITS1", "5.8S", "ITS2", "28S"))
   expect_equal(d$start, c(1L, 1801L, 2101L, 2259L, 2501L))
 })
+
+test_that("reconcile moves a gene end up to 5 bp to meet its ITSx spacer", {
+  bar <- data.frame(element = c("18S", "28S"), start = c(1, 2362), stop = c(1799, 6000),
+    strand = "+", model_cov = 100, stringsAsFactors = FALSE)
+  its <- data.frame(element = c("ITS1", "5.8S", "ITS2"), start = c(1801, 2001, 2161),
+    stop = c(2000, 2160, 2357), stringsAsFactors = FALSE)
+  rec <- RiboPilot:::reconcile_features(bar, its)
+  expect_equal(rec$stop[rec$element == "18S"], 1800)          # 1 bp gap closed
+  expect_equal(rec$start[rec$element == "28S"], 2358)         # 4 bp gap closed
+  expect_equal(rec$tool[rec$element == "18S"], "barrnap+ITSx")
+  expect_equal(rec$start[-1], rec$stop[-nrow(rec)] + 1)       # every feature abuts the next
+
+  bar$stop[1] <- 1794                                         # 6 bp: left for curation to flag
+  rec2 <- RiboPilot:::reconcile_features(bar, its)
+  expect_equal(rec2$stop[rec2$element == "18S"], 1794)
+  expect_equal(rec2$tool[rec2$element == "18S"], "barrnap")
+})

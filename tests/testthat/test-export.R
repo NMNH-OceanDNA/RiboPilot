@@ -24,6 +24,7 @@ test_that("feature_table_text_con emits partials, gaps, and ITS notes", {
   expect_match(tbl, "201\t>260\trRNA")          # 3' partial
   expect_match(tbl, "101\t120\tassembly_gap")   # gap feature
   expect_match(tbl, "estimated_length\t20")
+  expect_match(tbl, "linkage_evidence\tunspecified")
   expect_match(tbl, "internal transcribed spacer 1")
 })
 
@@ -194,4 +195,20 @@ test_that("is_nuclear_rrna_title splits nuclear rDNA from organellar/other", {
   expect_false(f("Homo sapiens mitochondrion, complete genome"))
   expect_false(f("Escherichia coli 16S ribosomal RNA gene"))
   expect_false(f("Some fish mitochondrial 12S ribosomal RNA"))
+})
+
+test_that("export_summary_df flags a Taxon that differs from the Taxonomy name", {
+  con <- chimera_test_con()
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "INSERT INTO assemblies (ID, path, scaffold, sequence, length) VALUES ('S1',1,1,'ACGT',4)")
+  DBI::dbExecute(con, "INSERT OR IGNORE INTO annotate (ID, path, scaffold) VALUES ('S1',1,1)")
+  units <- data.frame(ID = "S1", path = 1L, scaffold = 1L, seqid = "S1", stringsAsFactors = FALSE)
+  DBI::dbExecute(con, "UPDATE samples SET Taxon = 'Upeneus sp. A', sci_name = 'Upeneus',
+    match_type = 'exact', rank = 'genus'")
+  s <- RiboPilot:::export_summary_df(con, units)
+  expect_equal(s$organism, "Upeneus sp. A")
+  expect_match(s$submission_risk, "taxon_differs(Upeneus)", fixed = TRUE)
+  DBI::dbExecute(con, "UPDATE samples SET Taxon = 'Upeneus parvus', sci_name = 'Upeneus parvus', rank = 'species'")
+  s <- RiboPilot:::export_summary_df(con, units)
+  expect_false(grepl("taxon_differs", s$submission_risk))
 })

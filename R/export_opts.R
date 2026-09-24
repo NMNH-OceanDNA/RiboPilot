@@ -15,10 +15,10 @@ EXPORT_OPTS_DDL <- "CREATE TABLE IF NOT EXISTS export_opts (
 
 #' Package default header templates
 #' @noRd
-DEFAULT_FASTA_HEADER <- "{seqid} [organism={Taxon}] [moltype=genomic DNA] {Taxon} {rrna_definition}"
+DEFAULT_FASTA_HEADER <- "{seqid} [organism={organism}] [moltype=genomic DNA] {organism} {rrna_definition}"
 
 #' @noRd
-DEFAULT_FASTA_HEADER_MARKER <- "{seqid}_{element} [organism={Taxon}] {Taxon} {product}"
+DEFAULT_FASTA_HEADER_MARKER <- "{seqid}_{element} [organism={organism}] {organism} {product}"
 
 #' Create the export_opts table and seed its 'default' row (idempotent)
 #' @noRd
@@ -104,6 +104,21 @@ rrna_definition_text <- function(elements, partial) {
   paste0(paste(parts, collapse = "; "), ".")
 }
 
+#' Organism name to export: the Taxonomy step's name when it matched the whole
+#' Taxon label, or when the curator picked a species there; otherwise the Taxon
+#' label itself, so labels like "Upeneus sp. A" are kept
+#' @noRd
+export_organism <- function(taxon, sci_name = NA, match_type = NA, rank = NA) {
+  taxon <- as.character(taxon)
+  norm <- function(x) tolower(trimws(gsub("[_[:space:]]+", " ", x)))
+  whole <- vapply(taxon, function(t) !is.na(t) && norm(clean_taxon(t)) == norm(t),
+    logical(1), USE.NAMES = FALSE)
+  use <- !is.na(sci_name) & nzchar(sci_name) &
+    ((match_type %in% "exact" & whole) |
+      (match_type %in% "manual" & rank %in% c("species", "subspecies", "varietas", "forma")))
+  ifelse(use, sci_name, taxon)
+}
+
 #' Token data for the header templates: one row per exported unit
 #'
 #' Everything a template may reference. `samples` is taken whole so that every
@@ -150,6 +165,8 @@ export_header_data <- function(con, units) {
       reviewed = if (nrow(ann)) ann$reviewed[1] else NA_character_,
       export_group = if (nrow(ann)) ann$export_group[1] else NA_character_,
       seqid = units$seqid[i],
+      organism = export_organism(smp$Taxon %||% NA, smp$sci_name %||% NA,
+        smp$match_type %||% NA, smp$rank %||% NA),
       completeness = if (unit_partial || any(part)) "partial sequence" else "complete sequence",
       elements = paste(feat$element, collapse = "-"),
       rrna_definition = rrna_definition_text(feat$element, part),
@@ -223,9 +240,11 @@ validate_fasta_header <- function(template, data = NULL, require_seqid = TRUE) {
       return(err(trimws(strsplit(bad, "\n")[[1]][1])))
     }
   }
-  if (grepl("isolate", template, ignore.case = TRUE)) {
-    return(err(paste("Do not put isolate in the template: RiboPilot fills [isolate=ID_pX_sX]",
-      "itself for samples that export more than one record.")))
+  if (grepl("\\[\\s*isolate\\s*=", template, ignore.case = TRUE) &&
+      any(!is.na(data$seqid) & data$seqid != data$ID)) {
+    return(err(paste("Take [isolate=...] out of the template for this group. RiboPilot sets",
+      "[isolate=<ID>_p<path>_s<scaffold>] on each record of a sample that exports more than",
+      "one scaffold, so all of them can go into one GenBank submission.")))
   }
   if (require_seqid && !grepl("{seqid}", template, fixed = TRUE)) {
     multi <- !is.null(data) && any(duplicated(data$ID))
@@ -233,14 +252,32 @@ validate_fasta_header <- function(template, data = NULL, require_seqid = TRUE) {
       "and NCBI would reject the submission.")
     return(if (multi) err(msg) else warn(msg))
   }
+  if (!is.null(data) && nrow(data) > 0) {
+    em <- empty_modifiers(tryCatch(as.character(stringr::str_glue_data(data, template)),
+      error = function(e) character(0)))
+    hit <- lengths(em) > 0
+    if (any(hit)) {
+      return(warn(sprintf(paste("Empty %s on %d of %d record(s) (%s). NCBI does not accept an",
+        "empty modifier: fill in the column or take the modifier out."),
+        paste0("[", unique(unlist(em)), "=]", collapse = ", "), sum(hit), length(hit),
+        paste(utils::head((data$seqid %||% data$ID)[hit], 3), collapse = ", "))))
+    }
+  }
   ok()
+}
+
+#' Names of the source modifiers left empty (or "NA") in each header
+#' @noRd
+empty_modifiers <- function(headers) {
+  m <- regmatches(headers, gregexpr("\\[([^]=[]+)=\\s*(NA)?\\s*\\]", headers))
+  lapply(m, function(x) unique(sub("^\\[([^=]+)=.*$", "\\1", x)))
 }
 
 #' Resolve a template against token data
 #'
-#' A sample that exports more than one record gets `[isolate=<seqid>]` appended:
-#' GenBank refuses several sequences with the same organism and voucher unless
-#' an isolate (or similar) modifier tells them apart. Not user-editable.
+#' A sample that exports more than one record gets `[isolate=<seqid>]` appended,
+#' so all of its records can go into one GenBank submission. [validate_fasta_header()]
+#' refuses a template's own `[isolate=]` for such samples.
 #'
 #' @param template glue template. @param data rows from [export_header_data()].
 #' @return character vector of headers, one per row, without the leading ">".
