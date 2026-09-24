@@ -26,7 +26,6 @@ Imports:
     ggplot2,
     grid,
     glue,
-    golem,
     htmltools,
     htmlwidgets,
     jsonlite,

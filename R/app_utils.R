@@ -3,10 +3,12 @@
 #' Attach external resources (CSS/JS/favicon), mirroring MitoPilot styling
 #' @noRd
 add_external_resources <- function() {
-  golem::add_resource_path("www", app_sys("app", "www"))
+  shiny::addResourcePath("www", app_sys("app", "www"))
   shiny::tags$head(
-    golem::favicon(),
-    golem::bundle_resources(path = app_sys("app", "www"), app_title = "RiboPilot"),
+    shiny::tags$title("RiboPilot"),
+    shiny::tags$link(rel = "shortcut icon", href = "www/favicon.ico"),
+    shiny::tags$link(rel = "stylesheet", href = "www/custom.css"),
+    shiny::tags$script(src = "www/custom.js"),
     shinyjs::useShinyjs()
   )
 }
@@ -102,10 +104,10 @@ rstudio_show_dir <- function(path) {
   }, error = function(e) FALSE)
 }
 
-#' Active project directory (from golem options, else cwd)
+#' Active project directory (from the app options, else cwd)
 #' @noRd
 app_project <- function() {
-  golem::get_golem_options("project") %||% getwd()
+  shiny::getShinyOption("project") %||% getwd()
 }
 
 #' Open a connection to the project database

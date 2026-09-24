@@ -46,7 +46,6 @@ test_that("app connections carry the pipeline's busy timeout", {
   on.exit(DBI::dbDisconnect(con))
   expect_equal(DBI::dbGetQuery(con, "PRAGMA busy_timeout")[[1]], 10000)
 
-  withr::local_options(golem.app.prod = FALSE)
   local_mocked_bindings(app_project = function() dir, .package = "RiboPilot")
   acon <- RiboPilot:::app_con()
   on.exit(DBI::dbDisconnect(acon), add = TRUE)
@@ -96,4 +95,15 @@ test_that("sqlite journal mode is overridable", {
   expect_equal(RiboPilot:::sqlite_journal_mode("/tmp/x.sqlite"), "delete")
   Sys.setenv(RIBOPILOT_SQLITE_JOURNAL = "wal")
   expect_equal(RiboPilot:::sqlite_journal_mode("/tmp/x.sqlite"), "wal")
+})
+
+test_that("run_app hands the project to the app and RiboPilot is the same function", {
+  withr::local_options(list(RiboPilot.headless = NULL))
+  dir <- withr::local_tempdir()
+  file.create(file.path(dir, ".sqlite"))
+  local_mocked_bindings(check_nextflow_version = function(...) invisible("supported"),
+    ensure_hydra_setup = function(...) invisible(), .package = "RiboPilot")
+  app <- RiboPilot:::run_app(dir, launch.browser = FALSE, headless = FALSE)
+  expect_equal(app$appOptions$project, normalizePath(dir))
+  expect_identical(RiboPilot::RiboPilot, RiboPilot::run_app)
 })

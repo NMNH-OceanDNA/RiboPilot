@@ -162,43 +162,23 @@ build_reference_submit_script <- function(project, manifest, ref_dir, api_key = 
   job_script(project, cmd, sched, base)
 }
 
-#' Open the RiboPilot GUI
+#' Run the RiboPilot Shiny application
 #'
 #' Launches the R-Shiny app for reviewing and curating a RiboPilot project.
 #' Run from (or point `project` at) a project directory containing `.sqlite`.
+#' `RiboPilot()` is the same function.
 #'
-#' @param project Path to the project directory (default: current dir).
-#' @param host,port,launch.browser Passed to Shiny (see [run_app()]). To reach
-#'   the app from another computer, pass a `port` and `launch.browser = FALSE`,
-#'   then open an SSH tunnel to that port; the console prints the command.
-#' @param headless Offer a cluster job script (Save script, Submit as job)
-#'   instead of Run from App. By default this is on when a batch scheduler
-#'   (sbatch, qsub, or bsub) is on PATH or the session is RStudio Server, and
-#'   off otherwise. Pass `TRUE` or `FALSE` to override; `FALSE` runs Nextflow on
-#'   the machine that serves the app.
-#' @param ... Additional arguments passed to `run_app()`.
-#' @export
-RiboPilot <- function(project = getwd(), host = NULL, port = NULL, launch.browser = NULL,
-                      headless = NULL, ...) {
-  run_app(project = project, host = host, port = port, launch.browser = launch.browser,
-    headless = headless, ...)
-}
-
-#' Run the RiboPilot Shiny application
-#'
-#' @param project Project directory containing `.sqlite`.
-#' @param onStart,options,enableBookmarking,uiPattern Shiny app options.
-#' @param host,port,launch.browser Shiny server options.
+#' @param project Project directory containing `.sqlite` (default: current dir).
+#' @param host,port,launch.browser Passed to Shiny. To reach the app from
+#'   another computer, pass a `port` and `launch.browser = FALSE`, then open
+#'   an SSH tunnel to that port; the console prints the command.
 #' @param headless Offer a cluster job script instead of Run from App. `NULL`
 #'   (default) turns it on when a batch scheduler (sbatch, qsub, or bsub) is on
 #'   PATH or the session is RStudio Server; pass `TRUE` or `FALSE` to override.
-#' @param ... Passed to golem options.
 #' @export
 #' @importFrom shiny shinyApp
-run_app <- function(project = getwd(), onStart = NULL, options = list(),
-                    enableBookmarking = NULL, uiPattern = "/",
-                    host = NULL, port = NULL, launch.browser = NULL,
-                    headless = NULL, ...) {
+run_app <- function(project = getwd(), host = NULL, port = NULL, launch.browser = NULL,
+                    headless = NULL) {
   project <- normalizePath(project, mustWork = TRUE)
   if (!file.exists(file.path(project, ".sqlite"))) {
     stop("No RiboPilot project (.sqlite) found in: ", project,
@@ -220,18 +200,17 @@ run_app <- function(project = getwd(), onStart = NULL, options = list(),
     message("Cluster mode: the Update window offers a job script to submit instead of ",
       "Run from App. Pass headless = FALSE to run the pipeline on this machine.")
   }
-  options[["launch.browser"]] <- launch.browser
-  if (!is.null(host)) options[["host"]] <- host
-  if (!is.null(port)) options[["port"]] <- port
-
-  golem::with_golem_options(
-    app = shiny::shinyApp(
-      ui = app_ui, server = app_server, onStart = onStart,
-      options = options, enableBookmarking = enableBookmarking, uiPattern = uiPattern
-    ),
-    golem_opts = list(project = project, ...)
-  )
+  opts <- list(launch.browser = launch.browser)
+  if (!is.null(host)) opts$host <- host
+  if (!is.null(port)) opts$port <- port
+  app <- shiny::shinyApp(ui = app_ui, server = app_server, options = opts)
+  app$appOptions$project <- project
+  app
 }
+
+#' @rdname run_app
+#' @export
+RiboPilot <- run_app
 #' Wire one Nextflow run window: start, live progress, graceful stop, close
 #'
 #' Shared by the Update window (`pfx = ""`) and the Reference build window

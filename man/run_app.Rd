@@ -2,34 +2,38 @@
 % Please edit documentation in R/app_run.R
 \name{run_app}
 \alias{run_app}
+\alias{RiboPilot}
 \title{Run the RiboPilot Shiny application}
 \usage{
 run_app(
   project = getwd(),
-  onStart = NULL,
-  options = list(),
-  enableBookmarking = NULL,
-  uiPattern = "/",
   host = NULL,
   port = NULL,
   launch.browser = NULL,
-  headless = NULL,
-  ...
+  headless = NULL
+)
+
+RiboPilot(
+  project = getwd(),
+  host = NULL,
+  port = NULL,
+  launch.browser = NULL,
+  headless = NULL
 )
 }
 \arguments{
-\item{project}{Project directory containing `.sqlite`.}
+\item{project}{Project directory containing `.sqlite` (default: current dir).}
 
-\item{onStart, options, enableBookmarking, uiPattern}{Shiny app options.}
-
-\item{host, port, launch.browser}{Shiny server options.}
+\item{host, port, launch.browser}{Passed to Shiny. To reach the app from
+another computer, pass a `port` and `launch.browser = FALSE`, then open
+an SSH tunnel to that port; the console prints the command.}
 
 \item{headless}{Offer a cluster job script instead of Run from App. `NULL`
 (default) turns it on when a batch scheduler (sbatch, qsub, or bsub) is on
 PATH or the session is RStudio Server; pass `TRUE` or `FALSE` to override.}
-
-\item{...}{Passed to golem options.}
 }
 \description{
-Run the RiboPilot Shiny application
+Launches the R-Shiny app for reviewing and curating a RiboPilot project.
+Run from (or point `project` at) a project directory containing `.sqlite`.
+`RiboPilot()` is the same function.
 }
