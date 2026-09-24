@@ -1303,6 +1303,25 @@ test_that("find_rrna emits the assembler's fasta contract", {
   expect_false(any(grepl("params\\.find_rrna_chunk_size", main_nf)))
 })
 
+test_that("find_rrna_pick stages every scan chunk under its own name", {
+  nf <- readLines(system.file("nextflow", "modules", "find_rrna.nf", package = "RiboPilot"))
+  expect_true(any(grepl("tuple val(id), path(assembly), path(gffs, stageAs: 'chunk_*.gff')", nf, fixed = TRUE)))
+})
+
+test_that("query_samples asks GetOrganelle for one path over max_paths, and sets no cap for 0", {
+  start <- grep("^process query_samples \\{", pipeline_r_nf)
+  end <- start - 1 + which(pipeline_r_nf[start:length(pipeline_r_nf)] == "}")[1]
+  line <- grep("--max-paths-num", pipeline_r_nf[start:end], value = TRUE)
+  expect_length(line, 1)
+  expr <- sub("\\s+AS getOrganelle,\\s*$", "", trimws(line))
+  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "CREATE TABLE assemble_opts (getOrganelle TEXT, max_paths INTEGER)")
+  DBI::dbExecute(con, "INSERT INTO assemble_opts VALUES ('-F anonym', 10), ('-F anonym', 0), ('-F anonym', NULL)")
+  got <- DBI::dbGetQuery(con, paste("SELECT", expr, "AS go FROM assemble_opts ao"))$go
+  expect_equal(got, c("-F anonym --max-paths-num 11", "-F anonym", "-F anonym"))
+})
+
 # ---- rawDir is only required by samples that actually have reads ----
 
 mk_rawdir_project <- function(dir, raw = "NA", r1 = NA_character_) {

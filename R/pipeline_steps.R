@@ -264,8 +264,9 @@ reset_unit_evidence <- function(con, id, path, scaffold) {
 #' Load one sample's published assembly fastas into the database
 #'
 #' Parses `out/<ID>/assemble/<ID>_assembly_*.fasta` (headers
-#' `>ID.path.scaffold topology`), writes per-scaffold rows into `assemblies`,
-#' and updates the per-sample `assemble` summary.
+#' `>ID.path.scaffold topology`), orients each scaffold to the sense strand,
+#' rotates circular units to start in the IGS, writes per-scaffold rows into
+#' `assemblies`, and updates the per-sample `assemble` summary.
 #'
 #' @param con Open DBI connection.
 #' @param out_dir The pipeline `out/` directory.
@@ -365,7 +366,7 @@ load_assemblies <- function(con, out_dir, ID) {
     # nothing left to work with is a failure, not a silently empty sample
     if (nrow(kept) == 0) short_note else NULL,
     if (over(n_paths_raw, lim$max_paths[1]))
-      sprintf("%d paths exceeds max_paths (%d)", n_paths_raw, lim$max_paths[1]),
+      sprintf("%d or more paths exceed max_paths (%d)", n_paths_raw, lim$max_paths[1]),
     if (over(max_per_path_raw, lim$max_scaffolds[1]))
       sprintf("%d scaffolds in a path exceeds max_scaffolds (%d)",
         max_per_path_raw, lim$max_scaffolds[1]))
@@ -398,9 +399,13 @@ load_assemblies <- function(con, out_dir, ID) {
   # used to normalize orientation once per sample; with independent per-scaffold
   # annotation it must happen per scaffold. No-op (unchanged) when no rRNA anchor
   # caller is on PATH or the scaffold has no anchors; length is preserved by RC.
+  # A circular unit (one turn of the tandem array) is also rotated to start in the IGS.
   for (i in seq_len(nrow(df))) {
     or <- tryCatch(orient_rrna_sense(df$sequence[i]), error = function(e) NULL)
     if (!is.null(or) && isTRUE(or$flipped)) df$sequence[i] <- or$seq
+    if (identical(df$topology[i], "circular")) {
+      df$sequence[i] <- tryCatch(rotate_to_igs(df$sequence[i]), error = function(e) df$sequence[i])
+    }
   }
 
   # Carry the curator's keep/drop decisions across a re-assembly. The rows are

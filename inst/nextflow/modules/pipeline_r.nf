@@ -23,7 +23,7 @@ process query_samples {
              COALESCE(po.cpus,4) AS pre_cpus, COALESCE(po.memory,8) AS pre_mem,
              COALESCE(ao.cpus,4) AS asm_cpus, COALESCE(ao.memory,16) AS asm_mem,
              po.fastp AS fastp,
-             ao.getOrganelle || ' --max-paths-num ' || COALESCE(ao.max_paths, 10) AS getOrganelle,
+             ao.getOrganelle || CASE WHEN ao.max_paths > 0 THEN ' --max-paths-num ' || (ao.max_paths + 1) ELSE '' END AS getOrganelle,
              ao.seeds_db, ao.labels_db,
              COALESCE(ao.assembler, 'getorganelle') AS assembler,
              COALESCE(s.Assembly, '') AS Assembly,

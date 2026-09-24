@@ -168,6 +168,7 @@ test_that("too many paths fails the sample instead of keeping the longest", {
   st <- gate_state(con)
   expect_equal(st$assemble_switch, 3L)
   expect_match(st$assemble_notes, "max_paths")
+  expect_match(st$assemble_notes, "3 or more paths exceed max_paths (2)", fixed = TRUE)
   expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(DISTINCT path) n FROM assemblies")$n, 3)
 })
 
@@ -438,4 +439,29 @@ test_that("a re-assembly that changes a unit's sequence clears its old evidence 
   # the unchanged unit keeps everything
   expect_equal(ev("annotations", 2), 1)
   expect_equal(ev("screen", 2), 1)
+})
+
+test_that("a circular unit is rotated to start in the IGS before it is stored", {
+  dir <- withr::local_tempdir()
+  con <- mk_asm_db(dir)
+  on.exit(DBI::dbDisconnect(con))
+  withr::local_seed(1)
+  unit <- paste(sample(c("A", "C", "G", "T"), 1000, TRUE), collapse = "")
+  ad <- file.path(dir, "S1", "assemble")
+  dir.create(ad, recursive = TRUE)
+  writeLines(c(">S1.1.1 circular scaffold_1", unit, ">S1.1.2 linear scaffold_2", unit),
+    file.path(ad, "S1_assembly_1.fasta"))
+  # anchors as called on the unit written twice: its start point cuts 18S
+  local_mocked_bindings(.package = "RiboPilot", call_rrna_anchors = function(fasta, kingdom = "euk")
+    data.frame(seqid = "seq", element = c("18S", "28S", "18S", "28S", "18S"),
+      start = c(1L, 401L, 901L, 1401L, 1901L), stop = c(150L, 800L, 1150L, 1800L, 2000L),
+      strand = "+", model_cov = 100, stringsAsFactors = FALSE))
+
+  RiboPilot:::load_assemblies(con, dir, "S1")
+
+  a <- DBI::dbGetQuery(con, "SELECT scaffold, length, sequence FROM assemblies ORDER BY scaffold")
+  # 28S ends at 800 and the whole 18S starts at 901: the middle of 801..900 is 851
+  expect_equal(a$sequence[1], paste0(substr(unit, 851, 1000), substr(unit, 1, 850)))
+  expect_equal(a$sequence[2], unit)
+  expect_equal(a$length, c(1000L, 1000L))
 })

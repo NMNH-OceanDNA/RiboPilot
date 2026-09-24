@@ -18,6 +18,7 @@ load_assemblies(con, out_dir, ID)
 }
 \description{
 Parses `out/<ID>/assemble/<ID>_assembly_*.fasta` (headers
-`>ID.path.scaffold topology`), writes per-scaffold rows into `assemblies`,
-and updates the per-sample `assemble` summary.
+`>ID.path.scaffold topology`), orients each scaffold to the sense strand,
+rotates circular units to start in the IGS, writes per-scaffold rows into
+`assemblies`, and updates the per-sample `assemble` summary.
 }

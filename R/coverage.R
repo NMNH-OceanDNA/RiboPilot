@@ -63,7 +63,7 @@ write_coverage_units <- function(con, id, depth_file, clips_file = NULL) {
     return(invisible(0L))
   }
   d <- utils::read.table(depth_file, sep = "\t", header = FALSE,
-    col.names = c("ref", "pos", "depth"), stringsAsFactors = FALSE)
+    col.names = c("ref", "pos", "depth"), colClasses = c("character", "integer", "integer"))
   clips <- NULL
   if (!is.null(clips_file) && file.exists(clips_file) && file.size(clips_file) > 0) {
     clips <- utils::read.table(clips_file, sep = "\t", col.names = c("ref", "pos", "n"),

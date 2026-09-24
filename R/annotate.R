@@ -103,6 +103,28 @@ itsx_is_chimeric <- function(pos_lines) {
 #' @noRd
 reconcile_features <- function(bar, its) {
   pick <- function(df, el) if (!is.null(df) && nrow(df) > 0 && any(df$element == el)) df[df$element == el, ][1, ] else NULL
+  if (is.null(bar)) bar <- data.frame()
+  if (nrow(bar) > 0 && "strand" %in% names(bar)) {
+    st <- table(bar$strand[bar$strand %in% c("+", "-")])
+    if (length(st) == 2 && st[[1]] != st[[2]]) bar <- bar[bar$strand %in% names(which.max(st)), , drop = FALSE]
+  }
+  # 18S and 28S are the copies nearest the ITS region, upstream and downstream
+  core <- if (!is.null(its) && nrow(its) > 0) its[its$element %in% c("ITS1", "5.8S", "ITS2"), , drop = FALSE] else data.frame()
+  if (nrow(core) == 0 && nrow(bar) > 0 && any(bar$element == "5.8S")) {
+    core <- bar[bar$element == "5.8S", , drop = FALSE]
+    core <- core[which.max(core$stop - core$start), ]
+  }
+  hub <- if (nrow(core) > 0) (min(core$start) + max(core$stop)) / 2 else NA_real_
+  near <- function(el, side) {
+    d <- if (nrow(bar) > 0) bar[bar$element == el, , drop = FALSE] else data.frame()
+    if (nrow(d) == 0) return(NULL)
+    if (is.na(hub)) return(d[which.max(d$stop - d$start), ])
+    if (side == "up") d <- d[d$start < hub, , drop = FALSE]
+    if (side == "down") d <- d[d$stop > hub, , drop = FALSE]
+    if (nrow(d) == 0) return(NULL)
+    d[which.min(switch(side, up = hub - d$start, down = d$start - hub,
+      abs((d$start + d$stop) / 2 - hub))), ]
+  }
   feats <- list()
   add <- function(element, start, stop, tool, strand = NA_character_, model_cov = NA_real_) {
     if (is.null(start) || is.null(stop) || is.na(start) || is.na(stop) || stop < start) {
@@ -114,9 +136,9 @@ reconcile_features <- function(bar, its) {
       model_cov = as.numeric(model_cov), tool = tool, stringsAsFactors = FALSE)
   }
 
-  b18 <- pick(bar, "18S"); i18 <- pick(its, "18S")
-  b58 <- pick(bar, "5.8S"); i58 <- pick(its, "5.8S")
-  b28 <- pick(bar, "28S"); i28 <- pick(its, "28S")
+  b18 <- near("18S", "up"); i18 <- pick(its, "18S")
+  b58 <- near("5.8S", "at"); i58 <- pick(its, "5.8S")
+  b28 <- near("28S", "down"); i28 <- pick(its, "28S")
   its1 <- pick(its, "ITS1"); its2 <- pick(its, "ITS2")
 
   s18 <- b18 %||% i18
@@ -363,6 +385,33 @@ orient_rrna_sense <- function(seq, kingdom = "euk") {
     return(list(seq = rc, flipped = TRUE))
   }
   list(seq = seq, flipped = FALSE)
+}
+
+#' Rotate a circular rDNA unit so it starts in the IGS
+#'
+#' Position 1 becomes the middle of the stretch from the end of 28S to the
+#' start of the next 18S. Anchors are called on the unit written twice, so a
+#' gene cut by the current start point is still seen whole once. Returned
+#' unchanged when no plus-strand 28S precedes an 18S.
+#' @param seq Sense-strand sequence of one circular unit.
+#' @param kingdom Anchor-caller kingdom (default "euk").
+#' @return The rotated sequence, same length.
+#' @noRd
+rotate_to_igs <- function(seq, kingdom = "euk") {
+  L <- nchar(seq)
+  fa <- tempfile(fileext = ".fasta")
+  on.exit(unlink(fa), add = TRUE)
+  writeLines(c(">seq", paste0(seq, seq)), fa)
+  bar <- call_rrna_anchors(fa, kingdom = kingdom)
+  if (is.null(bar) || nrow(bar) == 0) return(seq)
+  bar <- bar[bar$strand %in% "+", , drop = FALSE]
+  end28 <- bar$stop[bar$element == "28S"]
+  s18 <- bar[bar$element == "18S" & vapply(bar$start, function(x) any(end28 < x), logical(1)), , drop = FALSE]
+  if (nrow(s18) == 0) return(seq)
+  g <- s18[which.max(s18$stop - s18$start), ]
+  e <- max(end28[end28 < g$start])
+  s <- (e + (g$start - e - 1L) %/% 2L) %% L + 1L
+  if (s == 1L) seq else paste0(substr(seq, s, L), substr(seq, 1L, s - 1L))
 }
 
 #' Annotate the nuclear rDNA feature model on a single sequence (all in R)
