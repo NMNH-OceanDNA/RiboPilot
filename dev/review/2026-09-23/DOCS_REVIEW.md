@@ -226,19 +226,21 @@ The task named install prerequisites, troubleshooting, a glossary, NEWS, and cit
 - Problem: The list is R, Nextflow, and "the bioinformatics tools, only if you are not running in a container". The supported route needs Docker (usable without sudo) or Singularity/Apptainer, plus Java 17+, and neither is on the list. Step 0 gives no Nextflow version; the linked install page gives 26.x today, which RiboPilot then pins to 25.10.6 by downloading that engine into NXF_HOME (this fails on a compute node with no internet). Nothing says Docker Desktop must be running, that Linux users need the docker group, that `nextflow` must be on the PATH that R sees, or that the first run pulls a 2.6 GB image (7.7 GB on disk).
 - Why it matters: A new user cannot tell what to install, and the first run surprises them with a long download or a failed version pin.
 - Fix: Add a "Before you start" checklist per operating system: Docker or Singularity/Apptainer, Java 17+, Nextflow with `export NXF_VER=25.10.6` in the shell profile, and R >= 4.4, each with a link and a one-line check (`docker run hello-world`, `java -version`, `nextflow -v`). Say the image is pulled once, on the first run.
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 
 <a id="doc-02"></a>**DOC-02. Supported operating systems are never stated.** Major (lowered from blocker by the verifier). Confirmed. ids: D-novice-5. Seen by 1 (docs-novice).
 - Where: README Installation; `vignettes/RiboPilot.Rmd` Step 0.
 - Problem: RiboPilot calls `bash` and uses `$(id -u)` in the Docker config, and Nextflow does not run natively on Windows, so Windows works only through WSL2 with R inside WSL. The image is amd64 only, so Apple Silicon Macs run it under emulation.
 - Why it matters: A Windows user installs R for Windows and gets stuck with no explanation.
 - Fix: Add "Supported computers": Linux and macOS (with a note on emulation on Apple Silicon), Windows only through WSL2 with R inside WSL, and clusters through Singularity/Apptainer.
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 
 <a id="doc-03"></a>**DOC-03. No hardware, disk, or run-time guidance, and the default resource requests stop small machines.** Major (D-novice-4 lowered from blocker by the verifier). Confirmed. ids: D-novice-4, D-hpc-12, D-intermediate-10, D-editor-6 (part). Seen by 4 (docs-editor, docs-hpc, docs-intermediate, docs-novice).
 - Where: README Installation; Get started Step 0 and Step 4; `R/init_db.R:49-50, 192-193`; `inst/nextflow/nextflow.config` (retry rule).
 - Problem: Every project, including the practice project, asks for 6 CPUs and 24 GB per assembly and 4 CPUs and 16 GB for read cleaning. A task that runs out of memory is retried with more (48, then 72 GB) up to 3 times and then quietly skipped. On the local executor that the docker profile uses, a task larger than the machine is refused ("Process requirement exceeds available memory"), and that ends the whole run, even under errorStrategy 'ignore' (the verifier re-ran this). No doc gives CPU, RAM, disk, or time figures.
 - Why it matters: On a typical 4-core, 16 GB laptop the practice project cannot run as shipped, and nobody can plan an 80-sample project.
 - Fix: Add a "Planning a project" table: minimum and recommended machine (for example 8 cores, 32 GB RAM, 20 GB free disk), per-sample needs, and measured times from this review (practice project about 16 min for 12 samples; order-level reference builds about 1.5 min; a Gastropoda-wide build about 8 min for 51,311 records). Say how to lower CPUs and Memory in the Assemble step's Assembly Options. Consider small defaults for the practice project, or `process.resourceLimits` in `config.docker`.
-- Status: the code half (PIPE-H2) is fixed: oversized requests are capped at the machine's size instead of ending the run. The hardware table is still to be written. See [Fixed on this branch](REVIEW_SUMMARY.md#fixed-on-this-branch-after-the-review).
+- Status: fixed on `review/2026-09-full-review`. The code half (PIPE-H2) caps oversized requests at the machine's size, and the Installation page now gives the measured run time, disk use, and the resource cap. See [Fixed on this branch](REVIEW_SUMMARY.md#fixed-on-this-branch-after-the-review).
 - See also: [CODE_REVIEW.md](CODE_REVIEW.md) PIPE-H2
 
 <a id="doc-04"></a>**DOC-04. No "Running on a cluster" page: opening the app on a login node, the head-job script, and shared storage.** Major. Confirmed. ids: D-hpc-6, D-intermediate-9, D-hpc-19, D-hpc-21. Seen by 2 (docs-hpc, docs-intermediate).
@@ -251,6 +253,7 @@ The task named install prerequisites, troubleshooting, a glossary, NEWS, and cit
   - The app has no login and listens on 127.0.0.1, which every user on a shared login node can reach.
 - Why it matters: For a Slurm or SGE user this is where the docs run out. A research computing engineer had to read the code to get a working cluster run.
 - Fix: New article "Running on a cluster": (1) build a profile with `generate_config()` (worked example), or use `NMNH_Hydra` / `NOAA_SEDNA` as-is; (2) keep the project, reads, and R library on shared storage; (3) open the app with `port` and `launch.browser = FALSE` and tunnel to it; (4) press Update, check partition, account, and walltime in the job script, then Submit as job; (5) where logs go; (6) the app needs singularity or docker on its own node and should share the jobs' image cache; (7) warn that Run from App stops when the browser closes, and that the port is open to other users on the node. Build the job header from the profile's queue and cluster options.
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 - See also: [UX-79](USABILITY_REVIEW.md#ux-79); [CODE_REVIEW.md](CODE_REVIEW.md) PIPE-M14, PIPE-L2, APP-L5
 
 <a id="doc-05"></a>**DOC-05. Nothing says where caches and big files go, how big they get, or how to move them.** Major. Confirmed. ids: D-hpc-4, D-novice-23, D-intermediate-27. Seen by 3 (docs-hpc, docs-intermediate, docs-novice).
@@ -264,6 +267,7 @@ The task named install prerequisites, troubleshooting, a glossary, NEWS, and cit
   - Generated profiles and SEDNA also lack the `pullTimeout` that Hydra needed (60 min).
 - Why it matters: On clusters with small home quotas the first run or reference build fails on a full disk, and users cannot budget space.
 - Fix: Add a "Disk space and caches" table (path, default, env var or argument to move it, typical size). Recommend `container_cache` or `NXF_SINGULARITY_CACHEDIR` on project or scratch space, `SINGULARITY_CACHEDIR` and `SINGULARITY_TMPDIR` off home, and `RIBOPILOT_REF_DIR` in the lab's `.Renviron`. Name `RiboPilot::ribopilot_ref_dir()` in the Reference guide. Add `pullTimeout` to generated profiles.
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 - See also: [CODE_REVIEW.md](CODE_REVIEW.md) PIPE-L2, REF-L15
 
 <a id="doc-06"></a>**DOC-06. No guidance on which steps need internet, or on compute nodes without it.** Major. Confirmed. ids: D-hpc-5. Seen by 1 (docs-hpc).
@@ -271,6 +275,7 @@ The task named install prerequisites, troubleshooting, a glossary, NEWS, and cit
 - Problem: The Nextflow head pulls the image, downloads the pinned Nextflow, and stages the default seeds URL. Compute-node tasks call NCBI in `blast_ref_fetch` (efetch), `score` (seed download), remote BLAST when the panel cannot name a hit, and the Reference-tab count and build jobs. The R session downloads the taxonomy from ftp.ncbi.nlm.nih.gov. A working offline recipe (a pre-pulled SIF passed by absolute path as `container`, NXF_VER set and run once online, local seeds) was tested but is not written down.
 - Why it matters: On a firewalled cluster an admin has to read the code to know what to open.
 - Fix: Add a "Network access" list (what, from which node, which hosts) and the tested offline recipe. Warn that Reference builds and GenBank fetches need NCBI from compute nodes.
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 
 <a id="doc-07"></a>**DOC-07. Nothing explains what an upgrade does to existing projects.** Major. Confirmed. ids: D-hpc-7. Seen by 1 (docs-hpc).
 - Where: `docker/README.md:58-64`; `README.Rmd:62-65`.
@@ -284,6 +289,7 @@ The task named install prerequisites, troubleshooting, a glossary, NEWS, and cit
 - Problem: Not explained anywhere: the five pipeline states (On hold, Ready to run, In progress, Success, Failed) and the State button; that one failed sample does not stop a run; the "Resume previous run?" box; the Work Dirs button; where `.nextflow.log` and job logs live; how to re-queue a failed sample; what "No taxonomy-locked samples", "Needs a database", or "No rawDir set" mean. The GNUTLS box that closes Get started applies only to the unsupported conda route (the image ships BLAST >= 2.12).
 - Why it matters: When something fails, users have no path forward except reading code or asking the author. Every failed run in this review also ended with a green "Done".
 - Fix: Add a Troubleshooting article with a "When something fails" routine (Notes column, Work Dirs, logs, set State to Ready to run, Update with Resume on) and a "Common errors" table (message, meaning, fix). The op-edge sweep and the usability review's error table are ready-made sources. Move the GNUTLS box there, labelled "conda only".
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 - See also: [UX-15](USABILITY_REVIEW.md#ux-15), [UX-42](USABILITY_REVIEW.md#ux-42), [UX-54](USABILITY_REVIEW.md#ux-54), [UX-55](USABILITY_REVIEW.md#ux-55)
 
 <a id="doc-09"></a>**DOC-09. The mapping-file rules are not written down.** Major. Confirmed. ids: D-intermediate-6, D-novice-22, O-novel-8, O-edge-26, O-edge-27 (part), D-editor-17 (part). Seen by 5 (docs-editor, docs-intermediate, docs-novice, op-edge, op-novel).
@@ -298,6 +304,7 @@ The task named install prerequisites, troubleshooting, a glossary, NEWS, and cit
   - There is no example table. (The optional Assembly column itself is documented under "Already have an assembly?".)
 - Why it matters: IDs end up in GenBank records, and most wrong guesses produce raw R errors.
 - Fix: Add a "Mapping file" reference section with a 3-row example CSV (one row using a subfolder), the ID rules, path rules, reserved column names, and how names are rewritten. Point to the practice project's `mapping.csv`. In code, treat missing R1 and R2 columns as blank when an Assembly column exists.
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 - See also: [UX-03](USABILITY_REVIEW.md#ux-03), [UX-06](USABILITY_REVIEW.md#ux-06), [UX-55](USABILITY_REVIEW.md#ux-55); [CODE_REVIEW.md](CODE_REVIEW.md) DB-L5, DB-L6, DB-L15
 
 <a id="doc-10"></a>**DOC-10. Where outputs land, and what can be deleted, is not documented.** Major. Confirmed. ids: D-intermediate-11. Seen by 1 (docs-intermediate).
@@ -305,12 +312,14 @@ The task named install prerequisites, troubleshooting, a glossary, NEWS, and cit
 - Problem: The docs show only the export tree. The project also holds `.sqlite` (all results), `.config`, `.taxonomy/`, `out/<ID>/` (fastp reports and assemblies), `work/` (large Nextflow intermediates needed for resume), and the job-script and log folders. Most are hidden dotfiles.
 - Why it matters: Users do not know what to back up or what they can delete when disk runs low.
 - Fix: Add a "Project folder" section: each item, what it is for, what to back up (`.sqlite`, `.config`, `mapping.csv`), and what is safe to delete (`work/` once results are locked, noting that resume needs it).
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 
 <a id="doc-11"></a>**DOC-11. There is no way to add samples to an existing project, and the docs do not say so.** Major. Confirmed. ids: D-intermediate-13. Seen by 1 (docs-intermediate).
 - Where: `man/new_project.Rd` (force); `vignettes/RiboPilot.Rmd` Step 3.
 - Problem: MitoPilot has `add_samples()`; RiboPilot has nothing like it, and `force = TRUE` deletes all results.
 - Why it matters: Studies sequenced in batches have no documented path, and may lose work with `force = TRUE`.
 - Fix: State the limit and a recommended approach (one project per batch), or port `add_samples()`.
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 
 <a id="doc-12"></a>**DOC-12. No NEWS, no citation, and no tool-version list for methods sections.** Major. Confirmed. ids: D-intermediate-14, D-domain-21, D-editor-17. Seen by 3 (docs-domain, docs-editor, docs-intermediate).
 - Where: repo root (no `NEWS.md`, no `inst/CITATION`, no `CITATION.cff`); README "Behind the scenes"; `vignettes/Curation-Flags.Rmd:137-139`; `docker/Dockerfile`.
@@ -331,6 +340,7 @@ The task named install prerequisites, troubleshooting, a glossary, NEWS, and cit
   - Work Dirs, the CSV downloads, and the headless Submit as job / Save script route.
 - Why it matters: Users learn the app by trial and error, and several of these controls change what gets exported.
 - Fix: Add an "App tour" (or fold it into the rewritten walkthrough) with one screenshot per step and a short table per step: toolbar buttons, key columns, and the details window. The "Screenshots for the docs" section below has 15 ready candidates.
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 - See also: [UX-51](USABILITY_REVIEW.md#ux-51), [UX-53](USABILITY_REVIEW.md#ux-53)
 
 <a id="doc-14"></a>**DOC-14. No glossary; sample, path, scaffold, unit, and record are never tied together.** Minor. Confirmed. ids: D-novice-36, D-intermediate-23. Seen by 2 (docs-intermediate, docs-novice).
@@ -338,6 +348,7 @@ The task named install prerequisites, troubleshooting, a glossary, NEWS, and cit
 - Problem: Undefined terms include genome skim, ETS, IGS, SSU, LSU, taxid, container, executor, profile, headless, R1/R2, scaffold, path, unit, seeds and labels database, core_nt, stock ITSx, Portal, defline, source modifiers, feature table, isomer, paralog, and rung. Annotation Review and Export rows are units (ID, path, scaffold); one sample can export several records named `ID_p<path>_s<scaffold>`, each with an automatic `[isolate=]`. Only tooltips explain this.
 - Why it matters: Novices stall on vocabulary, and the several-records-per-sample idea surprises users at export.
 - Fix: Add a short Glossary article, link terms on first use, and add a "Samples, scaffolds, and records" paragraph to Get started.
+- Status: partly fixed on `review/2026-09-full-review` (docs rewrite): Get started ties sample, path, scaffold, unit, and record together. A glossary page is still open.
 
 ## Proposed outline for the published site
 
@@ -455,7 +466,7 @@ Items are grouped by the page they mostly affect; the Where line gives every pla
   - The README's conda link now redirects to an Anaconda concepts page, not install steps.
 - Why it matters: Novices follow the only concrete commands they see, which lead to the unsupported path, and a user who keeps the default gets a run where every sample fails (fastp not found).
 - Fix: Default `executor` to "docker" (or make it required) and warn once on conda; then delete the four notes. Change the Nextflow hint to `export NXF_VER=25.10.6`. Move all conda material into one "Installing tools without a container (unsupported)" article. Keep the README short and link to Get started for detail.
-- Status: partly fixed on `review/2026-09-full-review`. The default is now docker, conda warns, and the "still defaults to conda" sentences are gone from README, Get started, and Reference databases. Moving the conda material off the main path is still open. See [Fixed on this branch](REVIEW_SUMMARY.md#fixed-on-this-branch-after-the-review).
+- Status: fixed on `review/2026-09-full-review`. The default is docker, conda warns, and all conda material is now on one page marked unsupported (Installing tools without a container), with the known gaps. See [Fixed on this branch](REVIEW_SUMMARY.md#fixed-on-this-branch-after-the-review).
 - See also: [UX-04](USABILITY_REVIEW.md#ux-04); [CODE_REVIEW.md](CODE_REVIEW.md) PIPE-M11
 
 ### README (home page)
@@ -484,7 +495,7 @@ Items are grouped by the page they mostly affect; the Where line gives every pla
   - The site URL, every Source link, the GitHub navbar icon, BugReports, the issue links, and the in-app Help link all 404 as well.
 - Why it matters: Every pre-release tester stops here, and the first practice run looks as if it succeeded.
 - Fix: Treat "repo public and Pages deployed" as a release gate. Ship the fish seeds and labels as checksummed release assets, or inside the package or image, not as a main-branch raw URL. Until then, add a short "Private preview" note (set `GITHUB_PAT`; pass local seeds), and report 404s as "not found or private" rather than a slow connection.
-- Status: the fish-reference half is deferred by the author (2026-09-24): most users will build their own reference databases, so shipping the built-in fish reference is not a release gate. The repo-public half (site URL, Source links, BugReports, Help link) still applies.
+- Status: the fish-reference half is deferred by the author (2026-09-24): most users will build their own reference databases, so shipping the built-in fish reference is not a release gate. The Installation page now has a private-preview note on `GITHUB_PAT` and the unreachable fish reference, to delete at release. The repo-public half (site URL, Source links, BugReports, Help link) still applies.
 - See also: [UX-11](USABILITY_REVIEW.md#ux-11); [CODE_REVIEW.md](CODE_REVIEW.md) SCI-M9, REF-L4, REF-L9
 
 <a id="doc-20"></a>**DOC-20. The README says the taxonomy lock gates assembly; the pipeline does not check it.** Major. Confirmed. ids: D-intermediate-4, D-editor-5, D-appclaims-2, D-api-5 (part). Seen by 4 (docs-api, docs-appclaims, docs-editor, docs-intermediate).
@@ -492,6 +503,7 @@ Items are grouped by the page they mostly affect; the Where line gives every pla
 - Problem: Every sample starts queued (`assemble_switch = 1`). The pipeline's sample query and the Update count select on `assemble_switch` and `assemble_lock` only, so `run_assembly()` or Update assembles samples whose taxonomy is unlocked or unresolved; only the Assemble table hides them. In a fresh project the Assemble table shows 0 rows while Update offers "2 sample(s) to update".
 - Why it matters: Samples assemble with no lineage (fish seeds, generic ruleset, contaminant_unchecked), and the user cannot see them in the table.
 - Fix: Add `s.taxonomy_lock = 1` to the sample query and `nf_pending_count()` (preferred: it makes the README true), or reword the README to say the Assemble table lists only taxonomy-locked samples.
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 - See also: [UX-09](USABILITY_REVIEW.md#ux-09)
 
 <a id="doc-21"></a>**DOC-21. The Hydra section is out of date: the app runs hydra_setup() itself.** Minor. Confirmed. ids: D-novice-32, D-editor-25, D-hpc-17, D-api-25. Seen by 4 (docs-api, docs-editor, docs-hpc, docs-novice).
@@ -499,12 +511,14 @@ Items are grouped by the page they mostly affect; the Where line gives every pla
 - Problem: The README and help say to call `hydra_setup()` "once per session, before launching the app", but `run_app()` calls `ensure_hydra_setup()` when it detects Hydra without qsub. The head-job script runs `source ~/.bashrc`, `module load java`, then bare `nextflow`, so Nextflow must be on PATH through `~/.bashrc` or `~/bin`; the README does not say this. Institution-specific content also sits on the public landing page.
 - Why it matters: Hydra users do a step they do not need and miss the one that matters.
 - Fix: Say the app applies the setup itself and `hydra_setup()` is only for console runs; say where to install Nextflow on Hydra; move the section to the cluster article.
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 
 <a id="doc-22"></a>**DOC-22. README.md has a paragraph that README.Rmd lacks.** Minor. Confirmed. ids: D-hpc-13, D-novice-33, D-editor-19, D-api-27 (part). Seen by 4 (docs-api, docs-editor, docs-hpc, docs-novice).
 - Where: `README.md:173-175` vs `README.Rmd:96-107`.
 - Problem: The "By default this fetches small rDNA-filtered read subsets ... so setup takes seconds" paragraph (with `full_size`) exists only in the generated README.md, which pkgdown uses for the home page.
 - Why it matters: The next knit of README.Rmd silently drops it.
 - Fix: Move it into README.Rmd and re-knit. Mention the one-time 2.6 GB image pull there, so "seconds" is not misleading.
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 - See also: [CODE_REVIEW.md](CODE_REVIEW.md) PKG-L8
 
 <a id="doc-23"></a>**DOC-23. The repeat diagram puts LSU under 5.8S, draws ETS as a gene, and has no key.** Minor. Confirmed. ids: D-domain-17, D-editor-23, D-novice-39. Seen by 3 (docs-domain, docs-editor, docs-novice).
@@ -512,12 +526,14 @@ Items are grouped by the page they mostly affect; the Where line gives every pla
 - Problem: "LSU" sits at columns 24-26, under 5.8S, not under 28S (columns 34-44), and "SSU" straddles the ETS/18S boundary. ETS is drawn with `=` like a gene. IGS (which holds the NTS and the next unit's 5' ETS), the separate 5S array in animals, SSU, LSU, and "ITS" are never defined. The 81-character line scrolls sideways at both 1400 px and 390 px.
 - Why it matters: It is the site's first picture of the biology, and a specialist reader will notice at once.
 - Fix: Put LSU under 28S, draw ETS as a spacer, put "(repeated hundreds of times)" on its own line, and add a one-line key: SSU = 18S, LSU = 28S, ITS = ITS1-5.8S-ITS2, IGS = NTS + ETS, and 5S is a separate array in animals.
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 
 <a id="doc-24"></a>**DOC-24. The taxonomy snapshot's size and time are understated, and its download can time out.** Minor. Confirmed. ids: D-hpc-15, D-novice-29, D-editor-36. Seen by 3 (docs-editor, docs-hpc, docs-novice).
 - Where: `README.Rmd:44` ("~72 MB ... about a minute"); `R/tax_index.R:91` ("a few minutes"); `R/taxonomy.R:84-95`.
 - Problem: Each project stores a 76-80 MB tarball plus a 382-400 MB SQLite index, about 0.5 GB. The app says indexing takes "a few minutes"; the README says "about a minute". `ensure_taxdump()` keeps R's 60 s download timeout, so Assign Taxonomy can fail on links slower than about 1.3 MB/s (read from the code; other downloads raise the timeout).
 - Why it matters: Users under-budget disk and cannot explain a timeout on a slow link.
 - Fix: Say "about 80 MB download and about 0.5 GB per project; indexing takes a few minutes the first time". Raise the timeout the way `download_or_stop()` does.
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 - See also: [CODE_REVIEW.md](CODE_REVIEW.md) REF-L15
 
 <a id="doc-25"></a>**DOC-25. The Nextflow version claim and hint point the wrong way.** Minor. Confirmed. ids: D-novice-31, D-intermediate-32. Seen by 2 (docs-intermediate, docs-novice).
@@ -539,6 +555,7 @@ Items are grouped by the page they mostly affect; the Where line gives every pla
 - Problem: Pandoc's smart typography turns the straight quotes in README.Rmd into curly quotes (U+2019, U+201C, U+201D) in README.md, which pkgdown and GitHub show as the home page, for example in "your lab's server" and "genome skim".
 - Why it matters: The landing page breaks the ASCII-only house style and drifts further from its source.
 - Fix: Knit with `md_extensions: -smart` on the `github_document` output.
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 - See also: [CODE_REVIEW.md](CODE_REVIEW.md) PKG-L8
 
 Also on this page: [DOC-28](#doc-28) (the "What RiboPilot does" order), [DOC-54](#doc-54) (rulesets sentence), [DOC-16](#doc-16) (conda recipe), [DOC-29](#doc-29) ("Already have an assembly?" summary), [DOC-98](#doc-98) (link text).
@@ -554,6 +571,7 @@ Also on this page: [DOC-28](#doc-28) (the "What RiboPilot does" order), [DOC-54]
   - The app's own run path (Update, then Run from App; the Assembler option for rescue; Assign Group and Export Data) is not described, and the console route skips the app's guards (the missing-reference-database block and the pending-group warning).
 - Why it matters: Nine of the ten reviewers reported it, including all three operators. It is the main reason nobody could finish from the docs, and it goes against the goal of an app-first guide.
 - Fix: Rewrite Steps 2 to 9 around the app: `new_project()`, open the app, then 1 Taxonomy (Assign Taxonomy, review Confidence, Edit Taxonomy, Lock); 2 Reference (Propose groups, Apply, Set up database, Run from App; ray-finned fishes can skip); 3 Assemble (Update, Run from App, review, Triage, Keep/Drop, Lock); 4 Annotation Review (warnings, Reviewed/Problematic/Partial, trim, Lock); 5 Export (Assign Group, Export Data, templates). One screenshot per step. Move `run_assembly()`, `run_fallback()`, `build_reference_db()`, and `export_project()` into an "Advanced: scripting" article.
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 - See also: [UX-49](USABILITY_REVIEW.md#ux-49), [UX-09](USABILITY_REVIEW.md#ux-09)
 
 <a id="doc-29"></a>**DOC-29. The documented "Already have an assembly?" route fails on every generate_config() Singularity profile.** Blocker. Confirmed. ids: D-hpc-1. Seen by 1 (docs-hpc).
@@ -568,12 +586,14 @@ Also on this page: [DOC-28](#doc-28) (the "What RiboPilot does" order), [DOC-54]
 - Problem: Every other call uses `RiboPilot::` and no page calls `library(RiboPilot)`, so this line fails with 'could not find function "RiboPilot"' at the step that opens the app. The "at a glance" block also uses `project` without defining it.
 - Why it matters: The single most important command in the guide fails.
 - Fix: Use `RiboPilot::RiboPilot("~/my_project")`, and add `project <- "~/my_project"` at the top of the summary block.
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 
 <a id="doc-31"></a>**DOC-31. The NCBI API key: the placeholder is sent to NCBI if left in, and the environment variable is ignored.** Major (D-novice-6 lowered from blocker by the verifier; D-editor-22 and O-practice-21 minor). Confirmed. ids: D-novice-6, D-editor-22, O-practice-21. Seen by 3 (docs-editor, docs-novice, op-practice).
 - Where: `vignettes/RiboPilot.Rmd:195` (`ncbi_api_key = "PASTE_YOUR_KEY_HERE"`); `R/init_project.R:181`; the practice project's `.config`.
 - Problem: The key is optional, but the example includes a fake value and never says to delete the line. `new_project()` writes it verbatim into `.config`, and it is exported as NCBI_API_KEY. NCBI answers HTTP 400 "API key invalid" to every request that carries it (reference fetch, Reference-tab counts, and builds). The guide also says you paste the key when creating a project, but the Step 1 command has no key argument, and `new_project()` does not read `NCBI_API_KEY` from the environment (the reference build and the app do), so the practice project's `.config` gets an empty key.
 - Why it matters: A user without a key silently breaks every NCBI lookup.
 - Fix: Comment the line out with "optional: delete this line if you have no key", and check the key format in `new_project()`. Default `ncbi_api_key` to `Sys.getenv("NCBI_API_KEY")`, as the reference code already does.
+- Status: docs half fixed on `review/2026-09-full-review` (docs rewrite): no placeholder key in any page, and Installation recommends `NCBI_API_KEY` in `~/.Renviron`. The code default is still open.
 - See also: [UX-07](USABILITY_REVIEW.md#ux-07)
 
 <a id="doc-32"></a>**DOC-32. Step 2 sends non-fish users to an unsupported console build before the project exists.** Major (D-novice-7 lowered from blocker by the verifier; O-practice-20 polish). Confirmed. ids: D-novice-7, D-intermediate-16, O-practice-20, D-editor-21 (part). Seen by 4 (docs-editor, docs-intermediate, docs-novice, op-practice).
@@ -581,6 +601,7 @@ Also on this page: [DOC-28](#doc-28) (the "What RiboPilot does" order), [DOC-54]
 - Problem: The console build uses `conda_env = "ribopilot"` and needs Entrez Direct and biopython on the host; on the supported Docker setup it stops with "Could not locate conda env". It is shown first, and the supported route only as a trailing note (Step 0 does name Step 2 as the one place `conda_env` is used). The note points to the Reference tab, but that needs a project (Step 3) with assigned taxonomy, and Step 3 then uses `db$seeds`, which does not exist on the app route. The gastropod example matches 51,311 records (about twice the app's 25,000 ceiling) and took about 8 minutes.
 - Why it matters: Non-fish users either fail on Docker or take an unsupported route with an oversized database.
 - Fix: For container users: create the project without reference options, then do Taxonomy and Reference in the app. Move the console build to the scripting article, with a narrower example query and its size and time.
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 
 <a id="doc-33"></a>**DOC-33. "If your samples are fish" should say ray-finned fishes.** Polish. Confirmed. ids: D-domain-24. Seen by 1 (docs-domain).
 - Where: `vignettes/RiboPilot.Rmd:143-144`.
@@ -593,12 +614,14 @@ Also on this page: [DOC-28](#doc-28) (the "What RiboPilot does" order), [DOC-54]
 - Problem: "Add these two lines inside the parentheses" (`custom_seeds_db = db$seeds,` ...) needs a comma after the previous argument, and `db` is gone after an R restart. The executor alert sits after "Already have an assembly?", far from the call it explains.
 - Why it matters: Copy and paste fails for novices.
 - Fix: Show complete calls with file paths (or note that re-running `build_reference_db()` returns the existing paths), and move the alert next to the call.
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 
 <a id="doc-35"></a>**DOC-35. The practice project leaves the reader without a next step, and its samples are unexplained.** Major. Confirmed. ids: D-novice-13, D-appclaims-18, D-domain-22, O-practice-19, D-api-26, D-intermediate-19 (part), D-editor-21 (part). Seen by 7 (docs-api, docs-appclaims, docs-domain, docs-editor, docs-intermediate, docs-novice, op-practice).
 - Where: `vignettes/RiboPilot.Rmd:121-138`; `README.Rmd:96-107`; `man/new_test_project.Rd:49` ("the bundled 10-sample test set"); `R/init_project.R:199-200`.
 - Problem: After Step 1 the guide switches to `~/my_project` and Steps 2-3, which practice users should skip, and never says "now open the app with this path". The project has 12 samples: 10 real SRA subsets plus the synthetic CHIM00 (a copy of an SRR22396758 scaffold) and CHIM01 (that fish rDNA joined to Penicillium). Both are labelled "Upeneus parvus", nothing in the mapping file marks them synthetic, and they export with real-looking GenBank headers (">CHIM00 [organism=Upeneus parvus] ... complete sequence"). No doc says what to expect from them. The help says "the bundled 10-sample test set" while the console prints "Fetching 12 test sample(s)". SRR22396893 has very thin data (about 0.6x) and fails. The command ends with "Please open and review the .config file", a hidden file that needs no edits for Docker.
 - Why it matters: The practice project is the first thing users run, and they cannot tell expected results from errors.
 - Fix: Add a short practice walkthrough (create, open the app with `~/ribopilot_test`, the five steps) and a "What you should see" box: CHIM01 is caught as off_target with a junction near 2,625 bp, CHIM00 is clean, and SRR22396893 fails and is the rescue example. Say 12 samples (10 downloaded plus 2 synthetic). Mark CHIM00 and CHIM01 as synthetic in the mapping file and leave them out of export by default. Drop or reword the `.config` message.
+- Status: docs half fixed on `review/2026-09-full-review` (docs rewrite): Get started explains the 12 samples and ends with next steps, and the new_test_project() help says 12 samples. The "Next: open the app" message at the end of new_project() is still open.
 - See also: [UX-11](USABILITY_REVIEW.md#ux-11)
 
 <a id="doc-36"></a>**DOC-36. Closing a run window or the browser tab stops the run, but the docs say you can keep working or come back later.** Major (D-novice-11 rated minor). Confirmed. ids: D-appclaims-6, D-novice-11. Seen by 2 (docs-appclaims, docs-novice).
@@ -606,6 +629,7 @@ Also on this page: [DOC-28](#doc-28) (the "What RiboPilot does" order), [DOC-54]
 - Problem: The build window is a modal that covers the app, and its Close asks "Stop the build?". Closing or reloading the tab kills both the reference build and an Update run, and the app stops 5 s after the last session closes. "Come back later" is true only for the console route.
 - Why it matters: Users lose long runs by closing a laptop lid or a tab, and a dropped SSH tunnel kills a cluster run started from the app. One reviewer's first Singularity run died this way when the driving browser tab closed.
 - Fix: Warn in the Assemble and Reference steps: keep the window and tab open and the computer awake; for long runs use the cluster Submit as job route; if it closes, press Update again with Resume on. Better, keep runs alive after the session ends.
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 - See also: [UX-43](USABILITY_REVIEW.md#ux-43); [CODE_REVIEW.md](CODE_REVIEW.md) APP-M1, REF-L17
 
 <a id="doc-37"></a>**DOC-37. Step 5 rescue: the app route is undocumented, and run_fallback() re-assembles good samples.** Major. Confirmed. ids: D-appclaims-8, O-practice-10, D-novice-10 (part), D-intermediate-16 (part). Seen by 4 (docs-appclaims, docs-intermediate, docs-novice, op-practice).
@@ -613,6 +637,7 @@ Also on this page: [DOC-28](#doc-28) (the "What RiboPilot does" order), [DOC-54]
 - Problem: The guide shows only `run_fallback()`. In the app the rescue is: Assembly Options cell, type a new set name, choose "SPAdes, baited to the seed DB", Save, Update. `run_fallback()` picks any unlocked sample with a failed assembly OR any unit missing 18S or 28S, so a sample with one complete unit plus one fragment (SRR33849683 in the practice project) is re-assembled with the bait assembler. Failed rows say only "see Notes", with no hint to try the fallback.
 - Why it matters: Users either miss the rescue or re-assemble good samples.
 - Fix: Document the app route with a screenshot (docs_10 below). Restrict `fallback_candidates()` to samples with no complete kept unit. Have failed-sample notes say "Try the baited SPAdes assembler in Assembly Options".
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 - See also: [UX-15](USABILITY_REVIEW.md#ux-15), [UX-16](USABILITY_REVIEW.md#ux-16), [UX-17](USABILITY_REVIEW.md#ux-17); [CODE_REVIEW.md](CODE_REVIEW.md) PIPE-H5
 
 <a id="doc-38"></a>**DOC-38. The Assemble-step instructions describe controls and re-runs that do not exist.** Major. Confirmed. ids: D-appclaims-5. Seen by 1 (docs-appclaims).
@@ -620,6 +645,7 @@ Also on this page: [DOC-28](#doc-28) (the "What RiboPilot does" order), [DOC-54]
 - Problem: The guide says to "switch to an alternative reconstruction or adjust the exact endpoints" in the Assemble tab, then press Update so the sample is annotated again. The Assemble details window has only Keep (K) / Drop (D), Copy FASTA, and evidence panels. Trimming is in Annotation Review ("Trim assembly..."), and it shifts coordinates and re-curates at once with no run. Keep/Drop needs no re-annotation, because every unit was annotated in the first run.
 - Why it matters: Users look for controls that are not there and start runs they do not need.
 - Fix: Say: keep or drop scaffolds in Assemble; trim or nudge boundaries in Annotation Review (applied at once); press Update only after changing an option set or setting State to Ready to run.
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 
 <a id="doc-39"></a>**DOC-39. "The spacers are simply the stretches between those landmarks" is not what ships: 1 bp and 4 bp are left unannotated.** Minor (lowered from major by the verifier: 1 to 4 bp at the ends of boundaries that two different tools predict). Confirmed. ids: D-domain-4. Seen by 1 (docs-domain).
 - Where: `vignettes/RiboPilot.Rmd:47-48`; `R/annotate.R:3, 97, 106-190`.
@@ -633,6 +659,7 @@ Also on this page: [DOC-28](#doc-28) (the "What RiboPilot does" order), [DOC-54]
 - Problem: With no export groups it stops with "No export groups assigned. Assign samples to a group first.", and groups can only be made in the app. It always uses the "default" header template, skips Problematic units, writes a `<group>.zip` (the app export does not), and stops part-way if a group has no annotation-locked units, after earlier groups were already written.
 - Why it matters: The guide's R export fails on every fresh project, and the error does not say where groups come from.
 - Fix: Make the app's Export step (Assign Group, then Export Data) the documented path. Describe `export_project()` as "exports each group made in the Export step, with the default template". Skip empty groups, and point the error at the Export step.
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 - See also: [UX-37](USABILITY_REVIEW.md#ux-37)
 
 <a id="doc-41"></a>**DOC-41. Step 9 leaves out behaviors that change what is submitted; Problematic silently drops units.** Major (D-novice-28 and O-practice-17 rated minor). Confirmed. ids: D-intermediate-22, D-appclaims-4, D-editor-16, D-novice-28, O-practice-17. Seen by 5 (docs-appclaims, docs-editor, docs-intermediate, docs-novice, op-practice).
@@ -643,6 +670,7 @@ Also on this page: [DOC-28](#doc-28) (the "What RiboPilot does" order), [DOC-54]
   - Groups are split by assembler, and the fact that the Portal takes only the FASTA is only in the bundle README.
 - Why it matters: A curator's flag removes a record from the submission without warning.
 - Fix: Rewrite Step 9 around Assign Group, Export Data, and the templates. Explain Reviewed, Problematic, and Partial and their export effects. Change the tips to say "Problematic units are left out of export", and show the excluded count in the Export window.
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 - See also: [UX-33](USABILITY_REVIEW.md#ux-33), [UX-34](USABILITY_REVIEW.md#ux-34)
 
 <a id="doc-42"></a>**DOC-42. Partial or complete is decided by scaffold position, not gene completeness, and no doc explains it.** Major (lowered from blocker by the verifier, because the Portal route does its own annotation; the usability review rates the same bug blocker, as UX-32). Confirmed. ids: D-domain-1. Seen by 1 (docs-domain).
@@ -650,7 +678,7 @@ Also on this page: [DOC-28](#doc-28) (the "What RiboPilot does" order), [DOC-54]
 - Problem: The first feature is marked partial only if it starts at base 1, and the last only if it ends at the last base; the stored model coverage (already used for the truncated flag) is ignored. SRR33849683_p1_s2, a 28S at 45.8 percent of the model, gets "28S ribosomal RNA gene, complete sequence." A trimmed SRR14163830 with 100 percent coverage 18S and 28S gets `<1` and `>7240` and "partial sequence" at both ends. The Partial toggle marks both ends even when only one is incomplete.
 - Why it matters: Public records carry the wrong completeness, and users are not told to check it.
 - Fix: In code, set `<` and `>` from model coverage at each end (or from the truncated flag), and let Partial choose 5', 3', or both. In Step 9 and the Curation guide, explain the rule, and until the fix ships tell users to check completeness before upload.
-- Status: the code half is fixed on `review/2026-09-full-review`. The truncated flag now sets both `<` and `>` and the "partial sequence" wording. The docs half (explain the rule in Step 9 and the Curation guide) and the 5' or 3' choice for Partial are still open. See [Fixed on this branch](REVIEW_SUMMARY.md#fixed-on-this-branch-after-the-review).
+- Status: fixed on `review/2026-09-full-review`. The truncated flag sets both `<` and `>` and the "partial sequence" wording, and Preparing a GenBank submission now explains the partial rule. The 5' or 3' choice for Partial is still open. See [Fixed on this branch](REVIEW_SUMMARY.md#fixed-on-this-branch-after-the-review).
 - See also: [UX-32](USABILITY_REVIEW.md#ux-32); [CODE_REVIEW.md](CODE_REVIEW.md) DB-H2, DB-L8
 
 <a id="doc-43"></a>**DOC-43. Exports carry unannotated ETS and IGS flanks; trimming and Portal length limits are never mentioned.** Major. Confirmed. ids: D-domain-12. Seen by 1 (docs-domain).
@@ -658,6 +686,7 @@ Also on this page: [DOC-28](#doc-28) (the "What RiboPilot does" order), [DOC-54]
 - Problem: Export writes the whole scaffold. Practice records carry 170-2,150 bp upstream of 18S plus downstream IGS, none of it annotated or named in the definition line. NCBI's Portal help says "Sequences longer than the expected length for a given submission type will be removed." The guides never mention the Trim tool, and trimming triggers the partial problem above. ETS and IGS product strings exist in the code but are never emitted.
 - Why it matters: Records may be removed at the Portal, or go out with unexplained flanking sequence.
 - Fix: In Step 9, explain the flanks and recommend trimming to the 18S-28S span for Portal rRNA-ITS submissions (after the partial fix). Optionally annotate partial ETS and IGS features for table2asn.
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 
 <a id="doc-44"></a>**DOC-44. Required source modifiers are not stated, and isolate is banned in templates but added automatically.** Major (D-appclaims-13 rated minor). Confirmed. ids: D-domain-13, D-appclaims-13, D-intermediate-7. Seen by 3 (docs-appclaims, docs-domain, docs-intermediate).
 - Where: `vignettes/RiboPilot.Rmd:378-383` ("The template is the whole defline"); `R/app_modals.R:622-625`; `R/export_opts.R:18, 219-253`.
@@ -669,6 +698,7 @@ Also on this page: [DOC-28](#doc-28) (the "What RiboPilot does" order), [DOC-54]
   - The computed tokens (seqid, rrna_definition, completeness, elements, element, product, sci_name, taxid) are not listed, and columns with spaces must be written in dotted form (`{Specimen.Voucher}`).
 - Why it matters: Submissions bounce for missing modifiers, or carry a misleading isolate value.
 - Fix: List NCBI's required modifiers, in NCBI's spelling, and the full token list in Step 9 and in the template help. Allow a user isolate. Mark variant records from one specimen with a note (for example "rDNA variant 2 of 2"), not with isolate.
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 - See also: [UX-36](USABILITY_REVIEW.md#ux-36), [UX-40](USABILITY_REVIEW.md#ux-40)
 
 <a id="doc-45"></a>**DOC-45. The default [organism=] uses the raw Taxon label, not the name confirmed in the Taxonomy step.** Major. Confirmed. ids: D-domain-5, D-intermediate-7 (part). Seen by 2 (docs-domain, docs-intermediate).
@@ -676,6 +706,7 @@ Also on this page: [DOC-28](#doc-28) (the "What RiboPilot does" order), [DOC-54]
 - Problem: The default header is `{seqid} [organism={Taxon}] ...`. Corrections made in the Taxonomy step update `sci_name`, not `Taxon`, so typos, synonyms, and informal names still go into `[organism=]`.
 - Why it matters: It contradicts the README's "verify or correct it in the app", and wrong organism names reach public records.
 - Fix: Default to `{sci_name}` once taxonomy is locked, or explain in Step 9 which column to use and when (for example an undescribed "Genus sp.").
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 - See also: [CODE_REVIEW.md](CODE_REVIEW.md) DB-M1
 
 <a id="doc-46"></a>**DOC-46. Step 9 does not say which files to upload, and README.txt names a table2asn / BankIt route without steps.** Minor. Confirmed. ids: D-novice-38, D-domain-23. Seen by 2 (docs-domain, docs-novice).
@@ -683,6 +714,7 @@ Also on this page: [DOC-28](#doc-28) (the "What RiboPilot does" order), [DOC-54]
 - Problem: NCBI's Submission Portal takes only `<group>.fasta` for rRNA-ITS; the `.tbl` files are for table2asn. Only the bundle's README.txt says so. README.txt then names an "alternate table2asn / BankIt route" but gives no steps. NCBI's GenBank submission page (updated 2026-06-15) lists only the Submission Portal as the web route and says table2asn output goes by email to gb-sub; whether BankIt still takes rRNA-ITS could not be confirmed.
 - Why it matters: Users may upload the wrong files, or follow a route that is not described.
 - Fix: Add one paragraph to Step 9: upload `<group>.fasta` at submit.ncbi.nlm.nih.gov; use the `.tbl` files only with table2asn, run it with `-V v`, read the `.val` file, and send the `.sqn` the way NCBI's page says. Drop the BankIt mention unless it is confirmed.
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 
 <a id="doc-47"></a>**DOC-47. The export layout block and the export_bundle help have small errors.** Minor. Confirmed. ids: D-appclaims-12, D-intermediate-29, D-novice-40, D-api-15, O-practice-25, O-practice-27, O-practice-33. Seen by 5 (docs-api, docs-appclaims, docs-intermediate, docs-novice, op-practice).
 - Where: `vignettes/RiboPilot.Rmd:349-365`; `man/export_bundle.Rd:50`; `R/export.R:518, 611, 643, 659-693, 725-731`; `R/itsx_check.R:424-426`.
@@ -694,6 +726,7 @@ Also on this page: [DOC-28](#doc-28) (the "What RiboPilot does" order), [DOC-54]
   - The summary CSV's variant_class, variant_group, variant_identity, and n_variants columns are not explained in the guide or in README.txt.
 - Why it matters: Users cannot match the guide to the files they get.
 - Fix: Correct the tree and the help, mark the optional items, mention the zip and the overwrite, normalize the path before `setwd()` and check the zip status, update README.txt's file list, and add a column key for the summary CSV.
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 - See also: [UX-38](USABILITY_REVIEW.md#ux-38), [UX-39](USABILITY_REVIEW.md#ux-39); [CODE_REVIEW.md](CODE_REVIEW.md) DB-L2, DB-L3
 
 <a id="doc-48"></a>**DOC-48. The ITSx notes in README.txt and Step 9 overstate: "ITS too long" is called misassembly, and NCBI is said to remove records "silently".** Minor (D-domain-15 polish, and one of its points was refuted; see the Problem). Confirmed. ids: D-domain-14, D-domain-15. Seen by 1 (docs-domain).
@@ -712,6 +745,7 @@ Also on this page: [DOC-28](#doc-28) (the "What RiboPilot does" order), [DOC-54]
 - Problem: "align genus" (AGP 2.1) says the gap was bridged by aligning to a same-genus reference genome. RiboPilot's N-runs come from assembler scaffolding or from user assemblies.
 - Why it matters: It is a false provenance statement in public records.
 - Fix: Use "paired-ends" where the assembler scaffolded with read pairs, otherwise "unspecified", and document it in Step 9.
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 - See also: [CODE_REVIEW.md](CODE_REVIEW.md) DB-L11
 
 Also on this page: [DOC-17](#doc-17), [DOC-18](#doc-18), and [DOC-19](#doc-19) (install and practice commands), [DOC-23](#doc-23) (diagram), [DOC-15](#doc-15) (terms), [DOC-16](#doc-16) (conda notes), [DOC-94](#doc-94) (curly quotes), [DOC-98](#doc-98) (page length), [DOC-60](#doc-60) (the NCBI lookup, lines 264-268), [DOC-01](#doc-01), [DOC-03](#doc-03), [DOC-08](#doc-08), [DOC-09](#doc-09), [DOC-10](#doc-10), and [DOC-13](#doc-13) (missing content), [DOC-90](#doc-90) (locking), [DOC-93](#doc-93) ("copies"), [DOC-53](#doc-53) (flags panel).
@@ -744,6 +778,7 @@ Also on this page: [DOC-17](#doc-17), [DOC-18](#doc-18), and [DOC-19](#doc-19) (
 - Problem: Skipping it assembles non-fish samples against the fish reference, which the same page calls "usually the wrong choice outside fish". The app only warns.
 - Why it matters: Non-fish users get worse assemblies without knowing why.
 - Fix: "Optional for ray-finned fishes. For any other group, do this step before assembling."
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 
 Also on this page: [DOC-36](#doc-36) ("you can keep working in the app while it runs"), [DOC-69](#doc-69) ("through a remote browser"), [DOC-05](#doc-05) (the default reference folder), [DOC-32](#doc-32) (the console build), [DOC-18](#doc-18) (the `new_project()` calls), [DOC-91](#doc-91) (the pre-filled API key), [DOC-94](#doc-94) (curly quotes), [DOC-93](#doc-93) (line 191).
 
@@ -770,6 +805,7 @@ Also on this page: [DOC-36](#doc-36) ("you can keep working in the app while it 
   - The docs never say where the ruleset is set (Curate Options, Clade ruleset).
 - Why it matters: Non-fish users cannot tell which thresholds were applied to their samples.
 - Fix: Table all five rulesets (length ranges, identity floors, lineage match), explain automatic selection and the override, fix the fish wording and the 28S rationale, and update the README sentence.
+- Status: partly fixed on `review/2026-09-full-review` (docs rewrite): the README and the Curation guide name the five rulesets and say they are picked from the lineage. Per-ruleset thresholds are still undocumented.
 - See also: [UX-51](USABILITY_REVIEW.md#ux-51)
 
 <a id="doc-55"></a>**DOC-55. The triage section counts seven rules; eight ship.** Major. Confirmed. ids: D-novice-15, D-editor-13, D-domain-19, D-appclaims-11. Seen by 4 (docs-appclaims, docs-domain, docs-editor, docs-novice).
@@ -777,18 +813,21 @@ Also on this page: [DOC-36](#doc-36) ("you can keep working in the app while it 
 - Problem: Rule 8, "Likely chimeric assembly" (off or flag only), is missing, so four rules only flag, not three. "Each rule can be turned off" never says where (Assemble step, select samples, Triage button).
 - Why it matters: The rule table does not match the Triage window.
 - Fix: Add rule 8, fix the counts, and name the Triage button and window.
+- Status: rule 8 added to the triage table on `review/2026-09-full-review` (docs rewrite).
 
 <a id="doc-56"></a>**DOC-56. Chimera detection is not documented, and the in-app description is incomplete.** Major. Confirmed. ids: D-domain-10, D-editor-13 (part), D-novice-15 (part), D-intermediate-19 (part). Seen by 4 (docs-domain, docs-editor, docs-intermediate, docs-novice).
 - Where: no vignette section (only an ITSx mention at `RiboPilot.Rmd:367`); in-app panel `R/app_modals.R:104-108`; `R/chimera.R`; `R/export.R:200-225`.
 - Problem: The detector has four channels (per-gene LCA, windowed BLAST, Ribovore ribotyper structure codes, and depth steps plus clip pileups), three labels (clean, suspect, likely), a taxonomy-only cap, and triage rule 8. Both suspect and likely become "chimeric(...)" in the export's submission_risk column, next to gap_in_rDNA and misassembly, which are also undocumented. The panel text covers windows and clips only, and its "two organisms" definition leaves out misjoins between array copies of one genome.
 - Why it matters: A label that marks export records "chimeric" is unexplained.
 - Fix: Add a "Chimeras and submission risk" section: channels, scores, labels, effects on triage and export, and known false-positive sources (next item). Update the panel text.
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 
 <a id="doc-57"></a>**DOC-57. The chimera check scores a clean flatfish the same as the planted chimera, so a good record is exported as chimeric.** Major. Confirmed. ids: D-domain-11. Seen by 1 (docs-domain).
 - Where: chimera reason text in the app and in the export's submission_risk; `R/chimera.R`; README.txt text from `R/export.R:267`.
 - Problem: SRR33849683 (Ancylopsetta cycloidea) scores 0.6 (suspect) with "18S resolves to Chordata ... but 5.8S to Pleuronectiformes"; Pleuronectiformes is inside Chordata (the pair's rank distance is 5, which fires the test). The window channel on the same scaffold switches to "Mammalia (PREDICTED: Canis, 100.0%)" over 751-2000, a tie in conserved 18S with the neighbouring Paralichthys windows. The synthetic fish-plus-Penicillium chimera CHIM01 also scores 0.6 (suspect); neither reaches "likely", so triage rule 8 never fires on the known chimera. The export then labels the genuine flatfish record chimeric, and README.txt warns that NCBI may remove chimeric sequences.
 - Why it matters: It pushes users to drop good records. Screenshots docs_11 and docs_15 show this "suspect" call.
 - Fix: Treat an ancestor/descendant LCA pair as agreement; break window ties toward the sample's lineage, or discount windows that sit inside conserved anchors; re-check the label cut-offs against CHIM01; document this false-positive source.
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 - See also: [UX-82](USABILITY_REVIEW.md#ux-82), [UX-83](USABILITY_REVIEW.md#ux-83); [CODE_REVIEW.md](CODE_REVIEW.md) SCI-M3, SCI-M4
 
 <a id="doc-58"></a>**DOC-58. The isomer test ignores the ITS, so real ITS variants are told the pick "does not matter".** Major. Confirmed. ids: D-domain-2. Seen by 1 (docs-domain).
@@ -796,6 +835,7 @@ Also on this page: [DOC-36](#doc-36) ("you can keep working in the app while it 
 - Problem: Units whose anchors (18S, 5.8S, 28S) match at 99.5 percent or more are called isomers, and the guide says picking between isomers "does not matter either way". Intragenomic variation sits mostly in ITS1, ITS2, and IGS, so units with identical anchors but different ITS are classic ITS variants, and for an ITS barcode record the choice matters a lot.
 - Why it matters: Users may submit an arbitrary ITS variant believing it is equivalent.
 - Fix: Compare ITS1 and ITS2 as well. Call units with different spacers "ITS variants" and say the choice changes the submitted ITS. Keep "isomer, pick either" for units whose annotated 18S-28S span is identical.
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 - See also: [CODE_REVIEW.md](CODE_REVIEW.md) SCI-M7
 
 <a id="doc-59"></a>**DOC-59. "Cannot be contamination" contradicts the phylum-level screen described on the same page.** Major. Confirmed. ids: D-domain-3. Seen by 1 (docs-domain).
@@ -803,6 +843,7 @@ Also on this page: [DOC-36](#doc-36) ("you can keep working in the app while it 
 - Problem: The guide says on-target variants "cannot be contamination", but the screen tests agreement at phylum rank, and the same page says "a human on a fish sample passes". Same-phylum contaminants (a human, gut-content prey, a parasite) are on-target, and the guide presents them as paralogs that "still export".
 - Why it matters: Users skip checking variants that may be contaminants.
 - Fix: Say on-target only means the same phylum, and tell users to BLAST each variant's ITS and check it against their taxon before locking.
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 - See also: [UX-86](USABILITY_REVIEW.md#ux-86)
 
 <a id="doc-60"></a>**DOC-60. The "GenBank screen" is by default a local panel, but the docs describe an NCBI search.** Major (D-domain-6 major; the other three rated minor). Confirmed. ids: D-domain-6, D-appclaims-14, D-intermediate-24, D-editor-27. Seen by 4 (docs-appclaims, docs-domain, docs-editor, docs-intermediate).
@@ -820,6 +861,7 @@ Also on this page: [DOC-36](#doc-36) ("you can keep working in the app while it 
 - Problem: Reads are mapped one path at a time (one bowtie2 index per path), and multi-mappers (MAPQ < 10) are dropped, so reads are not "split across paths"; they are dropped wherever sequence repeats inside one path (shared anchors, IGS subrepeats). The Triage window's "isomer paths splitting reads" is stale in the same way. The chimera read channel and the trim tool's suggested junctions read these same dips.
 - Why it matters: Users read repeat-driven dips as misjoins.
 - Fix: Explain the per-path mapping and the MAPQ filter, and name repeat-driven dips as an expected false signal.
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 - See also: [CODE_REVIEW.md](CODE_REVIEW.md) SCI-M2
 
 <a id="doc-62"></a>**DOC-62. The rule 7 note is about the wrong thing and contradicts the tooltip.** Minor. Confirmed. ids: D-editor-26. Seen by 1 (docs-editor).
@@ -839,6 +881,7 @@ Also on this page: [DOC-36](#doc-36) ("you can keep working in the app while it 
 - Problem: " - " stands in for a dash (for example "corroboration - see the table below", "Yes - dropped by default").
 - Why it matters: It goes against the house style.
 - Fix: Use a comma, colon, semicolon, or two sentences.
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 
 <a id="doc-65"></a>**DOC-65. The curation tables use equal column widths.** Polish. Confirmed. ids: D-editor-35. Seen by 1 (docs-editor).
 - Where: `vignettes/Curation-Flags.Rmd:32-41, 75-83`.
@@ -855,6 +898,7 @@ Also on this page: [DOC-15](#doc-15) (Curation flags versus Curation warnings), 
 - Problem: 54 topics sit under one "All functions" heading. Only 12 exports are for users (new_test_project, new_project, RiboPilot, run_app, build_reference_db, ribopilot_ref_dir, generate_config, hydra_setup, export_project, export_bundle, run_assembly, run_fallback). 24 are exported only because the Nextflow scripts call them by bare name (annotate_records, chimera_unit, write_coverage_units, and so on), and 17 have no caller outside R/ and the tests. Titles use internal codes ("WF1", "Option B2 baiting", "Run every channel for one unit and write chimera + chimera_windows"), and three pages cite unpublished `dev/design` notes. Only hydra_setup, of 54 pages, has an example. check_container_image is not exported but gets a page, because its `@noRd` sits inline in `@param` text, where it shows up as literal text.
 - Why it matters: A biologist cannot find the dozen functions they need.
 - Fix: Add grouped reference sections (Start a project; Reference databases; Clusters; Export; Advanced scripting). Put `@keywords internal` on the 24 Nextflow helpers (or switch the scripts to `RiboPilot:::` and unexport them), and unexport the 17 with no caller. Tested on a copy, `check_pkgdown()` then reports "No problems found". Move check_container_image's `@noRd` to its own line and drop the dev/design links. Add examples to the user-facing pages: runnable ones for `ribopilot_ref_dir()`, `generate_config(profile_dir = tempdir())`, and `new_project()` in a temp folder with `Rproj = FALSE`, and `\dontrun` for the rest. The outline section below lists which function goes where.
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 - See also: [CODE_REVIEW.md](CODE_REVIEW.md) PKG-L5
 
 <a id="doc-67"></a>**DOC-67. new_project() help says NMNH_Hydra and NOAA_SEDNA need generate_config() and calls conda ready to use.** Major. Confirmed. ids: D-hpc-9, D-intermediate-18, D-api-3, D-editor-15 (part). Seen by 4 (docs-api, docs-editor, docs-hpc, docs-intermediate).
@@ -868,12 +912,14 @@ Also on this page: [DOC-15](#doc-15) (Curation flags versus Curation warnings), 
 - Problem: "Annotation and curation are handled by re-running this workflow after you review and lock the assemblies in the app" contradicts the function's own success message ("Every scaffold is annotated as it is assembled") and Get started. The page also says it "runs fastp + GetOrganelle", leaving out the fallback assemblers and the supplied-assembly search.
 - Why it matters: Users re-run for nothing, or think annotation is missing.
 - Fix: Say one run preprocesses, assembles, scores, BLASTs, maps coverage, annotates, curates, screens, checks for chimeras, and triages every unit; re-run (or press Update) only after changing a selection, trim, or option.
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 
 <a id="doc-69"></a>**DOC-69. The headless (job-script) rule is described wrongly, and launch.browser = FALSE silently removes Run from App.** Major (D-novice-26 and D-intermediate-26 rated minor). Confirmed. ids: D-api-7, D-novice-26, D-intermediate-26. Seen by 3 (docs-api, docs-intermediate, docs-novice).
 - Where: `man/RiboPilot.Rd:19-23`; `man/run_app.Rd:25-28`; `vignettes/Reference-Databases.Rmd:63-64` ("If you are using RiboPilot through a remote browser"); `R/app_run.R:16-21, 150-197`; `R/app_modals.R:426-460`.
 - Problem: The help says headless mode is "Detected automatically (RStudio Server or a batch scheduler on PATH means yes)", and the Reference guide says "through a remote browser". In the code, `detect_headless()` also returns TRUE whenever `launch.browser` is not TRUE, and `launch.browser` defaults to `interactive()`. So on a plain workstation, `launch.browser = FALSE` (which the SSH-tunnel route needs) or a launch from Rscript gives the headless run window: no Run from App button, only Save script or Submit as job, and the text "No scheduler (sbatch/qsub/bsub) found on PATH ... running from the login node is discouraged". A workstation with sbatch on PATH also gets job-script mode. Neither page mentions the `headless = TRUE/FALSE` override.
 - Why it matters: Running from the app is the intended workflow, and a user who opens the app without a browser launch loses the Run button without knowing why.
 - Fix: Reword both help pages and the guide: "The app is headless when it does not open a browser (launch.browser = FALSE or a non-interactive session), on RStudio Server, or when a scheduler is on PATH. Headless mode hides Run from App; pass headless = FALSE to run on this machine."
+- Status: fixed on `review/2026-09-full-review`: the cluster package changed the headless rule (a scheduler on PATH or RStudio Server; `launch.browser` no longer matters), and Running on a cluster and Reference databases describe it.
 - See also: [UX-79](USABILITY_REVIEW.md#ux-79)
 
 <a id="doc-70"></a>**DOC-70. A failed new_project() leaves a half-made project, and the retry silently skips the config.** Major (D-api-14 rated minor). Confirmed. ids: D-intermediate-17, D-api-14. Seen by 2 (docs-api, docs-intermediate).
@@ -901,6 +947,7 @@ Also on this page: [DOC-15](#doc-15) (Curation flags versus Curation warnings), 
 - Problem: The save folder is given as `ribopilot_config_dir()`, which is unexported, so the path (`~/.config/R/RiboPilot`) is never shown. There is no advice on sharing a lab profile (`profile_dir` or `R_USER_CONFIG_DIR`, and passing `profile_dir` to `new_project()`). `container_run_options` is said to apply to Singularity/Apptainer only, but it also applies to Docker. Nothing says Hydra and SEDNA need no profile, or that awsbatch still needs hand edits. The saved profile keeps the template header "Turn it into a reusable profile with generate_config(...)", and the page opens "Mirrors MitoPilot".
 - Why it matters: Get started sends cluster users here, and they leave without a working recipe.
 - Fix: Add a slurm example followed by `new_project(executor = <name>)`, state the default folder, add the sharing and Hydra/SEDNA/awsbatch notes, fix the argument text, and rewrite the header when saving.
+- Status: docs half fixed on `review/2026-09-full-review` (docs rewrite): Running on a cluster has a worked example, the save folder, and sharing with `profile_dir`. The help page example is still open.
 
 <a id="doc-74"></a>**DOC-74. new_project() help omits ID rules, the return value, and the data loss from force, and typos pass silently.** Minor. Confirmed. ids: D-api-13, D-novice-30 (part). Seen by 2 (docs-api, docs-novice).
 - Where: `man/new_project.Rd:33-87`; `R/init_db.R:63, 79-90`.
@@ -1030,6 +1077,7 @@ Also on this page: [DOC-07](#doc-07) (upgrades and the tag policy), [DOC-06](#do
 - Problem: On a locked unit, Edit boundaries, Trim assembly, Restore assembly, and Notes still work; only the Mark buttons are disabled, so a signed-off or already exported record can change. The toolbar Lock offers "Lock anyway" for a second path in a sample, while Lock & Close refuses. Neither is documented.
 - Why it matters: "Locking a sample signs off on it" (the guide) is not true.
 - Fix: Disable edit, trim, and restore on locked units; use one rule for both lock buttons; document the one-path-per-sample rule.
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 - See also: [UX-20](USABILITY_REVIEW.md#ux-20), [UX-25](USABILITY_REVIEW.md#ux-25); [CODE_REVIEW.md](CODE_REVIEW.md) APP-M7, APP-M15
 
 <a id="doc-91"></a>**DOC-91. The run windows show the NCBI API key in plain text.** Minor. Confirmed. ids: D-appclaims-22. Seen by 1 (docs-appclaims).
@@ -1051,6 +1099,7 @@ Also on this page: [DOC-07](#doc-07) (upgrades and the tag policy), [DOC-06](#do
 - Problem: (a) "its quality checks anchor on the 18S and 28S genes", but 5.8S is also checked (missing_5.8S, length, identity floor 93). (b) The markers folder is `58S`. (c) The export help calls ITS1 and ITS2 "rRNA elements" and omits the combined ITS file. (d) The odd_one_out tooltip calls it "the usual signature of contamination" while the guide says it is not proof. (e) The Portal rewrites definition lines in small/large subunit wording (PZ692210 shows this), so RiboPilot's 18S/28S wording will not survive the Portal route. (f) Get started says every cell "copies" its ribosomal RNA genes; the README already says "carries".
 - Why it matters: Small slips undercut trust in the rest.
 - Fix: Fix each phrase, and add one sentence on the Portal's SSU/LSU definition style.
+- Status: one phrase fixed in Reference databases on `review/2026-09-full-review` (docs rewrite): the checks look at the 18S, 5.8S, and 28S genes. The rest is still open.
 
 Also on this page: [DOC-41](#doc-41) (Problematic tip), [DOC-42](#doc-42) (Partial tip), [DOC-60](#doc-60) (the screen_species column help), [DOC-56](#doc-56) (chimera panel text), [DOC-57](#doc-57) (chimera reason text), [DOC-62](#doc-62) (odd_one_out tip), [DOC-46](#doc-46), [DOC-47](#doc-47), and [DOC-48](#doc-48) (README.txt), [DOC-15](#doc-15) (names).
 
@@ -1061,6 +1110,7 @@ Also on this page: [DOC-41](#doc-41) (Problematic tip), [DOC-42](#doc-42) (Parti
 - Problem: Code inside the raw-HTML `div.alert` blocks goes through pandoc's smart quotes, and 9 code spans on the built site contain curly quotes. Pasting `conda_env = "ribopilot"` gives an R syntax error, and the pasted conda line turns `>` into a shell redirect that writes a file named `=2.12` plus a quote mark. Each vignette also carries its own `<style>` block for the alerts: Curation-Flags defines alert classes but has no alert boxes, RiboPilot.Rmd defines `.alert-tip` and `.alert-danger` without using them, and the custom `.alert` rule overrides Bootstrap's own class with hard-coded light colors.
 - Why it matters: Copy and paste of documented code fails in confusing ways.
 - Fix: Use pandoc fenced divs (`::: {.alert .alert-info}`) with backtick code, which fixes both problems, or turn off smart quotes for the vignettes. Put any custom alert CSS once in `pkgdown/extra.css`.
+- Status: fixed on `review/2026-09-full-review` (docs rewrite).
 
 <a id="doc-95"></a>**DOC-95. check_pkgdown fails on the DESCRIPTION URL, the favicons are stale, and the theme upper-cases every heading.** Minor. Confirmed. ids: D-editor-32, D-api-23, D-intermediate-30 (part). Seen by 3 (docs-api, docs-editor, docs-intermediate).
 - Where: `DESCRIPTION:12`; `_pkgdown.yml`; `pkgdown/favicon`.

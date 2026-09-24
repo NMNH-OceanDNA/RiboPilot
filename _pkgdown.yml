@@ -31,13 +31,102 @@ navbar:
     - github
 
 articles:
-- title: "Get started"
+- title: "Setup"
+  navbar: Setup
+  contents:
+  - 'Installation'
+
+- title: "Walkthrough"
   navbar: ~
   contents:
   - 'RiboPilot'
 
 - title: "Usage"
-  navbar: ~
+  navbar: Usage
   contents:
+  - 'Your-Own-Project'
   - 'Reference-Databases'
   - 'Curation-Flags'
+  - 'GenBank-Submission'
+  - 'Scripting'
+
+- title: "Computing environments"
+  navbar: Computing environments
+  contents:
+  - 'Clusters'
+  - 'Caches-and-Offline'
+  - 'Without-Containers'
+
+- title: "Help"
+  navbar: Help
+  contents:
+  - 'Troubleshooting'
+
+reference:
+- title: "Start a project"
+  contents:
+  - new_test_project
+  - new_project
+  - RiboPilot
+  - run_app
+  - add_samples
+  - update_sample_metadata
+- title: "Reference databases"
+  contents:
+  - build_reference_db
+  - ribopilot_ref_dir
+- title: "Clusters"
+  contents:
+  - generate_config
+  - hydra_setup
+- title: "Export"
+  contents:
+  - export_project
+  - export_bundle
+- title: "Advanced scripting"
+  contents:
+  - run_assembly
+- title: internal
+  contents:
+  - annotate_records
+  - auto_triage_sample
+  - backfill_coverage_median
+  - bitscore_weighted_lca
+  - check_container_image
+  - chimera_unit
+  - compute_ref_alignment
+  - curate_one
+  - curate_rrna_core
+  - derive_blast_products
+  - fallback_assemble_one
+  - itsx_check_one
+  - load_assemblies
+  - mark_unit_searched
+  - new_db
+  - open_project_db
+  - parse_blast_candidates
+  - prime_from_ref_store
+  - push_to_ref_store
+  - rank_at_least
+  - rank_distance
+  - rank_distance_label
+  - reconcile_one
+  - rederive_blast_products
+  - resolve_taxonomy
+  - score_assembly
+  - score_candidates
+  - score_one
+  - screen_one
+  - screen_sample
+  - select_rrna_contigs
+  - set_unit_triage
+  - shared_taxon
+  - stop_if_nothing_stored
+  - tk_ranked_lineage
+  - triage_preview
+  - write_blast_ref
+  - write_blast_refs
+  - write_coverage
+  - write_coverage_units
+  - write_path_scores
+  - write_rrna_candidates

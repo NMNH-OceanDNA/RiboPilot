@@ -1,0 +1,192 @@
+---
+title: "Preparing a GenBank submission"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Preparing a GenBank submission}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+The app's Export step writes one folder per export group, with everything you
+need to submit your records to GenBank: the sequences, their FASTA headers,
+feature tables, and a summary of the checks. This page explains what each part
+is for, and what to check before you upload. [Get started](RiboPilot.html)
+shows the Export step itself.
+
+# Which files to upload
+
+For rRNA and ITS sequences, NCBI's Submission Portal
+(https://submit.ncbi.nlm.nih.gov) takes a FASTA file only. Upload
+`<group>.fasta`. The Portal finds the genes itself with ITSx, and writes its own
+annotation, so the `.tbl` feature tables are not used there.
+
+The `.tbl` files are for NCBI's command-line program
+[table2asn](https://www.ncbi.nlm.nih.gov/genbank/table2asn/), the other route
+into GenBank. Run it with `-V v`, read the `.val` report it writes, and send the
+`.sqn` file the way NCBI's current instructions say.
+
+The Portal rewrites definition lines in its own wording (small and large subunit
+ribosomal RNA), so the 18S and 28S wording in your file will not survive that
+route.
+
+# The FASTA header template
+
+Each record's FASTA header comes from a template. The default is:
+
+```
+{seqid} [organism={organism}] [moltype=genomic DNA] {organism} {rrna_definition}
+```
+
+and the default for the per-marker files is:
+
+```
+{seqid}_{element} [organism={organism}] {organism} {product}
+```
+
+Edit them in the **Export Data** window. Each template is checked as you type,
+and **Save template** keeps it under a name, so a lab can keep one per
+submission style. Words in braces are filled in for each record:
+
+| Token | What it holds |
+|---|---|
+| `{seqid}` | The record's name: the sample ID, or `<ID>_p<path>_s<scaffold>` when the sample gives more than one record. Keep it in every template. |
+| `{organism}` | The organism name to submit (see below). |
+| `{rrna_definition}` | The definition phrase, for example "18S ribosomal RNA gene, partial sequence; internal transcribed spacer 1, 5.8S ribosomal RNA gene, and internal transcribed spacer 2, complete sequence; and 28S ribosomal RNA gene, partial sequence." |
+| `{completeness}` | "complete sequence" or "partial sequence", for the record as a whole. |
+| `{elements}` | The features in order, for example `18S-ITS1-5.8S-ITS2-28S`. |
+| `{length}`, `{n_features}`, `{missing}` | Record length, number of features, and missing features. |
+| `{sci_name}`, `{taxid}` | The name and NCBI taxon ID set in the Taxonomy step. |
+| `{element}`, `{product}` | Per-marker template only: the marker (18S, ITS1, and so on) and its product name. |
+
+Any column of your mapping file works too, as `{ColumnName}`. The **Available
+columns** list in the Export Data window shows every name you can use.
+
+# Required source modifiers
+
+NCBI asks each rRNA or ITS record for the organism, one identifier for the
+specimen (isolate, strain, clone, or specimen voucher), the collection date, and
+where it was collected. Add them to your template as source modifiers, spelled
+exactly as NCBI spells them. NCBI's page
+[Modifiers for FASTA Definition Lines](https://www.ncbi.nlm.nih.gov/genbank/mods_fastadefline/)
+(checked on 24 September 2026) spells them `[specimen-voucher=...]`,
+`[collection-date=...]`, and `[geo-loc-name=...]`, with hyphens.
+
+For example, with `Voucher`, `Date`, and `Country` columns in your mapping file:
+
+```
+{seqid} [organism={organism}] [specimen-voucher={Voucher}] [collection-date={Date}] [geo-loc-name={Country}] [moltype=genomic DNA] {organism} {rrna_definition}
+```
+
+If a record would get an empty modifier, such as `[collection-date=]` for a
+sample with no date, the template check warns and names the records. NCBI does
+not accept an empty modifier: fill in the column, or take the modifier out.
+
+# The organism name
+
+`{organism}` is the name confirmed in the Taxonomy step when your Taxon matched
+it exactly, or when you picked a species there by hand. Otherwise it is your
+Taxon label, as you typed it, so an informal name such as "Upeneus sp. A" is
+kept. To always use your own label, put `{Taxon}` in the template instead.
+
+When your Taxon differs from the name set in the Taxonomy step, the record's
+`submission_risk` column says `taxon_differs(<name>)`, so you can check which
+one you want.
+
+# Samples with more than one record
+
+When a sample gives more than one record, for example two rDNA variants from one
+fish, RiboPilot adds `[isolate=<ID>_p<path>_s<scaffold>]` to each header. This
+is on purpose: GenBank needs something to tell apart records that share an
+organism and a voucher, and these labels let one sample send several records in
+one submission. The values name records, not separate individuals. If GenBank
+staff ask, tell them the records are different rDNA scaffolds from one specimen.
+
+For that reason, a template with its own `[isolate=...]` is refused for an
+export group that holds such a sample. It is allowed otherwise.
+
+# Complete or partial
+
+A gene is written as partial (`<` or `>` in the feature table, and "partial
+sequence" in the definition line) when:
+
+- it runs into the end of the scaffold;
+- the quality check found it truncated, meaning less than 90 percent of the
+  gene was recovered; or
+- you pressed **Mark Partial** on the unit, which marks its first and last genes.
+
+A truncated gene is marked partial at both ends, even when one end meets a
+spacer.
+
+# Flanking sequence
+
+Records keep the sequence around the genes: part of the external spacer (ETS)
+before the 18S and part of the intergenic spacer (IGS) after the 28S. RiboPilot
+does not annotate these flanks. That is fine: GenBank annotates rRNA and ITS
+submissions itself, and does not use RiboPilot's annotation.
+
+# Gaps inside a record
+
+For the table2asn route, each run of 10 or more N bases is written to the
+feature table as an `assembly_gap`, with linkage evidence "unspecified".
+
+# Check before you submit
+
+**Flagged records.** Before it writes anything, the Export window lists every
+unit that the contamination screen or the chimera check flagged, and that you
+have not marked Reviewed. **Leave them out** is the default; **Export anyway**
+exports them with their flags in the summary.
+
+**The final ITSx check.** NCBI's Portal runs stock ITSx on every rRNA and ITS
+submission, and may remove records it judges chimeric, gapped, or misassembled.
+RiboPilot runs the same check on your records after writing them. The result is
+in the `itsx_check` column of `<group>_summary.csv` and in
+`<group>_itsx_check.csv`. It only warns: nothing is removed.
+
+**The submission_risk column.** Each record's row in `<group>_summary.csv` lists
+any of these flags:
+
+| Flag | What it means |
+|---|---|
+| `chimeric(...)` | Parts of the sequence match different phyla or kingdoms (a severe chimera call); the reason is in brackets. |
+| `chimeric(ITSx)` | ITSx calls the record chimeric. |
+| `gap_in_rDNA` | A run of N bases falls between the start of the 18S and the end of the 28S. |
+| `misassembly` | Features overlap or are out of order. |
+| `off_target(<taxon>)` | The contamination screen's GenBank hits agree on a taxon that is not on the sample's lineage. |
+| `contaminant` | The best GenBank hit shares no phylum with the sample. |
+| `taxon_differs(<name>)` | Your Taxon differs from the name set in the Taxonomy step. |
+| `missing_organism` | The record has no organism name. |
+
+Check `off_target` and `contaminant` records before you submit: the sequence may
+be another organism's rDNA, exported under your sample's name. Weaker chimera
+evidence is in the separate `chimera_warning` column; it is not a submission
+risk, but it is worth a look in the app.
+
+**What your marks do.** A unit is exported when its sample is locked in the
+Assemble step, the unit is locked in the Annotation Review step, its scaffold is
+kept, and it is not marked Exclude from export. The Export window lists each
+unit of the group that is left out, and why.
+
+| Mark | What it does to the export |
+|---|---|
+| **Mark Reviewed** | The Export window no longer asks about the unit's contamination or chimera flags. The summary's `reviewed` column says yes. |
+| **Exclude from export** | The unit is left out of every export. |
+| **Mark Partial** | The unit's first and last genes are written as partial. |
+
+# What is in the export folder
+
+```
+out/export/<group>/
+    <group>.fasta           every record, one file (this is what you upload)
+    <group>.tbl             feature tables (table2asn route only)
+    <group>_summary.csv     one row per record, with the submission_risk column
+    <group>_report.html     review report with feature maps and alignments
+    <group>_itsx_check.csv  what stock ITSx says about each record
+    README.txt              how to submit
+    samples/                one .fasta and .tbl per record
+    markers/                one folder per marker: 18S, ITS1, 58S, ITS2, 28S, ITS
+    itsx_check/             raw ITSx output behind the check
+```
+
+The summary CSV also says which records are variants of each other, in the
+`variant_class`, `variant_group`, `variant_identity`, and `n_variants` columns;
+see [Quality checks and flags](Curation-Flags.html).

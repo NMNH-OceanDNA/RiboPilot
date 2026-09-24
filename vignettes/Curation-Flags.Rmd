@@ -1,30 +1,20 @@
 ---
-title: "Understanding the automatic quality checks"
+title: "Quality checks and flags"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{Understanding the automatic quality checks}
+  %\VignetteIndexEntry{Quality checks and flags}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
 
-```{r, include = FALSE}
-knitr::opts_chunk$set(collapse = TRUE, comment = "#>", eval = FALSE)
-```
-
-<style>
-.alert { border-left: 5px solid; padding: 10px; margin: 12px 0; border-radius: 5px; }
-.alert-note { border-color: #007BFF; background-color: #EBF5FF; }
-strong { font-weight: bold; }
-</style>
-
 After it annotates a sample, RiboPilot runs a set of automatic quality checks and
 raises a **flag** for anything that looks unusual. Flags are there to guide your
-attention: they point out samples worth a closer look in the app's Annotate tab.
-They do not change your data, and a flag does not always mean something is wrong.
-It just means "please check this".
+attention: they point out samples worth a closer look in the app's Annotation
+Review step. They do not change your data, and a flag does not always mean
+something is wrong. It just means "please check this".
 
 You will see flags in two places in the app: a small count next to each sample in
-the table, and a detailed **Curation flags** panel when you open a sample. Each
+the table, and a detailed **Curation warnings** panel when you open a sample. Each
 flag links to the exact feature it concerns, so you can jump straight to it.
 
 # What the flags mean
@@ -48,7 +38,7 @@ time, those two checks are simply skipped and the others still apply.
 
 Flags above point at something worth a look; they never remove data. Separately,
 once a scaffold has been annotated and screened against GenBank, RiboPilot also
-proposes a keep, drop or flag call for the scaffold itself, in the Assemble tab.
+proposes a keep, drop or flag call for the scaffold itself, in the Assemble step.
 You can review and override every call by hand, and your own decisions are
 never silently overwritten (more on that below).
 
@@ -63,24 +53,26 @@ rules can be switched to Drop as well: two fire when annotation and the
 GenBank screen *disagree* with each other, and one fires when the GenBank
 screen's own consensus disagrees with the sample's identity. Turning any of
 them on is a deliberate choice about which evidence you trust more for your
-material, not more of the same corroboration - see the table below for
+material, not more of the same corroboration; see the table below for
 which is which.
 
-RiboPilot checks a scaffold against seven named rules, in this order. The
+RiboPilot checks a scaffold against eight named rules, in this order. The
 first rule that matches decides the outcome; if none match, the scaffold is
-kept. Four of the seven rules can ever drop a scaffold - the other three only
-flag, because their evidence is a missing channel or is taxonomic distance
-alone, neither of which is a safe basis for removing a scaffold by itself.
+kept. Four of the eight rules can ever drop a scaffold. The other four only
+flag, because their evidence is a missing channel, taxonomic distance alone, or
+a possible chimera, none of which is a safe basis for removing a scaffold by
+itself.
 
 | # | Rule | What it means | Can it drop? |
 |---|---|---|---|
 | 1 | Annotation has not run | Neither annotation tool has reported on this scaffold yet. | No, flag only |
 | 2 | GenBank screen has not run | No usable core_nt hit is recorded, so the scaffold cannot be judged against GenBank. | No, flag only |
-| 3 | No annotations, non-rDNA hit | Annotation found no rRNA or ITS feature, and the best GenBank match is not a nuclear rDNA record. | Yes - dropped by default |
+| 3 | No annotations, non-rDNA hit | Annotation found no rRNA or ITS feature, and the best GenBank match is not a nuclear rDNA record. | Yes, dropped by default |
 | 4 | No annotations but rDNA hit | Annotation found no rRNA or ITS feature, though the best GenBank match is a nuclear rDNA record. | Optional; flagged by default |
 | 5 | Has annotations but non-rDNA hit | The scaffold has a feature model, but its best GenBank match is not a nuclear rDNA record. | Optional; flagged by default |
 | 6 | GenBank taxonomy disagrees with the sample | The scaffold's BLAST hits agree on a taxon that is not on this sample's lineage. | Optional; flagged by default |
 | 7 | Disagrees with sibling scaffolds | This scaffold's top hit disagrees with the majority of this sample's other scaffolds. | No, flag only |
+| 8 | Chimeric assembly (severe) | Parts of this scaffold match organisms from different phyla or kingdoms. | No, flag only |
 
 Rule 2 also covers a case that looks different but is judged the same way: a
 scaffold whose only GenBank matches are whole-genome or chromosome-level
@@ -93,12 +85,12 @@ scaffold's GenBank hits agree on a taxon, and whether that taxon sits on your
 sample's own lineage. This is the check that catches a fungal, bacterial or
 plant contaminant riding along with a metazoan sample. It compares only
 against your sample's own lineage, at phylum rank, so it cannot separate two
-metazoans in the same phylum - a human on a fish sample passes, because both
+metazoans in the same phylum: a human on a fish sample passes, because both
 are Chordata, while a copepod on that same sample is caught. A `no_reference`
 result is a normal state
 for an offline project or a sparse clade, not a problem in itself: it means
 the screen had nothing usable to compare against, not that something is
-wrong. The verdict is also shown as a Screen column in the Assemble tab's
+wrong. The verdict is also shown as a Screen column in the Assemble step's
 scaffold table, alongside the rest of the evidence.
 
 Each rule can be turned off if it does not suit your data. Switching every
@@ -115,14 +107,67 @@ distance is the normal state for an under-studied group, not proof of
 contamination, which is exactly the case RiboPilot exists to serve. For that
 reason, disagreement with sibling scaffolds can only ever flag, never drop.
 
+# Chimeras: scaffolds made of two pieces
+
+A chimera is one scaffold joined from two pieces that do not belong together:
+rDNA from two organisms (for example a fish and a contaminating mold), or two
+different copies of the repeat from one genome.
+
+RiboPilot looks for a chimera in four ways:
+
+- **Gene by gene.** The 18S, 5.8S, and 28S genes each get their own best
+  GenBank matches, and these should agree on one lineage.
+- **Along the scaffold.** Overlapping 500 bp windows, one every 250 bp, are
+  matched against the local rDNA panel, and neighboring windows that match the
+  same class are joined into segments. Two neighboring segments of similar
+  length from different classes suggest a join.
+- **Gene structure.** The ribotyper tool checks that the 18S and 28S each look
+  like one whole gene. ITSx's own chimera call adds a little weight.
+- **Reads.** Many reads that stop at the same point, or a lasting step in read
+  depth, can mark a join.
+
+Each unit gets one of three levels, shown in the **Chimera** column of the
+Annotation Review table:
+
+| Level | What it means | Triage | Export |
+|---|---|---|---|
+| severe | Two parts match different phyla or kingdoms, each at 90 percent identity or more. | Rule 8 flags the scaffold. | The `submission_risk` column says `chimeric(...)`, and the Export window asks before it includes the unit. |
+| minor | Weaker evidence: a switch between classes, genes that agree only at a high rank, a ribotyper warning, or read evidence alone. | No rule fires. | Listed in the `chimera_warning` column of the summary CSV. It is not a submission risk, and the Export window does not ask. |
+| clean | Nothing found. | No rule fires. | Nothing. |
+
+In the practice project, CHIM01 is severe: its first part matches ray-finned
+fishes and its 28S matches a *Penicillium* mold, and the plot marks the join
+near 2,625 bp:
+
+![Chimera check for a real chimera](figures/curation/chimera-severe.png)
+
+RiboPilot already sets aside the usual false alarms. Windows in conserved
+stretches of 18S or 28S, where many groups match equally well, are shown as
+"unresolved" and do not count. Depth changes inside sequence that repeats
+elsewhere on the scaffold, or right at a gene boundary, are ignored, and so are
+reads that stop near the ends of the scaffold. A weak signal can still give a
+minor call. The first scaffold of SRR33849683, for example, is minor because its
+genes agree only at phylum level, though every window that can be placed
+matches a ray-finned fish:
+
+![Chimera check for a weaker signal that needs a look](figures/curation/chimera-mild.png)
+
+To judge a flag, open the **Chimera check** panel, and hover over the unit's
+badge in the **Chimera** column to read the evidence behind the call. A real
+chimera shows a clean switch from one lineage to another at one point, often
+with a depth change there too. A switch that sits inside a conserved stretch of
+18S or 28S, to a group that is not far from yours, is usually a false alarm. If
+in doubt, copy the scaffold with **Copy FASTA** and BLAST each side at NCBI.
+
 # Several scaffolds from one organism: the Variant column
 
 None of the rules above fires on this, and that is deliberate. When a sample
-yields more than one scaffold that the GenBank screen calls on-target, the
-difference between them cannot be contamination: the screen has already
-established that both agree with your sample's own lineage. So RiboPilot
+yields more than one scaffold that the GenBank screen calls on-target, both
+agree with your sample's lineage at phylum level. That rules out many
+contaminants but not all: a human on a fish sample is also a chordate. BLAST
+each variant's ITS before you lock one. RiboPilot
 compares them and tells you which of two situations you are looking at, in a
-Variant column in the Assemble tab's scaffold table.
+Variant column in the Assemble step's scaffold table.
 
 An **isomer** means the scaffolds are the same molecule assembled two ways:
 their conserved anchors are the same sequence, and they differ only outside
@@ -130,9 +175,10 @@ them. Often that is spacer copy number, because the rDNA repeat's intergenic
 spacer contains subrepeats and an assembly graph can traverse a different
 number of them on different passes. It is not always: when two isomers have the
 same total length the difference cannot be copy number, so RiboPilot reports the
-measured length difference and lets you see which case you have. Picking between
-isomers is a decision that does not matter either way, and the column is
-rendered neutrally to say so.
+measured length difference and lets you see which case you have. The
+comparison looks only at the 18S, 5.8S, and 28S genes. Two isomers can still
+differ in ITS1 or ITS2, and if they do, the one you lock is the ITS that GenBank
+receives, so compare their ITS before you choose.
 
 A **paralog** means the sample genuinely carries several different rDNA copies.
 This is real, documented biology in Octocorallia, Scyphozoa and other groups,
@@ -162,22 +208,24 @@ decided itself, unless you explicitly ask it to reconsider your calls too.
 
 The scaffold table shows each scaffold's median per-position read depth and a
 small sparkline of depth along its length, but depth never decides a keep,
-drop or flag call. In an rDNA assembly, depth is a poor judge of abundance:
-near-identical assembly paths often collapse together, so very high depth
-often just means several paths were combined rather than that the sequence
-is unusually abundant. Low depth can just as easily mean one molecule's reads
-were split across such paths rather than that the sequence is rare. The
-number is worth a look; it is not sound enough to decide anything on its own.
+drop or flag call. Reads are mapped to one path at a time, and reads that
+could sit in more than one place in that path are set aside. So depth dips
+where the sequence repeats inside the path, for example over repeats in the
+spacer between units, and those dips are expected. The number is worth a look;
+it is not sound enough to decide anything on its own.
 
 # How the checks are tuned per group
 
 Some checks, especially the expected lengths, depend on the group of organisms.
-RiboPilot ships two settings:
+RiboPilot ships five settings, and picks one from each sample's lineage:
 
-- **Generic animal** (the default): deliberately wide length ranges that suit a
-  broad range of animals.
-- **Fish**: tighter, fish-specific ranges for the ribosomal genes, with the
-  spacers kept wide because they vary even between close relatives.
+- **Generic animal**: deliberately wide length ranges that suit a broad range
+  of animals. Used for any group without its own setting.
+- **Ray-finned fishes**: tighter, fish-specific ranges for the ribosomal genes,
+  with the spacers kept wide because they vary even between close relatives.
+- **Sea stars** (Asteroidea), **true jellyfish** (Scyphozoa), and
+  **octocorals** (Octocorallia): tighter gene ranges, and lower identity
+  thresholds, because GenBank holds few close relatives for these groups.
 
 For reference, the generic animal length ranges are:
 

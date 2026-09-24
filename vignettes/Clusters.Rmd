@@ -1,0 +1,130 @@
+---
+title: "Running on a cluster"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Running on a cluster}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+On a computing cluster, RiboPilot sends each step of the pipeline to the
+cluster's scheduler as a job, and runs the analysis tools in Singularity (or
+Apptainer). You still open the app, review results, and export from the app;
+only the heavy work runs on compute nodes.
+
+# Choose a profile
+
+A profile tells RiboPilot how to submit jobs on your cluster. Two are built in
+and ready to use: `executor = "NMNH_Hydra"` and `executor = "NOAA_SEDNA"`.
+
+For any other Slurm, SGE, PBS, or LSF cluster, make a profile once with
+`RiboPilot::generate_config()`, then pass its name to `new_project()`:
+
+```r
+RiboPilot::generate_config(
+  "mylab_slurm",
+  scheduler       = "slurm",
+  queue           = "general",
+  account         = "mylab",
+  walltime        = "48h",
+  container_cache = "/scratch/mylab/singularity"
+)
+RiboPilot::new_project(path = "/shared/mylab/my_project",
+  mapping_fn = "/shared/mylab/my_samples.csv",
+  data_path = "/shared/mylab/reads", executor = "mylab_slurm")
+```
+
+`container_cache` is the folder where Singularity keeps the RiboPilot image,
+shared by every project that uses the profile; it must be visible from the
+compute nodes. If you leave it out, RiboPilot uses `NXF_SINGULARITY_CACHEDIR`
+when that is set, and otherwise a `containers` folder inside your reference
+folder. Many clusters need a `walltime`: some reject a job that asks for none.
+
+Profiles are saved in your own settings folder (on Linux,
+`~/.config/R/RiboPilot`). To share one with your lab, save it in a shared folder
+with `profile_dir`, and pass the same `profile_dir` to `new_project()`:
+
+```r
+RiboPilot::generate_config("mylab_slurm", scheduler = "slurm", queue = "general",
+  walltime = "48h", profile_dir = "/shared/mylab/ribopilot_profiles")
+RiboPilot::new_project(path = "/shared/mylab/my_project",
+  mapping_fn = "/shared/mylab/my_samples.csv", data_path = "/shared/mylab/reads",
+  executor = "mylab_slurm", profile_dir = "/shared/mylab/ribopilot_profiles")
+```
+
+# Put everything on shared storage
+
+The project folder, the reads, the reference folder, and the R library that
+holds RiboPilot must be visible from the login node and from every compute
+node.
+
+# Open the app
+
+On **RStudio Server**, just run `RiboPilot::RiboPilot("/shared/mylab/my_project")`.
+
+Without RStudio Server, start the app on the login node and reach it from your
+own computer through an SSH tunnel. On the login node, in R:
+
+```r
+RiboPilot::RiboPilot("/shared/mylab/my_project", port = 8123, launch.browser = FALSE)
+```
+
+The app prints the address to open and the tunnel command. On your own
+computer, in a terminal:
+
+```bash
+ssh -N -L 8123:localhost:8123 you@login.cluster.edu
+```
+
+Then open http://localhost:8123 in your browser.
+
+The app is headless when a batch scheduler (sbatch, qsub, or bsub) is on the
+PATH, or when it runs on RStudio Server. In headless mode the run window offers
+a job script to submit instead of **Run from App**, and the app prints a note
+saying so when it starts. Pass `headless = FALSE` to run Nextflow on the machine
+that serves the app, or `headless = TRUE` to get job scripts anywhere.
+
+::: {.alert .alert-warning}
+**The app has no login.** On a shared login node, other users on that node can
+reach its port. Pick an unusual port number, and close the app when you are
+done.
+:::
+
+# Submit a run as a job
+
+Press **Update**. The run window shows the job script for the Nextflow head job,
+which stays small and long-lived: 2 CPUs, 8 GB of memory, and 48 hours, in the
+queue and with the account from your profile (on Hydra, it goes to Hydra's
+queue for workflow managers). Check the partition, account, walltime, and
+memory, and edit the script in the window if you need to. Then press **Submit
+as job**, or **Save script** to submit it yourself.
+
+The job runs on its own, so you can close the browser; long runs belong here
+rather than in **Run from App**. The window does not follow the job: press the
+reload button above the table to see new results. The app does not track a
+submitted job, so do not start another run for the same project until the job
+has finished. If you press **Submit as job** again in the same window, the app
+warns you first.
+
+Each submission leaves three kinds of files in the project folder:
+
+- `jobs/`: the job scripts;
+- `logs/`: the scheduler's log for each job;
+- `nextflow_logs/`: one Nextflow log per run.
+
+In the Assemble step, **Work Dirs** finds the pipeline's working folders for a
+sample, from both app runs and cluster jobs.
+
+# The app needs the container too
+
+The app itself runs the container for two things: the final ITSx check at
+export, and the summary of the local rDNA panel in the BLAST options window. So
+Singularity (or Docker) must work on the node where the app runs, and it should
+use the same image cache as your jobs, or it downloads the whole image again.
+
+# On the NMNH Hydra cluster
+
+The app sets up Hydra's scheduler and Java for you when it starts. You only need
+`RiboPilot::hydra_setup()` when you run the pipeline from the R console. The job
+script runs `nextflow` from your PATH, so install Nextflow somewhere `~/.bashrc`
+puts on the PATH (for example `~/bin`).
