@@ -203,7 +203,7 @@ test_that("candidate_rungs covers every rung at or above the start rank, once ea
   expect_false(any(duplicated(r$taxid)))
   expect_setequal(r$taxid, unique(l$taxid[l$level <= 5]))
   expect_false(any(r$taxid %in% l$taxid[l$rank %in% c("genus", "species")]))
-  expect_true(grepl("[Organism]", r$query[1], fixed = TRUE))
+  expect_equal(r$query[r$taxid == 7588L], "txid7588[Organism:exp]")
   expect_equal(r$ref_id[r$taxid == 7588L], "asteroidea")
 })
 
@@ -260,4 +260,12 @@ test_that("loose samples are unaffected by somebody else's user group", {
     user_groups = c(S1 = "A", S2 = "A"))
   expect_equal(nrow(g$groups), 2L)
   expect_equal(g$members$ref_id[g$members$ID == "F1"], "danionidae")
+})
+
+test_that("a proposal names the samples it leaves out for want of a taxon", {
+  con <- mk_ladder_db(list(F1 = FISH)); on.exit(DBI::dbDisconnect(con))
+  expect_length(RiboPilot:::unplaced_note(con, RiboPilot:::sample_ladders(con)), 0L)
+  DBI::dbExecute(con, "INSERT INTO samples (ID) VALUES ('X1')")
+  expect_equal(RiboPilot:::unplaced_note(con, RiboPilot:::sample_ladders(con)),
+    "1 sample has no taxon and was left out: X1. Pick a taxon for it in the Taxonomy step, then propose groups again.")
 })

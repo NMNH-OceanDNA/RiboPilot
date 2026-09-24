@@ -9,6 +9,7 @@ mk_pending_project <- function(dir) {
   DBI::dbExecute(con, "CREATE TABLE annotate(ID TEXT, path INT, scaffold INT,
     annotate_switch INT, annotate_lock INT)")
   DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, ignore INT)")
+  DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT, taxonomy_lock INT)")
   DBI::dbDisconnect(con)
   db
 }
@@ -19,6 +20,7 @@ test_that("nf_pending_count adds assembly work to annotate-only work", {
   con <- DBI::dbConnect(RSQLite::SQLite(), db); on.exit(DBI::dbDisconnect(con))
 
   expect_equal(RiboPilot:::nf_pending_count(dir), 0L)
+  DBI::dbExecute(con, "INSERT INTO samples VALUES('A',1),('B',1)")
 
   # a sample queued for assembly
   DBI::dbExecute(con, "INSERT INTO assemble VALUES('A',1,0)")
@@ -39,6 +41,17 @@ test_that("nf_pending_count adds assembly work to annotate-only work", {
   # a locked sample is not work
   DBI::dbExecute(con, "UPDATE assemble SET assemble_lock = 1 WHERE ID = 'A'")
   expect_equal(RiboPilot:::nf_pending_count(dir), 2L)  # A drops as assembly, returns as a unit
+})
+
+test_that("nf_pending_count skips samples whose taxonomy is not locked", {
+  dir <- withr::local_tempdir()
+  db <- mk_pending_project(dir)
+  con <- DBI::dbConnect(RSQLite::SQLite(), db); on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "INSERT INTO assemble VALUES('A',1,0)")
+  DBI::dbExecute(con, "INSERT INTO samples VALUES('A',0)")
+  expect_equal(RiboPilot:::nf_pending_count(dir), 0L)
+  DBI::dbExecute(con, "UPDATE samples SET taxonomy_lock = 1")
+  expect_equal(RiboPilot:::nf_pending_count(dir), 1L)
 })
 
 test_that("nf_pending_count takes no workflow argument", {

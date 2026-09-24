@@ -65,36 +65,49 @@ have_taxdump <- function(dir) {
 extract_taxdump <- function(dir) {
   tmp <- tempfile("ribopilot_taxdump_")
   dir.create(tmp)
-  utils::untar(taxdump_tarball(dir),
-    files = c("names.dmp", "nodes.dmp", "merged.dmp", "delnodes.dmp"),
-    exdir = tmp)
+  st <- suppressWarnings(utils::untar(taxdump_tarball(dir),
+    files = c("names.dmp", "nodes.dmp", "merged.dmp", "delnodes.dmp"), exdir = tmp))
+  if (!identical(as.integer(st), 0L)) {
+    unlink(tmp, recursive = TRUE)
+    stop("Could not unpack ", taxdump_tarball(dir), " (tar status ", st,
+      "); the file is incomplete or corrupt. Delete it and try again.", call. = FALSE)
+  }
   tmp
 }
 
 #' Download a pinned NCBI taxdump tarball into `dir` (once per project)
 #'
-#' Stores only the ~72 MB compressed tarball plus a provenance file. The dmp
-#' files are extracted to a temp location once, when the project's taxonomy
-#' index is built (see [build_tax_index()]), and are not persisted.
+#' Stores only the about 80 MB compressed tarball plus a provenance file. The
+#' dmp files are extracted to a temp location once, when the project's
+#' taxonomy index is built (see [build_tax_index()]), and are not persisted.
 #'
 #' @param dir Destination directory (e.g. `<project>/.taxonomy`).
 #' @param force Re-download even if a tarball already exists.
 #' @return `dir`.
 #' @noRd
 ensure_taxdump <- function(dir, force = FALSE) {
-  if (file.exists(taxdump_tarball(dir)) && !force) {
+  tgz <- taxdump_tarball(dir)
+  if (file.exists(tgz) && !force) {
     return(dir)
   }
   dir.create(dir, recursive = TRUE, showWarnings = FALSE)
-  tgz <- taxdump_tarball(dir)
   url <- "https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump.tar.gz"
-  message("Downloading NCBI taxdump snapshot (~72 MB) to ", dir, " ...")
-  if (utils::download.file(url, tgz, mode = "wb", quiet = TRUE) != 0) {
-    stop("Failed to download taxdump from ", url, call. = FALSE)
+  message("Downloading the NCBI taxonomy (about 80 MB) to ", dir, " ...")
+  part <- paste0(tgz, ".part")
+  on.exit(unlink(c(part, paste0(part, ".md5"))), add = TRUE)
+  download_or_stop(url, part, "the NCBI taxonomy")
+  download_or_stop(paste0(url, ".md5"), paste0(part, ".md5"), "the NCBI taxonomy checksum")
+  want <- tolower(sub("\\s.*$", "", readLines(paste0(part, ".md5"), warn = FALSE)[1]))
+  got <- unname(tools::md5sum(part))
+  if (!identical(want, got)) {
+    stop("The NCBI taxonomy download is incomplete (checksum mismatch). Try again.", call. = FALSE)
   }
+  file.rename(part, tgz)
+  unlink(tax_index_path(dir))
   writeLines(
     c(
       paste0("source: ", url),
+      paste0("md5: ", got),
       paste0("downloaded: ", format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z")),
       paste0("tarball_mtime: ", format(file.info(tgz)$mtime, "%Y-%m-%d %H:%M:%S %Z"))
     ),
@@ -103,26 +116,12 @@ ensure_taxdump <- function(dir, force = FALSE) {
   dir
 }
 
-#' Map names -> taxids locally (exact; includes synonyms). First taxid per name.
-#'
-#' Cross-kingdom homonyms are real (genus *Morus* is both mulberries and
-#' gannets), so every taxid a name matched is kept in the "candidates" attribute
-#' and the caller decides what to do with an ambiguous name.
-#' @return named integer vector (input name -> first taxid, NA if unmatched),
-#'   with attribute `candidates`: named list of all taxids per name.
+#' Kingdom name of each rank-aligned lineage string (NA where there is none)
 #' @noRd
-tk_name2taxid <- function(names, con) {
-  names <- unique(names)
-  if (length(names) == 0) {
-    return(structure(integer(0), candidates = list()))
-  }
-  cand <- td_name2taxid(con, names)
-  res <- vapply(names, function(nm) {
-    x <- cand[[nm]]
-    if (length(x) == 0) NA_integer_ else as.integer(x[1])
-  }, integer(1))
-  attr(res, "candidates") <- cand
-  res
+rank_kingdom <- function(lineage) {
+  vapply(lineage, function(l) {
+    if (is.na(l)) NA_character_ else unname(parse_rank_names(l)[["kingdom"]])
+  }, character(1), USE.NAMES = FALSE)
 }
 
 #' Describe homonym candidates for review: "name [taxid] (kingdom)" per taxid
@@ -130,15 +129,9 @@ tk_name2taxid <- function(names, con) {
 describe_candidates <- function(taxids, con) {
   info <- td_taxid_info(con, taxids)
   m <- info[match(taxids, info$taxid), ]
-  kingdom <- vapply(m$lineage, function(l) {
-    if (is.na(l)) {
-      return(NA_character_)
-    }
-    unname(parse_rank_names(l)[["kingdom"]])
-  }, character(1), USE.NAMES = FALSE)
+  k <- rank_kingdom(m$lineage)
   lab <- paste0(ifelse(is.na(m$sci_name), "?", m$sci_name), " [", taxids, "]")
-  lab <- ifelse(is.na(kingdom), lab, paste0(lab, " (", kingdom, ")"))
-  paste(lab, collapse = " | ")
+  paste(ifelse(is.na(k), lab, paste0(lab, " (", k, ")")), collapse = " | ")
 }
 
 #' Local taxid info: sci_name, rank, ranked lineage (one batched index query)
@@ -206,46 +199,44 @@ resolve_taxonomy_local <- function(taxa, con) {
     return(res)
   }
 
-  # --- exact pass (one name2taxid + one info call for ALL exact names) ---
-  n2t <- tk_name2taxid(clean[ok], con)
-  cand <- attr(n2t, "candidates")
-  exact_tx <- unname(n2t[clean])
-  hit <- ok & !is.na(exact_tx)
+  # --- exact pass ---
+  cand <- td_name2taxid(con, clean[ok])
+  n_cand <- vapply(clean, function(x) length(cand[[x]]), integer(1), USE.NAMES = FALSE)
+  n_cand[!ok] <- 0L
+  amb <- n_cand > 1
+  if (any(amb)) {
+    res$match_type[amb] <- "ambiguous"
+    res$alternatives[amb] <- vapply(clean[amb],
+      function(x) describe_candidates(cand[[x]], con), character(1), USE.NAMES = FALSE)
+  }
+  hit <- n_cand == 1
   if (any(hit)) {
-    info <- td_taxid_info(con, exact_tx[hit])
-    m <- info[match(exact_tx[hit], info$taxid), ]
+    tx <- vapply(clean[hit], function(x) cand[[x]], integer(1), USE.NAMES = FALSE)
+    info <- td_taxid_info(con, tx)
+    m <- info[match(tx, info$taxid), ]
     res$match_type[hit] <- "exact"
-    res$taxid[hit] <- exact_tx[hit]
+    res$taxid[hit] <- tx
     res$sci_name[hit] <- m$sci_name
     res$rank[hit] <- m$rank
     res$lineage[hit] <- m$lineage
     res$lineage_taxids[hit] <- m$lineage_taxids
-    # a homonym is not a confident match: show every candidate and demand review
-    amb <- hit & vapply(clean, function(x) length(cand[[x]] %||% integer(0)) > 1,
-      logical(1), USE.NAMES = FALSE)
-    if (any(amb)) {
-      res$match_type[amb] <- "ambiguous"
-      res$alternatives[amb] <- vapply(clean[amb],
-        function(x) describe_candidates(cand[[x]], con), character(1), USE.NAMES = FALSE)
-    }
   }
 
   # --- fuzzy pass (genus-anchored) for two-token misses ---
-  miss <- which(ok & !hit)
+  miss <- which(ok & n_cand == 0)
   if (length(miss) > 0) {
     genus <- vapply(clean[miss], function(x) {
       t <- strsplit(x, " ")[[1]]
       if (length(t) == 2) t[1] else NA_character_
     }, character(1), USE.NAMES = FALSE)
-    gtx_map <- tk_name2taxid(stats::na.omit(unique(genus)), con)
-    chosen <- integer(length(miss)) # taxid to look up lineage for, at the end
-    chosen[] <- NA_integer_
+    gcand <- td_name2taxid(con, stats::na.omit(unique(genus)))
+    chosen <- rep(NA_integer_, length(miss))
     for (k in seq_along(miss)) {
       g <- genus[k]
-      if (is.na(g) || is.na(gtx_map[[g]] %||% NA)) next
-      gt <- gtx_map[[g]]
+      gts <- if (is.na(g)) integer(0) else gcand[[g]] %||% integer(0)
+      if (length(gts) == 0) next
       epithet <- strsplit(clean[miss[k]], " ")[[1]][2]
-      sp <- tk_genus_species(gt, con)
+      sp <- do.call(rbind, lapply(gts, tk_genus_species, con = con))
       if (nrow(sp) > 0) {
         sp$dist <- as.integer(utils::adist(tolower(clean[miss[k]]), tolower(sp$name)))
         sp <- sp[order(sp$dist), ]
@@ -257,11 +248,15 @@ resolve_taxonomy_local <- function(taxa, con) {
           next
         }
       }
+      if (length(gts) > 1) {
+        res$match_type[miss[k]] <- "ambiguous"
+        res$alternatives[miss[k]] <- describe_candidates(gts, con)
+        next
+      }
       res$match_type[miss[k]] <- "fuzzy_genus"
       res$sci_name[miss[k]] <- g
-      chosen[k] <- gt
+      chosen[k] <- gts
     }
-    # one info call for all fuzzy picks
     pick <- !is.na(chosen)
     if (any(pick)) {
       info <- td_taxid_info(con, chosen[pick])
@@ -393,11 +388,13 @@ resolve_taxon_one <- function(taxon) {
 #'
 #' @param taxa Character vector of Taxon strings (duplicates de-duplicated).
 #' @param taxdump_dir Directory of a pinned taxdump (see [ensure_taxdump()]). If
-#'   it contains a taxdump, resolution is local; otherwise network `datasets` is
-#'   used.
+#'   it contains a taxdump, resolution is local (an unreadable taxdump is an
+#'   error); otherwise network `datasets` is used.
 #' @return data.frame, one row per unique Taxon: `match_type` in
 #'   "exact"/"ambiguous"/"fuzzy_species"/"fuzzy_genus"/"unresolved", plus `taxid`,
-#'   `sci_name`, `rank`, `lineage`, `alternatives`.
+#'   `sci_name`, `rank`, `lineage`, `alternatives`. An ambiguous name (several
+#'   taxa share it) gets no taxid; \code{alternatives} lists each candidate
+#'   with its kingdom.
 #' @export
 resolve_taxonomy <- function(taxa, taxdump_dir = NULL) {
   uniq <- unique(stats::na.omit(taxa))
@@ -406,9 +403,11 @@ resolve_taxonomy <- function(taxa, taxdump_dir = NULL) {
   }
   if (have_taxdump(taxdump_dir)) {
     local <- with_tax_index(taxdump_dir, function(con) resolve_taxonomy_local(uniq, con))
-    if (!is.null(local)) {
-      return(local)
+    if (is.null(local)) {
+      stop("Could not read the NCBI taxonomy in ", taxdump_dir, ". Delete that folder, then ",
+        "press Update in the Taxonomy step to download a fresh copy.", call. = FALSE)
     }
+    return(local)
   }
   do.call(rbind, lapply(uniq, resolve_taxon_one))
 }

@@ -128,7 +128,7 @@ app_server <- function(input, output, session) {
     if (mode == "Taxonomy") {
       app_query(
         "SELECT s.taxonomy_lock, s.taxonomy_switch, s.ID, s.Taxon,
-           s.sci_name, s.taxid, s.rank, s.match_type, s.time_stamp
+           s.sci_name, s.taxid, s.rank, s.match_type, s.tax_alternatives, s.time_stamp
          FROM samples s")
     } else if (mode == "Reference") {
       con <- app_con(); on.exit(DBI::dbDisconnect(con))
@@ -252,6 +252,7 @@ app_server <- function(input, output, session) {
       rank = cd("rank", minWidth = 90, html = TRUE, cell = rt_longtext()),
       match_type = cd("match_type", minWidth = 110, html = TRUE, align = "center",
         cell = rt_confidence_badge()),
+      tax_alternatives = cd("tax_alternatives", minWidth = 260, html = TRUE, cell = rt_longtext()),
       reviewed = cd("reviewed", html = TRUE, align = "center", cell = rt_bool_badge(hide_no = TRUE)),
       problematic = cd("problematic", width = 110, html = TRUE, align = "center",
         cell = rt_bool_badge(hide_no = TRUE, yes_tone = "warning")),
@@ -616,11 +617,17 @@ app_server <- function(input, output, session) {
     samples_for = function(ids) {
       if (length(ids) == 0) return(data.frame())
       ph <- paste(rep("?", length(ids)), collapse = ",")
-      app_query(sprintf("SELECT ID, Taxon, sci_name, taxid, rank FROM samples WHERE ID IN (%s)", ph),
+      app_query(sprintf(
+        "SELECT ID, Taxon, sci_name, taxid, rank, tax_alternatives FROM samples WHERE ID IN (%s)", ph),
         params = as.list(ids))
     }
   ))
   observeEvent(input$edit_taxon_btn, open_taxon_review(selected_ids()))
+  observeEvent(input$tax_lock_confirm, {
+    x <- lock_next(); lock_next(NULL)
+    req(isTRUE(input$tax_lock_confirm), x)
+    set_flag(lock_sql(x$mm, 1L), verb = "locked")
+  })
 
   # ---- Reference databases (suggest / build / reuse / skip) ----
   ref_h <- reference_handlers(input, output, session, list(
@@ -699,6 +706,21 @@ app_server <- function(input, output, session) {
         text = sprintf("Unlocked rows leave the %s table until locked again.", next_step[[mm$pfx]]),
         action_label = "Unlock", danger = TRUE)
       return()
+    }
+    if (identical(mm$pfx, "taxonomy")) {
+      s <- selected_rows()
+      weak <- d$ID[s][is.na(d$taxid[s])]
+      if (length(weak) > 0) {
+        lock_next(list(mm = mm))
+        mp_confirm("tax_lock_confirm", title = "Lock samples with no taxon?",
+          text = sprintf(paste("%s: %s. Without a taxon a sample gets no reference group,",
+            "and the contamination screen cannot judge it. Cancel and click the ID to pick",
+            "a taxon, or lock anyway."),
+            mp_n(length(weak), "selected sample has no taxon", "selected samples have no taxon"),
+            paste(c(utils::head(weak, 10), if (length(weak) > 10) "..."), collapse = ", ")),
+          action_label = "Lock anyway", danger = TRUE)
+        return()
+      }
     }
     # In Annotate mode locking is per unit, and only ONE assembly path may be
     # locked per sample (paths are alternative resolutions of the same repeat).
@@ -951,27 +973,32 @@ app_server <- function(input, output, session) {
         "Select samples and set their State to Ready, and make sure they are not locked."),
         type = "warning"); return()
     }
+    td <- project_taxdump_dir(app_project())
     shinyWidgets::sendSweetAlert(
       title = "Assigning taxonomy...",
-      text = "Hold tight, resolving organism names against the local NCBI taxonomy. This can take a moment.",
+      text = if (file.exists(taxdump_tarball(td))) {
+        "Hold tight, resolving organism names against the local NCBI taxonomy. This can take a moment."
+      } else {
+        "Hold tight. The first time, this downloads the NCBI taxonomy (about 80 MB) and indexes it, which takes a few minutes."
+      },
       type = "info", btn_labels = NA, closeOnClickOutside = FALSE
     )
     later::later(function() {
       shiny::withReactiveDomain(session, {
-        td <- project_taxdump_dir(app_project())
         res <- tryCatch({
           ensure_taxdump(td)
           c2 <- app_con()
-          n <- resolve_samples_taxonomy(c2, ids, td)
+          mt <- resolve_samples_taxonomy(c2, ids, td)
           DBI::dbDisconnect(c2)
-          list(ok = TRUE, n = n)
+          list(ok = TRUE, mt = mt)
         }, error = function(e) list(ok = FALSE, msg = conditionMessage(e)))
         if (isTRUE(res$ok)) {
           refresh(shiny::isolate(refresh()) + 1)
+          open <- any(res$mt %in% c("ambiguous", "unresolved"))
           shinyWidgets::sendSweetAlert(
-            title = "Taxonomy assigned",
-            text = sprintf("Auto-assigned taxonomy for %d sample(s). Review and lock.", res$n),
-            type = "success")
+            title = if (open) "Some samples need a taxon" else "Taxonomy assigned",
+            text = tax_count_text(res$mt),
+            type = if (open) "warning" else "success")
         } else {
           shinyWidgets::sendSweetAlert(title = "Taxonomy assignment failed",
             text = res$msg, type = "error")

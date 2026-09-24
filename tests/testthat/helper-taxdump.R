@@ -2,6 +2,8 @@
 # index build and SQL, not a mock of it. Two genus *Morus* (mulberries and
 # gannets) carry the cross-kingdom homonym case; Danio carries the ordinary one.
 
+options(ribopilot.tax_min_nodes = 1L) # the fixture holds a handful of taxa, far under the real floor
+
 TEST_NODES <- list(
   # taxid, parent, rank
   c(1, 1, "no rank"),
@@ -22,6 +24,7 @@ TEST_NODES <- list(
   c(30410, 8782, "order"),
   c(30446, 30410, "family"),
   c(37577, 30446, "genus"),
+  c(37578, 37577, "species"),
   c(186623, 7711, "class"),
   c(7952, 186623, "order"),
   c(2743709, 7952, "family"),
@@ -49,6 +52,7 @@ TEST_NAMES <- list(
   c(30410, "Suliformes", "scientific name"),
   c(30446, "Sulidae", "scientific name"),
   c(37577, "Morus", "scientific name"),
+  c(37578, "Morus bassanus", "scientific name"),
   c(186623, "Actinopteri", "scientific name"),
   c(7952, "Cypriniformes", "scientific name"),
   c(2743709, "Danionidae", "scientific name"),
@@ -57,7 +61,9 @@ TEST_NAMES <- list(
   c(7955, "zebrafish", "genbank common name"),
   c(7955, "Brachydanio rerio", "synonym"),
   c(7955, "Danio rerio Hamilton, 1822", "authority"),
-  c(1841699, "Danio aesculapii", "scientific name")
+  c(1841699, "Danio aesculapii", "scientific name"),
+  # a name that is one taxon's scientific name and another's synonym
+  c(1841699, "Danio rerio", "synonym")
 )
 
 # old taxid -> current taxid

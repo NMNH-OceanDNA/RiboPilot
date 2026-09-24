@@ -39,6 +39,17 @@ sample_ladders <- function(con) {
   do.call(rbind, rows)
 }
 
+#' Sentence naming the samples a proposal leaves out for want of a taxon
+#' @noRd
+unplaced_note <- function(con, ladders) {
+  left <- setdiff(DBI::dbGetQuery(con, "SELECT ID FROM samples ORDER BY ID")$ID, ladders$ID)
+  if (length(left) == 0) return(character(0))
+  sprintf("%s left out: %s. Pick a taxon for %s in the Taxonomy step, then propose groups again.",
+    mp_n(length(left), "sample has no taxon and was", "samples have no taxon and were"),
+    paste(c(utils::head(left, 10), if (length(left) > 10) "..."), collapse = ", "),
+    if (length(left) == 1) "it" else "them")
+}
+
 #' Filename-safe group key from a clade name
 #' @noRd
 ref_id_from_name <- function(name) {
@@ -152,7 +163,7 @@ candidate_rungs <- function(ladders, start_rank = "family") {
   }
   data.frame(ref_id = vapply(l$name, ref_id_from_name, character(1), USE.NAMES = FALSE),
     taxid = as.integer(l$taxid), clade_name = l$name,
-    query = vapply(l$name, clade_query, character(1), USE.NAMES = FALSE),
+    query = mapply(clade_query, l$name, l$taxid, USE.NAMES = FALSE),
     stringsAsFactors = FALSE)
 }
 

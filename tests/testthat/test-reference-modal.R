@@ -222,6 +222,8 @@ test_that("a partial-coverage pick splits the uncovered sample into a new group"
   orig <- ref[ref$ref_id == "forcipulatida", ]
   expect_equal(orig$clade_name, "Forcipulatida")
   expect_equal(orig$n_samples, 1L)
+  expect_equal(DBI::dbGetQuery(con,
+    "SELECT query FROM reference WHERE ref_id = 'forcipulatida'")$query, "txid41692[Organism:exp]")
   split_key <- s$ref_id[s$ID == "S2"]
   spl <- ref[ref$ref_id == split_key, ]
   expect_equal(nrow(spl), 1L)
@@ -310,7 +312,7 @@ test_that("Suggest sends the uncached rungs to the runner", {
     while (!later::loop_empty()) later::run_now()
   })
   expect_setequal(sent$taxid, c(7607L, 41693L))
-  expect_true(all(grepl("[Organism]", sent$query, fixed = TRUE)))
+  expect_true(all(grepl("^txid[0-9]+\\[Organism:exp\\]$", sent$query)))
   # the stub runner produced no count files, so the two dropped rungs are still
   # missing from the cache, which is what proves the walk stayed offline
   after <- RiboPilot:::read_counts_cache(file.path(dir, "refs"))

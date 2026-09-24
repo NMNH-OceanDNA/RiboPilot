@@ -37,7 +37,7 @@ process query_samples {
       JOIN samples s        ON s.ID = a.ID
       JOIN assemble_opts ao ON a.assemble_opts = ao.assemble_opts
       JOIN pre_opts po      ON p.pre_opts = po.pre_opts
-      WHERE a.assemble_switch IN (1,4) AND a.assemble_lock = 0;" >> samplesheet.tsv
+      WHERE a.assemble_switch IN (1,4) AND a.assemble_lock = 0 AND s.taxonomy_lock = 1;" >> samplesheet.tsv
     """
 }
 

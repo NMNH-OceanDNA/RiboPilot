@@ -11,11 +11,11 @@
 #' @param taxdump_dir Directory with the taxdump (index built on demand).
 #' @param query Search string (>= 2 chars).
 #' @param limit Max results (default 25).
-#' @return data.frame(taxid, name, rank), possibly empty.
+#' @return data.frame(taxid, name, rank, kingdom), possibly empty.
 #' @noRd
 tax_search <- function(taxdump_dir, query, limit = 25) {
   empty <- data.frame(taxid = integer(0), name = character(0), rank = character(0),
-    stringsAsFactors = FALSE)
+    kingdom = character(0), stringsAsFactors = FALSE)
   query <- trimws(query %||% "")
   if (nchar(query) < 2) return(empty)
   idx <- build_tax_index(taxdump_dir)
@@ -34,7 +34,17 @@ tax_search <- function(taxdump_dir, query, limit = 25) {
     params = list(paste0(q, "%"), paste0("%", q, "%"), as.integer(limit)))
   res$pref <- NULL
   res$taxid <- suppressWarnings(as.integer(res$taxid))
+  info <- suppressWarnings(td_taxid_info(con, res$taxid))
+  res$kingdom <- rank_kingdom(info$lineage[match(res$taxid, info$taxid)])
   res
+}
+
+#' Radio choices for tax_search() results: taxid values, "name [rank, kingdom] (taxid N)" labels
+#' @noRd
+tax_search_choices <- function(r) {
+  stats::setNames(as.character(r$taxid), sprintf("%s   [%s%s]   (taxid %s)", r$name,
+    ifelse(is.na(r$rank), "?", r$rank),
+    ifelse(is.na(r$kingdom), "", paste0(", ", r$kingdom)), r$taxid))
 }
 
 #' Auto-assign taxonomy to samples from their `Taxon` string (local, no Nextflow)
@@ -46,26 +56,29 @@ tax_search <- function(taxdump_dir, query, limit = 25) {
 #' @param con Open DBI connection to the project database.
 #' @param ids Sample IDs to (re)resolve.
 #' @param taxdump_dir Directory with the project's pinned taxdump.
-#' @return (invisibly) number of samples updated.
+#' @return (invisibly) each sample's match_type, "unresolved" where none.
 #' @noRd
 resolve_samples_taxonomy <- function(con, ids, taxdump_dir) {
-  if (length(ids) == 0) return(invisible(0L))
+  if (length(ids) == 0) return(invisible(character(0)))
   taxdump_dir <- path.expand(taxdump_dir)
   ph <- paste(rep("?", length(ids)), collapse = ",")
-  rows <- DBI::dbGetQuery(con, sprintf("SELECT ID, Taxon FROM samples WHERE ID IN (%s)", ph),
+  rows <- DBI::dbGetQuery(con,
+    sprintf("SELECT ID, Taxon, lineage_taxids FROM samples WHERE ID IN (%s)", ph),
     params = as.list(ids))
   res <- resolve_taxonomy(rows$Taxon, taxdump_dir)
   m <- res[match(rows$Taxon, res$Taxon), ]
   for (i in seq_len(nrow(rows))) {
     DBI::dbExecute(con,
-      "UPDATE samples SET taxid = ?, sci_name = ?, rank = ?, lineage = ?, match_type = ?,
-         taxonomy_switch = 2, time_stamp = ? WHERE ID = ?",
+      "UPDATE samples SET taxid = ?, sci_name = ?, rank = ?, lineage = ?, lineage_taxids = ?,
+         match_type = ?, tax_alternatives = ?, taxonomy_switch = 2, time_stamp = ? WHERE ID = ?",
       params = list(
         if (is.na(m$taxid[i])) NA_integer_ else as.integer(m$taxid[i]),
-        m$sci_name[i], m$rank[i], m$lineage[i], m$match_type[i],
-        as.integer(Sys.time()), rows$ID[i]))
+        m$sci_name[i], m$rank[i], m$lineage[i], m$lineage_taxids[i], m$match_type[i],
+        m$alternatives[i], as.integer(Sys.time()), rows$ID[i]))
   }
-  invisible(nrow(rows))
+  rescreen_samples(con, rows$ID[!mapply(identical,
+    as.character(rows$lineage_taxids), as.character(m$lineage_taxids))])
+  invisible(ifelse(is.na(m$match_type), "unresolved", m$match_type))
 }
 
 #' Assign a chosen taxid to samples (manual override from the review modal)
@@ -77,12 +90,41 @@ assign_samples_taxid <- function(con, ids, taxid, taxdump_dir) {
   m <- info[1, ]
   for (id in ids) {
     DBI::dbExecute(con,
-      "UPDATE samples SET taxid = ?, sci_name = ?, rank = ?, lineage = ?,
-         match_type = 'manual', taxonomy_switch = 2, time_stamp = ? WHERE ID = ?",
-      params = list(as.integer(taxid), m$sci_name, m$rank, m$lineage,
+      "UPDATE samples SET taxid = ?, sci_name = ?, rank = ?, lineage = ?, lineage_taxids = ?,
+         match_type = 'manual', tax_alternatives = NULL, taxonomy_switch = 2, time_stamp = ?
+       WHERE ID = ?",
+      params = list(as.integer(taxid), m$sci_name, m$rank, m$lineage, m$lineage_taxids,
         as.integer(Sys.time()), id))
   }
+  rescreen_samples(con, ids)
   invisible(length(ids))
+}
+
+#' Recompute the contamination screen of samples whose taxon changed
+#' @noRd
+rescreen_samples <- function(con, ids) {
+  ids <- intersect(ids, DBI::dbGetQuery(con, "SELECT DISTINCT ID FROM assemblies")$ID)
+  for (id in ids) {
+    DBI::dbExecute(con, "DELETE FROM screen WHERE ID = ?", params = list(id))
+    screen_sample(con, id)
+  }
+  invisible(length(ids))
+}
+
+#' One-line outcome of a taxonomy resolve, counted by match type
+#' @noRd
+tax_count_text <- function(mt) {
+  mt[is.na(mt)] <- "unresolved"
+  lv <- c("exact", "manual", "fuzzy_species", "fuzzy_genus", "ambiguous", "unresolved")
+  n <- table(factor(mt, levels = union(lv, mt)))
+  n <- n[n > 0]
+  paste0("Checked ", mp_n(length(mt), "sample"), ": ",
+    paste(n, gsub("_", " ", names(n)), collapse = ", "), ". ",
+    if (any(mt %in% c("ambiguous", "unresolved"))) {
+      "Samples marked ambiguous or unresolved have no taxon yet: click a sample's ID to pick one, then lock."
+    } else {
+      "Review and lock."
+    })
 }
 
 #' Taxonomy review modal: search the local taxdump + assign to selected samples
@@ -90,16 +132,19 @@ assign_samples_taxid <- function(con, ids, taxid, taxdump_dir) {
 taxon_review_modal <- function(samples_df, n) {
   cur <- utils::head(samples_df, 12)
   rowsum <- paste(apply(cur, 1, function(r) {
-    sprintf("%s: \"%s\" -> %s", r[["ID"]], r[["Taxon"]],
+    s <- sprintf("%s: \"%s\" -> %s", r[["ID"]], r[["Taxon"]],
       if (is.na(r[["sci_name"]]) || !nzchar(r[["sci_name"]] %||% "")) "unassigned"
       else sprintf("%s [%s, %s]", r[["sci_name"]], r[["taxid"]], r[["rank"]] %||% "?"))
+    alt <- r[["tax_alternatives"]]
+    if (is.na(alt) || !nzchar(alt)) s else paste0(s, "\n    matches: ", alt)
   }), collapse = "\n")
   modalDialog(
     title = paste("Review taxonomy for", mp_n(n, "sample")), size = "l",
     tags$pre(style = "max-height:150px; overflow:auto; font-size:12px; background:#f6f6f6; padding:8px; border-radius:4px;",
       rowsum),
     textInput("tax_query", "Search NCBI organism name (species or genus):",
-      width = "100%", placeholder = "e.g. Danio rerio, or a genus like Upeneus"),
+      width = "100%", placeholder = "e.g. Danio rerio, or a genus like Upeneus",
+      value = if (n == 1) clean_taxon(samples_df$Taxon[1]) else ""),
     opts_help("Type at least 2 letters; results come from the project's local NCBI ",
       "taxdump. Pick a species or genus row, then apply."),
     uiOutput("tax_results"),
@@ -122,9 +167,7 @@ taxonomy_handlers <- function(input, output, session, deps) {
     if (nchar(query) < 2) return(shiny::helpText("Type at least 2 letters to search."))
     r <- tax_search(deps$taxdump(), query, 30)
     if (nrow(r) == 0) return(shiny::helpText("No matches in the local taxdump."))
-    choices <- stats::setNames(as.character(r$taxid),
-      sprintf("%s   [%s]   (taxid %s)", r$name,
-        ifelse(is.na(r$rank), "?", r$rank), r$taxid))
+    choices <- tax_search_choices(r)
     shinyWidgets::prettyRadioButtons("tax_pick", NULL, choices = choices,
       shape = "round", status = "primary")
   })

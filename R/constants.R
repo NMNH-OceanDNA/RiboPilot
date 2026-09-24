@@ -321,7 +321,8 @@ MP_COL_NAMES <- c(
   n_records        = "# GenBank Records",
   database         = "Database",
   fail_reason      = "Note",
-  action           = "Action"
+  action           = "Action",
+  tax_alternatives = "Other Matches"
 )
 
 #' Header tooltips for the columns whose name does not explain itself.
@@ -352,7 +353,8 @@ MP_COL_TIPS <- c(
   best_score       = "Highest scaffold score in this sample",
   export_group     = "Named group this unit is exported with",
   time_stamp       = "When this row was last changed",
-  n_records        = "GenBank records available for this clade"
+  n_records        = "GenBank records available for this clade",
+  tax_alternatives = "Every NCBI taxon the name matched, with its kingdom; click the ID to pick one"
 )
 
 # Lock vocabulary shared by the toolbar tooltip, the Lock column header and
