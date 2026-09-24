@@ -73,7 +73,7 @@ nf_command <- function(path, resume = TRUE,
 project_has_reads <- function(path) {
   db <- file.path(path, ".sqlite")
   if (!file.exists(db)) return(TRUE)
-  con <- tryCatch(DBI::dbConnect(RSQLite::SQLite(), db), error = function(e) NULL)
+  con <- tryCatch(open_project_db(db), error = function(e) NULL)
   if (is.null(con)) return(TRUE)
   on.exit(DBI::dbDisconnect(con))
   n <- tryCatch(DBI::dbGetQuery(con,
@@ -161,7 +161,7 @@ ribopilot_src_default <- function() {
 #' its units will be annotated too, because assembly re-seeds them.
 #' @noRd
 nf_pending_count <- function(path) {
-  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(path, ".sqlite"))
+  con <- open_project_db(file.path(path, ".sqlite"))
   on.exit(DBI::dbDisconnect(con))
   n_asm <- DBI::dbGetQuery(con,
     "SELECT COUNT(*) n FROM assemble WHERE assemble_switch IN (1,4) AND assemble_lock = 0")$n

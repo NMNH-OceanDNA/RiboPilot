@@ -94,7 +94,7 @@ config_mounted_dirs <- function(cfg_lines) {
 #' @return character vector of directories, possibly empty.
 #' @noRd
 reference_mount_dirs <- function(project, mounted = character(0)) {
-  con <- tryCatch(DBI::dbConnect(RSQLite::SQLite(), file.path(project, ".sqlite")),
+  con <- tryCatch(open_project_db(file.path(project, ".sqlite")),
     error = function(e) NULL)
   if (is.null(con)) return(character(0))
   on.exit(DBI::dbDisconnect(con), add = TRUE)

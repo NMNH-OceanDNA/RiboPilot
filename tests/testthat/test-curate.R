@@ -112,3 +112,13 @@ test_that("the extracted ruleset resolver keeps curate_one's precedence", {
   expect_equal(r$ruleset, "metazoa_generic")
   expect_equal(r$note, "no_clade_ruleset")
 })
+
+test_that("curation writes its flags to curate_flags and keeps the curator's note", {
+  con <- chimera_test_con(); on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_notes = 'check 3prime end with PCR'")
+  RiboPilot::curate_one(con, "S1", 1L, 1L)
+  a <- DBI::dbGetQuery(con, "SELECT annotate_notes, curate_flags, n_flags FROM annotate WHERE ID = 'S1'")
+  expect_equal(a$annotate_notes, "check 3prime end with PCR")
+  expect_match(a$curate_flags, "missing_18S", fixed = TRUE)
+  expect_gt(a$n_flags, 0)
+})

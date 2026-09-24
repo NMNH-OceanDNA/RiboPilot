@@ -176,7 +176,7 @@ rt_flag_badge <- function() {
       if (n === null || n === undefined || n === '' ) return ''
       n = Number(n)
       if (n === 0) return '<span class=\"mp-fg-success\">&#10003;</span>'
-      var tip = cellInfo.row.annotate_notes || ''
+      var tip = cellInfo.row.curate_flags || ''
       return '<span title=\"' + String(tip).replace(/\"/g, '&quot;') + '\" class=\"mp-pill mp-pill-warning\">' + n + '</span>'
     }")
 }

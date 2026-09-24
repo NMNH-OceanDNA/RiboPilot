@@ -142,7 +142,7 @@ test_that("export_summary_df puts off_target and contaminant into submission_ris
   on.exit(DBI::dbDisconnect(con))
   DBI::dbExecute(con, "INSERT INTO assemblies (ID, path, scaffold, sequence, length) VALUES ('S1',1,1,'ACGT',4)")
   DBI::dbExecute(con, "INSERT OR IGNORE INTO annotate (ID, path, scaffold) VALUES ('S1',1,1)")
-  DBI::dbExecute(con, "UPDATE annotate SET annotate_notes = 'missing_5.8S; contaminant' WHERE ID = 'S1'")
+  DBI::dbExecute(con, "UPDATE annotate SET curate_flags = 'missing_5.8S; contaminant' WHERE ID = 'S1'")
   DBI::dbExecute(con, "INSERT INTO screen (ID, path, scaffold, screen_verdict, lca_taxon) VALUES ('S1',1,1,'off_target','Actiniaria')")
   units <- data.frame(ID = "S1", path = 1L, scaffold = 1L, seqid = "S1", stringsAsFactors = FALSE)
   risk <- RiboPilot:::export_summary_df(con, units)$submission_risk
@@ -151,7 +151,7 @@ test_that("export_summary_df puts off_target and contaminant into submission_ris
   expect_true(RiboPilot:::has_screen_risk(risk))
 
   # an unchecked screen is not a contaminant call
-  DBI::dbExecute(con, "UPDATE annotate SET annotate_notes = 'contaminant_unchecked'")
+  DBI::dbExecute(con, "UPDATE annotate SET curate_flags = 'contaminant_unchecked'")
   DBI::dbExecute(con, "UPDATE screen SET screen_verdict = 'on_target'")
   risk <- RiboPilot:::export_summary_df(con, units)$submission_risk
   expect_false(RiboPilot:::has_screen_risk(risk))

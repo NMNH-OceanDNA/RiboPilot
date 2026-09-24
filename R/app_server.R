@@ -177,7 +177,7 @@ app_server <- function(input, output, session) {
       app_query(
         "SELECT s.ID, an.path, an.scaffold, s.Taxon, s.sci_name, s.taxid, asm.length,
            an.n_features, an.missing,
-           an.n_flags, an.annotate_notes, an.itsx_warnings, sc.screen_verdict,
+           an.n_flags, an.curate_flags, an.annotate_notes, an.itsx_warnings, sc.screen_verdict,
            ch.label AS chimera_label, ch.reason AS chimera_reason,
            an.reviewed, an.problematic, an.partial,
            an.export_group, an.time_stamp
@@ -199,7 +199,7 @@ app_server <- function(input, output, session) {
            -- and its column was already defined but never selected.
            asm.blast_species, asm.blast_accession, asm.blast_pident, asm.blast_qcovs,
            asm.blast_source,
-           an.n_flags, an.annotate_notes, an.itsx_warnings, sc.screen_verdict,
+           an.n_flags, an.curate_flags, an.annotate_notes, an.itsx_warnings, sc.screen_verdict,
            ch.label AS chimera_label, ch.reason AS chimera_reason, an.reviewed,
            an.problematic, an.partial, an.time_stamp,
            'details' AS details, 'output' AS output
@@ -260,6 +260,7 @@ app_server <- function(input, output, session) {
       n_flags = cd("n_flags", width = 100, html = TRUE, filterable = FALSE, align = "center",
         cell = rt_flag_badge()),
       annotate_notes = reactable::colDef(show = FALSE),
+      curate_flags = reactable::colDef(show = FALSE),
       itsx_warnings = cd("itsx_warnings", minWidth = 130, html = TRUE, cell = rt_itsx_badge()),
       screen_verdict = cd("screen_verdict", width = 110, html = TRUE, align = "center",
         cell = rt_screen_badge()),
@@ -649,7 +650,8 @@ app_server <- function(input, output, session) {
     if (!need_selection(length(ids))) return()
     con <- app_con()
     on.exit(DBI::dbDisconnect(con))
-    for (id in ids) DBI::dbExecute(con, sql, params = list(id))
+    if (!app_write(DBI::dbWithTransaction(con,
+      for (id in ids) DBI::dbExecute(con, sql, params = list(id))))) return()
     refresh(refresh() + 1)
     # refresh() re-renders the table, which drops the client-side selection.
     # Reselect the same samples by ID once the new table has been flushed.
@@ -664,7 +666,8 @@ app_server <- function(input, output, session) {
     if (!need_selection(NROW(u))) return()
     usql <- sub("WHERE ID = \\?", "WHERE ID = ? AND path = ? AND scaffold = ?", sql)
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    for (i in seq_len(nrow(u))) DBI::dbExecute(con, usql, params = list(u$ID[i], u$path[i], u$scaffold[i]))
+    if (!app_write(DBI::dbWithTransaction(con, for (i in seq_len(nrow(u)))
+      DBI::dbExecute(con, usql, params = list(u$ID[i], u$path[i], u$scaffold[i]))))) return()
     refresh(refresh() + 1)
     session$onFlushed(function() {
       d <- isolate(samples_data())
@@ -766,7 +769,7 @@ app_server <- function(input, output, session) {
   })
   pending_group <- reactiveVal(NULL)
   do_assign_group <- function(u, groups) {
-    assign_export_group(app_project(), u, groups)
+    if (!app_write(assign_export_group(app_project(), u, groups))) return()
     removeModal(); refresh(refresh() + 1)
     mp_toast(if (length(unique(groups)) == 1) {
       paste0(mp_n(nrow(u), "unit"), " assigned to group '", groups[1], "'.")
@@ -818,7 +821,7 @@ app_server <- function(input, output, session) {
   observeEvent(input$clear_group_btn, {
     u <- selected_units()
     if (!need_selection(NROW(u))) return()
-    clear_export_group(app_project(), u)
+    if (!app_write(clear_export_group(app_project(), u))) return()
     refresh(refresh() + 1)
     mp_toast(paste0("Group cleared for ", mp_n(nrow(u), "unit"), "."))
   })
@@ -1595,10 +1598,10 @@ app_server <- function(input, output, session) {
   unit_label <- function(u) paste0(u$path, ".", u$scaffold)
   do_scaf_triage <- function(id, units, verdict) {
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    for (i in seq_len(nrow(units))) {
+    if (!app_write(for (i in seq_len(nrow(units))) {
       set_unit_triage(con, id, units$path[i], units$scaffold[i], verdict,
         reason = NA_character_, source = "user")
-    }
+    })) return()
     refresh(refresh() + 1)
     word <- if (is.na(verdict)) "undecided" else verdict
     rp_toast(if (nrow(units) == 1) {
@@ -1797,7 +1800,7 @@ app_server <- function(input, output, session) {
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
     act <- triage_actions()
     # persist first: a pipeline re-run must reproduce what the curator just saw
-    write_triage_opts(con, act)
+    if (!app_write(write_triage_opts(con, act))) return()
     n <- 0L
     for (id in ids) {
       n <- n + tryCatch(auto_triage_sample(con, id, opts = act,
@@ -2074,13 +2077,13 @@ app_server <- function(input, output, session) {
   })
   output$curate_notes <- renderUI({
     u <- sel_unit(); req(u)
-    a <- app_query("SELECT n_flags, annotate_notes FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())
+    a <- app_query("SELECT n_flags, curate_flags FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())
     if (nrow(a) == 0 || is.na(a$n_flags[1]) || a$n_flags[1] == 0) {
       return(span(class = "mp-fg-success", HTML("&#10003; No curation warnings for this sample.")))
     }
     tagList(
       span(sprintf("%d sample warning(s): ", a$n_flags[1]), class = "mp-fg-warning", style = "font-weight:bold;"),
-      span(a$annotate_notes[1] %||% "", class = "mp-fg-warning"))
+      span(a$curate_flags[1] %||% "", class = "mp-fg-warning"))
   })
   output$flag_tbl <- reactable::renderReactable({
     d <- flag_rows()
@@ -2104,15 +2107,14 @@ app_server <- function(input, output, session) {
   # ---- edit / save / reset state machine (Edit is a checkbox) ----
   restore_edit_backup <- function() {
     b <- edit_backup()
-    if (!is.null(b) && nrow(b)) {
-      con <- app_con(); on.exit(DBI::dbDisconnect(con))
-      u <- sel_unit()
-      for (i in seq_len(nrow(b))) {
-        DBI::dbExecute(con,
-          "UPDATE annotations SET start = ?, stop = ?, length = ? WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?",
-          params = list(b$start[i], b$stop[i], b$stop[i] - b$start[i] + 1, u$ID, u$path, u$scaffold, b$element[i]))
-      }
-    }
+    if (is.null(b) || !nrow(b)) return(TRUE)
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    u <- sel_unit()
+    app_write(DBI::dbWithTransaction(con, for (i in seq_len(nrow(b))) {
+      DBI::dbExecute(con,
+        "UPDATE annotations SET start = ?, stop = ?, length = ? WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?",
+        params = list(b$start[i], b$stop[i], b$stop[i] - b$start[i] + 1, u$ID, u$path, u$scaffold, b$element[i]))
+    }))
   }
   save_edits <- function() {
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
@@ -2147,7 +2149,8 @@ app_server <- function(input, output, session) {
     if (isTRUE(input$unsaved_confirm)) {
       save_edits()
     } else {
-      restore_edit_backup(); edit_backup(NULL); edit_dirty(FALSE); edit_tick(edit_tick() + 1)
+      if (!restore_edit_backup()) return()
+      edit_backup(NULL); edit_dirty(FALSE); edit_tick(edit_tick() + 1)
       rp_toast("Boundary edits discarded.", type = "message")
     }
   }, ignoreNULL = TRUE)
@@ -2156,7 +2159,8 @@ app_server <- function(input, output, session) {
     shinyWidgets::updatePrettyCheckbox(session, "feat_edit", value = FALSE)  # clean exit (not dirty)
   })
   observeEvent(input$feat_reset, {
-    restore_edit_backup(); edit_dirty(FALSE); edit_tick(edit_tick() + 1)
+    if (!restore_edit_backup()) return()
+    edit_dirty(FALSE); edit_tick(edit_tick() + 1)
     shinyWidgets::updatePrettyCheckbox(session, "feat_edit", value = FALSE)
     rp_toast("Boundary edits discarded.", type = "message")
   })
@@ -2301,14 +2305,14 @@ app_server <- function(input, output, session) {
     # let that blank a stored note. Clearing text is done with the Clear button.
     if (!nzchar(new) && nzchar(cur)) return()
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    DBI::dbExecute(con, "UPDATE annotate SET annotate_notes = ? WHERE ID = ? AND path = ? AND scaffold = ?",
-      params = c(list(new), uargs()))
+    app_write(DBI::dbExecute(con, "UPDATE annotate SET annotate_notes = ? WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = c(list(new), uargs())))
   })
   observeEvent(input$annotate_notes_clear, {
     u <- sel_unit(); req(u)
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    DBI::dbExecute(con, "UPDATE annotate SET annotate_notes = NULL WHERE ID = ? AND path = ? AND scaffold = ?",
-      params = uargs())
+    if (!app_write(DBI::dbExecute(con, "UPDATE annotate SET annotate_notes = NULL WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = uargs()))) return()
     updateTextAreaInput(session, "annotate_notes", value = "")
     rp_toast("Notes cleared.", type = "message")
   })
@@ -2327,9 +2331,9 @@ app_server <- function(input, output, session) {
     if (start > stop) { rp_toast("Boundaries would cross; nudge ignored.", type = "warning"); return() }
     u <- sel_unit()
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    DBI::dbExecute(con,
+    if (!app_write(DBI::dbExecute(con,
       "UPDATE annotations SET start = ?, stop = ?, length = ?, edited = 1 WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?",
-      params = list(start, stop, stop - start + 1, u$ID, u$path, u$scaffold, cx$el))
+      params = list(start, stop, stop - start + 1, u$ID, u$path, u$scaffold, cx$el)))) return()
     edit_dirty(TRUE); edit_tick(edit_tick() + 1)
   }
   observeEvent(input$nt_5_out, nudge_boundary("5", "out"))
@@ -2341,9 +2345,9 @@ app_server <- function(input, output, session) {
     u <- sel_unit(); req(u)
     con <- app_con()
     on.exit(DBI::dbDisconnect(con))
-    DBI::dbExecute(con, sprintf(
+    if (!app_write(DBI::dbExecute(con, sprintf(
       "UPDATE annotate SET %s = CASE WHEN %s = 'yes' THEN 'no' ELSE 'yes' END WHERE ID = ? AND path = ? AND scaffold = ?",
-      col, col), params = uargs())
+      col, col), params = uargs()))) return()
     refresh(refresh() + 1)
     rp_toast(paste0("Toggled ", label, "."), type = "message")
   }
@@ -2376,9 +2380,9 @@ app_server <- function(input, output, session) {
         other$path[1], u$ID), type = "error")
       return()
     }
-    DBI::dbExecute(con,
+    if (!app_write(DBI::dbExecute(con,
       "UPDATE annotate SET annotate_lock = 1, reviewed = 'yes' WHERE ID = ? AND path = ? AND scaffold = ?",
-      params = uargs())
+      params = uargs()))) return()
     refresh(refresh() + 1)
     removeModal()
     rp_toast("Locked annotation unit.", type = "message")

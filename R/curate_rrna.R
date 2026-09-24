@@ -274,7 +274,7 @@ resolve_ruleset <- function(con, id, path = 1L, scaffold = 1L, ruleset = NULL) {
 #' per-feature reference identities (`blast_ref_alignment`), and the sample vs.
 #' hit lineages, runs [curate_rrna_core()], then updates each feature's
 #' `status`/`flags` and the per-sample `annotate` summary (`n_flags`,
-#' `annotate_notes`) in one transaction.
+#' `curate_flags`) in one transaction.
 #'
 #' @param con Open DBI connection.
 #' @param id Sample ID.
@@ -349,7 +349,7 @@ curate_one <- function(con, id, path = 1L, scaffold = 1L, ruleset = NULL) {
       }
     }
     DBI::dbExecute(con,
-      "UPDATE annotate SET n_flags = ?, annotate_notes = ?, time_stamp = ? WHERE ID = ? AND path = ? AND scaffold = ?",
+      "UPDATE annotate SET n_flags = ?, curate_flags = ?, time_stamp = ? WHERE ID = ? AND path = ? AND scaffold = ?",
       params = list(res$n_flags, res$notes, ts, id, path, scaffold))
   })
   invisible(res)

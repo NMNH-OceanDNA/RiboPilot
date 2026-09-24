@@ -361,7 +361,7 @@ opts_handlers <- function(input, output, session, deps) {
     if (length(ids) == 0) return(character(0))
     con <- deps$con(); on.exit(DBI::dbDisconnect(con))
     ph <- paste(rep("?", length(ids)), collapse = ",")
-    DBI::dbGetQuery(con, sprintf("SELECT ID FROM %s WHERE %s = 1 AND ID IN (%s)",
+    DBI::dbGetQuery(con, sprintf("SELECT DISTINCT ID FROM %s WHERE %s = 1 AND ID IN (%s)",
       tbl, lock_col, ph), params = as.list(ids))$ID
   }
 
@@ -376,14 +376,21 @@ opts_handlers <- function(input, output, session, deps) {
     if (length(sel) && clicked %in% sel) sel else clicked
   }
 
-  open_modal <- function(pfx) {
+  open_modal <- function(pfx, set = NULL) {
     sp <- specs[[pfx]]
     ids <- targets()
     con <- deps$con(); on.exit(DBI::dbDisconnect(con))
-    # current set for the first target, joined to its opts row
-    q <- sprintf("SELECT o.* FROM %s x JOIN %s o ON x.%s = o.%s WHERE x.ID = ?",
-      sp$link_tbl, sp$table, sp$key, sp$key)
-    cur <- tryCatch(DBI::dbGetQuery(con, q, params = list(ids[1])), error = function(e) NULL)
+    # the named set, else the first target's current set (for annotate, its
+    # first unit, as the table shows)
+    q <- if (is.null(set)) {
+      sprintf("SELECT o.* FROM %s x JOIN %s o ON x.%s = o.%s WHERE x.ID = ?%s LIMIT 1",
+        sp$link_tbl, sp$table, sp$key, sp$key,
+        if (sp$link_tbl == "annotate") " ORDER BY x.path, x.scaffold" else "")
+    } else {
+      sprintf("SELECT * FROM %s WHERE %s = ?", sp$table, sp$key)
+    }
+    cur <- tryCatch(DBI::dbGetQuery(con, q, params = list(set %||% ids[1])),
+      error = function(e) NULL)
     if (is.null(cur) || nrow(cur) == 0) {
       cur <- DBI::dbGetQuery(con, sprintf("SELECT * FROM %s WHERE %s = 'default'", sp$table, sp$key))
     }
@@ -436,9 +443,14 @@ opts_handlers <- function(input, output, session, deps) {
         con <- deps$con(); on.exit(DBI::dbDisconnect(con))
         DBI::dbGetQuery(con, sprintf("SELECT %s FROM %s", sp$key, sp$table))[[1]]
       }, error = function(e) character(0))
-      if (!(input[[paste0(p, "_name")]] %in% known)) {
+      nm <- input[[paste0(p, "_name")]]
+      if (!(nm %in% known)) {
         shinyWidgets::updatePrettyCheckbox(session, paste0(p, "_edit"), value = TRUE)
         for (f in fids) shinyjs::enable(f)
+      } else if (!identical(nm, cur_row()[[sp$key]][1]) ||
+                 isTRUE(input[[paste0(p, "_edit")]])) {
+        # a known set shows its own values, read-only
+        open_modal(p, set = nm)
       }
     })
     shiny::observeEvent(input[[paste0("update_", p)]], {
@@ -497,7 +509,7 @@ opts_edit_check <- function(sp, nm, ids, editing, deps) {
   if (length(others) == 0) return(list(action = "ok"))
   ph <- paste(rep("?", length(others)), collapse = ",")
   locked <- DBI::dbGetQuery(con,
-    sprintf("SELECT ID FROM %s WHERE %s = 1 AND ID IN (%s)", sp$queue_tbl, sp$lock, ph),
+    sprintf("SELECT DISTINCT ID FROM %s WHERE %s = 1 AND ID IN (%s)", sp$queue_tbl, sp$lock, ph),
     params = as.list(others))$ID
   if (length(locked) > 0) {
     return(list(action = "refuse", msg = sprintf(
@@ -573,24 +585,27 @@ opts_apply <- function(pfx, sp, input, deps, ids, cur) {
   base <- if (!is.null(cur) && nrow(cur)) as.list(cur) else list()
 
   con <- deps$con(); on.exit(DBI::dbDisconnect(con))
+  known <- DBI::dbGetQuery(con, sprintf("SELECT %s FROM %s", sp$key, sp$table))[[1]]
   warns <- character(0)
-  if (editing) {
-    row <- opts_row(pfx, nm, input, base)
-    dplyr::rows_upsert(dplyr::tbl(con, sp$table), row, by = sp$key, in_place = TRUE, copy = TRUE)
-    # a database that is not there yet is saved anyway (it may live on a share
-    # that is not mounted, or be built later), but it is said out loud now
-    # rather than surfacing as a failed assembly
-    warns <- unusable_db_warnings(row)
-  }
-
-  for (id in ids) {
-    DBI::dbExecute(con, sprintf("UPDATE %s SET %s = ? WHERE ID = ?", sp$link_tbl, sp$key),
-      params = list(nm, id))
-    DBI::dbExecute(con, sprintf("UPDATE %s SET %s = 1 WHERE ID = ?", sp$queue_tbl, sp$queue),
-      params = list(id))
-    # re-queuing annotation gives the sample work again, so it is no longer done
-    if (identical(sp$queue_tbl, "annotate")) refresh_sample_state(con, id)
-  }
+  saved <- app_write({
+    if (editing || !(nm %in% known)) {
+      row <- opts_row(pfx, nm, input, base)
+      dplyr::rows_upsert(dplyr::tbl(con, sp$table), row, by = sp$key, in_place = TRUE, copy = TRUE)
+      # a database that is not there yet is saved anyway (it may live on a share
+      # that is not mounted, or be built later), but it is said out loud now
+      # rather than surfacing as a failed assembly
+      warns <- unusable_db_warnings(row)
+    }
+    for (id in ids) {
+      DBI::dbExecute(con, sprintf("UPDATE %s SET %s = ? WHERE ID = ?", sp$link_tbl, sp$key),
+        params = list(nm, id))
+      DBI::dbExecute(con, sprintf("UPDATE %s SET %s = 1 WHERE ID = ?", sp$queue_tbl, sp$queue),
+        params = list(id))
+      # re-queuing annotation gives the sample work again, so it is no longer done
+      if (identical(sp$queue_tbl, "annotate")) refresh_sample_state(con, id)
+    }
+  })
+  if (!saved) return()
   deps$refresh(deps$refresh() + 1)
   shiny::removeModal()
   # one alert, not one per warning: a second sweet alert replaces the first
