@@ -18,13 +18,12 @@
 #'   dev/design/20_USER_ASSEMBLIES.md.
 #' @param min_depth Minimum trimmed paired reads to proceed with assembly.
 #' @param executor Executor for the Nextflow pipeline. Ready to use as-is:
-#'   "docker" (default) or "local" for the RiboPilot container on this machine,
-#'   and "conda" for a self-installed conda env (not supported; warns). Every
-#'   scheduler ("slurm", "sge", "pbs", "lsf", "awsbatch", "NMNH_Hydra",
-#'   "NOAA_SEDNA") is a template, not a usable
-#'   executor: it needs a queue and cluster options that only [generate_config()]
-#'   supplies, so build a profile there first and pass its name here. Passing a
-#'   bare scheduler name is an error rather than a config Nextflow cannot parse.
+#'   "docker" (default) and "local" run the RiboPilot container on this
+#'   machine, and "NMNH_Hydra" and "NOAA_SEDNA" are ready-made Singularity
+#'   profiles for those clusters. "conda" uses a self-installed conda env (not
+#'   supported; warns). For any other cluster, build a profile with
+#'   generate_config() and pass its name here. A bare scheduler name ("slurm",
+#'   "sge", "pbs", "lsf") is an error: it has no queue or cluster options yet.
 #' @param container Container to use for pipeline execution.
 #' @param custom_seeds_db Path/URL to a custom GetOrganelle nr seeds database.
 #' @param custom_labels_db Path/URL to a custom GetOrganelle nr labels database.
@@ -51,7 +50,7 @@ new_project <- function(
     data_path = NULL,
     assembly_path = NULL,
     min_depth = 2000000,
-    executor = c("docker", "conda", "local", "awsbatch", "slurm", "pbs", "sge", "lsf", "NMNH_Hydra", "NOAA_SEDNA"),
+    executor = c("docker", "conda", "local", "slurm", "pbs", "sge", "lsf", "NMNH_Hydra", "NOAA_SEDNA"),
     container = paste0("macguigand/ribopilot:", utils::packageVersion("RiboPilot")),
     custom_seeds_db = NULL,
     custom_labels_db = NULL,

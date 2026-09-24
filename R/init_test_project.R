@@ -179,9 +179,11 @@ new_test_project <- function(path = ".", n = Inf, full_size = FALSE, executor = 
   scratch <- file.path(tempdir(), "ribopilot_sra")
   sra_bin <- sra_bin %||% ""
 
-  message("Fetching ", nrow(mapping), " test sample(s)", if (full_size)
-    ". This downloads several GB and may take a while (go grab a coffee)..." else
-    " (rDNA-filtered reads from the RiboPilot release)...")
+  n_dl <- sum(!((mapping$Local %||% rep(FALSE, nrow(mapping))) %in% TRUE))
+  message("Preparing ", nrow(mapping), " test sample(s): ", n_dl,
+    if (full_size) " full read sets from ENA or SRA (several GB, this may take a while)"
+    else " small read sets from the RiboPilot release",
+    ", ", nrow(mapping) - n_dl, " bundled with the package...")
   .stage_test_reads(mapping, data_dir, sra_bin = sra_bin, scratch = scratch, full_size = full_size)
   unlink(scratch, recursive = TRUE)
 

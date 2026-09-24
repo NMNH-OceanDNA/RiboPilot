@@ -12,7 +12,7 @@ test_that("the reference workflow ships with both entry points", {
 
 test_that("the launcher passes every param a real container config interpolates", {
   # the config, not the workflow file, is what a run parses first: a missing
-  # --projectDir / --rawDir makes Nextflow reject the whole config
+  # --projectDir makes Nextflow reject the whole config
   proj <- withr::local_tempdir()
   for (engine in c("docker", "singularity")) {
     cfg <- c(RiboPilot:::container_engine_block(engine),
@@ -27,7 +27,7 @@ test_that("the launcher passes every param a real container config interpolates"
         gregexpr("\\$\\{params\\.[A-Za-z_]+\\}", paste(cfg, collapse = "\n")))[[1]]))
     expect_gt(length(needed), 0)
     expect_true(all(needed %in% passed), info = engine)
-    expect_equal(args[which(args == "--rawDir") + 1], "/data/raw")
+    expect_false("--rawDir" %in% args)
     expect_equal(args[which(args == "--projectDir") + 1], path.expand(proj))
   }
 })
@@ -39,8 +39,8 @@ test_that("every param the launcher passes is one the workflow declares or the c
   passed <- sub("^--", "", grep("^--", args, value = TRUE))
   declared <- sub("^params\\.([A-Za-z_]+).*$", "\\1",
     grep("^params\\.", strsplit(nf_txt, "\n")[[1]], value = TRUE))
-  # projectDir/rawDir are consumed by the executor config, not by the workflow
-  expect_setequal(setdiff(passed, c("projectDir", "rawDir")), declared)
+  # projectDir is consumed by the executor config, not by the workflow
+  expect_setequal(setdiff(passed, "projectDir"), declared)
 })
 
 test_that("the workflow publishes where reference_db_paths() looks", {

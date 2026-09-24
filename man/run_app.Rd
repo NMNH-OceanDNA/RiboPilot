@@ -24,8 +24,9 @@ run_app(
 
 \item{host, port, launch.browser}{Shiny server options.}
 
-\item{headless}{Offer a cluster job script instead of a local run. `NULL`
-(default) detects it; see [detect_headless()].}
+\item{headless}{Offer a cluster job script instead of Run from App. `NULL`
+(default) turns it on when a batch scheduler (sbatch, qsub, or bsub) is on
+PATH or the session is RStudio Server; pass `TRUE` or `FALSE` to override.}
 
 \item{...}{Passed to golem options.}
 }

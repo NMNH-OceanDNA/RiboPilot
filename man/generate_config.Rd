@@ -6,7 +6,7 @@
 \usage{
 generate_config(
   name,
-  scheduler = c("slurm", "sge", "pbs", "lsf", "local", "awsbatch"),
+  scheduler = c("slurm", "sge", "pbs", "lsf", "local"),
   container_engine = c("auto", "singularity", "apptainer", "docker"),
   container_cache = NULL,
   container_run_options = NULL,
@@ -23,15 +23,21 @@ generate_config(
 \arguments{
 \item{name}{Profile name. Saved as `config.<name>`; pass as `executor`.}
 
-\item{scheduler}{Base template. One of "slurm", "sge", "pbs", "lsf",
-"local", or "awsbatch".}
+\item{scheduler}{Base template: "slurm", "sge", "pbs", "lsf", or "local"
+(Docker on one machine, the same as executor = "local").}
 
-\item{container_engine}{"auto" picks docker for local/awsbatch and
-singularity for HPC schedulers; or "singularity"/"apptainer"/"docker".}
+\item{container_engine}{"auto" (default) picks singularity for the schedulers
+and docker for "local". "singularity", "apptainer", and "docker" apply to
+slurm, sge, pbs, and lsf; "local" always uses Docker.}
 
-\item{container_cache}{Optional cacheDir for singularity/apptainer.}
+\item{container_cache}{Folder where Singularity or Apptainer keeps the pulled
+image, shared by every project that uses this profile; it must be visible
+from the compute nodes. Default: `NXF_SINGULARITY_CACHEDIR` (or
+`NXF_APPTAINER_CACHEDIR`) when set, otherwise a "containers" folder in the
+reference folder (`RIBOPILOT_REF_DIR`, see ribopilot_ref_dir()). Pass "" to
+leave it to Nextflow (the project's work/singularity folder).}
 
-\item{container_run_options}{Optional runOptions for singularity/apptainer.}
+\item{container_run_options}{Optional extra runOptions for the container engine (any engine), appended to the bind mounts.}
 
 \item{queue}{Partition / queue name. If `NULL`, the directive is omitted.}
 

@@ -33,8 +33,8 @@ DEFAULT_LABELS_DB <- paste0("https://raw.githubusercontent.com/dmacguigan/RiboPi
 #' Everything except the conda profile, which uses the active environment's
 #' tools and sets no `container` directive.
 #' @noRd
-CONTAINER_EXECUTORS <- c("docker", "local", "awsbatch", "slurm", "pbs", "sge",
-                         "lsf", "NMNH_Hydra", "NOAA_SEDNA")
+CONTAINER_EXECUTORS <- c("docker", "local", "slurm", "pbs", "sge", "lsf",
+                         "NMNH_Hydra", "NOAA_SEDNA")
 
 #' Titles naming a nuclear rDNA locus.
 #'

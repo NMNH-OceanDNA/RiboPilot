@@ -7,8 +7,9 @@
 // RiboPilot does not use nf-sqldb: each process opens the project SQLite DB
 // directly by path and pulls its own CPU count from the DB. The container must
 // therefore see the project files, so the generated container-engine block
-// bind-mounts the project and raw-read directories. Requires a shared
-// filesystem visible to all compute nodes.
+// bind-mounts the project directory, and new_project() adds the read,
+// assembly, and reference folders. Requires a shared filesystem visible to
+// all compute nodes.
 
 // Throttle job submission to be a good cluster citizen (adjust as needed)
 executor {
