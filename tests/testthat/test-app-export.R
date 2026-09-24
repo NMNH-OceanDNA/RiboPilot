@@ -345,6 +345,7 @@ test_that("a busy database during Assign Group is reported and the session stays
     session$setInputs(assign_group_go = 1)
     expect_false(session$isClosed())
     expect_true(is.na(RiboPilot:::app_query("SELECT export_group FROM annotate")$export_group))
+  })
 })
 
 test_that("Assign Group refuses a name that cannot be a folder", {
@@ -363,6 +364,7 @@ test_that("Assign Group refuses a name that cannot be a folder", {
     session$setInputs(assign_group_go = 2)
     session$flushReact()
     expect_equal(RiboPilot:::app_query("SELECT export_group FROM annotate")$export_group, "Batch_1")
+  })
 })
 
 test_that("locking a sample with no taxon asks first, and locks on Lock anyway", {
@@ -390,7 +392,6 @@ test_that("locking a sample with no taxon asks first, and locks on Lock anyway",
     session$setInputs(tax_lock_confirm = TRUE)
     expect_equal(locks(), c(1L, 1L))
   })
-})
 })
 
 # trim_assembly() writes these; the export fixture was made without them
