@@ -43,6 +43,15 @@ test_that("nf_reference_command names the entry point and every param", {
   expect_true("--clades" %in% a && "--outDir" %in% a)
 })
 
+test_that("a real rawDir in the config is passed, so an older profile's bind resolves", {
+  d <- withr::local_tempdir()
+  writeLines(c("params {", "    rawDir = '/data/reads'", "}"), file.path(d, ".config"))
+  a <- RiboPilot:::nf_reference_command(d, "COUNT", "c.tsv", "/refs", "o")
+  expect_equal(a[which(a == "--rawDir") + 1], "/data/reads")
+  writeLines(c("params {", "    rawDir = 'NA'", "}"), file.path(d, ".config"))
+  expect_false("--rawDir" %in% RiboPilot:::nf_reference_command(d, "COUNT", "c.tsv", "/refs", "o"))
+})
+
 test_that("refseq and the api key only appear when asked for", {
   d <- withr::local_tempdir()
   writeLines("process { executor = 'local' }", file.path(d, ".config"))

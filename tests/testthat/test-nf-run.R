@@ -55,6 +55,20 @@ test_that("the run error is the abort cause, or else the first ERROR line", {
   expect_true(is.na(RiboPilot:::nf_log_facts(file.path(d, "none.log"))$error))
 })
 
+test_that("a task that failed before it started, or wrote bad bytes, still gets a report", {
+  d <- withr::local_tempdir()
+  writeBin(as.raw(c(0x65, 0x72, 0x72, 0xff, 0x0a)), file.path(d, ".command.err"))
+  log <- file.path(d, "run.nextflow.log")
+  writeLines(c(nf_log_lines(d)[1:2],
+    "Sep-24 11:47:37.900 [TaskFinalizer-1] ERROR nextflow.processor.TaskProcessor - Error executing process > 'preprocess (S9)'",
+    sprintf("Sep-24 11:47:38.000 [Task monitor] DEBUG n.processor.TaskPollingMonitor - Task completed > TaskHandler[id: 2; name: assemble (S1); status: COMPLETED; exit: 1; error: -; workDir: %s]", d),
+    "Sep-24 11:47:38.100 [TaskFinalizer-2] INFO  nextflow.processor.TaskProcessor - [07/65d217] NOTE: Process `assemble (S1)` terminated with an error exit status (1) -- Error is ignored"), log)
+  f <- RiboPilot:::nf_log_facts(log)
+  expect_equal(f$tasks$exit[f$tasks$item == "S9"], "-")
+  expect_match(f$tasks$stderr[f$tasks$item == "S1"], "^err")
+  expect_equal(RiboPilot:::nf_run_report(d, log, 1L, "pipeline", 0)$type, "error")
+})
+
 test_that("exit codes map to a likely cause", {
   f <- RiboPilot:::nf_exit_cause
   expect_match(f(137L), "out of memory")
@@ -111,7 +125,8 @@ test_that("the report lists the samples this run left Failed, with their notes",
 test_that("each pipeline note gets a plain cause and a next step", {
   h <- RiboPilot:::failure_hint
   expect_match(h("below min_depth: 812 reads after trimming")$why, "Too few reads")
-  expect_match(h("3 paths exceeds max_paths (2)")$next_step, "Max paths")
+  expect_match(h("3 or more paths exceed max_paths (2)")$next_step, "Max paths")
+  expect_match(h("failed assembly")$next_step, "type a new name in Parameter set name", fixed = TRUE)
   expect_match(h("5 scaffolds in a path exceeds max_scaffolds (4)")$next_step, "Max scaffolds")
   expect_match(h("2 scaffold(s) under min_assembly_length (500 bp)")$next_step, "SPAdes, baited")
   expect_match(h("no rRNA genes found in the supplied assembly")$why, "assembly you supplied")

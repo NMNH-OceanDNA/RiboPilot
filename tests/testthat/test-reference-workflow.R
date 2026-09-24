@@ -27,7 +27,7 @@ test_that("the launcher passes every param a real container config interpolates"
         gregexpr("\\$\\{params\\.[A-Za-z_]+\\}", paste(cfg, collapse = "\n")))[[1]]))
     expect_gt(length(needed), 0)
     expect_true(all(needed %in% passed), info = engine)
-    expect_false("--rawDir" %in% args)
+    expect_equal(args[which(args == "--rawDir") + 1], "/data/raw")
     expect_equal(args[which(args == "--projectDir") + 1], path.expand(proj))
   }
 })

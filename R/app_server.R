@@ -974,7 +974,7 @@ app_server <- function(input, output, session) {
       type = "info", btn_labels = NA, closeOnClickOutside = FALSE)
     later::later(function() {
       shiny::withReactiveDomain(session, {
-        out <- tryCatch(system2(sched$cmd, shQuote(f), stdout = TRUE, stderr = TRUE),
+        out <- tryCatch(submit_job(sched$cmd, f),
           error = function(e) conditionMessage(e))
         job_sent(TRUE)
         rp_alert(paste0("Submitted via ", sched$cmd, ": ", paste(out, collapse = " ")),

@@ -227,4 +227,7 @@ test_that("export_summary_df flags a Taxon that differs from the Taxonomy name",
   DBI::dbExecute(con, "UPDATE samples SET Taxon = 'Upeneus parvus', sci_name = 'Upeneus parvus', rank = 'species'")
   s <- RiboPilot:::export_summary_df(con, units)
   expect_false(grepl("taxon_differs", s$submission_risk))
+  DBI::dbExecute(con, "UPDATE samples SET Taxon = 'upeneus_parvus '")
+  s <- RiboPilot:::export_summary_df(con, units)
+  expect_false(grepl("taxon_differs", s$submission_risk))
 })

@@ -198,7 +198,8 @@ nf_exit_cause <- function(code) {
 task_err_tail <- function(dir, n = 1L) {
   f <- file.path(dir, ".command.err")
   if (!file.exists(f)) return("")
-  y <- trimws(cli::ansi_strip(readLines(f, warn = FALSE)))
+  y <- iconv(readLines(f, warn = FALSE), "UTF-8", "UTF-8", sub = "byte")
+  y <- trimws(cli::ansi_strip(y))
   y <- y[nzchar(y)]
   if (length(y) == 0) "" else paste(utils::tail(y, n), collapse = " ")
 }
@@ -233,7 +234,7 @@ nf_log_facts <- function(log) {
   msg <- c(note, rep("stopped the run", length(fatal)))
   keep <- !is.na(name) & !duplicated(name, fromLast = TRUE)
   name <- name[keep]; msg <- msg[keep]
-  last <- att[vapply(name, function(n) max(c(NA_integer_, which(att$name == n)), na.rm = TRUE),
+  last <- att[vapply(name, function(n) utils::tail(c(NA_integer_, which(att$name == n)), 1L),
     0L, USE.NAMES = FALSE), , drop = FALSE]
   tasks <- data.frame(process = sub(" \\(.*$", "", name),
     item = ifelse(grepl("\\(", name), sub("^.*\\((.*)\\)$", "\\1", name), "-"),
@@ -268,13 +269,14 @@ run_failed_samples <- function(project, since) {
 failure_hint <- function(note) {
   note <- note %|NA|% ""
   h <- function(why, next_step) list(why = why, next_step = next_step)
-  asm <- "Click this sample's Assembly Options cell in the Assemble table and tick Edit, then "
+  asm <- paste("Click this sample's Assembly Options cell in the Assemble table, type a new name in",
+    "Parameter set name (for example baited), and tick Edit, then ")
   bait <- "choose \"SPAdes, baited to the seed DB\" as the assembler"
   done <- ". Save, then press Update."
   if (grepl("below min_depth", note, fixed = TRUE)) {
     h("Too few reads were left after trimming to assemble this sample.",
       "Add more reads for it, or lower minDepth in the project's .config file. Then set its State to Ready to run and press Update.")
-  } else if (grepl("exceeds max_paths", note, fixed = TRUE)) {
+  } else if (grepl("exceed max_paths", note, fixed = TRUE)) {
     h("GetOrganelle found more alternative paths than Max paths allows.",
       paste0(asm, "raise Max paths, or ", bait, done))
   } else if (grepl("exceeds max_scaffolds", note, fixed = TRUE)) {

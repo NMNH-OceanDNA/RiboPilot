@@ -20,6 +20,6 @@ process fallback_assemble {
     script:
     """
     RIBOPILOT_SRC='${params.ribopilot_src}' rp_fallback.R \\
-        '${params.db}' '${id}' ${reads[0]} ${reads[1]} '${method}' ${task.cpus}
+        '${params.db}' '${id}' ${reads[0]} ${reads[1]} '${method}' ${task.cpus} ${task.attempt}
     """
 }

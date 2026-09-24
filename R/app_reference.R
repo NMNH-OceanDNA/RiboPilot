@@ -890,7 +890,7 @@ reference_handlers <- function(input, output, session, deps) {
       type = "info", btn_labels = NA, closeOnClickOutside = FALSE)
     later::later(function() {
       shiny::withReactiveDomain(session, {
-        out <- tryCatch(system2(sched$cmd, shQuote(res), stdout = TRUE, stderr = TRUE),
+        out <- tryCatch(submit_job(sched$cmd, res),
           error = function(e) conditionMessage(e))
         submitted(unique(c(shiny::isolate(submitted()), targets)))
         # record the build so the poller wires it when the job's FASTAs appear

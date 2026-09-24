@@ -44,7 +44,9 @@ the mapping file exist under `assembly_path` (default TRUE).}
 \description{
 Updates metadata columns for samples already in a project's database
 (adding new columns if needed). Never touches R1, R2, Assembly, or any
-pipeline state or lock column; use [add_samples()] to change what a sample
-reads or assembles from. Runs the same read_mapping()/check_mapping()
+pipeline state or lock column, except that a sample whose Taxon changes
+has its resolved taxonomy cleared, unlocked, and queued for the Taxonomy
+step again. Use [add_samples()] to change what a sample reads or
+assembles from. Runs the same read_mapping()/check_mapping()
 checks as [new_project()].
 }

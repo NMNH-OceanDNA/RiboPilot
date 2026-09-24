@@ -68,6 +68,15 @@ test_that("the reserved list covers every sample column new_db adds", {
   expect_setequal(added, RiboPilot:::SAMPLE_BUILTIN_COLS)
 })
 
+test_that("the vignette's reserved names are the reserved list", {
+  rmd <- test_path("..", "..", "vignettes", "Your-Own-Project.Rmd")
+  skip_if_not(file.exists(rmd), "no vignette source")
+  txt <- paste(readLines(rmd, warn = FALSE), collapse = " ")
+  txt <- sub("\\.\\s.*$", "", sub("^.*use these names:", "", txt))
+  expect_setequal(trimws(strsplit(gsub("\\band\\b", "", txt), ",")[[1]]),
+    RiboPilot:::SAMPLE_BUILTIN_COLS)
+})
+
 test_that("unsafe, repeated, or missing IDs are refused and shown", {
   expect_error(RiboPilot:::read_mapping(write_map("ID,Taxon,R1,R2\nCHIM00,G,a,b\nchim00,G,c,d\n")),
     "Repeated: CHIM00, chim00")
@@ -223,6 +232,31 @@ test_that("add_samples appends new samples, seeded the same as new_project", {
   expect_equal(s2_ann$reviewed, "no")
 })
 
+test_that("add_samples only takes files from the folders the project's config uses", {
+  skip_on_os("windows")
+  p <- mk_setup(data.frame(ID = "S1", Taxon = "Danio rerio", R1 = "S1_R1.fq.gz",
+    R2 = "S1_R2.fq.gz"), reads = c("S1_R1.fq.gz", "S1_R2.fq.gz"))
+  proj <- file.path(p$dir, "proj")
+  np(p, proj, data_path = p$data_dir)
+  other <- file.path(p$dir, "data2")
+  dir.create(other)
+  file.create(file.path(other, c("S2_R1.fq.gz", "S2_R2.fq.gz")))
+  writeLines(c(">c1", "ACGT"), file.path(other, "S3.fa"))
+  file.create(file.path(p$data_dir, c("S2_R1.fq.gz", "S2_R2.fq.gz")))
+  map2 <- file.path(p$dir, "mapping2.csv")
+  utils::write.csv(data.frame(ID = "S2", Taxon = "Danio rerio", R1 = "S2_R1.fq.gz",
+    R2 = "S2_R2.fq.gz"), map2, row.names = FALSE)
+  expect_error(add_samples(project = proj, mapping_fn = map2, data_path = other),
+    "must be in this project's read folder")
+  map3 <- file.path(p$dir, "mapping3.csv")
+  utils::write.csv(data.frame(ID = "S3", Taxon = "Danio rerio", Assembly = "S3.fa"),
+    map3, row.names = FALSE)
+  expect_error(add_samples(project = proj, mapping_fn = map3, assembly_path = other),
+    "no assembly folder")
+  # the project's read folder is the default
+  expect_message(add_samples(project = proj, mapping_fn = map2), "Added 1 sample")
+})
+
 test_that("add_samples refuses IDs already present, and bad IDs", {
   skip_on_os("windows")
   p <- mk_setup(data.frame(ID = "S1", Taxon = "Danio rerio", R1 = "S1_R1.fq.gz",
@@ -274,6 +308,46 @@ test_that("update_sample_metadata updates metadata but not pipeline state", {
   # pipeline state and locks are untouched
   expect_equal(assemble$assemble_switch[assemble$ID == "S1"], 0)
   expect_equal(assemble$assemble_lock[assemble$ID == "S1"], 1)
+})
+
+test_that("update_sample_metadata writes to the stored ID when the case differs", {
+  skip_on_os("windows")
+  p <- mk_setup(data.frame(ID = "S1", Taxon = "Danio rerio", R1 = "S1_R1.fq.gz",
+    R2 = "S1_R2.fq.gz"), reads = c("S1_R1.fq.gz", "S1_R2.fq.gz"))
+  proj <- file.path(p$dir, "proj")
+  np(p, proj, data_path = p$data_dir)
+  meta_map <- file.path(p$dir, "meta.csv")
+  utils::write.csv(data.frame(ID = "s1", Taxon = "Danio rerio", site = "Reef B",
+    R1 = "S1_R1.fq.gz", R2 = "S1_R2.fq.gz"), meta_map, row.names = FALSE)
+  suppressMessages(update_sample_metadata(project = proj, mapping_fn = meta_map, data_path = p$data_dir))
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(proj, ".sqlite"))
+  on.exit(DBI::dbDisconnect(con))
+  samples <- DBI::dbReadTable(con, "samples")
+  expect_equal(samples$ID, "S1")
+  expect_equal(samples$site, "Reef B")
+})
+
+test_that("a changed Taxon clears, unlocks, and re-queues that sample's taxonomy", {
+  skip_on_os("windows")
+  p <- mk_setup(data.frame(ID = c("S1", "S2"), Taxon = "Danio rerio", R1 = c("S1_R1.fq.gz", "S2_R1.fq.gz"),
+    R2 = c("S1_R2.fq.gz", "S2_R2.fq.gz")),
+    reads = c("S1_R1.fq.gz", "S1_R2.fq.gz", "S2_R1.fq.gz", "S2_R2.fq.gz"))
+  proj <- file.path(p$dir, "proj")
+  np(p, proj, data_path = p$data_dir)
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(proj, ".sqlite"))
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "UPDATE samples SET taxid = 7955, sci_name = 'Danio rerio', rank = 'species',
+    match_type = 'exact', lineage = 'x', lineage_taxids = '1', taxonomy_switch = 2, taxonomy_lock = 1")
+  meta_map <- file.path(p$dir, "meta.csv")
+  utils::write.csv(data.frame(ID = c("S1", "S2"), Taxon = c("Danio aesculapii", "Danio rerio"),
+    R1 = c("S1_R1.fq.gz", "S2_R1.fq.gz"), R2 = c("S1_R2.fq.gz", "S2_R2.fq.gz")), meta_map, row.names = FALSE)
+  expect_message(update_sample_metadata(project = proj, mapping_fn = meta_map, data_path = p$data_dir),
+    "Taxon changed for S1")
+  s <- DBI::dbGetQuery(con, "SELECT * FROM samples ORDER BY ID")
+  expect_true(is.na(s$sci_name[1]) && is.na(s$taxid[1]) && is.na(s$lineage[1]))
+  expect_equal(c(s$taxonomy_switch[1], s$taxonomy_lock[1]), c(1, 0))
+  expect_equal(s$sci_name[2], "Danio rerio")
+  expect_equal(c(s$taxonomy_switch[2], s$taxonomy_lock[2]), c(2, 1))
 })
 
 test_that("update_sample_metadata refuses an ID not in the project", {

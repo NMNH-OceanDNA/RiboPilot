@@ -19,9 +19,12 @@
 #' @param mapping_taxon Column in the mapping file with a taxonomic
 #'   identifier (default "Taxon").
 #' @param data_path Directory where the new samples' raw read data is
-#'   located. Required when any new sample lists reads.
+#'   located. Defaults to the project's read folder (rawDir in its .config),
+#'   and must be that folder.
 #' @param assembly_path Directory holding the new samples' assembly files
-#'   named in the mapping file's optional `Assembly` column.
+#'   named in the mapping file's optional `Assembly` column. Defaults to the
+#'   project's assembly folder (asmbDir in its .config), and must be that
+#'   folder.
 #' @param check_reads (logical) Check that the read files named in the
 #'   mapping file exist under `data_path` (default TRUE).
 #' @param check_assemblies (logical) Check that the assembly files named in
@@ -42,21 +45,44 @@ add_samples <- function(
   if (!file.exists(db_path)) {
     stop("No RiboPilot project database found in ", project, call. = FALSE)
   }
+  cfg <- file.path(project, ".config")
+  cfg <- if (file.exists(cfg)) readLines(cfg, warn = FALSE) else character(0)
+  proj_dir <- function(key) {
+    v <- config_param(cfg, key)
+    if (is.na(v) || v %in% c("", "NA")) NULL else normalizePath(v, mustWork = FALSE)
+  }
+  raw_dir <- proj_dir("rawDir")
+  asmb_dir <- proj_dir("asmbDir")
+  data_path <- data_path %||% raw_dir
+  assembly_path <- assembly_path %||% asmb_dir
   if (length(data_path) == 1) data_path <- normalizePath(data_path, mustWork = FALSE)
   if (length(assembly_path) == 1) assembly_path <- normalizePath(assembly_path, mustWork = FALSE)
   stop_unsafe_paths(c(data_path = data_path %||% NA, assembly_path = assembly_path %||% NA))
 
   mapping <- read_mapping(mapping_fn, mapping_id, mapping_taxon) |>
     check_mapping(mapping_id, data_path, assembly_path, check_reads, check_assemblies)
-  if (any(!is.na(mapping$R1)) && length(data_path) != 1) {
-    stop("Samples list read files (R1, R2), but no data_path was given. ",
-      "Pass data_path = the folder that holds them.", call. = FALSE)
+  same_dir <- function(given, proj, key, what) {
+    if (!is.null(proj) && identical(given, proj)) return(invisible())
+    stop(if (is.null(proj)) {
+      sprintf("This project has no %s folder (%s in %s), so samples with %s files cannot be added to it.",
+        what, key, file.path(project, ".config"), what)
+    } else {
+      sprintf("New %s files must be in this project's %s folder, %s (%s in %s): the pipeline looks only there.",
+        what, what, proj, key, file.path(project, ".config"))
+    }, call. = FALSE)
   }
+  if (any(!is.na(mapping$R1))) same_dir(data_path, raw_dir, "rawDir", "read")
+  if (any(!is.na(mapping$Assembly))) same_dir(assembly_path, asmb_dir, "asmbDir", "assembly")
 
   con <- open_project_db(db_path)
   on.exit(DBI::dbDisconnect(con))
 
   existing <- DBI::dbReadTable(con, "samples")$ID
+  asm <- stats::na.omit(c(DBI::dbGetQuery(con, "SELECT Assembly FROM samples")$Assembly, mapping$Assembly))
+  if (length(unique(grepl("\\.gz$", asm, ignore.case = TRUE))) > 1) {
+    stop("Assembly files must be all gzipped (.gz) or all plain in one project; the pipeline ",
+      "cannot mix them, and the project's assemblies and the new ones differ.", call. = FALSE)
+  }
   dup <- mapping[[mapping_id]][tolower(mapping[[mapping_id]]) %in% tolower(existing)]
   if (length(dup)) {
     stop("Already in the project (use update_sample_metadata() to change them): ",

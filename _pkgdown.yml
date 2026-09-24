@@ -90,7 +90,6 @@ reference:
   contents:
   - annotate_records
   - auto_triage_sample
-  - backfill_coverage_median
   - bitscore_weighted_lca
   - check_container_image
   - chimera_unit
@@ -120,13 +119,10 @@ reference:
   - screen_sample
   - select_rrna_contigs
   - set_unit_triage
-  - shared_taxon
   - stop_if_nothing_stored
   - tk_ranked_lineage
   - triage_preview
-  - write_blast_ref
   - write_blast_refs
-  - write_coverage
   - write_coverage_units
   - write_path_scores
   - write_rrna_candidates

@@ -84,10 +84,13 @@ chimera_channel_genes <- function(gene_taxa, feats = NULL) {
   shallow <- NULL
   for (i in seq_len(nrow(g) - 1)) for (j in (i + 1):nrow(g)) {
     k <- chimera_split_rank(g$lineage_taxids[i], g$lineage_taxids[j])
-    if (!is.na(k) && k <= 3L && (is.null(worst) || k < worst$k)) worst <- list(i = i, j = j, k = k)
+    sv <- isTRUE(k <= 2L && min(g$pident[i], g$pident[j]) >= CHIMERA_PID_DROP)
+    if (!is.na(k) && k <= 3L && (is.null(worst) || sv > worst$sv || (sv == worst$sv && k < worst$k)))
+      worst <- list(i = i, j = j, k = k, sv = sv)
     if (is.na(k) && is.null(shallow)) {
-      shared <- deepest_shared_rank(parse_rank_taxids(g$lineage_taxids[i]), parse_rank_taxids(g$lineage_taxids[j]))
-      if (shared <= 2L) shallow <- list(i = i, j = j, shared = shared)
+      x <- parse_rank_taxids(g$lineage_taxids[i]); y <- parse_rank_taxids(g$lineage_taxids[j])
+      shared <- deepest_shared_rank(x, y)
+      if (shared <= 2L && !identical(x, y)) shallow <- list(i = i, j = j, shared = shared)
     }
   }
   if (is.null(worst) && !is.null(shallow)) {
@@ -111,8 +114,7 @@ chimera_channel_genes <- function(gene_taxa, feats = NULL) {
     reason = sprintf("%s resolves to %s (%s, %.1f%%) but %s to %s (%s, %.1f%%): different %s",
       a$element, a$taxon, a$species, a$pident, b$element, b$taxon, b$species, b$pident,
       RRNA_LINEAGE_RANKS[worst$k]),
-    availability = "available",
-    severe = worst$k <= 2L && min(a$pident, b$pident) >= CHIMERA_PID_DROP)
+    availability = "available", severe = worst$sv)
 }
 
 #' Best hit per tile from a parse_blast_hits_file() frame
@@ -207,7 +209,9 @@ chimera_channel_windows <- function(segments, identity_only = FALSE) {
     if (min(la, lb) < 0.25 * max(la, lb)) next
     k <- if (identity_only) NA_integer_ else chimera_split_rank(a$lineage_taxids, b$lineage_taxids)
     if (!identity_only && (is.na(k) || k > 3L)) next
-    if (is.null(best) || isTRUE(k < best$k)) best <- list(a = a, b = b, k = k, junction = (a$stop + b$start) %/% 2L)
+    sv <- !identity_only && isTRUE(k <= 2L && min(a$pident, b$pident) >= CHIMERA_PID_DROP)
+    if (is.null(best) || sv > best$sv || (sv == best$sv && isTRUE(k < best$k)))
+      best <- list(a = a, b = b, k = k, sv = sv, junction = (a$stop + b$start) %/% 2L)
   }
   if (is.null(best)) return(list(score = 0, junctions = integer(0),
     reason = "no class-level switch between comparable segments", availability = "available"))
@@ -216,7 +220,7 @@ chimera_channel_windows <- function(segments, identity_only = FALSE) {
     reason = paste(c(desc(best$a), desc(best$b),
       if (!identity_only) sprintf("different %s", RRNA_LINEAGE_RANKS[best$k])), collapse = "; "),
     availability = if (identity_only) "identity_only" else "available",
-    severe = !identity_only && best$k <= 2L && min(best$a$pident, best$b$pident) >= CHIMERA_PID_DROP)
+    severe = best$sv)
 }
 
 CHIMERA_RIBOTYPER_SCORES <- c(InconsistentHits = 0.8, DuplicateRegion = 0.8, BothStrands = 0.8,

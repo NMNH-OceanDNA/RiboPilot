@@ -362,7 +362,8 @@ export_summary_df <- function(con, units) {
   taxon <- (smp$Taxon %||% NA)[si]
   sci <- (smp$sci_name %||% NA)[si]
   organism <- export_organism(taxon, sci, (smp$match_type %||% NA)[si], (smp$rank %||% NA)[si])
-  differs <- !is.na(sci) & nzchar(sci) & !is.na(taxon) & trimws(taxon) != sci
+  norm <- function(x) tolower(trimws(gsub("[_[:space:]]+", " ", x)))
+  differs <- !is.na(sci) & nzchar(sci) & !is.na(taxon) & norm(taxon) != norm(sci)
   risk <- vapply(seq_len(n), function(i) {
     note <- risk_flags(chiv[i], ann[anni[ukey[i]][[1]], , drop = FALSE], seqv[i],
       chimera_label = chm_label[i], chimera_reason = chm_reason[i])$note
@@ -812,21 +813,16 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
 #' Export a project's locked units as GenBank bundles
 #'
 #' Writes one bundle per export group made in the app's Export step, using the
-#' default header template. When no group was made, writes every
-#' annotation-locked unit into one bundle named "export".
+#' default header template. When no group was made, writes every unit with
+#' both its assembly and its annotation locked into one bundle named "export".
 #' @param path Project directory.
 #' @param out_dir Project "out" directory; bundles land in `<out_dir>/export`.
 #' @return (invisibly) the bundle names written.
 #' @export
 export_project <- function(path = ".", out_dir = file.path(path, "out")) {
   con <- open_project_db(file.path(path, ".sqlite"))
-  groups <- tryCatch(DBI::dbGetQuery(con,
-    "SELECT DISTINCT an.export_group FROM annotate an
-       JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
-      WHERE an.annotate_lock = 1 AND COALESCE(asm.ignore,0) = 0
-        AND COALESCE(an.problematic,'') != 'yes' AND COALESCE(an.export_group,'') != ''
-      ORDER BY an.export_group")$export_group,
-    finally = DBI::dbDisconnect(con))
+  g <- tryCatch(exportable_units(con)$export_group, finally = DBI::dbDisconnect(con))
+  groups <- sort(unique(g[nzchar(g)]))
   if (length(groups) == 0) {
     export_bundle(path, out_dir = out_dir, zip = TRUE)
     return(invisible("export"))

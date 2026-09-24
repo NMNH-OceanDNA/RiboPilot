@@ -531,3 +531,16 @@ test_that("annotation options on the Assemble tab answer to the annotation lock"
   expect_equal(switch_now(), 2L)
   expect_true(any(grepl("annotation is locked.*Annotation Review", said)))
 })
+
+test_that("export_project skips a group with no unit that has both locks", {
+  skip_if_not_installed("withr")
+  dir <- mk_export_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE annotate SET export_group = 'g2'")
+  DBI::dbExecute(con, "INSERT INTO assemble (ID, assemble_lock, assemble_switch) VALUES ('S0', 0, 2)")
+  DBI::dbExecute(con, "INSERT INTO assemblies (ID, path, scaffold, ignore) VALUES ('S0', 1, 1, 0)")
+  DBI::dbExecute(con, "INSERT INTO annotate (ID, path, scaffold, annotate_lock, problematic, export_group)
+    VALUES ('S0', 1, 1, 1, 'no', 'g1')")
+  DBI::dbDisconnect(con)
+  expect_equal(suppressMessages(RiboPilot::export_project(dir)), "g2")
+})

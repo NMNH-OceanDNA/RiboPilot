@@ -152,6 +152,7 @@ nf_reference_command <- function(project, entry, manifest, ref_dir, out_dir,
   main_nf <- app_sys("nextflow", "main_reference.nf")
   cfg <- file.path(project, ".config")
   proj_dir <- path.expand(project)
+  raw <- if (file.exists(cfg)) config_param(readLines(cfg, warn = FALSE), "rawDir") else NA
   # ref_dir is deliberately not bind-mounted: the tasks write into their own
   # work directory and Nextflow publishes to the folder from the host, so the
   # mount only gave Singularity a missing path to refuse
@@ -161,6 +162,7 @@ nf_reference_command <- function(project, entry, manifest, ref_dir, out_dir,
     if (isTRUE(resume)) "-resume",
     # the container runOptions interpolate params.projectDir
     "--projectDir", proj_dir,
+    if (!is.na(raw) && !raw %in% c("", "NA")) c("--rawDir", raw),
     "--clades", path.expand(manifest),
     "--refDir", path.expand(ref_dir),
     "--outDir", path.expand(out_dir),

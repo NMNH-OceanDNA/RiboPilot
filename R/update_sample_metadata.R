@@ -2,8 +2,10 @@
 #'
 #' Updates metadata columns for samples already in a project's database
 #' (adding new columns if needed). Never touches R1, R2, Assembly, or any
-#' pipeline state or lock column; use [add_samples()] to change what a sample
-#' reads or assembles from. Runs the same read_mapping()/check_mapping()
+#' pipeline state or lock column, except that a sample whose Taxon changes
+#' has its resolved taxonomy cleared, unlocked, and queued for the Taxonomy
+#' step again. Use [add_samples()] to change what a sample reads or
+#' assembles from. Runs the same read_mapping()/check_mapping()
 #' checks as [new_project()].
 #'
 #' @param project Path to the project directory (default = current working
@@ -59,6 +61,9 @@ update_sample_metadata <- function(
   mapping <- mapping |>
     dplyr::mutate(ID = .data[[mapping_id]], Taxon = .data[[mapping_taxon]]) |>
     dplyr::select(-dplyr::any_of(c("R1", "R2", "Assembly")))
+  mapping$ID <- existing[match(tolower(mapping$ID), tolower(existing))]
+  old <- DBI::dbGetQuery(con, "SELECT ID, Taxon FROM samples")
+  retax <- mapping$ID[!paste(mapping$ID, mapping$Taxon) %in% paste(old$ID, old$Taxon)]
 
   new_cols <- setdiff(colnames(mapping), DBI::dbListFields(con, "samples"))
   for (col in new_cols) {
@@ -68,6 +73,14 @@ update_sample_metadata <- function(
 
   dplyr::tbl(con, "samples") |>
     dplyr::rows_upsert(mapping, in_place = TRUE, copy = TRUE, by = "ID")
+  if (length(retax)) {
+    DBI::dbExecute(con, paste("UPDATE samples SET taxid = NULL, sci_name = NULL, rank = NULL,
+      match_type = NULL, tax_alternatives = NULL, lineage = NULL, lineage_taxids = NULL,
+      taxonomy_switch = 1, taxonomy_lock = 0 WHERE ID IN (",
+      paste(rep("?", length(retax)), collapse = ","), ")"), params = as.list(retax))
+    message("Taxon changed for ", paste(truncate_ids(retax), collapse = ", "),
+      ": their taxonomy was cleared and unlocked. Run the Taxonomy step again for them.")
+  }
 
   message("Updated metadata for ", nrow(mapping), " sample(s) in ", project, ": ",
     paste(mapping$ID, collapse = ", "))

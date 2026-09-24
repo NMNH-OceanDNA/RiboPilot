@@ -48,7 +48,7 @@ The rules:
 - **Reserved names.** RiboPilot adds some columns itself, so your file cannot
   use these names: taxid, sci_name, rank, match_type, tax_alternatives,
   lineage, lineage_taxids, ref_id, user_group, ref_source, taxonomy_switch,
-  taxonomy_lock, export_group, reference_support, and time_stamp.
+  taxonomy_lock, and time_stamp.
 
 The IDs end up in your GenBank records, so choose them with care.
 

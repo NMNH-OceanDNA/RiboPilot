@@ -174,13 +174,13 @@ test_that("a failed sample's details say why and what to try next", {
   d <- mk_run_project()
   con <- RiboPilot:::open_project_db(file.path(d, ".sqlite"))
   DBI::dbExecute(con, "UPDATE assemble SET assemble_switch = 3,
-    assemble_notes = '3 paths exceeds max_paths (2)'")
+    assemble_notes = '3 or more paths exceed max_paths (2)'")
   DBI::dbDisconnect(con)
   withr::local_dir(d)
   html <- as.character(RiboPilot:::failure_banner("S1"))
   expect_match(html, "This sample failed", fixed = TRUE)
   expect_match(html, "Max paths", fixed = TRUE)
-  expect_match(html, "3 paths exceeds max_paths (2)", fixed = TRUE)
+  expect_match(html, "3 or more paths exceed max_paths (2)", fixed = TRUE)
   con <- RiboPilot:::open_project_db(file.path(d, ".sqlite"))
   DBI::dbExecute(con, "UPDATE assemble SET assemble_switch = 2")
   DBI::dbDisconnect(con)
@@ -192,4 +192,17 @@ test_that("a scaffold of a failed sample says BLAST did not run, not that NCBI f
     "did not run because the assembly failed")
   expect_match(RiboPilot:::no_screen_note(failed = FALSE, blast_on = TRUE, running = FALSE),
     "did not return")
+})
+
+test_that("an LSF job script goes to bsub on stdin, others as an argument", {
+  skip_on_os("windows")
+  bin <- withr::local_tempdir()
+  writeLines(c("#!/bin/sh", 'echo "args=$# first=$(head -n 1)"'), file.path(bin, "bsub"))
+  writeLines(c("#!/bin/sh", 'echo "args=$#"'), file.path(bin, "sbatch"))
+  Sys.chmod(file.path(bin, c("bsub", "sbatch")), "0755")
+  withr::local_path(bin, action = "prefix")
+  f <- file.path(bin, "job.sh")
+  writeLines(c("#BSUB -q long", "nextflow run"), f)
+  expect_equal(RiboPilot:::submit_job("bsub", f), "args=0 first=#BSUB -q long")
+  expect_equal(RiboPilot:::submit_job("sbatch", f), "args=1")
 })

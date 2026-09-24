@@ -23,6 +23,13 @@ detect_scheduler <- function() {
   NULL
 }
 
+#' Submit a job script; bsub reads #BSUB lines only from stdin
+#' @noRd
+submit_job <- function(cmd, f) {
+  if (identical(cmd, "bsub")) system2(cmd, stdin = f, stdout = TRUE, stderr = TRUE)
+  else system2(cmd, shQuote(f), stdout = TRUE, stderr = TRUE)
+}
+
 #' Project subdirectories holding cluster job files
 #'
 #' Every submission drops three files (a script, the scheduler's job log, and
@@ -280,7 +287,9 @@ nf_run_window <- function(input, output, session, pfx, gears, project, kind, log
   waited <- function(t) !is.null(t) && difftime(Sys.time(), t, units = "secs") > NF_STOP_WAIT
   report <- function(p, how) {
     status <- tryCatch(p$get_exit_status() %||% NA_integer_, error = function(e) NA_integer_)
-    rep <- nf_run_report(shiny::isolate(project()), run$log, status, kind, run$started, how)
+    rep <- tryCatch(nf_run_report(shiny::isolate(project()), run$log, status, kind, run$started, how),
+      error = function(e) list(type = "error", title = "Run failed", text = "",
+        lead = sprintf("The run ended with exit status %s; see %s", status %|NA|% "unknown", run$log)))
     if (nzchar(rep$text)) try(writeLines(rep$text, sub("\\.nextflow\\.log$", "_report.txt", run$log)), silent = TRUE)
     rep
   }

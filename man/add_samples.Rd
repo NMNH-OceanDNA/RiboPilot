@@ -34,10 +34,13 @@ present.}
 identifier (default "Taxon").}
 
 \item{data_path}{Directory where the new samples' raw read data is
-located. Required when any new sample lists reads.}
+located. Defaults to the project's read folder (rawDir in its .config),
+and must be that folder.}
 
 \item{assembly_path}{Directory holding the new samples' assembly files
-named in the mapping file's optional `Assembly` column.}
+named in the mapping file's optional `Assembly` column. Defaults to the
+project's assembly folder (asmbDir in its .config), and must be that
+folder.}
 
 \item{check_reads}{(logical) Check that the read files named in the
 mapping file exist under `data_path` (default TRUE).}

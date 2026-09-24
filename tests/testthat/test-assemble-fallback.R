@@ -63,3 +63,28 @@ test_that("a SPAdes memory kill hands its exit status back for a retry", {
     out_dir = out, method = "denovo"))
   expect_equal(attr(n, "retry_status"), 247L)
 })
+
+test_that("the fallback script stops asking for a retry after the last attempt", {
+  skip_on_os("windows")
+  skip_on_cran()
+  skip_if_not_installed("pkgload")
+  root <- RiboPilot:::ribopilot_src_default()
+  skip_if(!file.exists(file.path(root, "DESCRIPTION")), "not a source checkout")
+  fake_spades(247L)
+  d <- withr::local_tempdir()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(d, ".sqlite"))
+  DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, assemble_opts TEXT)")
+  DBI::dbExecute(con, "CREATE TABLE assemble_opts(assemble_opts TEXT, seeds_db TEXT,
+    labels_db TEXT, bowtie2 TEXT, spades TEXT)")
+  DBI::dbExecute(con, "INSERT INTO assemble VALUES ('S1', 'default')")
+  DBI::dbExecute(con, "INSERT INTO assemble_opts VALUES ('default', NULL, NULL, NULL, NULL)")
+  DBI::dbDisconnect(con)
+  withr::local_dir(d)
+  run <- function(attempt) suppressWarnings(system2("Rscript",
+    c(system.file("nextflow", "bin", "rp_fallback.R", package = "RiboPilot"),
+      file.path(d, ".sqlite"), "S1", "r1.fq", "r2.fq", "denovo", "1", attempt),
+    env = paste0("RIBOPILOT_SRC=", root), stdout = FALSE, stderr = FALSE))
+  expect_equal(run("1"), 247L)
+  expect_equal(run("4"), 0L)
+  expect_match(readLines("S1_assembly_0.fasta")[1], "SPAdes exit 247")
+})

@@ -95,6 +95,27 @@ test_that("the gene channel treats an ancestor as agreement and grades real swit
   expect_false(RiboPilot:::chimera_channel_genes(gt("4751;4890;147545;;;;", pid2 = 85))$severe)
 })
 
+test_that("a severe switch is found on any pair, not only the first one checked", {
+  fish <- "33208;7711;186623;8030;8016;8017;8018"
+  fung <- "4751;4890;147545;5042;5043;5044;5045"
+  g <- data.frame(element = c("18S", "ITS1", "5.8S", "ITS2", "28S"), taxon = "x",
+    rank = NA_character_, taxid = NA_integer_, species = "sp", pident = c(98, 88, 95, 96, 97),
+    n_hits = 3L, lineage_taxids = c(fish, fung, fung, fung, fung), stringsAsFactors = FALSE)
+  expect_true(RiboPilot:::chimera_channel_genes(g)$severe)
+  s <- data.frame(start = c(1L, 1001L, 2001L), stop = c(1000L, 2000L, 3000L),
+    taxon = c("Actinopterygii", "Eurotiomycetes", "Chondrichthyes"), rank = "class",
+    species = "sp", pident = c(80, 97, 98), n_windows = 4L, db_source = "panel",
+    lineage_taxids = c(fish, fung, "33208;7711;7777;;;;"), stringsAsFactors = FALSE)
+  expect_true(RiboPilot:::chimera_channel_windows(s)$severe)
+})
+
+test_that("genes that agree at the same shallow rank are not a chimera", {
+  g <- data.frame(element = c("18S", "28S"), taxon = "Mollusca", rank = NA_character_,
+    taxid = NA_integer_, species = "sp", pident = 99, n_hits = 3L,
+    lineage_taxids = "33208;6447;;;;;", stringsAsFactors = FALSE)
+  expect_equal(RiboPilot:::chimera_channel_genes(g)$score, 0)
+})
+
 test_that("an element with too few covering hits is unresolved and does not vote", {
   feats <- data.frame(element = c("18S", "28S"), start = c(1L, 3000L), stop = c(1800L, 6000L))
   fish <- "33208;7711;186623;8030;8016;8017;8018"

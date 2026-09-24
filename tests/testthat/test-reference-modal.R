@@ -585,7 +585,7 @@ test_that("the in-app Build run pins NXF_VER and passes what the project config 
   expect_equal(unname(seen$env[["NXF_VER"]]), "25.10.6")
   expect_equal(seen$args[which(seen$args == "-entry") + 1], "BUILD")
   expect_equal(seen$args[which(seen$args == "--projectDir") + 1], path.expand(dir))
-  expect_false("--rawDir" %in% seen$args)
+  expect_equal(seen$args[which(seen$args == "--rawDir") + 1], "/data/raw")
   # its own launch folder, so a bare -resume of the pipeline never picks up this session
   expect_equal(seen$wd, file.path(dir, ".reference"))
   expect_true("-log" %in% seen$args)
