@@ -780,6 +780,8 @@ app_server <- function(input, output, session) {
     u <- selected_units()
     if (is.null(u) || nrow(u) == 0) { removeModal(); return() }
     if (!nzchar(grp)) { mp_toast("Type a group name first.", type = "warning"); return() }
+    bad <- export_group_problem(grp)
+    if (!is.null(bad)) { mp_toast(bad, type = "warning"); return() }
     # A GenBank submission records one assembly method, so a group should not
     # mix assemblers. Offer to split "<name>-<assembler>" like MitoPilot's
     # complete/partial split.

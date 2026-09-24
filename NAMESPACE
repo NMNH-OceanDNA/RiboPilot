@@ -2,6 +2,7 @@
 # file from roxygen tags. See docker/deploy-local.sh.
 
 export(RiboPilot)
+export(add_samples)
 export(annotate_records)
 export(auto_triage_sample)
 export(backfill_coverage_median)
@@ -48,6 +49,7 @@ export(shared_taxon)
 export(stop_if_nothing_stored)
 export(tk_ranked_lineage)
 export(triage_preview)
+export(update_sample_metadata)
 export(write_blast_ref)
 export(write_blast_refs)
 export(write_coverage)

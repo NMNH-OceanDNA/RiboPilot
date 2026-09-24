@@ -164,6 +164,7 @@ RP_TEST_READS_TAG <- "test-reads-2026.09.02"
 new_test_project <- function(path = ".", n = Inf, full_size = FALSE, executor = "docker",
                              container = paste0("macguigand/ribopilot:", utils::packageVersion("RiboPilot")),
                              min_depth = 500, sra_bin = NULL, Rproj = TRUE, force = FALSE, ...) {
+  path <- check_project_path(path, force)
   if (!dir.exists(path)) {
     message("Creating project directory: ", path)
     dir.create(path, recursive = TRUE)

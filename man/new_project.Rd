@@ -30,14 +30,17 @@ new_project(
 \arguments{
 \item{path}{Path to the project directory (default = current working dir).}
 
-\item{mapping_fn}{Path to a mapping CSV. Minimally an `ID` column (unique
-sample id), a `Taxon` column, and `R1`/`R2` columns naming the paired read
-inputs. Extra metadata columns are preserved.}
+\item{mapping_fn}{Path to a comma-separated mapping file. Minimally an `ID`
+column (unique sample id), a `Taxon` column, and `R1`/`R2` columns naming
+the paired read files relative to `data_path` (or an `Assembly` column).
+Column names are matched ignoring case. Extra metadata columns are
+preserved.}
 
 \item{mapping_id}{Column in the mapping file with unique ids (default "ID").}
 
-\item{data_path}{Directory where the raw read data is located. Not needed
-when every sample supplies its own assembly.}
+\item{data_path}{Directory where the raw read data is located. Required
+when any sample lists reads; not needed when every sample supplies its own
+assembly.}
 
 \item{assembly_path}{Directory holding the assembly files named in the
 mapping file's optional `Assembly` column. A sample with an assembly is
@@ -81,7 +84,9 @@ mapping file exist under `assembly_path` (default TRUE).}
 \item{Rproj}{(logical) Initialize/open an RStudio project (default TRUE; no
 effect outside RStudio).}
 
-\item{force}{(logical) Recreate an existing project database (default FALSE).}
+\item{force}{(logical) Recreate an existing project database (default
+FALSE). Without it, `new_project()` stops when the folder already holds a
+project.}
 
 \item{...}{Additional default processing parameters passed to [new_db()].}
 }

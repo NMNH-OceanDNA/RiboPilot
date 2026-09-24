@@ -8,7 +8,7 @@ mk_asmb_project <- function(mapping, assemblies = character(0), reads = characte
   dir.create(data_dir)
   dir.create(asmb_dir)
   file.create(file.path(data_dir, reads))
-  file.create(file.path(asmb_dir, assemblies))
+  for (a in assemblies) writeLines(c(">c1", "ACGT"), file.path(asmb_dir, a))
   map_fn <- file.path(dir, "mapping.csv")
   utils::write.csv(mapping, map_fn, row.names = FALSE)
   list(dir = dir, data_dir = data_dir, asmb_dir = asmb_dir, mapping_fn = map_fn,

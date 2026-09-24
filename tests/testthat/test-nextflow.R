@@ -1338,3 +1338,13 @@ test_that("a project with reads and a rawDir passes it through", {
   a <- RiboPilot:::nf_command(proj, resume = FALSE)
   expect_equal(a[which(a == "--rawDir") + 1], "/data/raw")
 })
+
+test_that("a reference folder with a space stays one mount argument", {
+  skip_on_os("windows")
+  d <- "/x/Library/Application Support/ref_dbs"
+  for (engine in c("docker", "singularity")) {
+    v <- RiboPilot:::container_bind_opts(RiboPilot:::container_engine_block(engine), d)[2]
+    words <- system2("bash", c("-c", shQuote(paste("printf '%s\\n'", v))), stdout = TRUE)
+    expect_equal(words[2], if (engine == "docker") paste0(d, ":", d) else d, info = engine)
+  }
+})

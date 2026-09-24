@@ -47,12 +47,12 @@ copied into the bundle as `<label>.sbt` so table2asn picks it up.}
 
 \item{run_table2asn}{Run table2asn if on PATH.}
 
-\item{zip}{Also write `<out_dir>/<label>.zip`.}
+\item{zip}{Also write `<out_dir>/export/<label>.zip`.}
 
 \item{export_opts}{Name of the saved FASTA-header configuration to use.}
 
 \item{fasta_header, fasta_header_marker}{Optional header templates
-(\code{\{token\}} glue syntax) overriding the saved configuration.}
+(\code{\{column\}} tokens) overriding the saved configuration.}
 
 \item{itsx_check}{Run stock ITSx (default parameters, no organism group) over
 the exported records, the way NCBI's Submission Portal does, and report

@@ -39,6 +39,19 @@ clear_export_group <- function(path, units) {
   invisible()
 }
 
+#' Why a group name cannot be used, or NULL when it can
+#'
+#' The name becomes the folder out/export/<name>, which export deletes and
+#' writes again.
+#' @noRd
+export_group_problem <- function(x) {
+  if (grepl("^[A-Za-z0-9_][A-Za-z0-9._-]*$", x)) return(NULL)
+  fix <- sub("^[.-]+", "", gsub("[^A-Za-z0-9._-]+", "_", x))
+  paste0("Group name \"", x, "\" cannot be used: it becomes a folder name, so use only ",
+    "letters, digits, dot, dash, and underscore, and start with a letter, digit, or underscore.",
+    if (nzchar(fix)) paste0(" Try \"", fix, "\"."))
+}
+
 #' Write annotate.export_group for the given units (NA clears). Accepts a
 #' data.frame(ID,path,scaffold) or a character vector of sample IDs. `group` is
 #' one name for all units, or one name per unit.
@@ -49,6 +62,10 @@ set_export_group <- function(con, units, group) {
   g <- if (length(group) == 0) NA_character_ else as.character(group)
   g <- if (length(g) == 1) rep(g, n) else g
   stopifnot(length(g) == n)
+  for (x in unique(g[!is.na(g)])) {
+    bad <- export_group_problem(x)
+    if (!is.null(bad)) stop(bad, call. = FALSE)
+  }
   # all-or-nothing: a partial group assignment is worse than none
   DBI::dbBegin(con)
   done <- FALSE
@@ -545,10 +562,10 @@ export_report_html <- function(con, units, out_html, label, smry = export_summar
 #' @param template Optional path to a GenBank submission template (`.sbt`);
 #'   copied into the bundle as `<label>.sbt` so table2asn picks it up.
 #' @param run_table2asn Run table2asn if on PATH.
-#' @param zip Also write `<out_dir>/<label>.zip`.
+#' @param zip Also write `<out_dir>/export/<label>.zip`.
 #' @param export_opts Name of the saved FASTA-header configuration to use.
 #' @param fasta_header,fasta_header_marker Optional header templates
-#'   (\code{\{token\}} glue syntax) overriding the saved configuration.
+#'   (\code{\{column\}} tokens) overriding the saved configuration.
 #' @param itsx_check Run stock ITSx (default parameters, no organism group) over
 #'   the exported records, the way NCBI's Submission Portal does, and report
 #'   what it would flag in the `itsx_check` column of the summary CSV and in
@@ -599,6 +616,8 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
   units$seqid <- ifelse(!is.na(n_units) & n_units > 1,
     sprintf("%s_p%s_s%s", units$ID, units$path, units$scaffold), units$ID)
   label <- label %||% group %||% "export"
+  bad <- export_group_problem(label)
+  if (!is.null(bad)) stop(bad, call. = FALSE)
 
   # Headers are resolved and checked before anything is written: a bad template
   # or a header that repeats across records is a rejected submission, not a
@@ -754,10 +773,13 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
     "\n  GenBank Portal takes FASTA only: upload ", label,
     ".fasta; NCBI auto-annotates the rRNA-ITS region (see README.txt).")
   if (isTRUE(zip)) {
-    zf <- paste0(gdir, ".zip")
-    old <- setwd(dirname(gdir))
+    zf <- file.path(normalizePath(dirname(gdir)), paste0(label, ".zip"))
+    unlink(zf)
+    old <- setwd(dirname(zf))
     on.exit(setwd(old), add = TRUE)
-    utils::zip(zf, label, flags = "-rq")
+    if (utils::zip(zf, label, flags = "-rq") != 0) {
+      warning("Could not write ", zf, call. = FALSE)
+    }
   }
   attr(gdir, "summary") <- smry
   invisible(gdir)
