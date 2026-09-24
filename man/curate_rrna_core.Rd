@@ -12,7 +12,6 @@ curate_rrna_core(
   sample_lineage = NA,
   hit_lineage = NA,
   hit_is_nuclear_rrna = NA,
-  chimeric = NA,
   sample_taxids = NA_character_,
   hit_taxids = NA_character_
 )
@@ -41,9 +40,6 @@ rather than passing silently.}
 \item{hit_is_nuclear_rrna}{Optional 0/1 (`blast_screen.is_nuclear_rrna`):
 whether that top hit is a nuclear rDNA record at all. 0 raises
 `not_nuclear_rdna`.}
-
-\item{chimeric}{Unused; chimera risk is now reported by [risk_flags()] from
-the `chimera` table, not by this function.}
 
 \item{sample_taxids, hit_taxids}{Optional rank-aligned taxid strings matching
 those lineages (`samples.lineage_taxids`, `blast_screen.lineage_taxids`).

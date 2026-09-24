@@ -3,17 +3,6 @@
 # blast_genbank result handling, adapted to RiboPilot's sqlite3/R-script model
 # and targeting nuclear rRNA + ITS references.
 
-#' Does this title name a nuclear rDNA record?
-#'
-#' Thin wrapper over [classify_hit_title()] so the binary predicate and the
-#' three-state classifier can never disagree. `uninformative` reads as FALSE
-#' here, which is what every existing caller already assumed.
-#' @param title Character vector of subject titles.
-#' @noRd
-is_nuclear_rrna_title <- function(title) {
-  classify_hit_title(title) == "rdna"
-}
-
 #' Floors a subject must clear to become a reference the sample is aligned to.
 #'
 #' Applied to the reference panel only, never to the search or to the screen's
@@ -56,7 +45,7 @@ ref_candidate_ok <- function(x) {
 #'
 #' * **Reference panel** - hits whose title is nuclear rDNA. Deduped by
 #'   accession (best pident*qcovs), ranked into `blast_ref_candidates`, rank-1
-#'   set as the sample's reference (`assemble.blast_*`). Same records the restricted search returned before.
+#'   written to the unit's `assemblies.blast_*` columns. Same records the restricted search returned before.
 #' * **Contamination screen** - the top hit over *all* of core_nt, unfiltered,
 #'   into `blast_screen`. This is the only signal that can distinguish "the host"
 #'   from "a symbiont" or "not nuclear rDNA at all", so it is deliberately taken
@@ -88,8 +77,8 @@ parse_blast_candidates <- function(con, id, path = 1L, scaffold = 1L, hits_file,
     return(derive_blast_products(con, id, path, scaffold, ts = ts))
   }
   h$species <- extract_species(h$title)
-  h$is_nuclear_rrna <- as.integer(is_nuclear_rrna_title(h$title))
   h$hit_class <- classify_hit_title(h$title)
+  h$is_nuclear_rrna <- as.integer(h$hit_class == "rdna")
 
   # Rank SUBJECTS by their best bitscore. The old pident*qcovs score
   # systematically preferred short high-identity hits: a 400 bp conserved-18S-core

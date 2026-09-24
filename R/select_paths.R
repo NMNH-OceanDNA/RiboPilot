@@ -155,3 +155,59 @@ score_assembly <- function(path_fastas,
   score_candidates(cand, sample_lineage = sample_lineage, sample_taxids = sample_taxids,
     expected_length = expected_length, weights = weights)
 }
+
+#' Resolve a seeds/BLAST reference to a local file (download a URL to temp)
+#' @noRd
+local_ref <- function(ref) {
+  if (is.na(ref) || !nzchar(ref)) {
+    return(NA_character_)
+  }
+  if (grepl("^https?://", ref)) {
+    dest <- tempfile(fileext = ".fasta")
+    if (utils::download.file(ref, dest, quiet = TRUE, mode = "wb") != 0) {
+      return(NA_character_)
+    }
+    return(dest)
+  }
+  if (file.exists(ref)) ref else NA_character_
+}
+
+#' Build a nucleotide BLAST db from a fasta (returns db prefix or NA)
+#' @noRd
+make_blast_db <- function(fasta) {
+  if (is.na(fasta) || !nzchar(unname(Sys.which("makeblastdb")))) {
+    return(NA_character_)
+  }
+  db <- tempfile("rp_scoredb_")
+  ok <- system2("makeblastdb", c("-in", shQuote(fasta), "-dbtype", "nucl", "-out", shQuote(db)),
+    stdout = FALSE, stderr = FALSE)
+  if (ok == 0) db else NA_character_
+}
+
+#' Write scored candidate paths for a sample into the `path_scores` table
+#'
+#' @param con Open DBI connection to the project database.
+#' @param ID Sample ID.
+#' @param scored A scored candidate data.frame from [score_assembly()] /
+#'   [score_candidates()].
+#' @return (invisibly) NULL. Existing rows for `ID` are replaced.
+#' @export
+write_path_scores <- function(con, ID, scored) {
+  if (is.null(scored) || nrow(scored) == 0) {
+    return(invisible())
+  }
+  cols <- c("length", "depth", "anchors", "blast_pident", "hit_id", "hit_taxid",
+    "hit_species", "blast_lineage", "s_tax", "s_identity", "s_anchors",
+    "s_depth", "s_length", "score", "rank", "auto_select")
+  df <- data.frame(ID = ID, path = scored$path, stringsAsFactors = FALSE)
+  for (c in cols) df[[c]] <- if (!is.null(scored[[c]])) scored[[c]] else NA
+  df$auto_select <- as.integer(df$auto_select)
+  df$time_stamp <- as.integer(Sys.time())
+  # one transaction: a failed append after a committed delete would leave the
+  # sample with no path scores at all
+  DBI::dbWithTransaction(con, {
+    DBI::dbExecute(con, "DELETE FROM path_scores WHERE ID = ?", params = list(ID))
+    DBI::dbAppendTable(con, "path_scores", df)
+  })
+  invisible()
+}

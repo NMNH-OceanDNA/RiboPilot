@@ -16,9 +16,12 @@
 ^out$
 ^ref_dbs$
 ^\.taxonomy$
-^RiboPilot_test\.R$
-^RiboPilot_test_hydra\.R$
+^RiboPilot_test.*\.R$
 ^tools$
+^update-version\.log$
+^\.nextflow\.log.*$
+^\.claude$
+^\.superpowers$
 ^REVIEW_.*\.md$
 ^BUG_.*\.MD$
 ^\.nextflow$

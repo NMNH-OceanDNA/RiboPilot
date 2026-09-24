@@ -47,13 +47,6 @@ container_engine_block <- function(engine, cache = NULL, run_options = NULL) {
   paste(lines, collapse = "\n")
 }
 
-#' Substitute `<<PLACEHOLDER>>` tokens in config template lines
-#'
-#' `NULL` values are skipped, leaving the token intact for a later pass.
-#'
-#' @param lines Character vector of config file lines.
-#' @param replacements Named list; name `FOO` replaces token `<<FOO>>`.
-#' @noRd
 #' Config tokens filled later, by new_project() rather than generate_config()
 #' @noRd
 PROJECT_CONFIG_TOKENS <- c("CONTAINER_ID", "RAW_DIR", "ASMB_DIR", "MIN_DEPTH",
@@ -66,6 +59,13 @@ config_tokens <- function(lines) {
   unique(unlist(regmatches(lines, gregexpr("<<[A-Z_]+>>", lines))))
 }
 
+#' Substitute `<<PLACEHOLDER>>` tokens in config template lines
+#'
+#' `NULL` values are skipped, leaving the token intact for a later pass.
+#'
+#' @param lines Character vector of config file lines.
+#' @param replacements Named list; name `FOO` replaces token `<<FOO>>`.
+#' @noRd
 fill_config <- function(lines, replacements) {
   for (nm in names(replacements)) {
     val <- replacements[[nm]]

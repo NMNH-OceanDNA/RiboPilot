@@ -120,8 +120,6 @@ test_that("need_unlocked names the locked ids and says how to unlock them", {
 test_that("guards pass through and shorten id lists", {
   expect_true(need_selection(3))
   expect_true(need_unlocked(character(0)))
-  expect_true(row_in_selection(2, integer(0), "X"))
-  expect_true(row_in_selection(2, c(1, 2), "X"))
   expect_equal(mp_id_list(c("a", "b")), "a, b")
   expect_equal(mp_id_list(letters[1:7]), "a, b, c, d, e, and 2 more")
 })

@@ -97,9 +97,8 @@ failure_banner <- function(id) {
 #' The order is whatever the main table shows when the modal opens: sort,
 #' column filters, search, and the lock/state rows the filter CSS hides. The
 #' script snapshots it into input$nav_order; the server renders the controls.
-#' @param pfx "assemble" or "annotate": names the lock/state row classes.
 #' @noRd
-rp_sample_nav <- function(pfx) {
+rp_sample_nav <- function() {
   tagList(
     uiOutput("sample_nav", inline = TRUE),
     tags$script(HTML(
@@ -145,7 +144,7 @@ assemble_modal <- function(id) {
   modalDialog(
     title = div(class = "mp-sticky-head", paste0("Assemble - ", id)),
     size = "l", easyClose = TRUE,
-    footer = div(class = "mp-sticky-foot", rp_sample_nav("assemble"), mp_footer(dismiss = "Close")),
+    footer = div(class = "mp-sticky-foot", rp_sample_nav(), mp_footer(dismiss = "Close")),
     modal_taxon_header(id),
     failure_banner(id),
     h5("Scaffolds", style = "margin:2px 0 4px;"),
@@ -375,7 +374,7 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
         uiOutput("modal_status_toggles", inline = TRUE, style = "display: contents;"))),
     size = "l", easyClose = FALSE,
     # Close is a server button so unsaved boundary edits can stop it.
-    footer = div(class = "mp-sticky-foot", rp_sample_nav("annotate"), if (locked) {
+    footer = div(class = "mp-sticky-foot", rp_sample_nav(), if (locked) {
       mp_footer(primary = actionButton("annotate_close", "Close"), dismiss = NULL)
     } else {
       mp_footer(primary = actionButton("lock_and_close", "Lock & Close"), dismiss = NULL,
@@ -767,8 +766,6 @@ tint_colors <- function(cols, f = 0.80) {
   stats::setNames(grDevices::rgb(m[1, ], m[2, ], m[3, ], maxColorValue = 255), names(cols))
 }
 
-#' Read-coverage track for one assembly unit, with feature regions shaded
-#' @noRd
 #' Pad a plot's left gutter (y title, axis text, strips) to a fixed width so
 #' plots stacked in a modal share one x axis. Returns a gtable; draw it with
 #' grid::grid.draw().
@@ -781,6 +778,8 @@ fixed_gutter <- function(g, left_cm = 3.2) {
   gt
 }
 
+#' Read-coverage track for one assembly unit, with feature regions shaded
+#' @noRd
 plot_coverage <- function(id, path = 1L, scaffold = 1L) {
   if (is.null(id)) {
     return(NULL)
@@ -799,7 +798,7 @@ plot_coverage <- function(id, path = 1L, scaffold = 1L) {
       ggplot2::annotate("text", 0, 0, label = msg) +
       ggplot2::theme_void())
   }
-  dep <- as.numeric(strsplit(cov$depths[1], ",")[[1]])
+  dep <- parse_depths(cov$depths)
   df <- data.frame(pos = seq_along(dep), depth = dep)
   feats <- app_query("SELECT element, start, stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
     params = list(id, path, scaffold))
@@ -950,7 +949,3 @@ plot_chimera <- function(id, path = 1L, scaffold = 1L, db = NULL) {
       axis.text = ggplot2::element_text(size = 10), panel.spacing.y = grid::unit(3, "pt"),
       plot.margin = ggplot2::margin(36, 6, 6, 6))
 }
-
-#' Synteny map: the sample's annotations over its BLAST reference's
-#' (when the reference has been fetched + annotated), aligned by element color.
-#' @noRd

@@ -93,7 +93,7 @@ screen_confidence_terms <- function(lca_n_hits, lca_rank, margin, top_bitscore,
 #' Classification keys off the taxid rather than the kingdom-rank NAME:
 #' taxids are immune to synonyms, homonyms and defline formatting, exactly the
 #' reason [rank_distance()] compares taxids and treats names as display-only.
-#' @noRd
+#'
 #' NCBI's 2024 prokaryote reclassification put a kingdom rank under Bacteria and
 #' Archaea, so `{K}` resolves to one of these rather than to 2 / 2157 and a
 #' bacterial contaminant would otherwise fall through to "other_euk". Both the

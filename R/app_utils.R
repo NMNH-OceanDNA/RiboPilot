@@ -233,10 +233,8 @@ unit_evidence <- function(id) {
   # not abundance. Pre-v10 rows have no median and fall back to the mean until
   # backfill_coverage_median() runs; depth_stat records which is in play.
   #
-  # Either way this is a WITHIN-SAMPLE ratio only. coverage.nf maps reads against
-  # all of a sample's scaffolds at once and GetOrganelle paths are near-identical
-  # isomers, so bowtie2 splits multireads across them: comparable within a path,
-  # not across.
+  # Either way this is a WITHIN-SAMPLE ratio only. coverage.nf maps one path at
+  # a time, so depths compare within a path, not across paths.
   mx <- suppressWarnings(max(d$depth, na.rm = TRUE))
   d$depth_max <- if (is.finite(mx) && mx > 0) mx else NA_real_
   d$shares <- rank_distance_label(d$rank_distance)

@@ -1,6 +1,6 @@
 # Reference-guided curation of the nuclear rDNA feature model. Follows
 # MitoPilot's design: a shared core (curate_rrna_core) driven by per-clade
-# params (params_rrna.R), plus thin clade wrappers. The core is pure (no DB);
+# params (params_rrna.R), selected by ruleset. The core is pure (no DB);
 # curate_one() is the DB driver called by the Nextflow curate process,
 # right after reconcile writes the annotations table.
 #
@@ -32,8 +32,6 @@
 #' @param hit_is_nuclear_rrna Optional 0/1 (`blast_screen.is_nuclear_rrna`):
 #'   whether that top hit is a nuclear rDNA record at all. 0 raises
 #'   `not_nuclear_rdna`.
-#' @param chimeric Unused; chimera risk is now reported by [risk_flags()] from
-#'   the `chimera` table, not by this function.
 #' @return list(features, flags, n_flags, notes) where `features` gains `status`
 #'   ("ok"/"flag") and `flags` (comma-separated per-feature codes), and the
 #'   sample-level `flags`/`notes` summarize missing anchors, ordering, etc.
@@ -41,7 +39,7 @@
 curate_rrna_core <- function(features, params = rrna_params(),
                              ref_pid = NULL, ref_cov = NULL,
                              sample_lineage = NA, hit_lineage = NA,
-                             hit_is_nuclear_rrna = NA, chimeric = NA,
+                             hit_is_nuclear_rrna = NA,
                              sample_taxids = NA_character_,
                              hit_taxids = NA_character_) {
   sample_flags <- character(0)
@@ -161,20 +159,6 @@ curate_rrna_core <- function(features, params = rrna_params(),
   sample_flags <- unique(sample_flags)
   notes <- if (length(sample_flags)) paste(sample_flags, collapse = "; ") else NA_character_
   list(features = features, flags = sample_flags, n_flags = length(sample_flags), notes = notes)
-}
-
-#' Thin actinopterygii curation wrapper.
-#' @param features,ref_pid,ref_cov,sample_lineage,hit_lineage,hit_is_nuclear_rrna,chimeric see
-#'   [curate_rrna_core()].
-#' @return see [curate_rrna_core()].
-#' @noRd
-curate_actinopterygii_rrna <- function(features, ref_pid = NULL, ref_cov = NULL,
-                                       sample_lineage = NA, hit_lineage = NA,
-                                       hit_is_nuclear_rrna = NA, chimeric = NA) {
-  curate_rrna_core(features, rrna_params("actinopterygii"),
-    ref_pid = ref_pid, ref_cov = ref_cov, sample_lineage = sample_lineage,
-    hit_lineage = hit_lineage, hit_is_nuclear_rrna = hit_is_nuclear_rrna,
-    chimeric = chimeric)
 }
 
 #' Is a lineage string present at all (before any placeholder test)?

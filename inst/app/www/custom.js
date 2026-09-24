@@ -1,4 +1,4 @@
-window.MP_SAMPLE_TABLES = '#tbl, .mp-sample-table';
+window.MP_SAMPLE_TABLES = '#tbl';
 
 // Rows the main table is showing: reactable's filtered + sorted rows, minus the
 // ones the lock/state filter CSS hides. The server names the mode's lock/state
@@ -37,37 +37,6 @@ $( document ).ready(function(){
   $(document).on('shiny:value', function(e) { if (e.name === 'filter_css') queue(); });
 });
 
-// One help affordance: every [data-toggle="mp-popover"] on the page (modals
-// and dynamically rendered UI included) opens its data-content in a
-// Bootstrap 3 popover on click or keyboard focus.
-$( document ).ready(function(){
-  if (!$.fn.popover) return;
-  $(document.body).popover({
-    selector: '[data-toggle="mp-popover"]',
-    trigger: 'click focus',
-    placement: 'auto right',
-    container: 'body',
-    html: true
-  });
-});
-
-// Update horizontal scroll position
-$( document ).ready(function(){
-  Shiny.addCustomMessageHandler('hScroll', function(params) {
-    // console.log(params.id)
-    var elmnt = document.getElementById(params.id);
-    if (elmnt) elmnt.scrollLeft = params.px;
-  });
-});
-
-// Update open/close state of details elements
-$( document ).ready(function(){
-  Shiny.addCustomMessageHandler('toggleDetails', function(params) {
-    // console.log(params.id);
-    $("#" + params.id).attr('open', params.state);
-  });
-});
-
 // Copy an element's text (the run report's Copy button). Plain http off
 // localhost has no Clipboard API, so select the text and copy that instead.
 window.rpCopyEl = function(id) {
@@ -78,52 +47,6 @@ window.rpCopyEl = function(id) {
   document.execCommand('copy'); s.removeAllRanges();
 };
 
-
-$( document ).ready(function(){
-  Shiny.addCustomMessageHandler('rightScroll', function(params) {
-    // Get the header element
-    var header = document.getElementsByClassName('biojs_msa_rheader')[0];
-    var maxScrollLeft = header.scrollWidth - header.clientWidth;
-    header.scrollLeft = maxScrollLeft;
-    var scrollEvent = new Event('scroll');
-    header.dispatchEvent(scrollEvent);
-  });
-});
-
-// Center the MSA viewer on a given alignment column (conflict-block navigation)
-// Scrolls the same horizontally-overflowing element the rightScroll handler
-// uses (.biojs_msa_rheader); the seqblock is a fixed-size canvas and does not
-// itself overflow, so scrolling it has no effect.
-$( document ).ready(function(){
-  Shiny.addCustomMessageHandler("msaScrollToCol", function(params) {
-    var attempts = 0;
-    function tryScroll() {
-      var el = document.getElementsByClassName('biojs_msa_rheader')[0]
-            || document.getElementsByClassName('biojs_msa_seqblock')[0];
-      if (!el || !el.scrollWidth || el.scrollWidth <= el.clientWidth) {
-        if (attempts++ < 20) { setTimeout(tryScroll, 150); }
-        return;
-      }
-      var colWidth = el.scrollWidth / params.alnLen;
-      var target = (params.col - 0.5) * colWidth - el.clientWidth / 2;
-      var maxScroll = el.scrollWidth - el.clientWidth;
-      target = Math.max(0, Math.min(target, maxScroll));
-      el.scrollLeft = target;
-      el.dispatchEvent(new Event('scroll'));
-    }
-    tryScroll();
-  });
-});
-
-// auto scrolling of progress box
-$( document ).ready(function(){
-  Shiny.addCustomMessageHandler("scrollProgress", function(params) {
-    var objDiv = document.getElementById(params.id);
-    if(objDiv) {
-        objDiv.scrollTop = objDiv.scrollHeight
-    }
-  });
-});
 
 // Sample-table resize: the CSS handle (resize: vertical) writes an inline
 // height, which then sticks and stops the table re-fitting the window. On

@@ -199,8 +199,8 @@ test_that("feature_map_svg falls back to a note when a unit has no annotations",
   expect_equal(RiboPilot:::feature_map_svg(con, "S1"), "<em>no annotations</em>")
 })
 
-test_that("is_nuclear_rrna_title splits nuclear rDNA from organellar/other", {
-  f <- RiboPilot:::is_nuclear_rrna_title
+test_that("a nuclear rDNA title classifies as rdna, organellar and bacterial ones do not", {
+  f <- function(x) RiboPilot:::classify_hit_title(x) == "rdna"
   expect_true(f("Symbiodinium sp. 18S ribosomal RNA gene, partial"))
   expect_true(f("Xenia sp. internal transcribed spacer 1, 5.8S ribosomal RNA"))
   expect_false(f("Homo sapiens mitochondrion, complete genome"))

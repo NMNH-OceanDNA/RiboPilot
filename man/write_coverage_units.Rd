@@ -2,7 +2,7 @@
 % Please edit documentation in R/coverage.R
 \name{write_coverage_units}
 \alias{write_coverage_units}
-\title{Split a combined `samtools depth -a` (all scaffolds mapped at once) into
+\title{Split a combined `samtools depth -a` (one path mapped at a time) into
 per-unit coverage rows}
 \usage{
 write_coverage_units(con, id, depth_file, clips_file = NULL)

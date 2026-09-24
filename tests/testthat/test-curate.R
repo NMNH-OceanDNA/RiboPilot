@@ -14,7 +14,7 @@ FISH <- "Metazoa; Chordata; Actinopteri; Gadus"
 
 test_that("a clean feature model curates with no flags", {
   r <- RiboPilot:::curate_rrna_core(good_feats(), RiboPilot:::rrna_params("actinopterygii"),
-    sample_lineage = FISH, hit_lineage = FISH, hit_is_nuclear_rrna = 1L, chimeric = 0L)
+    sample_lineage = FISH, hit_lineage = FISH, hit_is_nuclear_rrna = 1L)
   expect_equal(r$n_flags, 0)
   expect_true(all(r$features$status == "ok"))
 })

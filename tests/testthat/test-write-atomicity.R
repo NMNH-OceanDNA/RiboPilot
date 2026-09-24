@@ -140,18 +140,17 @@ test_that("a failed reference-record insert leaves the fetched sequence in place
   seq <- paste0(strrep("ACGT", 10), strrep("GT", 10))
   fa <- file.path(d, "MZ1.fa")
   writeLines(c(">MZ1.1 Fake species small subunit ribosomal RNA gene", seq), fa)
-  ft <- file.path(d, "MZ1.ft")
-  writeLines(c(">Feature MZ1.1", paste(1, nchar(seq), "rRNA", sep = "\t"),
-    paste("", "", "", "product", "18S ribosomal RNA", sep = "\t")), ft)
+  ann <- data.frame(seqid = "MZ1.1", element = "18S", type = "rRNA", start = 1L,
+    stop = nchar(seq), strand = "+", stringsAsFactors = FALSE)
 
-  RiboPilot:::write_blast_ref(con, "MZ1", fa, ft)
+  RiboPilot:::write_blast_refs(con, fa, ann)
   before <- DBI::dbGetQuery(con, "SELECT accession, sequence FROM blast_ref_sequences")
   expect_equal(nrow(before), 1L)
   expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM blast_ref_annotations")$n, 1L)
 
   # the features fail, and the record they belong to must not vanish with them
   block_inserts(con, "blast_ref_annotations")
-  expect_error(RiboPilot:::write_blast_ref(con, "MZ1", fa, ft), "blocked")
+  expect_error(RiboPilot:::write_blast_refs(con, fa, ann), "blocked")
   expect_equal(DBI::dbGetQuery(con, "SELECT accession, sequence FROM blast_ref_sequences"), before)
   expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM blast_ref_annotations")$n, 1L)
 })

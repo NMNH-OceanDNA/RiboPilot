@@ -81,18 +81,6 @@ test_that("rank labels and thresholds read the way a biologist expects", {
   expect_error(rank_at_least(1, "tribe"))
 })
 
-test_that("shared_taxon names the deepest common taxon", {
-  s <- shared_taxon(BIRD_N, BIRD_T, FISH_T)
-  expect_equal(s$taxon, "Chordata")
-  expect_equal(s$rank, "phylum")
-  expect_equal(s$distance, 5)
-
-  s2 <- shared_taxon(BACT_N, BACT_T, FISH_T)
-  expect_true(is.na(s2$taxon))
-  expect_equal(s2$rank, "none")
-  expect_equal(s2$distance, 7)
-})
-
 test_that("bitscore-weighted LCA survives one mislabelled accession", {
   # Three real fish hits plus one bogus bacterial record with a lower bitscore.
   paths <- list(FISH_T, CONGENER_T, FISH_T, BACT_T)

@@ -54,16 +54,3 @@ need_one_path <- function(u, session = getDefaultReactiveDomain()) {
   )
   FALSE
 }
-
-#' A row clicked outside a non-empty selection is not edited.
-#' @noRd
-row_in_selection <- function(row, sel, id, noun = "sample",
-                             session = getDefaultReactiveDomain()) {
-  if (length(sel) == 0 || row %in% sel) return(TRUE)
-  mp_toast(
-    paste0("Clear the current selection, or include ", id, " in it, to edit this ",
-           noun, "'s options."),
-    type = "warning", session = session
-  )
-  FALSE
-}

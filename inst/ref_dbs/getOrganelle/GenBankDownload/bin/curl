@@ -9,7 +9,7 @@
 # This shim forwards to the real curl with `--http1.1` appended. curl uses the
 # last --httpX flag given, so this overrides edirect's --http1.0.
 #
-# download_mitogenomes.sh prepends this directory to PATH so edirect picks it up.
+# download_rrna.sh prepends this directory to PATH so edirect picks it up.
 
 self_dir="$(cd "$(dirname "$0")" && pwd)"
 

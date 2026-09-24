@@ -27,14 +27,6 @@ test_that("rt_icon_bttn_text keeps the cell value as the render gate", {
   expect_true(grepl("type='button'", js, fixed = TRUE))
 })
 
-test_that("rt_bool_bttn renders a focusable button with aria-pressed", {
-  js <- as.character(rt_bool_bttn("id", "fa fa-check", "fa fa-circle",
-                                  "On now", "Off now"))
-  expect_true(grepl("<button type='button'", js, fixed = TRUE))
-  expect_true(grepl("aria-pressed=", js, fixed = TRUE))
-  expect_true(grepl("On now", js, fixed = TRUE))
-})
-
 test_that("rt_bool_badge uses pill classes and never a green no", {
   js <- as.character(rt_bool_badge())
   expect_true(grepl("mp-pill", js, fixed = TRUE))

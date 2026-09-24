@@ -4,8 +4,8 @@
 #
 # Split so the tools (barrnap, ITSx) can run as Nextflow processes while R
 # does the parsing + reconciliation: parse_barrnap()/parse_itsx() consume tool
-# output; reconcile_features() combines them; run_barrnap()/run_itsx()/
-# annotate_seq() are the all-in-R convenience path.
+# output; reconcile_features() combines them; run_barrnap()/run_itsx()
+# run the tools from R.
 
 #' Parse barrnap GFF3 text into rRNA gene features
 #'
@@ -429,16 +429,6 @@ rotate_to_igs <- function(seq, kingdom = "euk") {
   e <- max(end28[end28 < g$start])
   s <- (e + (g$start - e - 1L) %/% 2L) %% L + 1L
   if (s == 1L) seq else paste0(substr(seq, s, L), substr(seq, 1L, s - 1L))
-}
-
-#' Annotate the nuclear rDNA feature model on a single sequence (all in R)
-#'
-#' @param fasta Path to a single-sequence fasta (e.g. a stitched path).
-#' @param cpu CPUs for ITSx.
-#' @return data.frame(element, type, start, stop, length, strand, tool).
-#' @noRd
-annotate_seq <- function(fasta, cpu = 2) {
-  reconcile_features(run_barrnap(fasta), run_itsx(fasta, cpu = cpu))
 }
 
 #' Sequence ids short enough for ITSx

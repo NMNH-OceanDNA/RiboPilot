@@ -603,64 +603,6 @@ rt_icon_bttn_text <- function(inputId, icon, text = "", label = NULL,
     htmlwidgets::JS()
 }
 
-#' Two-state in-table toggle
-#'
-#' Renders a real focusable button carrying `aria-pressed`, so the toggle is
-#' reachable by keyboard and announces its state.
-#'
-#' @param inputId shiny input id to use
-#' @param ticon font awesome icon shown when the value is true
-#' @param ficon font awesome icon shown when the value is false
-#' @param title_true,title_false tooltips for each state
-#' @param disabled TRUE, or a reason string, renders the toggle inert
-#'   (`disabled`, `aria-disabled`, no click handler). A disabled button gets
-#'   no pointer events, so the reason rides on a wrapper span.
-#'
-#' @noRd
-rt_bool_bttn <- function(inputId, ticon, ficon, title_true = NULL,
-                         title_false = NULL, disabled = FALSE) {
-  off <- !isFALSE(disabled)
-  tips <- mp_js_obj(c(
-    on = if (off || is.null(title_true)) "" else title_true,
-    off = if (off || is.null(title_false)) "" else title_false
-  ))
-  gate <- if (off) {
-    "disabled aria-disabled='true'"
-  } else {
-    sprintf(
-      paste0("onclick='event.stopPropagation(); Shiny.setInputValue(",
-             "&#39;%s&#39;, this.id, {priority: &#39;event&#39;})'"),
-      inputId
-    )
-  }
-  wrap <- if (off) {
-    c(sprintf("<span title='%s'>",
-              mp_js_attr(if (is.character(disabled)) disabled else "")),
-      "</span>")
-  } else {
-    c("", "")
-  }
-  sprintf(
-    "
-    function(cellInfo) {
-      var { index } = cellInfo;
-      var on = cellInfo.value ? true : false;
-      var icon = on ? '%s' : '%s';
-      var tips = %s;
-      var tip = on ? tips.on : tips.off;
-      var t = tip ? ` title='${tip}'` : '';
-      return `%s<button type='button' ` +
-        `class='icon-bttn-text mp-toggle%s' ` +
-        `id='${index+1}' aria-pressed='${on}'${t} %s>` +
-        `<i class='${icon}' aria-hidden='true'></i>` +
-        `</button>%s`
-    }
-    ",
-    ticon, ficon, tips, wrap[1], if (off) "" else " grow", gate, wrap[2]
-  ) |>
-    htmlwidgets::JS()
-}
-
 #' Inline depth sparkline from a comma-separated track
 #'
 #' Shown because a curator deciding keep/drop should see coverage shape, and

@@ -197,42 +197,6 @@ REFERENCE_CONFIG_DDL <- "CREATE TABLE IF NOT EXISTS reference_config (
   PRIMARY KEY (rowid_key)
 );"
 
-#' Back-fill `coverage.median_depth` from the stored per-position tracks
-#'
-#' Computed lazily rather than at write time: a depth track is one comma-joined
-#' integer per base, so a large project holds hundreds of MB of them and parsing
-#' every row would make opening the app crawl. Rows with a NULL median fall back
-#' to the mean until this runs.
-#'
-#' @param con Open project DB connection.
-#' @param limit Maximum rows to fill in one call (NULL = all).
-#' @return (invisibly) the number of rows filled.
-#' @export
-backfill_coverage_median <- function(con, limit = NULL) {
-  if (!("median_depth" %in% DBI::dbListFields(con, "coverage"))) {
-    return(invisible(0L))
-  }
-  q <- "SELECT ID, path, scaffold, depths FROM coverage
-        WHERE median_depth IS NULL AND depths IS NOT NULL AND depths != ''"
-  if (!is.null(limit)) q <- paste(q, "LIMIT", as.integer(limit))
-  d <- tryCatch(DBI::dbGetQuery(con, q), error = function(e) data.frame())
-  if (nrow(d) == 0) {
-    return(invisible(0L))
-  }
-  upd <- DBI::dbSendStatement(con,
-    "UPDATE coverage SET median_depth = ? WHERE ID = ? AND path = ? AND scaffold = ?")
-  on.exit(DBI::dbClearResult(upd), add = TRUE)
-  n <- 0L
-  for (i in seq_len(nrow(d))) {
-    v <- suppressWarnings(as.numeric(strsplit(d$depths[i], ",", fixed = TRUE)[[1]]))
-    v <- v[!is.na(v)]
-    if (!length(v)) next
-    DBI::dbBind(upd, list(round(stats::median(v), 2), d$ID[i], d$path[i], d$scaffold[i]))
-    n <- n + 1L
-  }
-  invisible(n)
-}
-
 #' DDL for rrna_candidates: the rDNA contig search evidence for user assemblies.
 #'
 #' One row per contig barrnap hit in a user-supplied assembly, kept or dropped,

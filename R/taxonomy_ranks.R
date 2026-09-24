@@ -126,26 +126,6 @@ rank_at_least <- function(d, min_rank = "phylum") {
   !is.na(d) & d <= (length(RRNA_LINEAGE_RANKS) - i)
 }
 
-#' Deepest taxon name shared between a hit and the sample
-#'
-#' The thing a biologist actually wants to read: "shares: Notropis (genus)" vs
-#' "shares: Metazoa (kingdom)" vs "shares: nothing".
-#' @param hit_names Rank-aligned names from [parse_rank_names()].
-#' @param hit_taxids,sample_taxids Rank-aligned taxid vectors.
-#' @return list(taxon, rank, distance).
-#' @export
-shared_taxon <- function(hit_names, hit_taxids, sample_taxids) {
-  a <- if (is.character(hit_taxids)) parse_rank_taxids(hit_taxids) else hit_taxids
-  b <- if (is.character(sample_taxids)) parse_rank_taxids(sample_taxids) else sample_taxids
-  nm <- if (is.character(hit_names) && length(hit_names) == 1) parse_rank_names(hit_names) else hit_names
-  pos <- deepest_shared_rank(a, b)
-  if (pos == 0L) {
-    return(list(taxon = NA_character_, rank = "none", distance = length(RRNA_LINEAGE_RANKS)))
-  }
-  list(taxon = unname(nm[pos]), rank = RRNA_LINEAGE_RANKS[pos],
-    distance = length(RRNA_LINEAGE_RANKS) - pos)
-}
-
 #' Bitscore-weighted lowest common ancestor over the top BLAST hits
 #'
 #' Defence against a single mislabelled GenBank accession, which a one-hit
@@ -201,11 +181,10 @@ bitscore_weighted_lca <- function(taxid_paths, bitscores, names_paths = NULL,
 
 #' Back-fill `samples.lineage_taxids` from `samples.taxid` where missing
 #'
-#' The rank-aligned taxid path is what [rank_distance()] compares, but taxonomy
-#' is frozen from three places (the review CSV, the Shiny taxonomy tab, and
-#' `resolve_project_taxonomy`). Rather than patch each writer, the path is
-#' derived on demand and cached back, which also upgrades projects created
-#' before schema v9.
+#' The rank-aligned taxid path is what [rank_distance()] compares, but
+#' taxonomy is written from more than one place in the Taxonomy step. Rather
+#' than patch each writer, the path is derived on demand and cached back,
+#' which also upgrades projects created before schema v9.
 #'
 #' @param con Open project DB connection.
 #' @param ids Optional character vector of sample IDs (default: all).

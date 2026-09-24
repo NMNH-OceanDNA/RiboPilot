@@ -14,39 +14,7 @@
 # RiboPilot samples mean/median runs 1.01-1.26; the short conserved-core-heavy
 # fragments where it should be worst are the ones a curator most needs to judge.
 
-#' Write per-position read depth for one assembly unit (ID, path, scaffold)
-#'
-#' @param con Open project DB connection.
-#' @param id,path,scaffold Assembly unit.
-#' @param depth_file `samtools depth -a` output (ref, pos, depth), tab-separated.
-#' @return (invisibly) the mean depth.
-#' @export
-write_coverage <- function(con, id, path = 1L, scaffold = 1L, depth_file) {
-  path <- as.integer(path); scaffold <- as.integer(scaffold)
-  ts <- as.integer(Sys.time())
-  DBI::dbExecute(con, "DELETE FROM coverage WHERE ID = ? AND path = ? AND scaffold = ?",
-    params = list(id, path, scaffold))
-
-  dep <- integer(0)
-  if (file.exists(depth_file) && file.info(depth_file)$size > 0) {
-    d <- utils::read.table(depth_file, sep = "\t", header = FALSE,
-      col.names = c("ref", "pos", "depth"), stringsAsFactors = FALSE)
-    dep <- d$depth[order(d$pos)]
-  }
-  if (length(dep) == 0) {
-    DBI::dbAppendTable(con, "coverage", data.frame(ID = id, path = path, scaffold = scaffold,
-      mean_depth = 0, median_depth = 0, min_depth = 0L, max_depth = 0L, depths = "",
-      time_stamp = ts, stringsAsFactors = FALSE))
-    return(invisible(0))
-  }
-  DBI::dbAppendTable(con, "coverage", data.frame(ID = id, path = path, scaffold = scaffold,
-    mean_depth = round(mean(dep), 2), median_depth = round(stats::median(dep), 2),
-    min_depth = as.integer(min(dep)), max_depth = as.integer(max(dep)),
-    depths = paste(dep, collapse = ","), time_stamp = ts, stringsAsFactors = FALSE))
-  invisible(mean(dep))
-}
-
-#' Split a combined `samtools depth -a` (all scaffolds mapped at once) into
+#' Split a combined `samtools depth -a` (one path mapped at a time) into
 #' per-unit coverage rows
 #'
 #' The reference names are the scaffold fasta headers `path.scaffold`, so each
