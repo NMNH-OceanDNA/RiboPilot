@@ -192,6 +192,7 @@ Each item gives its id(s), severity, status, location, the problem, why it matte
 - Problem: the alert says "Auto-assigned taxonomy for 11 sample(s). Review and lock." when 4 are unresolved (a typo, "goatfish", a blank, and a numeric taxid). Locking unresolved samples raises no warning, and Propose groups quietly leaves them out. "Morus" (a gannet genus, and also a plant genus) was marked "ambiguous" but assigned to the plant (3497) and sent to a Moraceae reference group.
 - Why it matters: a bird sample can be assembled against a plant reference without anyone noticing.
 - Fix: report counts by confidence ("7 assigned, 4 unresolved"). Do not auto-assign ambiguous names. Warn before locking unresolved or ambiguous samples, and list samples that Propose groups left out.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 7). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 ![Taxonomy alert says 11 assigned while 4 rows show unresolved](screenshots/ux_19_taxonomy_unresolved_counted.png)
 
@@ -200,6 +201,7 @@ Each item gives its id(s), severity, status, location, the problem, why it matte
 - Problem: the Assemble tab says "No taxonomy-locked samples. Assign and lock taxonomy in Taxonomy mode first." and shows 0 rows, yet Update offers "2 sample(s) to update", and Run from App assembles them against the default fish database. Following the guide's `run_assembly()` does the same for every sample.
 - Why it matters: the taxonomy review, which the README says must come first, can be skipped by accident.
 - Fix: require `taxonomy_lock = 1` in `query_samples` and `nf_pending_count`, and disable Update when nothing qualifies.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 6). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 <a id="ux-10"></a>**UX-10. A step that has not run yet is shown in error red.** Minor. Confirmed. ids: U-design-20 (minor). Seen by 1 (design).
 - Where: taxonomy columns on a fresh project.
@@ -254,6 +256,7 @@ Each item gives its id(s), severity, status, location, the problem, why it matte
   - Work Dirs shows every task green, because the failure is a post-processing gate.
 - Why it matters: the user cannot tell whether to wait, re-run, change settings, or give up.
 - Fix: add a one-line banner at the top of the details window, for example "Assembly found only 2 short pieces (494 and 379 bp), under the 500 bp minimum. Try the baited SPAdes assembler in Assembly Options." Save the GetOrganelle and SPAdes error lines and the coverage estimate into the note. Fill the Why column for gate failures. Drop "still running" once no run is active. Hide empty sections.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 8). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 ![Enit_01 details: no reason, empty section titles](screenshots/ux_18_failed_sample_no_reason.png)
 
@@ -262,6 +265,7 @@ Each item gives its id(s), severity, status, location, the problem, why it matte
 - Problem: to rescue a sample, the user must know that the blue clade name in the Assembly Options cell is a button, tick Edit, and pick "SPAdes, baited to the seed DB". If the set is shared with locked samples, Save shows a red "Error" (its text does say to type a new set name). The guide shows only `run_fallback()` from R, and a failed row gives no hint. Clicking an option link inside a selected row applies it to the whole selection, which is not shown anywhere.
 - Why it matters: every operator had at least one failed sample, and the fix is buried.
 - Fix: add a "Try fallback assembler" action for selected failed samples that creates or reuses a baited set. Offer "Save as new set" instead of a red error. Add an Options button to the toolbar. Add a "Rescue a failed sample in the app" walkthrough to Step 5.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 6). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 <a id="ux-17"></a>**UX-17. A rescue run skips its own new scaffolds and leaves the sample "In progress".** Major. Confirmed. ids: O-practice-9 (major), U-novice-6 (major), U-power-1 (major; reported blocker). Seen by 3 (op-practice, novice, power). Screenshot: [ux_17](screenshots/ux_17_rescue_annotation_not_run.png).
 - Where: `R/pipeline_steps.R:381-395` (`load_assemblies` carries ignore flags by path and scaffold number) and `gate_failed()` at lines 200-206; `R/app_opts.R:589`; `tests/testthat/test-load-assemblies.R:209`.
@@ -279,6 +283,7 @@ Each item gives its id(s), severity, status, location, the problem, why it matte
 - Problem: typing a new set name ticks Edit automatically. A user who then clicks Edit, as the help text suggests, unticks it. Save reports "1 sample switched to littorinimorpha_bait and set to Ready to run" but writes no set. Reopening shows "default" with the unreachable fish database URLs.
 - Why it matters: the user thinks the rescue is queued, but the next run uses the wrong settings.
 - Fix: when the typed name does not exist, create it from the current values, or refuse with a clear message. Never point samples at a missing set.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 9). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 <a id="ux-19"></a>**UX-19. The Length column sorts as text.** Minor. Confirmed. ids: U-power-7 (minor; reported major). Seen by 1 (power).
 - Where: Assemble table; length is stored as a ";"-joined string (`length_str`).
@@ -297,6 +302,7 @@ Each item gives its id(s), severity, status, location, the problem, why it matte
   - Pressing D on a locked sample gives a red "Error: Scaffold 1.1 is annotation-locked".
 - Why it matters: a signed-off record can change without being unlocked, and a sample under rework can ship.
 - Fix: one rule, as in MitoPilot (`lock_blocked()` and a Close-only footer): a locked unit is read only and shows a lock banner. Require both locks for export. Give disabled buttons a tooltip ("Unlock to change"), and show lock guards as information, not errors.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 14). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 ![A locked, exported unit: boundary edit saved](screenshots/ux_11_locked_unit_edit_saved.png)
 
@@ -305,6 +311,7 @@ Each item gives its id(s), severity, status, location, the problem, why it matte
 - Problem: the Annotate and Curate Options cells live only on the Assemble table and are greyed by the assembly lock, but the server guard checks the annotation lock. After unlocking the assembly, a click says "Locked samples cannot be edited. Select these samples and press Lock to unlock them first". Pressing Lock re-locks the assembly. The annotation lock can only be cleared in Annotation Review, which hides samples whose assembly is unlocked. The way out takes 5 steps across 2 tabs.
 - Why it matters: the reviewer escaped only by reading the code.
 - Fix: show the Annotate and Curate options columns on Annotation Review (as MitoPilot does). At minimum, name the right lock and tab: "This unit's annotation is locked. Unlock it in Annotation Review first."
+- Status: fixed on `review/2026-09-full-review` (second batch, action 14). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 ![Guard message that points to the wrong lock](screenshots/ux_12_options_guard_wrong_lock.png)
 
@@ -330,6 +337,7 @@ Each item gives its id(s), severity, status, location, the problem, why it matte
   - This is by design, and the toast does state the result, so the verifier rated it minor. (MitoPilot's toolbar labels are static too; see U-mitopilot-9 in Appendix A.)
 - Why it matters: the user's intent to mark is reversed, and one Enter press unlocks many samples.
 - Fix: relabel live ("Mark problematic (1)" / "Clear problematic (1)"), or split into Mark and Clear. On a mixed selection, offer "Lock 6 unlocked" as the default. Put default focus on Cancel in destructive confirms.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 14). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 ![Pressing Problematic on a mixed selection cleared both](screenshots/ux_13_toolbar_toggle_cleared_both.png)
 
@@ -343,6 +351,7 @@ Each item gives its id(s), severity, status, location, the problem, why it matte
 - Where: `app_server.R:2352` (`SET annotate_lock = 1, reviewed = 'yes'`) vs the toolbar lock.
 - Problem: units locked from the toolbar show "reviewed: no" in the export summary and report, though the reviewer reviewed them. MitoPilot's Lock & Close locks only.
 - Fix: keep lock and reviewed separate, or make both lock paths do the same.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 14). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 <a id="ux-26"></a>**UX-26. The notes box has no label, and deleting its text does not delete the note.** Minor. Confirmed. ids: U-design-21 (minor), U-mitopilot-16 (polish; reported minor). Seen by 2 (mitopilot, design).
 - Where: `app_modals.R:402-407` (`textAreaInput(label = NULL)`); notes observer (`app_server.R:2271`).
@@ -400,6 +409,7 @@ Each item gives its id(s), severity, status, location, the problem, why it matte
 - Problem: a reviewer assigned 5 units to a group and 4 were exported, with no word about the fifth. The Export tab shows 10 rows next to "9 units locked & ready", or "Showing 11 of 11 units" next to "10 units locked & ready". The export window says "4 units in group". The practice export said "15 units locked & ready" and quietly left out CHIM01. No vignette or man page mentions this rule. MitoPilot treats Problematic as a note only.
 - Why it matters: users who mark a unit "for another look" lose it from the submission without knowing.
 - Fix: rename the button "Exclude from export" (or say so in its tooltip). Grey out Problematic rows in the Export table. Say "1 unit left out: SRR33849683 p1.s2 is marked Problematic" in the export window and the Done dialog. Document the rule.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 14). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 ![Export tab: 10 rows, but 9 units locked and ready](screenshots/ux_10_problematic_silently_excluded.png)
 
@@ -417,6 +427,7 @@ Each item gives its id(s), severity, status, location, the problem, why it matte
   - A data_path or project folder with a space is accepted by `new_project()`. Every task then fails with "Unable to find image 'with:latest' locally", and the app says Done.
 - Why it matters: spaces are normal in folder names on laptops and shared drives, and every one of these errors blames Docker.
 - Fix: quote the mount paths. Use MitoPilot's group picker (selectize with `createFilter '^[A-Za-z0-9._-]+$'`) and validate on the server too. Clean up the partial folder when export fails.
+- Status: fixed on `review/2026-09-full-review` (second batch, name and path validation). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 ![Group name with spaces: raw Docker error in the Export complete dialog](screenshots/ux_09_group_name_space_itsx_docker_error.png)
 
@@ -433,6 +444,7 @@ Each item gives its id(s), severity, status, location, the problem, why it matte
 - Problem: on a project with no groups it stops with "No export groups assigned. Assign samples to a group first." and does not say how. The guide implies no groups are needed.
 - Why it matters: a guide-follower hits an error at the last step.
 - Fix: point the guide at the Export tab (Assign Group, then Export Data), or give `export_project()` a default group of all locked units, and add a hint to the error.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 6). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 <a id="ux-38"></a>**UX-38. The export layout in the guide and the bundle README is out of date.** Minor. Confirmed. ids: O-practice-26 (minor), O-practice-27 (polish; reported minor), O-practice-33 (polish). Seen by 1 (op-practice).
 - Where: vignette Step 9 layout block; the bundle README.txt "WHAT IS IN THIS FOLDER".
@@ -473,6 +485,7 @@ Each item gives its id(s), severity, status, location, the problem, why it matte
   - The only clue is Nextflow text at the bottom of the progress box. Samples are left "Ready to run" or "In progress" with no note. (The verifier found no raw ANSI codes in the progress box beyond the one in UX-48.)
 - Why it matters: users trust the popup and move on. This was the most repeated complaint.
 - Fix: check `p$get_exit_status()` and the failed and ignored counts. On failure, show an error alert with the first "Caused by" line and the log path. On success, give per-sample counts ("11 succeeded, 1 failed: SRR22396893").
+- Status: fixed on `review/2026-09-full-review` (second batch, action 8). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 ![Green check after a run where every task failed (project folder with a space)](screenshots/ux_01_green_done_after_failed_run.png)
 
@@ -483,6 +496,7 @@ Each item gives its id(s), severity, status, location, the problem, why it matte
 - Problem: a reload during GetOrganelle killed Nextflow at once. The reloaded page says nothing, and the samples show "Ready to run" or "In progress". Closing the only tab stops both the app and the run. The run window cannot be closed without stopping the run, so the user cannot review other samples during a long batch. Only the Close button warns. `-resume` softens the loss.
 - Why it matters: a 16-minute run, or a 500-sample batch, is lost to one accidental F5.
 - Fix: launch Nextflow detached from the Shiny session. On load, re-attach to a running job and show a "Run in progress" banner. At minimum, add a `beforeunload` warning while a run is active, and an "interrupted run" notice after reload.
+- Status: resolved the author's way on `review/2026-09-full-review` (second batch, action 13): runs are not kept alive; Stop and closing the browser stop them cleanly, and only one run per project can go at once. See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 ![After a reload mid-run: sample left In progress, no message](screenshots/ux_23_reload_left_in_progress.png)
 
@@ -491,17 +505,20 @@ Each item gives its id(s), severity, status, location, the problem, why it matte
 - Problem: after Stop, the GetOrganelle container kept running for about 25 s, and two more task containers (annotate_tools, and screen, which writes to the project database) started about 10 s later. The progress board froze, with no "stopped" message. Resume later reused the cache correctly.
 - Why it matters: runaway containers on a shared machine, and no way to tell what state the samples are in.
 - Fix: send SIGTERM so Nextflow can clean up (or kill the process tree and its containers), wait for exit, then show "Run stopped" with the samples left unfinished.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 13). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 <a id="ux-45"></a>**UX-45. The run window does not list what will run, and runs with nothing queued.** Minor. Confirmed. ids: U-power-10 (minor), U-mitopilot-10 (minor). Seen by 2 (mitopilot, power).
 - Where: `run_modal(nf_pending_count())`; the Update handler has no zero-count guard.
 - Problem: the title shows only "N sample(s) to update", summing samples and annotation units. With "0 sample(s) to update", Run from App stays enabled, runs a no-op, and reports Done.
 - Why it matters: a batch user cannot check the queue before a long run.
 - Fix: list the queued IDs (collapsible), split samples from units, and refuse to start with "Nothing to update" and the reason, as MitoPilot does.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 8). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 <a id="ux-46"></a>**UX-46. Two browser sessions can run at once and overwrite each other's locks.** Minor. Confirmed. ids: O-edge-9 (minor; reported major). Seen by 1 (op-edge).
 - Where: `nf_start` (the process handle is per session, with no project-level run lock); lock handlers.
 - Problem: session B, on a stale view, re-locked a sample that A had just unlocked, and nobody was warned. B started a second Nextflow run while A's was still going. Both ended with a green Done, though A crashed and B reported "Failed: 10". The verifier rated it minor because two sessions on one project is uncommon.
 - Fix: write a project-level run lock and check it in `nf_start` ("A run is already in progress for this project"). Refresh or warn when the data changed underneath.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 13). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 <a id="ux-47"></a>**UX-47. The NCBI API key is shown in plain text and saved with the project.** Minor. Confirmed. ids: O-novel-11 (minor), U-power-18 (minor). Seen by 2 (op-novel, power).
 - Where: `ref_api_key` is a `textInput` (`app_modals.R:523`); `nf_command.R:58` passes `--ncbi_api_key` on the command line; the project .config.
@@ -525,6 +542,7 @@ Each item gives its id(s), severity, status, location, the problem, why it matte
   - Nothing covers bulk work, filters, CSV downloads, Work Dirs, Stop and resume, failure recovery, or the fact that closing the tab stops a run. There is no troubleshooting section.
 - Why it matters: every operator and most personas hit this, and it goes against the author's own goal of an app-first guide.
 - Fix: rewrite Steps 4 to 9 around the app's five steps and buttons, one screenshot per step (the operator reports list good candidates). Move the console commands to an HPC or scripting appendix. Add a "Reviewing a sample" page on Keep/Drop, Screen values, Chimera, Reviewed, Problematic, and Partial, and what each does to the export. Add a short "Working with many samples" section and a "Common errors" table (see the error table below).
+- Status: fixed on `review/2026-09-full-review` (second batch, action 6). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 <a id="ux-50"></a>**UX-50. Smaller mismatches between the guides and the app.** Minor. Confirmed. ids: O-practice-16 (minor), O-practice-19 (minor), O-practice-20 (polish; reported minor), O-novel-10 (polish). Seen by 2 (op-practice, op-novel).
 - Where: `vignettes/RiboPilot.Rmd` Steps 1, 2, 7, and 8; `vignettes/Reference-Databases.Rmd:55`.
@@ -562,6 +580,7 @@ Each item gives its id(s), severity, status, location, the problem, why it matte
 - Problem: in MitoPilot, Output opens the sample's output folder. Here it lists task work folders, with paths cut off at the hash and no copy button. There is no view of `.command.log` or `.command.err`, and older runs drop off as logs rotate. In a copied project every row points at the original project's folders and says "On disk: yes".
 - Why it matters: power users need a failed task's error log in one click.
 - Fix: open out/<ID> first and put work folders in a second section. Add a log tail viewer and a copy button, and show paths relative to the project.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 12). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 ### Errors (messages at setup and launch)
 
@@ -723,6 +742,7 @@ Reviewed against WCAG 2.2 AA. The good news first: every `--mp-*` color token pa
 - Where: `R/app_run.R:194` (keyed on `launch.browser` and port, not `headless`); launcher and `new_test_project()` messages.
 - Problem: with `headless = FALSE` and `launch.browser = FALSE` it prints "RiboPilot is headless. Tunnel it from your machine...". O-edge-29 adds: "No RiboPilot project (.sqlite) found" does not suggest `new_project()`, and `new_test_project(n = 0)` says "Fetching ... from the RiboPilot release" while only copying bundled files. (Its empty "for" titles are covered in UX-15.)
 - Fix: print the tunnel hint only when headless; otherwise "Open http://127.0.0.1:PORT in your browser." Add a `new_project()` hint, and reword the fetch message.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 12). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 <a id="ux-80"></a>**UX-80. Toasts and confirms use programmer wording.** Polish. Confirmed. ids: U-novice-18 (polish), U-power-21 (polish). Seen by 2 (novice, power).
 - Where: `app_server.R:2320` (`paste0('Toggled ', label, '.')`); the unlock confirm (`paste('Unlock', mp_n(...), '?')`); the State toast.
@@ -744,6 +764,7 @@ Reviewed against WCAG 2.2 AA. The good news first: every `--mp-*` color token pa
   - SRR14433901 (*Forcipiger*) has its whole segment labelled "Chromis insolata" from one window.
 - Why it matters: it pushes the user to drop a good record, and it teaches users to ignore the chimera flag.
 - Fix: break ties by rank distance to the sample, or label by majority, and show how many hits tie. Down-weight XM_/XR_ PREDICTED records and windows in the conserved 18S and 5.8S cores. Call a class switch only when on-lineage hits are clearly worse.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 15). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 ![Flounder flagged as a chimera: 18S windows tie with PREDICTED: Canis](screenshots/ux_21_false_chimera_canis.png)
 
@@ -751,6 +772,7 @@ Reviewed against WCAG 2.2 AA. The good news first: every `--mp-*` color token pa
 - Where: `chimera_depth_steps` in `R/chimera.R` (skips feature edges but not scaffold ends).
 - Problem: the thin rescued sample SRR22396893_p1_s1 got "chimeric(1-1286 Actinopteri ..., junction near 500 (reads), depth step at 500)" with only one lineage segment, at window depths of 4 to 12. On the clean flounder p1.s1, the normal end taper (median depth 24, then 8 in the last bin) became "depth step at 4000", a third junction line and part of a "suspect" call. A depth step alone scores 0.4, enough for "suspect". (The vignette's "depth never decides" line refers to triage, so the verifier called the contradiction arguable.)
 - Fix: skip bins near scaffold ends, require a minimum depth for the read and depth channels, and require a lineage switch before writing "chimeric" to `submission_risk`. Draw junctions on the coverage plot too.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 15). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 <a id="ux-84"></a>**UX-84. Adjacent features do not touch, and the gaps are never flagged.** Major. Confirmed. ids: U-curator-3 (major), O-novel-12 (minor). Seen by 2 (op-novel, curator).
 - Where: `reconcile_features` in `R/annotate.R` (its docs promise a gap-free model, but it only clips overlaps); `curate_rrna` has no gap flag.

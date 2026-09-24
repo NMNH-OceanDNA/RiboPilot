@@ -112,7 +112,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: the lookup joins `annotate` (one row per unit) to the options table with no `LIMIT`, so a sample with 3 units returns 3 rows. The modal then runs `cur$rrna_tool %|NA|% ...` on a length-3 vector, and `%|NA|%` is a bare `if (is.na(x))`, which errors.
 - Why it matters: the error happens inside an observer with no `tryCatch`, so Shiny closes the session (grey screen). Multi-unit samples are common: 3 of 12 in the test project.
 - Fix: add `ORDER BY x.path, x.scaffold LIMIT 1` to the lookup (the Assemble table subquery already does this), or take `cur[1, ]`.
-- Status: fixed on `review/2026-09-full-review`. `new_project()` and `new_test_project()` default to `docker`, and `executor = "conda"` warns that it is not supported. The C-pkg-30 ribotyper part is not addressed. See [Fixed on this branch](REVIEW_SUMMARY.md#fixed-on-this-branch-after-the-review).
+- Status: fixed on `review/2026-09-full-review`. `new_project()` and `new_test_project()` default to `docker`, and `executor = "conda"` warns that it is not supported. The C-pkg-30 ribotyper part is not addressed. See [Fixed on this branch](REVIEW_SUMMARY.md#fixed-on-this-branch-after-the-review). Also: fixed on `review/2026-09-full-review` (second batch, action 9).
 - Status: fixed on `review/2026-09-full-review`. `config.docker`, `config.local`, and `config.conda` carry `resourceLimits = [cpus: <<HOST_CPUS>>, memory: <<HOST_MEMORY>>.GB]`, which `new_project()` fills from `ps`. With Nextflow 25.10.6, a 1,000 GB, 64-CPU request now runs capped at the limit instead of stopping the run. Cluster profiles are unchanged. See [Fixed on this branch](REVIEW_SUMMARY.md#fixed-on-this-branch-after-the-review).
 - Status: fixed on `review/2026-09-full-review`. The RStudio step runs only when `rstudioapi::isAvailable()`; the Rproj help text says it has no effect outside RStudio. Test: `test-init-reads.R`. See [Fixed on this branch](REVIEW_SUMMARY.md#fixed-on-this-branch-after-the-review).
 - Status: fixed on `review/2026-09-full-review`. DESCRIPTION has an empty `biocViews:` line, and `remotes::dev_package_deps()` now resolves Biostrings, DECIPHER, and pwalign from Bioconductor (it returned NA before). See [Fixed on this branch](REVIEW_SUMMARY.md#fixed-on-this-branch-after-the-review).
@@ -123,6 +123,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: `trim_span` depends only on `sel_unit()`, which a trim does not change, so after one trim it still offers the old coordinates and length. Reproduced: trim 6,310 bp down to 4,161 bp, reopen Trim, pick "Annotated + flank", and the offered range is 2050 to 6310 on a 4,161 bp sequence. `trim_assembly()` clamps the end and drops every feature that starts before 2050.
 - Why it matters: a curator who trims tightly and then tries to add back some flank deletes 18S, ITS1, and 5.8S instead. Nothing warns. Restore recovers the sequence but throws away any boundary edits.
 - Fix: read `edit_tick()` inside `trim_span` (and anywhere else that caches unit length), and check the range against the current length when Apply is pressed.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 9). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 #### Medium
 
@@ -132,6 +133,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: all of these call processx `p$kill()`, which is SIGKILL to the Nextflow JVM only. Nextflow never gets to run its shutdown, so it cannot stop its Docker containers or cancel scheduler jobs. Three reviewers reproduced it: after `p$kill()` the task containers were still "Up". A page refresh ends the Shiny session, so it triggers the same kill, even though `app_lifecycle.R` is written to survive refreshes.
 - Why it matters: after the app says the run stopped, GetOrganelle, BLAST, and R-step containers keep running and keep writing to `.sqlite`. If the user starts a new run, two sets of writers race on the same samples and work folders.
 - Fix: send SIGINT first (`p$interrupt()`), wait a few seconds for Nextflow to exit, then fall back to `p$kill_tree()`. Do not kill from `onSessionEnded` before the lifecycle grace period has passed. Fix it once in a shared helper (see ponytail item P1) so the main run and the reference build do not drift.
+- Status: resolved the author's way on `review/2026-09-full-review` (second batch, action 13): runs are not kept alive; Stop and closing the browser stop them cleanly, and only one run per project can go at once. See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 **APP-M2. Failed Nextflow runs are announced as a success**
 - Ids: C-shiny-3 (medium), C-nextflow-12 (low). Severity: medium. Status: confirmed.
@@ -139,6 +141,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: when the process ends, the app always shows `rp_alert("Workflow run finished.", type = "message")`, which maps to a green "Done". It never reads `p$get_exit_status()`, and it never counts the tasks that failed and were ignored (`failed_task_errors()` is only used for count runs).
 - Why it matters: a config error, a missing container, or every assembly running out of memory all end with a green "Done", while samples stay queued. The progress panel underneath does show "failed: N" and Nextflow's error text, which is why this is medium, not high.
 - Fix: check the exit status. After each run, parse the log for "terminated with an error" notes and show the count and the first few errors in the alert.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 8). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 **APP-M3. "Run from App" crashes the session when Nextflow is missing or the command cannot be built**
 - Ids: C-shiny-2. Severity: medium. Status: confirmed.
@@ -146,6 +149,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: `processx::process$new("nextflow", ...)` and `nf_command()` run with no `tryCatch`. `run_app()` only warns at startup when Nextflow is missing. The reference build already does this right (`nf_spawn()` plus `tryCatch`, `R/reference_build.R:378`, `R/app_reference.R:927-937`).
 - Why it matters: RStudio opened from the dock often has no conda PATH. The user clicks Run from App and the whole session dies with no message.
 - Fix: wrap the launch in `tryCatch`, show an alert with the reason, restore the Start button, and reuse `nf_spawn()` for the PATH check.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 8). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 **APP-M4. Picking another existing parameter set while Edit is ticked overwrites that set with the values on screen**
 - Ids: C-shiny-4. Severity: medium. Status: confirmed.
@@ -153,6 +157,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: the name box only reacts to unknown names. Choosing a known set does not reload its values, so the fields still show the first set. Save then upserts the chosen name with those values. Reproduced: opened on "actinopteri", ticked Edit, picked "default", saved; "default" now had actinopteri's seeds path and 64 GB memory.
 - Why it matters: every sample on the overwritten set gets different GetOrganelle flags, memory, and seed and label databases on the next run. The confirm step only fires when other samples share the set.
 - Fix: on a known name, reload every field from that set and untick Edit (the MitoPilot pattern). On an unknown name, keep the values and tick Edit.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 9). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 **APP-M5. Every refresh resets the main table to page 1 and clears the selection**
 - Ids: C-shiny-7. Severity: medium. Status: confirmed.
@@ -174,6 +179,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: only the Reviewed, Problematic, and Partial toggles are disabled for locked units (`:1925`). Trim, Restore, and boundary Edit never check `annotate_lock`, and neither do `trim_assembly()` or `restore_assembly()`. `need_unlocked()` exists in `R/app_guards.R` but is not used here. Reproduced: a locked unit's 18S start moved from 2150 to 2149 and saved.
 - Why it matters: a unit signed off for export can change after sign-off with no unlock step, and the next export ships the changed sequence and feature table. MitoPilot makes a locked assembly read-only in this window.
 - Fix: hide or disable Edit, Trim, and Restore for locked units, and refuse them on the server with `need_unlocked()`.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 14). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 **APP-M8. A new set name saved with Edit unticked points samples at a set that does not exist**
 - Ids: C-shiny-13. Severity: medium. Status: confirmed.
@@ -181,6 +187,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: `opts_apply` only creates the set when Edit is ticked, but it always links the samples to the typed name. Reproduced: typed "remote_only" (Edit auto-ticked), unticked Edit, saved; the samples pointed at "remote_only" and no such row existed.
 - Why it matters: `blast.nf` (lines 36-45) joins on the options table, gets nothing back, and silently falls back to shell defaults. The same applies to the other options tables.
 - Fix: when the name is not an existing set and Edit is off, refuse with a message, or create the set from the values shown.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 9). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 **APP-M9. Nothing stops Nextflow from being launched twice**
 - Ids: C-shiny-15. Severity: medium. Status: confirmed (by reading; not reproduced live).
@@ -188,6 +195,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: neither handler checks for a live process, and the Start button is hidden only after a server round trip, so a fast double click queues two launches. `nf_process(p)` overwrites the first handle.
 - Why it matters: the first run is then never read (its output pipe can fill and stall it) and never killed by Stop or session end. Or the second run dies on Nextflow's lock while the app tracks the dead one and reports "finished".
 - Fix: return early when `nf_process()` is alive, and disable the button in the browser on click.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 13). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 **APP-M10. The Work Dirs browser misses every cluster run**
 - Ids: C-shiny-16, C-pkg-10. Severity: medium. Status: confirmed (both).
@@ -195,6 +203,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: `find_workdirs()` only reads `<project>/.nextflow.log*`, but submitted job scripts write their logs to `nextflow_logs/<base>.nextflow.log`. Also, the regex `Task completed > TaskHandler\[` does not match `GridTaskHandler` lines, so SLURM and SGE runs would show nothing even if that folder were read. (The claim that desktop runs rotate out of the log was judged overstated: Nextflow keeps 9 rotated logs.)
 - Why it matters: on HPC, the headless path the app recommends, a curator cannot find a failed task's `.command.err` from the app; it always says "No work directories found".
 - Fix: also read `nextflow_logs/*.nextflow.log`, and widen the regex to any `*TaskHandler`.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 12). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 **APP-M11. The chimera junction hint and track keep pre-trim coordinates**
 - Ids: C-shiny-18. Severity: medium. Status: confirmed.
@@ -202,6 +211,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: `trim_assembly()` shifts annotations and coverage but not `chimera.junctions` or `chimera_windows`, and the hint and the plot read them as stored.
 - Why it matters: after trimming 2,149 bp off the 5' end, the Trim modal still suggests a cut at 4400, but the real junction is now at 2251. A curator who cuts at the hint cuts in the wrong place. Design doc 21 says junctions are meant to feed the trim UI.
 - Fix: shift the chimera junctions and windows in `trim_assembly()` and `restore_assembly()`, or clear them with a "rerun chimera check" note.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 15). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 **APP-M12. Bulk triage can silently switch to the whole table, including locked samples**
 - Ids: C-shiny-19. Severity: medium. Status: confirmed.
@@ -223,6 +233,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: `annotate.annotate_notes` has two owners. The Notes box reads and writes it, and `curate_one()` replaces it with the joined flag list after every Save, Trim, Restore, or pipeline run. Reproduced: the note "check 3prime end with PCR" became "missing_5.8S; missing_28S; ...".
 - Why it matters: the curator's own notes are lost, and when the modal reopens the Notes box shows curation codes as if the user typed them. "Clear notes" also blanks the warnings tooltip while `n_flags` stays above zero. Export does not read notes, so no GenBank data is affected.
 - Fix: give curation its own column (for example `curate_notes`), or derive the flag text from `annotations.flags` when needed, and leave `annotate_notes` to the user. The design docs (08 and 11) already propose this split.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 9). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 **APP-M15. Two opposite rules for locking a second assembly path**
 - Ids: C-ponytail-39. Severity: medium (raised from low). Status: confirmed.
@@ -230,6 +241,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: the bulk Lock button offers "Lock anyway" and says both paths will be annotated and exported. Lock and Close refuses the same state with "Only one assembly path can be locked per sample".
 - Why it matters: the curator is told two different things about what export will contain, depending only on which button they pressed.
 - Fix: pick one rule and use it in both places. Delete the unused `LOCK_UNIT_SQL` at the same time.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 14). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 #### Low
 
@@ -242,13 +254,13 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - **APP-L7. C-shiny-20** (low, unverified-low). `R/app_server.R:2047`. Problem: the curation warnings summary depends only on the selected unit, so it is stale after Save or Trim. Why: the flag table shows 0 warnings while the line above still says 2. Fix: add `edit_tick()` to `output$curate_notes`.
 - **APP-L8. C-shiny-21** (low, unverified-low). `R/app_server.R:91`. Problem: the status line says "groups" in the Reference Samples view. Why: "Showing 12 of 12 groups" for a list of samples. Fix: use "sample" for that view.
 - **APP-L9. C-shiny-22** (low, unverified-low). `R/app_server.R:1245`. Problem: pressing Cancel on "This export already exists" rebuilds the Export modal from saved values. Why: the chosen group and unsaved header are lost, and pressing Export then writes the first group. Fix: pass the current inputs back into `export_modal()`.
-- **APP-L10. C-shiny-23** (low, unverified-low). `R/app_server.R:751`. Problem: the toolbar Reviewed, Problematic, and Partial buttons change annotation-locked units, while the modal disables the same toggles. Why: marking a locked unit Problematic from the toolbar silently drops it from the next export while it still shows in the Export table. Fix: skip or refuse locked units in `toolbar_flag()`.
-- **APP-L11. C-shiny-26** (low, unverified-low). `R/app_server.R:911`. Problem: "Submit as job" has no duplicate-submission guard (the reference flow has one). Why: two jobs on one project race on the Nextflow lock or the database. Fix: track the pending job and confirm before a second submit.
+- **APP-L10. C-shiny-23** (low, unverified-low). `R/app_server.R:751`. Problem: the toolbar Reviewed, Problematic, and Partial buttons change annotation-locked units, while the modal disables the same toggles. Why: marking a locked unit Problematic from the toolbar silently drops it from the next export while it still shows in the Export table. Fix: skip or refuse locked units in `toolbar_flag()`. Status: fixed on `review/2026-09-full-review` (second batch, action 14); see [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
+- **APP-L11. C-shiny-26** (low, unverified-low). `R/app_server.R:911`. Problem: "Submit as job" has no duplicate-submission guard (the reference flow has one). Why: two jobs on one project race on the Nextflow lock or the database. Fix: track the pending job and confirm before a second submit. Status: still open after the second batch; the new run lock covers app runs, not Submit as job.
 - **APP-L12. C-shiny-27** (low, unverified-low). `R/app_server.R:1303`. Problem: `unit_by_uid` ignores the sample part of the uid. Why: a late K or D event for sample A can act on sample B's scaffold with the same path and scaffold numbers. Fix: require `p[1] == sel_id()`.
 - **APP-L13. C-shiny-28** (low, unverified-low). `R/app_reference.R:1033`. Problem: Reference settings accept a minimum larger than the maximum. Why: Propose groups can never find a clade and gives no hint why. Fix: check `min >= 1` and `min <= max` before saving.
 - **APP-L14. C-shiny-29** (low, unverified-low). `R/app_server.R:1299, 1409`. Problem: each K or D click fully re-renders the scaffold table. Why: sort, filters, page, and the ticks used for bulk K/D are lost on every click. Fix: update the scaffold table with `updateReactable()` instead of re-rendering.
 - **APP-L15. C-shiny-30** (low, unverified-low). `R/app_server.R:1772`. Problem: Triage Apply always writes the project-wide "default" preset, while the modal says it is for N samples. Why: trying rules on 2 samples changes triage for every later run. Fix: say so in the modal, or save only on an explicit "save as project default".
-- **APP-L16. C-shiny-31** (low, unverified-low). `R/app_server.R:684`. Problem: Taxonomy Lock accepts samples with no taxid. Why: unresolved samples move on to Assemble and Reference, where grouping and screening need a lineage. Fix: warn or refuse when taxid is NA.
+- **APP-L16. C-shiny-31** (low, unverified-low). `R/app_server.R:684`. Problem: Taxonomy Lock accepts samples with no taxid. Why: unresolved samples move on to Assemble and Reference, where grouping and screening need a lineage. Fix: warn or refuse when taxid is NA. Status: fixed on `review/2026-09-full-review` (second batch, action 7); see [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 - **APP-L17. C-shiny-33** (low, unverified-low). `R/app_server.R:979`, `R/app_reference.R:955`. Problem: the progress observer reads `nf_state()` without `isolate()`, so each write re-runs it immediately and bypasses the 250 ms timer. Why: chatty runs re-render the progress text many times a second on the single R process. Fix: use `isolate(nf_state())`.
 
 ### 4.2 Pipeline and containers
@@ -275,6 +287,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: the generated docker and singularity blocks always mount `${params.rawDir}`. A project with no reads has `rawDir = 'NA'`. With singularity profiles Nextflow fails to even read the config ("Unknown config attribute `singularity.params.rawDir`", reproduced on the pinned versions); with docker every task fails with "mount path must be absolute". The shipped `config.docker` was already fixed for this, but `generate_config()` profiles were not.
 - Why it matters: on SLURM, SGE, PBS, or LSF, a project where every sample brings its own assembly fails before any task starts, and so do its reference builds.
 - Fix: drop the `rawDir` bind from `container_engine_block()` (new_project already adds the data folder through `EXTRA_MOUNTS`), and treat `'NA'` like empty in `nf_reference_command()`.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 12). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 **PIPE-H4. A supplied assembly with more than 5,000 contigs aborts the whole run**
 - Ids: C-nextflow-2. Severity: high. Status: confirmed.
@@ -282,6 +295,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: every scan chunk emits a file named `chunk.gff`, and `groupTuple` hands them all to `find_rrna_pick`, which stages them into one folder. Reproduced: "input file name collision ... chunk.gff", then Nextflow kills all running tasks, despite `errorStrategy 'ignore'`.
 - Why it matters: draft genomes with many contigs are exactly the case the chunking was written for, and the failure takes every other sample's tasks down with it.
 - Fix: declare the input as `path(gffs, stageAs: 'chunk_*.gff')`, or name each scan output after its chunk.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 10). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 **PIPE-H5. `run_fallback()` re-assembles good samples and chains preset names**
 - Ids: C-pkg-5 (high), C-nextflow-22 (medium), C-ponytail-3 (medium). Severity: high. Status: confirmed (all three).
@@ -289,6 +303,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: the candidate query joins the per-unit `annotate` rows and picks a sample if any one unit is missing 18S or 28S, with no `DISTINCT` and no ignore filter. Since annotation became per scaffold, any sample with one fragment or ITS-only scaffold qualifies. A sample with two matching units is returned twice, and the loop then creates `default_bait` and `default_bait_bait`.
 - Why it matters: a user who follows vignette Step 5 re-queues every unlocked sample whose genes sit on separate scaffolds (a normal outcome), switches it to SPAdes baiting, and replaces a good GetOrganelle assembly. Combined with PIPE-H1, old paths then mix in. The lock step comes after Step 5 in the vignette, so good samples are not yet protected.
 - Fix: the author wants runs launched from the app, and the Assembly Options assembler picker already switches a sample to bait or de novo. The ponytail fix is to delete `run_fallback()`, `fallback_candidates()`, and `set_sample_assembler()`, plus the man page and vignette step. If kept, pick samples where no non-ignored unit has both anchors (`NOT EXISTS`), use `SELECT DISTINCT`, and strip an existing `_bait` or `_denovo` suffix before deriving the preset name.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 6). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 #### Medium
 
@@ -305,6 +320,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: a bare `-resume` picks the last session in `.nextflow/history`, whatever script it ran. Reproduced with the pinned Nextflow: after run B, `A -resume` picked up B's session and re-ran A's finished task.
 - Why it matters: after any reference count or build, re-running the pipeline for re-queued samples starts GetOrganelle and preprocessing from scratch (hours per sample) instead of using the cache.
 - Fix: launch reference workflows from `<project>/.reference/` (their own history), or record the main workflow's session id and pass it to `-resume`.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 13). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 **PIPE-M3. Changing annotation options re-assembles the sample and undoes curator trims**
 - Ids: C-nextflow-4. Severity: medium (was high). Status: confirmed.
@@ -326,6 +342,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: the app allows 0 and its help says "0 means no limit", but the value goes straight to `--max-paths-num 0`, which GetOrganelle rejects with an assertion. Separately, GetOrganelle already cuts its output to max-paths, so `load_assemblies()` never sees more paths than the limit. In the test project, SRR14433904's log says "Only exporting 10 out of all 24 possible paths", and the sample is marked done with no note.
 - Why it matters: (a) a user who sets 0 gets a sample that stays queued with no message; (b) a sample with 24 candidate paths is silently cut to 10 instead of being failed by the gate.
 - Fix: pass a large number (or omit the flag) when max paths is 0 or less, and let GetOrganelle export max_paths + 1 so the gate can detect overflow, or read the "Only exporting" warning.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 10). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 **PIPE-M6. A fallback SPAdes crash (including out of memory) exits 0, so the memory retry never runs**
 - Ids: C-nextflow-14. Severity: medium. Status: confirmed.
@@ -333,6 +350,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: SPAdes and bowtie2 run with their output and exit status thrown away; the wrapper only checks whether `contigs.fasta` exists, then writes the `_0` marker and returns normally. SPAdes also gets no `-m` limit, and its working data goes to the R temp folder.
 - Why it matters: on SLURM with memory limits, SPAdes is killed, the task exits 0, it is never retried with more memory, the sample becomes "failed assembly", and `.command.err` has no SPAdes output to explain why. On nodes with a small `/tmp`, SPAdes runs out of space.
 - Fix: exit with the tool's non-zero status, send tool output to stderr, pass `-m` from the task memory, and put SPAdes and baited reads under the task folder.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 8). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 **PIPE-M7. A cached `find_rrna_pick` skips its database updates, so the sample stays queued**
 - Ids: C-nextflow-15. Severity: medium. Status: confirmed.
@@ -354,6 +372,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: the filter drops shallow samples with no note or state change. The count it compares is fastp's total reads (both mates), while the docs say "trimmed paired reads".
 - Why it matters: a shallow sample never assembles, shows "queued" after every run, keeps counting as pending, and is re-preprocessed each time with no explanation. A `min_depth` of 2,000,000 actually lets through a sample with 1,000,000 pairs.
 - Fix: send low samples to a small step that sets them to failed with a note such as "below minDepth (N reads)", and use one unit (pairs or reads) in both the code and the docs.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 8). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 **PIPE-M10. The awsbatch config cannot run as written**
 - Ids: C-nextflow-18. Severity: medium. Status: confirmed.
@@ -361,6 +380,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: `nf_command()` always passes a local `-work-dir`, and Nextflow's AWS Batch executor needs an S3 work folder. AWS Batch also ignores `docker.runOptions`, so the database mount in the template never happens. The template's own header says pure S3 cannot work.
 - Why it matters: awsbatch is still offered as an executor, but no combination of settings runs.
 - Fix: remove awsbatch from the offered executors until it is supported (simplest), or template `aws.batch.volumes` and let `nf_command()` honour a configured work folder.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 12). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 **PIPE-M11. The default executor is conda, and `environment.yml` lacks tools the pipeline calls**
 - Ids: C-nextflow-20 (medium), C-pkg-30 (low, unverified-low). Severity: medium. Status: confirmed (C-pkg-30 unverified-low).
@@ -382,6 +402,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: mount paths are pasted into `runOptions` with no quotes, and Nextflow passes `runOptions` to docker as-is, so a space splits the `-v` argument and the next word is read as the image name ("Unable to find image 'test/my:latest'"). Only `validate_blastdb_prefix()` refuses whitespace.
 - Why it matters: a Mac user with a project under "Google Drive" or a reference folder on "/Volumes/Lab Share" gets every task failing with a confusing image-name error. See also DB-M3 for the export ITSx check.
 - Fix: refuse whitespace and quotes in project, data, assembly, and reference paths in `new_project()` and `validate_ref_dir()`, with a clear message. Quoting every mount is the harder alternative.
+- Status: fixed on `review/2026-09-full-review` (second batch, name and path validation). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 **PIPE-M14. Cluster head-job scripts only fit Hydra-style SGE**
 - Ids: C-nextflow-23, C-security-13. Severity: medium. Status: confirmed (both).
@@ -389,6 +410,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: any `qsub` system gets SGE `#$` lines with a hard-coded `-pe mthread 2` (a Hydra name) and `h_vmem` with no `NXF_OPTS`, so PBS ignores them all. The SLURM and LSF log names render as `%%j` and `%%J`, so the scheduler writes a literal `%j`. `is_hydra_cluster()` matches "hydra" anywhere in `/etc/hosts`, so another cluster named Hydra gets the NMNH script.
 - Why it matters: on PBS the Nextflow head job runs with the queue's default walltime (often 1 hour) and is killed mid-run. An SGE site without an `mthread` environment rejects the job. The script is editable before submit, which only partly helps.
 - Fix: tell PBS and SGE apart and write `#PBS` lines for PBS, take the parallel environment from the saved profile, export `NXF_OPTS='-Xms512m -Xmx4g'` in every script, match Hydra by host name, use single `%` in the log patterns, and quote the log path.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 12). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 **PIPE-M15. Container and package version mismatch goes unnoticed, and every task prints a developer warning**
 - Ids: C-nextflow-25. Severity: medium. Status: confirmed.
@@ -414,7 +436,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 #### Low
 
 - **PIPE-L1. C-nextflow-11** (low, uncertain; was medium). `inst/nextflow/modules/pipeline_r.nf:188-259`, `R/pipeline_steps.R:171`. Problem: the per-unit database writers (reconcile, curate, chimera, triage, screen) use `errorStrategy 'ignore'` with no retry, and the busy timeout is 10 s. Why: on a cluster with many units on NFS, a "database is locked" error would leave a unit silently unannotated; the verifier found no such error in the author's test project, so harm is unproven. Fix: retry these steps with backoff, raise the busy timeout to 60 to 120 s, and cap concurrent database writers (`maxForks`, or run the tiny R steps on the local executor).
-- **PIPE-L2. C-nextflow-24** (low, confirmed; was medium). `R/generate_config.R:37-46`, `inst/config.slurm:27`. Problem: generated singularity profiles set no `pullTimeout` and no shared `cacheDir`, and every small R step inherits the 16 GB per-task memory default. Why: the 7.6 GB image can hit the 20 minute pull timeout on first use (only `config.NMNH_Hydra` sets 60 min), each project re-pulls it, and hundreds of 16 GB jobs are submitted for sub-GB R scripts. Fix: write `pullTimeout = '60 min'` and a shared `cacheDir`, and give the R-script steps a small-memory label.
+- **PIPE-L2. C-nextflow-24** (low, confirmed; was medium). `R/generate_config.R:37-46`, `inst/config.slurm:27`. Problem: generated singularity profiles set no `pullTimeout` and no shared `cacheDir`, and every small R step inherits the 16 GB per-task memory default. Why: the 7.6 GB image can hit the 20 minute pull timeout on first use (only `config.NMNH_Hydra` sets 60 min), each project re-pulls it, and hundreds of 16 GB jobs are submitted for sub-GB R scripts. Fix: write `pullTimeout = '60 min'` and a shared `cacheDir`, and give the R-script steps a small-memory label. Status: fixed on `review/2026-09-full-review` (second batch, action 12); see [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 - **PIPE-L3. C-security-8** (low, confirmed; was medium). `R/generate_config.R:~60, 234`, `R/init_project.R:170-183`. Problem: values put into Groovy config strings (queue, walltime, cluster options, paths) are not escaped. Why: a cluster option with a quote, or a path like `/data/O'Neil_lab/`, writes a config Nextflow cannot parse; the failure is loud but cryptic. Fix: escape quotes and backslashes (and `$` in run options), or refuse those characters with a clear message; optionally run `nextflow config` once on the written file.
 - **PIPE-L4. C-security-19** (low, confirmed). `R/run_assembly.R:35` (`config_param`). Problem: the config reader cuts everything after `//` and strips all quotes. Why: `rawDir = 's3://bucket/raw'` is read as `s3:`, and an apostrophe in a path is lost; `nf_command()` passes the result on as `--rawDir`. Fix: take the quoted value first, then strip a trailing comment only outside quotes.
 - **PIPE-L5. C-security-23** (low, confirmed). `R/assemble_fallback.R:32` (`bt2_args`). Problem: bowtie2 baiting writes a full SAM file to the R temp folder that nothing reads. Why: on a deep skim this can fill a small `/tmp` on a compute node. Fix: use `-S /dev/null`.
@@ -442,6 +464,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: GetOrganelle labels some units circular and picks the start point by sorted vertex name, which has nothing to do with 18S. The `topology` value is stored but never used, and the planned rotate-to-18S step was never built. The reviewer rotated a real unit (SRR14433901 1.1) to start inside 28S and ran the real tools: the model became a 3' fragment of 28S, then 18S, ITS1, and 5.8S, with ITS2 and the 5' half of 28S lost.
 - Why it matters: for any circular unit whose start falls inside 18S, ITS, or 28S (roughly half the unit length), the annotation is split and wrong. Trim can only remove sequence, so the complete unit can never be exported correctly. The current test units happen to start in the IGS.
 - Fix: for circular units, rotate before annotation so the sequence starts in the IGS (for example a fixed offset upstream of the 18S found by pybarrnap), and add a rotate action in the app as MitoPilot has.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 10). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 **SCI-H3. Path scores are assigned by file-listing order, so with 10 or more paths they land on the wrong path**
 - Ids: C-science-10. Severity: high. Status: confirmed.
@@ -449,6 +472,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: scoring numbers paths by their position in `Sys.glob()` output, not by the number in the file name. In the host locale the order is `_10, _1, _2, ...`; in the C locale it is `_1, _10, _2, ...`. Real sample SRR14433904 has exactly 10 paths (the default cap), all tied at 0.948, and file `_10` was scored as path 1 and auto-selected. `format_assembly.sh` already fixed the same bug for file names but not here.
 - Why it matters: path score, depth, anchors, best hit, and "Selected Path" are shown against the wrong path, and the result differs between the host and the container.
 - Fix: read the path number from the file name (`sub('.*_assembly_([0-9]+)\\.fasta$', '\\1', f)`) or from the FASTA header.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 10). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 #### Medium
 
@@ -458,6 +482,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: coverage maps reads with bowtie2 in end-to-end mode, which never soft-clips. All 24 coverage rows in the test project (including the made-up chimera CHIM01) have zero clips. A direct test gave 0 soft-clipped reads end-to-end and 64 with `--local`.
 - Why it matters: design doc 21 describes this channel as the only one that can reach "likely" on its own, and it is the one that sees same-host misjoins the taxonomy channels cannot. The other channels still run, so this is a dead signal, not a crash.
 - Fix: count clips from a `--local` alignment (a second bowtie2 pass, or `--local` for the coverage map with `-q 10` kept), then re-check the 0.3 threshold on CHIM01-style fixtures.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 15). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 **SCI-M2. The depth-step channel fires on normal IGS and ETS repeats**
 - Ids: C-science-2. Severity: medium (was high). Status: confirmed.
@@ -465,6 +490,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: 15 of the 22 clean fish units are "suspect" from depth steps alone. The dips sit on short repeats inside the IGS and ETS: reads there map to two places, get a mapping quality under 10, and are dropped, which looks like a junction. The real cross-kingdom chimera CHIM01 is also only "suspect", so the label does not separate the two.
 - Why it matters: "suspect" only feeds a warn-only export note (the triage flag needs "likely"), so impact is limited, but a depth step near another channel's junction can push a clean unit to "likely", and the export risk flags already treat "suspect" as chimeric.
 - Fix: compute steps on a depth track without the mapping-quality filter, or mask positions that occur twice on the scaffold before calling steps, and require the step to persist rather than be a single-window dip.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 15). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 **SCI-M3. The gene channel counts a shallow (unresolved) element as a lineage conflict**
 - Ids: C-science-11. Severity: medium. Status: confirmed.
@@ -472,6 +498,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: each element's lineage is cut below its LCA rank, and `rank_distance()` then reports the depth of the shallower one as a conflict. Reproduced on real data: 18S resolves only to Chordata while 5.8S resolves to Pleuronectiformes, both with the same top species, and the unit scores 0.6 "18S resolves to Chordata but 5.8S to Pleuronectiformes".
 - Why it matters: conserved 18S or 5.8S often resolves only to phylum or class while ITS or 28S reaches genus, so clean samples get a 0.6 "suspect" call with a misleading reason.
 - Fix: compare only ranks where both elements have a taxid, and fire only when they disagree at class or above at a rank both resolve. An ancestor is not a conflict.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 15). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 **SCI-M4. The window channel picks an arbitrary best hit among ties in conserved regions**
 - Ids: C-science-12. Severity: medium. Status: confirmed.
@@ -479,6 +506,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: the best hit per window is the first row after sorting by bitscore, so ties are broken by BLAST output order. Real example: a 500 bp window inside fish 18S came back as "Mammalia (PREDICTED: Canis, 100.0%)" next to Actinopteri windows, a class switch that scored 0.5 on both units.
 - Why it matters: 500 bp windows in conserved 18S and 28S cores match many classes at 100 percent, so the class is arbitrary and clean scaffolds get a window-channel chimera signal.
 - Fix: per window, take the LCA of all hits tied at the top bitscore (or within a small margin), and treat windows whose LCA is above class as uninformative.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 15). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 **SCI-M5. Re-assembly wipes triage decisions, so a curator's hand drop comes back as "keep"**
 - Ids: C-science-8, C-tests-2. Severity: medium (both were high). Status: confirmed (both).
@@ -493,6 +521,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: `pick()` returns the first row per element, in GFF start order. Reproduced twice: a scaffold with a 28S tail at the start and a full 28S later gave a model of 28S (the tail), 18S, ITS1, and 5.8S; the full 28S and ITSx's ITS2 were dropped.
 - Why it matters: user contigs with several rDNA copies, rotated circles, and scaffolds that start with a partial repeat get a model built from the wrong copy, losing ITS2 (the main barcode). Curation flags `missing_ITS2` and `out_of_order`, so it is not silent, but the curator is never offered the right model.
 - Fix: pick anchors relative to the chosen 5.8S or ITS: the nearest 18S upstream and the nearest 28S downstream on the same strand. Add a test with two partial 28S copies. Rotation (SCI-H2) removes the common circular case.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 10). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 **SCI-M7. The isomer and paralog classes are computed before annotation finishes**
 - Ids: C-science-4. Severity: medium (was high). Status: confirmed.
@@ -507,6 +536,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: `read.table()` with no `colClasses` turns the reference column into numbers. Reproduced: with scaffolds 1.1, 1.10, and 1.2, only 2 rows were written, scaffold 1.1 got the two tracks interleaved, and 1.10 got nothing.
 - Why it matters: any path with 10 or more scaffolds (fragmented assemblies, user contigs) gets a corrupted depth track and median depth for scaffold 1 (which also feeds the chimera read channel) and no coverage for scaffold 10. The default gate allows exactly 10.
 - Fix: `read.table(..., colClasses = c('character', 'integer', 'integer'))`.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 10). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 **SCI-M9. A failed seeds download stops everything after scoring for that sample**
 - Ids: C-science-18. Severity: medium. Status: confirmed.
@@ -569,6 +599,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: the Taxonomy tab writes the confirmed name to `samples.sci_name` and never changes `Taxon`, but the default header and the summary CSV use `Taxon`. The `missing_organism` check only tests for an empty value.
 - Why it matters: a typo such as "Upeneous parvus" that the user corrected in the app still goes out as `[organism=Upeneous parvus]`, even though the README promises users can verify or correct the organism. A user can type `{sci_name}` in the template, and NCBI checks names on submission, so it is not silent all the way.
 - Fix: the verifier warns that switching blindly to `sci_name` would lose valid labels like "Upeneus sp. A" (fuzzy genus matches set `sci_name` to "Upeneus"). Better: default to `sci_name` when the match was exact, keep `Taxon` otherwise, and flag every unit where the two differ so the curator sees which name is exported.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 11). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 **DB-M2. Export group names are used as folder names with no checks**
 - Ids: C-data-7, C-security-1 (was high), C-pkg-8. Severity: medium. Status: confirmed (four verifiers).
@@ -576,6 +607,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: the group text becomes `out/export/<label>`, which is deleted recursively before writing. Reproduced: `.` deleted every other bundle in `out/export`; `..` deleted all of `out/` (every published pipeline output); `../S1` deleted that sample's output; `18S/ITS` or `2026/01` failed halfway with "cannot open file" after `samples/` was written. `../..` points at the project root, which holds `.sqlite`.
 - Why it matters: a slash in a group name is a plausible choice and leaves a half-written bundle. The dot names are unlikely, and the overwrite dialog shows the path first, but they destroy data silently once confirmed.
 - Fix: validate group names when they are assigned (for example `^[A-Za-z0-9][A-Za-z0-9 ._-]*$`, never `.` or `..`, no `/` or `\`), and in `export_bundle()` check that the normalized folder is inside `out/export` before deleting it.
+- Status: fixed on `review/2026-09-full-review` (second batch, name and path validation). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 **DB-M3. The export ITSx check breaks on a space in the group or project path**
 - Ids: C-data-9, C-security-4 (was high). Severity: medium. Status: confirmed (three verifiers).
@@ -583,6 +615,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: the docker `-v wd:wd -w wd` and singularity `--bind wd --pwd wd` arguments are not quoted, and `system2()` joins them into one shell command. Reproduced: an export group named "Batch 1" gave "docker: invalid reference format", while "Batch1" worked. After the failure every unit is marked `not_run(...)`, which replaces the flags stored by the pipeline's ITSx step.
 - Why it matters: the final ITSx check silently does not run for any group or project folder with a space, and earlier ITSx warnings (such as `itsx_chimeric`) disappear from Annotation Review until the unit is annotated again. Note: overwriting the warnings on a failed check is by design and tested (see refuted C-data-8), so the fix here is the quoting.
 - Fix: `shQuote()` the mount and working-folder arguments (or call `processx::run()` with an argument vector). Rejecting spaces at `new_project()` (PIPE-M13) and in group names (DB-M2) also prevents it.
+- Status: fixed on `review/2026-09-full-review` (second batch, name and path validation). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 **DB-M4. Export and pending-count code opens the database with no busy timeout**
 - Ids: C-data-13, C-shiny-9. Severity: medium. Status: confirmed (both).
@@ -590,6 +623,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: these functions call `DBI::dbConnect()` directly, so the busy timeout is 0. Reproduced: while another process held a write lock, Assign Group failed in under 0.1 s with "database is locked", and the Shiny session closed, because `do_assign_group` (`R/app_server.R:768`) has no `tryCatch`. `itsx_store_warnings()` swallows the same error, so export-time ITSx flags are lost quietly.
 - Why it matters: curators assign groups and export while the pipeline writes other samples, which is the normal workflow. On NFS projects even the reads can fail.
 - Fix: open the database through `open_project_db()` (or pass in `app_con()`), and wrap app-started writes in `tryCatch` with an alert.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 9). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 **DB-M5. ITS spacers do not touch the rRNA genes, so table2asn warns on every ITS record**
 - Ids: C-data-17 (medium), C-science-16 (low). Severity: medium. Status: confirmed (both).
@@ -597,6 +631,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: when ITSx reports a spacer that stops short of barrnap's 18S or 28S, the gap is kept. In the test project, 21 of 22 units have 1 unannotated base between 18S and ITS1, and 20 have 4 between ITS2 and 28S. table2asn gave `SEQ_FEAT.ITSdoesNotAbutRRNA` on all 6 ITS-bearing records of the exported fish bundle. ITSx's 5.8S matches the vertebrate length better than barrnap's, so the 18S 3' end and 28S 5' end are systematically short.
 - Why it matters: every table2asn or BankIt submission carries validator warnings that GenBank staff will ask about. The Portal route sends a single `misc_RNA`, so it is less affected.
 - Fix: when ITSx reports the neighbouring spacer, snap the anchor boundary to it (18S end = ITS1 start - 1, 28S start = ITS2 end + 1), or close gaps of 5 bp or less at export and report the change.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 11). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 #### Low
 
@@ -610,10 +645,10 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - **DB-L8. C-data-21** (low, confirmed). `R/export.R:144-153`. Problem: `partial = 'yes'` marks both the first and last features partial, wherever they sit. Why: a complete 18S at an internal position is declared 5' partial, which table2asn reports. Fix: apply partial per feature (from truncation or coverage).
 - **DB-L9. C-data-22** (low, confirmed). `inst/nextflow/modules/pipeline_r.nf:177-179`, `R/itsx_check.R:387`. Problem: the pipeline runs ITSx with `|| true` and then creates an empty positions file, so a crash is recorded as `itsx_not_detected`. Why: the curator is told the Portal cannot annotate the record when the check never ran. Fix: treat "empty positions and no `_no_detections` file" as not run.
 - **DB-L10. C-data-23** (low, confirmed). `R/export.R:154`. Problem: the feature table ignores `annotations.strand` and always writes start then stop. Why: a reverse unit that the curator locks anyway is exported with plus-strand features. Fix: write stop then start for minus features, or block export when any feature is minus.
-- **DB-L11. C-data-24** (low, confirmed). `R/export.R:137-141`. Problem: every N-run is written as `assembly_gap` with `linkage_evidence align genus`. Why: records from user assemblies claim an evidence type that may not apply. Fix: choose the evidence by assembly source, or use "unspecified".
+- **DB-L11. C-data-24** (low, confirmed). `R/export.R:137-141`. Problem: every N-run is written as `assembly_gap` with `linkage_evidence align genus`. Why: records from user assemblies claim an evidence type that may not apply. Fix: choose the evidence by assembly source, or use "unspecified". Status: fixed on `review/2026-09-full-review` (second batch, action 11); see [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 - **DB-L12. C-data-25** (low, confirmed). `R/export.R:566-570`. Problem: the SeqID is the sample ID when a sample has one exportable unit, else `ID_p<path>_s<scaffold>`. Why: locking a second unit later renames the first record, and an ID like `A_p1_s2` can collide with unit p1 s2 of sample `A`. Fix: always add the unit suffix, or check for collisions before writing.
 - **DB-L13. C-data-26, C-security-20** (low, confirmed). `R/pipeline_steps.R:122` (`NETWORK_FS`). Problem: the list of network filesystems that must not use WAL misses `ceph`, `9p`/`v9fs` (WSL2 drives), and `wekafs`; unknown types get WAL. (The verifier notes FUSE mounts are already covered as `fuseblk`.) Why: a project on CephFS or a WSL2 Windows drive shares a WAL database across hosts, which SQLite does not support. Fix: default to the rollback journal unless the filesystem is known to be local (ext4, xfs, btrfs, apfs, zfs, tmpfs).
-- **DB-L14. C-data-28** (low, confirmed). `R/export_opts.R:164`, `R/export.R:339-341`. Problem: blank tokens render empty source modifiers such as `[specimen_voucher=]`, and validation only dry-runs the first row. Why: some records go out with empty modifiers and no warning. Fix: warn at export when any bracketed modifier renders empty for any record.
+- **DB-L14. C-data-28** (low, confirmed). `R/export_opts.R:164`, `R/export.R:339-341`. Problem: blank tokens render empty source modifiers such as `[specimen_voucher=]`, and validation only dry-runs the first row. Why: some records go out with empty modifiers and no warning. Fix: warn at export when any bracketed modifier renders empty for any record. Status: fixed on `review/2026-09-full-review` (second batch, action 11); see [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 - **DB-L15. C-data-31** (low, confirmed). `R/init_db.R:166, 691`. Problem: an all-assembly mapping is still required to have R1 and R2 columns. Why: `ID,Taxon,Assembly` is refused with a message about read files (the vignette does say to leave them blank). Fix: add missing R1 and R2 columns as NA when an Assembly column is present.
 - **DB-L16. C-pkg-11** (low, confirmed; was medium). `R/export.R:539, 742`. Problem: `export_bundle()` and `export_project()` pointed at a non-project folder create an empty `.sqlite`, and `export_project()` leaks its connection on the error. Why: the stray file then passes `run_app()`'s project check and blocks `new_project()` there. Fix: stop when `.sqlite` is missing (or open with `flags = RSQLite::SQLITE_RW`), and add `on.exit(dbDisconnect(...))`.
 
@@ -627,6 +662,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: these updates set `taxid`, `sci_name`, and `lineage` but not `lineage_taxids`, and the backfill only fills rows where it is empty. Reproduced: a sample resolved as plant "Morus sp." (3497) and then corrected to the gannet genus (37577) kept the plant's taxid path, and a real gannet hit then scored rank distance 7 ("shares nothing").
 - Why it matters: after the user fixes a wrong taxon (via the review modal, or a second Update after the Reference tab has filled the column), the contamination screen scores true host hits as possible contaminants and hits from the old organism as the host, and reference groups are built on the old clade.
 - Fix: write `lineage_taxids` in the same update as `taxid` (the lookups already return it), or set it to NULL whenever the taxid changes so the backfill recomputes it. Also clear the sample's screen rows (SCI-H1).
+- Status: fixed on `review/2026-09-full-review` (second batch, action 7). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 **REF-H2. A partial taxdump download is kept, and the index built from it is trusted forever**
 - Ids: C-refdata-2 (came in as critical), C-pkg-4 (medium), C-security-18 (low). Severity: high. Status: confirmed (all three).
@@ -634,6 +670,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: the roughly 80 MB taxdump downloads straight to its final name with R's default 60 s timeout and no md5 check, and a later call skips the download whenever the file exists. The untar exit status is ignored, and the index is accepted if it has more than 0 rows. Reproduced on a simulated 1 MB/s link: 63 of 80 MB kept, an index of 99,032 nodes instead of about 2.7 million marked valid, and "Danio rerio" then matched "exact" with a placeholder lineage. With a truncated tarball in another test, taxonomy failed with the misleading "NCBI datasets CLI not found".
 - Why it matters: on home Wi-Fi, a VPN, or a busy login node, every later lookup uses the broken index: green "exact" badges with missing lineages, reference ladders with no family or order, and a screen with no usable rank distances. Replacing the tarball by hand does not help, because the bad index still counts as valid. The first failure does show an error, which is why this is high and not critical.
 - Fix: download to a temp file with `options(timeout = 3600)` (as `download_or_stop()` in `db_dist.R` already does), check it against NCBI's `taxdump.tar.gz.md5`, then rename. Stop when untar fails. Require a node-count floor (for example over 2 million) before writing `tax_meta`, and store the tarball hash so a new tarball rebuilds the index. When the index cannot be built, say so instead of falling back to the datasets CLI (see ponytail P3).
+- Status: fixed on `review/2026-09-full-review` (second batch, action 7). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 **REF-H3. Homonym taxon names silently resolve to the lowest taxid, usually the wrong kingdom**
 - Ids: C-refdata-3. Severity: high. Status: confirmed.
@@ -641,6 +678,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: when a name matches several taxa, the lowest taxid wins. Exact homonyms are marked "ambiguous" but the alternatives are thrown away, and the badge for "ambiguous" is plain grey. The fuzzy pass also takes the lowest taxid with no ambiguity flag. Tested: "Morus sp." becomes the mulberry (3497), the typo "Morus bassanu" becomes the plant genus, and "Oenanthe" (a bird genus and a plant genus) becomes the plant. The index has 1,134 genus-level homonyms. Search results show two identical labels "Morus [genus]" that differ only by taxid.
 - Why it matters: a gannet labelled "Morus sp." gets a plant lineage, and reference groups, clade databases, the screen, and scoring all run against plants, with only a grey badge as a hint. Nothing blocks the pipeline.
 - Fix: prefer scientific-name matches; when more than one scientific name matches, leave the sample unresolved and ask for a manual pick. In the fuzzy pass try every candidate genus. Store and show the alternatives, and add the kingdom (or NCBI's unique name, for example "Morus <birds>") to search labels.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 7). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 #### Medium
 
@@ -650,6 +688,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: every caller passes only the clade name. Checked live: `"Oenanthe"[Organism]` returns 163 records, 149 of them the plant; `"Proboscidea"[Organism]` mixes elephants with a plant genus. `dev/design/19` says the builder queries by taxid.
 - Why it matters: a user who picks the wheatear genus gets a seed and label database that is about 91 percent plant rDNA, and GetOrganelle and the scorer then recruit and credit plant sequences. It needs a homonym clade (mostly at genus rank; family-level cases exist but the foreign share is small).
 - Fix: pass `clade_taxid` (already stored in the reference table) to every `clade_query()` call, and pass `--taxid` through `rp_ref_db.R` to `download_rrna.sh`. The plumbing already exists.
+- Status: fixed on `review/2026-09-full-review` (second batch, action 7). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 **REF-M2. The shared reference folder is not safe for several users, and one error fails every running build**
 - Ids: C-refdata-5, C-shiny-25 (low, unverified-low). Severity: medium. Status: confirmed (C-shiny-25 unverified-low).
@@ -704,7 +743,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - **REF-L14. C-refdata-24** (low, unverified-low). `dev/refdb/build_refdb.sh:635`. Problem: the awk accession scan uses `NR==FNR`, which stays true for stdin when the wanted list is empty. Why: the scan loads a multi-GB dump into memory for nothing. Fix: skip the scan when the list is empty, or use `FILENAME == ARGV[1]`.
 - **REF-L15. C-refdata-25** (low, unverified-low). `R/tax_index.R:23`. Problem: each project keeps its own 400 MB taxonomy index plus the 80 MB tarball. Why: 20 projects spend about 10 GB of HPC quota on identical copies. Fix: share the index in `ref_dir`, keyed by the tarball hash (the author's rule is that shared caches go under `ref_dir`).
 - **REF-L16. C-refdata-26** (low, unverified-low). `R/reference_counts.R:41`. Problem: the record-count cache never expires and ignores the RefSeq flag. Why: old counts drive the walk after GenBank grows, and RefSeq-only databases list the full GenBank count. Fix: store the count date and RefSeq flag, and recount after a set age.
-- **REF-L17. C-refdata-27** (low, unverified-low). `R/reference_build.R:4, 368-381`. Problem: the file header says in-app builds are detached and survive a closed app, but the app launches them with `cleanup = TRUE`. Why: a user who starts a build and closes the tab returns to a failed build. Fix: launch detached with output to a log file, or correct the header and warn in the UI.
+- **REF-L17. C-refdata-27** (low, unverified-low). `R/reference_build.R:4, 368-381`. Problem: the file header says in-app builds are detached and survive a closed app, but the app launches them with `cleanup = TRUE`. Why: a user who starts a build and closes the tab returns to a failed build. Fix: launch detached with output to a log file, or correct the header and warn in the UI. Status: fixed on `review/2026-09-full-review` (second batch, action 13); see [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 - **REF-L18. C-refdata-28** (low, unverified-low). `inst/ref_dbs/getOrganelle/GenBankDownload/README.md:25`, `R/utils.R:97-100`. Problem: the README ("From R (recommended)" with `conda_env`), the `build_reference_db` help, and the `check_reference_db` hint push conda and scripted builds. Why: new users follow the unsupported conda path instead of the app's Reference tab. Fix: point to the Reference tab, keep a short headless Docker note, and drop the conda instructions.
 
 ### 4.6 Security
@@ -719,6 +758,7 @@ No reviewer found SQL injection: every query value is a bound parameter. The app
 - Problem: glue evaluates any R expression inside braces. Reproduced: `validate_fasta_header('{seqid} {nchar(system("id -un", intern=TRUE))}', d)` ran the command and returned "ok". A saved template runs as soon as the Export modal opens. Headless mode binds `127.0.0.1` with no authentication.
 - Why it matters: another user on a shared login node who can reach the port, or anyone who can write a shared project `.sqlite`, can run commands as the owner. The editable job script and Submit button already give similar access, so glue adds one more route rather than a new class of risk, but it is also the easiest to close.
 - Fix: replace glue with plain token substitution: match `\{([A-Za-z0-9_.]+)\}` and look the name up in the data columns, rejecting anything else (this also removes the last real use of stringr). For headless use, document that the app must not be exposed to other users, and consider a random per-session token in the URL.
+- Status: fixed on `review/2026-09-full-review` (second batch, name and path validation). See [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 
 #### Low
 
@@ -854,7 +894,7 @@ What this means:
 - **TEST-L1. C-tests-14 (confirmed; was medium), C-nextflow-31 (unverified-low)** (low). `.github/workflows/R-CMD-check.yaml:27-34`, `.github/workflows/pkgdown.yaml`. Problem: CI runs `R CMD check` on Ubuntu with no Nextflow, sqlite3, or BLAST, so 132 tests skip, including every `blast.nf` end-to-end test, and no job parses `main.nf` with the pinned Nextflow. The pkgdown job's `BUILD SITE` commit-message condition can never be true for manual, release, or pull-request triggers, and a step name contains a non-ASCII emoji. Why: a regression in `blast.nf`, the local and remote fallback, `rp_env.R` loading, or `main.nf` syntax merges with green CI (as PIPE-M17 did). Fix: add a CI job that runs `testthat::test_local()` from the source tree with Nextflow and the tools installed (the ribopilot image works), plus `nextflow run inst/nextflow/main.nf -preview`; relax the pkgdown condition for non-push events and remove the emoji.
 - **TEST-L2. C-tests-9** (low, confirmed; was medium). `tests/testthat/test-rrna-kingdom.R:70, 100, 111, 122, 136`. Problem: the fake-tool tests prepend their folder to PATH, so a real pybarrnap on PATH still wins. Why: with the conda env active (needed for the BLAST tests), 2 tests fail with no code change. Test-only; the author already knows. Fix: `withr::local_path(c(dir, '/usr/bin', '/bin'), action = 'replace')`, or mock `rrna_caller()`.
 - **TEST-L3. C-tests-10** (low, confirmed; was medium). `R/app_lifecycle.R:21`, `tests/testthat/helper-app-fixture.R`. Problem: the app's 5 s shutdown timer runs after every `testServer()` session. Why: it adds about 45 s to the suite (12 cases take exactly 5 s), and pending `stopApp()` calls fire inside unrelated later tests. Fix: read the grace period from an option and set it to 0 in the test helper, or stub `register_app_lifecycle()` there.
-- **TEST-L4. C-tests-11** (low, confirmed; was medium). `tests/testthat/test-export-units.R:61`, `R/export.R:548-549`. Problem: the test named "ignored and problematic units are excluded from the bundle" only sets `ignore = 1`; no test exports with `problematic = 'yes'` or `annotate_lock = 0`. Why: if a refactor drops either filter, problematic or unlocked units reach the GenBank bundle and the suite stays green. The filter is correct today. Fix: mark one unit problematic and another unlocked, and assert neither appears in the FASTA files or the summary.
+- **TEST-L4. C-tests-11** (low, confirmed; was medium). `tests/testthat/test-export-units.R:61`, `R/export.R:548-549`. Problem: the test named "ignored and problematic units are excluded from the bundle" only sets `ignore = 1`; no test exports with `problematic = 'yes'` or `annotate_lock = 0`. Why: if a refactor drops either filter, problematic or unlocked units reach the GenBank bundle and the suite stays green. The filter is correct today. Fix: mark one unit problematic and another unlocked, and assert neither appears in the FASTA files or the summary. Status: fixed on `review/2026-09-full-review` (second batch, action 14); see [Second batch](REVIEW_SUMMARY.md#second-batch-actions-6-to-15).
 - **TEST-L5. C-tests-13** (low, unverified-low). `tests/testthat/test-app-scaffold-uid.R:697`. Problem: the ITSx roll-up test runs a pasted copy of the app's SQL, not the app. Why: if the app's roll-up breaks, the test still passes. Fix: drive it through `shiny::testServer(app_server)` as the other tests in the file do.
 - **TEST-L6. C-tests-15** (low, unverified-low). `tests/testthat/test-app-opts.R:106, 129, 137`, `test-app-scaffold-uid.R:431`, `test-screen-variants.R:470`, `test-screen.R:270`, `test-blast-opts-panel.R:106`, `test-nextflow.R:37-155, 379-562`, `test-nf-pending.R:50`. Problem: many tests grep source text instead of checking behaviour, and one regex stops at the first nested `)`. Why: a harmless reformat fails them, while a behaviour change that keeps the strings passes. Fix: use `testServer()` plus output checks, a stub run for Nextflow wiring (TEST-M1), and `getParseData()` instead of regex for call checks.
 - **TEST-L7. C-tests-16** (low, unverified-low). `tests/testthat/test-chimera.R:352`, `test-itsx-check.R:203`. Problem: the only real-data chimera and ITSx checks need `RIBOPILOT_TEST_PANEL`, `RIBOPILOT_TEST_TAXDUMP`, and `RIBOPILOT_TEST_PROJECT`, which are documented nowhere. Why: they skipped in every run, so regressions against real data go unnoticed. Fix: document the variables (for example in `tests/README.md`) and add a small dev script that sets them, and run it before releases.
