@@ -343,13 +343,10 @@ screen_one <- function(con, id, path = 1L, scaffold = 1L, force = FALSE) {
   # about the sample's own taxonomy or a missing taxdump, and a remote search
   # would not help either one.
   if (r$reason_code %in% c("no_hits", "unresolved_hit_lineages")) {
-    # a missing row (or table, for a project that predates blast_searched) means
-    # remote, which preserves current behaviour for every existing project.
-    searched_source <- tryCatch(
-      DBI::dbGetQuery(con,
-        "SELECT source FROM blast_searched WHERE ID = ? AND path = ? AND scaffold = ?",
-        params = list(id, path, scaffold))$source,
-      error = function(e) NA_character_)
+    # a missing row means remote.
+    searched_source <- DBI::dbGetQuery(con,
+      "SELECT source FROM blast_searched WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = list(id, path, scaffold))$source
     if (length(searched_source) > 0 && identical(searched_source[1], "local")) {
       r$reason <- if (identical(r$reason_code, "no_hits")) {
         paste("the local reference panel returned no usable hit for this",
@@ -378,7 +375,7 @@ screen_one <- function(con, id, path = 1L, scaffold = 1L, force = FALSE) {
   invisible(r$verdict)
 }
 
-#' Screen every unit of one sample and refresh its reference support
+#' Screen every unit of one sample
 #' @param con Open project DB connection.
 #' @param id Sample ID.
 #' @param force Recompute rows already at the current version.
@@ -389,42 +386,8 @@ screen_sample <- function(con, id, force = FALSE) {
     "SELECT path, scaffold FROM assemblies WHERE ID = ? ORDER BY path, scaffold",
     params = list(id))
   for (i in seq_len(nrow(u))) screen_one(con, id, u$path[i], u$scaffold[i], force = force)
-  update_reference_support(con, id)
   # after the loop, never before: screen_one() rewrites a row with DELETE plus
   # append, so a variant column written first would be silently wiped
   screen_variants(con, id)
   invisible(nrow(u))
-}
-
-#' Refresh a sample's reference support
-#'
-#' The minimum rank distance across the sample's ON-TARGET units only. Computed
-#' from on-target units because a sample whose only resolvable hits belong to a
-#' contaminant would otherwise report excellent support for the wrong organism.
-#'
-#' Recomputed fresh from each hit's `lineage_taxids` against the sample's own
-#' lineage, rather than read from the stored `blast_hits.rank_distance` column:
-#' that column is only ever populated at BLAST time when the sample lineage
-#' was already resolved, and stays NULL for every hit otherwise, which would
-#' silently starve this of a value for exactly the samples still awaiting
-#' taxonomy resolution.
-#' @noRd
-update_reference_support <- function(con, id) {
-  samp <- tryCatch(DBI::dbGetQuery(con,
-    "SELECT lineage_taxids t FROM samples WHERE ID = ?", params = list(id))$t[1],
-    error = function(e) NA_character_)
-  h <- DBI::dbGetQuery(con,
-    "SELECT h.lineage_taxids FROM blast_hits h
-       JOIN screen s ON s.ID = h.ID AND s.path = h.path AND s.scaffold = h.scaffold
-     WHERE h.ID = ? AND s.screen_verdict = 'on_target'", params = list(id))
-  v <- NA_integer_
-  if (nrow(h) > 0 && !is.na(samp %|NA|% NA) && nzchar(samp %|NA|% "")) {
-    d <- vapply(h$lineage_taxids, function(x) {
-      if (is.na(x)) NA_integer_ else as.integer(rank_distance(x, samp))
-    }, integer(1), USE.NAMES = FALSE)
-    if (!all(is.na(d))) v <- min(d, na.rm = TRUE)
-  }
-  DBI::dbExecute(con, "UPDATE samples SET reference_support = ? WHERE ID = ?",
-    params = list(v, id))
-  invisible(v)
 }

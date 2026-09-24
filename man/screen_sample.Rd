@@ -2,7 +2,7 @@
 % Please edit documentation in R/screen.R
 \name{screen_sample}
 \alias{screen_sample}
-\title{Screen every unit of one sample and refresh its reference support}
+\title{Screen every unit of one sample}
 \usage{
 screen_sample(con, id, force = FALSE)
 }
@@ -17,5 +17,5 @@ screen_sample(con, id, force = FALSE)
 (invisibly) the number of units screened.
 }
 \description{
-Screen every unit of one sample and refresh its reference support
+Screen every unit of one sample
 }

@@ -313,7 +313,7 @@ load_assemblies <- function(con, out_dir, ID) {
       s <- as.character(seqs[[i]])
       rows[[length(rows) + 1]] <- data.frame(
         ID = ID, path = pth, scaffold = scf,
-        topology = topo, length = nchar(s), length_raw = nchar(s),
+        topology = topo, length = nchar(s),
         sequence = s, source_contig = src, ignore = 0L, edited = 0L, time_stamp = ts,
         stringsAsFactors = FALSE
       )

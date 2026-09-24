@@ -1109,7 +1109,6 @@ app_server <- function(input, output, session) {
       return(NULL)
     }
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    ensure_export_opts(con)
     tmpls <- list_export_templates(con)
     nm <- if (export_template() %in% tmpls) export_template() else "default"
     export_template(nm)

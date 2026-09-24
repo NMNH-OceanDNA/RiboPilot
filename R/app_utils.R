@@ -194,8 +194,7 @@ unit_evidence <- function(id) {
     "SELECT a.path, a.scaffold, a.length, COALESCE(a.ignore,0) AS ignore,
        a.triage, a.triage_reason, a.triage_source, a.source_contig,
        a.blast_species, a.blast_accession, a.blast_pident, a.blast_qcovs, a.blast_source,
-       ROUND(COALESCE(c.median_depth, c.mean_depth), 1) AS depth,
-       CASE WHEN c.median_depth IS NULL THEN 'mean' ELSE 'median' END AS depth_stat,
+       ROUND(c.median_depth, 1) AS depth,
        ROUND(c.mean_depth, 1) AS depth_mean,
        c.depths AS depths_raw,
        b.species AS screen_species, b.accession AS screen_accession, b.title AS screen_title,
@@ -232,8 +231,7 @@ unit_evidence <- function(id) {
   # Median per position, not mean: an rDNA scaffold's conserved 18S/28S cores
   # recruit multi-mapping reads that the spacers do not, so a mean is inflated in
   # proportion to how much core the scaffold contains -- which is composition,
-  # not abundance. Pre-v10 rows have no median and fall back to the mean until
-  # backfill_coverage_median() runs; depth_stat records which is in play.
+  # not abundance.
   #
   # Either way this is a WITHIN-SAMPLE ratio only. coverage.nf maps one path at
   # a time, so depths compare within a path, not across paths.

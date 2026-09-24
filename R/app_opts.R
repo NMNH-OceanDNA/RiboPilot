@@ -299,13 +299,7 @@ curate_opts_modal <- function(cur, choices, n) {
     opts_name_row("co_name", "co_edit", choices, cur$curate_opts),
     shinyjs::disabled(shiny::selectInput("co_ruleset", "Clade ruleset:",
       choices = RRNA_RULESETS, selected = cur$ruleset %|NA|% "metazoa_generic", width = "100%")),
-    opts_help("Per-clade expected feature lengths + anchor-identity thresholds ",
-      "used to flag oddities during curation."),
-    shiny::div(style = "display:flex; gap:2em;",
-      shiny::div(style = "flex:1", shinyjs::disabled(shiny::numericInput("co_pid",
-        "Min anchor identity (%):", value = cur$min_anchor_pid %|NA|% 85, min = 0, max = 100, width = "100%"))),
-      shiny::div(style = "flex:1; margin-top:32px;", shinyjs::disabled(shinyWidgets::prettyCheckbox("co_contam",
-        "Flag contaminants", value = (cur$check_contaminant %|NA|% 1) == 1, status = "primary")))),
+    opts_help("Per-clade expected feature lengths and anchor-identity thresholds used to flag oddities during curation."),
     update_id = "update_co")
 }
 
@@ -418,7 +412,7 @@ opts_handlers <- function(input, output, session, deps) {
            "ao_findrrna"),
     bo = c("bo_run", "bo_source", "bo_entrez", "bo_extra", "bo_mts"),
     no = c("no_cpus", "no_mem", "no_tool", "no_kingdom", "no_itsxtaxon", "no_itsxopts"),
-    co = c("co_ruleset", "co_pid", "co_contam")
+    co = c("co_ruleset")
   )
   for (pfx in names(specs)) local({
     p <- pfx; sp <- specs[[p]]; fids <- field_ids[[p]]
@@ -537,7 +531,7 @@ opts_row <- function(pfx, nm, input, base) {
       memory = as.integer(input$ao_mem), getOrganelle = input$ao_getorg %||% "",
       seeds_db = blank_to_na(input$ao_seeds %||% base$seeds_db),
       labels_db = blank_to_na(input$ao_labels %||% base$labels_db),
-      target = base$target %||% NA_character_, max_paths = as.integer(input$ao_maxpaths),
+      max_paths = as.integer(input$ao_maxpaths),
       max_scaffolds = as.integer(input$ao_maxscaf),
       min_assembly_length = as.integer(input$ao_minlen),
       assembler = input$ao_assembler %||% "getorganelle",
@@ -554,9 +548,7 @@ opts_row <- function(pfx, nm, input, base) {
       memory = as.integer(input$no_mem), rrna_tool = input$no_tool,
       rrna_kingdom = input$no_kingdom, itsx_taxon = input$no_itsxtaxon %||% "all",
       itsx_opts = input$no_itsxopts %||% "", stringsAsFactors = FALSE),
-    co = data.frame(curate_opts = nm, ruleset = input$co_ruleset,
-      min_anchor_pid = as.numeric(input$co_pid),
-      check_contaminant = as.integer(isTRUE(input$co_contam)), stringsAsFactors = FALSE)
+    co = data.frame(curate_opts = nm, ruleset = input$co_ruleset, stringsAsFactors = FALSE)
   )
 }
 

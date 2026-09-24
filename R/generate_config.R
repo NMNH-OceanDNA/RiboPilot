@@ -50,7 +50,7 @@ container_engine_block <- function(engine, cache = NULL, run_options = NULL) {
 #' Config tokens filled later, by new_project() rather than generate_config()
 #' @noRd
 PROJECT_CONFIG_TOKENS <- c("CONTAINER_ID", "RAW_DIR", "ASMB_DIR", "MIN_DEPTH",
-                           "GENETIC_CODE", "NCBI_API_KEY", "EXTRA_MOUNTS",
+                           "NCBI_API_KEY", "EXTRA_MOUNTS",
                            "HOST_CPUS", "HOST_MEMORY")
 
 #' Placeholder tokens still present in config lines
@@ -193,7 +193,7 @@ generate_config <- function(
   }
   scheduler <- match.arg(scheduler)
   container_engine <- match.arg(container_engine)
-  if (scheduler == "local" && container_engine %nin% c("auto", "docker")) {
+  if (scheduler == "local" && !(container_engine %in% c("auto", "docker"))) {
     stop("A \"local\" profile runs the Docker image. container_engine = \"", container_engine,
       "\" works with the slurm, sge, pbs, and lsf schedulers.", call. = FALSE)
   }

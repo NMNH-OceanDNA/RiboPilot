@@ -279,12 +279,10 @@ curate_one <- function(con, id, path = 1L, scaffold = 1L, ruleset = NULL) {
      WHERE ID = ? AND path = ? AND scaffold = ?",
     params = list(id, path, scaffold))
 
-  sample_lineage <- DBI::dbGetQuery(con, "SELECT lineage FROM samples WHERE ID = ?",
-    params = list(id))$lineage[1]
-  # pre-v9 projects have no taxid column; the comparison falls back to names
-  sample_taxids <- tryCatch(DBI::dbGetQuery(con,
-    "SELECT lineage_taxids t FROM samples WHERE ID = ?", params = list(id))$t[1],
-    error = function(e) NA_character_)
+  smp <- DBI::dbGetQuery(con, "SELECT lineage, lineage_taxids FROM samples WHERE ID = ?",
+    params = list(id))
+  sample_lineage <- smp$lineage[1]
+  sample_taxids <- smp$lineage_taxids[1]
 
   rs <- resolve_ruleset(con, id, path, scaffold, ruleset)
   ruleset <- rs$ruleset

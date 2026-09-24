@@ -11,6 +11,7 @@ hit <- function(acc, title, pident, qcovs, bits, len, qs, qe, staxid = 7955) {
 mk_blast_db <- function() {
   con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
   DBI::dbExecute(con, RiboPilot:::BLAST_HITS_DDL)
+  DBI::dbExecute(con, RiboPilot:::BLAST_SEARCHED_DDL)
   DBI::dbExecute(con, "CREATE TABLE blast_ref_candidates(ID TEXT, path INT, scaffold INT, rank INT,
     accession TEXT, species TEXT, title TEXT, pident REAL, qcovs REAL, evalue REAL, bitscore REAL, time_stamp INT)")
   DBI::dbExecute(con, "CREATE TABLE blast_screen(ID TEXT, path INT, scaffold INT, accession TEXT, title TEXT,

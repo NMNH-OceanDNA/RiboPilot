@@ -2,19 +2,19 @@
 # declare themselves. Kept in one place so both app fixtures agree with new_db().
 
 fixture_fill_schema <- function(con) {
-  for (ddl in list(RiboPilot:::BLAST_HITS_DDL, RiboPilot:::TRIAGE_OPTS_DDL,
+  for (ddl in list(RiboPilot:::BLAST_HITS_DDL, RiboPilot:::BLAST_SEARCHED_DDL, RiboPilot:::TRIAGE_OPTS_DDL,
                    RiboPilot:::SCREEN_DDL, RiboPilot:::ASSEMBLY_BACKUP_DDL,
                    RiboPilot:::REFERENCE_DDL, RiboPilot:::REFERENCE_CONFIG_DDL,
                    RiboPilot:::CHIMERA_DDL, RiboPilot:::CHIMERA_WINDOWS_DDL)) {
     DBI::dbExecute(con, ddl)
   }
-  DBI::dbExecute(con, RiboPilot:::TRIAGE_OPTS_SEED)
+  RiboPilot:::write_triage_opts(con, RiboPilot:::triage_actions_default())
   DBI::dbExecute(con,
     "INSERT INTO reference_config (rowid_key, ref_dir, min_records, max_records)
      VALUES (1, NULL, 1000, 25000)")
   DBI::dbExecute(con, "CREATE TABLE IF NOT EXISTS curate_opts (curate_opts TEXT PRIMARY KEY,
-    ruleset TEXT, min_anchor_pid REAL, check_contaminant INTEGER)")
-  DBI::dbExecute(con, "INSERT INTO curate_opts VALUES ('default','metazoa_generic',85,1)")
+    ruleset TEXT)")
+  DBI::dbExecute(con, "INSERT INTO curate_opts VALUES ('default','metazoa_generic')")
   DBI::dbExecute(con, "CREATE TABLE IF NOT EXISTS blast_opts (blast_opts TEXT PRIMARY KEY,
     run_blast INTEGER, entrez_query TEXT, max_target_seqs INTEGER, extra_opts TEXT)")
   DBI::dbExecute(con, "INSERT OR IGNORE INTO blast_opts VALUES ('default',1,NULL,50,'')")
@@ -45,7 +45,6 @@ fixture_fill_schema <- function(con) {
   add_col("annotate", "curate_flags", "TEXT")
   add_col("annotations", "model_coverage", "REAL")
   add_col("coverage", "median_depth", "REAL")
-  add_col("samples", "reference_support", "INTEGER")
   add_col("samples", "ref_id", "TEXT")
   add_col("samples", "tax_alternatives", "TEXT")
   invisible()

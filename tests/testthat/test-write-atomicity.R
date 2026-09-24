@@ -16,6 +16,7 @@ test_that("a failed screen insert leaves the stored verdict in place", {
   on.exit(DBI::dbDisconnect(con))
   DBI::dbExecute(con, RiboPilot:::SCREEN_DDL)
   DBI::dbExecute(con, RiboPilot:::BLAST_HITS_DDL)
+  DBI::dbExecute(con, RiboPilot:::BLAST_SEARCHED_DDL)
   DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT, lineage_taxids TEXT, reference_support INT)")
   DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT,
     sequence TEXT, length INT)")
@@ -159,6 +160,7 @@ test_that("a failed blast_hits insert leaves the unit's stored hits in place", {
   con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
   on.exit(DBI::dbDisconnect(con))
   DBI::dbExecute(con, RiboPilot:::BLAST_HITS_DDL)
+  DBI::dbExecute(con, RiboPilot:::BLAST_SEARCHED_DDL)
   DBI::dbExecute(con, "CREATE TABLE blast_ref_candidates(ID TEXT, path INT, scaffold INT, rank INT,
     accession TEXT, species TEXT, title TEXT, pident REAL, qcovs REAL, evalue REAL,
     bitscore REAL, time_stamp INT)")

@@ -23,18 +23,16 @@
 #'   mapping file exist under `assembly_path` (default TRUE).
 #' @param assemble_cpus Default number of CPUs for assembly.
 #' @param assemble_memory Default memory (GB) for assembly.
-#' @param seeds_db Path/URL to the GetOrganelle nr seeds database (built per
-#'   clade, see the reference-DB builder). May be NULL until built.
-#' @param labels_db Path/URL to the GetOrganelle nr labels database.
+#' @param seeds_db Path or URL to the GetOrganelle seeds database. NULL
+#'   (default) uses the built-in Actinopterygii database.
+#' @param labels_db Path or URL to the GetOrganelle labels database. NULL
+#'   (default) uses the built-in Actinopterygii database.
 #' @param getOrganelle Default GetOrganelle command-line options.
-#' @param target Read-recruitment target passed to GetOrganelle (default
-#'   "anonym", using the custom seed/label DBs).
 #' @param max_paths Max assembly paths for a sample to continue (default 10).
 #' @param max_scaffolds Max scaffolds within a path to continue (default 10).
 #' @param min_assembly_length Minimum contig length (bp) to retain (default 500).
 #' @param ref_dir Folder for built reference databases (default: the
 #'   `RIBOPILOT_REF_DIR` environment variable, else [ribopilot_ref_dir()]).
-#' @param ... Reserved for forward compatibility.
 #'
 #' @export
 new_db <- function(
@@ -48,19 +46,17 @@ new_db <- function(
     check_assemblies = TRUE,
     assemble_cpus = 6,
     assemble_memory = 24,
-    seeds_db = "https://raw.githubusercontent.com/dmacguigan/RiboPilot/main/ref_dbs/getOrganelle/seeds/actinopterygii_rrna_seeds.fasta",
-    labels_db = "https://raw.githubusercontent.com/dmacguigan/RiboPilot/main/ref_dbs/getOrganelle/labels/actinopterygii_rrna_labels.fasta",
+    seeds_db = NULL,
+    labels_db = NULL,
     getOrganelle = paste(
       "-F anonym",
       "-R 10 -k 21,45,65,85,105,115",
       "--larger-auto-ws"
     ),
-    target = "anonym",
     max_paths = 10,
     max_scaffolds = 10,
     min_assembly_length = 500,
-    ref_dir = NULL,
-    ...) {
+    ref_dir = NULL) {
   # Read and check the mapping file ----
   # Fail here, not per-task inside a work/ directory as an opaque tool error.
   mapping <- read_mapping(mapping_fn %||% "./mapping.csv", mapping_id, mapping_taxon) |>
@@ -102,8 +98,6 @@ new_db <- function(
       ref_source = NA_character_,
       taxonomy_switch = 1L,
       taxonomy_lock = 0L,
-      export_group = NA_character_,
-      reference_support = NA_integer_,
       time_stamp = NA_integer_
     )
   glue::glue_sql(
@@ -184,16 +178,9 @@ new_db <- function(
       find_rrna_notes TEXT,
       assemble_switch INTEGER,
       assemble_lock INTEGER,
-      hide_switch INTEGER,
       assemble_opts TEXT,
       blast_opts TEXT,
       triage_opts TEXT DEFAULT 'default',
-      blast_accession TEXT,
-      blast_species TEXT,
-      blast_pident REAL,
-      blast_qcovs REAL,
-      blast_evalue REAL,
-      blast_lineage TEXT,
       time_stamp INTEGER,
       PRIMARY KEY (ID)
     );"
@@ -211,7 +198,6 @@ new_db <- function(
           find_rrna_notes = NA_character_,
           assemble_switch = 1,
           assemble_lock = 0,
-          hide_switch = 0,
           assemble_opts = "default",
           blast_opts = "default",
           time_stamp = NA_integer_
@@ -229,7 +215,6 @@ new_db <- function(
       getOrganelle TEXT,
       seeds_db TEXT,
       labels_db TEXT,
-      target TEXT,
       max_paths INTEGER,
       max_scaffolds INTEGER,
       min_assembly_length INTEGER,
@@ -247,9 +232,8 @@ new_db <- function(
         cpus = assemble_cpus,
         memory = assemble_memory,
         getOrganelle = getOrganelle,
-        seeds_db = seeds_db %||% NA_character_,
-        labels_db = labels_db %||% NA_character_,
-        target = target,
+        seeds_db = seeds_db,
+        labels_db = labels_db,
         max_paths = max_paths,
         max_scaffolds = max_scaffolds,
         min_assembly_length = min_assembly_length,
@@ -320,15 +304,11 @@ new_db <- function(
       scaffold INTEGER NOT NULL,
       topology TEXT,
       length INTEGER,
-      length_raw INTEGER,
       sequence TEXT,
       -- the contig name this unit had in the file it came from: the original
       -- GetOrganelle/SPAdes header, or the user's own contig name when the
       -- assembly was supplied. Only the latter is shown in the app.
       source_contig TEXT,
-      depth TEXT,
-      gc TEXT,
-      errors TEXT,
       ignore INTEGER,
       edited INTEGER,
       blast_accession TEXT,
@@ -342,7 +322,6 @@ new_db <- function(
       triage_reason TEXT,
       triage_source TEXT,
       triage_rule TEXT,
-      edit_positions TEXT,
       time_stamp INTEGER,
       PRIMARY KEY (ID, path, scaffold)
     );"
@@ -353,24 +332,6 @@ new_db <- function(
 
   # blast_searched (resume marker keyed on query hash; see BLAST_SEARCHED_DDL) ----
   DBI::dbExecute(con, BLAST_SEARCHED_DDL)
-
-  # assembly_blast (per-path BLAST hits) ----
-  DBI::dbExecute(
-    con,
-    "CREATE TABLE assembly_blast (
-      ID TEXT NOT NULL,
-      path INTEGER NOT NULL,
-      blast_opts TEXT,
-      blast_accession TEXT,
-      blast_species TEXT,
-      blast_pident REAL,
-      blast_qcovs REAL,
-      blast_evalue REAL,
-      blast_lineage TEXT,
-      time_stamp INTEGER,
-      PRIMARY KEY (ID, path)
-    );"
-  )
 
   # blast_ref_candidates (ranked remote-GenBank hits per assembly unit) ----
   DBI::dbExecute(
@@ -584,21 +545,18 @@ new_db <- function(
     "CREATE TABLE curate_opts (
       curate_opts TEXT NOT NULL,
       ruleset TEXT,
-      min_anchor_pid REAL,
-      check_contaminant INTEGER,
       PRIMARY KEY (curate_opts)
     );"
   )
   dplyr::tbl(con, "curate_opts") |>
     dplyr::rows_upsert(
-      data.frame(curate_opts = "default", ruleset = "metazoa_generic",
-        min_anchor_pid = 85, check_contaminant = 1L),
+      data.frame(curate_opts = "default", ruleset = "metazoa_generic"),
       in_place = TRUE, copy = TRUE, by = "curate_opts"
     )
 
   # triage_opts (per-rule triage actions; see TRIAGE_RULE_DEFS) ----
   DBI::dbExecute(con, TRIAGE_OPTS_DDL)
-  DBI::dbExecute(con, TRIAGE_OPTS_SEED)
+  write_triage_opts(con, triage_actions_default())
 
   # rrna_candidates (user-assembly rDNA contig search; see RRNA_CANDIDATES_DDL) ----
   DBI::dbExecute(con, RRNA_CANDIDATES_DDL)
@@ -655,7 +613,7 @@ new_db <- function(
 #' @noRd
 SAMPLE_BUILTIN_COLS <- c("taxid", "sci_name", "rank", "match_type", "tax_alternatives", "lineage",
   "lineage_taxids", "ref_id", "user_group", "ref_source", "taxonomy_switch",
-  "taxonomy_lock", "export_group", "reference_support", "time_stamp")
+  "taxonomy_lock", "time_stamp")
 
 #' Read a mapping CSV as typed, or stop naming the problem and the fix
 #'

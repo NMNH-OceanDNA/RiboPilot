@@ -15,17 +15,13 @@ new_db(
   check_assemblies = TRUE,
   assemble_cpus = 6,
   assemble_memory = 24,
-  seeds_db =
-    "https://raw.githubusercontent.com/dmacguigan/RiboPilot/main/ref_dbs/getOrganelle/seeds/actinopterygii_rrna_seeds.fasta",
-  labels_db =
-    "https://raw.githubusercontent.com/dmacguigan/RiboPilot/main/ref_dbs/getOrganelle/labels/actinopterygii_rrna_labels.fasta",
+  seeds_db = NULL,
+  labels_db = NULL,
   getOrganelle = paste("-F anonym", "-R 10 -k 21,45,65,85,105,115", "--larger-auto-ws"),
-  target = "anonym",
   max_paths = 10,
   max_scaffolds = 10,
   min_assembly_length = 500,
-  ref_dir = NULL,
-  ...
+  ref_dir = NULL
 )
 }
 \arguments{
@@ -57,15 +53,13 @@ mapping file exist under `assembly_path` (default TRUE).}
 
 \item{assemble_memory}{Default memory (GB) for assembly.}
 
-\item{seeds_db}{Path/URL to the GetOrganelle nr seeds database (built per
-clade, see the reference-DB builder). May be NULL until built.}
+\item{seeds_db}{Path or URL to the GetOrganelle seeds database. NULL
+(default) uses the built-in Actinopterygii database.}
 
-\item{labels_db}{Path/URL to the GetOrganelle nr labels database.}
+\item{labels_db}{Path or URL to the GetOrganelle labels database. NULL
+(default) uses the built-in Actinopterygii database.}
 
 \item{getOrganelle}{Default GetOrganelle command-line options.}
-
-\item{target}{Read-recruitment target passed to GetOrganelle (default
-"anonym", using the custom seed/label DBs).}
 
 \item{max_paths}{Max assembly paths for a sample to continue (default 10).}
 
@@ -75,8 +69,6 @@ clade, see the reference-DB builder). May be NULL until built.}
 
 \item{ref_dir}{Folder for built reference databases (default: the
 `RIBOPILOT_REF_DIR` environment variable, else [ribopilot_ref_dir()]).}
-
-\item{...}{Reserved for forward compatibility.}
 }
 \description{
 Creates the SQLite tracking database. Mirrors MitoPilot's `new_db()` spine

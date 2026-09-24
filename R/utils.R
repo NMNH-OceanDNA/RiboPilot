@@ -10,9 +10,6 @@
   if (is.na(x)) y else x
 }
 
-#' Inverted %in%
-#' @noRd
-`%nin%` <- Negate(`%in%`)
 
 #' Container engine a Nextflow config actually turns on
 #'

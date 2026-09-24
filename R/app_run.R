@@ -109,7 +109,7 @@ job_script <- function(project, cmd, sched, jobname) {
   cfg <- file.path(project, ".config")
   cfg_lines <- if (file.exists(cfg)) readLines(cfg, warn = FALSE) else character(0)
   kind <- config_param(cfg_lines, "executor") %|NA|% ""
-  if (kind %nin% c("slurm", "sge", "pbs", "pbspro", "lsf")) {
+  if (!(kind %in% c("slurm", "sge", "pbs", "pbspro", "lsf"))) {
     kind <- switch(sched$cmd %||% "", sbatch = "slurm", qsub = "sge", bsub = "lsf", "")
   }
   # log paths are absolute: the app submits from wherever its R session happens

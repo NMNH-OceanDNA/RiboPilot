@@ -461,10 +461,8 @@ rt_variant_badge <- function() {
 
 #' Inline depth bar relative to the deepest scaffold of the same sample
 #'
-#' The value is the MEDIAN per-position depth where one is stored (see
-#' R/coverage.R for why a mean misleads on an rDNA scaffold); the tooltip names
-#' which statistic it is, so a pre-v10 row falling back to the mean is not read
-#' as a median.
+#' The value is the MEDIAN per-position depth (see R/coverage.R for why a mean
+#' misleads on an rDNA scaffold); the tooltip also shows the mean for context.
 #'
 #' The bar has no background track. A grey remainder said only "this is a
 #' fraction of something", which the fill length and the number beside it
@@ -478,10 +476,9 @@ rt_depth_bar <- function(max_col = "depth_max") {
     "function(cellInfo) {
       var v = cellInfo.value, m = cellInfo.row['%s']
       if (v === null || v === undefined || v === '') return ''
-      var stat = cellInfo.row['depth_stat'] ? cellInfo.row['depth_stat'] : 'median'
       var mean = cellInfo.row['depth_mean']
-      var tip = stat + ' depth ' + v + 'x'
-      if (mean !== null && mean !== undefined && mean !== '' && stat === 'median') tip += ' (mean ' + mean + 'x)'
+      var tip = 'median depth ' + v + 'x'
+      if (mean !== null && mean !== undefined && mean !== '') tip += ' (mean ' + mean + 'x)'
       if (!m || m <= 0) return '<span title=\"' + tip + '\">' + v + '</span>'
       var f = Math.max(0, Math.min(1, v / m))
       var w = Math.round(f * 46)

@@ -138,7 +138,7 @@ mk_triage_state_db <- function() {
   DBI::dbExecute(con, "CREATE TABLE chimera(ID TEXT, path INT, scaffold INT, label TEXT, reason TEXT)")
   DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, assemble_switch INT, triage_opts TEXT)")
   DBI::dbExecute(con, RiboPilot:::TRIAGE_OPTS_DDL)
-  DBI::dbExecute(con, RiboPilot:::TRIAGE_OPTS_SEED)
+  RiboPilot:::write_triage_opts(con, RiboPilot:::triage_actions_default())
   DBI::dbExecute(con, "INSERT INTO assemble VALUES('S1',4,'default')")
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S1','Danio rerio','1;2')")
   for (s in 1:2) {

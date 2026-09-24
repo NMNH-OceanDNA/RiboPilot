@@ -151,7 +151,6 @@ new_project <- function(
       RAW_DIR = if (length(data_path) == 1 && nzchar(data_path)) data_path else "NA",
       ASMB_DIR = if (length(assembly_path) == 1) assembly_path else "NA",
       MIN_DEPTH = format(min_depth, scientific = FALSE),
-      GENETIC_CODE = "1",
       NCBI_API_KEY = ncbi_api_key %||% "",
       EXTRA_MOUNTS = extra_mounts,
       HOST_CPUS = ps::ps_cpu_count(),

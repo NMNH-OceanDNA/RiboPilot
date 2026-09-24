@@ -71,45 +71,50 @@ test_that("a truncated gene is exported partial, in the feature table and the de
   expect_equal(RiboPilot:::export_header_data(con, units)$completeness, "complete sequence")
 })
 
-test_that("submission_risks flags chimeric, in-span gaps, and misassembly", {
+test_that("export summary flags chimeric, in-span gaps, and misassembly", {
   con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
   on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT, Taxon TEXT, sci_name TEXT, match_type TEXT, rank TEXT)")
   DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT, type TEXT, start INT, stop INT)")
   DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, sequence TEXT, length INT)")
-  DBI::dbExecute(con, "CREATE TABLE annotate(ID TEXT, path INT, scaffold INT, chimeric INT)")
+  DBI::dbExecute(con, "CREATE TABLE annotate(ID TEXT, path INT, scaffold INT, chimeric INT, n_features INT, missing TEXT, reviewed TEXT, partial TEXT, problematic TEXT, curate_flags TEXT)")
+  risk <- function(id) RiboPilot:::export_summary_df(con,
+    data.frame(ID = id, path = 1L, scaffold = 1L, seqid = id))$submission_risk
 
   # clean, contiguous, no gaps
   clean <- paste0(strrep("A", 100), strrep("C", 100), strrep("G", 100))
+  DBI::dbExecute(con, "INSERT INTO samples VALUES('OK','Danio rerio',NULL,NULL,NULL)")
   DBI::dbExecute(con, "INSERT INTO assemblies VALUES('OK',1,1, ?, ?)", params = list(clean, nchar(clean)))
-  DBI::dbExecute(con, "INSERT INTO annotate VALUES('OK',1,1, 0)")
+  DBI::dbExecute(con, "INSERT INTO annotate VALUES('OK',1,1, 0, 3, '', 'no', 'no', 'no', NULL)")
   DBI::dbExecute(con, "INSERT INTO annotations VALUES('OK',1,1,'18S','rRNA',1,100)")
   DBI::dbExecute(con, "INSERT INTO annotations VALUES('OK',1,1,'5.8S','rRNA',101,200)")
   DBI::dbExecute(con, "INSERT INTO annotations VALUES('OK',1,1,'28S','rRNA',201,300)")
-  expect_equal(RiboPilot:::submission_risks(con, "OK")$note, "")
+  expect_equal(risk("OK"), "")
 
   # N-run inside the 18S..28S span -> gap_in_rDNA
   gapped <- paste0(strrep("A", 100), strrep("N", 20), strrep("C", 180))
+  DBI::dbExecute(con, "INSERT INTO samples VALUES('GAP','Danio rerio',NULL,NULL,NULL)")
   DBI::dbExecute(con, "INSERT INTO assemblies VALUES('GAP',1,1, ?, ?)", params = list(gapped, nchar(gapped)))
-  DBI::dbExecute(con, "INSERT INTO annotate VALUES('GAP',1,1, 0)")
+  DBI::dbExecute(con, "INSERT INTO annotate VALUES('GAP',1,1, 0, 2, '', 'no', 'no', 'no', NULL)")
   DBI::dbExecute(con, "INSERT INTO annotations VALUES('GAP',1,1,'18S','rRNA',1,100)")
   DBI::dbExecute(con, "INSERT INTO annotations VALUES('GAP',1,1,'28S','rRNA',121,300)")
-  r <- RiboPilot:::submission_risks(con, "GAP")
-  expect_true(r$gap_in_rdna)
-  expect_match(r$note, "gap_in_rDNA")
+  expect_match(risk("GAP"), "gap_in_rDNA")
 
   # chimeric flag from the annotate table
+  DBI::dbExecute(con, "INSERT INTO samples VALUES('CHIM','Danio rerio',NULL,NULL,NULL)")
   DBI::dbExecute(con, "INSERT INTO assemblies VALUES('CHIM',1,1, ?, ?)", params = list(clean, nchar(clean)))
-  DBI::dbExecute(con, "INSERT INTO annotate VALUES('CHIM',1,1, 1)")
+  DBI::dbExecute(con, "INSERT INTO annotate VALUES('CHIM',1,1, 1, 2, '', 'no', 'no', 'no', NULL)")
   DBI::dbExecute(con, "INSERT INTO annotations VALUES('CHIM',1,1,'18S','rRNA',1,100)")
   DBI::dbExecute(con, "INSERT INTO annotations VALUES('CHIM',1,1,'28S','rRNA',201,300)")
-  expect_true(RiboPilot:::submission_risks(con, "CHIM")$chimeric)
+  expect_match(risk("CHIM"), "chimeric")
 
   # overlapping / out-of-order features -> misassembly
+  DBI::dbExecute(con, "INSERT INTO samples VALUES('BAD','Danio rerio',NULL,NULL,NULL)")
   DBI::dbExecute(con, "INSERT INTO assemblies VALUES('BAD',1,1, ?, ?)", params = list(clean, nchar(clean)))
-  DBI::dbExecute(con, "INSERT INTO annotate VALUES('BAD',1,1, 0)")
+  DBI::dbExecute(con, "INSERT INTO annotate VALUES('BAD',1,1, 0, 2, '', 'no', 'no', 'no', NULL)")
   DBI::dbExecute(con, "INSERT INTO annotations VALUES('BAD',1,1,'18S','rRNA',1,150)")
   DBI::dbExecute(con, "INSERT INTO annotations VALUES('BAD',1,1,'5.8S','rRNA',120,200)")
-  expect_true(RiboPilot:::submission_risks(con, "BAD")$misassembly)
+  expect_match(risk("BAD"), "misassembly")
 })
 
 test_that("risk_flags flags a severe chimera or ITSx's call, never a minor one", {

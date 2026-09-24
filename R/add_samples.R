@@ -78,8 +78,6 @@ add_samples <- function(
       ref_source = NA_character_,
       taxonomy_switch = 1L,
       taxonomy_lock = 0L,
-      export_group = NA_character_,
-      reference_support = NA_integer_,
       time_stamp = NA_integer_
     )
 
@@ -119,7 +117,6 @@ add_samples <- function(
           find_rrna_notes = NA_character_,
           assemble_switch = 1,
           assemble_lock = 0,
-          hide_switch = 0,
           assemble_opts = "default",
           blast_opts = "default",
           time_stamp = NA_integer_

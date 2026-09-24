@@ -188,13 +188,10 @@ derive_blast_products <- function(con, id, path = 1L, scaffold = 1L,
     if (!is.null(df)) {
       DBI::dbAppendTable(con, "blast_ref_candidates", df)
       top <- ref[1, ]
-      searched_source <- tryCatch(
-        DBI::dbGetQuery(con,
-          "SELECT source FROM blast_searched WHERE ID = ? AND path = ? AND scaffold = ?",
-          params = list(id, path, scaffold))$source,
-        error = function(e) NA_character_)
-      # a missing row (or table, for a DB that predates blast_searched) means
-      # remote, which preserves current behaviour for every existing project.
+      searched_source <- DBI::dbGetQuery(con,
+        "SELECT source FROM blast_searched WHERE ID = ? AND path = ? AND scaffold = ?",
+        params = list(id, path, scaffold))$source
+      # a missing row means remote.
       blast_source <- if (length(searched_source) > 0 && identical(searched_source[1], "local")) {
         "local_rrna"
       } else {
@@ -279,7 +276,6 @@ parse_blast_hits_file <- function(hits_file) {
 #' @noRd
 write_blast_screen <- function(con, id, path, scaffold, top, hits,
                                ts = as.integer(Sys.time())) {
-  cols <- DBI::dbListFields(con, "blast_screen")
   row <- data.frame(
     ID = id, path = as.integer(path), scaffold = as.integer(scaffold),
     accession = top$accession, title = top$title, species = top$species,
@@ -290,7 +286,7 @@ write_blast_screen <- function(con, id, path, scaffold, top, hits,
     bitscore = top$bitscore %||% NA_real_,
     is_nuclear_rrna = consensus_hit_class(hits$hit_class, hits$bitscore),
     time_stamp = ts, stringsAsFactors = FALSE)
-  DBI::dbAppendTable(con, "blast_screen", row[, intersect(names(row), cols), drop = FALSE])
+  DBI::dbAppendTable(con, "blast_screen", row)
   invisible(row$lineage)
 }
 

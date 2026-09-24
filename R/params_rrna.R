@@ -138,18 +138,10 @@ rrna_params <- function(ruleset = "metazoa_generic") {
   )
 }
 
-#' The reference-identity floor for an element (handles a per-element named
-#' vector or a single scalar for back-compatibility)
+#' The reference-identity floor for an element (NA when the ruleset has none)
 #' @noRd
 anchor_pid_floor <- function(min_anchor_pid, element) {
-  if (is.null(min_anchor_pid)) return(NA_real_)
-  if (!is.null(names(min_anchor_pid)) && element %in% names(min_anchor_pid)) {
-    return(unname(min_anchor_pid[[element]]))
-  }
-  if (length(min_anchor_pid) == 1 && is.null(names(min_anchor_pid))) {
-    return(unname(min_anchor_pid[1]))
-  }
-  NA_real_
+  unname(min_anchor_pid[element]) %||% NA_real_
 }
 
 #' Available curation rulesets (for app selectors / validation).

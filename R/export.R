@@ -177,39 +177,7 @@ feature_table_text_con <- function(con, id, path = 1L, scaffold = 1L, seqid = id
   paste(lines, collapse = "\n")
 }
 
-#' Portal-parity submission-risk flags for one export sequence
-#'
-#' NCBI's Submission Portal accepts FASTA only for rRNA-ITS and runs ITSx (stock
-#' parameters) on it, silently removing sequences it judges chimeric, gapped
-#' between ITS regions, or misassembled
-#' (https://submit.ncbi.nlm.nih.gov/help/genbank/#annotation_rRNAITS_faq). This
-#' re-checks each sequence the same way so a curator sees the risk at export
-#' rather than as a rejection. Warn-only: nothing is dropped from the bundle.
-#' @return list(chimeric, gap_in_rdna, misassembly, note); `note` is a
-#'   `;`-joined string of the flags that fired ("" when clean).
-#' @noRd
-submission_risks <- function(con, id, path = 1L, scaffold = 1L) {
-  chim <- DBI::dbGetQuery(con,
-    "SELECT chimeric FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?",
-    params = list(id, path, scaffold))$chimeric[1]
-  chm <- tryCatch(DBI::dbGetQuery(con,
-    "SELECT label, reason FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?",
-    params = list(id, path, scaffold)), error = function(e) data.frame())
-  ann <- DBI::dbGetQuery(con,
-    "SELECT element, start, stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
-    params = list(id, path, scaffold))
-  seq <- NA_character_
-  if (nrow(ann) > 0) {
-    st <- DBI::dbGetQuery(con, "SELECT sequence FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
-      params = list(id, path, scaffold))
-    if (nrow(st)) seq <- st$sequence[1]
-  }
-  risk_flags(chim, ann, seq,
-    chimera_label = if (nrow(chm)) chm$label[1] else NA_character_,
-    chimera_reason = if (nrow(chm)) chm$reason[1] else NA_character_)
-}
-
-#' The risk computation of [submission_risks()] over already-fetched facts
+#' The risk computation over already-fetched facts
 #'
 #' `ann` is that unit's annotations ordered by start (or NULL/0 rows), `seq` its
 #' assembled sequence (length 1, may be NA). `chimera_label`/`chimera_reason`
@@ -344,7 +312,7 @@ submission_readme <- function(label, itsx_check = TRUE) {
 #' Per-unit export summary data.frame
 #'
 #' `units` is a data.frame(ID, path, scaffold, seqid). Includes a
-#' `submission_risk` column ([submission_risks]) so the CSV and HTML report both
+#' `submission_risk` column ([risk_flags]) so the CSV and HTML report both
 #' surface portal-parity risk flags.
 #' @noRd
 export_summary_df <- function(con, units) {
@@ -467,7 +435,7 @@ export_left_out <- function(con, group) {
 #' Records that a unit is one of N intragenomic variants detected in its sample
 #' and the anchor identity between them. It answers doc 08's open question 7
 #' without imposing a submission policy: the fact is recorded, the choice stays
-#' the curator's. Deliberately NOT routed through [submission_risks()] -- a
+#' the curator's. Deliberately NOT routed through [risk_flags()] -- a
 #' paralog is real biology, and warning on export is the behaviour this
 #' sub-project exists to remove.
 #'

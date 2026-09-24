@@ -99,8 +99,8 @@ test_that("opts_row falls back to getorganelle if the picker is missing", {
 test_that("opts_row still builds the other opts tables", {
   expect_equal(opts_row("po", "p", list(po_cpus = 2, po_mem = 4, po_fastp = "-x"),
     base = list())$fastp, "-x")
-  expect_equal(opts_row("co", "c", list(co_ruleset = "strict", co_pid = 0.9,
-    co_contam = TRUE), base = list())$check_contaminant, 1L)
+  expect_named(opts_row("co", "c", list(co_ruleset = "strict"), base = list()),
+    c("curate_opts", "ruleset"))
 })
 
 test_that("annotation and curation presets are set from the Assemble surface", {

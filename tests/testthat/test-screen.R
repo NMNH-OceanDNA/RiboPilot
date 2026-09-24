@@ -281,6 +281,7 @@ mk_screen_db <- function() {
   con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
   DBI::dbExecute(con, RiboPilot:::SCREEN_DDL)
   DBI::dbExecute(con, RiboPilot:::BLAST_HITS_DDL)
+  DBI::dbExecute(con, RiboPilot:::BLAST_SEARCHED_DDL)
   DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT, lineage_taxids TEXT, reference_support INT)")
   # sequence/length are in the base assemblies DDL and the variant pass reads
   # them, so the fixture must carry them or it tests a schema that cannot exist
@@ -376,14 +377,12 @@ test_that("a stored no_reference row is recomputed once evidence arrives, withou
   expect_equal(r1$n, 3L)
 })
 
-test_that("screen_sample covers every unit and sets reference support", {
+test_that("screen_sample covers every unit", {
   con <- mk_screen_db(); on.exit(DBI::dbDisconnect(con))
   add_hits(con, 1, FISH_T); add_hits(con, 2, FISH_T)
   n <- screen_sample(con, "S1")
   expect_equal(n, 2L)
   expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM screen")$n, 2L)
-  rs <- DBI::dbGetQuery(con, "SELECT reference_support v FROM samples WHERE ID='S1'")$v
-  expect_false(is.na(rs))
 })
 
 test_that("screen_sample touches only its own sample, not the whole project", {
@@ -403,62 +402,12 @@ test_that("screen_sample touches only its own sample, not the whole project", {
   screen_sample(con, "S1")
   expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM screen WHERE ID='S1'")$n, 2L)
   expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM screen WHERE ID='S2'")$n, 0L)
-  rs1 <- DBI::dbGetQuery(con, "SELECT reference_support v FROM samples WHERE ID='S1'")$v
-  rs2 <- DBI::dbGetQuery(con, "SELECT reference_support v FROM samples WHERE ID='S2'")$v
-  expect_false(is.na(rs1))
-  expect_true(is.na(rs2))
 
   s1_before <- DBI::dbGetQuery(con, "SELECT * FROM screen WHERE ID='S1' ORDER BY scaffold")
   screen_sample(con, "S2")
   expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM screen WHERE ID='S2'")$n, 3L)
   s1_after <- DBI::dbGetQuery(con, "SELECT * FROM screen WHERE ID='S1' ORDER BY scaffold")
   expect_equal(s1_before, s1_after)
-})
-
-test_that("recomputed reference_support agrees with the stored rank_distance column at a specific nonzero minimum", {
-  # oracle: three on-target hits at DIFFERENT, hand-computed distances, none
-  # zero, with the stored rank_distance values written literally rather than
-  # via rank_distance() itself -- so this cannot pass merely because both
-  # sides call the same (possibly broken) function. A congener (same genus,
-  # different species) sits at distance 1; two different-family hits sharing
-  # only order sit at distance 3; the minimum across the unit is 1.
-  # Three DISTINCT accessions, because the unanimity floor is three.
-  con <- mk_screen_db(); on.exit(DBI::dbDisconnect(con))
-  cong     <- "33208;7711;186623;7952;2743709;7954;90001"
-  difffam  <- "33208;7711;186623;7952;55555;66666;77777"
-  difffam2 <- "33208;7711;186623;7952;55556;66667;77778"
-  expect_equal(rank_distance(cong, FISH_T), 1L)
-  expect_equal(rank_distance(difffam, FISH_T), 3L)
-  expect_equal(rank_distance(difffam2, FISH_T), 3L)
-
-  DBI::dbExecute(con,
-    "INSERT INTO blast_hits (ID,path,scaffold,hit_rank,hsp,bitscore,lineage_taxids,lineage,hit_class,rank_distance)
-     VALUES ('S1',1,1,1,1,900,?,?,'rdna',1)",
-    params = list(cong, "Eukaryota;Chordata;Actinopteri;Anabantiformes;Congeneridae;Congen;congen_sp"))
-  DBI::dbExecute(con,
-    "INSERT INTO blast_hits (ID,path,scaffold,hit_rank,hsp,bitscore,lineage_taxids,lineage,hit_class,rank_distance)
-     VALUES ('S1',1,1,2,1,800,?,?,'rdna',3)",
-    params = list(difffam, "Eukaryota;Mollusca;Bivalvia;Veneroida;Veneridae;Venus;mercenaria"))
-  DBI::dbExecute(con,
-    "INSERT INTO blast_hits (ID,path,scaffold,hit_rank,hsp,bitscore,lineage_taxids,lineage,hit_class,rank_distance)
-     VALUES ('S1',1,1,3,1,780,?,?,'rdna',3)",
-    params = list(difffam2, "Eukaryota;Chordata;Actinopteri;Anabantiformes;Otherfam;Otherg;other_sp"))
-
-  screen_one(con, "S1", 1, 1)
-  expect_equal(DBI::dbGetQuery(con, "SELECT screen_verdict v FROM screen WHERE scaffold=1")$v,
-    "on_target")
-
-  RiboPilot:::update_reference_support(con, "S1")
-  recomputed <- DBI::dbGetQuery(con,
-    "SELECT reference_support v FROM samples WHERE ID='S1'")$v
-  stored <- DBI::dbGetQuery(con,
-    "SELECT MIN(rank_distance) v FROM blast_hits WHERE ID='S1' AND scaffold=1")$v
-  stored_vals <- DBI::dbGetQuery(con,
-    "SELECT rank_distance v FROM blast_hits WHERE ID='S1' AND scaffold=1 ORDER BY hit_rank")$v
-
-  expect_equal(recomputed, 1L)          # the hardcoded oracle
-  expect_equal(recomputed, stored)      # agrees with the stored column
-  expect_equal(stored_vals, c(1L, 3L, 3L))  # the stored column holds the values intended
 })
 
 test_that("the scoring core reads its weights from the params sublist", {
