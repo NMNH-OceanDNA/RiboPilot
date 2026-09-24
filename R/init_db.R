@@ -61,42 +61,10 @@ new_db <- function(
     min_assembly_length = 500,
     ref_dir = NULL,
     ...) {
-  # Read mapping file ----
-  if (is.null(mapping_fn)) {
-    mapping_fn <- "./mapping.csv"
-    if (!file.exists(mapping_fn)) {
-      stop("Mapping file not found")
-    }
-  }
-  mapping <- utils::read.csv(mapping_fn)
-  mapping[[mapping_id]] <- as.character(mapping[[mapping_id]])
-
-  # Validate ID column ----
-  if (any(duplicated(mapping[[mapping_id]]))) {
-    bad <- unique(mapping[[mapping_id]][duplicated(mapping[[mapping_id]])])
-    message("problematic IDs:\n", paste(bad, collapse = ", "))
-    stop("Duplicate IDs found in mapping file")
-  }
-  if (any(nchar(mapping[[mapping_id]]) > 18)) {
-    bad <- mapping[[mapping_id]][nchar(mapping[[mapping_id]]) > 18]
-    message("problematic IDs:\n", paste(bad, collapse = ", "))
-    stop("IDs must be no more than 18 characters")
-  }
-  if (any(!grepl("^[a-zA-Z0-9_:-]+$", mapping[[mapping_id]]))) {
-    bad <- mapping[[mapping_id]][!grepl("^[a-zA-Z0-9_:-]+$", mapping[[mapping_id]])]
-    message("problematic IDs:\n", paste(bad, collapse = ", "))
-    stop("IDs must contain only alphanumeric characters, dashes, underscores, and colons")
-  }
-
-  # Validate read files ----
-  # Fail here, not per-task inside a work/ directory as an opaque fastp error.
-  mapping <- normalize_assembly_column(mapping, mapping_id, assembly_path)
-  if (isTRUE(check_reads)) {
-    check_mapping_reads(mapping, mapping_id, data_path)
-  }
-  if (isTRUE(check_assemblies)) {
-    check_mapping_assemblies(mapping, mapping_id, assembly_path)
-  }
+  # Read and check the mapping file ----
+  # Fail here, not per-task inside a work/ directory as an opaque tool error.
+  mapping <- read_mapping(mapping_fn %||% "./mapping.csv", mapping_id, mapping_taxon) |>
+    check_mapping(mapping_id, data_path, assembly_path, check_reads, check_assemblies)
 
   # Default GetOrganelle nr databases (broad Actinopterygii) when unset ----
   seeds_db <- seeds_db %||% DEFAULT_SEEDS_DB
@@ -680,6 +648,184 @@ new_db <- function(
   invisible(return())
 }
 
+#' Sample columns new_db() adds itself; a mapping column may not reuse one
+#'
+#' Compared ignoring case, as SQLite compares column names.
+#' @noRd
+SAMPLE_BUILTIN_COLS <- c("taxid", "sci_name", "rank", "match_type", "lineage",
+  "lineage_taxids", "ref_id", "user_group", "ref_source", "taxonomy_switch",
+  "taxonomy_lock", "export_group", "reference_support", "time_stamp")
+
+#' Read a mapping CSV as typed, or stop naming the problem and the fix
+#'
+#' Every column is read as text, so IDs like 001 stay as typed. Values are
+#' trimmed, blank cells become NA, and fully blank rows are dropped. Column
+#' names are matched to ID, Taxon, R1, R2, and Assembly ignoring case.
+#'
+#' @param mapping_fn Path to the mapping CSV.
+#' @param mapping_id,mapping_taxon ID and taxon column names.
+#' @return the mapping data.frame.
+#' @noRd
+read_mapping <- function(mapping_fn, mapping_id = "ID", mapping_taxon = "Taxon") {
+  if (length(mapping_fn) != 1 || is.na(mapping_fn) || !file.exists(mapping_fn) ||
+      dir.exists(mapping_fn)) {
+    stop("Mapping file not found: ", mapping_fn %||% "(none given)", call. = FALSE)
+  }
+  excel <- "In Excel, use File > Save As > CSV UTF-8 (Comma delimited)."
+  if (any(readBin(mapping_fn, "raw", 512L) == as.raw(0))) {
+    stop("The mapping file is not a plain-text CSV (it looks like an Excel workbook ",
+      "or another binary file): ", mapping_fn, ". ", excel, call. = FALSE)
+  }
+  hdr <- readLines(mapping_fn, n = 1L, warn = FALSE)
+  if (length(hdr) == 0 || !nzchar(trimws(hdr))) {
+    stop("The mapping file is empty: ", mapping_fn, call. = FALSE)
+  }
+  if (!grepl(",", hdr) && grepl("[;\t]", hdr)) {
+    stop("The mapping file must be comma-separated, but its header uses ",
+      if (grepl(";", hdr)) "semicolons" else "tabs", ": ", mapping_fn, ". ", excel,
+      call. = FALSE)
+  }
+  mapping <- utils::read.csv(mapping_fn, colClasses = "character", na.strings = c("", "NA"))
+  mapping[] <- lapply(mapping, function(x) {
+    x <- trimws(x)
+    x[which(x == "")] <- NA_character_
+    x
+  })
+
+  for (w in setdiff(c(mapping_id, mapping_taxon, "R1", "R2", "Assembly"), names(mapping))) {
+    i <- which(tolower(names(mapping)) == tolower(w))
+    if (length(i) == 1) {
+      message("Using mapping column '", names(mapping)[i], "' as '", w, "'.")
+      names(mapping)[i] <- w
+    }
+  }
+  if ("Assembly" %in% names(mapping)) {
+    for (w in setdiff(c("R1", "R2"), names(mapping))) mapping[[w]] <- NA_character_
+  }
+  miss <- setdiff(c(mapping_id, mapping_taxon, "R1", "R2"), names(mapping))
+  if (length(miss)) {
+    stop("The mapping file is missing column(s): ", paste(miss, collapse = ", "), ".\n",
+      "Columns found: ", paste(names(mapping), collapse = ", "), ".\n",
+      "It needs ", mapping_id, " and ", mapping_taxon, ", plus R1 and R2 (paired reads) ",
+      "or Assembly, in a comma-separated file.", call. = FALSE)
+  }
+  low <- tolower(names(mapping))
+  twins <- names(mapping)[low %in% low[duplicated(low)]]
+  if (length(twins)) {
+    stop("Mapping column names must differ by more than upper/lower case: ",
+      paste(twins, collapse = ", "), ".", call. = FALSE)
+  }
+  reserved <- c(SAMPLE_BUILTIN_COLS, if (mapping_id != "ID") "ID",
+    if (mapping_taxon != "Taxon") "Taxon")
+  hit <- names(mapping)[low %in% tolower(reserved)]
+  if (length(hit)) {
+    stop("The mapping file has column(s) RiboPilot fills in itself: ",
+      paste(hit, collapse = ", "), ". Rename them (for example my_", tolower(hit[1]), ").",
+      call. = FALSE)
+  }
+
+  blank <- rowSums(!is.na(mapping)) == 0
+  no_id <- is.na(mapping[[mapping_id]]) & !blank
+  if (any(no_id)) {
+    stop("Some rows have no ", mapping_id, " (blank or NA): line(s) ",
+      paste(truncate_ids(which(no_id) + 1L), collapse = ", "), " of the mapping file.",
+      call. = FALSE)
+  }
+  mapping <- mapping[!blank, , drop = FALSE]
+  rownames(mapping) <- NULL
+  if (nrow(mapping) == 0) {
+    stop("The mapping file has a header row but no samples: ", mapping_fn, call. = FALSE)
+  }
+
+  ids <- mapping[[mapping_id]]
+  k <- tolower(ids)
+  dup <- unique(ids[k %in% k[duplicated(k)]])
+  if (length(dup)) {
+    stop("Each ", mapping_id, " must be unique, ignoring upper/lower case (sample folders ",
+      "would clash on macOS and Windows). Repeated: ",
+      paste(truncate_ids(dup), collapse = ", "), call. = FALSE)
+  }
+  bad <- ids[!grepl("^[A-Za-z0-9_:-]+$", ids)]
+  if (length(bad)) {
+    stop("IDs may use only letters, digits, dash (-), underscore (_), and colon (:), with ",
+      "no spaces, dots, or slashes. Change: ",
+      paste(truncate_ids(sQuote(bad, FALSE)), collapse = ", "), call. = FALSE)
+  }
+  long <- ids[nchar(ids) > 18]
+  if (length(long)) {
+    stop("IDs must be 18 characters or fewer. Shorten: ",
+      paste(truncate_ids(long), collapse = ", "), call. = FALSE)
+  }
+  mapping
+}
+
+#' Check a mapping's read and assembly columns against the files on disk
+#'
+#' @return the mapping, with a normalized `Assembly` column.
+#' @noRd
+check_mapping <- function(mapping, mapping_id = "ID", data_path = NULL, assembly_path = NULL,
+                          check_reads = TRUE, check_assemblies = TRUE) {
+  ids <- mapping[[mapping_id]]
+  stop_unsafe_paths(c(
+    stats::setNames(mapping$R1, paste(ids, "R1")),
+    stats::setNames(mapping$R2, paste(ids, "R2")),
+    if ("Assembly" %in% names(mapping)) stats::setNames(mapping$Assembly, paste(ids, "Assembly"))),
+    mount = FALSE)
+  mapping <- normalize_assembly_column(mapping, mapping_id, assembly_path)
+  if (isTRUE(check_reads)) check_mapping_reads(mapping, mapping_id, data_path)
+  if (isTRUE(check_assemblies)) check_mapping_assemblies(mapping, mapping_id, assembly_path)
+  mapping
+}
+
+#' Stop when a path cannot hold a new project
+#'
+#' @return (invisibly) the path, made absolute.
+#' @noRd
+check_project_path <- function(path, force = FALSE) {
+  path <- normalizePath(path, mustWork = FALSE)
+  if (!startsWith(path, "/")) path <- file.path(getwd(), path)
+  if (file.exists(path) && !dir.exists(path)) {
+    stop("The project path is a file, not a folder: ", path, call. = FALSE)
+  }
+  if (file.exists(file.path(path, ".sqlite")) && !force) {
+    stop("A RiboPilot project already exists in ", path, ". Use force = TRUE to ",
+      "replace it (its results will be lost).", call. = FALSE)
+  }
+  top <- path
+  while (!dir.exists(top) && dirname(top) != top) top <- dirname(top)
+  if (unname(file.access(top, 2)) != 0) {
+    stop("Cannot write to ", top, ": permission denied.", call. = FALSE)
+  }
+  stop_unsafe_paths(c(path = path))
+  invisible(path)
+}
+
+#' Stop on paths the pipeline passes unquoted to Docker, Singularity, and bash
+#'
+#' @param x Named character vector; names say what each path is. NA, "" and
+#'   URLs are skipped.
+#' @param mount Also refuse "," and ":", which split a container mount.
+#' @noRd
+stop_unsafe_paths <- function(x, mount = TRUE) {
+  x <- x[!is.na(x) & nzchar(x) & !grepl("^[a-z]+://", x)]
+  re <- if (mount) {
+    "[\\s'\"`$\\\\;&|<>()*?#!{}\\[\\],:]"
+  } else {
+    "[\\s'\"`$\\\\;&|<>()*?#!{}\\[\\]]"
+  }
+  hit <- regmatches(x, gregexpr(re, x, perl = TRUE))
+  bad <- which(lengths(hit) > 0)
+  if (length(bad) == 0) return(invisible())
+  lines <- vapply(bad, function(i) {
+    ch <- unique(hit[[i]])
+    what <- unique(ifelse(grepl("\\s", ch, perl = TRUE), "space", sQuote(ch, FALSE)))
+    sprintf("  %s: '%s' (remove: %s)", names(x)[i], x[i], paste(what, collapse = ", "))
+  }, character(1))
+  stop("These paths have characters the pipeline cannot pass to Docker, Singularity, ",
+    "or Nextflow:\n", paste(truncate_ids(lines), collapse = "\n"),
+    "\nRename them to use only letters, digits, and . _ - / characters.", call. = FALSE)
+}
+
 #' Check that the read files named in a mapping table exist
 #'
 #' @param mapping Mapping data frame (needs `R1` and `R2` columns).
@@ -688,9 +834,6 @@ new_db <- function(
 #'   NULL, only the paired-end check runs.
 #' @noRd
 check_mapping_reads <- function(mapping, mapping_id = "ID", data_path = NULL) {
-  if (!all(c("R1", "R2") %in% colnames(mapping))) {
-    stop("Mapping file must have R1 and R2 columns naming the paired read files")
-  }
   ids <- as.character(mapping[[mapping_id]])
   blank <- function(x) is.na(x) | !nzchar(trimws(as.character(x)))
 
@@ -716,6 +859,13 @@ check_mapping_reads <- function(mapping, mapping_id = "ID", data_path = NULL) {
       "\nSingle-end reads are not supported by the RiboPilot pipeline."
     )
   }
+  same <- !no_reads & basename(mapping$R1) == basename(mapping$R2)
+  if (any(same)) {
+    stop(
+      "R1 and R2 must name two different read files, but these use one file name for both:\n",
+      paste(truncate_ids(paste0(ids[same], ": ", mapping$R1[same])), collapse = "\n")
+    )
+  }
 
   mapping <- mapping[!no_reads, , drop = FALSE]
   ids <- ids[!no_reads]
@@ -726,9 +876,20 @@ check_mapping_reads <- function(mapping, mapping_id = "ID", data_path = NULL) {
   if (length(data_path) != 1 || is.na(data_path) || !nzchar(data_path)) {
     return(invisible())
   }
+  if (!dir.exists(data_path)) {
+    stop("data_path does not exist or is not a folder: ", data_path)
+  }
+  files <- as.vector(rbind(mapping$R1, mapping$R2))
+  full <- grepl("^[/~]", files)
+  if (any(full)) {
+    stop(
+      "R1 and R2 take file names relative to data_path (", data_path, "), not full paths:\n",
+      paste(truncate_ids(paste0(rep(ids, each = 2)[full], ": ", files[full])), collapse = "\n")
+    )
+  }
   reads <- data.frame(
     ID = rep(ids, each = 2),
-    path = file.path(data_path, as.vector(rbind(mapping$R1, mapping$R2)))
+    path = file.path(data_path, files)
   )
   bad <- reads[!file.exists(reads$path), , drop = FALSE]
   if (nrow(bad)) {
@@ -792,13 +953,45 @@ check_mapping_assemblies <- function(mapping, mapping_id = "ID", assembly_path =
   if (!any(named) || length(assembly_path) != 1 || !nzchar(assembly_path)) {
     return(invisible())
   }
+  if (!dir.exists(assembly_path)) {
+    stop("assembly_path does not exist or is not a folder: ", assembly_path)
+  }
   ids <- as.character(mapping[[mapping_id]])[named]
-  paths <- file.path(assembly_path, mapping$Assembly[named])
+  files <- mapping$Assembly[named]
+  full <- grepl("^[/~]", files)
+  if (any(full)) {
+    stop(
+      "Assembly takes file names relative to assembly_path (", assembly_path, "), not full paths:\n",
+      paste(truncate_ids(paste0(ids[full], ": ", files[full])), collapse = "\n")
+    )
+  }
+  paths <- file.path(assembly_path, files)
   bad <- !file.exists(paths)
   if (any(bad)) {
     stop(
       "Assembly files named in the mapping file were not found in ", assembly_path, ":\n",
       paste(truncate_ids(paste0(ids[bad], ": ", paths[bad])), collapse = "\n")
+    )
+  }
+  gz <- grepl("\\.gz$", files, ignore.case = TRUE)
+  if (any(gz) && !all(gz)) {
+    stop(
+      "Assembly files must be all gzipped (.gz) or all plain in one project; the pipeline ",
+      "cannot mix them. Gzipped: ", paste(truncate_ids(ids[gz]), collapse = ", "),
+      ". Plain: ", paste(truncate_ids(ids[!gz]), collapse = ", "), "."
+    )
+  }
+  first <- vapply(paths, function(p) {
+    con <- gzfile(p, "rt")
+    on.exit(close(con))
+    l <- suppressWarnings(readLines(con, n = 1L, warn = FALSE))
+    if (length(l)) l else ""
+  }, character(1), USE.NAMES = FALSE)
+  notfa <- !startsWith(first, ">")
+  if (any(notfa)) {
+    stop(
+      "Assembly files must be FASTA (first line starts with '>'), but these are not:\n",
+      paste(truncate_ids(paste0(ids[notfa], ": ", paths[notfa])), collapse = "\n")
     )
   }
   invisible()

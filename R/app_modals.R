@@ -615,7 +615,8 @@ trim_modal <- function(n, a_from, a_to) {
 group_modal <- function() {
   modalDialog(
     title = "Assign export group", size = "s", easyClose = TRUE,
-    textInput("group_name", "Group name", placeholder = "e.g. batch_2026_01"),
+    textInput("group_name", "Group name",
+      placeholder = "letters, digits, dot, dash, underscore; e.g. batch_2026_01"),
     footer = mp_footer(primary = actionButton("assign_group_go", "Assign"))
   )
 }

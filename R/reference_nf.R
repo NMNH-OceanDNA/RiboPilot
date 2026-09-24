@@ -59,9 +59,9 @@ container_bind_opts <- function(cfg_lines, dirs) {
   if (length(dirs) == 0) return(character(0))
   switch(config_container_engine(cfg_lines) %|NA|% "",
     docker = c("-process.containerOptions",
-      paste(paste0("-v ", dirs, ":", dirs), collapse = " ")),
+      paste(paste0("-v ", shQuote(dirs), ":", shQuote(dirs)), collapse = " ")),
     singularity = c("-process.containerOptions",
-      paste(paste0("--bind ", dirs), collapse = " ")),
+      paste(paste0("--bind ", shQuote(dirs)), collapse = " ")),
     character(0))
 }
 

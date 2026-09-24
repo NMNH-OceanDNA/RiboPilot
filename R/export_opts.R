@@ -1,10 +1,11 @@
 # Named FASTA-header configurations for export, the token data they are resolved
 # against, and the checks that run before anything is written.
 #
-# Mirrors MitoPilot's export_opts: a template is glue text ("{seqid} [organism=
-# {Taxon}] ..."), stored under a name so a project can keep several and switch
-# between them. Tokens resolve against the sample's own metadata, so any extra
-# column of the user's mapping file is usable with no extra plumbing.
+# Mirrors MitoPilot's export_opts: a template is text with {column} tokens
+# ("{seqid} [organism={Taxon}] ..."), stored under a name so a project can keep
+# several and switch between them. Tokens resolve against the sample's own
+# metadata, so any extra column of the user's mapping file is usable with no
+# extra plumbing.
 
 EXPORT_OPTS_DDL <- "CREATE TABLE IF NOT EXISTS export_opts (
   export_opts TEXT NOT NULL,
@@ -206,7 +207,7 @@ find_unmatched_brace <- function(x) {
 #' NCBI rejects the submission. Returns a level rather than stopping, so the app
 #' can show it live while the user is still typing.
 #'
-#' @param template The glue template.
+#' @param template The header template.
 #' @param data Token data (from [export_header_data()]); the first row is used
 #'   for a dry run. NULL skips the dry run.
 #' @param require_seqid Demand `{seqid}` (an error when any sample exports more
@@ -228,17 +229,10 @@ validate_fasta_header <- function(template, data = NULL, require_seqid = TRUE) {
   }
   if (!is.null(data) && nrow(data) > 0) {
     bad <- tryCatch({
-      stringr::str_glue_data(data[1, , drop = FALSE], template)
+      fill_header(template, data[1, , drop = FALSE])
       NULL
     }, error = function(e) conditionMessage(e))
-    if (!is.null(bad)) {
-      col <- regmatches(bad, regexpr("object '[^']+' not found", bad))
-      if (length(col) > 0) {
-        col <- sub("object '([^']+)' not found", "\\1", col)
-        return(err(sprintf("Column \"%s\" is not in the database. Use one of the available columns listed below.", col)))
-      }
-      return(err(trimws(strsplit(bad, "\n")[[1]][1])))
-    }
+    if (!is.null(bad)) return(err(bad))
   }
   if (grepl("\\[\\s*isolate\\s*=", template, ignore.case = TRUE) &&
       any(!is.na(data$seqid) & data$seqid != data$ID)) {
@@ -273,18 +267,37 @@ empty_modifiers <- function(headers) {
   lapply(m, function(x) unique(sub("^\\[([^=]+)=.*$", "\\1", x)))
 }
 
+#' Fill a template's {column} tokens from one row of token data
+#'
+#' A plain lookup: nothing inside braces is ever run, because a template can
+#' come from a project database someone else wrote.
+#' @return the filled string; an error names the first token that is not a column.
+#' @noRd
+fill_header <- function(template, row) {
+  p <- regmatches(template, gregexpr("\\{[^{}]*\\}", template), invert = NA)[[1]]
+  tok <- seq_along(p) %% 2L == 0L
+  nm <- substr(p[tok], 2L, nchar(p[tok]) - 1L)
+  miss <- setdiff(nm, names(row))
+  if (length(miss)) {
+    stop(sprintf("Column \"%s\" is not in the database. Use one of the available columns listed below.",
+      miss[1]), call. = FALSE)
+  }
+  p[tok] <- vapply(nm, function(n) as.character(row[[n]][1]), character(1))
+  paste(p, collapse = "")
+}
+
 #' Resolve a template against token data
 #'
 #' A sample that exports more than one record gets `[isolate=<seqid>]` appended,
 #' so all of its records can go into one GenBank submission. [validate_fasta_header()]
 #' refuses a template's own `[isolate=]` for such samples.
 #'
-#' @param template glue template. @param data rows from [export_header_data()].
+#' @param template Header template. @param data rows from [export_header_data()].
 #' @return character vector of headers, one per row, without the leading ">".
 #' @noRd
 render_fasta_headers <- function(template, data) {
   h <- vapply(seq_len(nrow(data)), function(i) {
-    as.character(stringr::str_glue_data(data[i, , drop = FALSE], template))
+    fill_header(template, data[i, , drop = FALSE])
   }, character(1))
   multi <- !is.na(data$seqid) & data$seqid != data$ID
   h[multi] <- paste0(h[multi], " [isolate=", data$seqid[multi], "]")

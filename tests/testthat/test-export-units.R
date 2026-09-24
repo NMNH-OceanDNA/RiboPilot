@@ -227,3 +227,33 @@ test_that("sample_assembler follows assemble_opts and defaults to getorganelle",
   expect_equal(RiboPilot:::sample_assembler(dir, c("B", "A", "C", "D")),
     c("bait", "getorganelle", "getorganelle", "getorganelle"))
 })
+
+test_that("a group name that is not a safe folder name is refused before anything is deleted", {
+  dir <- mk_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  on.exit(DBI::dbDisconnect(con))
+  expect_error(RiboPilot:::set_export_group(con, "S1", "Batch 1"), "Try \"Batch_1\"", fixed = TRUE)
+  for (g in c("..", ".", "../S1", "18S/ITS", "-x")) {
+    expect_error(RiboPilot:::set_export_group(con, "S1", g), "cannot be used", info = g)
+  }
+  expect_true(all(is.na(DBI::dbGetQuery(con, "SELECT export_group FROM annotate")$export_group)))
+  RiboPilot:::set_export_group(con, "S1", "batch_2026.01-a")
+  # a bad label must not reach the recursive delete of out/export/<label>
+  dir.create(file.path(dir, "out", "keep"), recursive = TRUE)
+  expect_error(bundle(dir, label = ".."), "cannot be used")
+  expect_true(dir.exists(file.path(dir, "out", "keep")))
+})
+
+test_that("the zip lands in out/export from a relative project path, and is replaced", {
+  skip_if(!nzchar(Sys.which("zip")), "zip not on PATH")
+  dir <- mk_project()
+  withr::local_dir(dir)
+  z <- function(...) suppressWarnings(suppressMessages(export_bundle(".", label = "z",
+    markers = FALSE, report = FALSE, itsx_check = FALSE, zip = TRUE, ...)))
+  z()
+  zf <- file.path("out", "export", "z.zip")
+  expect_true(file.exists(zf))
+  n_all <- nrow(utils::unzip(zf, list = TRUE))
+  z(ids = "S2")
+  expect_lt(nrow(utils::unzip(zf, list = TRUE)), n_all)
+})

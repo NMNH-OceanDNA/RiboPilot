@@ -178,3 +178,18 @@ test_that("an empty source modifier on any record is a warning, not only on the 
   d <- data.frame(ID = "S1", seqid = "S1", t = NA)
   expect_equal(validate_fasta_header("{seqid} [note={t}]", d)$level, "warn")
 })
+
+test_that("a header template is filled by lookup and never runs code", {
+  dir <- mk_hdr_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  on.exit(DBI::dbDisconnect(con))
+  u <- data.frame(ID = "S2", path = 1L, scaffold = 1L, seqid = "S2")
+  d <- RiboPilot:::export_header_data(con, u)
+  f <- tempfile("rp_hdr_")
+  tpl <- sprintf('{seqid} {file.create("%s")}', f)
+  expect_equal(RiboPilot:::validate_fasta_header(tpl, d)$level, "error")
+  expect_error(RiboPilot:::render_fasta_headers(tpl, d), "is not in the database")
+  expect_false(file.exists(f))
+  expect_equal(RiboPilot:::render_fasta_headers("{seqid} [organism={Taxon}] site={collection_site}", d),
+    "S2 [organism=Genus speciesB] site=Reef B")
+})

@@ -345,5 +345,23 @@ test_that("a busy database during Assign Group is reported and the session stays
     session$setInputs(assign_group_go = 1)
     expect_false(session$isClosed())
     expect_true(is.na(RiboPilot:::app_query("SELECT export_group FROM annotate")$export_group))
+})
+
+test_that("Assign Group refuses a name that cannot be a folder", {
+  skip_if_not_installed("withr")
+  dir <- mk_export_project()
+  withr::local_dir(dir)
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Export")
+    session$flushReact()
+    session$setInputs(tbl__reactable__selected = 1, group_name = "Batch 1")
+    session$setInputs(assign_group_btn = 1)
+    session$setInputs(assign_group_go = 1)
+    session$flushReact()
+    expect_true(all(is.na(RiboPilot:::app_query("SELECT export_group FROM annotate")$export_group)))
+    session$setInputs(group_name = "Batch_1")
+    session$setInputs(assign_group_go = 2)
+    session$flushReact()
+    expect_equal(RiboPilot:::app_query("SELECT export_group FROM annotate")$export_group, "Batch_1")
   })
 })

@@ -62,14 +62,14 @@ itsx_check_command <- function(project, workdir, which = Sys.which) {
     }, character(1))
     user <- if (all(nzchar(ids))) c("-u", paste(ids, collapse = ":")) else character(0)
     return(list(bin = bin,
-      prefix = c("run", "--rm", user, "-v", paste0(wd, ":", wd), "-w", wd, img, "ITSx"),
+      prefix = c("run", "--rm", user, "-v", shQuote(paste0(wd, ":", wd)), "-w", shQuote(wd), img, "ITSx"),
       message = ""))
   }
   w <- which(c("singularity", "apptainer"))
   w <- w[nzchar(w)]
   if (length(w) < 1) return(none("singularity/apptainer not on PATH"))
   list(bin = unname(w[1]),
-    prefix = c("exec", "--bind", wd, "--pwd", wd, singularity_image_ref(img, project, lines), "ITSx"),
+    prefix = c("exec", "--bind", shQuote(wd), "--pwd", shQuote(wd), singularity_image_ref(img, project, lines), "ITSx"),
     message = "")
 }
 
