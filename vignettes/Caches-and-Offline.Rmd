@@ -1,0 +1,77 @@
+---
+title: "Disk space, caches, and offline use"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Disk space, caches, and offline use}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+This page says where RiboPilot and its tools keep their large files, which of a
+project's files you should back up, and what needs the internet.
+
+# Where the big files go
+
+| What | Default place | How to move it | Typical size |
+|---|---|---|---|
+| Container image (Docker) | Docker's own storage | Docker's settings | 2.6 GB to download, 7.7 GB on disk, one per RiboPilot version |
+| Container image (Singularity, profile from `generate_config()`) | `NXF_SINGULARITY_CACHEDIR` if set, else a `containers` folder in the reference folder | `container_cache` in `generate_config()` | about 2.4 GB per copy |
+| Container image (Singularity, built-in Hydra and SEDNA profiles) | `NXF_SINGULARITY_CACHEDIR` if set, else `<project>/work/singularity` | `NXF_SINGULARITY_CACHEDIR` | about 2.4 GB per copy |
+| Singularity's download cache | `~/.singularity/cache` | `SINGULARITY_CACHEDIR` (Apptainer: `APPTAINER_CACHEDIR`) | grew 4.9 GB in one pull |
+| Singularity's temporary files | `/tmp` | `SINGULARITY_TMPDIR` | |
+| Nextflow's own files | `~/.nextflow` | `NXF_HOME` | grows when runs use a pinned Nextflow version |
+| Reference databases | a folder in your home; `RiboPilot::ribopilot_ref_dir()` prints it | `RIBOPILOT_REF_DIR`, the `ref_dir` argument of `new_project()`, or **Settings** in the Reference step | 4 MB and 16 MB for the two practice databases |
+| Cluster profiles | `~/.config/R/RiboPilot` on Linux | `profile_dir`, or `R_USER_CONFIG_DIR` | tiny |
+| Taxonomy copy | `<project>/.taxonomy` | (one per project) | about 0.5 GB |
+| Nextflow working files | `<project>/work` | (one per project) | 0.9 GB for the practice project |
+
+Home folders on clusters are often small. Put `NXF_SINGULARITY_CACHEDIR`,
+`SINGULARITY_CACHEDIR`, `SINGULARITY_TMPDIR`, and `RIBOPILOT_REF_DIR` on project
+or scratch space, for example in your lab's `.Renviron` and shell profile.
+
+# Inside a project folder
+
+| Item | What it is | Keep or delete |
+|---|---|---|
+| `.sqlite` | Every result and decision. | Back it up. |
+| `.config` | How the project runs. | Back it up. |
+| `mapping.csv` | A copy of your mapping file. | Back it up. |
+| `.taxonomy/` | The taxonomy copy. | Can be rebuilt: **Assign Taxonomy** downloads it again. |
+| `out/` | Per-sample outputs, and your exports in `out/export/`. | Keep. |
+| `work/` | Nextflow's working files, needed for **Resume previous run?**. | Safe to delete once every sample is locked and exported. |
+| `work_ref/`, `.reference/` | Working files of reference builds. | Safe to delete once every group is Ready. |
+| `.nextflow/` | Nextflow's record of finished work, also needed for Resume. | Delete only together with `work/`. |
+| `nextflow_logs/` | One Nextflow log per run, and the run reports. | Logs; keep while you need them. |
+| `jobs/`, `logs/` | Cluster job scripts and the scheduler's logs. | Logs; keep while you need them. |
+| `.nextflow.log` | The log of a run started from the R console. | Log. |
+| `.ribopilot_run.lock` | Exists only while a run is going. | Leave it alone. |
+
+# What needs the internet
+
+- **The machine that runs Nextflow** downloads the container image (from
+  Docker Hub), a pinned Nextflow version when yours is newer than RiboPilot
+  supports (from GitHub), and the built-in fish reference if a group uses it
+  (from GitHub).
+- **The compute nodes** reach NCBI: to download reference sequences during a
+  run, to BLAST a scaffold at NCBI when the local rDNA panel in the container
+  finds nothing, and for the Reference step's record counts and database builds.
+- **The R session that runs the app** downloads NCBI's taxonomy
+  (ftp.ncbi.nlm.nih.gov) the first time you press **Assign Taxonomy**.
+
+# Running with no internet on compute nodes
+
+1. Where there is internet, pull the image once:
+   `singularity pull ribopilot_<version>.sif docker://macguigand/ribopilot:<version>`.
+2. Create the project with that file as its container, for example
+   `container = "/shared/sif/ribopilot_<version>.sif"` in
+   `RiboPilot::new_project()`.
+3. Set `NXF_VER` to your Nextflow version, and run Nextflow once where there is
+   internet, so that version is cached.
+4. Build the reference databases beforehand, where there is internet.
+5. Optionally, `export NXF_OFFLINE=true`.
+
+An offline run still assembles and annotates every sample. Scaffolds the local
+panel cannot name get the `contaminant_unchecked` flag and the triage flag
+"GenBank screen has not run". Once you are online again, set those samples to
+Ready to run and press **Update** with **Resume previous run?** ticked to fill
+them in.

@@ -132,9 +132,11 @@ RP_TEST_READS_TAG <- "test-reads-2026.09.02"
 
 #' Initialize a RiboPilot test project
 #'
-#' Sets up a ready-to-run test project from the bundled 10-sample test set (USNM
-#' fish genome skims, study SRP313821): downloads each sample's paired reads,
-#' writes the mapping file, and initializes the project database + config.
+#' Sets up a ready-to-run practice project from the bundled test set: 10 fish
+#' genome skims (USNM, study SRP313821) plus two synthetic samples, CHIM00 (a
+#' clean control) and CHIM01 (fish rDNA joined to a Penicillium 28S). Downloads
+#' each fish sample's paired reads, writes the mapping file, and initializes the
+#' project database and config.
 #'
 #' By default the reads are the rDNA-filtered subsets published with the
 #' RiboPilot GitHub releases (a few MB per sample, seconds to fetch). With
