@@ -122,6 +122,29 @@ app_query <- function(sql, params = NULL) {
   if (is.null(params)) DBI::dbGetQuery(con, sql) else DBI::dbGetQuery(con, sql, params = params)
 }
 
+#' Run an app database write, reporting a failure instead of ending the session
+#'
+#' An error inside an observer closes the Shiny session, and a write can fail
+#' while a pipeline task holds the project database.
+#' @param expr The write.
+#' @return TRUE when `expr` ran, FALSE after an error alert.
+#' @noRd
+app_write <- function(expr) {
+  tryCatch({
+    expr
+    TRUE
+  }, error = function(e) {
+    busy <- grepl("locked|busy", conditionMessage(e), ignore.case = TRUE)
+    rp_alert(if (busy) {
+      paste("The project database is busy, most likely because a pipeline run is",
+        "writing to it, so this change was not saved. Wait a moment and try again.")
+    } else {
+      paste("This change was not saved:", conditionMessage(e))
+    }, type = "error", title = if (busy) "Database busy" else "Not saved")
+    FALSE
+  })
+}
+
 #' Is the remote GenBank BLAST switched on for this sample?
 #'
 #' Lets the modal tell "BLAST was never asked for" apart from "BLAST was asked

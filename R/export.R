@@ -22,7 +22,7 @@
 #' @param group Group name.
 #' @noRd
 assign_export_group <- function(path, units, group) {
-  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(path, ".sqlite"))
+  con <- open_project_db(file.path(path, ".sqlite"))
   on.exit(DBI::dbDisconnect(con))
   set_export_group(con, units, group)
   invisible()
@@ -33,7 +33,7 @@ assign_export_group <- function(path, units, group) {
 #' @param units data.frame(ID, path, scaffold) or a character vector of IDs.
 #' @noRd
 clear_export_group <- function(path, units) {
-  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(path, ".sqlite"))
+  con <- open_project_db(file.path(path, ".sqlite"))
   on.exit(DBI::dbDisconnect(con))
   set_export_group(con, units, NA)
   invisible()
@@ -73,7 +73,7 @@ set_export_group <- function(con, units, group) {
 #' @return character vector aligned to `ids`.
 #' @noRd
 sample_assembler <- function(path, ids) {
-  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(path, ".sqlite"))
+  con <- open_project_db(file.path(path, ".sqlite"))
   on.exit(DBI::dbDisconnect(con))
   a <- tryCatch(DBI::dbGetQuery(con,
     "SELECT a.ID, COALESCE(ao.assembler, 'getorganelle') AS assembler
@@ -353,7 +353,7 @@ export_summary_df <- function(con, units) {
   scr <- fetch("SELECT ID, path, scaffold, variant_class, variant_group, variant_identity
                 FROM screen WHERE ID IN (%s)")
   sv <- fetch("SELECT ID, path, scaffold, screen_verdict, lca_taxon FROM screen WHERE ID IN (%s)")
-  nts <- fetch("SELECT ID, path, scaffold, annotate_notes FROM annotate WHERE ID IN (%s)")
+  nts <- fetch("SELECT ID, path, scaffold, curate_flags FROM annotate WHERE ID IN (%s)")
   smp <- fetch("SELECT * FROM samples WHERE ID IN (%s)")
 
   ukey <- unit_key(units$ID, units$path, units$scaffold)
@@ -381,7 +381,7 @@ export_summary_df <- function(con, units) {
       chimera_label = chm_label[i], chimera_reason = chm_reason[i])$note
     # the sequence may be another organism's rDNA, exported under this sample's name
     off <- isTRUE(sv$screen_verdict[svi[i]] == "off_target")
-    notes <- if (is.na(nti[i])) character(0) else strsplit(nts$annotate_notes[nti[i]] %|NA|% "", "; ", fixed = TRUE)[[1]]
+    notes <- if (is.na(nti[i])) character(0) else strsplit(nts$curate_flags[nti[i]] %|NA|% "", "; ", fixed = TRUE)[[1]]
     paste(c(if (nzchar(note)) note,
       if (off) sprintf("off_target(%s)", sv$lca_taxon[svi[i]] %|NA|% "other taxon"),
       if ("contaminant" %in% notes) "contaminant",
@@ -586,7 +586,7 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
                           export_opts = "default", fasta_header = NULL,
                           fasta_header_marker = NULL, itsx_check = TRUE,
                           itsx_cpu = 2L) {
-  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(path, ".sqlite"))
+  con <- open_project_db(file.path(path, ".sqlite"))
   on.exit(DBI::dbDisconnect(con), add = TRUE)
 
   # Export annotation-locked, non-ignored, non-problematic UNITS (one GenBank
@@ -792,7 +792,7 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
 #' @return (invisibly) the export groups exported.
 #' @export
 export_project <- function(path = ".", out_dir = file.path(path, "out")) {
-  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(path, ".sqlite"))
+  con <- open_project_db(file.path(path, ".sqlite"))
   groups <- DBI::dbGetQuery(con, "SELECT DISTINCT export_group FROM annotate WHERE export_group IS NOT NULL")$export_group
   DBI::dbDisconnect(con)
   if (length(groups) == 0) {

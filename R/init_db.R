@@ -547,8 +547,8 @@ new_db <- function(
 
   # annotate (per-unit annotation + curation summary) ----
   # One row per assembly unit (ID, path, scaffold); seeded per unit by
-  # load_assemblies() after assembly. n_flags / annotate_notes filled by curation;
-  # curate_opts selects the per-clade ruleset (see curate_opts table).
+  # load_assemblies() after assembly. n_flags / curate_flags filled by curation,
+  # annotate_notes by the curator; curate_opts selects the per-clade ruleset.
   DBI::dbExecute(
     con,
     "CREATE TABLE annotate (
@@ -564,6 +564,7 @@ new_db <- function(
       curate_opts TEXT,
       n_flags INTEGER,
       annotate_notes TEXT,
+      curate_flags TEXT,
       itsx_warnings TEXT,
       reviewed TEXT,
       problematic TEXT,

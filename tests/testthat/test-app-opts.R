@@ -208,3 +208,81 @@ test_that("saving a database that is missing or empty warns, naming the file", {
     data.frame(seeds_db = NA_character_, labels_db = NA_character_,
       stringsAsFactors = FALSE)), 0L)
 })
+
+# ---- opts modal targeting on a multi-unit sample ----
+
+test_that("the Annotation and Curation options open for a sample with several units", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    session$flushReact()
+    session$setInputs(set_annotate_opts = 1)
+    session$setInputs(set_curate_opts = 1)
+    expect_false(session$isClosed())
+  })
+})
+
+test_that("a sample whose units are all annotation-locked never opens the options for zero samples", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_lock = 1")
+  DBI::dbDisconnect(con)
+
+  seen_n <- integer(0)
+  local_mocked_bindings(annotate_opts_modal = function(cur, choices, n) {
+    seen_n <<- c(seen_n, n); shiny::modalDialog()
+  }, .package = "RiboPilot")
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    session$flushReact()
+    session$setInputs(set_annotate_opts = 1)
+    expect_false(0L %in% seen_n)
+  })
+})
+
+test_that("picking an existing parameter set loads that set's values", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "INSERT INTO annotate_opts VALUES ('alt',16,32,'barrnap','fun','all','')")
+  DBI::dbDisconnect(con)
+
+  seen <- character(0)
+  local_mocked_bindings(annotate_opts_modal = function(cur, choices, n) {
+    seen <<- c(seen, cur$annotate_opts[1]); shiny::modalDialog()
+  }, .package = "RiboPilot")
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    session$flushReact()
+    session$setInputs(set_annotate_opts = 1)
+    session$setInputs(no_edit = TRUE, no_name = "alt")
+    expect_equal(seen, c("default", "alt"))
+  })
+})
+
+test_that("a new set name saved with Edit unticked creates the set", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    session$flushReact()
+    session$setInputs(set_annotate_opts = 1)
+    session$setInputs(no_name = "fresh", no_edit = FALSE, no_cpus = 2, no_mem = 4,
+      no_tool = "pybarrnap", no_kingdom = "euk", no_itsxtaxon = "all", no_itsxopts = "")
+    session$setInputs(update_no = 1)
+    expect_equal(RiboPilot:::app_query(
+      "SELECT COUNT(*) n FROM annotate_opts WHERE annotate_opts = 'fresh'")$n, 1L)
+    expect_equal(unique(RiboPilot:::app_query(
+      "SELECT annotate_opts FROM annotate WHERE ID = 'S1'")$annotate_opts), "fresh")
+  })
+})

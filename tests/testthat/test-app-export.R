@@ -189,7 +189,7 @@ test_that("export asks before shipping a unit flagged as a contaminant", {
   withr::local_dir(dir)
 
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
-  DBI::dbExecute(con, "UPDATE annotate SET export_group = 'g1', reviewed = 'no', annotate_notes = 'contaminant'")
+  DBI::dbExecute(con, "UPDATE annotate SET export_group = 'g1', reviewed = 'no', curate_flags = 'contaminant'")
   DBI::dbDisconnect(con)
   fasta <- file.path(dir, "out", "export", "g1", "g1.fasta")
 
@@ -330,4 +330,20 @@ test_that("export asks before shipping a severe chimera, not a minor one", {
   DBI::dbDisconnect(con)
   go(1)
   expect_false(file.exists(fasta))         # severe: asked, did not act
+})
+
+test_that("a busy database during Assign Group is reported and the session stays open", {
+  skip_if_not_installed("withr")
+  dir <- mk_export_project()
+  withr::local_dir(dir)
+  local_mocked_bindings(set_export_group = function(...) stop("database is locked"),
+    .package = "RiboPilot")
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Export")
+    session$flushReact()
+    session$setInputs(tbl__reactable__selected = 1, group_name = "g")
+    session$setInputs(assign_group_go = 1)
+    expect_false(session$isClosed())
+    expect_true(is.na(RiboPilot:::app_query("SELECT export_group FROM annotate")$export_group))
+  })
 })

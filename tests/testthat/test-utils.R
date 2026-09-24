@@ -53,6 +53,26 @@ test_that("app connections carry the pipeline's busy timeout", {
   expect_equal(DBI::dbGetQuery(acon, "PRAGMA busy_timeout")[[1]], 10000)
 })
 
+test_that("grouping, export, and the run count open the project with the busy timeout", {
+  con <- chimera_test_con()
+  dir <- dirname(DBI::dbGetInfo(con)$dbname)
+  DBI::dbDisconnect(con)
+  real <- RiboPilot::open_project_db
+  opened <- 0L
+  local_mocked_bindings(
+    open_project_db = function(db) { opened <<- opened + 1L; real(db) },
+    .package = "RiboPilot")
+  RiboPilot:::assign_export_group(dir, "S1", "g1")
+  RiboPilot:::clear_export_group(dir, "S1")
+  RiboPilot:::sample_assembler(dir, "S1")
+  RiboPilot:::nf_pending_count(dir)
+  RiboPilot:::project_has_reads(dir)
+  RiboPilot:::reference_mount_dirs(dir)
+  expect_error(RiboPilot::export_bundle(dir), "No annotation-locked units")
+  expect_error(RiboPilot::export_project(dir), "No export groups")
+  expect_equal(opened, 8L)
+})
+
 test_that("filesystem type is probed once per directory", {
   old <- Sys.getenv("RIBOPILOT_SQLITE_JOURNAL", unset = NA)
   on.exit(if (is.na(old)) Sys.unsetenv("RIBOPILOT_SQLITE_JOURNAL") else

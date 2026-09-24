@@ -121,3 +121,13 @@ test_that("a gap between neighbouring features is flagged; one between non-neigh
   f2 <- good_feats()[good_feats()$element %in% c("18S", "5.8S", "28S"), ]
   expect_false("gap" %in% RiboPilot:::curate_rrna_core(f2, RiboPilot:::rrna_params())$flags)
 })
+
+test_that("curation writes its flags to curate_flags and keeps the curator's note", {
+  con <- chimera_test_con(); on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_notes = 'check 3prime end with PCR'")
+  RiboPilot::curate_one(con, "S1", 1L, 1L)
+  a <- DBI::dbGetQuery(con, "SELECT annotate_notes, curate_flags, n_flags FROM annotate WHERE ID = 'S1'")
+  expect_equal(a$annotate_notes, "check 3prime end with PCR")
+  expect_match(a$curate_flags, "missing_18S", fixed = TRUE)
+  expect_gt(a$n_flags, 0)
+})
