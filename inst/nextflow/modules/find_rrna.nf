@@ -56,7 +56,7 @@ process find_rrna_pick {
     errorStrategy 'ignore'
 
     input:
-    tuple val(id), path(assembly), path(gffs)
+    tuple val(id), path(assembly), path(gffs, stageAs: 'chunk_*.gff')
 
     output:
     tuple val(id), path("${id}_assembly_*.fasta"), path('status.txt'), emit: picked

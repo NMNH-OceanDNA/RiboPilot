@@ -17,7 +17,7 @@ score_assembly(
 )
 }
 \arguments{
-\item{path_fastas}{Character vector of per-path fasta files.}
+\item{path_fastas}{Per-path fasta files, each named with its path number last (`<id>_assembly_<n>.fasta`); `n` becomes the `path` column.}
 
 \item{gfa_path}{The assembly graph `.gfa` (for depth). May be NA.}
 

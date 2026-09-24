@@ -90,3 +90,18 @@ test_that("score_assembly carries the top hit's identity into the score", {
   # identical on every other term, so the better identity must rank first
   expect_equal(out$path[1], 2L)
 })
+
+test_that("score_assembly numbers paths from the file names, not the order given", {
+  dir <- withr::local_tempdir()
+  fas <- vapply(1:10, function(k) {
+    f <- file.path(dir, sprintf("S1_assembly_%d.fasta", k))
+    writeLines(c(sprintf(">S1.%d.1 linear scaffold_1", k), strrep("ACGT", 1000 + k)), f)
+    f
+  }, character(1))
+  local_mocked_bindings(assembly_anchors = function(...) c("18S", "28S"), .package = "RiboPilot")
+  # glob order puts _10 before _2 in every locale
+  out <- score_assembly(fas[c(10, 1:9)])
+  expect_equal(out$length[match(1:10, out$path)], 4 * (1000 + 1:10))
+  # every path ties, so the lowest path number wins in any locale
+  expect_equal(out$path[out$auto_select], 1L)
+})

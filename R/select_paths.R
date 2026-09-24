@@ -82,7 +82,7 @@ sseqid_species <- function(sseqid) {
 
 #' Score GetOrganelle candidate paths from real assembly output
 #'
-#' @param path_fastas Character vector of per-path fasta files.
+#' @param path_fastas Per-path fasta files, each named with its path number last (`<id>_assembly_<n>.fasta`); `n` becomes the `path` column.
 #' @param gfa_path The assembly graph `.gfa` (for depth). May be NA.
 #' @param sample_lineage The sample's resolved rank-aligned lineage.
 #' @param sample_taxids The sample's rank-aligned lineage taxids. Preferred over
@@ -106,6 +106,10 @@ score_assembly <- function(path_fastas,
                            weights = DEFAULT_SCORE_WEIGHTS) {
   gd <- if (!is.na(gfa_path) && file.exists(gfa_path)) parse_gfa_depth(gfa_path) else NULL
 
+  pnum <- as.integer(sub(".*[^0-9]([0-9]+)\\.fasta$", "\\1", basename(path_fastas)))
+  path_fastas <- path_fastas[order(pnum)]
+  pnum <- sort(pnum)
+
   per_path <- lapply(seq_along(path_fastas), function(i) {
     fa <- path_fastas[i]
     seqs <- readLines(fa, warn = FALSE)
@@ -120,7 +124,7 @@ score_assembly <- function(path_fastas,
     bh <- if (!is.null(blast_db)) blast_best_hits(fa, blast_db, with_staxids) else data.frame()
     top <- if (nrow(bh) > 0) bh[which.max(bh$bitscore), ] else NULL
     data.frame(
-      path = i,
+      path = pnum[i],
       length = len,
       depth = depth,
       anchors = anchors,
