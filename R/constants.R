@@ -132,8 +132,10 @@ SCAFFOLD_COL_HELP <- list(
   depth = paste("Median read depth per position (a mean is inflated by the conserved",
     "18S/28S cores). The bar compares it with this sample's deepest scaffold:",
     "meaningful within a path, not across paths."),
-  depth_track = paste("Read depth along the scaffold, start to end. A deep dip in the middle",
-    "can mark a place where the assembler joined two pieces that do not belong together."),
+  depth_track = paste("Read depth along the scaffold, start to end. Reads that map equally well",
+    "to two places are left out, so a repeat inside the scaffold shows as a dip. A lasting step",
+    "in depth, not a short dip, can mark a place where the assembler joined two pieces that do",
+    "not belong together."),
   elements = "The rRNA and ITS features annotation found, in the order they sit on the scaffold.",
   itsx_warnings = paste("What stock ITSx (the ITS detection tool; default settings, no organism group, the way NCBI's",
     "Submission Portal runs it) flags on this scaffold: chimera, gap inside the ITS,",
@@ -161,8 +163,9 @@ SCAFFOLD_COL_HELP <- list(
     "contamination). Hover for the list. Per-feature warnings such as length or",
     "truncation are listed in the details view."),
   chimera = paste("Chimera check: whether different parts of this scaffold match different",
-    "lineages or show read-level breakpoints. clean, suspect, or likely. Hover for the",
-    "lineage segments and junction positions. Warns only; never blocks export.")
+    "lineages or show read-level breakpoints. severe: parts match different phyla or",
+    "kingdoms; the export flags the record as chimeric and asks about it. minor: weaker",
+    "evidence, listed in the export report only. clean: nothing found. Hover for the evidence.")
 )
 
 #' Toggle the annotation lock on one unit (used by the bulk lock button and by
@@ -175,11 +178,11 @@ LOCK_UNIT_SQL <- "UPDATE annotate SET annotate_lock = 1 - COALESCE(annotate_lock
 CHIMERA_COL_HELP <- list(
   start = "First base of this stretch of the scaffold (1-based).",
   stop = "Last base of this stretch of the scaffold.",
-  taxon = "Best-hit lineage at class rank, shared by every window in the segment. 'nohit' means no window in the stretch matched the local rDNA panel or decoys.",
+  taxon = "Best-hit lineage at class rank, shared by every window in the segment. 'nohit' means no window in the stretch matched the local rDNA panel or decoys. 'unresolved' means the top hits tie across classes (a conserved stretch), so the windows say nothing about origin.",
   species = "Species of the strongest single hit inside the segment.",
   pident = "Mean percent identity of the windows' best hits.",
   n_windows = "Number of 500 bp windows (step 250) collapsed into this segment.",
-  win_species = "Species of the best hit for this window.",
+  win_species = "Species of the best hit for this window. '+N tied' means N more hits scored about the same, and the lineage is cut back to the rank they share.",
   lineage = "Best-hit lineage, last three ranks shown; hover for the full ranked lineage.",
   win_pident = "Percent identity of the window's best hit.",
   bitscore = "BLAST bit score of the best hit.",

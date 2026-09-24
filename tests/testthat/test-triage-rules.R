@@ -210,8 +210,8 @@ test_that("the screen rule sits after the combination rules and before odd_one_o
   expect_equal(k[length(k) - 1], "odd_one_out")
 })
 
-test_that("triage rule chimeric fires on likely with the reason text", {
-  d <- data.frame(ID = "S1", chimera_label = c("likely", "suspect"),
+test_that("triage rule chimeric fires on severe with the reason text", {
+  d <- data.frame(ID = "S1", chimera_label = c("severe", "minor"),
     chimera_reason = c("1-2500 A; 2600-4000 B", "x"),
     annotated_n = 1L, is_nuclear_rrna = 1L, n_features = 3L, stringsAsFactors = FALSE)
   ctx <- RiboPilot:::triage_rule_ctx(d)

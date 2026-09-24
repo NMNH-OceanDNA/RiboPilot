@@ -112,30 +112,40 @@ test_that("submission_risks flags chimeric, in-span gaps, and misassembly", {
   expect_true(RiboPilot:::submission_risks(con, "BAD")$misassembly)
 })
 
-test_that("risk_flags reports suspect and likely chimera labels", {
-  r <- RiboPilot:::risk_flags(0L, NULL, NA_character_, chimera_label = "suspect", chimera_reason = "why")
+test_that("risk_flags flags a severe chimera or ITSx's call, never a minor one", {
+  r <- RiboPilot:::risk_flags(0L, NULL, NA_character_, chimera_label = "severe", chimera_reason = "why")
   expect_true(r$chimeric)
-  expect_match(r$note, "chimeric")
+  expect_equal(r$note, "chimeric(why)")
+  m <- RiboPilot:::risk_flags(0L, NULL, NA_character_, chimera_label = "minor", chimera_reason = "why")
+  expect_false(m$chimeric)
+  expect_equal(m$note, "")
   expect_false(RiboPilot:::risk_flags(0L, NULL, NA_character_, chimera_label = "clean")$chimeric)
+  expect_equal(RiboPilot:::risk_flags(1L, NULL, NA_character_, chimera_label = "minor", chimera_reason = "why")$note,
+    "chimeric(ITSx)")
 })
 
 test_that("risk_flags strips ';' out of the embedded chimera reason", {
-  r <- RiboPilot:::risk_flags(0L, NULL, NA_character_, chimera_label = "likely",
+  r <- RiboPilot:::risk_flags(0L, NULL, NA_character_, chimera_label = "severe",
     chimera_reason = "18S resolves to Fish; 28S to Fungi")
   paren <- sub("^chimeric\\((.*)\\)$", "\\1", r$note)
   expect_false(grepl(";", paren, fixed = TRUE))
   expect_match(paren, "18S resolves to Fish, 28S to Fungi", fixed = TRUE)
 })
 
-test_that("export_summary_df reads the chimera table into submission_risk", {
+test_that("export_summary_df puts a severe chimera in submission_risk and a minor one in chimera_warning", {
   con <- chimera_test_con()
   on.exit(DBI::dbDisconnect(con))
   DBI::dbExecute(con, "INSERT INTO assemblies (ID, path, scaffold, sequence, length) VALUES ('S1',1,1,'ACGT',4)")
   DBI::dbExecute(con, "INSERT OR IGNORE INTO annotate (ID, path, scaffold) VALUES ('S1',1,1)")
-  DBI::dbExecute(con, "INSERT INTO chimera (ID, path, scaffold, label, reason) VALUES ('S1',1,1,'likely','18S vs 28S mismatch')")
+  DBI::dbExecute(con, "INSERT INTO chimera (ID, path, scaffold, label, reason) VALUES ('S1',1,1,'severe','18S vs 28S mismatch')")
   units <- data.frame(ID = "S1", path = 1L, scaffold = 1L, seqid = "S1", stringsAsFactors = FALSE)
   smry <- RiboPilot:::export_summary_df(con, units)
   expect_match(smry$submission_risk, "chimeric")
+  expect_equal(smry$chimera_warning, "")
+  DBI::dbExecute(con, "UPDATE chimera SET label = 'minor', reason = 'depth step at 3000'")
+  smry <- RiboPilot:::export_summary_df(con, units)
+  expect_false(grepl("chimeric", smry$submission_risk))
+  expect_equal(smry$chimera_warning, "depth step at 3000")
 })
 
 test_that("export_summary_df puts off_target and contaminant into submission_risk", {
@@ -156,7 +166,8 @@ test_that("export_summary_df puts off_target and contaminant into submission_ris
   DBI::dbExecute(con, "UPDATE screen SET screen_verdict = 'on_target'")
   risk <- RiboPilot:::export_summary_df(con, units)$submission_risk
   expect_false(RiboPilot:::has_screen_risk(risk))
-  expect_false(any(RiboPilot:::has_screen_risk(c(NA, "", "chimeric", "missing_organism"))))
+  expect_equal(RiboPilot:::has_screen_risk(c(NA, "", "chimeric(ITSx)", "gap_in_rDNA", "missing_organism")),
+    c(FALSE, FALSE, TRUE, FALSE, FALSE))
 })
 
 test_that("feature_map_svg_text draws one arrow per element, in order, in palette colours", {

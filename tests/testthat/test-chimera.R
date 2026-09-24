@@ -70,7 +70,29 @@ test_that("per-gene LCA uses only HSPs covering half the element", {
   ch <- RiboPilot:::chimera_channel_genes(g, feats)
   expect_equal(ch$score, 0.6)
   expect_equal(ch$junctions, 2400L)
-  expect_match(ch$reason, "18S.*Salmo salar.*28S.*Penicillium")
+  expect_match(ch$reason, "18S.*Salmo salar.*28S.*Penicillium.*different kingdom")
+  expect_true(ch$severe)
+})
+
+test_that("the gene channel treats an ancestor as agreement and grades real switches", {
+  gt <- function(lt2, pid2 = 99) data.frame(element = c("18S", "5.8S"), taxon = c("A", "B"),
+    rank = NA_character_, taxid = NA_integer_, species = "sp", pident = c(99, pid2), n_hits = 3L,
+    lineage_taxids = c("33208;7711;186623;;;;", lt2), stringsAsFactors = FALSE)
+  anc <- data.frame(element = c("18S", "5.8S"), taxon = c("Chordata", "Pleuronectiformes"),
+    rank = NA_character_, taxid = NA_integer_, species = "sp", pident = 99, n_hits = 3L,
+    lineage_taxids = c("33208;7711;;;;;", "33208;7711;186623;8256;;;"), stringsAsFactors = FALSE)
+  anc_ch <- RiboPilot:::chimera_channel_genes(anc)
+  expect_equal(anc_ch$score, 0.3)
+  expect_false(anc_ch$severe)
+  anc_deep <- data.frame(element = c("18S", "5.8S"), taxon = c("Actinopterygii", "Pleuronectiformes"),
+    rank = NA_character_, taxid = NA_integer_, species = "sp", pident = 99, n_hits = 3L,
+    lineage_taxids = c("33208;7711;186623;;;;", "33208;7711;186623;8256;;;"), stringsAsFactors = FALSE)
+  expect_equal(RiboPilot:::chimera_channel_genes(anc_deep)$score, 0)
+  cls <- RiboPilot:::chimera_channel_genes(gt("33208;7711;40674;;;;"))
+  expect_equal(cls$score, 0.6)
+  expect_false(cls$severe)
+  expect_true(RiboPilot:::chimera_channel_genes(gt("4751;4890;147545;;;;"))$severe)
+  expect_false(RiboPilot:::chimera_channel_genes(gt("4751;4890;147545;;;;", pid2 = 85))$severe)
 })
 
 test_that("an element with too few covering hits is unresolved and does not vote", {
@@ -110,6 +132,30 @@ test_that("segments collapse adjacent windows sharing a class", {
   expect_equal(ch$junctions, 2375L)
   expect_match(ch$reason, "Actinopterygii")
   expect_match(ch$reason, "Penicillium")
+  expect_true(ch$severe)
+})
+
+test_that("window hits tied at the top bitscore resolve to the rank they share", {
+  hits <- data.frame(qseqid = c("w1_500", "w1_500", "w251_750"), accession = c("XR_1", "OP_1", "OP_2"),
+    title = c("Canis aureus 28S ribosomal RNA", "Paralichthys sp. 28S ribosomal RNA", "Paralichthys sp. 28S ribosomal RNA"),
+    staxid = c(1L, 2L, 2L), pident = c(100, 99.8, 99), bitscore = c(924, 918, 900), stringsAsFactors = FALSE)
+  fake_lin <- function(taxids, dir) data.frame(taxid = c(1L, 2L),
+    lineage = c("Metazoa;Chordata;Mammalia;Carnivora;Canidae;Canis;Canis aureus",
+                "Metazoa;Chordata;Actinopteri;Pleuronectiformes;Paralichthyidae;Paralichthys;Paralichthys sp."),
+    lineage_taxids = c("33208;7711;40674;33554;9608;9611;44565", "33208;7711;186623;8256;8257;8258;8259"),
+    stringsAsFactors = FALSE)
+  testthat::local_mocked_bindings(tk_ranked_lineage = fake_lin, .package = "RiboPilot")
+  w <- RiboPilot:::chimera_window_hits(hits, data.frame(start = c(1L, 251L), stop = c(500L, 750L)))
+  expect_equal(RiboPilot:::chimera_rank_name(w$lineage, "class"), c(NA, "Actinopteri"))
+  expect_match(w$species[1], "+1 tied", fixed = TRUE)
+  expect_equal(RiboPilot:::chimera_segments(w)$taxon, c("unresolved", "Actinopteri"))
+  fish <- "33208;7711;186623;8256;8257;8258;8259"
+  s <- RiboPilot:::chimera_segments(rbind(
+    chim_win(seq(1, 751, 250), "Metazoa;Chordata;Actinopteri;o;f;g;s", fish),
+    chim_win(seq(1001, 1501, 250), "Metazoa;Chordata;;;;;", "33208;7711;;;;;"),
+    chim_win(seq(1751, 2501, 250), "Metazoa;Chordata;Actinopteri;o;f;g;s", fish)))
+  expect_equal(s$taxon, c("Actinopteri", "unresolved", "Actinopteri"))
+  expect_equal(RiboPilot:::chimera_channel_windows(s)$score, 0)
 })
 
 test_that("a sliver segment cannot fire the window channel", {
@@ -175,38 +221,49 @@ test_that("depth steps ignore feature edges", {
   expect_equal(RiboPilot:::chimera_depth_steps(dep, data.frame(element = character(0), start = integer(0), stop = integer(0))), 1000L)
 })
 
-test_that("clip pileups need depth and fraction", {
-  dep <- rep(20, 500); cl <- integer(500); cl[300] <- 8; cl[10] <- 8
-  expect_equal(RiboPilot:::chimera_clip_pileups(dep, cl), 300L)
+test_that("clip pileups need depth and fraction and skip the scaffold ends", {
+  dep <- rep(20, 1000); cl <- integer(1000); cl[500] <- 9; cl[100] <- 9; cl[700] <- 7
+  expect_equal(RiboPilot:::chimera_clip_pileups(dep, cl), 500L)
   ch <- RiboPilot:::chimera_channel_reads(dep, cl, data.frame(element = character(0), start = integer(0), stop = integer(0)))
   expect_equal(ch$score, 0.7)
-  expect_equal(ch$junctions, 300L)
+  expect_equal(ch$junctions, 500L)
 })
+
+test_that("depth steps skip repeats, scaffold ends, and thin coverage", {
+  set.seed(1)
+  rnd <- function(n) paste(sample(c("A", "C", "G", "T"), n, TRUE), collapse = "")
+  none <- data.frame(element = character(0), start = integer(0), stop = integer(0))
+  dip <- rep(60, 4600); dip[2001:2600] <- 5
+  expect_length(RiboPilot:::chimera_depth_steps(dip, none, paste0(rnd(2000), strrep(rnd(100), 6), rnd(2000))), 0)
+  expect_true(length(RiboPilot:::chimera_depth_steps(dip, none, rnd(4600))) > 0)
+  expect_length(RiboPilot:::chimera_depth_steps(c(rep(60, 4200), rep(5, 400)), none, rnd(4600)), 0)
+  expect_length(RiboPilot:::chimera_depth_steps(c(rep(15, 2300), rep(3, 2300)), none, rnd(4600)), 0)
+  expect_equal(RiboPilot:::chimera_depth_steps(c(rep(60, 2300), rep(10, 2300)), none, rnd(4600)), 2250L)
+})
+
 
 chim_ch <- function(score, junctions = integer(0), availability = "available") {
   list(score = score, junctions = junctions, reason = "r", availability = availability)
 }
 
-test_that("taxonomy-only evidence caps at suspect", {
-  s <- RiboPilot:::chimera_score(list(genes = chim_ch(0.6, 2400L), windows = chim_ch(0.5, 2375L),
-    ribotyper = chim_ch(0, availability = "unavailable"), reads = chim_ch(0, availability = "unavailable")))
-  expect_equal(s$score, 0.7)
-  expect_equal(s$label, "suspect")
-})
-
-test_that("corroborated junctions add a bonus and read evidence can reach likely", {
-  s <- RiboPilot:::chimera_score(list(genes = chim_ch(0.6, 2400L), windows = chim_ch(0.5, 2375L),
+test_that("only a severe channel makes a severe label; other evidence is minor", {
+  sev <- RiboPilot:::chimera_score(list(genes = chim_ch(0.6, 2400L), windows = c(chim_ch(0.5, 2375L), severe = TRUE),
     ribotyper = chim_ch(0), reads = chim_ch(0.7, 2410L)))
-  expect_equal(s$score, 0.95)
-  expect_equal(s$label, "likely")
-  expect_equal(s$junctions, 2375L)
+  expect_equal(sev$label, "severe")
+  expect_equal(sev$junctions, 2375L)
+  reads <- RiboPilot:::chimera_score(list(genes = chim_ch(0), windows = chim_ch(0),
+    ribotyper = chim_ch(0), reads = chim_ch(0.4, 3000L)))
+  expect_equal(reads$label, "minor")
+  itsx <- RiboPilot:::chimera_score(list(genes = chim_ch(0), windows = chim_ch(0),
+    ribotyper = chim_ch(0.2), reads = chim_ch(0)))
+  expect_equal(itsx$label, "clean")
 })
 
 test_that("labels follow the thresholds", {
   expect_equal(RiboPilot:::chimera_label(0.29), "clean")
-  expect_equal(RiboPilot:::chimera_label(0.3), "suspect")
-  expect_equal(RiboPilot:::chimera_label(0.7), "suspect")
-  expect_equal(RiboPilot:::chimera_label(0.71), "likely")
+  expect_equal(RiboPilot:::chimera_label(0.3), "minor")
+  expect_equal(RiboPilot:::chimera_label(0.9), "minor")
+  expect_equal(RiboPilot:::chimera_label(0.1, severe = TRUE), "severe")
 })
 
 test_that("chimera_unit writes lineage-bearing rows with mocked tools", {
@@ -238,7 +295,7 @@ test_that("chimera_unit writes lineage-bearing rows with mocked tools", {
   testthat::local_mocked_bindings(chimera_run_blastn = fake_blast, chimera_run_ribotyper = fake_rt,
     tk_ranked_lineage = fake_lin, .package = "RiboPilot")
   r <- RiboPilot:::chimera_unit(con, "S1", 1L, 1L, dbarg = "panel", taxdump_dir = NULL)
-  expect_equal(r$label, "likely")
+  expect_equal(r$label, "severe")
   w <- DBI::dbGetQuery(con, "SELECT start, lineage FROM chimera_windows WHERE ID='S1' ORDER BY start")
   expect_gt(nrow(w), 10)
   expect_match(w$lineage[1], "Actinopterygii")
@@ -321,14 +378,14 @@ test_that("scaffold column help and badge exist", {
   expect_true(nzchar(RiboPilot:::SCAFFOLD_COL_HELP$chimera))
   js <- RiboPilot:::rt_chimera_badge()
   expect_s3_class(js, "JS_EVAL")
-  expect_match(as.character(js), "likely")
+  expect_match(as.character(js), "severe")
 })
 
 test_that("plot_chimera builds from stored windows and segments", {
   con <- chimera_test_con()
   db <- DBI::dbGetInfo(con)$dbname
   DBI::dbExecute(con, "INSERT INTO annotations (ID, path, scaffold, element, start, stop) VALUES ('S1',1,1,'18S',1,1800)")
-  DBI::dbExecute(con, "INSERT INTO chimera (ID, path, scaffold, score, label, junctions, segments) VALUES ('S1',1,1,0.9,'likely','2375',
+  DBI::dbExecute(con, "INSERT INTO chimera (ID, path, scaffold, score, label, junctions, segments) VALUES ('S1',1,1,0.9,'severe','2375',
     '[{\"start\":1,\"stop\":2500,\"taxon\":\"Actinopterygii\",\"rank\":\"class\",\"species\":\"Salmo salar\",\"pident\":99,\"n_windows\":10},
       {\"start\":2251,\"stop\":4500,\"taxon\":\"Eurotiomycetes\",\"rank\":\"class\",\"species\":\"Penicillium sp.\",\"pident\":97,\"n_windows\":9}]')")
   DBI::dbExecute(con, "INSERT INTO chimera_windows (ID, path, scaffold, start, stop, pident, lineage) VALUES ('S1',1,1,1,500,99,'a;b;Actinopterygii'), ('S1',1,1,2251,2750,97,'f;a;Eurotiomycetes')")

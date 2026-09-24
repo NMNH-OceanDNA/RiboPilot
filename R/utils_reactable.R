@@ -405,7 +405,7 @@ rt_screen_badge <- function() {
     }")
 }
 
-#' Render the chimera check verdict: clean, suspect, or likely, with the
+#' Render the chimera check verdict: clean, minor, or severe, with the
 #' reason as a hover tooltip.
 #' @noRd
 rt_chimera_badge <- function() {
@@ -415,7 +415,7 @@ rt_chimera_badge <- function() {
       if (v === null || v === undefined || v === '' || v === 'NA') return '';
       var tone;
       if (v === 'clean')        { tone = 'success'; }
-      else if (v === 'likely')  { tone = 'danger'; }
+      else if (v === 'severe')  { tone = 'danger'; }
       else                      { tone = 'warning'; }
       var tip = cellInfo.row.chimera_reason || '';
       return '<span title=\"' + String(tip).replace(/\"/g, '&quot;') + '\" class=\"mp-pill mp-pill-' + tone + '\">' + v + '</span>';
@@ -665,8 +665,8 @@ rt_bool_bttn <- function(inputId, ticon, ficon, title_true = NULL,
 #'
 #' Shown because a curator deciding keep/drop should see coverage shape, and
 #' deliberately not used by any rule: high depth is often k-mer collapse across
-#' the conserved core or IGS subrepeats, and low depth is often isomer paths
-#' splitting reads.
+#' the conserved core or IGS subrepeats, and low depth is often a repeat inside
+#' the scaffold, where reads map to two places and are left out.
 #' @noRd
 rt_depth_sparkline <- function() {
   htmlwidgets::JS(

@@ -300,3 +300,34 @@ test_that("assigning a group across two assemblers offers a split", {
     expect_equal(groups(), c("one", "one"))
   })
 })
+
+test_that("export asks before shipping a severe chimera, not a minor one", {
+  skip_if_not_installed("withr")
+  dir <- mk_export_project()
+  withr::local_dir(dir)
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE annotate SET export_group = 'g1', reviewed = 'no'")
+  DBI::dbExecute(con, "INSERT INTO chimera (ID, path, scaffold, label, reason) VALUES ('S1',1,1,'minor','depth step at 300')")
+  DBI::dbDisconnect(con)
+  fasta <- file.path(dir, "out", "export", "g1", "g1.fasta")
+  go <- function(n) shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Export")
+    session$setInputs(export_group_sel = "g1",
+      fasta_header = RiboPilot:::DEFAULT_FASTA_HEADER,
+      fasta_header_marker = RiboPilot:::DEFAULT_FASTA_HEADER_MARKER,
+      export_markers = FALSE, export_report = FALSE)
+    settle(session)
+    session$setInputs(export_go = n)
+    settle(session)
+  })
+
+  go(1)
+  expect_true(file.exists(fasta))          # minor: no question asked
+
+  unlink(file.path(dir, "out"), recursive = TRUE)
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE chimera SET label = 'severe', reason = '1-250 Actinopteri; 251-600 Eurotiomycetes'")
+  DBI::dbDisconnect(con)
+  go(1)
+  expect_false(file.exists(fasta))         # severe: asked, did not act
+})
