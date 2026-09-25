@@ -288,7 +288,8 @@ the ticked units, or the buttons at the top of a unit's window:
 | **Exclude from export** | This unit should not be submitted. | The unit is left out of every export, and the Export window says so. **Include in export** undoes it. |
 | **Mark Partial** | The unit does not hold a complete repeat. | Its first and last genes are written as partial. |
 
-**Lock & Close** locks the unit, but does not mark it Reviewed.
+**Lock** locks the unit and keeps the window open; **Lock & Close** locks it and
+closes the window. Neither marks it Reviewed.
 
 A locked unit is read only. To change its boundaries, trim it, restore it, or
 change its marks, unlock it first. Only units that are locked here, and whose

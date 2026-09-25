@@ -396,7 +396,7 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
       mp_footer(primary = actionButton("annotate_close", "Close"), dismiss = NULL)
     } else {
       mp_footer(primary = actionButton("lock_and_close", "Lock & Close"), dismiss = NULL,
-        extra = actionButton("annotate_close", "Close"))
+        extra = tagList(actionButton("annotate_close", "Close"), actionButton("modal_lock", "Lock")))
     }),
     modal_taxon_header(id),
     if (locked) div(class = "alert alert-warning", role = "status", icon("lock"), " ", MP_UNIT_LOCKED),

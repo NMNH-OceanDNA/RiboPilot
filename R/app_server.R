@@ -2374,17 +2374,23 @@ app_server <- function(input, output, session) {
     if (edits_block()) return()
     removeModal()
   })
-  observeEvent(input$lock_and_close, {
+  lock_unit <- function() {
     u <- sel_unit(); req(u)
-    if (edits_block()) return()
-    if (!need_one_path(as.data.frame(u))) return()
+    if (edits_block()) return(FALSE)
+    if (!need_one_path(as.data.frame(u))) return(FALSE)
     con <- app_con()
     on.exit(DBI::dbDisconnect(con))
     if (!app_write(DBI::dbExecute(con,
       "UPDATE annotate SET annotate_lock = 1 WHERE ID = ? AND path = ? AND scaffold = ?",
-      params = uargs()))) return()
+      params = uargs()))) return(FALSE)
     refresh(refresh() + 1)
-    removeModal()
     rp_toast("1 unit locked - ready to export.", type = "message")
+    TRUE
+  }
+  observeEvent(input$lock_and_close, if (lock_unit()) removeModal())
+  # Lock and stay: redraw the window so it shows the unit read only.
+  observeEvent(input$modal_lock, if (lock_unit()) {
+    u <- sel_unit()
+    showModal(annotate_modal(u$ID, u$path, u$scaffold))
   })
 }

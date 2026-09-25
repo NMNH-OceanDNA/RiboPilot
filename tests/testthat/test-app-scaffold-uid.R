@@ -471,6 +471,20 @@ test_that("a second assembly path is refused from the toolbar and from Lock & Cl
     session$setInputs(lock_and_close = 2)
     session$flushReact()
     expect_equal(locks()$lock, c(1L, 1L, 0L, 0L))
+
+    # Lock keeps the window open and follows the same rules
+    c2 <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+    DBI::dbExecute(c2, "UPDATE annotate SET annotate_lock = 0 WHERE path = 1 AND scaffold = 2")
+    DBI::dbDisconnect(c2)
+    sel_unit(list(ID = "S1", path = 1L, scaffold = 2L))
+    session$setInputs(modal_lock = 1)
+    session$flushReact()
+    expect_equal(locks()$lock, c(1L, 1L, 0L, 0L))
+    expect_equal(locks()$reviewed[2], "no")
+    sel_unit(list(ID = "S1", path = 2L, scaffold = 1L))
+    session$setInputs(modal_lock = 2)
+    session$flushReact()
+    expect_equal(locks()$lock, c(1L, 1L, 0L, 0L))
   })
 })
 
