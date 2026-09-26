@@ -273,6 +273,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: scoring and loading glob `out/<ID>/assemble/<ID>_assembly_*.fasta` and `*.gfa`. `publishDir` with `overwrite: true` replaces files with the same name but never deletes the others, and nothing in `R/` or the `.nf` files clears the folder. Reproduced twice: a first run published paths 1 and 2, a rerun published only path 1, and the database ended with the new path 1 plus the old path 2. Nextflow also documents that publishing is asynchronous, so a downstream task should not read the publish folder at all.
 - Why it matters: after a rerun that yields fewer paths (new options, a lower max_paths, or a switch to the bait fallback), old paths are loaded, scored, annotated, and BLASTed as current, and can be auto-selected and exported next to the new assembly. Scoring may also read an old graph file. This is silent. (The common "GetOrganelle failed, then fallback" case writes only the `_0` marker, which is skipped, so that case is safe.)
 - Fix: have `rp_score.R` and `load_assemblies()` read the files staged into the score task (the process already receives `path(fastas)`; pass the graph through the channel too), not the publish folder. As a stopgap, delete `out/<ID>/assemble/<ID>_assembly_*` at the start of each assembly.
+- Status: fixed on `review/2026-09-full-review` (third batch, re-runs). See [Third batch](REVIEW_SUMMARY.md#third-batch-re-runs-caching-blast-and-visibility).
 
 **PIPE-H2. On the local executor, a memory request larger than the machine ends the whole run**
 - Ids: C-nextflow-7. Severity: high. Status: confirmed.
@@ -313,6 +314,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: a unit is skipped as "already searched" when its sequence md5 matches `blast_searched.query_md5`. The check ignores the source (local or remote), Entrez query, extra options, `max_target_seqs`, and panel version, and no code ever deletes `blast_searched` rows. Changing BLAST options only re-queues assembly, which usually gives back the same sequence.
 - Why it matters: switching to remote BLAST, installing a panel, or changing the Entrez query has no effect, with no message. A unit whose remote escalation failed once is never retried. The old hits stay valid, so nothing is corrupted.
 - Fix: store a hash of the effective settings with the md5 and compare both, or clear `blast_searched` for samples whose BLAST options changed. A per-sample "search again" action would also help.
+- Status: fixed on `review/2026-09-full-review` (third batch, BLAST). See [Third batch](REVIEW_SUMMARY.md#third-batch-re-runs-caching-blast-and-visibility).
 
 **PIPE-M2. Reference count and build runs break `-resume` for the main pipeline**
 - Ids: C-nextflow-9 (medium), C-shiny-32 (low, unverified-low). Severity: medium. Status: confirmed (C-shiny-32 unverified-low).
@@ -328,6 +330,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: state 4 means "annotation pending", but `query_samples` treats 4 as "assemble". Changing annotate or curate options sets units back to pending, the sample moves to 4, and the next run re-assembles it while the unit query picks nothing. Reproduced: a trimmed, edited unit came back as the raw sequence.
 - Why it matters: trims and undo snapshots are lost, and any ignored annotation failure also keeps a sample at 4, so it is re-assembled on every run. It needs the assembly to be unlocked; the verifier found the locked-unit part of the claim is not reachable from the app.
 - Fix: give "annotation pending" its own state (or make `query_samples` select only 1), and have `refresh_sample_state()` ignore locked units.
+- Status: fixed on `review/2026-09-full-review` (third batch, re-run state). See [Third batch](REVIEW_SUMMARY.md#third-batch-re-runs-caching-blast-and-visibility).
 
 **PIPE-M4. `-resume` reuses an old fallback assembly after its options change**
 - Ids: C-nextflow-6. Severity: medium (was high). Status: confirmed.
@@ -335,6 +338,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: the task's inputs are only id, reads, cpus, memory, and method. The seeds and labels databases and the bowtie2 and SPAdes options are read from the database at run time, so they are not part of Nextflow's cache key.
 - Why it matters: after changing SPAdes options or the reference database for a bait-assembled sample, Nextflow reports the task as cached and reloads the old assembly. Unticking Resume works around it.
 - Fix: pass seeds and labels as `path` inputs and the tool options as `val` inputs, as the GetOrganelle arm already does.
+- Status: fixed on `review/2026-09-full-review` (third batch, re-runs). See [Third batch](REVIEW_SUMMARY.md#third-batch-re-runs-caching-blast-and-visibility).
 
 **PIPE-M5. Max paths 0 crashes GetOrganelle, and the max-paths gate can never fire**
 - Ids: C-nextflow-10. Severity: medium. Status: confirmed.
@@ -358,6 +362,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: this step writes the sample state, notes, and candidates to the database, and reads `max_scaffolds` from the database, but it is not `cache false` and its inputs do not change on a re-queue.
 - Why it matters: re-queue a supplied assembly that found no rDNA (for example after raising max_scaffolds), and with `-resume` the step is cached, nothing updates the row, and the sample shows "queued" forever.
 - Fix: add `cache false` to `find_rrna_pick` and `stage_assembly` (both are cheap and write to the database), or pass `max_scaffolds` as an input.
+- Status: fixed on `review/2026-09-full-review` (third batch, re-runs). See [Third batch](REVIEW_SUMMARY.md#third-batch-re-runs-caching-blast-and-visibility).
 
 **PIPE-M8. A failed `find_rrna_scan` chunk silently shrinks the search**
 - Ids: C-nextflow-16. Severity: medium. Status: confirmed.
@@ -365,6 +370,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: a scan chunk that fails is ignored, and the pick step just combines whatever chunk results arrived.
 - Why it matters: if the chunk that held the rDNA contig fails (memory, pre-emption), the sample is recorded as "no rRNA genes found in the supplied assembly", with no warning. Rare, but silent and wrong.
 - Fix: retry or stop on scan failure, and have the pick step check it got every chunk (`groupTuple(size:)` or `groupKey`).
+- Status: fixed on `review/2026-09-full-review` (third batch, re-runs). See [Third batch](REVIEW_SUMMARY.md#third-batch-re-runs-caching-blast-and-visibility).
 
 **PIPE-M9. Samples below minDepth are silently skipped and stay queued; the depth unit does not match the docs**
 - Ids: C-nextflow-17. Severity: medium. Status: confirmed.
@@ -425,6 +431,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: sending seedless samples to the bait method is intended. But when the labels database is blank or unreachable, `extract_rdna_contigs()` keeps every contig, and `bait_reads()` falls back to all reads. None of the fallback assembler functions are tested.
 - Why it matters: SPAdes runs on the full genome-skim read set for hours and every contig of 300 bp or more is written as an "rDNA" scaffold. The default `max_scaffolds = 10` gate usually fails the sample afterward; with the gate at 0, thousands of contigs go on to BLAST and annotation. The app blocks missing file databases, so this needs a blank or dead database.
 - Fix: when the rDNA filter cannot run, keep nothing and write a clear note (fail closed). Add tests for `fallback_assemble_one()` and `extract_rdna_contigs()` with fake `bowtie2`, `spades.py`, and `blastn` on PATH.
+- Status: fixed on `review/2026-09-full-review` (third batch, science). See [Third batch](REVIEW_SUMMARY.md#third-batch-re-runs-caching-blast-and-visibility).
 
 **PIPE-M17. BLAST database provenance is never recorded in container runs**
 - Ids: C-tests-1. Severity: medium (was high). Status: confirmed.
@@ -514,6 +521,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: `load_assemblies()` rewrites the sample's `assemblies` rows and carries over only `ignore`, matched on the path and scaffold numbers. The triage, reason, source, and rule columns come back empty. `auto_triage_sample()` skips only rows whose source is "user", so the carried-over drop now looks undecided and is re-decided. Reproduced: a user drop went to "ignore 1, no source" after re-assembly, then to "keep, auto, ignore 0" after triage. Matching by number also means that if contigs come back in a different order, the drop lands on the wrong scaffold. The code comment promises to carry curator decisions.
 - Why it matters: a scaffold the curator rejected goes back into Annotation Review with no record it was ever rejected, and can be locked and exported. Existing tests miss it because they set `ignore = 1` directly instead of going through `set_unit_triage()`.
 - Fix: carry all four triage columns with `ignore`, and do not discard user decisions on the gate path. Better, key the carry-over on a hash of the sequence (see DB-H1). Add a test: user drop, then `load_assemblies()`, then `auto_triage_sample()`.
+- Status: fixed on `review/2026-09-full-review` (third batch, re-run state). See [Third batch](REVIEW_SUMMARY.md#third-batch-re-runs-caching-blast-and-visibility).
 
 **SCI-M6. The feature model takes the first hit per gene, so a partial leading copy replaces the real anchor**
 - Ids: C-science-6, C-tests-6. Severity: medium (C-science-6 was high). Status: confirmed (both).
@@ -529,6 +537,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: the screen step, which also runs `screen_variants()`, waits only for BLAST, which runs in parallel with annotation. In the test project, SRR14433904 has 10 identical paths; the screen ran 2 to 8 seconds before 9 of the 10 were annotated, so one unit is stored as "singleton" and nine as NA. Rerunning now gives "isomer" for all 10.
 - Why it matters: the curator reads "singleton, the sample's only comparable unit" for a sample with 10 copies. These columns are information only, with no gating.
 - Fix: call `screen_variants()` from `auto_triage_sample()` (which already waits for curation and chimera), or make the screen wait for reconcile for that sample.
+- Status: fixed on `review/2026-09-full-review` (third batch, science). See [Third batch](REVIEW_SUMMARY.md#third-batch-re-runs-caching-blast-and-visibility).
 
 **SCI-M8. Coverage names like "1.10" are read as the number 1.1, merging two scaffolds' depth tracks**
 - Ids: C-science-9. Severity: medium (was high). Status: confirmed.
@@ -544,6 +553,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: `download.file()` throws on an HTTP error, but `local_ref()` only checks a return code, and `score_one()` calls it with no `tryCatch`. Reproduced with the default seeds URL (currently 404).
 - Why it matters: the default seeds database is a URL. On a compute node with no internet, or with a dead URL, a successfully assembled sample gets no BLAST, coverage, annotation, or triage, and the only error is in the Nextflow log.
 - Fix: wrap the download in `tryCatch` and return `NA` (the callers already handle `NA`), or reuse the seeds file Nextflow already staged for the assembler.
+- Status: fixed on `review/2026-09-full-review` (third batch, science). See [Third batch](REVIEW_SUMMARY.md#third-batch-re-runs-caching-blast-and-visibility).
 
 #### Low
 
@@ -717,6 +727,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: efetch returns PDB records as `>pdb|4V6X|A5 Chain A5, 28S ribosomal RNA`, and the record is stored as `pdb|4V6X|A5` while the candidate table uses `4V6X_A5`. The title still classifies as rDNA, and the species becomes "Chain A5,". `build_refdb.sh` already converts `pdb|X|Y` to `X_Y`, and the local panel holds 298 PDB records.
 - Why it matters: for hosts with ribosome structures (human, rabbit, yeast, Drosophila, parasites), a full-length near-identical PDB chain ranks first, and reference-guided alignment is silently skipped. The record is fetched again every run.
 - Fix: apply the same `pdb|X|Y` to `X_Y` rule in `parse_defline_ids()` (and `push_to_ref_store()`), or exclude PDB accessions as reference candidates.
+- Status: fixed on `review/2026-09-full-review` (third batch, BLAST). See [Third batch](REVIEW_SUMMARY.md#third-batch-re-runs-caching-blast-and-visibility).
 
 **REF-M6. Concurrent taxonomy-index builds share one temp file and can install a broken index**
 - Ids: C-refdata-12. Severity: medium. Status: confirmed.

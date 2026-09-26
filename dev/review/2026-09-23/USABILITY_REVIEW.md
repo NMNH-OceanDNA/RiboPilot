@@ -242,6 +242,7 @@ Each item gives its id(s), severity, status, location, the problem, why it matte
   - Dropping a sample's only scaffold leaves the green check; the only cue is a red "0" in # Kept.
 - Why it matters: a user reads green as "good" and locks it. This is the first link in the chain that ends in UX-31.
 - Fix: add Screen, Chimera, and Top hit columns next to the ID, or an amber "needs a look" state icon. Hide the five Options columns by default (UX-61). Count undecided scaffolds apart from kept ones. Show a note when nothing is kept.
+- Status: fixed on `review/2026-09-full-review` (third batch, visibility). See [Third batch](REVIEW_SUMMARY.md#third-batch-re-runs-caching-blast-and-visibility).
 
 ![Assemble table: CHIM01 shows a green check like the clean samples](screenshots/ux_03_assemble_table_contaminant_green.png)
 
@@ -275,6 +276,7 @@ Each item gives its id(s), severity, status, location, the problem, why it matte
   - The verifier lowered U-power-1 from blocker because pressing Keep by hand works around it.
 - Why it matters: the documented recovery does not recover, and the run says it finished.
 - Fix: carry over only curator decisions, and skip the carry-over when the assembler changes. Store the gate result in its own column instead of blanket ignore flags. Add the re-queue step to the test, and call `refresh_sample_state()` when a sample ends with no pending units.
+- Status: fixed on `review/2026-09-full-review` (third batch, re-run state). See [Third batch](REVIEW_SUMMARY.md#third-batch-re-runs-caching-blast-and-visibility).
 
 ![Rescued sample: the two largest scaffolds say annotation has not run](screenshots/ux_17_rescue_annotation_not_run.png)
 
@@ -323,6 +325,7 @@ Each item gives its id(s), severity, status, location, the problem, why it matte
   - CHIM00, with an overlapping ITS1 and a truncated 28S, shows a check mark and "No curation warnings for this sample" above a table that lists them.
 - Why it matters: the reviewer is shown a clean record while the app holds evidence that it is not.
 - Fix: add one "Checks" summary column right after ID, and hide the duplicate Taxon column. Put Screen, Chimera, and ITSx pills in the window header. Open Curation warnings when it has content, and count feature warnings in the summary.
+- Status: fixed on `review/2026-09-full-review` (third batch, visibility). See [Third batch](REVIEW_SUMMARY.md#third-batch-re-runs-caching-blast-and-visibility).
 
 ![Annotation Review at 1920 px: no Screen or Chimera column visible](screenshots/ux_22_review_signals_offscreen_1920.png)
 
@@ -418,6 +421,7 @@ Each item gives its id(s), severity, status, location, the problem, why it matte
 - Problem: SRR33849683 scaffold 1 (chimera suspect, a "PREDICTED: Canis" 100% window at 751-2000) was marked Reviewed and exported. The final window showed a green "Final ITSx check: nothing flagged on 10 record(s)" above one amber line, "Submission-risk flags on 1 record(s) (submission_risk column)." The record name and the reason are only in the summary CSV and the R console. The ITSx line in the same dialog does list seqids. The chimera panel says it "never blocks export" and gives no help on judging a 100% distant-taxon window inside conserved 18S or 28S.
 - Why it matters: the user has to open the CSV to find out which record is at risk.
 - Fix: list flagged records with a plain reason ("SRR33849683 p1.s1: may be chimeric, dog-like piece at 751-2000 bp") above the success line. Add one sentence to the chimera panel and the docs on telling a conserved-region hit from real contamination (see also UX-82).
+- Status: fixed on `review/2026-09-full-review` (third batch, visibility). See [Third batch](REVIEW_SUMMARY.md#third-batch-re-runs-caching-blast-and-visibility).
 
 <a id="ux-35"></a>**UX-35. Spaces or slashes in names and paths break runs and export.** Major. Confirmed. ids: U-novice-2 (major), U-mitopilot-5 (major), O-edge-7 (major). Seen by 3 (op-edge, novice, mitopilot). Screenshots: [ux_09](screenshots/ux_09_group_name_space_itsx_docker_error.png), [ux_01](screenshots/ux_01_green_done_after_failed_run.png).
 - Where: `R/itsx_check.R:65` (unquoted `-v wd:wd -w wd`); config `docker.runOptions` mounts built with `paste0('-v ', dirs, ':', dirs)`; `group_modal` (a bare text box) and `assign_group_go` (checks only `nzchar`).
@@ -785,6 +789,7 @@ Reviewed against WCAG 2.2 AA. The good news first: every `--mp-*` color token pa
 - Problem: only 2 of 9 on-target single-unit fish samples got "singleton"; the other 7 are blank, because their screen rows were stamped before their annotation rows (SRR22396758: screen 12:39:36, annotation 12:40:50). Re-running the check on a copy of the finished database gives "singleton". For SRR33849683, the one sample with two on-target units (non-overlapping 28S pieces), the Variant cell is empty, although the Curation-Flags vignette promises "reported as not comparable" and that the anchor identity "is always shown".
 - Why it matters: the check meant to say whether two units are the same molecule is silent exactly where it is needed, and export then makes them two records (UX-36).
 - Fix: run the variant check after annotation (for example alongside triage), and show "not comparable" with the reason.
+- Status: fixed on `review/2026-09-full-review` (third batch, science). See [Third batch](REVIEW_SUMMARY.md#third-batch-re-runs-caching-blast-and-visibility).
 
 <a id="ux-86"></a>**UX-86. "on_target" is green even when hits agree only at class or phylum.** Minor. Confirmed. ids: U-curator-16 (minor). Seen by 1 (curator).
 - Where: screen verdict badge.
