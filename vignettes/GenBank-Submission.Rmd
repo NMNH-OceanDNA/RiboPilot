@@ -134,7 +134,9 @@ feature table as an `assembly_gap`, with linkage evidence "unspecified".
 **Flagged records.** Before it writes anything, the Export window lists every
 unit that the contamination screen or the chimera check flagged, and that you
 have not marked Reviewed. **Leave them out** is the default; **Export anyway**
-exports them with their flags in the summary.
+exports them with their flags in the summary. Lock asks about the same units
+first, in the Assemble and Annotation Review steps. When the export is done, its
+summary names every record that has a submission-risk flag, and why.
 
 **The final ITSx check.** NCBI's Portal runs stock ITSx on every rRNA and ITS
 submission, and may remove records it judges chimeric, gapped, or misassembled.
@@ -168,7 +170,7 @@ unit of the group that is left out, and why.
 
 | Mark | What it does to the export |
 |---|---|
-| **Mark Reviewed** | The Export window no longer asks about the unit's contamination or chimera flags. The summary's `reviewed` column says yes. |
+| **Mark Reviewed** | Lock and the Export window no longer ask about the unit's contamination or chimera flags. The summary's `reviewed` column says yes. |
 | **Exclude from export** | The unit is left out of every export. |
 | **Mark Partial** | The unit's first and last genes are written as partial. |
 

@@ -231,3 +231,55 @@ test_that("export_summary_df flags a Taxon that differs from the Taxonomy name",
   s <- RiboPilot:::export_summary_df(con, units)
   expect_false(grepl("taxon_differs", s$submission_risk))
 })
+
+test_that("unit_checks names every finding, colours the worst, and agrees with the export prompt", {
+  con <- chimera_test_con()
+  on.exit(DBI::dbDisconnect(con))
+  expect_equal(nrow(RiboPilot:::unit_checks(con, "sample")), 0L)
+  DBI::dbExecute(con, "DELETE FROM annotate")
+  for (s in 1:4) {
+    DBI::dbExecute(con, "INSERT INTO assemblies (ID, path, scaffold, sequence, length, ignore) VALUES ('S1',1,?,'ACGT',4,0)",
+      params = list(s))
+    DBI::dbExecute(con, "INSERT INTO annotate (ID, path, scaffold) VALUES ('S1',1,?)", params = list(s))
+    DBI::dbExecute(con, "INSERT INTO screen (ID, path, scaffold, screen_verdict) VALUES ('S1',1,?,'on_target')",
+      params = list(s))
+  }
+  # s1 clean; s2 minor chimera + a truncated feature; s3 off target and contaminant; s4 dropped
+  DBI::dbExecute(con, "INSERT INTO chimera (ID, path, scaffold, label) VALUES ('S1',1,2,'minor')")
+  DBI::dbExecute(con, "INSERT INTO annotations (ID, path, scaffold, element, status, flags) VALUES ('S1',1,2,'28S','flag','truncated')")
+  DBI::dbExecute(con, "UPDATE screen SET screen_verdict = 'off_target', lca_taxon = 'Actiniaria' WHERE scaffold = 3")
+  DBI::dbExecute(con, "UPDATE annotate SET curate_flags = 'contaminant' WHERE scaffold = 3")
+  DBI::dbExecute(con, "UPDATE screen SET screen_verdict = 'off_target' WHERE scaffold = 4")
+  DBI::dbExecute(con, "UPDATE assemblies SET ignore = 1 WHERE scaffold = 4")
+
+  u <- RiboPilot:::unit_checks(con, "unit")
+  expect_equal(u$scaffold, 1:3)
+  expect_equal(u$checks, c("ok", "minor chimera, warnings", "off target, contaminant"))
+  expect_equal(u$checks_tone, c("success", "warning", "danger"))
+  # red is exactly what the Export and Lock prompts ask about
+  smry <- RiboPilot:::export_summary_df(con, cbind(u[1:3], seqid = "x"))
+  expect_equal(u$checks_tone == "danger", RiboPilot:::has_screen_risk(smry$submission_risk))
+
+  # one row per sample, over its kept units only, worst tone
+  s <- RiboPilot:::unit_checks(con, "sample")
+  expect_equal(s$ID, "S1")
+  expect_equal(s$checks, "off target, contaminant, minor chimera, warnings")
+  expect_equal(s$checks_tone, "danger")
+
+  # nothing flagged but no usable screen is grey, not green
+  DBI::dbExecute(con, "DELETE FROM screen WHERE scaffold = 1")
+  expect_equal(RiboPilot:::unit_checks(con, "unit")[1, c("checks", "checks_tone")],
+    data.frame(checks = "no reference", checks_tone = "neutral"))
+})
+
+test_that("the export done dialog names flagged records and is green only when nothing is flagged", {
+  smry <- data.frame(seqid = c("A", "B_p1_s1"), itsx_check = c("", ""),
+    submission_risk = c("", "off_target(Actiniaria);contaminant"))
+  html <- as.character(RiboPilot:::export_check_summary_ui(smry))
+  expect_match(html, "B_p1_s1 (GenBank hits agree on Actiniaria; the best GenBank hit is from another phylum)",
+    fixed = TRUE)
+  expect_false(grepl("mp-fg-success", html, fixed = TRUE))
+  expect_lt(regexpr("Submission-risk", html), regexpr("Final ITSx", html))
+  smry$submission_risk <- ""
+  expect_match(as.character(RiboPilot:::export_check_summary_ui(smry)), "mp-fg-success", fixed = TRUE)
+})

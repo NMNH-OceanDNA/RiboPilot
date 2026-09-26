@@ -123,7 +123,7 @@ app_ui <- function(request) {
             shiny::div(class = "mp-filter-row",
               filter_pickers("Annotate"),
               shiny::div(class = "mp-filter-cols",
-                mp_filter_picker("ann_col_groups", "Columns:", c("BLAST", "Checks"), width = "170px")))),
+                mp_filter_picker("ann_col_groups", "Columns:", c("BLAST", "Check details"), width = "170px")))),
           shiny::uiOutput("table_status"),
           shiny::div(class = "mp-table-resize", reactable::reactableOutput("tbl", height = "100%")),
           # CSV downloads sit under the table, as in MitoPilot.

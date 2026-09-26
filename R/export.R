@@ -225,6 +225,57 @@ has_screen_risk <- function(risk) {
   grepl("(^|;)(off_target\\(|contaminant(;|$)|chimeric(\\(|;|$))", ifelse(is.na(risk), "", risk))
 }
 
+#' The Checks column: what the checks found, per unit or per sample
+#'
+#' Findings are listed worst first. The red ones (off target, contaminant,
+#' severe chimera, ITSx chimeric) are the tags [has_screen_risk()] reads, so
+#' Lock and Export ask about them. "ok" needs every unit screened on_target;
+#' with nothing flagged and no usable screen the cell says "no reference".
+#' Only kept scaffolds count.
+#' @param con Open project DB connection.
+#' @param by "unit" (one row per ID, path, scaffold) or "sample" (one per ID).
+#' @return data.frame(ID, [path, scaffold,] checks, checks_tone)
+#' @noRd
+unit_checks <- function(con, by = c("unit", "sample")) {
+  by <- match.arg(by)
+  u <- DBI::dbGetQuery(con,
+    "SELECT an.ID, an.path, an.scaffold, sc.screen_verdict, ch.label AS chimera_label,
+       an.chimeric, an.curate_flags, an.itsx_warnings,
+       (SELECT COUNT(*) FROM annotations f WHERE f.ID = an.ID AND f.path = an.path
+          AND f.scaffold = an.scaffold AND f.status = 'flag') AS n_feat_flags
+     FROM annotate an
+       JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
+       LEFT JOIN screen sc ON sc.ID = an.ID AND sc.path = an.path AND sc.scaffold = an.scaffold
+       LEFT JOIN chimera ch ON ch.ID = an.ID AND ch.path = an.path AND ch.scaffold = an.scaffold
+     WHERE COALESCE(asm.ignore, 0) = 0")
+  txt <- function(x) { x <- as.character(x); x[is.na(x)] <- ""; x }
+  fl <- strsplit(txt(u$curate_flags), "; ", fixed = TRUE)
+  itsx <- txt(u$itsx_warnings)
+  hit <- cbind(
+    "off target" = u$screen_verdict %in% "off_target",
+    "contaminant" = vapply(fl, function(x) "contaminant" %in% x, logical(1)),
+    "severe chimera" = u$chimera_label %in% "severe",
+    "ITSx chimeric" = u$chimeric %in% 1,
+    "minor chimera" = u$chimera_label %in% "minor",
+    "uncertain screen" = u$screen_verdict %in% "uncertain",
+    "ITSx" = nzchar(itsx) & !startsWith(itsx, "not_run("),
+    "warnings" = vapply(fl, function(x) any(x != "contaminant"), logical(1)) | u$n_feat_flags > 0)
+  cols <- if (by == "unit") c("ID", "path", "scaffold") else "ID"
+  key <- if (by == "unit") unit_key(u$ID, u$path, u$scaffold) else u$ID
+  rows <- split(seq_len(nrow(u)), factor(key, levels = unique(key)))
+  cell <- vapply(rows, function(i) {
+    h <- colSums(hit[i, , drop = FALSE]) > 0
+    tone <- if (any(h[1:4])) "danger" else if (any(h)) "warning"
+      else if (all(u$screen_verdict[i] %in% "on_target")) "success" else "neutral"
+    c(if (any(h)) paste(names(h)[h], collapse = ", ") else if (tone == "success") "ok" else "no reference", tone)
+  }, character(2))
+  out <- u[match(names(rows), key), cols, drop = FALSE]
+  out$checks <- cell[1, ]
+  out$checks_tone <- cell[2, ]
+  rownames(out) <- NULL
+  out
+}
+
 #' README text mapping the bundle to NCBI's two submission routes
 #' @noRd
 submission_readme <- function(label, itsx_check = TRUE) {

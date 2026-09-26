@@ -13,9 +13,11 @@ attention: they point out samples worth a closer look in the app's Annotation
 Review step. They do not change your data, and a flag does not always mean
 something is wrong. It just means "please check this".
 
-You will see flags in two places in the app: a small count next to each sample in
-the table, and a detailed **Curation warnings** panel when you open a sample. Each
-flag links to the exact feature it concerns, so you can jump straight to it.
+You will see flags in three places in the app: the **Checks** column right after
+the ID in the Assemble and Annotation Review tables, which sums up every check in
+a few words; a count in the **Warnings** column; and a detailed **Curation
+warnings** panel when you open a unit. Each flag links to the exact feature it
+concerns, so you can jump straight to it.
 
 # What the flags mean
 
@@ -33,6 +35,20 @@ flag links to the exact feature it concerns, so you can jump straight to it.
 The last two checks (`low_identity` and `contaminant`) rely on looking up a
 reference match on NCBI during assembly. If that lookup was unavailable at the
 time, those two checks are simply skipped and the others still apply.
+
+# The Checks column
+
+The Checks column puts every check on one line, worst first, in a color that
+matches the worst finding. On the Assemble table it covers the sample's kept
+scaffolds; on the Annotation Review table, one unit. "warnings" means one of the
+flags above, on the unit or on one of its features.
+
+| Checks says | Color | What happens |
+|---|---|---|
+| off target, contaminant, severe chimera, ITSx chimeric | red | Lock and the Export window ask first, until the unit is marked Reviewed. |
+| minor chimera, uncertain screen, ITSx, warnings | amber | Worth a look; nothing asks. |
+| ok | green | The GenBank screen matched your sample's lineage, and nothing is flagged. |
+| no reference | grey | Nothing is flagged, but the screen had no usable GenBank match to judge by. |
 
 # How scaffolds are kept or dropped (auto-triage)
 
@@ -90,8 +106,9 @@ are Chordata, while a copepod on that same sample is caught. A `no_reference`
 result is a normal state
 for an offline project or a sparse clade, not a problem in itself: it means
 the screen had nothing usable to compare against, not that something is
-wrong. The verdict is also shown as a Screen column in the Assemble step's
-scaffold table, alongside the rest of the evidence.
+wrong. The verdict is also shown as a Screen column in a sample's scaffold table
+(click its ID in the Assemble step) and in the Annotation Review table, and an
+off-target verdict turns the Checks cell red.
 
 Each rule can be turned off if it does not suit your data. Switching every
 rule off at once makes Apply a no-op: it changes nothing, rather than
@@ -127,12 +144,12 @@ RiboPilot looks for a chimera in four ways:
   depth, can mark a join.
 
 Each unit gets one of three levels, shown in the **Chimera** column of the
-Annotation Review table:
+Annotation Review table and in the **Checks** column:
 
 | Level | What it means | Triage | Export |
 |---|---|---|---|
-| severe | Two parts match different phyla or kingdoms, each at 90 percent identity or more. | Rule 8 flags the scaffold. | The `submission_risk` column says `chimeric(...)`, and the Export window asks before it includes the unit. |
-| minor | Weaker evidence: a switch between classes, genes that agree only at a high rank, a ribotyper warning, or read evidence alone. | No rule fires. | Listed in the `chimera_warning` column of the summary CSV. It is not a submission risk, and the Export window does not ask. |
+| severe | Two parts match different phyla or kingdoms, each at 90 percent identity or more. | Rule 8 flags the scaffold. | The `submission_risk` column says `chimeric(...)`, and Lock and the Export window ask first until the unit is marked Reviewed. |
+| minor | Weaker evidence: a switch between classes, genes that agree only at a high rank, a ribotyper warning, or read evidence alone. | No rule fires. | Listed in the `chimera_warning` column of the summary CSV. It is not a submission risk, and neither Lock nor the Export window asks. |
 | clean | Nothing found. | No rule fires. | Nothing. |
 
 In the practice project, CHIM01 is severe: its first part matches ray-finned

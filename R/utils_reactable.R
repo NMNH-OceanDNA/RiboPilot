@@ -422,6 +422,22 @@ rt_chimera_badge <- function() {
     }")
 }
 
+#' Render the Checks summary: the pill colour is the worst finding's tone
+#' (`checks_tone`), and the text names every finding, so colour is never the
+#' only signal
+#' @noRd
+rt_checks_badge <- function() {
+  htmlwidgets::JS(
+    "function(cellInfo) {
+      var v = cellInfo.value;
+      if (v === null || v === undefined || v === '' || v === 'NA') return '';
+      var tone = cellInfo.row.checks_tone || 'neutral';
+      var t = String(v).replace(/\"/g, '&quot;');
+      return '<span title=\"' + t + '\" class=\"mp-pill mp-pill-' + tone + '\"' +
+        ' style=\"max-width:100%; overflow:hidden; text-overflow:ellipsis; vertical-align:middle;\">' + v + '</span>';
+    }")
+}
+
 #' Render the intragenomic variant class: is this scaffold one of several rDNA
 #' copies, or the same molecule assembled twice.
 #'
