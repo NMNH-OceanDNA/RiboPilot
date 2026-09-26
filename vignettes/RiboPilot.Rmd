@@ -248,9 +248,7 @@ To follow that advice:
 ![Assembly options set to the baited SPAdes assembler](figures/get-started/rescue-baited.png)
 
 Use this only for samples that failed. A sample that already has a good scaffold
-does not need it. If the rescued sample still reads "In progress" when the run
-ends, press **Update** and **Run from App** once more to finish its new
-scaffolds.
+does not need it.
 
 ## Lock the samples you are happy with
 

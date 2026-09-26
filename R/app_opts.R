@@ -41,7 +41,7 @@ opts_modal_shell <- function(title, n, name_row, ..., update_id) {
     name_row,
     opts_help("Reusable named set applied to the selected samples; check Edit to ",
       "change values, or type a new name to create a set.",
-      " Saving re-queues the selected samples: their state becomes Ready to run."),
+      " Saving queues the selected samples for the next Update."),
     ...,
     footer = mp_footer(primary = shiny::actionButton(update_id, "Save")))
 }
@@ -598,8 +598,6 @@ opts_apply <- function(pfx, sp, input, deps, ids, cur) {
         params = list(nm, id))
       DBI::dbExecute(con, sprintf("UPDATE %s SET %s = 1 WHERE ID = ?", sp$queue_tbl, sp$queue),
         params = list(id))
-      # re-queuing annotation gives the sample work again, so it is no longer done
-      if (identical(sp$queue_tbl, "annotate")) refresh_sample_state(con, id)
     }
   })
   if (!saved) return()

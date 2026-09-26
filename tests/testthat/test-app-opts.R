@@ -286,3 +286,26 @@ test_that("a new set name saved with Edit unticked creates the set", {
       "SELECT annotate_opts FROM annotate WHERE ID = 'S1'")$annotate_opts), "fresh")
   })
 })
+
+test_that("saving annotation options re-queues the units, not the assembly", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE assemble SET assemble_lock = 0, assemble_switch = 2")
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_switch = 2")
+  DBI::dbDisconnect(con)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    session$flushReact()
+    session$setInputs(set_annotate_opts = 1)
+    session$setInputs(no_name = "fresh", no_edit = TRUE, no_cpus = 2, no_mem = 4,
+      no_tool = "pybarrnap", no_kingdom = "euk", no_itsxtaxon = "all", no_itsxopts = "")
+    session$setInputs(update_no = 1)
+    expect_equal(RiboPilot:::app_query(
+      "SELECT assemble_switch FROM assemble WHERE ID = 'S1'")$assemble_switch, 2L)
+    expect_equal(unique(RiboPilot:::app_query(
+      "SELECT annotate_switch FROM annotate WHERE ID = 'S1'")$annotate_switch), 1L)
+  })
+})

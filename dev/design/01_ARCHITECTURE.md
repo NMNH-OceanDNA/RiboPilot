@@ -91,18 +91,20 @@ keyed by an opts hash) and replace the mito-specific tables. Proposed tables:
 ### Per-sample state (`assemble.assemble_switch`), as built
 
 The per-sample switch is not written once at the end of assembly. Loading a
-sample's assemblies writes state 4, "in progress". Triage, the last per-sample
-step, calls `refresh_sample_state()` (R/pipeline_steps.R:234), which counts that
-sample's un-parked units still queued or running and writes 2 (done) when none
-remain. A sample therefore also settles to 2 when its remaining units are held
-or ignored rather than finished. Only 2 and 4 are ever rewritten: held (0),
-queued (1) and failed (3) are the user's or the gate's statements and are left
-alone.
+sample's assemblies writes state 4, "in progress", and only the pipeline writes
+4. Triage, the last per-sample step, calls `refresh_sample_state()`, which
+writes 2 (done) when none of that sample's unlocked, kept units is still
+queued; it never writes 4. A sample also settles to 2 when its remaining units
+are held or ignored, and at load time when it has no unit left to annotate
+(triage never runs for such a sample). Held (0), queued (1) and failed (3) are
+the user's or the gate's statements and are left alone.
 
-Two consequences worth knowing before touching this. A sample still at 4 is
-picked up by the next run, so an interrupted run resumes on its own. And
-`nf_pending_count()` counts those samples as pending, which is why an
-interrupted project reports outstanding work instead of zero.
+A sample still at 4 is picked up by the next run and assembled again (the
+assembly comes from the Nextflow cache), so a stopped run resumes on its own,
+and `nf_pending_count()` counts it as pending. Work queued on units alone (an
+annotation or curation option change, a scaffold put back) leaves the sample
+state as it is; `query_annotate_units` takes those units without
+re-assembling, so trims and edits survive.
 
 Same DB-write discipline as MitoPilot: **writes happen driver-side over JDBC/DBI,
 not from a head-node local executor**, and curate/validate commits assemblies +

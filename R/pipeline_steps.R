@@ -191,48 +191,34 @@ open_sqlite_ro <- function(path) {
   con
 }
 
-#' Was this sample's last assembly stopped by the max_paths / max_scaffolds gate
+#' Settle a sample's state once no work is queued for it
 #'
-#' Recognised from the state and the note the gate writes, so it stays true
-#' across a restart and needs no extra column.
-#' @noRd
-gate_failed <- function(con, id) {
-  r <- tryCatch(DBI::dbGetQuery(con,
-    "SELECT assemble_switch, COALESCE(assemble_notes,'') AS notes FROM assemble WHERE ID = ?",
-    params = list(id)), error = function(e) data.frame())
-  if (nrow(r) == 0) return(FALSE)
-  isTRUE(r$assemble_switch[1] == 3L) && grepl("max_paths|max_scaffolds", r$notes[1])
-}
-
-#' Settle a sample's state against the work still queued for it
-#'
-#' The sample state is written by the pipeline as the sample moves through WF1:
-#' loading an assembly opens it at 4 (in progress) and triage, the last
-#' per-sample step, closes it at 2 (done). This recomputes it from what is
-#' actually pending, so a sample also closes when the remaining work is taken
-#' away rather than finished -- units held at 0 or on ignored scaffolds are a
-#' deliberate skip, not unfinished work.
-#'
-#' Only 2 and 4 are rewritten. A sample the user has held (0), queued to re-run
-#' (1), or whose assembly failed (3) is saying something this cannot improve on.
+#' Loading an assembly opens a sample at 4 (in progress) and triage, the last
+#' per-sample step, closes it. This moves 4 to 2 when no unlocked, kept unit is
+#' still queued, so a sample also closes when its remaining work is taken away
+#' rather than finished. It never moves a sample to 4: that state makes the next
+#' run assemble the sample again, and only the pipeline sets it. Work queued on
+#' units alone (an annotation option change, a scaffold put back) stays on the
+#' units, where the annotation-only arm of the next run finds it.
 #'
 #' @param con Open project DB connection.
 #' @param id Sample ID.
-#' @return (invisibly) the state now stored.
+#' @return (invisibly) the number of units still queued.
 #' @noRd
 refresh_sample_state <- function(con, id) {
   pending <- tryCatch(DBI::dbGetQuery(con,
     "SELECT COUNT(*) n FROM annotate an
        LEFT JOIN assemblies asm
          ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
-      WHERE an.ID = ? AND an.annotate_switch IN (1,4) AND COALESCE(asm.ignore,0) = 0",
+      WHERE an.ID = ? AND an.annotate_switch IN (1,4) AND COALESCE(an.annotate_lock,0) = 0
+        AND COALESCE(asm.ignore,0) = 0",
     params = list(id))$n[1], error = function(e) NA_integer_)
-  if (is.na(pending)) return(invisible(NA_integer_))
-  st <- if (pending > 0) 4L else 2L
-  DBI::dbExecute(con,
-    "UPDATE assemble SET assemble_switch = ? WHERE ID = ? AND assemble_switch IN (2,4)",
-    params = list(st, id))
-  invisible(st)
+  if (isTRUE(pending == 0)) {
+    DBI::dbExecute(con,
+      "UPDATE assemble SET assemble_switch = 2 WHERE ID = ? AND assemble_switch = 4",
+      params = list(id))
+  }
+  invisible(pending)
 }
 
 #' Per-unit tables whose rows describe one assembled sequence
@@ -256,8 +242,28 @@ reset_unit_evidence <- function(con, id, path, scaffold) {
   }
   DBI::dbExecute(con,
     "UPDATE annotate SET annotate_switch = 1, annotate_lock = 0, reviewed = 'no',
-       partial = 'no', problematic = 'no', export_group = NULL
+       partial = 'no', problematic = 'no', export_group = NULL, n_features = NULL
      WHERE ID = ? AND path = ? AND scaffold = ?", params = p)
+}
+
+#' Carry the curator's own triage decisions onto a re-assembly's rows
+#'
+#' A decision follows its sequence: the old row at the same (path, scaffold)
+#' with the same sequence, else any old row with that sequence, so it survives
+#' renumbered paths and never lands on a different contig. Only
+#' triage_source = 'user' is carried; the run recomputes the automatic ones.
+#' @param df New assemblies rows. @param old The sample's current rows.
+#' @noRd
+carry_user_triage <- function(df, old) {
+  cols <- c("triage", "triage_reason", "triage_source", "triage_rule")
+  df[cols] <- NA_character_
+  i <- match(paste(df$path, df$scaffold, df$sequence), paste(old$path, old$scaffold, old$sequence))
+  miss <- is.na(i)
+  i[miss] <- match(df$sequence[miss], old$sequence)
+  u <- which(identical_user(old$triage_source[i]))
+  df[u, cols] <- old[i[u], cols]
+  df$ignore[u] <- as.integer(df$triage[u] %in% "drop")
+  df
 }
 
 #' Load one sample's assembly fastas into the database
@@ -373,7 +379,12 @@ load_assemblies <- function(con, dir, ID) {
       sprintf("%d scaffolds in a path exceeds max_scaffolds (%d)",
         max_per_path_raw, lim$max_scaffolds[1]))
 
+  old <- DBI::dbGetQuery(con,
+    "SELECT path, scaffold, sequence, triage, triage_reason, triage_source, triage_rule
+       FROM assemblies WHERE ID = ?", params = list(ID))
+
   if (length(gate) > 0) {
+    df <- carry_user_triage(df, old)
     # Store the sequences anyway: raising the limit and re-running should not
     # mean re-assembling, and the curator needs to see what tripped the gate.
     # ignore = 1 is what actually stops the work -- every downstream selection
@@ -410,23 +421,7 @@ load_assemblies <- function(con, dir, ID) {
     }
   }
 
-  # Carry the curator's keep/drop decisions across a re-assembly. The rows are
-  # replaced wholesale below, and opts_apply re-queues a sample whenever its
-  # assemble_opts change, so without this every ignore flag is silently reset.
-  prev <- tryCatch(DBI::dbGetQuery(con,
-    "SELECT path, scaffold, COALESCE(ignore,0) AS ignore FROM assemblies WHERE ID = ?",
-    params = list(ID)), error = function(e) data.frame())
-  # ...unless the last run was a gate failure, which ignored every scaffold
-  # wholesale. Those are not curator decisions, and carrying them would leave the
-  # sample empty after raising the limit and re-running -- the exact recovery the
-  # gate is supposed to allow.
-  if (isTRUE(gate_failed(con, ID))) prev <- data.frame()
-  if (nrow(prev) > 0) {
-    i <- match(paste(df$path, df$scaffold), paste(prev$path, prev$scaffold))
-    df$ignore <- ifelse(is.na(i), 0L, as.integer(prev$ignore[i]))
-  }
-  old <- DBI::dbGetQuery(con, "SELECT path, scaffold, sequence FROM assemblies WHERE ID = ?",
-    params = list(ID))
+  df <- carry_user_triage(df, old)
   j <- match(paste(df$path, df$scaffold), paste(old$path, old$scaffold))
   changed <- which(!is.na(j) & (is.na(old$sequence[j]) | old$sequence[j] != df$sequence))
 
@@ -491,7 +486,7 @@ load_assemblies <- function(con, dir, ID) {
   # front of the curator and holds the unit's annotate row.
   if (any(short)) {
     reason <- sprintf("shorter than min_assembly_length (%d bp)", as.integer(minlen))
-    for (i in which(short)) {
+    for (i in which(short & !identical_user(df$triage_source))) {
       set_unit_triage(con, ID, df$path[i], df$scaffold[i], "drop",
         reason = reason, source = "auto", rule = "too_short")
     }
@@ -500,6 +495,15 @@ load_assemblies <- function(con, dir, ID) {
   # A (re)assembly invalidates any pre-trim undo snapshots for this sample.
   tryCatch(DBI::dbExecute(con, "DELETE FROM assembly_backup WHERE ID = ?", params = list(ID)),
     error = function(e) NULL)
+  # triage closes the sample, and it never runs for one with no unit to annotate
+  n_work <- DBI::dbGetQuery(con,
+    "SELECT COUNT(*) n FROM annotate an JOIN assemblies asm
+       ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
+     WHERE an.ID = ? AND COALESCE(an.annotate_lock,0) = 0 AND COALESCE(asm.ignore,0) = 0",
+    params = list(ID))$n
+  if (n_work == 0) {
+    DBI::dbExecute(con, "UPDATE assemble SET assemble_switch = 2 WHERE ID = ?", params = list(ID))
+  }
   invisible(nrow(df))
 }
 
@@ -646,7 +650,7 @@ reconcile_ignore_unit <- function(con, id, path, scaffold, ignore) {
         if (isTRUE(n > 0) || isTRUE(done > 0)) 2L else 1L),
       params = list(id, path, scaffold))
   }
-  # holding the last queued unit finishes the sample; releasing one reopens it
+  # holding the last queued unit finishes the sample
   refresh_sample_state(con, id)
   invisible()
 }
