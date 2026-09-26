@@ -87,8 +87,8 @@ These are the codes the report explains, with what they usually mean:
 | `-` | No exit code: the step was stopped before it finished. | Run again with **Resume previous run?** ticked. |
 | any other | The tool stopped with an error. | Read the last error in the report, and the step's log (see below). |
 
-The memory-hungry steps (`preprocess`, `assemble`, `fallback_assemble`, and
-`annotate_tools`) retry by themselves after codes 104, 134, 137, 139, 140, 143,
+The memory-hungry steps (`preprocess`, `assemble`, `fallback_assemble`,
+`find_rrna_scan`, and `annotate_tools`) retry by themselves after codes 104, 134, 137, 139, 140, 143,
 and 247, up to three times, with more memory each time. The report says how
 often a step was tried.
 

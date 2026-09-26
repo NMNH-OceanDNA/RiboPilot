@@ -21,8 +21,7 @@ mk_state_db <- function(dir) {
 }
 
 write_state_fasta <- function(dir, id = "S1") {
-  ad <- file.path(dir, id, "assemble")
-  dir.create(ad, recursive = TRUE, showWarnings = FALSE)
+  ad <- dir
   writeLines(c(
     paste0(">", id, ".1.1 circular scaffold_1--101+"), strrep("ACGT", 200),
     paste0(">", id, ".1.2 linear scaffold_2--103+"), strrep("TGCA", 150)),

@@ -285,6 +285,9 @@ failure_hint <- function(note) {
   } else if (grepl("under min_assembly_length", note, fixed = TRUE)) {
     h("Every assembled piece was shorter than Min assembly length.",
       paste0(asm, bait, ", or lower Min assembly length", done))
+  } else if (grepl("rRNA search incomplete", note, fixed = TRUE)) {
+    h("Part of the search for rRNA genes in your assembly did not finish.",
+      "Set its State to Ready to run and press Update. If it fails again, Work Dirs shows the failed find_rrna_scan step.")
   } else if (grepl("no rRNA genes found in the supplied assembly", note, fixed = TRUE)) {
     h("No rRNA genes were found in the assembly you supplied.",
       "Check that the Assembly file named in the mapping file is the right one. To assemble from reads instead, leave Assembly blank and give R1 and R2.")

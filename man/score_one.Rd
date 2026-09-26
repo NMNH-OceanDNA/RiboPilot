@@ -4,15 +4,15 @@
 \alias{score_one}
 \title{Score one sample's candidate paths and write path_scores (+ auto_select)}
 \usage{
-score_one(con, id, out_dir, taxdump_dir = NULL)
+score_one(con, id, dir, taxdump_dir = NULL)
 }
 \arguments{
 \item{con}{Open DBI connection.}
 
 \item{id}{Sample ID.}
 
-\item{out_dir}{Pipeline output dir (assembly fastas + gfa live under
-`<out_dir>/<id>/assemble`).}
+\item{dir}{Folder holding the sample's `<id>_assembly_*.fasta` files and
+assembly graph (`.gfa`): the score task's own folder.}
 
 \item{taxdump_dir}{Optional pinned taxdump for hit-lineage resolution.}
 }

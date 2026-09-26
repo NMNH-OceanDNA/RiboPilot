@@ -2,14 +2,14 @@
 % Please edit documentation in R/pipeline_steps.R
 \name{load_assemblies}
 \alias{load_assemblies}
-\title{Load one sample's published assembly fastas into the database}
+\title{Load one sample's assembly fastas into the database}
 \usage{
-load_assemblies(con, out_dir, ID)
+load_assemblies(con, dir, ID)
 }
 \arguments{
 \item{con}{Open DBI connection.}
 
-\item{out_dir}{The pipeline `out/` directory.}
+\item{dir}{Folder holding the sample's assembly fastas (the score task's own folder).}
 
 \item{ID}{Sample ID.}
 }
@@ -17,7 +17,7 @@ load_assemblies(con, out_dir, ID)
 (invisibly) the number of scaffolds loaded.
 }
 \description{
-Parses `out/<ID>/assemble/<ID>_assembly_*.fasta` (headers
+Parses `<dir>/<ID>_assembly_*.fasta` (headers
 `>ID.path.scaffold topology`), orients each scaffold to the sense strand,
 rotates circular units to start in the IGS, writes per-scaffold rows into
 `assemblies`, and updates the per-sample `assemble` summary.

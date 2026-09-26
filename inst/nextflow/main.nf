@@ -82,8 +82,8 @@ workflow {
     // Seeds / labels stay strings here. sqlite3 renders a SQL NULL as '', and
     // assemble_opts.seeds_db is nullable, so file('') would throw for EVERY row
     // -- including fallback rows that never use seeds -- before a task is
-    // submitted. Only the getOrganelle arm below turns them into files.
-    asm_opts = rows.map { r -> tuple(r.ID, r.asm_cpus, r.asm_mem, r.getOrganelle, live_db(r.seeds_db), live_db(r.labels_db), r.assembler) }
+    // submitted. The assembler arms below turn them into files, or [] (nothing staged) when blank.
+    asm_opts = rows.map { r -> tuple(r.ID, r.asm_cpus, r.asm_mem, r.getOrganelle, live_db(r.seeds_db), live_db(r.labels_db), r.assembler, r.bowtie2, r.spades) }
     // Only samples assembling from reads: a supplied assembly may also name
     // reads (for coverage), and those must not be assembled as well.
     read_ids = sample_rows.reads.map { r -> tuple(r.ID, true) }
@@ -110,11 +110,13 @@ workflow {
         go: it[7] == 'getorganelle' && it[5] && it[6]
         fb: true
     }
-    assemble(asm_branched.go.map { id, reads, cpus, mem, go, seeds, labels, _asm ->
+    assemble(asm_branched.go.map { id, reads, cpus, mem, go, seeds, labels, _asm, _bt2, _spades ->
         tuple(id, reads, cpus, mem, go, file(seeds), file(labels)) })
-    fallback_assemble(asm_branched.fb.map { id, reads, cpus, mem, _go, _seeds, _labels, asm ->
+    fallback_assemble(asm_branched.fb.map { id, reads, cpus, mem, _go, seeds, labels, asm, bt2, spades ->
         // a seedless getorganelle sample lands here; give it a real fallback method
-        tuple(id, reads, cpus, mem, asm == 'getorganelle' ? 'bait' : asm) })
+        def method = asm == 'getorganelle' ? 'bait' : asm
+        tuple(id, reads, cpus, mem, method, seeds && method == 'bait' ? file(seeds) : [],
+              labels ? file(labels) : [], bt2, spades) })
 
     // Load assemblies + score paths (also seeds one annotate unit per scaffold).
     // Both assemblers emit the same fasta contract, so they merge here and

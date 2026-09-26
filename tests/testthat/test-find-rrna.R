@@ -57,3 +57,48 @@ test_that("max_contigs of NA or zero means no cap", {
   expect_length(select_rrna_contigs(gff, max_contigs = NA)$candidates, 2L)
   expect_length(select_rrna_contigs(gff, max_contigs = 0)$candidates, 2L)
 })
+
+test_that("a scan part that never came back fails the sample instead of shrinking the search", {
+  skip_on_os("windows")
+  skip_on_cran()
+  skip_if_not_installed("pkgload")
+  root <- RiboPilot:::ribopilot_src_default()
+  skip_if(!file.exists(file.path(root, "DESCRIPTION")), "not a source checkout")
+  d <- withr::local_tempdir()
+  db <- file.path(d, ".sqlite")
+  con <- DBI::dbConnect(RSQLite::SQLite(), db)
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, assemble_opts TEXT, paths INT, scaffolds INT,
+    length TEXT, topology TEXT, assemble_switch INT, assemble_notes TEXT, find_rrna_notes TEXT,
+    time_stamp INT)")
+  DBI::dbExecute(con, "CREATE TABLE assemble_opts(assemble_opts TEXT, max_scaffolds INT)")
+  DBI::dbExecute(con, "CREATE TABLE rrna_candidates(ID TEXT, contig TEXT, length INT,
+    rrna_features TEXT, rrna_bases INT, rank INT, selected INT, reason TEXT, time_stamp INT)")
+  DBI::dbExecute(con, "CREATE TABLE annotate(ID TEXT, annotate_switch INT, annotate_lock INT,
+    reviewed TEXT)")
+  DBI::dbExecute(con, "INSERT INTO assemble_opts VALUES('default', 10)")
+  DBI::dbExecute(con, "INSERT INTO assemble (ID, assemble_opts, assemble_switch) VALUES('S1', 'default', 1)")
+  withr::local_dir(d)
+  s <- strrep("ACGT", 20)
+  writeLines(c(">ctg1", s, ">ctg2", s, ">ctg3", s), "asm.fa")
+  for (k in 1:3) writeLines(gff_line(paste0("ctg", k), "18S_rRNA", 1, 40), sprintf("chunk_%d.gff", k))
+  run <- function(...) suppressWarnings(system2("Rscript",
+    c(system.file("nextflow", "bin", "rp_find_rrna.R", package = "RiboPilot"),
+      db, "S1", "asm.fa", "S1", "1", ...),
+    env = paste0("RIBOPILOT_SRC=", root), stdout = FALSE, stderr = FALSE))
+  state <- function() DBI::dbGetQuery(con,
+    "SELECT assemble_switch, find_rrna_notes FROM assemble WHERE ID = 'S1'")
+
+  # chunk size 1 over three contigs is three parts; the second never came back
+  expect_equal(run("chunk_1.gff", "chunk_3.gff"), 0L)
+  expect_equal(state()$assemble_switch, 3L)
+  expect_equal(state()$find_rrna_notes,
+    "rRNA search incomplete: 1 of 3 part(s) of the supplied assembly could not be scanned")
+  expect_equal(readLines("status.txt"), "empty")
+  expect_false(file.exists("S1_assembly_1.fasta"))
+
+  expect_equal(run("chunk_1.gff", "chunk_2.gff", "chunk_3.gff"), 0L)
+  expect_equal(readLines("status.txt"), "ok")
+  expect_equal(state()$find_rrna_notes, "3 rDNA contig(s) found in the supplied assembly")
+  expect_length(readLines("rrna_scan.gff"), 3L)
+})

@@ -8,25 +8,24 @@
 #'
 #' @param con Open DBI connection.
 #' @param id Sample ID.
-#' @param out_dir Pipeline output dir (assembly fastas + gfa live under
-#'   `<out_dir>/<id>/assemble`).
+#' @param dir Folder holding the sample's `<id>_assembly_*.fasta` files and
+#'   assembly graph (`.gfa`): the score task's own folder.
 #' @param taxdump_dir Optional pinned taxdump for hit-lineage resolution.
 #' @return (invisibly) the scored data.frame.
 #' @export
-score_one <- function(con, id, out_dir, taxdump_dir = NULL) {
+score_one <- function(con, id, dir, taxdump_dir = NULL) {
   td <- if (have_taxdump(taxdump_dir)) taxdump_dir else NULL
   seeds_db <- DBI::dbGetQuery(con,
     "SELECT ao.seeds_db FROM assemble a JOIN assemble_opts ao ON a.assemble_opts = ao.assemble_opts WHERE a.ID = ?",
     params = list(id))$seeds_db[1]
   blast_db <- make_blast_db(local_ref(seeds_db))
 
-  adir <- file.path(out_dir, id, "assemble")
-  fastas <- Sys.glob(file.path(adir, paste0(id, "_assembly_*.fasta")))
+  fastas <- Sys.glob(file.path(dir, paste0(id, "_assembly_*.fasta")))
   fastas <- fastas[!grepl("_assembly_0\\.fasta$", fastas)]
   if (length(fastas) == 0) {
     return(invisible(NULL))
   }
-  gfa <- Sys.glob(file.path(adir, "*.gfa"))
+  gfa <- Sys.glob(file.path(dir, "*.gfa"))
   tax <- DBI::dbGetQuery(con,
     "SELECT lineage, lineage_taxids FROM samples WHERE ID = ?", params = list(id))
 
@@ -261,25 +260,25 @@ reset_unit_evidence <- function(con, id, path, scaffold) {
      WHERE ID = ? AND path = ? AND scaffold = ?", params = p)
 }
 
-#' Load one sample's published assembly fastas into the database
+#' Load one sample's assembly fastas into the database
 #'
-#' Parses `out/<ID>/assemble/<ID>_assembly_*.fasta` (headers
+#' Parses `<dir>/<ID>_assembly_*.fasta` (headers
 #' `>ID.path.scaffold topology`), orients each scaffold to the sense strand,
 #' rotates circular units to start in the IGS, writes per-scaffold rows into
 #' `assemblies`, and updates the per-sample `assemble` summary.
 #'
 #' @param con Open DBI connection.
-#' @param out_dir The pipeline `out/` directory.
+#' @param dir Folder holding the sample's assembly fastas (the score task's own folder).
 #' @param ID Sample ID.
 #' @return (invisibly) the number of scaffolds loaded.
 #' @export
-load_assemblies <- function(con, out_dir, ID) {
-  fas <- Sys.glob(file.path(out_dir, ID, "assemble", paste0(ID, "_assembly_*.fasta")))
+load_assemblies <- function(con, dir, ID) {
+  fas <- Sys.glob(file.path(dir, paste0(ID, "_assembly_*.fasta")))
   fas <- fas[!grepl("_assembly_0\\.fasta$", fas)] # skip the "no assembly" sentinel
   ts <- as.integer(Sys.time())
 
   if (length(fas) == 0) {
-    s0 <- file.path(out_dir, ID, "assemble", paste0(ID, "_assembly_0.fasta"))
+    s0 <- file.path(dir, paste0(ID, "_assembly_0.fasta"))
     h <- if (file.exists(s0)) readLines(s0, n = 1L, warn = FALSE) else character(0)
     why <- if (length(h) && startsWith(h, ">No assembly found: ")) substring(h, 21L) else ""
     DBI::dbExecute(con,

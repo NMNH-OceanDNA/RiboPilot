@@ -1,16 +1,17 @@
 #!/usr/bin/env Rscript
 # Pick the nuclear rDNA contigs out of a user-supplied assembly.
-# Args: <db> <id> <assembly.fasta> <merged.gff> <out_prefix>
-# Writes <out_prefix>_assembly_1.fasta (assembler header contract), the
-# rrna_candidates evidence, an assemble note, and status.txt (ok|empty).
+# Args: <db> <id> <assembly.fasta> <out_prefix> <chunk_size> [chunk.gff ...]
+# Writes <out_prefix>_assembly_1.fasta (assembler header contract), the merged
+# scan rrna_scan.gff, the rrna_candidates evidence, an assemble note, and
+# status.txt (ok|empty).
 a <- commandArgs(trailingOnly = TRUE)
 rp_file <- sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE))
 if (length(rp_file) != 1) stop("run with Rscript: cannot locate rp_env.R", call. = FALSE)
 source(file.path(dirname(rp_file), "rp_env.R"))
-rp_args(a, 5, "rp_find_rrna.R <db> <id> <assembly.fasta> <merged.gff> <out_prefix>")
+rp_args(a, 5, "rp_find_rrna.R <db> <id> <assembly.fasta> <out_prefix> <chunk_size> [chunk.gff ...]")
 
 local({
-  db <- a[1]; id <- a[2]; fa <- a[3]; gff <- a[4]; prefix <- a[5]
+  db <- a[1]; id <- a[2]; fa <- a[3]; prefix <- a[4]; gffs <- a[-(1:5)]
   con <- open_project_db(db)
   on.exit(DBI::dbDisconnect(con))
 
@@ -25,14 +26,19 @@ local({
     params = list(id))$max_scaffolds[1], error = function(e) NA_integer_)
   if (length(cap) != 1 || is.na(cap)) cap <- 10L
 
-  gff_lines <- if (file.exists(gff)) readLines(gff, warn = FALSE) else character(0)
+  gff_lines <- as.character(unlist(lapply(gffs, readLines, warn = FALSE)))
+  writeLines(gff_lines, "rrna_scan.gff")
+  lost <- ceiling(length(seqs) / as.integer(a[5])) - length(gffs)
   res <- select_rrna_contigs(gff_lines, lengths = lengths, max_contigs = cap)
   write_rrna_candidates(con, id, res$evidence)
 
   ts <- as.integer(Sys.time())
-  if (length(res$candidates) == 0) {
+  if (lost > 0 || length(res$candidates) == 0) {
     n_hit <- nrow(res$evidence)
-    note <- if (n_hit == 0) {
+    note <- if (lost > 0) {
+      sprintf("rRNA search incomplete: %d of %d part(s) of the supplied assembly could not be scanned",
+        lost, lost + length(gffs))
+    } else if (n_hit == 0) {
       "no rRNA genes found in the supplied assembly"
     } else {
       sprintf("no rDNA contig confirmed: %d contig(s) had rRNA hits but no 18S or 28S anchor", n_hit)

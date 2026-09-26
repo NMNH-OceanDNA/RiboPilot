@@ -130,6 +130,8 @@ test_that("each pipeline note gets a plain cause and a next step", {
   expect_match(h("5 scaffolds in a path exceeds max_scaffolds (4)")$next_step, "Max scaffolds")
   expect_match(h("2 scaffold(s) under min_assembly_length (500 bp)")$next_step, "SPAdes, baited")
   expect_match(h("no rRNA genes found in the supplied assembly")$why, "assembly you supplied")
+  expect_match(h("rRNA search incomplete: 1 of 3 part(s) of the supplied assembly could not be scanned")$next_step,
+    "Ready to run")
   expect_match(h("failed assembly: SPAdes exit 247: finished abnormally, OS return value: -9")$why,
     "memory")
   expect_match(h("failed assembly")$next_step, "SPAdes, baited")

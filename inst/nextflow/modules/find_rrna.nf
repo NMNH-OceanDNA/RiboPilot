@@ -3,9 +3,8 @@
 // See dev/design/20_USER_ASSEMBLIES.md.
 //
 // The output is the same fasta contract the assembler emits
-// (<id>_assembly_1.fasta, headers ">id.path.scaffold topology"), published to
-// the same out/<id>/assemble folder, so score() and the whole tail of WF1 need
-// no knowledge of where the sequences came from.
+// (<id>_assembly_1.fasta, headers ">id.path.scaffold topology"), so score()
+// and the whole tail of WF1 need no knowledge of where the sequences came from.
 
 // Contigs per chunk of a user-supplied assembly sent to one rRNA scan task.
 // Declared HERE, not in main.nf: includes are resolved before the including
@@ -49,6 +48,7 @@ process find_rrna_scan {
 // in the assembler's fasta format, and record the evidence.
 process find_rrna_pick {
 
+    cache false
     tag "${id}"
     cpus 1
     memory { "${4 * task.attempt} GB" }
@@ -64,9 +64,8 @@ process find_rrna_pick {
 
     script:
     """
-    cat ${gffs} > rrna_scan.gff
     RIBOPILOT_SRC='${params.ribopilot_src}' rp_find_rrna.R \\
-        '${params.db}' '${id}' ${assembly} rrna_scan.gff '${id}'
+        '${params.db}' '${id}' ${assembly} '${id}' ${params.find_rrna_chunk_size} ${gffs}
     # publishDir needs a file to match even when nothing was found; the sentinel
     # name is the one load_assemblies() already skips.
     [ -f ${id}_assembly_1.fasta ] || echo ">No rDNA contigs found" > ${id}_assembly_0.fasta
@@ -91,7 +90,8 @@ workflow find_rrna {
 
         find_in
             .map { id, assembly, cpus, mem, tool, kingdom -> tuple(id, assembly) }
-            .join(gffs_by_id)
+            .join(gffs_by_id, remainder: true)
+            .map { id, assembly, gffs -> tuple(id, assembly, gffs ?: []) }
             .set { pick_in }
 
         find_rrna_pick(pick_in)
@@ -111,6 +111,7 @@ workflow find_rrna {
 // through here trips the max_scaffolds gate, which is the correct answer.
 process stage_assembly {
 
+    cache false
     tag "${id}"
     cpus 1
     memory 2.GB

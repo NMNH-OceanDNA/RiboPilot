@@ -60,8 +60,7 @@ test_that("a failed assemblies insert leaves the sample's scaffolds in place", {
   DBI::dbExecute(con, "INSERT INTO assemble_opts VALUES('default', 10, 10, NULL)")
   DBI::dbExecute(con, "INSERT INTO assemble VALUES('S1',NULL,NULL,NULL,NULL,1,NULL,'default',NULL)")
 
-  ad <- file.path(dir, "S1", "assemble")
-  dir.create(ad, recursive = TRUE)
+  ad <- dir
   writeLines(c(
     ">S1.1.1 circular", strrep("ACGT", 200),
     ">S1.1.2 linear", strrep("TGCA", 150)),

@@ -90,7 +90,7 @@ test_that("query_samples selects the assembler and declares it in the header", {
   # rows, so it and the select list must agree on column count or splitCsv
   # misreads every field.
   n_hdr <- length(strsplit(sub(".*printf '", "", sub("\\\\n' > .*", "", hdr)), "\\\\t")[[1]])
-  expect_equal(n_hdr, 16L)
+  expect_equal(n_hdr, 18L)
 })
 
 test_that("main.nf branches on the assembler and merges both arms into score", {
@@ -460,7 +460,7 @@ test_that("a sample with no seeds database goes to the fallback, not to file('')
   # sqlite3 renders a SQL NULL as '', and file('') throws during channel
   # construction, killing the run before any task is submitted
   txt <- paste(main_nf, collapse = "\n")
-  expect_match(txt, "asm_opts = rows.map \\{ r -> tuple\\(r.ID, r.asm_cpus, r.asm_mem, r.getOrganelle, live_db\\(r.seeds_db\\), live_db\\(r.labels_db\\), r.assembler\\)")
+  expect_match(txt, "asm_opts = rows.map \\{ r -> tuple\\(r.ID, r.asm_cpus, r.asm_mem, r.getOrganelle, live_db\\(r.seeds_db\\), live_db\\(r.labels_db\\), r.assembler, r.bowtie2, r.spades\\)")
   expect_match(txt, "go: it[7] == 'getorganelle' && it[5] && it[6]", fixed = TRUE)
   expect_match(txt, "fb: true", fixed = TRUE)
 })
@@ -1303,10 +1303,11 @@ test_that("query_samples skips samples whose taxonomy is not locked", {
   DBI::dbExecute(con, "CREATE TABLE preprocess(ID TEXT, R1 TEXT, R2 TEXT, pre_opts TEXT)")
   DBI::dbExecute(con, "CREATE TABLE pre_opts(pre_opts TEXT, cpus INT, memory INT, fastp TEXT)")
   DBI::dbExecute(con, "CREATE TABLE assemble_opts(assemble_opts TEXT, cpus INT, memory INT,
-    getOrganelle TEXT, max_paths INT, seeds_db TEXT, labels_db TEXT, assembler TEXT, find_rrna INT)")
+    getOrganelle TEXT, max_paths INT, seeds_db TEXT, labels_db TEXT, assembler TEXT, find_rrna INT,
+    bowtie2 TEXT, spades TEXT)")
   DBI::dbExecute(con, "CREATE TABLE annotate_opts(annotate_opts TEXT, rrna_tool TEXT, rrna_kingdom TEXT)")
   DBI::dbExecute(con, "INSERT INTO pre_opts VALUES('default',4,8,'')")
-  DBI::dbExecute(con, "INSERT INTO assemble_opts VALUES('default',4,16,'--flag',10,NULL,NULL,'getorganelle',1)")
+  DBI::dbExecute(con, "INSERT INTO assemble_opts VALUES('default',4,16,'--flag',10,NULL,NULL,'getorganelle',1,NULL,NULL)")
   DBI::dbExecute(con, "INSERT INTO annotate_opts VALUES('default','pybarrnap','euk')")
   for (id in c("LOCKED", "UNLOCKED")) {
     DBI::dbExecute(con, "INSERT INTO samples VALUES(?,NULL,?)",
@@ -1338,7 +1339,7 @@ test_that("main.nf routes supplied assemblies away from preprocess and assembly"
 
 test_that("find_rrna emits the assembler's fasta contract", {
   nf <- readLines(system.file("nextflow", "modules", "find_rrna.nf", package = "RiboPilot"))
-  # published where load_assemblies() globs, named what it expects
+  # published to out/<id>/assemble, named what score() expects
   expect_true(any(grepl("\\$\\{params\\.publishDir\\}/\\$\\{id\\}/assemble", nf)))
   expect_true(any(grepl("\\$\\{id\\}_assembly_\\*\\.fasta", nf)))
   # the sentinel name load_assemblies() skips, for a sample with nothing found
@@ -1432,4 +1433,48 @@ test_that("samples below minDepth are marked failed with their read count", {
   expect_match(body, "below min_depth: ${after} reads after trimming", fixed = TRUE)
   expect_match(body, "cache false", fixed = TRUE)
   expect_false(grepl("'terminate'", body, fixed = TRUE))
+})
+
+test_that("score reads the assembly files staged into its task", {
+  start <- grep("^process score \\{", pipeline_r_nf)
+  end <- start - 1 + which(pipeline_r_nf[start:length(pipeline_r_nf)] == "}")[1]
+  body <- paste(pipeline_r_nf[start:end], collapse = "\n")
+  expect_match(body, "rp_score.R '${params.db}' '${id}' . '${params.taxdump_dir}'", fixed = TRUE)
+  expect_false(grepl("publishDir", body, fixed = TRUE))
+  asm <- readLines(system.file("nextflow", "modules", "assemble.nf", package = "RiboPilot"))
+  expect_true(any(grepl('tuple val(id), path("{${id}_assembly_*.fasta,*.gfa}"), emit: paths',
+    asm, fixed = TRUE)))
+})
+
+test_that("a fallback assembly's databases and tool options are task inputs", {
+  fb <- readLines(system.file("nextflow", "modules", "fallback.nf", package = "RiboPilot"))
+  expect_true(any(grepl(paste("tuple val(id), path(reads), val(nthreads), val(mem), val(method),",
+    "path(seeds), path(labels), val(bowtie2), val(spades)"), fb, fixed = TRUE)))
+  expect_false(any(grepl("params.db", fb, fixed = TRUE)))
+  txt <- paste(main_nf, collapse = "\n")
+  expect_match(txt, "seeds && method == 'bait' ? file(seeds) : []", fixed = TRUE)
+  expect_match(txt, "labels ? file(labels) : [], bt2, spades", fixed = TRUE)
+  src <- readLines(system.file("nextflow", "bin", "rp_fallback.R", package = "RiboPilot"))
+  expect_false(any(grepl("open_project_db|dbGetQuery", src)))
+})
+
+test_that("find_rrna_pick and stage_assembly always run, so their database writes do", {
+  nf <- readLines(system.file("nextflow", "modules", "find_rrna.nf", package = "RiboPilot"))
+  for (p in c("find_rrna_pick", "stage_assembly")) {
+    s <- grep(paste0("^process ", p, " \\{"), nf)
+    body <- nf[s:(s - 1 + which(nf[s:length(nf)] == "}")[1])]
+    expect_true(any(grepl("^\\s*cache false$", body)), info = p)
+  }
+})
+
+test_that("the pick step runs even when every scan part failed, and scan parts retry", {
+  txt <- paste(readLines(system.file("nextflow", "modules", "find_rrna.nf", package = "RiboPilot")),
+    collapse = "\n")
+  expect_match(txt, ".join(gffs_by_id, remainder: true)", fixed = TRUE)
+  expect_match(txt, "tuple(id, assembly, gffs ?: [])", fixed = TRUE)
+  expect_match(txt, "${params.find_rrna_chunk_size} ${gffs}", fixed = TRUE)
+  cfg <- paste(readLines(system.file("nextflow", "nextflow.config", package = "RiboPilot")),
+    collapse = " ")
+  expect_match(cfg, "withName: 'assemble|fallback_assemble|preprocess|annotate_tools|find_rrna_scan'",
+    fixed = TRUE)
 })

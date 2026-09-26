@@ -26,8 +26,7 @@ mk_asm_db <- function(dir) {
 
 # GetOrganelle-style output: one path fasta, two scaffolds.
 write_asm_fasta <- function(dir, id = "S1") {
-  ad <- file.path(dir, id, "assemble")
-  dir.create(ad, recursive = TRUE, showWarnings = FALSE)
+  ad <- dir
   writeLines(c(
     paste0(">", id, ".1.1 circular scaffold_1--101+,102+"), strrep("ACGT", 200),
     paste0(">", id, ".1.2 linear scaffold_2--103+"), strrep("TGCA", 150)),
@@ -115,8 +114,7 @@ test_that("assemble.scaffolds records total units, not the largest path's count"
 # serial remote BLAST per scaffold.
 
 write_many_scaffolds <- function(dir, n, id = "S1", path = 1) {
-  ad <- file.path(dir, id, "assemble")
-  dir.create(ad, recursive = TRUE, showWarnings = FALSE)
+  ad <- dir
   writeLines(unlist(lapply(seq_len(n), function(k) {
     c(sprintf(">%s.%d.%d linear scaffold_%d", id, path, k, k), strrep("ACGT", 100 + k))
   })), file.path(ad, sprintf("%s_assembly_%d.fasta", id, path)))
@@ -316,8 +314,7 @@ test_that("a dot in the sample ID does not shift the path and scaffold", {
   dir <- withr::local_tempdir()
   con <- mk_asm_db(dir); on.exit(DBI::dbDisconnect(con))
   DBI::dbExecute(con, "UPDATE assemble SET ID = 'SRR123.1'")
-  ad <- file.path(dir, "SRR123.1", "assemble")
-  dir.create(ad, recursive = TRUE, showWarnings = FALSE)
+  ad <- dir
   writeLines(c(">SRR123.1.2.3 linear scaffold_1", strrep("ACGT", 100)),
     file.path(ad, "SRR123.1_assembly_1.fasta"))
 
@@ -332,8 +329,7 @@ test_that("a dot in the sample ID does not shift the path and scaffold", {
 test_that("a header with a non-numeric path or scaffold is skipped with a warning", {
   dir <- withr::local_tempdir()
   con <- mk_asm_db(dir); on.exit(DBI::dbDisconnect(con))
-  ad <- file.path(dir, "S1", "assemble")
-  dir.create(ad, recursive = TRUE, showWarnings = FALSE)
+  ad <- dir
   writeLines(c(
     ">S1.v2.1 linear scaffold_bad", strrep("ACGT", 100),
     ">S1.1.x linear scaffold_bad", strrep("ACGT", 100),
@@ -351,8 +347,7 @@ test_that("a header with a non-numeric path or scaffold is skipped with a warnin
 test_that("a fasta of nothing but unparsable headers fails the sample", {
   dir <- withr::local_tempdir()
   con <- mk_asm_db(dir); on.exit(DBI::dbDisconnect(con))
-  ad <- file.path(dir, "S1", "assemble")
-  dir.create(ad, recursive = TRUE, showWarnings = FALSE)
+  ad <- dir
   writeLines(c(">S1 linear scaffold_1", strrep("ACGT", 100)),
     file.path(ad, "S1_assembly_1.fasta"))
 
@@ -395,8 +390,7 @@ test_that("a header with no contig name leaves it empty", {
   dir <- withr::local_tempdir()
   con <- mk_asm_db(dir)
   on.exit(DBI::dbDisconnect(con))
-  ad <- file.path(dir, "S1", "assemble")
-  dir.create(ad, recursive = TRUE, showWarnings = FALSE)
+  ad <- dir
   writeLines(c(">S1.1.1 linear", strrep("ACGT", 200)),
     file.path(ad, "S1_assembly_1.fasta"))
 
@@ -422,7 +416,7 @@ test_that("a re-assembly that changes a unit's sequence clears its old evidence 
     partial = 'yes', export_group = 'g1'")
 
   # scaffold 1 comes back as a different contig; scaffold 2 is unchanged
-  fa <- file.path(dir, "S1", "assemble", "S1_assembly_1.fasta")
+  fa <- file.path(dir, "S1_assembly_1.fasta")
   writeLines(c(">S1.1.1 linear scaffold_1--101+", strrep("GATC", 120),
     ">S1.1.2 linear scaffold_2--103+", strrep("TGCA", 150)), fa)
   RiboPilot:::load_assemblies(con, dir, "S1")
@@ -447,8 +441,7 @@ test_that("a circular unit is rotated to start in the IGS before it is stored", 
   on.exit(DBI::dbDisconnect(con))
   withr::local_seed(1)
   unit <- paste(sample(c("A", "C", "G", "T"), 1000, TRUE), collapse = "")
-  ad <- file.path(dir, "S1", "assemble")
-  dir.create(ad, recursive = TRUE)
+  ad <- dir
   writeLines(c(">S1.1.1 circular scaffold_1", unit, ">S1.1.2 linear scaffold_2", unit),
     file.path(ad, "S1_assembly_1.fasta"))
   # anchors as called on the unit written twice: its start point cuts 18S
@@ -469,8 +462,7 @@ test_that("a circular unit is rotated to start in the IGS before it is stored", 
 test_that("a failed assembly carries the assembler's reason into the note", {
   dir <- withr::local_tempdir()
   con <- mk_asm_db(dir); on.exit(DBI::dbDisconnect(con))
-  ad <- file.path(dir, "S1", "assemble")
-  dir.create(ad, recursive = TRUE)
+  ad <- dir
   writeLines(">No assembly found: SPAdes exit 21: Invalid kmer coverage histogram",
     file.path(ad, "S1_assembly_0.fasta"))
   RiboPilot::load_assemblies(con, dir, "S1")
@@ -482,4 +474,29 @@ test_that("a failed assembly carries the assembler's reason into the note", {
   RiboPilot::load_assemblies(con, dir, "S1")
   expect_equal(DBI::dbGetQuery(con, "SELECT assemble_notes FROM assemble")$assemble_notes,
     "failed assembly")
+})
+
+test_that("score_one scores the fastas and graph in the folder it is given", {
+  dir <- withr::local_tempdir()
+  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, assemble_opts TEXT)")
+  DBI::dbExecute(con, "CREATE TABLE assemble_opts(assemble_opts TEXT, seeds_db TEXT)")
+  DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT, lineage TEXT, lineage_taxids TEXT)")
+  DBI::dbExecute(con, "INSERT INTO assemble VALUES('S1', 'default')")
+  DBI::dbExecute(con, "INSERT INTO assemble_opts VALUES('default', NULL)")
+  DBI::dbExecute(con, "INSERT INTO samples VALUES('S1', NULL, NULL)")
+  for (f in c("S1_assembly_0.fasta", "S1_assembly_1.fasta", "x.K115.graph1.selected_graph.gfa")) {
+    writeLines(c(">S1.1.1 linear", "ACGT"), file.path(dir, f))
+  }
+  got <- NULL
+  local_mocked_bindings(.package = "RiboPilot",
+    score_assembly = function(path_fastas, gfa_path, ...) {
+      got <<- list(fastas = basename(path_fastas), gfa = basename(gfa_path))
+      data.frame()
+    },
+    write_path_scores = function(...) invisible())
+  RiboPilot:::score_one(con, "S1", dir)
+  expect_equal(got$fastas, "S1_assembly_1.fasta")
+  expect_equal(got$gfa, "x.K115.graph1.selected_graph.gfa")
 })
