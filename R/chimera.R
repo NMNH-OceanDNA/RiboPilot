@@ -517,21 +517,55 @@ chimera_unit <- function(con, id, path = 1L, scaffold = 1L, dbarg = NULL, taxdum
 #' @noRd
 chimera_shift <- function(con, id, path, scaffold, offset, len) {
   p <- list(id, as.integer(path), as.integer(scaffold))
-  ch <- DBI::dbGetQuery(con, "SELECT junctions FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", params = p)
+  ch <- DBI::dbGetQuery(con, "SELECT junctions, label, score FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = p)
   if (!nrow(ch)) return(invisible())
   w <- DBI::dbGetQuery(con, "SELECT * FROM chimera_windows WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
     params = p)
   w$start <- w$start - offset; w$stop <- w$stop - offset
   w <- w[w$start >= 1 & w$stop <= len, , drop = FALSE]
-  j <- suppressWarnings(as.integer(strsplit(ch$junctions[1] %|NA|% "", ",", fixed = TRUE)[[1]])) - offset
+  j0 <- suppressWarnings(as.integer(strsplit(ch$junctions[1] %|NA|% "", ",", fixed = TRUE)[[1]]))
+  j <- j0 - offset
   j <- j[!is.na(j) & j >= 1 & j <= len]
   seg <- chimera_segments(w)
+  gone <- any(!is.na(j0)) && !length(j)
+  reason <- gsub(" ()", "", chimera_reason(seg, list(), j), fixed = TRUE)
+  if (gone) reason <- sub("no junction", "junctions trimmed away", reason, fixed = TRUE)
   DBI::dbWithTransaction(con, {
     DBI::dbExecute(con, "DELETE FROM chimera_windows WHERE ID = ? AND path = ? AND scaffold = ?", params = p)
     if (nrow(w)) DBI::dbAppendTable(con, "chimera_windows", w)
-    DBI::dbExecute(con, "UPDATE chimera SET junctions = ?, segments = ? WHERE ID = ? AND path = ? AND scaffold = ?",
+    DBI::dbExecute(con,
+      "UPDATE chimera SET junctions = ?, segments = ?, reason = ?, label = ?, score = ?
+       WHERE ID = ? AND path = ? AND scaffold = ?",
       params = c(list(paste(j, collapse = ","),
-        if (nrow(seg)) as.character(jsonlite::toJSON(seg, dataframe = "rows")) else NA_character_), p))
+        if (nrow(seg)) as.character(jsonlite::toJSON(seg, dataframe = "rows")) else NA_character_,
+        reason, if (gone) "clean" else ch$label[1], if (gone) 0 else ch$score[1]), p))
+  })
+  invisible()
+}
+
+#' A unit's chimera result and windows as JSON, kept with the trim backup
+#' @noRd
+chimera_snapshot <- function(con, id, path, scaffold) {
+  p <- list(id, as.integer(path), as.integer(scaffold))
+  tryCatch({
+    ch <- DBI::dbGetQuery(con, "SELECT * FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", params = p)
+    if (!nrow(ch)) return(NA_character_)
+    w <- DBI::dbGetQuery(con, "SELECT * FROM chimera_windows WHERE ID = ? AND path = ? AND scaffold = ?", params = p)
+    as.character(jsonlite::toJSON(list(chimera = ch, windows = w), dataframe = "rows", na = "null", digits = NA))
+  }, error = function(e) NA_character_)
+}
+
+#' Put back the chimera result and windows saved by [chimera_snapshot()]
+#' @noRd
+chimera_restore <- function(con, id, path, scaffold, snap) {
+  s <- jsonlite::fromJSON(snap)
+  p <- list(id, as.integer(path), as.integer(scaffold))
+  DBI::dbWithTransaction(con, {
+    DBI::dbExecute(con, "DELETE FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", params = p)
+    DBI::dbExecute(con, "DELETE FROM chimera_windows WHERE ID = ? AND path = ? AND scaffold = ?", params = p)
+    DBI::dbAppendTable(con, "chimera", as.data.frame(s$chimera))
+    if (is.data.frame(s$windows) && nrow(s$windows)) DBI::dbAppendTable(con, "chimera_windows", s$windows)
   })
   invisible()
 }

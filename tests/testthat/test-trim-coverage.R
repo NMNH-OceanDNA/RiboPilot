@@ -110,6 +110,29 @@ test_that("a trim moves the chimera junctions and windows, and a restore moves t
   expect_true(is.na(DBI::dbGetQuery(con, "SELECT clips FROM coverage")$clips))
 
   RiboPilot:::restore_assembly(con, "S1", 1L, 1L)
-  expect_equal(ch()$junctions, "70")
-  expect_equal(win()$start, 51L)
+  expect_equal(ch()$junctions, "30,70")
+  expect_equal(win()$start, c(1L, 51L))
+})
+
+test_that("trimming away every junction clears the chimera label, and a restore brings it back", {
+  dir <- withr::local_tempdir()
+  seq <- paste(sample(c("A", "C", "G", "T"), 100, TRUE), collapse = "")
+  con <- mk_trim_db(dir, seq, rep(20, 100))
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "INSERT INTO chimera (ID, path, scaffold, score, label, junctions, reason)
+    VALUES ('S1',1,1,0.9,'severe','30','1-40 C1; 41-90 C2; junction near 30')")
+  DBI::dbExecute(con, "INSERT INTO chimera_windows (ID, path, scaffold, start, stop, pident, lineage, lineage_taxids)
+    VALUES ('S1',1,1,1,40,99,'K;P;C1;o;f;g;s','1;2;3;;;;'), ('S1',1,1,51,90,99,'K;P;C2;o;f;g;s','1;2;4;;;;')")
+  ch <- function() DBI::dbGetQuery(con, "SELECT label, score, junctions, reason FROM chimera")
+
+  RiboPilot:::trim_assembly(con, "S1", 1L, 1L, from = 45, to = 100)
+  expect_equal(ch()$label, "clean")
+  expect_equal(ch()$score, 0)
+  expect_match(ch()$reason, "junctions trimmed away", fixed = TRUE)
+  expect_false(grepl("41-90", ch()$reason, fixed = TRUE))
+
+  RiboPilot:::restore_assembly(con, "S1", 1L, 1L)
+  expect_equal(ch()$label, "severe")
+  expect_equal(ch()$junctions, "30")
+  expect_equal(nrow(DBI::dbGetQuery(con, "SELECT * FROM chimera_windows")), 2L)
 })

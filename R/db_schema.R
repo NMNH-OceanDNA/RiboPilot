@@ -146,6 +146,7 @@ ASSEMBLY_BACKUP_DDL <- "CREATE TABLE IF NOT EXISTS assembly_backup (
   length INTEGER,
   annotations TEXT,
   coverage TEXT,
+  chimera TEXT,
   time_stamp INTEGER,
   PRIMARY KEY (ID, path, scaffold)
 );"

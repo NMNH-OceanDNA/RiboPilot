@@ -535,11 +535,12 @@ trim_assembly <- function(con, id, path = 1L, scaffold = 1L, from, to) {
     cov0 <- DBI::dbGetQuery(con, "SELECT depths FROM coverage WHERE ID = ? AND path = ? AND scaffold = ?",
       params = list(id, path, scaffold))
     DBI::dbExecute(con,
-      "INSERT INTO assembly_backup (ID, path, scaffold, sequence, length, annotations, coverage, time_stamp)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO assembly_backup (ID, path, scaffold, sequence, length, annotations, coverage, chimera, time_stamp)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
       params = list(id, path, scaffold, s$sequence[1], n,
         as.character(jsonlite::toJSON(ann0, dataframe = "rows", na = "null")),
-        if (nrow(cov0)) cov0$depths[1] else NA_character_, as.integer(Sys.time())))
+        if (nrow(cov0)) cov0$depths[1] else NA_character_,
+        chimera_snapshot(con, id, path, scaffold), as.integer(Sys.time())))
   }
   new_seq <- substr(s$sequence[1], from, to); new_len <- nchar(new_seq)
 
@@ -664,7 +665,7 @@ restore_assembly <- function(con, id, path = 1L, scaffold = 1L) {
   ensure_assembly_backup(con)
   path <- as.integer(path); scaffold <- as.integer(scaffold)
   bak <- DBI::dbGetQuery(con,
-    "SELECT sequence, length, annotations, coverage FROM assembly_backup WHERE ID = ? AND path = ? AND scaffold = ?",
+    "SELECT sequence, length, annotations, coverage, chimera FROM assembly_backup WHERE ID = ? AND path = ? AND scaffold = ?",
     params = list(id, path, scaffold))
   if (nrow(bak) == 0 || is.na(bak$sequence[1])) {
     stop("No original assembly on record for this unit (nothing to restore).", call. = FALSE)
@@ -689,7 +690,11 @@ restore_assembly <- function(con, id, path = 1L, scaffold = 1L) {
   })
 
   write_coverage_summary(con, id, path, scaffold, parse_depths(bak$coverage))
-  off <- if (is.na(cur)) -1L else as.integer(regexpr(cur, bak$sequence[1], fixed = TRUE))
-  if (off > 1L) chimera_shift(con, id, path, scaffold, 1L - off, bak$length[1])
+  if (!is.na(bak$chimera[1])) {
+    chimera_restore(con, id, path, scaffold, bak$chimera[1])
+  } else {
+    off <- if (is.na(cur)) -1L else as.integer(regexpr(cur, bak$sequence[1], fixed = TRUE))
+    if (off > 1L) chimera_shift(con, id, path, scaffold, 1L - off, bak$length[1])
+  }
   invisible(bak$length[1])
 }
