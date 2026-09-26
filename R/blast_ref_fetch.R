@@ -9,6 +9,17 @@ parse_defline_ids <- function(full) {
   list(acc = sub("\\s.*$", "", full), title = trimws(sub("^\\S+\\s*", "", full)))
 }
 
+#' Rewrite efetch's PDB deflines to the accession BLAST reports
+#'
+#' efetch names a PDB chain ">pdb|4V6X|A5 ..."; BLAST names it 4V6X_A5. Rewrites
+#' the file in place.
+#' @noRd
+normalize_pdb_deflines <- function(fasta) {
+  x <- readLines(fasta, warn = FALSE)
+  writeLines(sub("^>pdb\\|([^|]+)\\|(\\S+)", ">\\1_\\2", x), fasta)
+  invisible(fasta)
+}
+
 #' TRUE if the file's first non-blank line is a FASTA header
 #' @noRd
 is_fasta_file <- function(path) {

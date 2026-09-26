@@ -21,7 +21,7 @@ mark_unit_searched(
 
 \item{path, scaffold}{Assembly unit within the sample.}
 
-\item{query_md5}{md5 of the exact query sequence submitted.}
+\item{query_md5}{md5 of the query sequence and the search settings, as blast.nf computes it.}
 
 \item{n_hits}{Number of hits the search returned.}
 

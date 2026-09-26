@@ -327,7 +327,7 @@ rederive_blast_products <- function(con, ids = NULL) {
 #' @param con Open project DB connection.
 #' @param id Sample ID.
 #' @param path,scaffold Assembly unit within the sample.
-#' @param query_md5 md5 of the exact query sequence submitted.
+#' @param query_md5 md5 of the query sequence and the search settings, as blast.nf computes it.
 #' @param n_hits Number of hits the search returned.
 #' @param source Which search produced the hits, "local" or "remote".
 #' @return (invisibly) TRUE.

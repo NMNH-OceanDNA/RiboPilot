@@ -105,3 +105,19 @@ test_that("score_assembly numbers paths from the file names, not the order given
   # every path ties, so the lowest path number wins in any locale
   expect_equal(out$path[out$auto_select], 1L)
 })
+
+test_that("a seed database that cannot be downloaded leaves a note and the sample still scores", {
+  withr::local_options(timeout = 5)
+  local_mocked_bindings(assembly_anchors = function(...) character(0), .package = "RiboPilot")
+  con <- chimera_test_con()   # new_db() fixture from helper-chimera.R, sample S1
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "UPDATE assemble_opts SET seeds_db = 'http://127.0.0.1:9/seeds.fasta'")
+  out <- withr::local_tempdir()
+  ad <- file.path(out, "S1", "assemble"); dir.create(ad, recursive = TRUE)
+  writeLines(c(">S1.1.1 linear x", strrep("ACGT", 200)), file.path(ad, "S1_assembly_1.fasta"))
+  expect_true(is.na(suppressWarnings(RiboPilot:::local_ref("http://127.0.0.1:9/seeds.fasta"))))
+  expect_no_error(suppressWarnings(RiboPilot::score_one(con, "S1", out)))
+  expect_equal(nrow(DBI::dbGetQuery(con, "SELECT * FROM path_scores WHERE ID = 'S1'")), 1L)
+  expect_match(DBI::dbGetQuery(con, "SELECT assemble_notes FROM assemble WHERE ID = 'S1'")$assemble_notes,
+    "seed database could not be read", fixed = TRUE)
+})

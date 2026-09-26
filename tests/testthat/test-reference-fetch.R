@@ -79,6 +79,21 @@ test_that("write_blast_refs replaces rather than duplicating on a re-run", {
   expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM blast_ref_sequences")$n, 1L)
 })
 
+test_that("a PDB chain is stored under the accession BLAST reports", {
+  con <- mk_ref_db()
+  on.exit(DBI::dbDisconnect(con))
+  f <- withr::local_tempfile(fileext = ".fa")
+  writeLines(c(">pdb|4V6X|A5 Chain A5, 28S ribosomal RNA", strrep("ACGT", 100),
+    ">MN000001.1 Danio rerio 28S ribosomal RNA", strrep("TGCA", 100)), f)
+  RiboPilot:::normalize_pdb_deflines(f)
+  expect_equal(readLines(f)[1], ">4V6X_A5 Chain A5, 28S ribosomal RNA")
+  RiboPilot:::write_blast_refs(con, f, NULL)
+  expect_setequal(DBI::dbGetQuery(con, "SELECT accession FROM blast_ref_sequences")$accession,
+    c("4V6X_A5", "MN000001.1"))
+  bin <- readLines(system.file("nextflow", "bin", "rp_ref_store.R", package = "RiboPilot"))
+  expect_lt(grep("normalize_pdb_deflines", bin)[1], grep("annotate_records", bin)[1])
+})
+
 test_that("stop_if_nothing_stored fires only when input existed but nothing landed", {
   con <- mk_ref_db()
   on.exit(DBI::dbDisconnect(con))

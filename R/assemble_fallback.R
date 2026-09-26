@@ -114,7 +114,7 @@ run_spades <- function(r1, r2, out_dir, threads = 4, opts = "") {
 #' @param out_fa Output `<id>_assembly_1.fasta` path.
 #' @param min_contig Minimum contig length to consider.
 #' @param min_pident,max_evalue BLAST thresholds to call a contig rDNA.
-#' @return Number of contigs kept (0 if none).
+#' @return Number of contigs kept (0 if none, or when the label database or blastn cannot be used).
 #' @noRd
 extract_rdna_contigs <- function(contigs_fa, labels_db, id, out_fa,
                                  min_contig = 300, min_pident = 70, max_evalue = 1e-10) {
@@ -127,21 +127,20 @@ extract_rdna_contigs <- function(contigs_fa, labels_db, id, out_fa,
     return(0L)
   }
   db <- make_blast_db(local_ref(labels_db))
-  keep_names <- names(seqs)
-  if (!is.na(db) && nzchar(unname(Sys.which("blastn")))) {
-    qfa <- tempfile(fileext = ".fasta")
-    Biostrings::writeXStringSet(seqs, qfa)
-    out <- suppressWarnings(system2("blastn", c("-query", shQuote(qfa), "-db", shQuote(db),
-      "-outfmt", shQuote("6 qseqid pident evalue"), "-max_target_seqs", "1", "-evalue", "1e-5"),
-      stdout = TRUE, stderr = FALSE))
-    hits <- if (length(out)) utils::read.table(text = out, sep = "\t",
-      col.names = c("qseqid", "pident", "evalue"), stringsAsFactors = FALSE) else data.frame()
-    if (nrow(hits) > 0) {
-      hits <- hits[hits$pident >= min_pident & hits$evalue <= max_evalue, ]
-      keep_names <- intersect(names(seqs), unique(hits$qseqid))
-    } else {
-      keep_names <- character(0)
-    }
+  if (is.na(db) || !nzchar(unname(Sys.which("blastn")))) {
+    return(0L)
+  }
+  qfa <- tempfile(fileext = ".fasta")
+  Biostrings::writeXStringSet(seqs, qfa)
+  out <- suppressWarnings(system2("blastn", c("-query", shQuote(qfa), "-db", shQuote(db),
+    "-outfmt", shQuote("6 qseqid pident evalue"), "-max_target_seqs", "1", "-evalue", "1e-5"),
+    stdout = TRUE, stderr = FALSE))
+  hits <- if (length(out)) utils::read.table(text = out, sep = "\t",
+    col.names = c("qseqid", "pident", "evalue"), stringsAsFactors = FALSE) else data.frame()
+  keep_names <- character(0)
+  if (nrow(hits) > 0) {
+    hits <- hits[hits$pident >= min_pident & hits$evalue <= max_evalue, ]
+    keep_names <- intersect(names(seqs), unique(hits$qseqid))
   }
   seqs <- seqs[names(seqs) %in% keep_names]
   if (length(seqs) == 0) {
@@ -160,9 +159,10 @@ extract_rdna_contigs <- function(contigs_fa, labels_db, id, out_fa,
 
 #' Run an assembly fallback for one sample (Option B2 baiting, or Option A)
 #'
-#' Writes `<out_dir>/<id>_assembly_<n>.fasta` (a `_0` sentinel if nothing is
-#' recovered), matching the GetOrganelle output contract so the rest of the
-#' pipeline is unchanged.
+#' Writes `<out_dir>/<id>_assembly_<n>.fasta` (a `_0` sentinel naming the reason
+#' if nothing is recovered), matching the GetOrganelle output contract so the
+#' rest of the pipeline is unchanged. Nothing is assembled without a readable
+#' label database, or, for baiting, a readable seed database.
 #'
 #' @param id Sample ID.
 #' @param r1,r2 Trimmed paired reads.
@@ -182,10 +182,18 @@ fallback_assemble_one <- function(id, r1, r2, reference, labels_db, out_dir = ".
   method <- match.arg(method)
   dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
   out_fa <- file.path(out_dir, paste0(id, "_assembly_1.fasta"))
+  none <- function(why) {
+    writeLines(paste0(">No assembly found: ", why), file.path(out_dir, paste0(id, "_assembly_0.fasta")))
+    message("Fallback (", method, ") recovered no rDNA contigs for ", id, ": ", why)
+    invisible(0L)
+  }
+  labels_db <- local_ref(labels_db)
+  if (is.na(labels_db)) return(none("no usable label database to pick out rDNA contigs"))
 
   reads <- c(r1, r2)
   if (method == "bait") {
-    reference <- local_ref(reference)  # resolve a URL/local seeds DB to a file
+    reference <- local_ref(reference)
+    if (is.na(reference)) return(none("no usable seed database to bait reads with"))
     baited <- bait_reads(r1, r2, reference, file.path(out_dir, "rp_baited"), threads = threads,
       opts = bowtie2_opts)
     if (is.null(baited)) {
@@ -201,9 +209,7 @@ fallback_assemble_one <- function(id, r1, r2, reference, labels_db, out_dir = ".
   unlink(c(sp_dir, Sys.glob(file.path(out_dir, "rp_baited.*"))), recursive = TRUE)
 
   if (n == 0L) {
-    why <- attr(contigs, "why") %||% "no contig of 300 bp or more matched the label database"
-    writeLines(paste0(">No assembly found: ", why), file.path(out_dir, paste0(id, "_assembly_0.fasta")))
-    message("Fallback (", method, ") recovered no rDNA contigs for ", id, ": ", why)
+    none(attr(contigs, "why") %||% "no contig of 300 bp or more matched the label database")
   } else {
     message("Fallback (", method, ") recovered ", n, " rDNA contig(s) for ", id, ".")
   }

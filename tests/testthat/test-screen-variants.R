@@ -436,6 +436,24 @@ test_that("a sample with one on-target unit is a singleton, not NA", {
     "variant: singleton", fixed = TRUE)
 })
 
+test_that("the pipeline leaves the variant check to triage, after annotation lands", {
+  con <- mk_variant_db(); on.exit(DBI::dbDisconnect(con))
+  add_unit(con, 1, A, 2000L, annotate = FALSE)
+  add_unit(con, 2, A1, 200L, annotate = FALSE)
+  screen_sample(con, "S1", variants = FALSE)
+  expect_true(all(is.na(DBI::dbGetQuery(con, "SELECT variant_class v FROM screen")$v)))
+  # annotation arrives after the screen, as it does with a local BLAST
+  DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,1,'18S',1,?,'+')", params = list(nchar(A)))
+  DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,2,'18S',1,?,'+')", params = list(nchar(A1)))
+  RiboPilot:::screen_variants(con, "S1")
+  expect_equal(DBI::dbGetQuery(con, "SELECT variant_class v FROM screen ORDER BY scaffold")$v,
+    c("isomer", "isomer"))
+  bin <- system.file("nextflow", "bin", package = "RiboPilot")
+  expect_true(any(grepl("variants = FALSE", readLines(file.path(bin, "rp_screen.R")), fixed = TRUE)))
+  tri <- readLines(file.path(bin, "rp_triage.R"))
+  expect_lt(grep("screen_variants", tri)[1], grep("auto_triage_sample", tri)[1])
+})
+
 # --- the app badge ---
 
 test_that("the variant badge never borrows the off-target red or warning language", {

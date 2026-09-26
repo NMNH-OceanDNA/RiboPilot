@@ -4,7 +4,7 @@
 \alias{screen_sample}
 \title{Screen every unit of one sample}
 \usage{
-screen_sample(con, id, force = FALSE)
+screen_sample(con, id, force = FALSE, variants = TRUE)
 }
 \arguments{
 \item{con}{Open project DB connection.}
@@ -12,6 +12,8 @@ screen_sample(con, id, force = FALSE)
 \item{id}{Sample ID.}
 
 \item{force}{Recompute rows already at the current version.}
+
+\item{variants}{Also classify on-target units as isomers or paralogs. The pipeline's screen step passes FALSE; its triage step runs that check once annotation is done.}
 }
 \value{
 (invisibly) the number of units screened.

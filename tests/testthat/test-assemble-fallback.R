@@ -45,7 +45,8 @@ test_that("a SPAdes failure is written into the no-assembly marker with its exit
   skip_on_os("windows")
   fake_spades(21L)
   out <- withr::local_tempdir()
-  n <- suppressMessages(RiboPilot::fallback_assemble_one("S1", "r1.fq", "r2.fq", NA, NA,
+  lab <- file.path(out, "labels.fasta"); writeLines(c(">l", "ACGT"), lab)
+  n <- suppressMessages(RiboPilot::fallback_assemble_one("S1", "r1.fq", "r2.fq", NA, lab,
     out_dir = out, method = "denovo"))
   expect_equal(as.integer(n), 0L)
   expect_null(attr(n, "retry_status"))
@@ -59,7 +60,8 @@ test_that("a SPAdes memory kill hands its exit status back for a retry", {
   skip_on_os("windows")
   fake_spades(247L)
   out <- withr::local_tempdir()
-  n <- suppressMessages(RiboPilot::fallback_assemble_one("S1", "r1.fq", "r2.fq", NA, NA,
+  lab <- file.path(out, "labels.fasta"); writeLines(c(">l", "ACGT"), lab)
+  n <- suppressMessages(RiboPilot::fallback_assemble_one("S1", "r1.fq", "r2.fq", NA, lab,
     out_dir = out, method = "denovo"))
   expect_equal(attr(n, "retry_status"), 247L)
 })
@@ -72,12 +74,13 @@ test_that("the fallback script stops asking for a retry after the last attempt",
   skip_if(!file.exists(file.path(root, "DESCRIPTION")), "not a source checkout")
   fake_spades(247L)
   d <- withr::local_tempdir()
+  lab <- file.path(d, "labels.fasta"); writeLines(c(">l", "ACGT"), lab)
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(d, ".sqlite"))
   DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, assemble_opts TEXT)")
   DBI::dbExecute(con, "CREATE TABLE assemble_opts(assemble_opts TEXT, seeds_db TEXT,
     labels_db TEXT, bowtie2 TEXT, spades TEXT)")
   DBI::dbExecute(con, "INSERT INTO assemble VALUES ('S1', 'default')")
-  DBI::dbExecute(con, "INSERT INTO assemble_opts VALUES ('default', NULL, NULL, NULL, NULL)")
+  DBI::dbExecute(con, "INSERT INTO assemble_opts VALUES ('default', NULL, ?, NULL, NULL)", params = list(lab))
   DBI::dbDisconnect(con)
   withr::local_dir(d)
   run <- function(attempt) suppressWarnings(system2("Rscript",
@@ -87,4 +90,53 @@ test_that("the fallback script stops asking for a retry after the last attempt",
   expect_equal(run("1"), 247L)
   expect_equal(run("4"), 0L)
   expect_match(readLines("S1_assembly_0.fasta")[1], "SPAdes exit 247")
+})
+
+test_that("the fallback refuses to assemble without a usable label database", {
+  skip_on_os("windows")
+  fake_spades(21L)
+  out <- withr::local_tempdir()
+  n <- suppressMessages(RiboPilot::fallback_assemble_one("S1", "r1.fq", "r2.fq", NA, NA,
+    out_dir = out, method = "denovo"))
+  expect_equal(as.integer(n), 0L)
+  # SPAdes (stubbed to fail) would have overwritten this with its own exit note
+  expect_equal(readLines(file.path(out, "S1_assembly_0.fasta"))[1],
+    ">No assembly found: no usable label database to pick out rDNA contigs")
+})
+
+test_that("baiting refuses to run without a usable seed database", {
+  skip_on_os("windows")
+  fake_spades(21L)
+  out <- withr::local_tempdir()
+  lab <- file.path(out, "labels.fasta"); writeLines(c(">l", "ACGT"), lab)
+  n <- suppressMessages(RiboPilot::fallback_assemble_one("S1", "r1.fq", "r2.fq",
+    file.path(out, "missing_seeds.fasta"), lab, out_dir = out, method = "bait"))
+  expect_equal(as.integer(n), 0L)
+  expect_equal(readLines(file.path(out, "S1_assembly_0.fasta"))[1],
+    ">No assembly found: no usable seed database to bait reads with")
+})
+
+test_that("no contig is kept when the label database cannot be used", {
+  d <- withr::local_tempdir()
+  contigs <- file.path(d, "contigs.fasta")
+  writeLines(c(">NODE_1", strrep("ACGT", 100), ">NODE_2", strrep("TTGA", 100)), contigs)
+  out_fa <- file.path(d, "S1_assembly_1.fasta")
+  expect_equal(RiboPilot:::extract_rdna_contigs(contigs, NA, "S1", out_fa), 0L)
+  expect_false(file.exists(out_fa))
+})
+
+test_that("only contigs with a label hit are kept", {
+  skip_on_os("windows")
+  bin <- withr::local_tempdir()
+  writeLines(c("#!/bin/bash", "exit 0"), file.path(bin, "makeblastdb"))
+  writeLines(c("#!/bin/bash", "printf 'NODE_1\\t99.0\\t1e-50\\n'"), file.path(bin, "blastn"))
+  Sys.chmod(file.path(bin, c("makeblastdb", "blastn")), "0755")
+  withr::local_path(bin, action = "prefix")
+  d <- withr::local_tempdir()
+  contigs <- file.path(d, "contigs.fasta")
+  writeLines(c(">NODE_1", strrep("ACGT", 100), ">NODE_2", strrep("TTGA", 100)), contigs)
+  lab <- file.path(d, "labels.fasta"); writeLines(c(">l", "ACGT"), lab)
+  out_fa <- file.path(d, "S1_assembly_1.fasta")
+  expect_equal(RiboPilot:::extract_rdna_contigs(contigs, lab, "S1", out_fa), 1L)
+  expect_equal(readLines(out_fa)[1], ">S1.1.1 linear NODE_1")
 })

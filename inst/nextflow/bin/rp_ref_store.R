@@ -11,6 +11,7 @@ local({
   on.exit(DBI::dbDisconnect(con))
   cpu <- if (length(a) >= 3 && nzchar(a[3])) as.integer(a[3]) else 2L
   ref_dir <- if (length(a) >= 4 && nzchar(a[4])) a[4] else ""
+  RiboPilot:::normalize_pdb_deflines(a[2])
   # reference annotation is pinned to the metazoan constants, not a per-run setting
   ann <- annotate_records(a[2], kingdom = RiboPilot:::REF_ANNOT_KINGDOM, cpu = cpu,
     taxon = RiboPilot:::REF_ANNOT_TAXON)
