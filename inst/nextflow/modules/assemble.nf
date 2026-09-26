@@ -8,7 +8,7 @@ process assemble {
     errorStrategy 'ignore'
 
     input:
-    tuple val(id), path(reads), val(nthreads), val(mem), val(getOrganelle_opts), path(seeds), path(labels)
+    tuple val(id), path(reads), val(nthreads), val(mem), val(getOrganelle_opts), path(seeds, stageAs: 'seeds/*'), path(labels, stageAs: 'labels/*')
 
     output:
     // per-path formatted fastas (headers ">id.path.scaffold topology") + graph

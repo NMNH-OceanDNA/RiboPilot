@@ -259,7 +259,8 @@ unit_checks <- function(con, by = c("unit", "sample")) {
     "minor chimera" = u$chimera_label %in% "minor",
     "uncertain screen" = u$screen_verdict %in% "uncertain",
     "ITSx" = nzchar(itsx) & !startsWith(itsx, "not_run("),
-    "warnings" = vapply(fl, function(x) any(x != "contaminant"), logical(1)) | u$n_feat_flags > 0)
+    "warnings" = vapply(fl, function(x) any(x != "contaminant"), logical(1)),
+    "feature flags" = u$n_feat_flags > 0)
   cols <- if (by == "unit") c("ID", "path", "scaffold") else "ID"
   key <- if (by == "unit") unit_key(u$ID, u$path, u$scaffold) else u$ID
   rows <- split(seq_len(nrow(u)), factor(key, levels = unique(key)))

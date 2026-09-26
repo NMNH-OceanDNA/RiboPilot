@@ -65,9 +65,11 @@ process query_annotate_units {
     path 'annotate_units.tsv'
     script:
     """
-    printf 'ID\tpath\tscaffold\tcpus\tmem\n' > annotate_units.tsv
+    printf 'ID\tpath\tscaffold\tcpus\tmem\tsearched\n' > annotate_units.tsv
     sqlite3 -cmd '.timeout 10000' -separator '\t' '${params.db}' "
-      SELECT an.ID, an.path, an.scaffold, COALESCE(ao.cpus,4) AS cpus, COALESCE(ao.memory,8) AS mem
+      SELECT an.ID, an.path, an.scaffold, COALESCE(ao.cpus,4) AS cpus, COALESCE(ao.memory,8) AS mem,
+        EXISTS (SELECT 1 FROM blast_searched bs WHERE bs.ID = an.ID AND bs.path = an.path
+          AND bs.scaffold = an.scaffold) AS searched
       FROM annotate an
       JOIN annotate_opts ao ON an.annotate_opts = ao.annotate_opts
       JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold

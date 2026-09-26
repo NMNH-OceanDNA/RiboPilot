@@ -341,6 +341,11 @@ mark_unit_searched <- function(con, id, path = 1L, scaffold = 1L, query_md5,
      VALUES (?, ?, ?, ?, ?, ?, ?)",
     params = list(id, as.integer(path), as.integer(scaffold), query_md5,
       as.integer(n_hits), source, as.integer(Sys.time())))
+  # new hits: the stored verdict was judged on the old ones
+  if (DBI::dbExistsTable(con, "screen")) {
+    DBI::dbExecute(con, "DELETE FROM screen WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = list(id, as.integer(path), as.integer(scaffold)))
+  }
   invisible(TRUE)
 }
 

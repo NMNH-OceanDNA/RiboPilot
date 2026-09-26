@@ -269,6 +269,20 @@ carry_user_triage <- function(df, old) {
   i[miss] <- match(df$sequence[miss], old$sequence)
   u <- which(identical_user(old$triage_source[i]))
   df[u, cols] <- old[i[u], cols]
+  # a sequence the curator kept stays kept, once per kept copy
+  ko <- identical_user(old$triage_source) & old$triage %in% "keep"
+  for (s in unique(old$sequence[ko])) {
+    r <- which(df$sequence == s)
+    if (!length(r)) next
+    k <- r[identical_user(df$triage_source[r]) & df$triage[r] %in% "keep"]
+    if (!length(k)) {
+      r1 <- r[order(identical_user(df$triage_source[r]))][1]
+      df[r1, cols] <- old[which(ko & old$sequence == s)[1], cols]
+    }
+    extra <- length(k) - sum(ko & old$sequence == s)
+    if (extra > 0) df[utils::tail(k[miss[k]], extra), cols] <- NA_character_
+  }
+  u <- identical_user(df$triage_source)
   df$ignore[u] <- as.integer(df$triage[u] %in% "drop")
   df
 }
@@ -389,6 +403,13 @@ load_assemblies <- function(con, dir, ID) {
   old <- DBI::dbGetQuery(con,
     "SELECT path, scaffold, sequence, triage, triage_reason, triage_source, triage_rule
        FROM assemblies WHERE ID = ?", params = list(ID))
+  # a unit whose sequence changed describes another molecule now
+  reset_changed <- function(df) {
+    j <- match(paste(df$path, df$scaffold), paste(old$path, old$scaffold))
+    for (i in which(!is.na(j) & (is.na(old$sequence[j]) | old$sequence[j] != df$sequence))) {
+      reset_unit_evidence(con, ID, df$path[i], df$scaffold[i])
+    }
+  }
 
   if (length(gate) > 0) {
     df <- carry_user_triage(df, old)
@@ -402,6 +423,7 @@ load_assemblies <- function(con, dir, ID) {
     DBI::dbWithTransaction(con, {
       DBI::dbExecute(con, "DELETE FROM assemblies WHERE ID = ?", params = list(ID))
       DBI::dbAppendTable(con, "assemblies", df)
+      reset_changed(df)
       DBI::dbExecute(con, "UPDATE annotate SET annotate_switch = 0 WHERE ID = ?", params = list(ID))
       DBI::dbExecute(con,
         "UPDATE assemble SET paths=?, scaffolds=?, length=?, topology=?,
@@ -429,15 +451,13 @@ load_assemblies <- function(con, dir, ID) {
   }
 
   df <- carry_user_triage(df, old)
-  j <- match(paste(df$path, df$scaffold), paste(old$path, old$scaffold))
-  changed <- which(!is.na(j) & (is.na(old$sequence[j]) | old$sequence[j] != df$sequence))
 
   # replace this sample's assemblies, in one transaction: a failed append after a
   # committed delete would destroy them with nothing to put back
   DBI::dbWithTransaction(con, {
     DBI::dbExecute(con, "DELETE FROM assemblies WHERE ID = ?", params = list(ID))
     DBI::dbAppendTable(con, "assemblies", df)
-    for (i in changed) reset_unit_evidence(con, ID, df$path[i], df$scaffold[i])
+    reset_changed(df)
   })
 
   # Per-sample summary, described over the scaffolds that passed the length

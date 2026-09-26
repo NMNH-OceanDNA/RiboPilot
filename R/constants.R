@@ -339,7 +339,7 @@ MP_COL_TIPS <- c(
   sci_name         = "Taxon assigned from the NCBI taxdump",
   match_type       = "How the taxon name was matched",
   checks           = paste("Red: Lock and Export ask about it (off target, contaminant, severe chimera,",
-    "ITSx chimeric). Amber: worth a look (minor chimera, uncertain screen, ITSx, curation warnings).",
+    "ITSx chimeric). Amber: worth a look (minor chimera, uncertain screen, ITSx, curation warnings, feature flags).",
     "ok: on target and nothing flagged. On Assemble, covers the sample's kept scaffolds"),
   n_flags          = SCAFFOLD_COL_HELP$warnings,
   itsx_warnings    = SCAFFOLD_COL_HELP$itsx_warnings,

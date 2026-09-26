@@ -54,6 +54,11 @@ def live_db(p) {
     (p && (p ==~ '^https?://.*' || file(p).exists())) ? p : ''
 }
 
+// The fallback downloads a URL itself, so a dead one fails only its sample.
+def is_url(p) { p ==~ '^https?://.*' }
+def stage_db(p) { p && !is_url(p) ? file(p) : [] }
+def url_db(p) { is_url(p) ? p : '' }
+
 workflow {
     // samples straight from the DB (tab-separated, with header)
     rows = query_samples().splitCsv(header: true, sep: '\t')
@@ -115,8 +120,8 @@ workflow {
     fallback_assemble(asm_branched.fb.map { id, reads, cpus, mem, _go, seeds, labels, asm, bt2, spades ->
         // a seedless getorganelle sample lands here; give it a real fallback method
         def method = asm == 'getorganelle' ? 'bait' : asm
-        tuple(id, reads, cpus, mem, method, seeds && method == 'bait' ? file(seeds) : [],
-              labels ? file(labels) : [], bt2, spades) })
+        def s = method == 'bait' ? seeds : ''
+        tuple(id, reads, cpus, mem, method, stage_db(s), stage_db(labels), url_db(s), url_db(labels), bt2, spades) })
 
     // Load assemblies + score paths (also seeds one annotate unit per scaffold).
     // Both assemblers emit the same fasta contract, so they merge here and
@@ -125,9 +130,16 @@ workflow {
         .mix(fallback_assemble.out.paths)
         .mix(find_rrna.out.paths)
         .mix(stage_assembly.out.paths))
+    // Units queued for annotation only, on samples this run is not assembling.
+    // Same tuple shape as the freshly assembled ones, so they mix into one
+    // channel and the whole tail below is shared.
+    requeued_rows = query_annotate_units().splitCsv(header: true, sep: '\t')
+    requeued = requeued_rows.map { r -> tuple(r.ID, r.path, r.scaffold, r.cpus, r.mem) }
+    // a scaffold put back after a load-time drop was never searched or screened
+    unsearched = requeued_rows.filter { r -> r.searched == '0' }.map { r -> r.ID }.unique()
     // per-scaffold remote GenBank BLAST -> ranked reference candidates + screen,
     // then fetch each candidate reference (sequence + features) from NCBI
-    blast_genbank(score.out)
+    blast_genbank(score.out.mix(unsearched))
     blast_ref_fetch(blast_genbank.out)
     // per-unit coverage (independent branch off score)
     cov_in = score.out.join(preprocess.out.reads.map { id, reads, after -> tuple(id, reads) })
@@ -143,12 +155,6 @@ workflow {
         .flatMap { _id, tsv ->
             tsv.splitCsv(header: true, sep: '\t')
                .collect { r -> tuple(r.ID, r.path, r.scaffold, r.cpus, r.mem) } }
-    // Units queued for annotation only, on samples this run is not assembling.
-    // Same tuple shape as the freshly assembled ones, so they mix into one
-    // channel and the whole tail below is shared.
-    requeued = query_annotate_units()
-        .splitCsv(header: true, sep: '\t')
-        .map { r -> tuple(r.ID, r.path, r.scaffold, r.cpus, r.mem) }
 
     annotate_tools(units.mix(requeued))
     reconcile(annotate_tools.out)

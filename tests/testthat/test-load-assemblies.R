@@ -659,3 +659,43 @@ test_that("a re-assembly that moves a dropped contig clears the stale feature co
   expect_equal(DBI::dbGetQuery(con,
     "SELECT annotate_switch FROM annotate WHERE path = 1 AND scaffold = 1")$annotate_switch, 1L)
 })
+
+test_that("a contig that changes at a gate load loses its old evidence and lock", {
+  con <- chimera_test_con(); on.exit(DBI::dbDisconnect(con))
+  out <- withr::local_tempdir()
+  carry_fasta(out, list("1.1" = carry_seq(1200, 1)))
+  RiboPilot:::load_assemblies(con, out, "S1")
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_lock = 1, reviewed = 'yes'")
+  DBI::dbExecute(con, "INSERT INTO annotations (ID, path, scaffold, element) VALUES ('S1',1,1,'18S')")
+
+  DBI::dbExecute(con, "UPDATE assemble_opts SET max_paths = 1")
+  carry_fasta(out, list("1.1" = carry_seq(1300, 2), "2.1" = carry_seq(1300, 3)))
+  RiboPilot:::load_assemblies(con, out, "S1")
+  DBI::dbExecute(con, "UPDATE assemble_opts SET max_paths = 10")
+  RiboPilot:::load_assemblies(con, out, "S1")
+
+  a <- DBI::dbGetQuery(con, "SELECT annotate_lock, reviewed FROM annotate WHERE path = 1 AND scaffold = 1")
+  expect_equal(a$annotate_lock, 0L)
+  expect_equal(a$reviewed, "no")
+  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM annotations WHERE path = 1")$n, 0L)
+})
+
+test_that("a kept sequence stays kept once when its identical copies come back", {
+  con <- chimera_test_con(); on.exit(DBI::dbDisconnect(con))
+  out <- withr::local_tempdir()
+  a <- carry_seq(1200, 1)
+  carry_fasta(out, list("1.1" = a, "2.1" = a, "3.1" = a))
+  RiboPilot:::load_assemblies(con, out, "S1")
+  for (p in 1:2) RiboPilot:::set_unit_triage(con, "S1", p, 1L, "drop", source = "user")
+  RiboPilot:::set_unit_triage(con, "S1", 3L, 1L, "keep", source = "user")
+
+  carry_fasta(out, list("1.1" = a, "2.1" = a))
+  RiboPilot:::load_assemblies(con, out, "S1")
+  expect_equal(sum(carry_tri(con)$triage %in% "keep"), 1L)
+
+  carry_fasta(out, list("1.1" = a))
+  RiboPilot:::load_assemblies(con, out, "S1")
+  carry_fasta(out, list("1.1" = a, "2.1" = a, "3.1" = a))
+  RiboPilot:::load_assemblies(con, out, "S1")
+  expect_equal(carry_tri(con)$triage, c("keep", NA, NA))
+})

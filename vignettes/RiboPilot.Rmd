@@ -199,7 +199,7 @@ The columns to look at first:
   the unit is marked Reviewed: off target (the GenBank screen matched an
   organism outside your sample's lineage), contaminant, severe chimera, or
   ITSx chimeric. Amber is worth a look: a minor chimera, an uncertain screen,
-  ITSx flags, or curation warnings. Green "ok" means the screen matched your
+  ITSx flags, or curation warnings on the unit or its features. Green "ok" means the screen matched your
   organism and nothing was flagged; grey "no reference" means the screen had
   nothing to compare with.
 - **# Paths**, **# Units**, and **# Kept**: how many assembly paths and

@@ -254,7 +254,7 @@ test_that("unit_checks names every finding, colours the worst, and agrees with t
 
   u <- RiboPilot:::unit_checks(con, "unit")
   expect_equal(u$scaffold, 1:3)
-  expect_equal(u$checks, c("ok", "minor chimera, warnings", "off target, contaminant"))
+  expect_equal(u$checks, c("ok", "minor chimera, feature flags", "off target, contaminant"))
   expect_equal(u$checks_tone, c("success", "warning", "danger"))
   # red is exactly what the Export and Lock prompts ask about
   smry <- RiboPilot:::export_summary_df(con, cbind(u[1:3], seqid = "x"))
@@ -263,7 +263,7 @@ test_that("unit_checks names every finding, colours the worst, and agrees with t
   # one row per sample, over its kept units only, worst tone
   s <- RiboPilot:::unit_checks(con, "sample")
   expect_equal(s$ID, "S1")
-  expect_equal(s$checks, "off target, contaminant, minor chimera, warnings")
+  expect_equal(s$checks, "off target, contaminant, minor chimera, feature flags")
   expect_equal(s$checks_tone, "danger")
 
   # nothing flagged but no usable screen is grey, not green

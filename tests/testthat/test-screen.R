@@ -323,6 +323,18 @@ test_that("screen_one writes one row carrying the verdict and its evidence", {
   expect_true(!is.na(r$screen_reason) && nzchar(r$screen_reason))
 })
 
+test_that("a unit searched again is screened again", {
+  con <- mk_screen_db(); on.exit(DBI::dbDisconnect(con))
+  add_hits(con, 1, FISH_T)
+  screen_one(con, "S1", 1, 1)
+  DBI::dbExecute(con, "DELETE FROM blast_hits")
+  add_hits(con, 1, FUNGI_T, lin = "Eukaryota;Ascomycota;Sordariomycetes;o;f;g;s")
+  RiboPilot:::mark_unit_searched(con, "S1", 1, 1, "new", 3L)
+  screen_sample(con, "S1", variants = FALSE)
+  expect_equal(DBI::dbGetQuery(con, "SELECT screen_verdict v FROM screen WHERE ID='S1' AND scaffold=1")$v,
+    "off_target")
+})
+
 test_that("a unit with no hits gets a no_reference row rather than none", {
   con <- mk_screen_db(); on.exit(DBI::dbDisconnect(con))
   screen_one(con, "S1", 1, 2)

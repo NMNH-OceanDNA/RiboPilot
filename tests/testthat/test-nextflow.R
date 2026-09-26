@@ -181,6 +181,7 @@ mk_units_db <- function() {
   DBI::dbExecute(con, "CREATE TABLE annotate_opts(annotate_opts TEXT, cpus INT, memory INT)")
   DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, ignore INT)")
   DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, assemble_switch INT, assemble_lock INT)")
+  DBI::dbExecute(con, "CREATE TABLE blast_searched(ID TEXT, path INT, scaffold INT)")
   DBI::dbExecute(con, "INSERT INTO annotate_opts VALUES('default',4,8)")
   con
 }
@@ -1504,13 +1505,50 @@ test_that("score reads the assembly files staged into its task", {
 test_that("a fallback assembly's databases and tool options are task inputs", {
   fb <- readLines(system.file("nextflow", "modules", "fallback.nf", package = "RiboPilot"))
   expect_true(any(grepl(paste("tuple val(id), path(reads), val(nthreads), val(mem), val(method),",
-    "path(seeds), path(labels), val(bowtie2), val(spades)"), fb, fixed = TRUE)))
+    "path(seeds, stageAs: 'seeds/*'), path(labels, stageAs: 'labels/*'), val(seeds_url), val(labels_url),",
+    "val(bowtie2), val(spades)"), fb, fixed = TRUE)))
   expect_false(any(grepl("params.db", fb, fixed = TRUE)))
   txt <- paste(main_nf, collapse = "\n")
-  expect_match(txt, "seeds && method == 'bait' ? file(seeds) : []", fixed = TRUE)
-  expect_match(txt, "labels ? file(labels) : [], bt2, spades", fixed = TRUE)
+  expect_match(txt, "def s = method == 'bait' ? seeds : ''", fixed = TRUE)
   src <- readLines(system.file("nextflow", "bin", "rp_fallback.R", package = "RiboPilot"))
   expect_false(any(grepl("open_project_db|dbGetQuery", src)))
+})
+
+test_that("a database URL reaches the fallback as text, so a dead one fails only its sample", {
+  txt <- paste(main_nf, collapse = "\n")
+  expect_match(txt, "def stage_db(p) { p && !is_url(p) ? file(p) : [] }", fixed = TRUE)
+  expect_match(txt, "stage_db(s), stage_db(labels), url_db(s), url_db(labels), bt2, spades", fixed = TRUE)
+  fb <- paste(readLines(system.file("nextflow", "modules", "fallback.nf", package = "RiboPilot")),
+    collapse = "\n")
+  expect_match(fb, "'${seeds}' '${labels}' '${bowtie2}' '${spades}' '${seeds_url}' '${labels_url}'",
+    fixed = TRUE)
+  src <- paste(readLines(system.file("nextflow", "bin", "rp_fallback.R", package = "RiboPilot")),
+    collapse = "\n")
+  expect_match(src, "reference = db(7), labels_db = db(8)", fixed = TRUE)
+})
+
+test_that("seeds and labels with the same file name do not collide", {
+  for (f in c("fallback.nf", "assemble.nf")) {
+    nf <- paste(readLines(system.file("nextflow", "modules", f, package = "RiboPilot")), collapse = "\n")
+    expect_match(nf, "path(seeds, stageAs: 'seeds/*'), path(labels, stageAs: 'labels/*')",
+      fixed = TRUE, info = f)
+  }
+})
+
+test_that("a scaffold never searched is sent to BLAST and the screen when it is annotated", {
+  con <- mk_units_db(); on.exit(DBI::dbDisconnect(con))
+  add_unit(con, "PUTBACK")
+  add_unit(con, "SEARCHED")
+  DBI::dbExecute(con, "INSERT INTO blast_searched VALUES('SEARCHED',1,1)")
+  got <- DBI::dbGetQuery(con, paste(annotate_units_sql(), "ORDER BY an.ID"))
+  expect_equal(got$searched, c(0L, 1L))
+  code <- paste(main_nf[!grepl("^\\s*//", main_nf)], collapse = "\n")
+  expect_match(code, "filter { r -> r.searched == '0' }", fixed = TRUE)
+  expect_match(code, "blast_genbank(score.out.mix(unsearched))", fixed = TRUE)
+})
+
+test_that("the default container tag is newer than the last image built before the bin scripts changed", {
+  expect_true(utils::packageVersion("RiboPilot") > "0.0.0.9018")
 })
 
 test_that("find_rrna_pick and stage_assembly always run, so their database writes do", {

@@ -41,12 +41,13 @@ time, those two checks are simply skipped and the others still apply.
 The Checks column puts every check on one line, worst first, in a color that
 matches the worst finding. On the Assemble table it covers the sample's kept
 scaffolds; on the Annotation Review table, one unit. "warnings" means one of the
-flags above, on the unit or on one of its features.
+flags above on the unit itself, the ones the Warnings column counts; "feature
+flags" means one on one of its features.
 
 | Checks says | Color | What happens |
 |---|---|---|
 | off target, contaminant, severe chimera, ITSx chimeric | red | Lock and the Export window ask first, until the unit is marked Reviewed. |
-| minor chimera, uncertain screen, ITSx, warnings | amber | Worth a look; nothing asks. |
+| minor chimera, uncertain screen, ITSx, warnings, feature flags | amber | Worth a look; nothing asks. |
 | ok | green | The GenBank screen matched your sample's lineage, and nothing is flagged. |
 | no reference | grey | Nothing is flagged, but the screen had no usable GenBank match to judge by. |
 
