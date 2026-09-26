@@ -5,7 +5,8 @@
 mk_state_db <- function(dir) {
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
   DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, topology TEXT,
-                       length INT, length_raw INT, sequence TEXT, source_contig TEXT, ignore INT, edited INT, time_stamp INT)")
+                       length INT, length_raw INT, sequence TEXT, source_contig TEXT, ignore INT, edited INT, time_stamp INT,
+                       triage TEXT, triage_reason TEXT, triage_source TEXT, triage_rule TEXT)")
   DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, paths INT, scaffolds INT, length TEXT,
                        topology TEXT, assemble_switch INT, assemble_notes TEXT,
                        assemble_opts TEXT, time_stamp INT)")
@@ -99,10 +100,12 @@ test_that("dropping the last queued unit settles the sample", {
   RiboPilot:::reconcile_ignore_unit(con, "S1", 1L, 2L, 1L)
   expect_equal(sample_state(con), 2L)
 
-  # putting it back reopens the sample: it has to be annotated again
+  # putting it back queues the unit, not the sample: state 4 would re-assemble it
   DBI::dbExecute(con, "UPDATE assemblies SET ignore = 0 WHERE ID='S1' AND path=1 AND scaffold=2")
   RiboPilot:::reconcile_ignore_unit(con, "S1", 1L, 2L, 0L)
-  expect_equal(sample_state(con), 4L)
+  expect_equal(sample_state(con), 2L)
+  expect_equal(DBI::dbGetQuery(con,
+    "SELECT annotate_switch FROM annotate WHERE path=1 AND scaffold=2")$annotate_switch, 1L)
 })
 
 test_that("refresh_sample_state does not overwrite a state the pipeline did not set", {
@@ -203,4 +206,29 @@ test_that("a unit that was never annotated still queues", {
     "SELECT annotate_switch FROM annotate WHERE ID='S1' AND path=1 AND scaffold=2")
   expect_equal(st$annotate_switch, 1L)
   expect_equal(sample_state(con), 4L)
+})
+
+test_that("queued units never move a finished sample back to in progress", {
+  dir <- withr::local_tempdir()
+  con <- mk_state_db(dir); on.exit(DBI::dbDisconnect(con))
+  write_state_fasta(dir)
+  RiboPilot:::load_assemblies(con, dir, "S1")
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_switch = 2")
+  RiboPilot:::refresh_sample_state(con, "S1")
+  expect_equal(sample_state(con), 2L)
+
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_switch = 1")
+  RiboPilot:::refresh_sample_state(con, "S1")
+  expect_equal(sample_state(con), 2L)
+})
+
+test_that("a locked unit is not pending work", {
+  dir <- withr::local_tempdir()
+  con <- mk_state_db(dir); on.exit(DBI::dbDisconnect(con))
+  write_state_fasta(dir)
+  RiboPilot:::load_assemblies(con, dir, "S1")
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_switch = 2 WHERE scaffold = 1")
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_lock = 1 WHERE scaffold = 2")
+  RiboPilot:::refresh_sample_state(con, "S1")
+  expect_equal(sample_state(con), 2L)
 })

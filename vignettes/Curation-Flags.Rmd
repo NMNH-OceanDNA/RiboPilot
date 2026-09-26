@@ -203,6 +203,8 @@ If you keep or drop a scaffold by hand, that decision is recorded as yours,
 and a later automatic re-run will not overwrite it, even if the rules above
 would now propose something different. Re-triaging only touches scaffolds it
 decided itself, unless you explicitly ask it to reconsider your calls too.
+They also survive assembling the sample again, as long as the scaffold comes
+back with the same sequence; a scaffold whose sequence changed starts undecided.
 
 # Depth is shown, not decided
 

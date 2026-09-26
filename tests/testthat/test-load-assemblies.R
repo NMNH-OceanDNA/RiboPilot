@@ -14,7 +14,7 @@ mk_asm_db <- function(dir) {
                        max_scaffolds INT, min_assembly_length INT)")
   DBI::dbExecute(con, "CREATE TABLE annotate(ID TEXT, path INT, scaffold INT, annotate_switch INT,
                        annotate_lock INT, annotate_opts TEXT, curate_opts TEXT, reviewed TEXT,
-                       partial TEXT, problematic TEXT, export_group TEXT,
+                       partial TEXT, problematic TEXT, export_group TEXT, n_features INT,
                        PRIMARY KEY (ID, path, scaffold))")
   DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT)")
   DBI::dbExecute(con, "CREATE TABLE assembly_backup(ID TEXT, path INT, scaffold INT)")
@@ -50,8 +50,7 @@ test_that("a re-assembly preserves per-scaffold ignore flags", {
   DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,2,'18S')")
 
   # curator drops scaffold 2
-  DBI::dbExecute(con, "UPDATE assemblies SET ignore = 1 WHERE ID='S1' AND path=1 AND scaffold=2")
-  RiboPilot:::reconcile_ignore_unit(con, "S1", 1L, 2L, 1L)
+  RiboPilot:::set_unit_triage(con, "S1", 1L, 2L, "drop", source = "user")
 
   # HELD, not deleted: the unit is already invisible downstream (everything
   # filters on assemblies.ignore), so dropping its curation buys nothing and
@@ -219,6 +218,7 @@ test_that("raising the limit and re-running recovers a gated sample", {
   # the curator raises the limit and re-queues; the blanket ignore the gate set
   # must not be mistaken for their own keep/drop decisions
   DBI::dbExecute(con, "UPDATE assemble_opts SET max_scaffolds = 10")
+  DBI::dbExecute(con, "UPDATE assemble SET assemble_switch = 1")
   RiboPilot:::load_assemblies(con, dir, "S1")
 
   expect_equal(gate_state(con)$assemble_switch, 4L)
@@ -235,11 +235,13 @@ test_that("a curator's own drops still survive a re-assembly", {
   write_many_scaffolds(dir, 4)
   RiboPilot:::load_assemblies(con, dir, "S1")
 
-  DBI::dbExecute(con, "UPDATE assemblies SET ignore = 1 WHERE scaffold = 2")
+  RiboPilot:::set_unit_triage(con, "S1", 1L, 2L, "drop", source = "user")
   RiboPilot:::load_assemblies(con, dir, "S1")
 
-  ig <- DBI::dbGetQuery(con, "SELECT scaffold, ignore FROM assemblies ORDER BY scaffold")
+  ig <- DBI::dbGetQuery(con, "SELECT scaffold, ignore, triage, triage_source FROM assemblies ORDER BY scaffold")
   expect_equal(ig$ignore, c(0L, 1L, 0L, 0L))
+  expect_equal(ig$triage, c(NA, "drop", NA, NA))
+  expect_equal(ig$triage_source, c(NA, "user", NA, NA))
 })
 
 # --- min_assembly_length is a filter, not a gate -------------------------------
@@ -482,4 +484,162 @@ test_that("a failed assembly carries the assembler's reason into the note", {
   RiboPilot::load_assemblies(con, dir, "S1")
   expect_equal(DBI::dbGetQuery(con, "SELECT assemble_notes FROM assemble")$assemble_notes,
     "failed assembly")
+})
+
+# --- triage decisions across a re-assembly -------------------------------------
+# Real schema, and decisions made through set_unit_triage(), as the app does.
+
+carry_fasta <- function(dir, seqs) {
+  ad <- file.path(dir, "S1", "assemble")
+  dir.create(ad, recursive = TRUE, showWarnings = FALSE)
+  unlink(Sys.glob(file.path(ad, "*")))
+  writeLines(unlist(lapply(names(seqs), function(k)
+    c(sprintf(">S1.%s linear c%s", k, k), seqs[[k]]))), file.path(ad, "S1_assembly_1.fasta"))
+}
+carry_seq <- function(n, seed) {
+  withr::with_seed(seed, paste(sample(c("A", "C", "G", "T"), n, TRUE), collapse = ""))
+}
+carry_tri <- function(con) DBI::dbGetQuery(con,
+  "SELECT path, scaffold, ignore, triage, triage_source FROM assemblies ORDER BY path, scaffold")
+
+test_that("a curator's drop survives a re-assembly and the triage after it", {
+  con <- chimera_test_con(); on.exit(DBI::dbDisconnect(con))
+  out <- withr::local_tempdir()
+  carry_fasta(out, list("1.1" = carry_seq(1200, 1), "1.2" = carry_seq(900, 2), "1.3" = carry_seq(1500, 3)))
+  RiboPilot:::load_assemblies(con, out, "S1")
+  RiboPilot:::set_unit_triage(con, "S1", 1L, 2L, "drop", reason = "looks off", source = "user")
+
+  RiboPilot:::load_assemblies(con, out, "S1")
+  RiboPilot:::auto_triage_sample(con, "S1")
+
+  r <- DBI::dbGetQuery(con, "SELECT ignore, triage, triage_reason, triage_source
+    FROM assemblies WHERE path = 1 AND scaffold = 2")
+  expect_equal(r$ignore, 1L)
+  expect_equal(r$triage, "drop")
+  expect_equal(r$triage_reason, "looks off")
+  expect_equal(r$triage_source, "user")
+})
+
+test_that("a curator's drop follows its contig, not its number", {
+  con <- chimera_test_con(); on.exit(DBI::dbDisconnect(con))
+  out <- withr::local_tempdir()
+  a <- carry_seq(1200, 1); b <- carry_seq(900, 2)
+  carry_fasta(out, list("1.1" = a, "1.2" = b))
+  RiboPilot:::load_assemblies(con, out, "S1")
+  RiboPilot:::set_unit_triage(con, "S1", 1L, 2L, "drop", source = "user")
+
+  carry_fasta(out, list("1.1" = b, "1.2" = a))
+  RiboPilot:::load_assemblies(con, out, "S1")
+
+  r <- carry_tri(con)
+  expect_equal(r$ignore, c(1L, 0L))
+  expect_equal(r$triage, c("drop", NA))
+})
+
+test_that("identical copies keep their own decisions", {
+  con <- chimera_test_con(); on.exit(DBI::dbDisconnect(con))
+  out <- withr::local_tempdir()
+  a <- carry_seq(1200, 1)
+  carry_fasta(out, list("1.1" = a, "1.2" = a))
+  RiboPilot:::load_assemblies(con, out, "S1")
+  RiboPilot:::set_unit_triage(con, "S1", 1L, 2L, "drop", source = "user")
+
+  RiboPilot:::load_assemblies(con, out, "S1")
+  expect_equal(carry_tri(con)$ignore, c(0L, 1L))
+})
+
+test_that("a changed sequence starts undecided", {
+  con <- chimera_test_con(); on.exit(DBI::dbDisconnect(con))
+  out <- withr::local_tempdir()
+  carry_fasta(out, list("1.1" = carry_seq(1200, 1)))
+  RiboPilot:::load_assemblies(con, out, "S1")
+  RiboPilot:::set_unit_triage(con, "S1", 1L, 1L, "drop", source = "user")
+
+  carry_fasta(out, list("1.1" = carry_seq(1200, 9)))
+  RiboPilot:::load_assemblies(con, out, "S1")
+  r <- carry_tri(con)
+  expect_equal(r$ignore, 0L)
+  expect_true(is.na(r$triage_source))
+})
+
+test_that("a gate failure keeps the curator's decisions for the re-run", {
+  con <- chimera_test_con(); on.exit(DBI::dbDisconnect(con))
+  out <- withr::local_tempdir()
+  carry_fasta(out, list("1.1" = carry_seq(1200, 1), "1.2" = carry_seq(900, 2), "1.3" = carry_seq(1500, 3)))
+  RiboPilot:::load_assemblies(con, out, "S1")
+  RiboPilot:::set_unit_triage(con, "S1", 1L, 2L, "drop", source = "user")
+
+  DBI::dbExecute(con, "UPDATE assemble_opts SET max_scaffolds = 2")
+  DBI::dbExecute(con, "UPDATE assemble SET assemble_switch = 1")
+  RiboPilot:::load_assemblies(con, out, "S1")
+  expect_equal(DBI::dbGetQuery(con, "SELECT assemble_switch FROM assemble")$assemble_switch, 3L)
+  expect_equal(carry_tri(con)$triage_source, c(NA, "user", NA))
+
+  DBI::dbExecute(con, "UPDATE assemble_opts SET max_scaffolds = 10")
+  DBI::dbExecute(con, "UPDATE assemble SET assemble_switch = 1")
+  RiboPilot:::load_assemblies(con, out, "S1")
+  expect_equal(carry_tri(con)$ignore, c(0L, 1L, 0L))
+})
+
+test_that("a rescue assembly's new scaffolds are annotated in the same run", {
+  con <- chimera_test_con(); on.exit(DBI::dbDisconnect(con))
+  out <- withr::local_tempdir()
+  # every piece is under the 500 bp minimum: the sample fails
+  carry_fasta(out, list("1.1" = carry_seq(300, 1), "1.2" = carry_seq(200, 2)))
+  RiboPilot:::load_assemblies(con, out, "S1")
+  expect_equal(DBI::dbGetQuery(con, "SELECT assemble_switch FROM assemble")$assemble_switch, 3L)
+
+  # Save in Assembly Options re-queues it; the fallback assembler gives new contigs
+  DBI::dbExecute(con, "UPDATE assemble SET assemble_switch = 1")
+  carry_fasta(out, list("1.1" = carry_seq(1286, 3), "1.2" = carry_seq(944, 4)))
+  RiboPilot:::load_assemblies(con, out, "S1")
+
+  expect_equal(carry_tri(con)$ignore, c(0L, 0L))
+  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM annotate an
+    JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
+    WHERE an.ID = 'S1' AND an.annotate_lock = 0 AND COALESCE(asm.ignore,0) = 0")$n, 2L)
+  expect_equal(DBI::dbGetQuery(con, "SELECT assemble_switch FROM assemble")$assemble_switch, 4L)
+})
+
+test_that("a sample with no unit left to annotate is not left in progress", {
+  con <- chimera_test_con(); on.exit(DBI::dbDisconnect(con))
+  out <- withr::local_tempdir()
+  carry_fasta(out, list("1.1" = carry_seq(1200, 1), "1.2" = carry_seq(900, 2)))
+  RiboPilot:::load_assemblies(con, out, "S1")
+  for (s in 1:2) RiboPilot:::set_unit_triage(con, "S1", 1L, s, "drop", source = "user")
+
+  DBI::dbExecute(con, "UPDATE assemble SET assemble_switch = 1")
+  RiboPilot:::load_assemblies(con, out, "S1")
+  expect_equal(DBI::dbGetQuery(con, "SELECT assemble_switch FROM assemble")$assemble_switch, 2L)
+})
+
+test_that("a curator's keep wins over the length filter", {
+  con <- chimera_test_con(); on.exit(DBI::dbDisconnect(con))
+  out <- withr::local_tempdir()
+  carry_fasta(out, list("1.1" = carry_seq(1200, 1), "1.2" = carry_seq(900, 2)))
+  RiboPilot:::load_assemblies(con, out, "S1")
+  RiboPilot:::set_unit_triage(con, "S1", 1L, 2L, "keep", source = "user")
+
+  DBI::dbExecute(con, "UPDATE assemble_opts SET min_assembly_length = 1000")
+  RiboPilot:::load_assemblies(con, out, "S1")
+  r <- carry_tri(con)
+  expect_equal(r$ignore, c(0L, 0L))
+  expect_equal(r$triage, c(NA, "keep"))
+})
+
+test_that("a re-assembly that moves a dropped contig clears the stale feature count", {
+  con <- chimera_test_con(); on.exit(DBI::dbDisconnect(con))
+  out <- withr::local_tempdir()
+  a <- carry_seq(1200, 1); b <- carry_seq(900, 2)
+  carry_fasta(out, list("1.1" = a, "1.2" = b))
+  RiboPilot:::load_assemblies(con, out, "S1")
+  DBI::dbExecute(con, "UPDATE annotate SET n_features = 3, annotate_switch = 2")
+  RiboPilot:::set_unit_triage(con, "S1", 1L, 2L, "drop", source = "user")
+
+  carry_fasta(out, list("1.1" = b, "1.2" = a))
+  RiboPilot:::load_assemblies(con, out, "S1")
+  # putting it back must queue it: its old features described the other contig
+  RiboPilot:::set_unit_triage(con, "S1", 1L, 1L, "keep", source = "user")
+  expect_equal(DBI::dbGetQuery(con,
+    "SELECT annotate_switch FROM annotate WHERE path = 1 AND scaffold = 1")$annotate_switch, 1L)
 })
