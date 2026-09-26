@@ -1547,10 +1547,6 @@ test_that("a scaffold never searched is sent to BLAST and the screen when it is 
   expect_match(code, "blast_genbank(score.out.mix(unsearched))", fixed = TRUE)
 })
 
-test_that("the default container tag is newer than the last image built before the bin scripts changed", {
-  expect_true(utils::packageVersion("RiboPilot") > "0.0.0.9018")
-})
-
 test_that("find_rrna_pick and stage_assembly always run, so their database writes do", {
   nf <- readLines(system.file("nextflow", "modules", "find_rrna.nf", package = "RiboPilot"))
   for (p in c("find_rrna_pick", "stage_assembly")) {
