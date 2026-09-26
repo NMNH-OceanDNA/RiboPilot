@@ -136,6 +136,10 @@ test_that("each pipeline note gets a plain cause and a next step", {
     "memory")
   expect_match(h("failed assembly")$next_step, "SPAdes, baited")
   expect_match(h(NA_character_)$why, "no rDNA scaffolds")
+  expect_match(h("failed assembly: no usable seed database to bait reads with")$next_step,
+    "Seed database and Label database", fixed = TRUE)
+  expect_match(h("failed assembly: no usable label database to pick out rDNA contigs")$why,
+    "no seed or label database")
 })
 
 test_that("a project lock refuses a second run and clears once the run is gone", {

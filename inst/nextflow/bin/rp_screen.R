@@ -10,6 +10,6 @@ rp_args(a, 2, "rp_screen.R <db> <id>")
 n <- local({
   con <- open_project_db(a[1])
   on.exit(DBI::dbDisconnect(con))
-  screen_sample(con, a[2])
+  screen_sample(con, a[2], variants = FALSE)
 })
 cat("screen: ", a[2], " - ", n, " unit(s)\n", sep = "")

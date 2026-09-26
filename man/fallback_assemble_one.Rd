@@ -40,7 +40,8 @@ preset.}
   memory, attribute `retry_status` holds its exit status.
 }
 \description{
-Writes `<out_dir>/<id>_assembly_<n>.fasta` (a `_0` sentinel if nothing is
-recovered), matching the GetOrganelle output contract so the rest of the
-pipeline is unchanged.
+Writes `<out_dir>/<id>_assembly_<n>.fasta` (a `_0` sentinel naming the reason
+if nothing is recovered), matching the GetOrganelle output contract so the
+rest of the pipeline is unchanged. Nothing is assembled without a readable
+label database, or, for baiting, a readable seed database.
 }

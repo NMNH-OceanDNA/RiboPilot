@@ -121,7 +121,7 @@ score_assembly <- function(path_fastas,
       NA_real_
     }
     anchors <- paste(assembly_anchors(fa), collapse = ",")
-    bh <- if (!is.null(blast_db)) blast_best_hits(fa, blast_db, with_staxids) else data.frame()
+    bh <- if (!is.null(blast_db) && !is.na(blast_db)) blast_best_hits(fa, blast_db, with_staxids) else data.frame()
     top <- if (nrow(bh) > 0) bh[which.max(bh$bitscore), ] else NULL
     data.frame(
       path = pnum[i],
@@ -156,7 +156,7 @@ score_assembly <- function(path_fastas,
     expected_length = expected_length, weights = weights)
 }
 
-#' Resolve a seeds/BLAST reference to a local file (download a URL to temp)
+#' Resolve a seeds/BLAST reference to a local file (download a URL to temp); NA when it cannot be read
 #' @noRd
 local_ref <- function(ref) {
   if (is.na(ref) || !nzchar(ref)) {
@@ -164,10 +164,9 @@ local_ref <- function(ref) {
   }
   if (grepl("^https?://", ref)) {
     dest <- tempfile(fileext = ".fasta")
-    if (utils::download.file(ref, dest, quiet = TRUE, mode = "wb") != 0) {
-      return(NA_character_)
-    }
-    return(dest)
+    ok <- tryCatch(utils::download.file(ref, dest, quiet = TRUE, mode = "wb") == 0,
+      error = function(e) FALSE)
+    return(if (ok) dest else NA_character_)
   }
   if (file.exists(ref)) ref else NA_character_
 }

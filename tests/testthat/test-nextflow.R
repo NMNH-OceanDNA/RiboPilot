@@ -932,6 +932,61 @@ test_that("an unconfigured project falls back to remote without usage noise", {
   expect_equal(searched$source[1], "remote")
 })
 
+test_that("a changed BLAST setting searches a unit again, an unchanged one does not", {
+  skip_on_cran()
+  skip_if_not_installed("withr")
+  skip_if(Sys.which("nextflow") == "", "nextflow not installed")
+  skip_if(Sys.which("sqlite3") == "", "sqlite3 not installed")
+  src <- RiboPilot:::ribopilot_src_default()
+  skip_if(!file.exists(file.path(src, "DESCRIPTION")), "not a source checkout")
+  root <- withr::local_tempdir()
+  empty_db_dir <- file.path(root, "no_panels"); dir.create(empty_db_dir)
+  withr::local_envvar(RIBOPILOT_DB_DIR = empty_db_dir)
+  proj <- mk_dbarg_project(root, "")
+  calls <- file.path(root, "blastn_calls.txt")
+  writeLines(c("#!/usr/bin/env bash", sprintf("echo x >> '%s'", calls),
+    "printf 'REMOTE1\\tDanio rerio 18S ribosomal RNA gene\\t99.0\\t80\\t1e-90\\t7955\\t1500\\t1600\\t1\\t1600\\t1\\t1600\\t6997\\tq1\\n'"),
+    file.path(proj$fake_bin, "blastn"))
+  n_calls <- function() if (file.exists(calls)) length(readLines(calls)) else 0L
+  expect_equal(run_dbarg_project(root, proj)$status, 0)
+  expect_equal(n_calls(), 1L)
+  run_dbarg_project(root, proj)
+  expect_equal(n_calls(), 1L)
+  con <- DBI::dbConnect(RSQLite::SQLite(), proj$db_path)
+  DBI::dbExecute(con, "UPDATE blast_opts SET max_target_seqs = 20")
+  DBI::dbDisconnect(con)
+  run_dbarg_project(root, proj)
+  expect_equal(n_calls(), 2L)
+})
+
+test_that("a failed escalation to NCBI is tried again on the next run", {
+  skip_on_cran()
+  skip_if_not_installed("withr")
+  skip_if(Sys.which("nextflow") == "", "nextflow not installed")
+  skip_if(Sys.which("sqlite3") == "", "sqlite3 not installed")
+  src <- RiboPilot:::ribopilot_src_default()
+  skip_if(!file.exists(file.path(src, "DESCRIPTION")), "not a source checkout")
+  root <- withr::local_tempdir()
+  panel_dir <- file.path(root, "panel"); dir.create(panel_dir)
+  panel <- file.path(panel_dir, "ribopilot_rrna")
+  for (e in c("nin", "nsq", "nhr", "ndb")) writeLines("x", paste0(panel, ".", e))
+  proj <- mk_dbarg_project(root, panel)
+  calls <- file.path(root, "blastn_calls.txt")
+  # the panel names nothing and NCBI cannot be reached
+  writeLines(c("#!/usr/bin/env bash", sprintf("echo \"$*\" >> '%s'", calls),
+    "case \" $* \" in *\" -remote \"*) exit 1 ;; *) exit 0 ;; esac"),
+    file.path(proj$fake_bin, "blastn"))
+  remote_calls <- function() sum(grepl("-remote", readLines(calls), fixed = TRUE))
+  expect_equal(run_dbarg_project(root, proj)$status, 0)
+  expect_equal(remote_calls(), 1L)
+  con <- DBI::dbConnect(RSQLite::SQLite(), proj$db_path)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  expect_equal(DBI::dbGetQuery(con, "SELECT query_md5 FROM blast_searched")$query_md5,
+    "remote_fallback_failed")
+  run_dbarg_project(root, proj)
+  expect_equal(remote_calls(), 2L)
+})
+
 test_that("a configured panel that rp_dbarg.R cannot use is reported, not silently dropped", {
   # local_blast_db_arg()'s commonest failure (blast_db_exists() FALSE, e.g. the
   # panel path was never bind-mounted into the container) returns NULL with no

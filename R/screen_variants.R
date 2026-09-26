@@ -299,8 +299,9 @@ screen_reason_base <- function(reason) {
 #' question the screen already owns, and a unit that has changed verdict has any
 #' stale finding cleared.
 #'
-#' No version guard: the only caller is the per-sample `screen` pipeline process,
-#' once per run, and identical anchors short-circuit without aligning.
+#' No version guard: it runs once per sample per run, from the pipeline's triage
+#' step (after annotation) and from [screen_sample()], and identical anchors
+#' short-circuit without aligning.
 #' @param con Open project DB connection.
 #' @param id Sample ID.
 #' @return (invisibly) the number of units given a variant class.

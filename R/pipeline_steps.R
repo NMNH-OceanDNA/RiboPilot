@@ -15,16 +15,23 @@
 #' @export
 score_one <- function(con, id, dir, taxdump_dir = NULL) {
   td <- if (have_taxdump(taxdump_dir)) taxdump_dir else NULL
-  seeds_db <- DBI::dbGetQuery(con,
-    "SELECT ao.seeds_db FROM assemble a JOIN assemble_opts ao ON a.assemble_opts = ao.assemble_opts WHERE a.ID = ?",
-    params = list(id))$seeds_db[1]
-  blast_db <- make_blast_db(local_ref(seeds_db))
-
   fastas <- Sys.glob(file.path(dir, paste0(id, "_assembly_*.fasta")))
   fastas <- fastas[!grepl("_assembly_0\\.fasta$", fastas)]
   if (length(fastas) == 0) {
     return(invisible(NULL))
   }
+  seeds_db <- DBI::dbGetQuery(con,
+    "SELECT ao.seeds_db FROM assemble a JOIN assemble_opts ao ON a.assemble_opts = ao.assemble_opts WHERE a.ID = ?",
+    params = list(id))$seeds_db[1]
+  seeds <- local_ref(seeds_db)
+  if (is.na(seeds) && !is.na(seeds_db) && nzchar(seeds_db)) {
+    note <- paste("seed database could not be read, so paths were scored without it:", seeds_db)
+    DBI::dbExecute(con,
+      "UPDATE assemble SET assemble_notes = CASE WHEN COALESCE(assemble_notes, '') = '' THEN ?
+         ELSE assemble_notes || '; ' || ? END WHERE ID = ?",
+      params = list(note, note, id))
+  }
+  blast_db <- make_blast_db(seeds)
   gfa <- Sys.glob(file.path(dir, "*.gfa"))
   tax <- DBI::dbGetQuery(con,
     "SELECT lineage, lineage_taxids FROM samples WHERE ID = ?", params = list(id))

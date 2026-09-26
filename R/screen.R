@@ -379,15 +379,16 @@ screen_one <- function(con, id, path = 1L, scaffold = 1L, force = FALSE) {
 #' @param con Open project DB connection.
 #' @param id Sample ID.
 #' @param force Recompute rows already at the current version.
+#' @param variants Also classify on-target units as isomers or paralogs. The pipeline's screen step passes FALSE; its triage step runs that check once annotation is done.
 #' @return (invisibly) the number of units screened.
 #' @export
-screen_sample <- function(con, id, force = FALSE) {
+screen_sample <- function(con, id, force = FALSE, variants = TRUE) {
   u <- DBI::dbGetQuery(con,
     "SELECT path, scaffold FROM assemblies WHERE ID = ? ORDER BY path, scaffold",
     params = list(id))
   for (i in seq_len(nrow(u))) screen_one(con, id, u$path[i], u$scaffold[i], force = force)
   # after the loop, never before: screen_one() rewrites a row with DELETE plus
   # append, so a variant column written first would be silently wiped
-  screen_variants(con, id)
+  if (isTRUE(variants)) screen_variants(con, id)
   invisible(nrow(u))
 }

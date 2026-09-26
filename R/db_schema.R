@@ -39,10 +39,12 @@ BLAST_HITS_DDL <- "CREATE TABLE IF NOT EXISTS blast_hits (
 
 #' DDL for blast_searched: which units have been searched, and by which search.
 #'
-#' Keyed on a hash of the query sequence, so a re-assembled or trimmed unit is
-#' searched again rather than inheriting the previous contig's hits. A unit that
-#' found nothing still gets a row, which is what stops it being re-searched on
-#' every retry and every re-run.
+#' Keyed on a hash of the query sequence and the search settings (blast.nf), so
+#' a re-assembled or trimmed unit, or a changed BLAST option, is searched again
+#' rather than keeping the previous hits. A unit that found nothing still gets a
+#' row, which is what stops it being re-searched on every retry and every re-run.
+#' `remote_fallback_failed` marks a unit whose escalation to NCBI failed, so the
+#' next run tries it again.
 #' @noRd
 BLAST_SEARCHED_DDL <- "CREATE TABLE IF NOT EXISTS blast_searched (
   ID TEXT NOT NULL,
