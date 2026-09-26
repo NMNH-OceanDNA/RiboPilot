@@ -113,7 +113,7 @@ test_that("a seed database that cannot be downloaded leaves a note and the sampl
   on.exit(DBI::dbDisconnect(con))
   DBI::dbExecute(con, "UPDATE assemble_opts SET seeds_db = 'http://127.0.0.1:9/seeds.fasta'")
   out <- withr::local_tempdir()
-  ad <- file.path(out, "S1", "assemble"); dir.create(ad, recursive = TRUE)
+  ad <- out
   writeLines(c(">S1.1.1 linear x", strrep("ACGT", 200)), file.path(ad, "S1_assembly_1.fasta"))
   expect_true(is.na(suppressWarnings(RiboPilot:::local_ref("http://127.0.0.1:9/seeds.fasta"))))
   expect_no_error(suppressWarnings(RiboPilot::score_one(con, "S1", out)))

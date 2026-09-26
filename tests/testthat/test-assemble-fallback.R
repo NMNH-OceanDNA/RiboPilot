@@ -78,7 +78,7 @@ test_that("the fallback script stops asking for a retry after the last attempt",
   withr::local_dir(d)
   run <- function(attempt) suppressWarnings(system2("Rscript",
     c(system.file("nextflow", "bin", "rp_fallback.R", package = "RiboPilot"),
-      "S1", "r1.fq", "r2.fq", "denovo", "1", attempt, "", lab),
+      "S1", "r1.fq", "r2.fq", "denovo", "1", attempt, "''", lab),
     env = paste0("RIBOPILOT_SRC=", root), stdout = FALSE, stderr = FALSE))
   expect_equal(run("1"), 247L)
   expect_equal(run("4"), 0L)
