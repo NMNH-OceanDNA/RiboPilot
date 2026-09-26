@@ -251,20 +251,33 @@ export_overwrite_modal <- function(dir, n) {
   )
 }
 
+#' Plain words for the tags of submission_risk strings, one string per record
+#' @noRd
+risk_reasons <- function(risk) {
+  vapply(risk, function(r) {
+    r <- r %|NA|% ""
+    arg <- function(tag) regmatches(r, regexec(paste0(tag, "\\(([^)]*)\\)"), r))[[1]][2]
+    tx <- arg("off_target")
+    nm <- arg("taxon_differs")
+    paste(c(if (!is.na(tx)) sprintf("GenBank hits agree on %s", tx),
+      if (grepl("(^|;)contaminant(;|$)", r)) "the best GenBank hit is from another phylum",
+      if (grepl("(^|;)chimeric\\(ITSx\\)", r)) "ITSx, the tool NCBI runs on submissions, calls it chimeric"
+      else if (grepl("(^|;)chimeric", r)) "parts of the scaffold match organisms from different phyla or kingdoms",
+      if (grepl("(^|;)gap_in_rDNA", r)) "an assembly gap inside the rDNA",
+      if (grepl("(^|;)misassembly", r)) "features overlap or are out of order",
+      if (!is.na(nm)) sprintf("your Taxon differs from %s", nm),
+      if (grepl("(^|;)missing_organism", r)) "no organism name"),
+      collapse = "; ")
+  }, character(1), USE.NAMES = FALSE)
+}
+
 #' Ask before exporting units the contamination checks flagged
 #'
 #' `flagged` is rows of [export_summary_df()] whose submission_risk carries an
 #' off_target or contaminant tag and that no curator has marked Reviewed.
 #' @noRd
 export_screen_modal <- function(flagged) {
-  why <- vapply(flagged$submission_risk, function(r) {
-    tx <- regmatches(r, regexec("off_target\\(([^)]*)\\)", r))[[1]][2]
-    paste(c(if (!is.na(tx)) sprintf("GenBank hits agree on %s", tx),
-      if (grepl("(^|;)contaminant(;|$)", r)) "the best GenBank hit is from another phylum",
-      if (grepl("(^|;)chimeric\\(ITSx\\)", r)) "ITSx, the tool NCBI runs on submissions, calls it chimeric"
-      else if (grepl("(^|;)chimeric", r)) "parts of the scaffold match organisms from different phyla or kingdoms"),
-      collapse = "; ")
-  }, character(1))
+  why <- risk_reasons(flagged$submission_risk)
   items <- lapply(seq_len(nrow(flagged)), function(i) tags$li(
     tags$b(sprintf("%s p%s.s%s", flagged$ID[i], flagged$path[i], flagged$scaffold[i])),
     sprintf(" (%s): %s.", flagged$organism[i] %|NA|% "no Taxon", why[i])))
@@ -711,16 +724,22 @@ export_modal <- function(groups, templates = "default", template = "default",
 
 #' One-paragraph verdict for the export-complete dialog
 #'
-#' Reads the summary attached to [export_bundle()]'s return value and says how
-#' many records the ITSx check and the submission-risk gate flagged, so a
-#' curator sees it before opening the CSV.
+#' Reads the summary attached to [export_bundle()]'s return value; names the
+#' records the submission-risk gate flagged, and why, and says how many the
+#' ITSx check flagged, so a curator sees it before opening the CSV.
 #' @param smry data.frame from [export_summary_df()] (possibly with `itsx_check`).
 #' @noRd
 export_check_summary_ui <- function(smry) {
   if (is.null(smry) || nrow(smry) == 0) return(NULL)
   n <- nrow(smry)
-  risk <- sum(nzchar(smry$submission_risk %||% ""))
+  risky <- nzchar(smry$submission_risk %||% "")
   lines <- list()
+  if (any(risky)) {
+    lines[[1]] <- tags$p(class = "mp-fg-warning", style = "font-weight:bold;",
+      sprintf("Submission-risk flags on %d of %d record(s): %s. See the submission_risk column in the summary CSV.",
+        sum(risky), n, mp_id_list(sprintf("%s (%s)", smry$seqid[risky],
+          risk_reasons(smry$submission_risk[risky])), max = 10)))
+  }
   if (!is.null(smry$itsx_check)) {
     not_run <- startsWith(smry$itsx_check, "not_run(")
     if (all(not_run)) {
@@ -729,7 +748,7 @@ export_check_summary_ui <- function(smry) {
     } else {
       flagged <- sum(nzchar(smry$itsx_check) & !not_run)
       lines[[length(lines) + 1]] <- if (flagged == 0) {
-        tags$p(class = "mp-fg-success", HTML("&#10003; "),
+        tags$p(class = if (!any(risky)) "mp-fg-success", if (!any(risky)) HTML("&#10003; "),
           sprintf("Final ITSx check: nothing flagged on %d record(s).", n))
       } else {
         tags$p(class = "mp-fg-warning", style = "font-weight:bold;",
@@ -737,10 +756,6 @@ export_check_summary_ui <- function(smry) {
             flagged, n, paste(smry$seqid[nzchar(smry$itsx_check) & !not_run], collapse = ", ")))
       }
     }
-  }
-  if (risk > 0) {
-    lines[[length(lines) + 1]] <- tags$p(class = "mp-fg-warning",
-      sprintf("Submission-risk flags on %d record(s) (submission_risk column).", risk))
   }
   if (length(lines) == 0) return(NULL)
   do.call(tagList, lines)

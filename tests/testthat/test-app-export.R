@@ -389,8 +389,54 @@ test_that("locking a sample with no taxon asks first, and locks on Lock anyway",
     session$setInputs(tbl__reactable__selected = 2L)
     session$setInputs(tax_lock_btn = 2)
     expect_equal(locks(), c(1L, 0L))       # no taxon: asked, not locked
-    session$setInputs(tax_lock_confirm = TRUE)
+    session$setInputs(lock_confirm = TRUE)
     expect_equal(locks(), c(1L, 1L))
+  })
+})
+
+test_that("Lock asks before locking a flagged unit that is not marked Reviewed", {
+  skip_if_not_installed("withr")
+  dir <- mk_export_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_lock = 0, reviewed = 'no', curate_flags = 'contaminant'")
+  DBI::dbExecute(con, "UPDATE assemble SET assemble_lock = 0")
+  DBI::dbDisconnect(con)
+  withr::local_dir(dir)
+  q <- function(sql) RiboPilot:::app_query(sql)[[1]]
+  set <- function(sql) { c2 <- RiboPilot:::app_con(); DBI::dbExecute(c2, sql); DBI::dbDisconnect(c2) }
+
+  shiny::testServer(RiboPilot:::app_server, {
+    # Assemble: the sample's kept unit is flagged, so Lock asks first
+    session$setInputs(mode = "Assemble")
+    session$flushReact()
+    d <- samples_data()
+    expect_equal(names(d)[match("ID", names(d)) + 1], "checks")
+    expect_equal(d$checks, "contaminant")
+    session$setInputs(tbl__reactable__selected = 1L, asmb_lock_btn = 1)
+    expect_equal(q("SELECT assemble_lock FROM assemble"), 0L)
+    session$setInputs(lock_confirm = TRUE)
+    expect_equal(q("SELECT assemble_lock FROM assemble"), 1L)
+
+    # Annotation Review toolbar: same question, Cancel leaves it unlocked
+    session$setInputs(mode = "Annotate")
+    session$flushReact()
+    d <- samples_data()
+    expect_equal(names(d)[match("scaffold", names(d)) + 1], "checks")
+    session$setInputs(tbl__reactable__selected = 1L, annot_lock_btn = 1)
+    session$setInputs(lock_confirm = FALSE)
+    expect_equal(q("SELECT annotate_lock FROM annotate"), 0L)
+
+    # the unit window asks too, and Lock anyway locks and closes
+    sel_unit(list(ID = "S1", path = 1L, scaffold = 1L))
+    session$setInputs(lock_and_close = 1)
+    expect_equal(q("SELECT annotate_lock FROM annotate"), 0L)
+    session$setInputs(lock_confirm = TRUE)
+    expect_equal(q("SELECT annotate_lock FROM annotate"), 1L)
+
+    # a Reviewed unit locks at once
+    set("UPDATE annotate SET annotate_lock = 0, reviewed = 'yes'")
+    session$setInputs(modal_lock = 1)
+    expect_equal(q("SELECT annotate_lock FROM annotate"), 1L)
   })
 })
 

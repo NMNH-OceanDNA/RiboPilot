@@ -98,7 +98,7 @@ app_server <- function(input, output, session) {
       tolower(input$mode %||% "table"), suffix, ".csv"),
     content = function(file) {
       d <- samples_data()
-      d <- d[rows(), setdiff(names(d), c("details", "output", "action")), drop = FALSE]
+      d <- d[rows(), setdiff(names(d), c("details", "output", "action", "checks_tone")), drop = FALSE]
       utils::write.csv(d, file, row.names = FALSE)
     }
   )
@@ -168,7 +168,7 @@ app_server <- function(input, output, session) {
            'details' AS details, 'output' AS output
          FROM samples s LEFT JOIN assemble a ON s.ID = a.ID
            LEFT JOIN preprocess pp ON s.ID = pp.ID
-         WHERE s.taxonomy_lock = 1")
+         WHERE s.taxonomy_lock = 1") |> with_checks("sample")
     } else if (mode == "Export") {
       # the units an export writes (EXPORTABLE_WHERE), one row per (ID, path, scaffold)
       app_query(paste(
@@ -207,9 +207,19 @@ app_server <- function(input, output, session) {
            JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
            LEFT JOIN screen sc ON sc.ID = an.ID AND sc.path = an.path AND sc.scaffold = an.scaffold
            LEFT JOIN chimera ch ON ch.ID = an.ID AND ch.path = an.path AND ch.scaffold = an.scaffold
-         WHERE a.assemble_lock = 1 AND COALESCE(asm.ignore, 0) = 0")
+         WHERE a.assemble_lock = 1 AND COALESCE(asm.ignore, 0) = 0") |> with_checks("unit")
     }
   })
+
+  # The Checks summary goes right after the row's ID (and path and scaffold).
+  with_checks <- function(d, by) {
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    ck <- unit_checks(con, by)
+    k <- function(x) if (by == "unit") unit_key(x$ID, x$path, x$scaffold) else x$ID
+    i <- match(k(d), k(ck))
+    at <- max(match(c("ID", "path", "scaffold"), names(d)), na.rm = TRUE)
+    cbind(d[seq_len(at)], checks = ck$checks[i], checks_tone = ck$checks_tone[i], d[-seq_len(at)])
+  }
 
   # ---- reactable (MitoPilot-style: resizable, filterable, sticky, icons) ----
   # Re-render only on structural changes (mode / column groups); the data is
@@ -251,6 +261,8 @@ app_server <- function(input, output, session) {
       match_type = cd("match_type", minWidth = 110, html = TRUE, align = "center",
         cell = rt_confidence_badge()),
       tax_alternatives = cd("tax_alternatives", minWidth = 260, html = TRUE, cell = rt_longtext()),
+      checks = cd("checks", width = 180, html = TRUE, cell = rt_checks_badge()),
+      checks_tone = reactable::colDef(show = FALSE),
       reviewed = cd("reviewed", html = TRUE, align = "center", cell = rt_bool_badge(hide_no = TRUE)),
       problematic = cd("problematic", width = 110, html = TRUE, align = "center",
         cell = rt_bool_badge(hide_no = TRUE, yes_tone = "warning")),
@@ -381,7 +393,7 @@ app_server <- function(input, output, session) {
         Options = c("pre_opts", "assemble_opts", "blast_opts", "annotate_opts", "curate_opts")),
       Annotate = list(
         BLAST = c("blast_species", "blast_accession", "blast_pident", "blast_qcovs", "blast_source"),
-        Checks = c("n_flags", "itsx_warnings", "screen_verdict", "chimera_label")),
+        `Check details` = c("n_flags", "itsx_warnings", "screen_verdict", "chimera_label")),
       NULL)
     keep_cols <- cols[intersect(names(cols), names(d))]
     keep_cols[[".selection"]] <- reactable::colDef(sticky = "left")
@@ -624,11 +636,6 @@ app_server <- function(input, output, session) {
     }
   ))
   observeEvent(input$edit_taxon_btn, open_taxon_review(selected_ids()))
-  observeEvent(input$tax_lock_confirm, {
-    x <- lock_next(); lock_next(NULL)
-    req(isTRUE(input$tax_lock_confirm), x)
-    set_flag(lock_sql(x$mm, 1L), verb = "locked")
-  })
 
   # ---- Reference databases (suggest / build / reuse / skip) ----
   ref_h <- reference_handlers(input, output, session, list(
@@ -687,8 +694,27 @@ app_server <- function(input, output, session) {
   }
   # One direction per click (mp_flag_next): a selection that is all locked
   # unlocks, anything else locks. Unlocking drops rows from the next step's
-  # table, so it is confirmed first.
+  # table, so it is confirmed first. lock_next holds what a confirmed prompt does.
   lock_next <- reactiveVal(NULL)
+  observeEvent(input$lock_confirm, {
+    f <- lock_next(); lock_next(NULL)
+    req(isTRUE(input$lock_confirm), f)
+    f()
+  })
+  # Units flagged as possible contamination and not marked Reviewed, asked
+  # about before a lock, as the Export window does.
+  confirm_flagged_lock <- function(f, then) {
+    lock_next(then)
+    one <- nrow(f) == 1
+    mp_confirm("lock_confirm", title = "Possible contamination or chimera",
+      text = paste0(mp_n(nrow(f), "unit"), if (one) " is" else " are",
+        " flagged and not marked Reviewed: ",
+        mp_id_list(sprintf("%s p%s.s%s (%s)", f$ID, f$path, f$scaffold,
+          risk_reasons(f$submission_risk))),
+        ". Lock anyway? Export asks about ", if (one) "it" else "them",
+        " again unless ", if (one) "it is" else "they are", " marked Reviewed."),
+      action_label = "Lock anyway", danger = TRUE)
+  }
   lock_sql <- function(mm, to) sprintf("UPDATE %s SET %s_lock = %d WHERE ID = ?", mm$tbl, mm$pfx, to)
   next_step <- c(taxonomy = "Assemble", assemble = "Annotation Review", annotate = "Export")
   observeEvent(list(input$tax_lock_btn, input$asmb_lock_btn, input$annot_lock_btn), ignoreInit = TRUE, {
@@ -701,18 +727,19 @@ app_server <- function(input, output, session) {
     to <- if (identical(mp_flag_next(cur, on = 1L, off = 0L), 0L)) 0L else 1L
     n <- nrow(u)
     if (to == 0L) {
-      lock_next(list(mm = mm, u = u))
-      mp_confirm("unlock_confirm", title = paste0("Unlock ", mp_n(n, MP_UNIT[[mm$pfx]]), "?"),
+      lock_next(function() set_flag(lock_sql(mm, 0L), verb = "unlocked"))
+      mp_confirm("lock_confirm", title = paste0("Unlock ", mp_n(n, MP_UNIT[[mm$pfx]]), "?"),
         text = sprintf("Unlocked rows leave the %s table until locked again.", next_step[[mm$pfx]]),
         action_label = "Unlock", danger = TRUE)
       return()
     }
+    do_lock <- function() set_flag(lock_sql(mm, 1L), verb = "locked")
     if (identical(mm$pfx, "taxonomy")) {
       s <- selected_rows()
       weak <- d$ID[s][is.na(d$taxid[s])]
       if (length(weak) > 0) {
-        lock_next(list(mm = mm))
-        mp_confirm("tax_lock_confirm", title = "Lock samples with no taxon?",
+        lock_next(do_lock)
+        mp_confirm("lock_confirm", title = "Lock samples with no taxon?",
           text = sprintf(paste("%s: %s. Without a taxon a sample gets no reference group,",
             "and the contamination screen cannot judge it. Cancel and click the ID to pick",
             "a taxon, or lock anyway."),
@@ -723,12 +750,17 @@ app_server <- function(input, output, session) {
       }
     }
     if (identical(input$mode %||% "Assemble", "Annotate") && !need_one_path(u)) return()
-    set_flag(lock_sql(mm, 1L), verb = "locked")
-  })
-  observeEvent(input$unlock_confirm, {
-    x <- lock_next(); lock_next(NULL)
-    req(isTRUE(input$unlock_confirm), x)
-    set_flag(lock_sql(x$mm, 0L), verb = "unlocked")
+    open <- !(cur %in% 1)
+    ids <- unique(u$ID[open])
+    units <- if (identical(mm$pfx, "annotate")) u[open, , drop = FALSE]
+      else if (identical(mm$pfx, "assemble") && length(ids)) app_query(sprintf(
+        "SELECT an.ID, an.path, an.scaffold FROM annotate an
+         JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
+         WHERE COALESCE(asm.ignore, 0) = 0 AND an.ID IN (%s)",
+        paste(rep("?", length(ids)), collapse = ",")), params = as.list(ids))
+    f <- screen_flagged(units)
+    if (nrow(f)) return(confirm_flagged_lock(f, do_lock))
+    do_lock()
   })
   observeEvent(list(input$tax_state_btn, input$asmb_state_btn, input$annot_state_btn),
     ignoreInit = TRUE, {  # open a picker to choose the target state
@@ -1230,6 +1262,7 @@ app_server <- function(input, output, session) {
   })
   # Units the contamination checks flagged that no curator has signed off on.
   screen_flagged <- function(u) {
+    if (NROW(u) == 0) return(data.frame())
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
     s <- export_summary_df(con, cbind(u, seqid = u$ID))
     s[has_screen_risk(s$submission_risk) & !(s$reviewed %in% "yes"), , drop = FALSE]
@@ -2374,23 +2407,26 @@ app_server <- function(input, output, session) {
     if (edits_block()) return()
     removeModal()
   })
-  lock_unit <- function() {
+  # `close`: Lock & Close; otherwise Lock, which redraws the window read only.
+  lock_unit <- function(close) {
     u <- sel_unit(); req(u)
-    if (edits_block()) return(FALSE)
-    if (!need_one_path(as.data.frame(u))) return(FALSE)
+    if (edits_block()) return()
+    if (!need_one_path(as.data.frame(u))) return()
+    f <- screen_flagged(as.data.frame(u))
+    if (nrow(f)) return(confirm_flagged_lock(f, function() lock_unit_now(close)))
+    lock_unit_now(close)
+  }
+  lock_unit_now <- function(close) {
+    u <- sel_unit()
     con <- app_con()
     on.exit(DBI::dbDisconnect(con))
     if (!app_write(DBI::dbExecute(con,
       "UPDATE annotate SET annotate_lock = 1 WHERE ID = ? AND path = ? AND scaffold = ?",
-      params = uargs()))) return(FALSE)
+      params = uargs()))) return()
     refresh(refresh() + 1)
     rp_toast("1 unit locked - ready to export.", type = "message")
-    TRUE
+    if (close) removeModal() else showModal(annotate_modal(u$ID, u$path, u$scaffold))
   }
-  observeEvent(input$lock_and_close, if (lock_unit()) removeModal())
-  # Lock and stay: redraw the window so it shows the unit read only.
-  observeEvent(input$modal_lock, if (lock_unit()) {
-    u <- sel_unit()
-    showModal(annotate_modal(u$ID, u$path, u$scaffold))
-  })
+  observeEvent(input$lock_and_close, lock_unit(TRUE))
+  observeEvent(input$modal_lock, lock_unit(FALSE))
 }
