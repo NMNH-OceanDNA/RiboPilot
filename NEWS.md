@@ -9,7 +9,7 @@ read this page, not the number, to see what changed.
   yet convert an existing project. See "Upgrading RiboPilot" in the Installation
   guide.
 * Use a container image built from this code. The published 0.0.0.9018 image
-  holds older code, and a run with it fails every sample at its first R step.
+  holds older code, and a run with it can fail in its R steps.
 
 ## GenBank records
 
@@ -85,9 +85,8 @@ read this page, not the number, to see what changed.
   rather than silently including them.
 * Every tool chain package in the container image is pinned to the version
   actually installed, and the pins match `environment.yml`.
-* Each pipeline R step stops with an error when the RiboPilot that launched the
-  run and the RiboPilot installed in the container differ in version or in the
-  pipeline scripts themselves, instead of only warning.
+* Opening a project whose container image is for another RiboPilot version shows
+  a message that says so and how to switch; runs carry on with that image.
 * The database that answered a unit's BLAST search (the bundled rDNA database,
   with its version, or NCBI core_nt) is recorded for every unit, and the BLAST
   evidence panel names it.

@@ -102,19 +102,14 @@ What an upgrade means for your projects:
   from the same mapping file and reads, and go through the steps again. Keep the
   old folder until the new project is done. Reference databases in your
   reference folder are kept and reused, so the Reference step is quick.
-- **The container image must match.** A project names its container image when
-  you create it, in the `container = '...'` line of its `.config` file. Each run
-  uses the pipeline scripts of the RiboPilot installed in R together with the R
-  code inside that image. When the two do not match, every sample fails at its
-  first R step (scoring, which comes after read cleaning and assembly), with a
-  message such as:
-
-  ```
-  Version mismatch: this run was started by RiboPilot 0.0.0.9018, but this task
-  loaded RiboPilot 0.0.0.9018 built from different code. Build an image from the
-  RiboPilot that starts the run (docker/deploy-local.sh in its source folder) and
-  set container in the project's .config to it. Then run again.
-  ```
+- **The container image should match.** A project names its container image
+  when you create it, in the `container = '...'` line of its `.config` file. Each
+  run uses the pipeline scripts of the RiboPilot installed in R together with the
+  R code and tools inside that image. When you open a project whose image is for
+  another RiboPilot version, the app says "Container version does not match
+  RiboPilot" and carries on: runs still work, with the image's code. An image with
+  the same version number but older code is not detected, and a run with it can
+  fail in its R steps.
 
 To get the image that matches your RiboPilot:
 

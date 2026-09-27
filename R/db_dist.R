@@ -405,6 +405,27 @@ config_container_image <- function(cfg_lines) {
   trimws(sub("^['\"]?([^'\"]*).*$", "\\1", trimws(v)))
 }
 
+#' The project's container tag against the installed RiboPilot
+#'
+#' Pipeline steps run the RiboPilot inside the image, so a project on an older
+#' tag runs older code. Only the official image is compared; a custom image has
+#' no version to compare against.
+#' @param path Project directory containing `.config`.
+#' @return NULL when they match, the image is custom, or `.config` cannot be
+#'   read; else a list with `configured` and `expected`.
+#' @noRd
+container_version_gap <- function(path) {
+  cfg <- file.path(path, ".config")
+  if (!file.exists(cfg)) return(NULL)
+  lines <- tryCatch(readLines(cfg, warn = FALSE), error = function(e) NULL)
+  if (is.null(lines)) return(NULL)
+  configured <- config_container_image(lines)
+  if (!grepl("^macguigand/ribopilot:", configured)) return(NULL)
+  expected <- paste0("macguigand/ribopilot:", utils::packageVersion("RiboPilot"))
+  if (identical(configured, expected)) return(NULL)
+  list(configured = configured, expected = expected)
+}
+
 #' Image reference singularity/apptainer can open for a config's container
 #'
 #' Nextflow pulls a Docker Hub name into a SIF itself, but a direct

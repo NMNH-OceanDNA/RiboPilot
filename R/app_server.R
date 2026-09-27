@@ -18,6 +18,25 @@ app_server <- function(input, output, session) {
   # positional params (ID, path, scaffold) of the open annotate unit
   uargs <- function() { u <- sel_unit(); list(u$ID, u$path, u$scaffold) }
 
+  # Container version check. Warn only: the project still runs, with the
+  # RiboPilot code and tools in its image.
+  cgap <- container_version_gap(app_project())
+  if (!is.null(cgap)) {
+    mp_alert(
+      title = "Container version does not match RiboPilot",
+      text = tags$div(
+        tags$p("This project runs the pipeline from:"),
+        tags$pre(cgap$configured),
+        tags$p("but the installed RiboPilot is ",
+          tags$b(as.character(utils::packageVersion("RiboPilot"))), ", which expects:"),
+        tags$pre(cgap$expected),
+        tags$p("The app works either way, but pipeline runs will use the RiboPilot code ",
+          "and tools in the older image."),
+        tags$p(tags$b("To switch, edit the container line in the project's .config."),
+          " That is a one-line change and leaves the rest of your settings alone.")),
+      html = TRUE, type = "info")
+  }
+
   # ---- Work Dirs browser (Nextflow task dirs per sample) ----
   show_workdirs <- function(preselect = NULL) {
     ids <- app_query("SELECT ID FROM samples ORDER BY ID")$ID

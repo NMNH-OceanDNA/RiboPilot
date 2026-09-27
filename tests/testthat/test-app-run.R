@@ -206,3 +206,18 @@ test_that("an LSF job script goes to bsub on stdin, others as an argument", {
   expect_equal(RiboPilot:::submit_job("bsub", f), "args=0 first=#BSUB -q long")
   expect_equal(RiboPilot:::submit_job("sbatch", f), "args=1")
 })
+
+test_that("opening a project on an image for another version warns and carries on", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  writeLines(c("process {", "    container = 'macguigand/ribopilot:0.0.0.1'", "}"),
+    file.path(dir, ".config"))
+  withr::local_dir(dir)
+  seen <- character(0)
+  local_mocked_bindings(mp_alert = function(title, ...) seen <<- c(seen, title))
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    expect_true(nrow(samples_data()) > 0)
+  })
+  expect_equal(seen, "Container version does not match RiboPilot")
+})
