@@ -29,7 +29,6 @@ app_ui <- function(request) {
 
   structure(lang = "en", shiny::tagList(
     add_external_resources(),
-    shiny::uiOutput("filter_css"),
     shiny::fluidPage(
       shiny::tags$a(href = "#mp-content", class = "sr-only sr-only-focusable", "Skip to table"),
       shiny::div(
@@ -83,7 +82,7 @@ app_ui <- function(request) {
                 needs_selection = TRUE),
               btn("asmb_lock_btn", "Lock", title = MP_LOCK_DEF("assemble"), needs_selection = TRUE),
               btn("triage_btn", "Triage", icon = mp_icon("traffic-light"),
-                title = "Re-run automatic scaffold triage on the selected samples",
+                title = "Re-run automatic scaffold triage on the selected samples. Locked samples are skipped.",
                 needs_selection = TRUE),
               btn("asmb_run_btn", "Update", icon = mp_icon("circle-play"), emphasis = "primary",
                 title = "Review and launch the RiboPilot pipeline")),

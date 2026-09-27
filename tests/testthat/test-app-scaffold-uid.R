@@ -89,10 +89,18 @@ test_that("the evidence table exposes a uid for every unit", {
   expect_equal(nrow(RiboPilot:::unit_evidence("")), 0L)
 })
 
+# bulk triage leaves assembly-locked samples alone
+unlock_assembly <- function(dir) {
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE assemble SET assemble_lock = 0")
+  DBI::dbDisconnect(con)
+}
+
 test_that("bulk triage previews before it writes, and applying honours the preview", {
   skip_if_not_installed("withr")
   dir <- mk_app_project()
   withr::local_dir(dir)
+  unlock_assembly(dir)
   # make every unit droppable: no features, and a non-rDNA top hit
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
   DBI::dbExecute(con, "DELETE FROM annotations")
@@ -108,7 +116,7 @@ test_that("bulk triage previews before it writes, and applying honours the previ
     session$flushReact()
 
     # opening the modal must not change anything
-    session$setInputs(triage_btn = 1, triage_overwrite_user = FALSE)
+    session$setInputs(tbl__reactable__selected = 1L, triage_btn = 1, triage_overwrite_user = FALSE)
     session$flushReact()
     expect_true(all(RiboPilot:::app_query("SELECT COALESCE(ignore,0) i FROM assemblies WHERE ID='S1'")$i == 0))
     prev <- output$triage_preview$html      # renderUI returns list(html, deps)
@@ -132,6 +140,7 @@ test_that("the modal previews the stored preset, not the shipped defaults", {
   skip_if_not_installed("withr")
   dir <- mk_app_project()
   withr::local_dir(dir)
+  unlock_assembly(dir)
   # same droppable evidence, but the project's preset says flag, not drop. No
   # triage_rule_* input is ever set here, standing in for the window before the
   # browser echoes the controls back: the preview must already honour the preset.
@@ -148,7 +157,7 @@ test_that("the modal previews the stored preset, not the shipped defaults", {
     session$setInputs(mode = "Assemble")
     sel_id("S1")
     session$flushReact()
-    session$setInputs(triage_btn = 1, triage_overwrite_user = FALSE)
+    session$setInputs(tbl__reactable__selected = 1L, triage_btn = 1, triage_overwrite_user = FALSE)
     session$flushReact()
 
     expect_equal(triage_actions()$no_feat_non_rdna, "flag")
@@ -164,6 +173,7 @@ test_that("preview says so when a Drop rule is armed but everything it matches i
   skip_if_not_installed("withr")
   dir <- mk_app_project()
   withr::local_dir(dir)
+  unlock_assembly(dir)
   # same droppable evidence as above, but every unit is already a user
   # decision: with overwrite off, auto-triage must skip all of them
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
@@ -181,7 +191,7 @@ test_that("preview says so when a Drop rule is armed but everything it matches i
     session$setInputs(mode = "Assemble")
     sel_id("S1")
     session$flushReact()
-    session$setInputs(triage_btn = 1, triage_overwrite_user = FALSE)
+    session$setInputs(tbl__reactable__selected = 1L, triage_btn = 1, triage_overwrite_user = FALSE)
     session$flushReact()
     prev <- output$triage_preview$html
     expect_true(nzchar(prev))
@@ -196,6 +206,7 @@ test_that("turning every rule off says Apply changes nothing, not 'Would drop'",
   skip_if_not_installed("withr")
   dir <- mk_app_project()
   withr::local_dir(dir)
+  unlock_assembly(dir)
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
   # p1.s1 hand-decided drop, p1.s2 hand-decided keep: standing curator calls
   DBI::dbExecute(con,
@@ -214,7 +225,7 @@ test_that("turning every rule off says Apply changes nothing, not 'Would drop'",
     session$setInputs(mode = "Assemble")
     sel_id("S1")
     session$flushReact()
-    session$setInputs(triage_btn = 1, triage_overwrite_user = FALSE)
+    session$setInputs(tbl__reactable__selected = 1L, triage_btn = 1, triage_overwrite_user = FALSE)
     off_inputs <- stats::setNames(as.list(rep("off", length(RiboPilot:::triage_rule_keys()))),
       paste0("triage_rule_", RiboPilot:::triage_rule_keys()))
     do.call(session$setInputs, off_inputs)
@@ -233,12 +244,13 @@ test_that("the all-off message replaces the no-Drop note instead of also printin
   skip_if_not_installed("withr")
   dir <- mk_app_project()
   withr::local_dir(dir)
+  unlock_assembly(dir)
 
   shiny::testServer(RiboPilot:::app_server, {
     session$setInputs(mode = "Assemble")
     sel_id("S1")
     session$flushReact()
-    session$setInputs(triage_btn = 1, triage_overwrite_user = FALSE)
+    session$setInputs(tbl__reactable__selected = 1L, triage_btn = 1, triage_overwrite_user = FALSE)
     off_inputs <- stats::setNames(as.list(rep("off", length(RiboPilot:::triage_rule_keys()))),
       paste0("triage_rule_", RiboPilot:::triage_rule_keys()))
     do.call(session$setInputs, off_inputs)

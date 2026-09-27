@@ -83,26 +83,23 @@ app_server <- function(input, output, session) {
       target = "_blank", rel = "noopener", "Help")))
   # row-count line above the table + CSV export of the table
   output$table_status <- renderUI({
-    d <- samples_data()
     mode <- input$mode %||% "Taxonomy"
     noun <- if (mode == "Reference" && ref_view() == "Groups") "group" else MP_UNIT[[tolower(mode)]]
-    # the client counts what reactable shows (column filters, search, and the
-    # CSS-hidden lock/state rows); the server mask is the fallback before it reports
-    shown <- input$tbl_visible_n %||% sum(visible_mask())
-    mp_table_status(min(shown, nrow(d)), nrow(d), length(selected_ids()), noun)
+    mp_table_status(min(length(visible_rows()), nrow(samples_data())), nrow(all_rows()),
+      length(selected_ids()), noun)
   })
   observe(shinyjs::toggleState(selector = ".mp-needs-selection",
     condition = length(selected_ids()) > 0))
-  table_csv_handler <- function(suffix, rows) downloadHandler(
+  table_csv_handler <- function(suffix, rows, data = samples_data) downloadHandler(
     filename = function() paste0(basename(app_project()), "_",
       tolower(input$mode %||% "table"), suffix, ".csv"),
     content = function(file) {
-      d <- samples_data()
+      d <- data()
       d <- d[rows(), setdiff(names(d), c("details", "output", "action", "checks_tone")), drop = FALSE]
       utils::write.csv(d, file, row.names = FALSE)
     }
   )
-  output$table_csv <- table_csv_handler("", function() TRUE)
+  output$table_csv <- table_csv_handler("", function() TRUE, all_rows)
   output$table_csv_selected <- table_csv_handler("_selected", selected_rows)
 
   # mode -> (table, prefix) for lock/state columns and updates
@@ -118,7 +115,7 @@ app_server <- function(input, output, session) {
   ref_view <- reactive(input$ref_view %||% "Samples")
 
   # ---- samples table data (per mode; includes state + lock) ----
-  samples_data <- reactive({
+  all_rows <- reactive({
     refresh()
     mode <- input$mode %||% "Assemble"
     # Column order mirrors MitoPilot: lock, state, ID, Taxon lead the tables.
@@ -211,6 +208,10 @@ app_server <- function(input, output, session) {
     }
   })
 
+  # The rows the table shows: the step's Lock and State filters are applied here,
+  # so the table pages and counts only the rows that pass them.
+  samples_data <- reactive(all_rows()[visible_mask(), , drop = FALSE])
+
   # The Checks summary goes right after the row's ID (and path and scaffold).
   with_checks <- function(d, by) {
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
@@ -228,14 +229,17 @@ app_server <- function(input, output, session) {
   # Column defs read the data once; these two re-render the table only when a
   # refresh() changes what the defs depend on (unit columns, group members).
   multi_unit_rv <- reactiveVal(FALSE)
-  observe({ d <- samples_data(); multi_unit_rv(any(duplicated(d$ID))) })
+  # row keys of the data the table was last given
+  tbl_keys <- character(0)
+  row_keys <- function(d) unit_key(d$ID, d[["path"]] %||% 1L, d[["scaffold"]] %||% 1L)
+  observe({ d <- all_rows(); multi_unit_rv(any(duplicated(d$ID))) })
   output$tbl <- reactable::renderReactable({
     mode <- input$mode %||% "Assemble"
     multi_unit_rv()
     if (mode == "Reference" && ref_view() == "Groups") refresh()
     d <- isolate(samples_data())
+    tbl_keys <<- row_keys(d)
     mm <- mode_meta(mode)
-    session$sendCustomMessage("rp_table_pfx", mm$pfx)
     lock_col <- paste0(mm$pfx, "_lock")
     state_col <- paste0(mm$pfx, "_switch")
 
@@ -246,8 +250,9 @@ app_server <- function(input, output, session) {
 
     # Path/Scaffold are shown only when the sample has more than one unit; a
     # single-unit project reads exactly like the old per-sample table.
-    multi_unit <- all(c("path", "scaffold") %in% names(d)) &&
-      nrow(unique(d[, c("ID", "path", "scaffold")])) > length(unique(d$ID))
+    a <- isolate(all_rows())
+    multi_unit <- all(c("path", "scaffold") %in% names(a)) &&
+      nrow(unique(a[, c("ID", "path", "scaffold")])) > length(unique(a$ID))
 
     cd <- function(f, ...) reactable::colDef(name = mp_col_name(f), header = mp_col_header(f), ...)
     cols <- list(
@@ -356,14 +361,8 @@ app_server <- function(input, output, session) {
       cols[["action"]] <- cd("action", minWidth = 150, sticky = "right", align = "center",
         class = "mp-actions-sticky", headerClass = "mp-actions-sticky",
         html = TRUE, filterable = FALSE, cell = rt_link("ref_row_action"))
-      # the state still drives the row class, so it stays in the data, unshown
       cols[[state_col]] <- reactable::colDef(show = FALSE)
     }
-    rowclass <- reactable::JS(sprintf(
-      "function(rowInfo){ if(!rowInfo||!rowInfo.values) return '';
-         return 'rp-lock-'+rowInfo.values['%s']+' rp-state-'+rowInfo.values['%s']; }",
-      lock_col, state_col))
-
     # Explain an empty table: every mode after Taxonomy is gated on the previous
     # stage's lock, and a fresh project has nothing locked, so the default
     # "No rows found" reads like a failed import.
@@ -376,8 +375,10 @@ app_server <- function(input, output, session) {
           "assemble against RiboPilot's built-in ray-finned fish reference.",
           "Press Propose groups to group your samples by clade from the assigned taxonomy.")
       },
-      Assemble = "No taxonomy-locked samples. Assign and lock taxonomy in Taxonomy mode first.",
-      Annotate = "No assembly-locked samples. Review and lock assemblies in Assemble mode first.",
+      Assemble = paste("No samples to show. A sample is listed once its taxonomy is locked",
+        "in the Taxonomy step. The Lock and State filters and the search box also hide rows."),
+      Annotate = paste("No units to show. A unit is listed once its sample's assembly is locked",
+        "in the Assemble step. The Lock and State filters and the search box also hide rows."),
       Export   = paste("No units ready to export. A unit is listed once its assembly (Assemble)",
         "and its annotation (Annotation Review) are both locked; units marked Exclude from export",
         "are not listed."),
@@ -424,18 +425,24 @@ app_server <- function(input, output, session) {
       language = reactable::reactableLang(noData = nodata),
       # consistent header capitalization (Title Case names above) + left alignment
       defaultColDef = reactable::colDef(align = "left", headerVAlign = "center"),
-      rowStyle = rt_highlight_row(), rowClass = rowclass,
+      rowStyle = rt_highlight_row(),
       # column order comes from samples_data()
       columns = keep_cols
     )
   })
 
-  # Push data-only updates on refresh() so client-side filters / sort / page
-  # survive a lock, state, or group action (a full re-render would clear them).
-  # Mode and column-group changes still re-render via output$tbl above.
-  observeEvent(refresh(), {
-    reactable::updateReactable("tbl", data = samples_data())
-  }, ignoreInit = TRUE)
+  # Data-only updates keep the search, column filters, and sort; the page and
+  # the selection (by row key) are passed back. Mode and column-group changes
+  # still re-render via output$tbl above.
+  push_tbl <- function(page = NULL) {
+    d <- samples_data(); k <- row_keys(d)
+    sel <- reactable::getReactableState("tbl", "selected")
+    reactable::updateReactable("tbl", data = d, selected = which(k %in% tbl_keys[sel]), page = page)
+    tbl_keys <<- k
+  }
+  observeEvent(refresh(), push_tbl(reactable::getReactableState("tbl", "page")), ignoreInit = TRUE)
+  observeEvent(list(input$Assemble_lock_filter, input$Assemble_state_filter,
+    input$Annotate_lock_filter, input$Annotate_state_filter), push_tbl(), ignoreInit = TRUE)
 
   # ---- open the details modal when an ID cell is clicked ----
   observeEvent(input$open_detail, {
@@ -562,9 +569,9 @@ app_server <- function(input, output, session) {
       state = input[[paste0(mode, "_state_filter")]])
   }
 
-  # logical mask of samples_data() rows that pass the active mode's filters
+  # logical mask of all_rows() that pass the active mode's filters
   visible_mask <- reactive({
-    d <- samples_data()
+    d <- all_rows()
     keep <- rep(TRUE, nrow(d))
     f <- active_filters()
     if (is.null(f) || nrow(d) == 0) {
@@ -578,14 +585,15 @@ app_server <- function(input, output, session) {
     keep
   })
 
-  # Bulk actions must only ever touch VISIBLE samples. Rows filtered out are
-  # hidden with CSS but stay in reactable's row model, so intersect the selection
-  # with the visible mask here (and prune it in the observer below).
+  # Rows left by the table's search and column filters, as the browser reports
+  # them (custom.js); every row until it has.
+  visible_rows <- function() {
+    v <- input$tbl_visible
+    if (is.null(v)) seq_len(nrow(samples_data())) else as.integer(unlist(v$rows))
+  }
+  # Bulk actions only ever touch rows the user can see.
   selected_rows <- function() {
-    sel <- reactable::getReactableState("tbl", "selected")
-    if (is.null(sel) || length(sel) == 0) return(integer(0))
-    vis <- visible_mask()
-    sel[sel >= 1 & sel <= length(vis) & vis[sel]]
+    intersect(reactable::getReactableState("tbl", "selected") %||% integer(0), visible_rows())
   }
   selected_ids <- function() samples_data()$ID[selected_rows()]
   # Visible selected rows as (ID, path, scaffold) units (path/scaffold = 1 when the
@@ -600,22 +608,13 @@ app_server <- function(input, output, session) {
       stringsAsFactors = FALSE)
   }
 
-  # Prune hidden rows out of the reactable selection whenever the selection or a
-  # filter changes, so a select-all under an active filter cannot silently carry
-  # invisible samples into a bulk Lock / State / Reviewed / Group action.
-  observeEvent(
-    list(reactable::getReactableState("tbl", "selected"),
-      input$Assemble_lock_filter, input$Assemble_state_filter,
-      input$Annotate_lock_filter, input$Annotate_state_filter, input$mode),
-    {
-      sel <- reactable::getReactableState("tbl", "selected")
-      if (is.null(sel) || length(sel) == 0) {
-        return()
-      }
-      vis <- visible_mask()
-      keep <- sel[sel >= 1 & sel <= length(vis) & vis[sel]]
-      if (length(keep) != length(sel)) reactable::updateReactable("tbl", selected = keep)
-    }, ignoreInit = TRUE)
+  # Rows the search or a column filter hides leave the selection.
+  observeEvent(input$tbl_visible, {
+    keep <- selected_rows()
+    if (length(keep) != length(reactable::getReactableState("tbl", "selected"))) {
+      reactable::updateReactable("tbl", selected = keep)
+    }
+  })
 
   # ---- named parameter-set editing (preprocess/assemble/blast/annotate/curate) ----
   opts_handlers(input, output, session, list(
@@ -668,12 +667,6 @@ app_server <- function(input, output, session) {
     if (!app_write(DBI::dbWithTransaction(con,
       for (id in ids) DBI::dbExecute(con, sql, params = list(id))))) return()
     refresh(refresh() + 1)
-    # refresh() re-renders the table, which drops the client-side selection.
-    # Reselect the same samples by ID once the new table has been flushed.
-    session$onFlushed(function() {
-      idx <- which(isolate(samples_data())$ID %in% ids)
-      if (length(idx) > 0) reactable::updateReactable("tbl", selected = idx)
-    }, once = TRUE)
     mp_toast(paste(mp_n(length(ids), "sample"), paste0(verb, ".")))
   }
   set_unit_flag <- function(sql, verb = "updated", u = selected_units()) {
@@ -683,13 +676,6 @@ app_server <- function(input, output, session) {
     if (!app_write(DBI::dbWithTransaction(con, for (i in seq_len(nrow(u)))
       DBI::dbExecute(con, usql, params = list(u$ID[i], u$path[i], u$scaffold[i]))))) return()
     refresh(refresh() + 1)
-    session$onFlushed(function() {
-      d <- isolate(samples_data())
-      pp <- if ("path" %in% names(d)) d$path else rep(1L, nrow(d))
-      ss <- if ("scaffold" %in% names(d)) d$scaffold else rep(1L, nrow(d))
-      idx <- which(paste(d$ID, pp, ss) %in% paste(u$ID, u$path, u$scaffold))
-      if (length(idx) > 0) reactable::updateReactable("tbl", selected = idx)
-    }, once = TRUE)
     mp_toast(paste(mp_n(nrow(u), "unit"), paste0(verb, ".")))
   }
   # One direction per click (mp_flag_next): a selection that is all locked
@@ -886,26 +872,6 @@ app_server <- function(input, output, session) {
     if (!app_write(clear_export_group(app_project(), u))) return()
     refresh(refresh() + 1)
     mp_toast(paste0("Group cleared for ", mp_n(nrow(u), "unit"), "."))
-  })
-
-  # ---- lock / state row filters (hide via CSS on rp-lock-/rp-state- classes) ----
-  # Only the active mode's filters apply, and the rules are scoped to the main
-  # table, so a filter set in Assemble does not blank the Taxonomy/Export tables
-  # (which share the #tbl output but have no filter controls). all_state includes
-  # "0" so deselecting "Hold" actually hides held rows.
-  output$filter_css <- renderUI({
-    f <- active_filters()
-    if (is.null(f)) {
-      return(NULL)
-    }
-    hide <- character(0)
-    if (!is.null(f$lock)) hide <- c(hide, paste0(".rp-lock-", setdiff(unname(LOCK_CHOICES), f$lock)))
-    if (!is.null(f$state)) hide <- c(hide, paste0(".rp-state-", setdiff(unname(STATE_CHOICES), f$state)))
-    if (length(hide) == 0) {
-      return(NULL)
-    }
-    sel <- paste0("#tbl ", hide)
-    tags$style(HTML(paste0(paste(sel, collapse = ", "), " { display:none !important; }")))
   })
 
   # ---- Update modal: run the workflow with live Nextflow progress ----
@@ -1721,10 +1687,8 @@ app_server <- function(input, output, session) {
     showModal(assemble_modal(pt$id))
   })
   # ---- bulk triage over the selected samples ----
-  triage_target_ids <- function() {
-    ids <- unique(selected_ids())
-    if (length(ids)) ids else unique(samples_data()$ID)  # no selection: the whole table
-  }
+  # the unlocked samples selected when the window opened
+  triage_ids <- reactiveVal(character(0))
   # the preset the modal was opened with; seeding from the shipped defaults
   # instead would report -- and on Apply write back -- settings the curator
   # never chose, until the browser echoed the controls back
@@ -1740,14 +1704,21 @@ app_server <- function(input, output, session) {
     normalize_triage_actions(a)
   })
   observeEvent(input$triage_btn, {
-    ids <- triage_target_ids()
+    d <- samples_data(); sel <- selected_rows()
+    if (!need_selection(length(sel))) return()
+    lk <- d$assemble_lock[sel] %in% 1
+    if (all(lk)) return(need_unlocked(d$ID[sel]))
+    ids <- unique(d$ID[sel][!lk])
+    triage_ids(ids)
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    cur <- if (length(ids)) triage_opts_for(con, ids[1]) else triage_actions_default()
+    cur <- triage_opts_for(con, ids[1])
     triage_preset(cur)
     showModal(triage_modal(length(ids), cur))
+    if (any(lk)) mp_toast(sprintf("Left %s unchanged: unlock before triage.",
+      mp_n(sum(lk), "locked sample")), type = "warning")
   })
   triage_pv <- reactive({
-    ids <- triage_target_ids()
+    ids <- triage_ids()
     if (!length(ids)) return(NULL)
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
     tryCatch(triage_preview(con, ids, opts = triage_actions(),
@@ -1813,7 +1784,7 @@ app_server <- function(input, output, session) {
         else "No sample would be left with nothing kept."))
   })
   observeEvent(input$triage_apply, {
-    ids <- triage_target_ids(); req(length(ids))
+    ids <- triage_ids(); req(length(ids))
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
     act <- triage_actions()
     # persist first: a pipeline re-run must reproduce what the curator just saw

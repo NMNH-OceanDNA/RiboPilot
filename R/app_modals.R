@@ -111,9 +111,9 @@ no_screen_note <- function(failed, blast_on, running) {
 
 #' Prev / picker / next sample navigation for the detail modals
 #'
-#' The order is whatever the main table shows when the modal opens: sort,
-#' column filters, search, and the lock/state rows the filter CSS hides. The
-#' script snapshots it into input$nav_order; the server renders the controls.
+#' The order is whatever the main table shows when the modal opens: its Lock
+#' and State filters, column filters, search, and sort. The script snapshots it
+#' into input$nav_order; the server renders the controls.
 #' @noRd
 rp_sample_nav <- function() {
   tagList(

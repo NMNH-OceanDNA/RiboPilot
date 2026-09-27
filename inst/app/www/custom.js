@@ -1,40 +1,23 @@
 window.MP_SAMPLE_TABLES = '#tbl';
 
-// Rows the main table is showing: reactable's filtered + sorted rows, minus the
-// ones the lock/state filter CSS hides. The server names the mode's lock/state
-// columns (rp_table_pfx) when it renders the table.
-window.RP_TBL_PFX = 'assemble';
+// The main table's rows in display order, after its search and column filters.
 window.rpVisibleRows = function() {
-  var tbl = document.getElementById('tbl');
-  var st = window.Reactable ? Reactable.getState('tbl') : null;
-  var rows = (st && st.sortedData) || [];
-  if (!tbl) return rows;
-  var probe = document.createElement('div'); tbl.appendChild(probe);
-  rows = rows.filter(function(r) {
-    probe.className = 'rp-lock-' + r[RP_TBL_PFX + '_lock'] + ' rp-state-' + r[RP_TBL_PFX + '_switch'];
-    return getComputedStyle(probe).display !== 'none';
-  });
-  probe.remove();
-  return rows;
+  try { return Reactable.getState('tbl').sortedData; } catch (e) { return []; }
 };
+// Report those rows (1-based data indices) whenever the table redraws. Only
+// #tbl is watched, and reporting changes nothing in it, so an idle page does
+// no work.
 $( document ).ready(function(){
-  Shiny.addCustomMessageHandler('rp_table_pfx', function(pfx) {
-    window.RP_TBL_PFX = pfx;
-    setTimeout(rpReportVisible, 0);
-  });
-  // The status line above the table counts what is actually shown.
-  var pending = null;
-  function rpReportVisible() {
-    Shiny.setInputValue('tbl_visible_n', rpVisibleRows().length);
+  var tbl = document.getElementById('tbl'), pending = null;
+  if (!tbl) return;
+  function report() {
+    try {
+      Shiny.setInputValue('tbl_visible',
+        {rows: Reactable.getInstance('tbl').rows.map(function(r) { return r.index + 1; })});
+    } catch (e) {}
   }
-  function queue() { clearTimeout(pending); pending = setTimeout(rpReportVisible, 50); }
-  function hook() {
-    if (!window.Reactable || !document.getElementById('tbl') || hook.done) return;
-    try { Reactable.onStateChange('tbl', queue); hook.done = true; } catch (e) {}
-  }
-  new MutationObserver(function() { hook(); queue(); })
-    .observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style'] });
-  $(document).on('shiny:value', function(e) { if (e.name === 'filter_css') queue(); });
+  new MutationObserver(function() { clearTimeout(pending); pending = setTimeout(report, 50); })
+    .observe(tbl, { childList: true, subtree: true, characterData: true });
 });
 
 // Copy an element's text (the run report's Copy button). Plain http off

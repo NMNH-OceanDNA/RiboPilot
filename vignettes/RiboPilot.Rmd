@@ -229,8 +229,8 @@ Its **Chimera check** marks where the fish sequence meets the mold, near
 
 RiboPilot proposes keep or drop for each scaffold (this is called triage), and
 never overwrites a call you made by hand. The **Triage** button runs the
-proposal again on the ticked samples. [Quality checks and flags](Curation-Flags.html)
-explains the rules.
+proposal again on the ticked samples, skipping any whose assembly is locked.
+[Quality checks and flags](Curation-Flags.html) explains the rules.
 
 In this step you only keep or drop scaffolds. Trimming a scaffold and moving
 gene boundaries happen in the Annotation Review step, and apply at once, with no
