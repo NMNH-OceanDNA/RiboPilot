@@ -132,8 +132,10 @@ Actinopteri (all ray-finned fishes), holds more records than the usual maximum:
 ![Proposed reference groups for the practice samples](figures/get-started/reference-propose.png)
 
 Press **Apply**. Then switch to the **Groups** view, tick all three groups, and
-click **Set up database** at the end of any ticked row. You are offered four
-choices:
+click **Set up database** at the end of any ticked row. The window offers
+**Download sequences from GenBank**, **Use a database I already have**, and
+**Leave these samples on their current database**. With a single group ticked,
+as in the picture, it also offers **Change which clade this group uses**:
 
 ![The choices for setting up a group's reference database](figures/get-started/reference-setup.png)
 
