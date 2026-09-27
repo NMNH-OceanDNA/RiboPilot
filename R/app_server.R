@@ -231,6 +231,8 @@ app_server <- function(input, output, session) {
   multi_unit_rv <- reactiveVal(FALSE)
   # row keys of the data the table was last given
   tbl_keys <- character(0)
+  # TRUE from a re-render until the new table reports its own page and selection
+  tbl_stale <- FALSE
   row_keys <- function(d) unit_key(d$ID, d[["path"]] %||% 1L, d[["scaffold"]] %||% 1L)
   observe({ d <- all_rows(); multi_unit_rv(any(duplicated(d$ID))) })
   output$tbl <- reactable::renderReactable({
@@ -239,6 +241,8 @@ app_server <- function(input, output, session) {
     if (mode == "Reference" && ref_view() == "Groups") refresh()
     d <- isolate(samples_data())
     tbl_keys <<- row_keys(d)
+    st <- isolate(reactable::getReactableState("tbl"))
+    tbl_stale <<- length(st$selected) > 0 || !(st$page %||% 1) %in% 1
     mm <- mode_meta(mode)
     lock_col <- paste0(mm$pfx, "_lock")
     state_col <- paste0(mm$pfx, "_switch")
@@ -256,7 +260,7 @@ app_server <- function(input, output, session) {
 
     cd <- function(f, ...) reactable::colDef(name = mp_col_name(f), header = mp_col_header(f), ...)
     cols <- list(
-      ID = cd("ID", width = mp_fit_width(d$ID), sticky = "left", html = TRUE, cell = rt_link("open_detail")),
+      ID = cd("ID", width = mp_fit_width(a$ID), sticky = "left", html = TRUE, cell = rt_link("open_detail")),
       path = cd("path", width = 70, align = "center", show = multi_unit),
       scaffold = cd("scaffold", width = 90, align = "center", show = multi_unit),
       Taxon = cd("Taxon", minWidth = 140, sticky = "left", html = TRUE, cell = rt_longtext()),
@@ -435,10 +439,14 @@ app_server <- function(input, output, session) {
   # still re-render via output$tbl above.
   push_tbl <- function(page = NULL) {
     d <- samples_data(); k <- row_keys(d)
-    sel <- reactable::getReactableState("tbl", "selected")
-    reactable::updateReactable("tbl", data = d, selected = which(k %in% tbl_keys[sel]), page = page)
+    sel <- if (!tbl_stale) reactable::getReactableState("tbl", "selected")
+    reactable::updateReactable("tbl", data = d, selected = which(k %in% tbl_keys[sel]),
+      page = if (!tbl_stale) page)
     tbl_keys <<- k
+    session$sendCustomMessage("rp_tbl_report", TRUE)
   }
+  observeEvent(list(reactable::getReactableState("tbl", "selected"),
+    reactable::getReactableState("tbl", "page")), tbl_stale <<- FALSE, ignoreInit = TRUE)
   observeEvent(refresh(), push_tbl(reactable::getReactableState("tbl", "page")), ignoreInit = TRUE)
   observeEvent(list(input$Assemble_lock_filter, input$Assemble_state_filter,
     input$Annotate_lock_filter, input$Annotate_state_filter), push_tbl(), ignoreInit = TRUE)

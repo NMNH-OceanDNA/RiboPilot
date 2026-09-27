@@ -128,7 +128,7 @@ test_that("rp_env.R names a version or build mismatch", {
   m <- env$rp_mismatch(a, b, "1.1.0", "1.0.0")
   expect_match(m, "^Version mismatch:")
   expect_match(m, "started by RiboPilot 1.1.0", fixed = TRUE)
-  expect_match(m, "has RiboPilot 1.0.0", fixed = TRUE)
+  expect_match(m, "loaded RiboPilot 1.0.0", fixed = TRUE)
 
   writeLines("x2", file.path(b, "rp_x.R"))
   expect_match(env$rp_mismatch(a, b, "1.0.0", "1.0.0"), "built from different code", fixed = TRUE)
@@ -136,4 +136,14 @@ test_that("rp_env.R names a version or build mismatch", {
   writeLines("x1", file.path(b, "rp_x.R"))
   file.create(file.path(b, "rp_new.R"))
   expect_false(is.null(env$rp_mismatch(a, b, "1.0.0", "1.0.0")))
+
+  skip_if(file.exists("/.dockerenv"), "inside a container")
+  withr::with_envvar(c(SINGULARITY_NAME = "", APPTAINER_NAME = ""),
+    expect_match(env$rp_mismatch(a, b, "1.1.0", "1.0.0"), "Install the same RiboPilot", fixed = TRUE))
+  withr::with_envvar(c(SINGULARITY_NAME = "rp.sif"), {
+    expect_match(env$rp_mismatch(a, b, "1.1.0", "1.0.0"), "macguigand/ribopilot:1.1.0", fixed = TRUE)
+    m <- env$rp_mismatch(a, b, "1.0.0", "1.0.0")
+    expect_match(m, "docker/deploy-local.sh", fixed = TRUE)
+    expect_no_match(m, "macguigand/ribopilot:", fixed = TRUE)
+  })
 })

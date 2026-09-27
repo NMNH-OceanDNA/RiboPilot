@@ -103,3 +103,25 @@ test_that("bulk triage acts on the unlocked samples selected when it opened", {
     expect_equal(seen, "S2")
   })
 })
+
+test_that("a refresh right after a re-render does not carry the old table's selection", {
+  skip_if_not_installed("withr")
+  dir <- mk_table_project()
+  withr::local_dir(dir)
+  up <- mock_table_updates()
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Taxonomy")
+    invisible(output$tbl)
+    session$setInputs(tbl__reactable__selected = c(1L, 2L), tbl__reactable__page = 1L)
+    session$setInputs(mode = "Assemble")
+    invisible(output$tbl)
+    session$setInputs(refresh = 1)
+    last <- up$list[[length(up$list)]]
+    expect_length(last$selected, 0)
+    expect_null(last$page)
+    session$setInputs(tbl__reactable__selected = 2L)
+    session$setInputs(refresh = 2)
+    last <- up$list[[length(up$list)]]
+    expect_equal(last$data$ID[last$selected], samples_data()$ID[2])
+  })
+})

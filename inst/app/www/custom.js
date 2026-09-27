@@ -16,8 +16,10 @@ $( document ).ready(function(){
         {rows: Reactable.getInstance('tbl').rows.map(function(r) { return r.index + 1; })});
     } catch (e) {}
   }
-  new MutationObserver(function() { clearTimeout(pending); pending = setTimeout(report, 50); })
-    .observe(tbl, { childList: true, subtree: true, characterData: true });
+  function queue() { clearTimeout(pending); pending = setTimeout(report, 50); }
+  new MutationObserver(queue).observe(tbl, { childList: true, subtree: true, characterData: true });
+  // a data update can move rows off the page without changing the page itself
+  Shiny.addCustomMessageHandler('rp_tbl_report', queue);
 });
 
 // Copy an element's text (the run report's Copy button). Plain http off
