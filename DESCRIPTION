@@ -9,7 +9,7 @@ Description: An R package for nuclear ribosomal repeat (18S-ITS1-5.8S-ITS2-28S)
     to MitoPilot; uses Nextflow for execution and includes an R-Shiny app for
     project management and curation of results.
 License: GPL (>= 3)
-URL: https://github.com/dmacguigan/RiboPilot
+URL: https://github.com/dmacguigan/RiboPilot, https://dmacguigan.github.io/RiboPilot/
 BugReports: https://github.com/dmacguigan/RiboPilot/issues
 biocViews:
 Depends:
