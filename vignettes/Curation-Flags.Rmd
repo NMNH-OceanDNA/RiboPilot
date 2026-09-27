@@ -51,6 +51,11 @@ example because NCBI could not be reached, RiboPilot does not skip the check: it
 raises `contaminant_unchecked`, and triage flags the scaffold "BLAST screen has not
 run".
 
+`low_identity` needs the reference sequences it compares each gene against, which
+the run downloads from NCBI (or reuses from your reference folder). When they could
+not be downloaded, the identity check is skipped with no warning, so a gene without
+`low_identity` has not always been checked.
+
 # The Checks column
 
 The Checks column puts every check on one line, worst first, in a color that

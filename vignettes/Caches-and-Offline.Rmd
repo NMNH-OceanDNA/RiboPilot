@@ -71,6 +71,7 @@ or scratch space, for example in your lab's `.Renviron` and shell profile.
 
 An offline run still assembles and annotates every sample. Scaffolds the bundled
 rDNA database cannot match get the `contaminant_unchecked` warning and the triage flag
-"BLAST screen has not run". Once you are online again, set those samples to
-Ready to run and press **Update** with **Resume previous run?** ticked to fill
-them in.
+"BLAST screen has not run". The `low_identity` check is skipped with no warning
+for genes whose reference sequences are not already in your reference folder.
+Once you are online again, set those samples to Ready to run and press **Update**
+with **Resume previous run?** ticked to fill them in.

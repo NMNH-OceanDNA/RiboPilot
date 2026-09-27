@@ -168,13 +168,13 @@ test_that("unit_evidence surfaces the screen reason", {
   DBI::dbExecute(con,
     "INSERT INTO screen (ID,path,scaffold,screen_verdict,screen_reason,screen_version)
      VALUES('S1',1,1,'no_reference',
-     'the local reference panel returned no usable hit for this scaffold; a remote BLAST search may identify it',1)")
+     'the bundled rDNA database returned no usable hit for this scaffold; a search at NCBI (BLAST Options, Search) may identify it',1)")
   DBI::dbDisconnect(con)
   withr::local_dir(dir)
 
   d <- RiboPilot:::unit_evidence("S1")
   expect_true("screen_reason" %in% names(d))
-  expect_match(d$screen_reason[1], "remote BLAST search")
+  expect_match(d$screen_reason[1], "search at NCBI")
 })
 
 test_that("the Files pane helper declines outside RStudio rather than erroring", {

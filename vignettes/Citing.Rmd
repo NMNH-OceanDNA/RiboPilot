@@ -14,8 +14,9 @@ In R, `citation("RiboPilot")` prints the citation for the version you have.
 
 - The RiboPilot version (`packageVersion("RiboPilot")` in R) and the container
   image your project used (the `container` line of the project's `.config`
-  file). Each run report in the project's `nextflow_logs` folder records the
-  RiboPilot and Nextflow versions of that run.
+  file). Each run's Nextflow log (`nextflow_logs/*.nextflow.log` in the project)
+  records the Nextflow version and, in its launch command, the RiboPilot version
+  (`--ribopilot_version`).
 - The bundled rDNA database the BLAST screen searched. A sample's **BLAST
   Options** window names it, for example "ribopilot_rrna 2026.08.18": about
   600,000 animal (Metazoa) nuclear rDNA records downloaded from GenBank on 18
@@ -52,8 +53,8 @@ setup without a container (unsupported) uses whatever versions you installed.
 | Ribovore | `ribovore` | 1.0.5 | Its ribotyper checks the 18S and 28S structure in the chimera check. | Schaffer et al. 2021 |
 | Infernal | (installed with Ribovore) | 1.1.5 | Used by ribotyper. | Nawrocki and Eddy 2013 |
 | Entrez Direct | `entrez-direct` | 26.0 | Downloads GenBank records for reference databases. | Kans 2013- |
-| R | `r-base` | 4.4.3 | Runs RiboPilot inside the container. | R Core Team |
-| Nextflow | (on your computer) | 25.10.6 | Runs the pipeline. | Di Tommaso et al. 2017 |
+| R | `r-base` | 4.4.3 | Runs RiboPilot inside the container. | R Core Team 2025 |
+| Nextflow | (on your computer) | yours (24.10 to 25.10.x), or 25.10.6 when yours is newer | Runs the pipeline. | Di Tommaso et al. 2017 |
 
 The Package column is the bioconda or conda-forge package in the image. The
 barrnap package 1.10.6 reports itself as barrnap 1.10.5.
@@ -71,7 +72,7 @@ barrnap package 1.10.6 reports itself as barrnap 1.10.5.
 - Kans J. 2013-. Entrez Direct: E-utilities on the Unix command line. In: Entrez Programming Utilities Help. National Center for Biotechnology Information. https://www.ncbi.nlm.nih.gov/books/NBK179288/
 - Langmead B, Salzberg SL. 2012. Fast gapped-read alignment with Bowtie 2. Nature Methods 9: 357-359.
 - Nawrocki EP, Eddy SR. 2013. Infernal 1.1: 100-fold faster RNA homology searches. Bioinformatics 29: 2933-2935.
-- R Core Team. R: A language and environment for statistical computing. R Foundation for Statistical Computing, Vienna, Austria. https://www.R-project.org/
+- R Core Team. 2025. R: A language and environment for statistical computing. R Foundation for Statistical Computing, Vienna, Austria. https://www.R-project.org/
 - Schaffer AA, McVeigh R, Robbertse B, et al. 2021. Ribovore: ribosomal RNA sequence analysis for GenBank submissions and database curation. BMC Bioinformatics 22: 400.
 - Seemann T. barrnap: BAsic Rapid Ribosomal RNA Predictor. https://github.com/tseemann/barrnap
 - Shimoyama Y. pybarrnap: Python implementation of barrnap. https://github.com/moshi4/pybarrnap

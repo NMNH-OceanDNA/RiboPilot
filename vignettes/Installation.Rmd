@@ -105,8 +105,9 @@ What an upgrade means for your projects:
 - **The container image must match.** A project names its container image when
   you create it, in the `container = '...'` line of its `.config` file. Each run
   uses the pipeline scripts of the RiboPilot installed in R together with the R
-  code inside that image. When the two do not match, the run stops before doing
-  any work, with a message such as:
+  code inside that image. When the two do not match, every sample fails at its
+  first R step (scoring, which comes after read cleaning and assembly), with a
+  message such as:
 
   ```
   Version mismatch: this run was started by RiboPilot 0.0.0.9018, but this task
