@@ -7,70 +7,111 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
-After it annotates a sample, RiboPilot runs a set of automatic quality checks and
-raises a **flag** for anything that looks unusual. Flags are there to guide your
-attention: they point out samples worth a closer look in the app's Annotation
-Review step. They do not change your data, and a flag does not always mean
-something is wrong. It just means "please check this".
+After it annotates a unit, RiboPilot runs a set of automatic quality checks and
+raises a **curation warning** for anything that looks unusual. Warnings guide
+your attention in the Annotation Review step. They do not change your data, and a
+warning does not always mean something is wrong: it means "please check this".
 
-You will see flags in three places in the app: the **Checks** column right after
-the ID in the Assemble and Annotation Review tables, which sums up every check in
-a few words; a count in the **Warnings** column; and a detailed **Curation
-warnings** panel when you open a unit. Each flag links to the exact feature it
-concerns, so you can jump straight to it.
+You see them in three places:
 
-# What the flags mean
+- the **Checks** column of the Assemble and Annotation Review tables (right after
+  the ID, or after **Path #** and **Scaffold #** when those show), which sums up
+  every check in a few words;
+- the **Warnings** column of Annotation Review, which counts the warnings on the
+  unit as a whole (marked "unit" in the table below); hover over it for the list;
+- the **Curation warnings** panel of a unit's window, which lists the unit's
+  warnings and, below them, each feature that has a warning. Click **select** on a
+  feature's row to make it the active feature.
 
-| Flag | Applies to | What it means |
-|---|---|---|
-| `missing_18S`, `missing_5.8S`, `missing_28S` | sample | One of the three ribosomal genes was not found. |
-| `missing_ITS1`, `missing_ITS2` | sample | A spacer was not recovered between its neighboring genes. |
-| `out_of_order` | sample | The five features are not in the expected order (18S, ITS1, 5.8S, ITS2, 28S). |
-| `overlap` | feature | Two features overlap when they should sit side by side. |
-| `wrong_strand` | feature | A feature was found on the opposite strand from what is expected. |
-| `length` | feature | A feature is shorter or longer than typical for your group. |
-| `low_identity` | feature | A conserved gene is less similar to reference sequences than expected (could signal an assembly problem or a genuinely unusual sample). |
-| `contaminant` | sample | The closest published match belongs to an unrelated group, which can indicate contamination. |
+# What the warnings mean
 
-The last two checks (`low_identity` and `contaminant`) rely on looking up a
-reference match on NCBI during assembly. If that lookup was unavailable at the
-time, those two checks are simply skipped and the others still apply.
+| Warning | On | What it means | What to do |
+|---|---|---|---|
+| `missing_18S`, `missing_5.8S`, `missing_28S` | unit | One of the three rRNA genes was not found. | Expected when the scaffold holds only part of the repeat. Otherwise look at **Read coverage** for a break. |
+| `missing_ITS1`, `missing_ITS2` | unit | A spacer was not found between its two genes. | Usually follows a missing gene. If both genes are there, check the boundaries in **Edit active feature boundaries**. |
+| `out_of_order` | unit | The features are not in the order 18S, ITS1, 5.8S, ITS2, 28S. | Likely a misassembly; the export marks it `misassembly`. Check the feature map and read coverage before you submit it. |
+| `overlap` | unit and feature | A feature overlaps the one before it. | Move the boundary in **Edit active feature boundaries**. The export marks it `misassembly`. |
+| `gap` | unit and feature | More than 5 bases between two neighboring features belong to neither. Gaps of 5 bases or fewer are closed when the unit is annotated. | Check the boundaries, and extend the gene or spacer if the gap is part of it. |
+| `wrong_strand` | unit and feature | A feature lies on the opposite strand from the rest. | Likely a misassembly or a wrong call. Check the feature model. |
+| `length` | feature | The feature is shorter or longer than the range for its group (tables below). | Common for the spacers, and often fine. Check that the boundaries look right. |
+| `truncated` | feature | Less than 90 percent of the gene's rRNA model was recovered. | Nothing: the export writes the gene as partial. |
+| `low_identity` | feature | The gene is less similar to its best reference than the floor for its group (tables below), and the reference covers at least half of the gene. | An assembly error, or a little-studied group. Look at the **Reference alignment**. |
+| `contaminant` | unit | The BLAST screen's best hit is from a different phylum than your sample. | Check the unit before you lock it: it may be another organism's rDNA. Lock and the Export window ask about it until you mark it Reviewed. |
+| `contaminant_unchecked` | unit | The contamination check could not run: the BLAST screen has no usable hit for the unit, or your sample's lineage is unknown. | If NCBI could not be reached, run the sample again once it can (see [Troubleshooting](Troubleshooting.html)). If the sample has no taxon, set one in the Taxonomy step. |
+| `not_nuclear_rdna` | unit | The BLAST screen's best hit is not a nuclear rDNA record, for example a mitochondrial or bacterial rRNA. | The scaffold may not be nuclear rDNA. Check its features and hits before you keep it. |
+| `no_clade_ruleset` | unit | Your sample's group has no ruleset of its own, so the generic animal ranges were used. | Nothing. See [How the checks are tuned per group](#how-the-checks-are-tuned-per-group). |
+
+Two more columns hold checks of their own. **ITSx Warnings** says what stock ITSx, the
+tool NCBI runs on rRNA and ITS submissions, finds in the unit, for example
+`itsx_chimeric`, `itsx_no_5.8S`, or `itsx_boundary_shift(...)`. **Chimera** holds the
+chimera check's level; see [Chimeras](#chimeras-scaffolds-made-of-two-pieces).
+
+The contamination checks need a BLAST screen result. When a unit has none, for
+example because NCBI could not be reached, RiboPilot does not skip the check: it
+raises `contaminant_unchecked`, and triage flags the scaffold "BLAST screen has not
+run".
 
 # The Checks column
 
 The Checks column puts every check on one line, worst first, in a color that
 matches the worst finding. On the Assemble table it covers the sample's kept
-scaffolds; on the Annotation Review table, one unit. "warnings" means one of the
-flags above on the unit itself, the ones the Warnings column counts; "feature
-flags" means one on one of its features.
+scaffolds; on the Annotation Review table, one unit. "warnings" means a unit warning from
+the table above, the ones the Warnings column counts; "feature flags" means a
+warning on one of its features.
 
 | Checks says | Color | What happens |
 |---|---|---|
 | off target, contaminant, severe chimera, ITSx chimeric | red | Lock and the Export window ask first, until the unit is marked Reviewed. |
 | minor chimera, uncertain screen, ITSx, warnings, feature flags | amber | Worth a look; nothing asks. |
-| ok | green | The GenBank screen matched your sample's lineage, and nothing is flagged. |
-| no reference | grey | Nothing is flagged, but the screen had no usable GenBank match to judge by. |
+| ok | green | The BLAST screen matched your sample's lineage, and nothing is flagged. |
+| no reference | grey | Nothing is flagged, but the BLAST screen had no usable match to judge by. |
+
+# What the BLAST screen searches
+
+After a scaffold is assembled, RiboPilot BLASTs it to find out what it matches.
+This BLAST screen feeds the Screen column, the contamination warnings above, the
+triage rules below, and the chimera check.
+
+By default each scaffold is searched in the **bundled rDNA database** inside the
+container: about 600,000 animal nuclear rDNA records from GenBank, plus NCBI's
+16S, eukaryote small subunit, and eukaryote large subunit rRNA sets, so that a
+bacterial, fungal, or plant scaffold still finds its match. Only a scaffold that
+matches nothing there is sent on to NCBI's full nucleotide database (core_nt),
+over the internet. The search is not limited to rDNA records, so a scaffold that
+is really mitochondrial or bacterial is caught.
+
+To change this, open a sample's **BLAST Options** in the Assemble step and pick a
+**Search** choice: "Bundled database only" never goes to NCBI, and "NCBI only
+(core_nt)" skips the bundled database. The BLAST Options window also names the
+version of the bundled database.
+
+The first line of the **BLAST evidence** panel (click a sample's ID in the
+Assemble step) says which database gave a scaffold's best match. In Annotation
+Review, the **Hit Source** column (in the **BLAST** column group) says which
+database named the unit's best rDNA reference: "bundled", "NCBI", or "seed file"
+(the assembly's own seed database, which is only a hint).
+
+For a methods section, see [Citing RiboPilot](Citing.html).
 
 # How scaffolds are kept or dropped (auto-triage)
 
-Flags above point at something worth a look; they never remove data. Separately,
-once a scaffold has been annotated and screened against GenBank, RiboPilot also
-proposes a keep, drop or flag call for the scaffold itself, in the Assemble step.
-You can review and override every call by hand, and your own decisions are
-never silently overwritten (more on that below).
+Warnings point at something worth a look; they never remove data. Separately,
+once a scaffold has been annotated and screened, RiboPilot proposes keep, drop,
+or undecided for the scaffold itself, in the Assemble step. You can override
+every call by hand with **K** and **D**, and your own decisions are never
+silently overwritten (more on that below).
 
 The proposal rests on two evidence channels that are independent of one
-another: **annotation**, from barrnap and ITSx run locally on the assembly, and
-the **GenBank screen**, the best reference match found remotely. RiboPilot
-never drops a scaffold on one channel's silence: a rule can only drop once
-both the annotation tools and the GenBank screen have actually reported on
-the scaffold. By default, the only rule that drops is the one where both
-channels independently say the scaffold is not nuclear rDNA. Three other
-rules can be switched to Drop as well: two fire when annotation and the
-GenBank screen *disagree* with each other, and one fires when the GenBank
-screen's own consensus disagrees with the sample's identity. Turning any of
-them on is a deliberate choice about which evidence you trust more for your
-material, not more of the same corroboration; see the table below for
+another: **annotation**, from barrnap and ITSx run on the scaffold, and the
+**BLAST screen** described above. RiboPilot never drops a scaffold on one
+channel's silence: a rule can only drop once both the annotation tools and the
+BLAST screen have reported on the scaffold. By default, the only rule that drops
+is the one where both channels independently say the scaffold is not nuclear
+rDNA. Three other rules can be switched to Drop as well: two fire when
+annotation and the BLAST screen *disagree* with each other, and one fires when
+the BLAST screen's own consensus disagrees with the sample's identity. Turning
+any of them on is a deliberate choice about which evidence you trust more for
+your material, not more of the same corroboration; see the table below for
 which is which.
 
 RiboPilot checks a scaffold against eight named rules, in this order. The
@@ -78,12 +119,13 @@ first rule that matches decides the outcome; if none match, the scaffold is
 kept. Four of the eight rules can ever drop a scaffold. The other four only
 flag, because their evidence is a missing channel, taxonomic distance alone, or
 a possible chimera, none of which is a safe basis for removing a scaffold by
-itself.
+itself. A flagged scaffold stays undecided, and the **Why** column of the
+sample's scaffold table gives the reason.
 
 | # | Rule | What it means | Can it drop? |
 |---|---|---|---|
 | 1 | Annotation has not run | Neither annotation tool has reported on this scaffold yet. | No, flag only |
-| 2 | GenBank screen has not run | No usable core_nt hit is recorded, so the scaffold cannot be judged against GenBank. | No, flag only |
+| 2 | BLAST screen has not run | No usable BLAST hit is recorded, so the scaffold cannot be judged. | No, flag only |
 | 3 | No annotations, non-rDNA hit | Annotation found no rRNA or ITS feature, and the best GenBank match is not a nuclear rDNA record. | Yes, dropped by default |
 | 4 | No annotations but rDNA hit | Annotation found no rRNA or ITS feature, though the best GenBank match is a nuclear rDNA record. | Optional; flagged by default |
 | 5 | Has annotations but non-rDNA hit | The scaffold has a feature model, but its best GenBank match is not a nuclear rDNA record. | Optional; flagged by default |
@@ -111,14 +153,14 @@ wrong. The verdict is also shown as a Screen column in a sample's scaffold table
 (click its ID in the Assemble step) and in the Annotation Review table, and an
 off-target verdict turns the Checks cell red.
 
-Each rule can be turned off if it does not suit your data. Switching every
-rule off at once makes Apply a no-op: it changes nothing, rather than
-marking every remaining scaffold "keep" on the strength of no active checks.
-Rules 4, 5 and 6
-can be turned up to Drop if you want RiboPilot to act on them automatically
-rather than just flag them for you to review. This setting lives with the
-project, not with any one run, so the app and the pipeline never disagree
-about what a rule is set to do.
+To change what a rule does, tick samples in the Assemble step and press
+**Triage**. The Triage window sets each rule to Off, Flag, or Drop (Drop only
+where the rule allows it), shows how many scaffolds each rule would decide, and
+applies to the ticked samples when you press **Apply**. Switching every rule off
+at once makes Apply a no-op: it changes nothing, rather than marking every
+remaining scaffold "keep" on the strength of no active checks. The rule
+settings live with the project, not with any one run, so the app and the
+pipeline never disagree about what a rule is set to do.
 
 Rule 7 deserves a special note: a low-identity hit at a large taxonomic
 distance is the normal state for an under-studied group, not proof of
@@ -136,7 +178,7 @@ RiboPilot looks for a chimera in four ways:
 - **Gene by gene.** The 18S, 5.8S, and 28S genes each get their own best
   GenBank matches, and these should agree on one lineage.
 - **Along the scaffold.** Overlapping 500 bp windows, one every 250 bp, are
-  matched against the local rDNA panel, and neighboring windows that match the
+  matched against the bundled rDNA database, and neighboring windows that match the
   same class are joined into segments. Two neighboring segments of similar
   length from different classes suggest a join.
 - **Gene structure.** The ribotyper tool checks that the 18S and 28S each look
@@ -180,7 +222,7 @@ in doubt, copy the scaffold with **Copy FASTA** and BLAST each side at NCBI.
 # Several scaffolds from one organism: the Variant column
 
 None of the rules above fires on this, and that is deliberate. When a sample
-yields more than one scaffold that the GenBank screen calls on-target, both
+yields more than one scaffold that the BLAST screen calls on target, both
 agree with your sample's lineage at phylum level. That rules out many
 contaminants but not all: a human on a fish sample is also a chordate. BLAST
 each variant's ITS before you lock one. RiboPilot
@@ -220,15 +262,15 @@ shown, so you can see the number the label came from rather than only the label.
 If you keep or drop a scaffold by hand, that decision is recorded as yours,
 and a later automatic re-run will not overwrite it, even if the rules above
 would now propose something different. Re-triaging only touches scaffolds it
-decided itself, unless you explicitly ask it to reconsider your calls too.
+decided itself, unless you tick **Also re-decide scaffolds I set by hand** in the Triage window.
 They also survive assembling the sample again, as long as the scaffold comes
 back with the same sequence; a scaffold whose sequence changed starts undecided.
 
 # Depth is shown, not decided
 
 The scaffold table shows each scaffold's median per-position read depth and a
-small sparkline of depth along its length, but depth never decides a keep,
-drop or flag call. Reads are mapped to one path at a time, and reads that
+small sparkline of depth along its length, but depth never decides a keep or
+drop call. Reads are mapped to one path at a time, and reads that
 could sit in more than one place in that path are set aside. So depth dips
 where the sequence repeats inside the path, for example over repeats in the
 spacer between units, and those dips are expected. The number is worth a look;
@@ -236,30 +278,44 @@ it is not sound enough to decide anything on its own.
 
 # How the checks are tuned per group
 
-Some checks, especially the expected lengths, depend on the group of organisms.
-RiboPilot ships five settings, and picks one from each sample's lineage:
+The expected lengths and identity floors depend on the group of organisms.
+RiboPilot ships five rulesets, and picks one from each sample's lineage:
 
-- **Generic animal**: deliberately wide length ranges that suit a broad range
-  of animals. Used for any group without its own setting.
-- **Ray-finned fishes**: tighter, fish-specific ranges for the ribosomal genes,
-  with the spacers kept wide because they vary even between close relatives.
-- **Sea stars** (Asteroidea), **true jellyfish** (Scyphozoa), and
-  **octocorals** (Octocorallia): tighter gene ranges, and lower identity
-  thresholds, because GenBank holds few close relatives for these groups.
-
-For reference, the generic animal length ranges are:
-
-| Feature | Typical length (bases) |
+| Ruleset | Used for samples in |
 |---|---|
-| 18S | 1600 - 2100 |
-| 5.8S | 140 - 180 |
-| 28S | 2000 - 6000 (the recovered portion varies with sequencing depth) |
-| ITS1 | 120 - 1600 |
-| ITS2 | 120 - 1600 |
+| `actinopterygii` | ray-finned fishes |
+| `asteroidea` | sea stars |
+| `scyphozoa` | true jellyfish |
+| `octocorallia` | octocorals |
+| `metazoa_generic` | any other group; the unit gets the `no_clade_ruleset` note |
 
-A `length` flag simply means a feature fell outside these ranges. That is common
-and often fine, especially for the fast-evolving spacers; it is a prompt to look,
-not a verdict.
+To use another one, pick it as **Clade ruleset** in the sample's **Curate
+Options** (Assemble step). Leaving `metazoa_generic` there lets RiboPilot choose
+from the lineage.
+
+Expected lengths, in bases. A `length` warning means a feature fell outside its
+range, which is common and often fine for the spacers:
+
+| Feature | Generic animal | Ray-finned fishes | Sea stars, jellyfish, octocorals |
+|---|---|---|---|
+| 18S | 1600 to 2100 | 1750 to 1950 | 1700 to 1900 |
+| 5.8S | 140 to 180 | 140 to 175 | 150 to 170 |
+| 28S | 2000 to 6000 | 2500 to 5000 | 2000 to 6000 |
+| ITS1 | 120 to 1600 | 150 to 1200 | 120 to 1200 |
+| ITS2 | 120 to 1600 | 150 to 1200 | 120 to 1200 |
+
+Identity floors, in percent. Below these a gene gets `low_identity`:
+
+| Gene | Generic animal | Ray-finned fishes | Sea stars, jellyfish, octocorals |
+|---|---|---|---|
+| 18S | 95 | 97 | 93 |
+| 5.8S | 93 | 95 | 90 |
+| 28S | 80 | 85 | 78 |
+
+The floors are lower for sea stars, jellyfish, and octocorals because GenBank
+holds few close relatives for them. In every ruleset, a gene is `truncated` when
+less than 90 percent of its rRNA model was recovered, and identity is judged only
+when the reference covers at least half of the gene.
 
 # Adding tuning for a new group
 

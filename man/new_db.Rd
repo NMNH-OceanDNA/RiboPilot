@@ -34,30 +34,32 @@ new_db(
 \item{mapping_taxon}{Column name with a taxonomic identifier (default "Taxon").}
 
 \item{data_path}{Directory holding the raw read files named in the mapping
-file. Read files are resolved as `<data_path>/<R1>`, the same way the
+file. Read files are resolved as \verb{<data_path>/<R1>}, the same way the
 Nextflow pipeline does it. When NULL, read files cannot be located and
 only the paired-end check is applied.}
 
 \item{assembly_path}{Directory holding the assembly files named in the
-mapping file's optional `Assembly` column. A sample with an assembly skips
+mapping file's optional \code{Assembly} column. A sample with an assembly skips
 read preprocessing and assembly: its nuclear rDNA contigs are found inside
-the supplied file instead. Its `R1`/`R2` may be blank.}
+the supplied file instead. Its \code{R1}/\code{R2} may be blank.}
 
 \item{check_reads}{(logical) Check that the read files named in the mapping
 file exist (default TRUE). Set FALSE when the data will be staged later.}
 
 \item{check_assemblies}{(logical) Check that the assembly files named in the
-mapping file exist under `assembly_path` (default TRUE).}
+mapping file exist under \code{assembly_path} (default TRUE).}
 
 \item{assemble_cpus}{Default number of CPUs for assembly.}
 
 \item{assemble_memory}{Default memory (GB) for assembly.}
 
 \item{seeds_db}{Path or URL to the GetOrganelle seeds database. NULL
-(default) uses the built-in Actinopterygii database.}
+(default) names an Actinopterygii database that RiboPilot does not ship;
+the Reference step replaces it.}
 
 \item{labels_db}{Path or URL to the GetOrganelle labels database. NULL
-(default) uses the built-in Actinopterygii database.}
+(default) names an Actinopterygii database that RiboPilot does not ship;
+the Reference step replaces it.}
 
 \item{getOrganelle}{Default GetOrganelle command-line options.}
 
@@ -68,10 +70,10 @@ mapping file exist under `assembly_path` (default TRUE).}
 \item{min_assembly_length}{Minimum contig length (bp) to retain (default 500).}
 
 \item{ref_dir}{Folder for built reference databases (default: the
-`RIBOPILOT_REF_DIR` environment variable, else [ribopilot_ref_dir()]).}
+\code{RIBOPILOT_REF_DIR} environment variable, else \code{\link[=ribopilot_ref_dir]{ribopilot_ref_dir()}}).}
 }
 \description{
-Creates the SQLite tracking database. Mirrors MitoPilot's `new_db()` spine
+Creates the SQLite tracking database. Mirrors MitoPilot's \code{new_db()} spine
 (samples / preprocess / pre_opts / assemble / assemble_opts / blast_opts /
 assemblies) but with nuclear ribosomal (nrDNA) assembly options. Annotation,
 curation, and export tables are added in later build increments.

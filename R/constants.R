@@ -58,7 +58,7 @@ NUCLEAR_RRNA_TITLE_RE <- paste0(
 #' Titles naming a ribosomal subunit that is not nuclear.
 #'
 #' 16S and 23S are prokaryotic; 12S is the metazoan mitochondrial SSU, whose
-#' records often carry no organelle word for [ORGANELLAR_TITLE_RE] to catch.
+#' records often carry no organelle word for `ORGANELLAR_TITLE_RE` to catch.
 #' @noRd
 NON_NUCLEAR_RRNA_RE <- "\\b(12S|16S|23S)\\b"
 
@@ -142,15 +142,16 @@ SCAFFOLD_COL_HELP <- list(
     "missing or partial 5.8S, or a boundary far from RiboPilot's own. Filled in by",
     "the annotation step and updated again by export. Empty means clean; 'not run'",
     "means ITSx produced no output."),
-  screen_verdict = paste("Contamination check: whether the best GenBank match looks like the",
+  screen_verdict = paste("BLAST screen: whether the best matches look like the",
     "sample's own organism (on target), something else (off target), or the",
     "evidence is too thin to say."),
-  screen_reason = paste("Why the screen check reached that verdict, including when the panel",
-    "found no usable hit."),
+  screen_reason = paste("Why the BLAST screen reached that verdict, including when the bundled",
+    "rDNA database found no usable hit."),
   variant_class = paste("Whether this scaffold looks like an alternative arrangement of another",
     "scaffold in the sample, or a second copy of the rDNA. Information only:",
     "neither one is a fault."),
-  screen_species = "Organism named by the best GenBank match, searched against all of GenBank.",
+  screen_species = paste("Organism named by the best match of the BLAST screen: the bundled rDNA",
+    "database first, then NCBI core_nt for a scaffold it cannot match. The evidence panel below says which."),
   shares = paste("The most specific level of classification the best GenBank match shares with",
     "this sample. \"no reference\" is normal for a group with little in GenBank."),
   odd_one_out = paste("Marks a scaffold whose best GenBank match disagrees with the rest of the",
@@ -159,9 +160,9 @@ SCAFFOLD_COL_HELP <- list(
   screen_pident = paste("How closely the matched stretch resembles the best GenBank record,",
     "as a percentage of identical bases."),
   triage_reason = "Why triage decided the way it did, or what left it undecided.",
-  warnings = paste("Number of sample-level curation warnings (feature order, overlaps, strand,",
-    "contamination). Hover for the list. Per-feature warnings such as length or",
-    "truncation are listed in the details view."),
+  warnings = paste("Number of curation warnings on the unit as a whole, such as a missing gene,",
+    "features out of order, or contamination. Hover for the list. Warnings on one",
+    "feature, such as length or truncated, are in the unit's Curation warnings panel."),
   chimera = paste("Chimera check: whether different parts of this scaffold match different",
     "lineages or show read-level breakpoints. severe: parts match different phyla or",
     "kingdoms; the export flags the record as chimeric and asks about it. minor: weaker",
@@ -173,7 +174,7 @@ SCAFFOLD_COL_HELP <- list(
 CHIMERA_COL_HELP <- list(
   start = "First base of this stretch of the scaffold (1-based).",
   stop = "Last base of this stretch of the scaffold.",
-  taxon = "Best-hit lineage at class rank, shared by every window in the segment. 'nohit' means no window in the stretch matched the local rDNA panel or decoys. 'unresolved' means the top hits tie across classes (a conserved stretch), so the windows say nothing about origin.",
+  taxon = "Best-hit lineage at class rank, shared by every window in the segment. 'nohit' means no window in the stretch matched the bundled rDNA database. 'unresolved' means the top hits tie across classes (a conserved stretch), so the windows say nothing about origin.",
   species = "Species of the strongest single hit inside the segment.",
   pident = "Mean percent identity of the windows' best hits.",
   n_windows = "Number of 500 bp windows (step 250) collapsed into this segment.",

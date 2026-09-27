@@ -213,7 +213,7 @@ nf_run_blocking <- function(wd, args, log = NULL) {
 #' died stays in its work directory and never reaches the user. The task hash in
 #' the NOTE is what connects the two.
 #'
-#' @param log The run log written by [nf_run_blocking()].
+#' @param log The run log written by `nf_run_blocking()`.
 #' @param work The run's work directory.
 #' @param n Lines kept from the end of each task's stderr.
 #' @return Unique error strings, newest run only; character(0) when none failed.

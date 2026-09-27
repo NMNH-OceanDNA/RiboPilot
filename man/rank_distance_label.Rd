@@ -2,7 +2,7 @@
 % Please edit documentation in R/taxonomy_ranks.R
 \name{rank_distance_label}
 \alias{rank_distance_label}
-\title{Human-readable label for a [rank_distance()] value ("genus", "class", "none")}
+\title{Human-readable label for a \code{\link[=rank_distance]{rank_distance()}} value ("genus", "class", "none")}
 \usage{
 rank_distance_label(d)
 }
@@ -13,5 +13,5 @@ rank_distance_label(d)
 character.
 }
 \description{
-Human-readable label for a [rank_distance()] value ("genus", "class", "none")
+Human-readable label for a \code{\link[=rank_distance]{rank_distance()}} value ("genus", "class", "none")
 }

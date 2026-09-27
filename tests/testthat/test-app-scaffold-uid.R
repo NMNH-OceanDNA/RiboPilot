@@ -761,3 +761,26 @@ test_that("Download selected rows writes only the ticked visible rows", {
     expect_equal(nrow(utils::read.csv(output$table_csv)), n)
   })
 })
+
+test_that("the BLAST evidence names the database that answered", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "INSERT INTO blast_screen (ID, path, scaffold, accession, species, pident, qcovs,
+    is_nuclear_rrna) VALUES ('S1',1,1,'X1.1','Danio rerio',99,90,1), ('S1',1,2,'X2.1','Danio rerio',99,90,1)")
+  DBI::dbExecute(con, "INSERT INTO blast_searched (ID, path, scaffold, query_md5, source)
+    VALUES ('S1',1,1,'m','local')")
+  DBI::dbDisconnect(con)
+  withr::local_dir(dir)
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    sel_id("S1")
+    session$flushReact()
+    session$setInputs(scaf_examine = "S1|1|1")
+    session$flushReact()
+    expect_match(output$unit_screen$html, "bundled rDNA database", fixed = TRUE)
+    session$setInputs(scaf_examine = "S1|1|2")
+    session$flushReact()
+    expect_match(output$unit_screen$html, "NCBI core_nt", fixed = TRUE)
+  })
+})

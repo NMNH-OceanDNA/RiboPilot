@@ -37,7 +37,7 @@ ref_candidate_ok <- function(x) {
       (!is.na(aln) & aln >= REF_CANDIDATE_MIN_ALN_BP))
 }
 
-#' Parse remote blastn hits into ranked reference candidates + a contamination
+#' Parse blastn hits into ranked reference candidates + a contamination
 #' screen
 #'
 #' Reads a blastn `-outfmt "6 saccver stitle pident qcovs evalue staxids"` file
@@ -46,8 +46,9 @@ ref_candidate_ok <- function(x) {
 #' * **Reference panel** - hits whose title is nuclear rDNA. Deduped by
 #'   accession (best pident*qcovs), ranked into `blast_ref_candidates`, rank-1
 #'   written to the unit's `assemblies.blast_*` columns. Same records the restricted search returned before.
-#' * **Contamination screen** - the top hit over *all* of core_nt, unfiltered,
-#'   into `blast_screen`. This is the only signal that can distinguish "the host"
+#' * **Contamination screen** - the top hit of the whole search (the bundled
+#'   rDNA database with its decoys, or NCBI core_nt), unfiltered, into
+#'   `blast_screen`. This is the only signal that can distinguish "the host"
 #'   from "a symbiont" or "not nuclear rDNA at all", so it is deliberately taken
 #'   before the nuclear-rDNA filter.
 #'

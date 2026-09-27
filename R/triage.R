@@ -24,7 +24,7 @@ TRIAGE_VERDICTS <- c("keep", "drop")
 #'
 #' Writes the verdict, its justification and its owner, derives
 #' `assemblies.ignore` from the verdict, and reconciles the unit's annotate row
-#' (held on drop, restored on keep) through [reconcile_ignore_unit()].
+#' (held on drop, restored on keep) through `reconcile_ignore_unit()`.
 #'
 #' @param con Open project DB connection.
 #' @param id,path,scaffold Assembly unit.

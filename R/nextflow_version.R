@@ -81,7 +81,7 @@ nf_installed_version <- function(nextflow = "nextflow") {
 #' Surfaced in the "found but no version" message so the real cause (most often
 #' "Cannot find Java or it's a wrong version") is visible. Keeps the informative
 #' lines (ERROR / NOTE / Java), trimmed short.
-#' @param out Output lines from [nf_version_output()].
+#' @param out Output lines from `nf_version_output()`.
 #' @return A short string, or "" if nothing useful was captured.
 #' @noRd
 nf_probe_error <- function(out) {
@@ -133,7 +133,7 @@ nf_pin_for <- function(version) {
   NF_MAX_SUPPORTED
 }
 
-#' NXF_VER value to pin for a run (detects, then [nf_pin_for()]).
+#' NXF_VER value to pin for a run (detects, then `nf_pin_for()`).
 #' @param nextflow The nextflow binary name/path.
 #' @return A version string for `NXF_VER`, or `NA_character_` if Nextflow missing.
 #' @noRd

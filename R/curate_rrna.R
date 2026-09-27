@@ -12,8 +12,8 @@
 #' Curate one reconciled nrDNA feature model against a clade ruleset (pure)
 #'
 #' @param features data.frame(element, type, start, stop, length, strand, ...)
-#'   as produced by [reconcile_features()] / stored in the `annotations` table.
-#' @param params A ruleset from [rrna_params()].
+#'   as produced by `reconcile_features()` / stored in the `annotations` table.
+#' @param params A ruleset from `rrna_params()`.
 #' @param ref_pid Optional named numeric vector (element -> percent identity to
 #'   the top reference), from the `blast_ref_alignment` table. Missing elements
 #'   are skipped (identity check is opportunistic).
@@ -22,9 +22,9 @@
 #'   The identity check is skipped when coverage is below `min_ref_coverage`, so
 #'   a partial reference cannot raise a false low_identity flag.
 #' @param sample_lineage,hit_lineage Optional lineage strings for the contaminant
-#'   check: the sample's assigned lineage vs. the lineage of the top hit over
-#'   *all* of core_nt (`blast_screen.lineage`), not the nuclear-rDNA reference
-#'   panel. An unknown lineage on either side raises `contaminant_unchecked`
+#'   check: the sample's assigned lineage vs. the lineage of the BLAST screen's
+#'   unfiltered top hit (`blast_screen.lineage`), not the nuclear-rDNA reference
+#'   candidates. An unknown lineage on either side raises `contaminant_unchecked`
 #'   rather than passing silently.
 #' @param sample_taxids,hit_taxids Optional rank-aligned taxid strings matching
 #'   those lineages (`samples.lineage_taxids`, `blast_screen.lineage_taxids`).

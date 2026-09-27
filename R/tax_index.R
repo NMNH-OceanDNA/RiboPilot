@@ -252,7 +252,7 @@ td_paths <- function(con, taxids) {
 #' Missing ranks are filled the way `taxonkit reformat -F -t` filled them: an
 #' "unclassified <nearest known ancestor> <rank>" placeholder name and an EMPTY
 #' taxid, so the seven slots always line up positionally and a filled rank stays
-#' distinguishable from a real one ([parse_rank_names()] reads the placeholder
+#' distinguishable from a real one (`parse_rank_names()` reads the placeholder
 #' back as NA).
 #' @param path data.frame(taxid, rank, name), root first.
 #' @return list(names, taxids), each a ";"-joined 7-field string.

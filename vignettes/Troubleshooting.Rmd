@@ -61,11 +61,11 @@ The step names you may see, and what each step does:
 | `assemble` | Assembles the rDNA with GetOrganelle. |
 | `fallback_assemble` | Assembles with SPAdes (baited or de-novo). |
 | `score` | Scores the scaffolds and picks a path. |
-| `blast_genbank` | Compares each scaffold with GenBank. |
+| `blast_genbank` | Runs the BLAST screen: searches each scaffold in the bundled rDNA database, and at NCBI when that finds nothing. |
 | `blast_ref_fetch`, `blast_ref_align` | Download reference sequences and align to them. |
 | `coverage` | Maps the reads back for depth. |
 | `annotate_tools`, `reconcile` | Find the five features. |
-| `curate`, `screen`, `chimera` | Run the quality checks, the contamination screen, and the chimera check. |
+| `curate`, `screen`, `chimera` | Run the quality checks, the Screen verdict, and the chimera check. |
 | `triage` | Proposes which scaffolds to keep. |
 
 # Error codes
@@ -138,7 +138,7 @@ gives a message that a run is already going (see below).
 |---|---|---|
 | "No samples to show. A sample is listed once its taxonomy is locked in the Taxonomy step. ..." | The Assemble table lists only samples whose taxonomy is locked, and the Lock and State filters and the search box can hide the rest. | Lock the samples in the Taxonomy step, or reset the filters and clear the search box. |
 | "Nothing to update": "No samples or annotation units are Ready to run. ..." | Nothing is queued. Locked or finished samples are skipped. | Set the State of the rows you want to Ready to run, then press **Update**. |
-| "N reference group(s) are not built or skipped (...)." | Some reference groups have no database yet. The run goes ahead, and those samples use the database their options already name. | Build the databases in the Reference step first, unless the samples are ray-finned fishes. |
+| "N reference group(s) are not built or skipped (...)." | Some reference groups have no database yet. The run goes ahead, and those samples use the database their options already name. | Build the databases in the Reference step first. |
 | "Cannot run: N reference database file(s) named by the samples queued for assembly are missing or empty (...)." | A database the samples point at is gone. | Rebuild it in the Reference step, or point those samples at a database that exists. |
 | "A pipeline run is already going for this project, or is still stopping its tasks (started ...)." | Another window, or a stopped run that is still cleaning up, holds the project. | Wait for it to finish, or stop it in the window that started it. |
 | "The mapping file is missing column(s): ..." | The mapping file needs ID, Taxon, R1, and R2 (or Assembly). | See [Your own project](Your-Own-Project.html). |
@@ -146,7 +146,7 @@ gives a message that a run is already going (see below).
 | "Read files named in the mapping file were not found in ..." | A name in R1 or R2 does not match a file in `data_path`. | Check the spelling, and that names are relative to `data_path`. |
 | "These paths have characters the pipeline cannot pass to Docker, Singularity, or Nextflow: ..." | A path has a space, a quote mark, or another special character. | Rename it to use only letters, digits, and `.`, `_`, `-`, and `/`. |
 | "Group name ... cannot be used: it becomes a folder name ..." | An export group name has a space or another special character. | Use the name the message suggests. |
-| `contaminant_unchecked`, or the triage flag "GenBank screen has not run" | NCBI could not be reached, or gave no usable match, so the scaffold could not be checked against GenBank. | Once NCBI is reachable, set the sample to Ready to run and press **Update** again. |
+| `contaminant_unchecked`, or the triage flag "BLAST screen has not run" | The BLAST screen has no usable hit for the scaffold: nothing matched in the bundled rDNA database, and the search at NCBI matched nothing, failed, or was switched off. It also appears when the sample has no taxon. | If NCBI could not be reached, set the sample to Ready to run and press **Update** once it can: the scaffold is searched again. If the sample has no taxon, set one in the Taxonomy step. |
 | "Nextflow ... is below the minimum supported version (24.10.0)." | Your Nextflow is too old. | Install Nextflow 24.10 through 25.10; see [Installation](Installation.html). |
 | "Nextflow ... is newer than RiboPilot has verified ... Runs will be pinned to Nextflow 25.10.6 via NXF_VER." | RiboPilot runs a supported version instead, downloading it once. | Nothing, or install a supported version. |
 | "Container image ... is not published on Docker Hub, so container executors will fail at image pull." | The project names an image Docker cannot download. | Check the `container` you passed to `new_project()`, and your network. |

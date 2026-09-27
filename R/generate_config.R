@@ -82,7 +82,7 @@ fill_config <- function(lines, replacements) {
 #' first, then a package built-in (`inst/config.<executor>`).
 #'
 #' @param executor Executor / profile name.
-#' @param profile_dir User profile directory (see [ribopilot_config_dir()]).
+#' @param profile_dir User profile directory (see `ribopilot_config_dir()`).
 #' @noRd
 resolve_config <- function(executor, profile_dir = ribopilot_config_dir()) {
   user_path <- file.path(profile_dir, paste0("config.", executor))
@@ -106,7 +106,7 @@ resolve_config <- function(executor, profile_dir = ribopilot_config_dir()) {
 #' Reports the package built-in templates plus any saved cluster profiles. The
 #' `name` column is what you pass to `new_project(executor = ...)`.
 #'
-#' @param profile_dir User profile directory (see [ribopilot_config_dir()]).
+#' @param profile_dir User profile directory (see `ribopilot_config_dir()`).
 #'
 #' @return A data.frame with columns `name`, `type` ("builtin" or "saved"),
 #'   and `path`.
@@ -144,7 +144,7 @@ list_configs <- function(profile_dir = ribopilot_config_dir()) {
 #' Configure your HPC cluster once and reuse it for every project. Mirrors
 #' MitoPilot's `generate_config()`. Builds a Nextflow config from a generic
 #' scheduler template, fills in cluster-level settings, and saves it as a named
-#' profile in [ribopilot_config_dir()]. Afterwards
+#' profile in `ribopilot_config_dir()`. Afterwards
 #' `new_project(executor = "<name>")` will find and use it automatically.
 #'
 #' @param name Profile name. Saved as `config.<name>`; pass as `executor`.

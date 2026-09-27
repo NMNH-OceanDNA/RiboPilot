@@ -118,7 +118,7 @@ sample, from both app runs and cluster jobs.
 # The app needs the container too
 
 The app itself runs the container for two things: the final ITSx check at
-export, and the summary of the local rDNA panel in the BLAST options window. So
+export, and the note about the bundled rDNA database in the BLAST Options window. So
 Singularity (or Docker) must work on the node where the app runs, and it should
 use the same image cache as your jobs, or it downloads the whole image again.
 

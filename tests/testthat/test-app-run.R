@@ -191,7 +191,7 @@ test_that("a scaffold of a failed sample says BLAST did not run, not that NCBI f
   expect_match(RiboPilot:::no_screen_note(failed = TRUE, blast_on = TRUE, running = FALSE),
     "did not run because the assembly failed")
   expect_match(RiboPilot:::no_screen_note(failed = FALSE, blast_on = TRUE, running = FALSE),
-    "did not return")
+    "found no match, or it could")
 })
 
 test_that("an LSF job script goes to bsub on stdin, others as an argument", {

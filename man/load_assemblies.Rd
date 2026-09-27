@@ -17,8 +17,8 @@ load_assemblies(con, dir, ID)
 (invisibly) the number of scaffolds loaded.
 }
 \description{
-Parses `<dir>/<ID>_assembly_*.fasta` (headers
-`>ID.path.scaffold topology`), orients each scaffold to the sense strand,
+Parses \verb{<dir>/<ID>_assembly_*.fasta} (headers
+\verb{>ID.path.scaffold topology}), orients each scaffold to the sense strand,
 rotates circular units to start in the IGS, writes per-scaffold rows into
-`assemblies`, and updates the per-sample `assemble` summary.
+\code{assemblies}, and updates the per-sample \code{assemble} summary.
 }

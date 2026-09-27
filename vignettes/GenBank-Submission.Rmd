@@ -132,7 +132,7 @@ feature table as an `assembly_gap`, with linkage evidence "unspecified".
 # Check before you submit
 
 **Flagged records.** Before it writes anything, the Export window lists every
-unit that the contamination screen or the chimera check flagged, and that you
+unit that the BLAST screen or the chimera check flagged, and that you
 have not marked Reviewed. **Leave them out** is the default; **Export anyway**
 exports them with their flags in the summary. Lock asks about the same units
 first, in the Assemble and Annotation Review steps. When the export is done, its
@@ -153,8 +153,8 @@ any of these flags:
 | `chimeric(ITSx)` | ITSx calls the record chimeric. |
 | `gap_in_rDNA` | A run of N bases falls between the start of the 18S and the end of the 28S. |
 | `misassembly` | Features overlap or are out of order. |
-| `off_target(<taxon>)` | The contamination screen's GenBank hits agree on a taxon that is not on the sample's lineage. |
-| `contaminant` | The best GenBank hit shares no phylum with the sample. |
+| `off_target(<taxon>)` | The BLAST screen's hits agree on a taxon that is not on the sample's lineage. |
+| `contaminant` | The BLAST screen's best hit is from a different phylum than the sample. |
 | `taxon_differs(<name>)` | Your Taxon differs from the name set in the Taxonomy step. |
 | `missing_organism` | The record has no organism name. |
 

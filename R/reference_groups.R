@@ -59,7 +59,7 @@ ref_id_from_name <- function(name) {
 }
 
 #' Sample IDs whose lineage passes through a taxid
-#' @param ladders From [sample_ladders()]. @param taxid NCBI taxid.
+#' @param ladders From `sample_ladders()`. @param taxid NCBI taxid.
 #' @noRd
 ladder_coverage <- function(ladders, taxid) {
   unique(ladders$ID[ladders$taxid == as.integer(taxid)])
@@ -90,7 +90,7 @@ lineage_coverage <- function(con, taxid, taxdump_dir) {
 
 #' The lineage shared by a set of samples, with coverage and optional counts
 #'
-#' @param ladders From [sample_ladders()].
+#' @param ladders From `sample_ladders()`.
 #' @param ids Sample IDs in the group.
 #' @param count_fn Optional function(taxid, name) -> integer record count.
 #' @return data.frame(level, rank, taxid, name, n_samples, n_records), deepest last.
@@ -129,7 +129,7 @@ group_ladder <- function(ladders, ids, count_fn = NULL) {
 #' A loose sample walks its own ladder. A user group walks the ladder its
 #' members share, so whatever clade it lands on covers all of them.
 #'
-#' @param ladders From [sample_ladders()].
+#' @param ladders From `sample_ladders()`.
 #' @param ids Sample IDs to cover.
 #' @param user_groups Named character vector, sample ID -> label; NULL for none.
 #' @return list of list(ids, rungs).
@@ -199,7 +199,7 @@ walk_to_clade <- function(rungs, count_fn, min_records, max_records, start_rank)
 
 #' Suggest clade groups for a project's samples
 #'
-#' @param ladders From [sample_ladders()].
+#' @param ladders From `sample_ladders()`.
 #' @param count_fn function(taxid, name) -> integer GenBank record count.
 #' @param min_records,max_records Record window bounding the walk.
 #' @param start_rank Rank the walk starts from (default "family").

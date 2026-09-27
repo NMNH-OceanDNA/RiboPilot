@@ -109,7 +109,7 @@ reference_member_html <- function(m) {
 
 #' Preview modal: what Propose groups would change, before anything is written
 #'
-#' @param diff From [reference_group_diff()].
+#' @param diff From `reference_group_diff()`.
 #' @param n_old,n_new Group counts before and after.
 #' @param warn Character vector of warning lines (samples left out, clades over the record ceiling).
 #' @noRd
@@ -183,7 +183,7 @@ rung_label <- function(name, rank, n_samples, n_records, chosen, min_records = N
 #' Clade ladder modal: pick a rung, or search the taxdump for anything else
 #'
 #' @param ref_id Group key. @param clade_name Current clade.
-#' @param ladder data.frame from [group_ladder()].
+#' @param ladder data.frame from `group_ladder()`.
 #' @param chosen_taxid The group's current clade taxid.
 #' @param n_group Samples in the group.
 #' @param index_ready Is the taxdump name-search index already built? When it is
@@ -216,7 +216,7 @@ reference_ladder_modal <- function(ref_id, clade_name, ladder, chosen_taxid, n_g
 }
 
 #' Use-an-existing-database modal: manifest entries plus typed paths
-#' @param manifest From [read_ref_manifest()].
+#' @param manifest From `read_ref_manifest()`.
 #' @param label What to call the target in the title: the clade name for one
 #'   group, "N selected groups" for several. Never the raw group key, which the
 #'   table no longer shows.
@@ -252,8 +252,8 @@ SETTINGS_HEAD <- "font-weight:600; margin:2px 0 6px;"
 
 #' Settings modal: the reference folder, and the record window Propose groups uses
 #'
-#' @param cfg From [ref_config()].
-#' @param blastdb_version From [blastdb_provenance()]; "" when nothing has run yet.
+#' @param cfg From `ref_config()`.
+#' @param blastdb_version From `blastdb_provenance()`; "" when nothing has run yet.
 #' @noRd
 reference_settings_modal <- function(cfg, blastdb_version = "") {
   shiny::modalDialog(
@@ -275,13 +275,13 @@ reference_settings_modal <- function(cfg, blastdb_version = "") {
       "clade holding at least the minimum. Below that there is too little published ",
       "sequence to seed an assembly; past the maximum a clade is so broad that its ",
       "seeds stop being specific to your organism."),
-    shiny::h5("Local BLAST panel", style = SETTINGS_HEAD),
+    shiny::h5("Local rDNA database for the BLAST screen", style = SETTINGS_HEAD),
     shiny::div(
       style = "font-size:0.85em; color:#666; margin-bottom:0.4em;",
-      "Path prefix of a downloaded panel, without a file extension. ",
-      "Leave empty and RiboPilot uses a panel shipped with the image or ",
-      "installed locally if it finds one, otherwise it searches NCBI. ",
-      "To search NCBI instead, use Remote BLAST in the BLAST options; the ",
+      "Path prefix of a downloaded rDNA database, without a file extension. ",
+      "Leave empty and RiboPilot uses the bundled rDNA database in the container, ",
+      "or one installed on this computer; with neither, it searches NCBI. ",
+      "To search NCBI instead, choose NCBI only (core_nt) under Search in BLAST Options; the ",
       "environment variable RIBOPILOT_NO_LOCAL_BLAST=1 does the same for every ",
       "project when set before launching the app."),
     shiny::textInput("ref_blastdb_path", NULL, width = "100%",
@@ -330,9 +330,9 @@ reference_action_modal <- function(ids, label) {
       choice("ref_act_clade", "Change which clade this group uses",
         "Widen or narrow the group, or pick a different clade entirely.")
     },
-    choice("ref_act_skip", "Leave these samples on the built-in fish database",
-      paste("Nothing is built. These samples assemble against RiboPilot's",
-        "ray-finned fish reference, which is usually wrong outside fish.")),
+    choice("ref_act_skip", "Leave these samples on their current database",
+      paste("Nothing is built. These samples keep the seed and label databases",
+        "their Assembly Options already name.")),
     footer = mp_footer(dismiss = "Cancel"))
   # This dialog is a short stack of buttons, so the app's 600px modal floor is
   # dead space that stretches every label across it. Narrow it and let the hints
@@ -700,7 +700,7 @@ reference_handlers <- function(input, output, session, deps) {
       error = function(e) e)
     if (inherits(res, "error")) { notify(conditionMessage(res), "error"); return() }
     bump()
-    notify(sprintf("Left %d group(s) on the built-in fish database.", res))
+    notify(sprintf("Left %d group(s) on their current database.", res))
   }
 
   # ---- use existing ----

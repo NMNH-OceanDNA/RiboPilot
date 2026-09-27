@@ -13,13 +13,13 @@ itsx_check_one(con, id, path = 1L, scaffold = 1L, out_prefix)
 
 \item{path, scaffold}{Assembly unit within the sample.}
 
-\item{out_prefix}{ITSx output prefix (files `<out_prefix>.positions.txt` etc.).}
+\item{out_prefix}{ITSx output prefix (files \verb{<out_prefix>.positions.txt} etc.).}
 }
 \value{
-one-row data.frame as from [itsx_check_units()], invisibly.
+one-row data.frame as from \code{itsx_check_units()}, invisibly.
 }
 \description{
 The annotation step runs stock ITSx next to its own tuned run and hands the
-`<out_prefix>.*` files to reconcile, which calls this after the unit's
+\verb{<out_prefix>.*} files to reconcile, which calls this after the unit's
 annotations are written.
 }

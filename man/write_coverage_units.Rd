@@ -2,7 +2,7 @@
 % Please edit documentation in R/coverage.R
 \name{write_coverage_units}
 \alias{write_coverage_units}
-\title{Split a combined `samtools depth -a` (one path mapped at a time) into
+\title{Split a combined \verb{samtools depth -a} (one path mapped at a time) into
 per-unit coverage rows}
 \usage{
 write_coverage_units(con, id, depth_file, clips_file = NULL)
@@ -12,7 +12,7 @@ write_coverage_units(con, id, depth_file, clips_file = NULL)
 
 \item{id}{Sample ID.}
 
-\item{depth_file}{`samtools depth -a` output (ref, pos, depth), ref = path.scaffold.}
+\item{depth_file}{\verb{samtools depth -a} output (ref, pos, depth), ref = path.scaffold.}
 
 \item{clips_file}{Optional per-position soft-clip counts (ref, pos, n), tab-separated.}
 }
@@ -20,6 +20,6 @@ write_coverage_units(con, id, depth_file, clips_file = NULL)
 (invisibly) the number of units written.
 }
 \description{
-The reference names are the scaffold fasta headers `path.scaffold`, so each
+The reference names are the scaffold fasta headers \code{path.scaffold}, so each
 distinct ref is written as one coverage unit.
 }

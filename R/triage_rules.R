@@ -27,8 +27,8 @@ TRIAGE_RULE_DEFS <- list(
   ),
   list(
     key = "no_screen",
-    label = "GenBank screen has not run",
-    meaning = "No usable core_nt hit is recorded, so the scaffold cannot be judged against GenBank.",
+    label = "BLAST screen has not run",
+    meaning = "No usable BLAST hit is recorded, so the scaffold cannot be judged.",
     actions = c("off", "flag"),
     default = "flag",
     test = function(d, i, ctx) {
@@ -197,8 +197,8 @@ triage_rule_matrix <- function(d) {
 #'
 #' First enabled rule that matches wins. Nothing matching means keep.
 #'
-#' @param d Frame from [unit_triage_state()].
-#' @param opts Named list key -> action; see [normalize_triage_actions()].
+#' @param d Frame from `unit_triage_state()`.
+#' @param opts Named list key -> action; see `normalize_triage_actions()`.
 #' @param m Rule matrix for `d`, for callers that already built one.
 #' @return `d` with `new_triage`, `new_reason` and `new_rule` columns.
 #' @noRd

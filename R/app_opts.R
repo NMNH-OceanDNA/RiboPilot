@@ -54,7 +54,7 @@ ref_db_origin <- function(cur) {
   if (length(clade) != 1 || is.na(clade) || !nzchar(trimws(clade))) {
     return("Set at project creation, or by hand.")
   }
-  sprintf("Set by the Reference tab for clade %s.", clade)
+  sprintf("Set by the Reference step for clade %s.", clade)
 }
 
 #' "" -> NA, so an emptied path is stored as absent rather than as an empty path
@@ -149,7 +149,7 @@ assemble_opts_modal <- function(cur, choices, n) {
       shinyjs::disabled(shiny::textInput("ao_labels", "Label database:",
         value = cur$labels_db %|NA|% "", width = "100%")),
       opts_help(ref_db_origin(cur), " Editing these points this parameter set at a ",
-        "different database; the Reference tab overwrites them the next time it ",
+        "different database; the Reference step overwrites them the next time it ",
         "builds or reuses one for this group.", id = "help_ao_refdb")),
     shiny::div(style = "display:flex; gap:2em;",
       shiny::div(style = "flex:1", shinyjs::disabled(shiny::numericInput("ao_minlen",

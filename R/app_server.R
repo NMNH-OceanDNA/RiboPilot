@@ -371,9 +371,8 @@ app_server <- function(input, output, session) {
       Reference = if (ref_view() == "Samples") {
         "No samples yet. Create the project with a mapping file (new_project())."
       } else {
-        paste("No reference groups yet. Until a group has its own database, its samples",
-          "assemble against RiboPilot's built-in ray-finned fish reference.",
-          "Press Propose groups to group your samples by clade from the assigned taxonomy.")
+        paste("No reference groups yet. Press Propose groups to group your samples by clade",
+          "from the assigned taxonomy, then set up a database for each group.")
       },
       Assemble = paste("No samples to show. A sample is listed once its taxonomy is locked",
         "in the Taxonomy step. The Lock and State filters and the search box also hide rows."),
@@ -460,7 +459,7 @@ app_server <- function(input, output, session) {
     } else if (mode == "Annotate") {
       locked <- app_query("SELECT assemble_lock FROM assemble WHERE ID = ?", params = list(id))$assemble_lock
       if (!isTRUE(locked[1] == 1)) {
-        rp_alert("Lock the assembly (Assemble mode) before annotating this sample.",
+        rp_alert("Lock the assembly in the Assemble step before annotating this sample.",
           type = "warning")
         return()
       }
@@ -727,7 +726,7 @@ app_server <- function(input, output, session) {
         lock_next(do_lock)
         mp_confirm("lock_confirm", title = "Lock samples with no taxon?",
           text = sprintf(paste("%s: %s. Without a taxon a sample gets no reference group,",
-            "and the contamination screen cannot judge it. Cancel and click the ID to pick",
+            "and the BLAST screen cannot judge it. Cancel and click the ID to pick",
             "a taxon, or lock anyway."),
             mp_n(length(weak), "selected sample has no taxon", "selected samples have no taxon"),
             paste(c(utils::head(weak, 10), if (length(weak) > 10) "..."), collapse = ", ")),
@@ -903,7 +902,7 @@ app_server <- function(input, output, session) {
     if (length(dead) > 0) {
       rp_alert(sprintf(paste0(
         "Cannot run: %d reference database file(s) named by the samples queued for assembly ",
-        "are missing or empty (%s). Rebuild them in the Reference tab, or point those samples ",
+        "are missing or empty (%s). Rebuild them in the Reference step, or point those samples ",
         "at a database that exists."), length(dead), paste(dead, collapse = ", ")), type = "error")
       return()
     }
@@ -1400,8 +1399,8 @@ app_server <- function(input, output, session) {
         chimera_reason = reactable::colDef(show = FALSE),
         itsx_warnings = reactable::colDef(name = "ITSx Warnings", minWidth = 130, show = TRUE, html = TRUE,
           header = rt_help_header("ITSx Warnings", SCAFFOLD_COL_HELP$itsx_warnings), cell = rt_itsx_badge()),
-        screen_species = reactable::colDef(name = "Top GenBank hit", minWidth = 160, show = TRUE,
-          html = TRUE, header = rt_help_header("Top GenBank hit", SCAFFOLD_COL_HELP$screen_species),
+        screen_species = reactable::colDef(name = "Top BLAST hit", minWidth = 160, show = TRUE,
+          html = TRUE, header = rt_help_header("Top BLAST hit", SCAFFOLD_COL_HELP$screen_species),
           cell = rt_longtext()),
         shares = reactable::colDef(name = "Shares", width = 105, show = TRUE, html = TRUE,
           header = rt_help_header("Shares", SCAFFOLD_COL_HELP$shares),
@@ -1506,7 +1505,7 @@ app_server <- function(input, output, session) {
       tags$b(lbl),
       div(style = "margin-top:4px;",
         tags$span(style = "color:#555;",
-          paste0("Best match in ", searched_in(r), ", NOT restricted to nuclear rDNA:"))),
+          paste0("Best match in ", searched_in(r), ", not restricted to nuclear rDNA:"))),
       div(class = "code-block", style = "white-space:normal; margin-top:3px;",
         HTML(sprintf("<b>%s</b> &nbsp; %s &nbsp; %s%% id &nbsp; %s%% cov<br><span style='color:#666;'>%s</span>",
           r$screen_species %|NA|% "unknown",
@@ -1545,7 +1544,7 @@ app_server <- function(input, output, session) {
         ` ` = if (screened) {
           "No nuclear rDNA reference matched this scaffold. See the unrestricted screen above."
         } else {
-          "No GenBank result for this scaffold, so there is nothing to rank here yet."
+          "No BLAST result for this scaffold, so there is nothing to rank here yet."
         },
         check.names = FALSE), compact = TRUE))
     }
@@ -2007,7 +2006,7 @@ app_server <- function(input, output, session) {
   output$feat_align_ui <- renderUI({
     m <- active_msa()
     if (is.null(m)) {
-      return(em(paste("No reference alignment for this feature. Needs GenBank BLAST hits +",
+      return(em(paste("No reference alignment for this feature. Needs BLAST hits +",
         "reference fetch from the pipeline run; if those ran, run Update again.")))
     }
     div(class = "rp-msa-box", msaR::msaROutput("feat_msa", height = "auto"))
@@ -2072,10 +2071,10 @@ app_server <- function(input, output, session) {
     u <- sel_unit(); req(u)
     a <- app_query("SELECT n_flags, curate_flags FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())
     if (nrow(a) == 0 || is.na(a$n_flags[1]) || a$n_flags[1] == 0) {
-      return(span(class = "mp-fg-success", HTML("&#10003; No curation warnings for this sample.")))
+      return(span(class = "mp-fg-success", HTML("&#10003; No warnings on the unit as a whole.")))
     }
     tagList(
-      span(sprintf("%d sample warning(s): ", a$n_flags[1]), class = "mp-fg-warning", style = "font-weight:bold;"),
+      span(sprintf("%d unit warning(s): ", a$n_flags[1]), class = "mp-fg-warning", style = "font-weight:bold;"),
       span(a$curate_flags[1] %||% "", class = "mp-fg-warning"))
   })
   output$flag_tbl <- reactable::renderReactable({

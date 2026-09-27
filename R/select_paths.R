@@ -8,7 +8,7 @@
 #' Distinct rRNA anchors (18S/5.8S/28S) present in a fasta
 #'
 #' Uses the same caller and kingdom translation as the annotation path
-#' ([rrna_caller()], [rrna_kingdom_for()]) so the two cannot disagree: the
+#' (`rrna_caller()`, `rrna_kingdom_for()`) so the two cannot disagree: the
 #' `anchors` term carries a fifth of the composite path score, so a caller that
 #' silently finds nothing zeroes it for every candidate.
 #'

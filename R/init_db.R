@@ -24,9 +24,11 @@
 #' @param assemble_cpus Default number of CPUs for assembly.
 #' @param assemble_memory Default memory (GB) for assembly.
 #' @param seeds_db Path or URL to the GetOrganelle seeds database. NULL
-#'   (default) uses the built-in Actinopterygii database.
+#'   (default) names an Actinopterygii database that RiboPilot does not ship;
+#'   the Reference step replaces it.
 #' @param labels_db Path or URL to the GetOrganelle labels database. NULL
-#'   (default) uses the built-in Actinopterygii database.
+#'   (default) names an Actinopterygii database that RiboPilot does not ship;
+#'   the Reference step replaces it.
 #' @param getOrganelle Default GetOrganelle command-line options.
 #' @param max_paths Max assembly paths for a sample to continue (default 10).
 #' @param max_scaffolds Max scaffolds within a path to continue (default 10).

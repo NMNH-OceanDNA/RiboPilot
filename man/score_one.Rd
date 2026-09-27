@@ -11,8 +11,8 @@ score_one(con, id, dir, taxdump_dir = NULL)
 
 \item{id}{Sample ID.}
 
-\item{dir}{Folder holding the sample's `<id>_assembly_*.fasta` files and
-assembly graph (`.gfa`): the score task's own folder.}
+\item{dir}{Folder holding the sample's \verb{<id>_assembly_*.fasta} files and
+assembly graph (\code{.gfa}): the score task's own folder.}
 
 \item{taxdump_dir}{Optional pinned taxdump for hit-lineage resolution.}
 }

@@ -9,7 +9,7 @@ write_blast_refs(con, fasta_file, ann = NULL)
 \arguments{
 \item{con}{Open project DB connection.}
 
-\item{fasta_file}{Multi-record fasta, deflines `>ACC.V description`.}
+\item{fasta_file}{Multi-record fasta, deflines \verb{>ACC.V description}.}
 
 \item{ann}{Annotation frame carrying seqid, element, type, start, stop, strand,
 or NULL.}
@@ -18,7 +18,7 @@ or NULL.}
 (invisibly) the number of accessions stored.
 }
 \description{
-Sequence comes from the fasta; element coordinates come from `ann` rather than
-from an NCBI feature table. An accession with no rows in `ann` is still stored,
+Sequence comes from the fasta; element coordinates come from \code{ann} rather than
+from an NCBI feature table. An accession with no rows in \code{ann} is still stored,
 with no annotations.
 }

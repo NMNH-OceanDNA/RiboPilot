@@ -14,26 +14,26 @@ score_candidates(
 }
 \arguments{
 \item{candidates}{data.frame, one row per candidate path, with columns:
-`path`, `depth` (mean graph depth), `blast_pident` (0-100), `blast_lineage`
-(rank-aligned lineage of the top hit), `anchors` (comma list of distinct
-anchors found among 18S/5.8S/28S), `length` (total bp), and optionally
-`blast_lineage_taxids`.}
+\code{path}, \code{depth} (mean graph depth), \code{blast_pident} (0-100), \code{blast_lineage}
+(rank-aligned lineage of the top hit), \code{anchors} (comma list of distinct
+anchors found among 18S/5.8S/28S), \code{length} (total bp), and optionally
+\code{blast_lineage_taxids}.}
 
 \item{sample_lineage}{The sample's resolved rank-aligned lineage.}
 
 \item{sample_taxids}{The sample's rank-aligned lineage taxids. When both this
-and `candidates$blast_lineage_taxids` are present the taxonomy term is
+and \code{candidates$blast_lineage_taxids} are present the taxonomy term is
 scored on taxids instead of names.}
 
 \item{expected_length}{Numeric length-2 c(min, max) plausible rDNA repeat unit length
 for the clade (default c(4000, 12000)).}
 
-\item{weights}{Named weights (see [DEFAULT_SCORE_WEIGHTS]).}
+\item{weights}{Named weights (see \code{DEFAULT_SCORE_WEIGHTS}).}
 }
 \value{
-`candidates` with added sub-score columns (`s_tax`, `s_identity`,
-  `s_anchors`, `s_depth`, `s_length`), a `score`, a `rank` (1 = best), and an
-  `auto_select` logical flagging the top candidate.
+\code{candidates} with added sub-score columns (\code{s_tax}, \code{s_identity},
+\code{s_anchors}, \code{s_depth}, \code{s_length}), a \code{score}, a \code{rank} (1 = best), and an
+\code{auto_select} logical flagging the top candidate.
 }
 \description{
 Score and rank candidate paths, auto-selecting the best

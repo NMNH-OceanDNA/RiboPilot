@@ -20,11 +20,11 @@ add_samples(
 directory).}
 
 \item{mapping_fn}{Path to a comma-separated mapping file for the new
-samples only. Same shape as [new_project()]'s mapping file: an `ID`
-column (none already in the project), a `Taxon` column, and `R1`/`R2`
-columns naming paired read files relative to `data_path` (or an
-`Assembly` column). Column names are matched ignoring case. Extra
-metadata columns are added to the `samples` table if not already
+samples only. Same shape as \code{\link[=new_project]{new_project()}}'s mapping file: an \code{ID}
+column (none already in the project), a \code{Taxon} column, and \code{R1}/\code{R2}
+columns naming paired read files relative to \code{data_path} (or an
+\code{Assembly} column). Column names are matched ignoring case. Extra
+metadata columns are added to the \code{samples} table if not already
 present.}
 
 \item{mapping_id}{Column in the mapping file with unique ids (default
@@ -38,19 +38,19 @@ located. Defaults to the project's read folder (rawDir in its .config),
 and must be that folder.}
 
 \item{assembly_path}{Directory holding the new samples' assembly files
-named in the mapping file's optional `Assembly` column. Defaults to the
+named in the mapping file's optional \code{Assembly} column. Defaults to the
 project's assembly folder (asmbDir in its .config), and must be that
 folder.}
 
 \item{check_reads}{(logical) Check that the read files named in the
-mapping file exist under `data_path` (default TRUE).}
+mapping file exist under \code{data_path} (default TRUE).}
 
 \item{check_assemblies}{(logical) Check that the assembly files named in
-the mapping file exist under `assembly_path` (default TRUE).}
+the mapping file exist under \code{assembly_path} (default TRUE).}
 }
 \description{
 Appends new samples to a project's database, seeding every per-sample
-table (samples, preprocess, assemble, annotate) the way [new_db()] does
+table (samples, preprocess, assemble, annotate) the way \code{\link[=new_db]{new_db()}} does
 for a new sample. Runs the same read_mapping()/check_mapping() checks as
-[new_project()].
+\code{\link[=new_project]{new_project()}}.
 }

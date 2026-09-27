@@ -27,7 +27,7 @@ reference_db_paths <- function(dir, ref_id) {
 #' pointing somewhere new starts over.
 #'
 #' @param con Open project DB connection.
-#' @param groups data.frame from [suggest_reference_groups()]$groups.
+#' @param groups data.frame from `suggest_reference_groups()`$groups.
 #' @param members data.frame(ID, ref_id).
 #' @return (invisibly) the number of groups written.
 #' @noRd
@@ -70,7 +70,7 @@ write_reference_groups <- function(con, groups, members) {
   invisible(nrow(groups))
 }
 
-#' User-group labels, as the named vector [suggest_reference_groups()] wants
+#' User-group labels, as the named vector `suggest_reference_groups()` wants
 #' @noRd
 sample_user_groups <- function(con) {
   d <- tryCatch(DBI::dbGetQuery(con,
@@ -89,7 +89,7 @@ sample_user_groups <- function(con) {
 #' slug of the same name, so the two can never disagree.
 #'
 #' @param con Open project DB connection.
-#' @param groups,members From [suggest_reference_groups()].
+#' @param groups,members From `suggest_reference_groups()`.
 #' @return data.frame(ID, from_group, to_group, hand_set, user_group).
 #' @noRd
 reference_group_diff <- function(con, groups, members) {
@@ -293,7 +293,7 @@ reference_preset_name <- function(con, ref_id) {
 
 #' Give a group's samples an assemble_opts preset pointing at its database
 #'
-#' The preset is named after the group (see [reference_preset_name()]) and
+#' The preset is named after the group (see `reference_preset_name()`) and
 #' copies every other setting from the preset the group's samples are on, so
 #' switching database changes the database and nothing else. Locked samples keep
 #' their preset: their stored results were produced with the old one.
@@ -491,13 +491,13 @@ append_run_log <- function(log, lines) {
 #' Start one background build run covering a set of clade groups
 #'
 #' One Nextflow run handles every group, so all launched rows share the pid, the
-#' log, and the launch time; [poll_reference_builds()] still judges each row on
+#' log, and the launch time; `poll_reference_builds()` still judges each row on
 #' its own FASTAs.
 #'
 #' @param con Open project DB connection.
 #' @param project Project directory (the log lives in `<project>/.reference`).
 #' @param ref_ids Group keys.
-#' @param api_key,refseq,resume Passed to [nf_reference_command()].
+#' @param api_key,refseq,resume Passed to `nf_reference_command()`.
 #' @param overwrite Rebuild groups whose database already exists.
 #' @param launcher function(cmd, args, log) -> pid.
 #' @return (invisibly) the log path, or NULL when every group was reused.

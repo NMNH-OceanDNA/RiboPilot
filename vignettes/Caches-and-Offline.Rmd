@@ -49,11 +49,10 @@ or scratch space, for example in your lab's `.Renviron` and shell profile.
 # What needs the internet
 
 - **The machine that runs Nextflow** downloads the container image (from
-  Docker Hub), a pinned Nextflow version when yours is newer than RiboPilot
-  supports (from GitHub), and the built-in fish reference if a group uses it
-  (from GitHub).
+  Docker Hub), and a pinned Nextflow version when yours is newer than RiboPilot
+  supports (from GitHub).
 - **The compute nodes** reach NCBI: to download reference sequences during a
-  run, to BLAST a scaffold at NCBI when the local rDNA panel in the container
+  run, to BLAST a scaffold at NCBI when the bundled rDNA database in the container
   finds nothing, and for the Reference step's record counts and database builds.
 - **The R session that runs the app** downloads NCBI's taxonomy
   (ftp.ncbi.nlm.nih.gov) the first time you press **Assign Taxonomy**.
@@ -70,8 +69,8 @@ or scratch space, for example in your lab's `.Renviron` and shell profile.
 4. Build the reference databases beforehand, where there is internet.
 5. Optionally, `export NXF_OFFLINE=true`.
 
-An offline run still assembles and annotates every sample. Scaffolds the local
-panel cannot name get the `contaminant_unchecked` flag and the triage flag
-"GenBank screen has not run". Once you are online again, set those samples to
+An offline run still assembles and annotates every sample. Scaffolds the bundled
+rDNA database cannot match get the `contaminant_unchecked` warning and the triage flag
+"BLAST screen has not run". Once you are online again, set those samples to
 Ready to run and press **Update** with **Resume previous run?** ticked to fill
 them in.

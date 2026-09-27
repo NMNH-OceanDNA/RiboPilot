@@ -17,9 +17,9 @@ score_assembly(
 )
 }
 \arguments{
-\item{path_fastas}{Per-path fasta files, each named with its path number last (`<id>_assembly_<n>.fasta`); `n` becomes the `path` column.}
+\item{path_fastas}{Per-path fasta files, each named with its path number last (\verb{<id>_assembly_<n>.fasta}); \code{n} becomes the \code{path} column.}
 
-\item{gfa_path}{The assembly graph `.gfa` (for depth). May be NA.}
+\item{gfa_path}{The assembly graph \code{.gfa} (for depth). May be NA.}
 
 \item{sample_lineage}{The sample's resolved rank-aligned lineage.}
 
@@ -31,13 +31,13 @@ or an nt-style db).}
 
 \item{taxdump_dir}{Pinned taxdump dir (for resolving hit lineages).}
 
-\item{with_staxids}{TRUE if `blast_db` carries taxids; else taxonomy is taken
+\item{with_staxids}{TRUE if \code{blast_db} carries taxids; else taxonomy is taken
 from the seed-DB subject id species.}
 
-\item{expected_length, weights}{Passed to [score_candidates()].}
+\item{expected_length, weights}{Passed to \code{\link[=score_candidates]{score_candidates()}}.}
 }
 \value{
-Scored candidate data.frame (see [score_candidates()]).
+Scored candidate data.frame (see \code{\link[=score_candidates]{score_candidates()}}).
 }
 \description{
 Score GetOrganelle candidate paths from real assembly output

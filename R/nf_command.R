@@ -67,7 +67,7 @@ nf_command <- function(path, resume = TRUE,
 #' Does this project have any sample the pipeline must fetch reads for?
 #'
 #' `preprocess` holds a row only for a sample that named a read pair
-#' ([check_mapping_reads()] drops the rest), so an empty table means every
+#' (`check_mapping_reads()` drops the rest), so an empty table means every
 #' sample supplied its own assembly and no read folder is needed.
 #' @noRd
 project_has_reads <- function(path) {

@@ -21,9 +21,9 @@ status_badge <- function(label, state, invert = FALSE, neutral_no = FALSE) {
 #' against the GetOrganelle seed file. The seed file is the same set of
 #' sequences that baited the assembly, so its hit answers "which seed does this
 #' scaffold resemble", not "what is this"; the other two are real reference
-#' searches. Shown where no GenBank screen exists, and never without saying
+#' searches. Shown where no BLAST screen exists, and never without saying
 #' which search it came from.
-#' @param r One row of [unit_evidence()].
+#' @param r One row of `unit_evidence()`.
 #' @noRd
 seed_hit_block <- function(r) {
   sp <- r$blast_species %||% NA_character_
@@ -39,9 +39,9 @@ seed_hit_block <- function(r) {
     tags$span(style = "color:#555;", if (from_seeds) {
       "Closest sequence in the local seed file (a hint, NOT a GenBank identification):"
     } else if (from_local) {
-      "Best nuclear rDNA reference from the local reference panel search:"
+      "Best nuclear rDNA reference from the bundled rDNA database:"
     } else {
-      "Best nuclear rDNA reference from the GenBank search:"
+      "Best nuclear rDNA reference from the NCBI core_nt search:"
     }),
     div(class = "code-block", style = "white-space:normal; margin-top:3px;",
       HTML(sprintf("<b>%s</b> &nbsp; %s &nbsp; %s%% id", sp,
@@ -92,34 +92,34 @@ failure_banner <- function(id) {
       "Pipeline note: ", r$note[1]))
 }
 
-#' Why a scaffold has no GenBank screen
+#' Why a scaffold has no BLAST screen
 #' @noRd
 no_screen_note <- function(failed, blast_on, running) {
   if (failed) {
-    "No GenBank screen for this scaffold. BLAST did not run because the assembly failed."
+    "No BLAST screen for this scaffold. BLAST did not run because the assembly failed."
   } else if (!blast_on) {
-    paste("GenBank BLAST is switched off for this sample (Assemble tab,",
-      "BLAST options). Run the pipeline (Assemble > Update) with BLAST enabled to screen this scaffold.")
+    paste("BLAST is switched off for this sample (Assemble step, BLAST Options).",
+      "Switch Run BLAST on there, then press Update to screen this scaffold.")
   } else if (running) {
-    paste("No GenBank screen for this scaffold yet. A run is going for this project,",
-      "and its remote BLAST may still be working on it.")
+    paste("No BLAST screen for this scaffold yet. A run is going for this project,",
+      "and its BLAST search may still be working on it.")
   } else {
-    paste("No GenBank screen for this scaffold. The remote BLAST did not return",
-      "(NCBI queue, network, or retries used up).")
+    paste("No BLAST screen for this scaffold: the search found no match, or it could",
+      "not finish (for example, NCBI could not be reached).")
   }
 }
 
 #' Which database answered a scaffold's BLAST search, and when
-#' @param r One row of [unit_evidence()].
+#' @param r One row of `unit_evidence()`.
 #' @noRd
 searched_in <- function(r) {
   at <- r$searched_at %||% NA
   when <- if (is.na(at)) "" else format(as.POSIXct(at, origin = "1970-01-01"), ", searched %Y-%m-%d")
   db <- r$searched_db %|NA|% ""
   if (identical(r$searched_source, "local")) {
-    paste0("the local reference panel ", if (nzchar(db)) db else "(release not recorded)", when)
+    paste0("the bundled rDNA database ", if (nzchar(db)) db else "(release not recorded)", when)
   } else {
-    paste0("NCBI core_nt (remote)", when)
+    paste0("NCBI core_nt", when)
   }
 }
 
@@ -152,7 +152,7 @@ chimera_panel <- function() {
     tags$p(class = "mp-help-text", style = "margin:2px 0 4px;",
       "A chimera is one scaffold built from pieces of different origin: two organisms, ",
       "or rDNA copies joined in the wrong place. Four checks look for one: the 18S, 5.8S, and 28S ",
-      "GenBank hits must agree on a lineage; 500 bp windows BLASTed against the local rDNA panel ",
+      "GenBank hits must agree on a lineage; 500 bp windows BLASTed against the bundled rDNA database ",
       "are grouped into segments by class; ribotyper checks the 18S and 28S structure; and reads ",
       "clipped at one position, or a lasting step in read depth, mark a possible join."),
     tags$p(class = "mp-help-text", style = "margin:2px 0 4px;",
@@ -166,7 +166,7 @@ chimera_panel <- function() {
     reactable::reactableOutput("chimera_segments"),
     rp_details("All windows",
       tags$p(class = "mp-help-text", style = "margin:2px 0 4px;",
-        "One row per window: its best BLAST hit in the local panel, the hit identity, and the read evidence over that stretch."),
+        "One row per window: its best BLAST hit in the bundled rDNA database, the hit identity, and the read evidence over that stretch."),
       reactable::reactableOutput("chimera_windows"), open = FALSE))
 }
 
@@ -181,7 +181,7 @@ assemble_modal <- function(id) {
     failure_banner(id),
     h5("Scaffolds", style = "margin:2px 0 4px;"),
     tags$p(class = "mp-help-text", style = "margin-bottom:4px;",
-      paste("Click on a scaffold row to examine GenBank evidence and coverage below")),
+      "Click a scaffold row to see its BLAST evidence, read coverage, and chimera check below."),
     reactable::reactableOutput("assemble_scaffolds"),
     div(style = "margin-top:6px;",
       actionButton("copy_fasta", "Copy FASTA", icon = icon("clipboard"), class = "btn-sm"),
@@ -196,7 +196,7 @@ assemble_modal <- function(id) {
     # All start collapsed, and collapse again when another scaffold is picked
     # (examine_unit), so the modal opens short for every scaffold.
     div(id = "asm_unit_panels",
-      rp_details(tagList("GenBank evidence for ", textOutput("hl_scaf_ev", inline = TRUE)), open = FALSE,
+      rp_details(tagList("BLAST evidence for ", textOutput("hl_scaf_ev", inline = TRUE)), open = FALSE,
         uiOutput("unit_screen"),
         div(style = "margin-top:8px; color:#555;",
           "Best matches among records whose title says nuclear rDNA:"),
@@ -287,7 +287,7 @@ risk_reasons <- function(risk) {
 
 #' Ask before exporting units the contamination checks flagged
 #'
-#' `flagged` is rows of [export_summary_df()] whose submission_risk carries an
+#' `flagged` is rows of `export_summary_df()` whose submission_risk carries an
 #' off_target or contaminant tag and that no curator has marked Reviewed.
 #' @noRd
 export_screen_modal <- function(flagged) {
@@ -334,7 +334,7 @@ triage_rule_control <- function(def, current) {
 #' so it always shows what it would do first, per rule, including how many
 #' samples would end up with NOTHING kept. Never applied without the counts.
 #' @param n_samples Number of samples the action would cover.
-#' @param actions Named list key -> action, from [triage_opts_for()].
+#' @param actions Named list key -> action, from `triage_opts_for()`.
 #' @noRd
 triage_modal <- function(n_samples, actions = triage_actions_default()) {
   rows <- lapply(TRIAGE_RULE_DEFS, function(def) {
@@ -561,7 +561,7 @@ run_modal <- function(n, headless = FALSE, sched = NULL, script = "") {
 
 #' Reference build modal: run the reference workflow with live progress
 #'
-#' The same shape as [run_modal()] so a database build looks like any other
+#' The same shape as `run_modal()` so a database build looks like any other
 #' RiboPilot run: command preview, progress board, Run / Stop / Close, and the
 #' cluster-submit section when the app is served headless.
 #' @param api_key Key to prefill; the project's own key, not just the env var.
@@ -741,7 +741,7 @@ export_modal <- function(groups, templates = "default", template = "default",
 #' Reads the summary attached to [export_bundle()]'s return value; names the
 #' records the submission-risk gate flagged, and why, and says how many the
 #' ITSx check flagged, so a curator sees it before opening the CSV.
-#' @param smry data.frame from [export_summary_df()] (possibly with `itsx_check`).
+#' @param smry data.frame from `export_summary_df()` (possibly with `itsx_check`).
 #' @noRd
 export_check_summary_ui <- function(smry) {
   if (is.null(smry) || nrow(smry) == 0) return(NULL)
@@ -776,7 +776,7 @@ export_check_summary_ui <- function(smry) {
 }
 
 #' Coloured one-line verdict for a header template
-#' @param chk result of [validate_fasta_header()].
+#' @param chk result of `validate_fasta_header()`.
 #' @noRd
 header_status_ui <- function(chk) {
   if (is.null(chk)) return(NULL)
@@ -883,7 +883,7 @@ plot_coverage <- function(id, path = 1L, scaffold = 1L) {
 
 #' Coverage + annotation plot for the trim modal, with the kept window marked
 #'
-#' Reuses [plot_coverage()] and overlays the trim window: the flanks that would
+#' Reuses `plot_coverage()` and overlays the trim window: the flanks that would
 #' be cut are greyed out and the two boundaries drawn as dashed lines.
 #' @noRd
 plot_trim <- function(id, path = 1L, scaffold = 1L, from = NA, to = NA) {
@@ -923,8 +923,6 @@ chimera_seg_colors <- function(seg, sample_lt) {
   ifelse(nohit, "#FFFFFF", ifelse(host, "#B3B3B3", pal[seg$taxon]))
 }
 
-#' Lineage segments, window identity, and junctions under the depth track
-#' @noRd
 #' The chimera call for one unit, in words
 #' @noRd
 chimera_result_text <- function(label, reason) {

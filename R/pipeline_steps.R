@@ -534,7 +534,7 @@ load_assemblies <- function(con, dir, ID) {
   invisible(nrow(df))
 }
 
-#' Trim one assembly unit (ID,path,scaffold) to [from, to], shifting its
+#' Trim one assembly unit (ID,path,scaffold) to \[from, to\], shifting its
 #' annotations and coverage to match. Features that fall entirely outside the
 #' kept range are dropped; overlapping features are clamped. Used by the Annotate
 #' tab's "Trim assembly" control.
@@ -684,7 +684,7 @@ reconcile_ignore_unit <- function(con, id, path, scaffold, ignore) {
 
 #' Restore a sample's assembly to its original (pre-trim) state
 #'
-#' Reverses one or more [trim_assembly()] calls by writing back the snapshot
+#' Reverses one or more `trim_assembly()` calls by writing back the snapshot
 #' taken at the first trim: the full-length sequence, the original annotation
 #' rows, and the untrimmed coverage track. The snapshot is left in place so a
 #' fresh trim + restore returns to the same original.

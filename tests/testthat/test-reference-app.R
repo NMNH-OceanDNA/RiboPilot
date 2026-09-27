@@ -84,7 +84,7 @@ test_that("the row action modal names what skipping actually costs", {
     expect_true(grepl(id, html, fixed = TRUE), info = id)
   }
   expect_true(grepl("Asteroidea", html, fixed = TRUE))
-  expect_true(grepl("fish", html, fixed = TRUE))
+  expect_true(grepl("their current database", html, fixed = TRUE))
   # a stack of short buttons opts out of the app's 600px modal floor
   expect_true(grepl("rp-modal-narrow", html, fixed = TRUE))
   # the hint sits under a bare button, which has no bottom margin for

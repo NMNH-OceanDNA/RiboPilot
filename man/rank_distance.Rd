@@ -8,7 +8,7 @@ rank_distance(hit_taxids, sample_taxids)
 }
 \arguments{
 \item{hit_taxids, sample_taxids}{Rank-aligned taxid vectors from
-[parse_rank_taxids()], or ";"-joined taxid strings.}
+\code{parse_rank_taxids()}, or ";"-joined taxid strings.}
 }
 \value{
 integer in 0..7.

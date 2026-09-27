@@ -42,10 +42,11 @@ MB per sample) and sets up the project. The analysis runs in Docker by default,
 so there is nothing else to choose. The first run later downloads the RiboPilot
 container image once (about 2.6 GB).
 
-While RiboPilot is in private preview, this download needs a GitHub token, and
-you will see two warnings that the built-in fish reference database is not
-reachable; see [Installation](Installation.html). The Reference step below
-builds the databases the practice project needs.
+While RiboPilot is in private preview, this download needs a GitHub token; see
+[Installation](Installation.html). You may also see two warnings that the default
+fish reference database is not reachable. That is expected: RiboPilot does not ship
+a reference database, and the Reference step below builds the ones the practice
+project needs.
 
 The 10 fish are real genome skims from GenBank's Sequence Read Archive. CHIM00
 and CHIM01 are synthetic: CHIM00 is a clean copy of one fish's rDNA, and CHIM01
@@ -61,9 +62,11 @@ RiboPilot::RiboPilot("~/ribopilot_test")
 ```
 
 The app opens in your browser on the Taxonomy step. The toolbar shows the five
-steps in order, and each step has its own table. Click a row to tick it, or tick
-the box in the header to tick every row; the toolbar buttons act on the ticked
-rows. Click a sample's ID, or its **details** button, to open its details.
+steps in order, and each step has its own table. The **Lock** and **State**
+filters, and the search box, can hide rows from the table entirely; the header
+tick box ticks only the rows still shown, and the toolbar buttons act only on
+ticked rows the search and column filters still show. Click a sample's ID, or
+its **details** button, to open its details.
 
 Two buttons appear in every step:
 
@@ -144,10 +147,9 @@ In our test, the Syngnathiformes database (about 10,500 GenBank records) took
 under 3 minutes and Pleuronectiformes (about 2,300 records) under 1 minute.
 Actinopteri holds about 43,000 records, so its download takes much longer.
 
-For your own samples, this step is optional only if they are ray-finned fishes
-(Actinopterygii): those can stay on the built-in fish database. For any other
-group, do it before you assemble. [Reference databases](Reference-Databases.html)
-explains the other choices.
+For your own samples, do this step before you assemble: RiboPilot does not ship a
+reference database, so every group, fishes included, needs one.
+[Reference databases](Reference-Databases.html) explains the other choices.
 
 # Step 3: Assemble
 
@@ -196,9 +198,9 @@ The columns to look at first:
 - **Lock**: open until you lock the sample.
 - **Checks**: what the quality checks found on the sample's kept scaffolds,
   in words and in color. Red means Lock and Export will ask about it until
-  the unit is marked Reviewed: off target (the GenBank screen matched an
-  organism outside your sample's lineage), contaminant, severe chimera, or
-  ITSx chimeric. Amber is worth a look: a minor chimera, an uncertain screen,
+  the unit is marked Reviewed: off target (the BLAST screen matched an
+  organism outside your sample's lineage), contaminant, severe chimera, or ITSx
+  chimeric. Amber is worth a look: a minor chimera, an uncertain screen,
   ITSx flags, or curation warnings on the unit or its features. Green "ok" means the screen matched your
   organism and nothing was flagged; grey "no reference" means the screen had
   nothing to compare with.
@@ -210,17 +212,17 @@ The columns to look at first:
 - **Notes**: what the pipeline noted about the sample, for example why it
   failed.
 
-The **Columns** menu above the table hides or shows the option columns and the
-count columns.
+The **Columns** menu above the table shows or hides the **Stats** and
+**Options** column groups.
 
 Click a sample's ID to open its details. The window lists the sample's
 scaffolds, each with **K** (keep) and **D** (drop) buttons and a Screen verdict
-from the contamination check. Below the list are three panels for the scaffold
-you click: **GenBank evidence**, **Read coverage**, and **Chimera check**. For
-CHIM01, the GenBank evidence shows that the best match is a *Penicillium* mold,
+from the BLAST screen. Below the list are three panels for the scaffold
+you click: **BLAST evidence**, **Read coverage**, and **Chimera check**. For
+CHIM01, the BLAST evidence shows that the best match is a *Penicillium* mold,
 which shares nothing with *Upeneus parvus*:
 
-![CHIM01's GenBank evidence, with its best match a Penicillium mold](figures/get-started/assemble-details-chim01.png)
+![CHIM01's BLAST evidence, with its best match a Penicillium mold](figures/get-started/assemble-details-chim01.png)
 
 Its **Chimera check** marks where the fish sequence meets the mold, near
 2,625 bp:
@@ -266,7 +268,7 @@ it and asks first. For this practice run, lock all 12: when Lock asks about
 CHIM01, press **Lock anyway**, so you can see the Export step catch it too.
 
 ::: {.alert .alert-info}
-**What you should see.** CHIM00 is clean. CHIM01 is flagged in red: the contamination
+**What you should see.** CHIM00 is clean. CHIM01 is flagged in red: the BLAST
 screen names *Penicillium*, and the chimera check calls it severe, with the join
 near 2,625 bp. SRR22396893 fails, then assembles with the baited assembler.
 SRR33849683 gives two scaffolds, so it becomes two records; its first scaffold
@@ -279,10 +281,11 @@ Each kept scaffold of a locked sample is one row, or unit:
 
 ![The Annotation Review table, one row per unit](figures/get-started/annotation-table.png)
 
-The **Checks** column, right after the ID, sums up each unit's checks as in
-the Assemble step. The Warnings, ITSx Warnings, Screen, and Chimera columns
-further right hold the details; the **Columns** menu shows or hides them
-under **Check details**.
+The **Checks** column sums up each unit's checks as in the Assemble step. It sits
+right after the ID, or after **Path #** and **Scaffold #** when a sample has more
+than one unit, as in the practice project. The Warnings, ITSx Warnings, Screen, and
+Chimera columns further right hold the details; the **Columns** menu shows or
+hides them under **Check details**.
 
 Click a unit's ID to open it. The window shows the feature model (18S, ITS1,
 5.8S, ITS2, 28S), **Read coverage** with colored feature bands, **Edit active
@@ -337,7 +340,7 @@ extra files to write:
 ![The Export window, with the header template and the files to write](figures/get-started/export-window.png)
 
 Before it writes anything, the Export window lists every unit that the
-contamination screen or the chimera check flagged, and that you have not marked
+BLAST screen or the chimera check flagged, and that you have not marked
 Reviewed. It offers **Leave them out**, **Export anyway**, or **Cancel**, and
 **Leave them out** is the default. In the practice project, CHIM01 is listed:
 
@@ -347,7 +350,7 @@ The export ends with a summary. It names each record that has a
 submission-risk flag, and why, above the result of the final ITSx check, and it
 is green only when nothing was flagged:
 
-![Export summary with the final ITSx check](figures/get-started/export-done.png)
+![Export summary naming the flagged records, above the final ITSx check](figures/get-started/export-done.png)
 
 Each export group gets its own folder:
 

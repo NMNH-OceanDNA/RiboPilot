@@ -39,7 +39,7 @@ tax_search <- function(taxdump_dir, query, limit = 25) {
   res
 }
 
-#' Radio choices for tax_search() results: taxid values, "name [rank, kingdom] (taxid N)" labels
+#' Radio choices for tax_search() results: taxid values, "name \[rank, kingdom\] (taxid N)" labels
 #' @noRd
 tax_search_choices <- function(r) {
   stats::setNames(as.character(r$taxid), sprintf("%s   [%s%s]   (taxid %s)", r$name,

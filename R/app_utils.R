@@ -180,7 +180,7 @@ blast_enabled <- function(id) {
 #' @param id Sample ID.
 #' @return data.frame with one row per (path, scaffold), ordered path/scaffold,
 #'   including a `uid` key, relative depth, and the sibling-concordance columns
-#'   from [unit_concordance()]. Empty data.frame when the sample has no units.
+#'   from `unit_concordance()`. Empty data.frame when the sample has no units.
 #' @noRd
 unit_evidence <- function(id) {
   if (is.null(id) || !nzchar(id)) {

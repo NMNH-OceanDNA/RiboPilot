@@ -7,14 +7,14 @@
 hydra_setup()
 }
 \value{
-Invisibly, `TRUE` if the Hydra environment was applied, otherwise
-  `FALSE`.
+Invisibly, \code{TRUE} if the Hydra environment was applied, otherwise
+\code{FALSE}.
 }
 \description{
-RStudio Server sessions on Hydra start with a stripped `PATH` that omits the
-Univa Grid Engine, Java, and the user's `~/bin` directories, so Nextflow
-cannot find `qsub` and every job submission fails. Call this once per session,
-before launching the app, to put those directories back on `PATH`. Has no
+RStudio Server sessions on Hydra start with a stripped \code{PATH} that omits the
+Univa Grid Engine, Java, and the user's \verb{~/bin} directories, so Nextflow
+cannot find \code{qsub} and every job submission fails. Call this once per session,
+before launching the app, to put those directories back on \code{PATH}. Has no
 effect (and warns) when not running on Hydra.
 }
 \examples{

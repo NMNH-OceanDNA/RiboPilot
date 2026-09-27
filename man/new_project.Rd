@@ -30,9 +30,9 @@ new_project(
 \arguments{
 \item{path}{Path to the project directory (default = current working dir).}
 
-\item{mapping_fn}{Path to a comma-separated mapping file. Minimally an `ID`
-column (unique sample id), a `Taxon` column, and `R1`/`R2` columns naming
-the paired read files relative to `data_path` (or an `Assembly` column).
+\item{mapping_fn}{Path to a comma-separated mapping file. Minimally an \code{ID}
+column (unique sample id), a \code{Taxon} column, and \code{R1}/\code{R2} columns naming
+the paired read files relative to \code{data_path} (or an \code{Assembly} column).
 Column names are matched ignoring case. Extra metadata columns are
 preserved.}
 
@@ -43,9 +43,9 @@ when any sample lists reads; not needed when every sample supplies its own
 assembly.}
 
 \item{assembly_path}{Directory holding the assembly files named in the
-mapping file's optional `Assembly` column. A sample with an assembly is
+mapping file's optional \code{Assembly} column. A sample with an assembly is
 searched for its nuclear rDNA contigs instead of being assembled from
-reads, and its `R1`/`R2` may be left blank. See
+reads, and its \code{R1}/\code{R2} may be left blank. See
 dev/design/20_USER_ASSEMBLIES.md.}
 
 \item{min_depth}{Minimum number of reads left after trimming, counting both
@@ -67,7 +67,7 @@ generate_config() and pass its name here. A bare scheduler name ("slurm",
 \item{custom_labels_db}{Path/URL to a custom GetOrganelle nr labels database.}
 
 \item{ref_dir}{Folder for built reference databases (default: the
-`RIBOPILOT_REF_DIR` environment variable, else [ribopilot_ref_dir()]).}
+\code{RIBOPILOT_REF_DIR} environment variable, else \code{\link[=ribopilot_ref_dir]{ribopilot_ref_dir()}}).}
 
 \item{config}{Optional path to an existing custom Nextflow config file.}
 
@@ -76,23 +76,23 @@ generate_config() and pass its name here. A bare scheduler name ("slurm",
 \item{ncbi_api_key}{Optional NCBI API key (raises request rate limits).}
 
 \item{check_reads}{(logical) Check that the read files named in the mapping
-file exist under `data_path` (default TRUE). Set FALSE when the data will
+file exist under \code{data_path} (default TRUE). Set FALSE when the data will
 be staged later.}
 
 \item{check_assemblies}{(logical) Check that the assembly files named in the
-mapping file exist under `assembly_path` (default TRUE).}
+mapping file exist under \code{assembly_path} (default TRUE).}
 
 \item{Rproj}{(logical) Initialize/open an RStudio project (default TRUE; no
 effect outside RStudio).}
 
 \item{force}{(logical) Recreate an existing project database (default
-FALSE). Without it, `new_project()` stops when the folder already holds a
+FALSE). Without it, \code{new_project()} stops when the folder already holds a
 project.}
 
-\item{...}{Additional default processing parameters passed to [new_db()].}
+\item{...}{Additional default processing parameters passed to \code{\link[=new_db]{new_db()}}.}
 }
 \description{
-Mirrors MitoPilot's `new_project()`. Creates the project directory, copies
+Mirrors MitoPilot's \code{new_project()}. Creates the project directory, copies
 the mapping file, initializes the SQLite tracking database, and writes a
-`.config` Nextflow config from the chosen executor template.
+\code{.config} Nextflow config from the chosen executor template.
 }

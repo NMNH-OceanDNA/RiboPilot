@@ -16,14 +16,14 @@ build_reference_db(
 )
 }
 \arguments{
-\item{query}{Advanced GenBank search term, e.g. `'"Gastropoda"[Organism]'`
-or `'"Percidae"[Organism]'`.}
+\item{query}{Advanced GenBank search term, e.g. \code{'"Gastropoda"[Organism]'}
+or \code{'"Percidae"[Organism]'}.}
 
-\item{clade}{Short name for the output files, e.g. `"gastropoda"`. Files are
-written as `<out_dir>/seeds/<clade>_rrna_seeds.fasta` and
-`<out_dir>/labels/<clade>_rrna_labels.fasta`.}
+\item{clade}{Short name for the output files, e.g. \code{"gastropoda"}. Files are
+written as \verb{<out_dir>/seeds/<clade>_rrna_seeds.fasta} and
+\verb{<out_dir>/labels/<clade>_rrna_labels.fasta}.}
 
-\item{out_dir}{Directory to store databases (default [ribopilot_ref_dir()],
+\item{out_dir}{Directory to store databases (default \code{\link[=ribopilot_ref_dir]{ribopilot_ref_dir()}},
 outside any project so it is reused across projects).}
 
 \item{api_key}{Optional NCBI API key (raises the request-rate limit).}
@@ -34,28 +34,28 @@ outside any project so it is reused across projects).}
 download).}
 
 \item{conda_env}{Optional conda env (name or path) providing Entrez Direct +
-biopython; its `bin/` is prepended to PATH for the run.}
+biopython; its \verb{bin/} is prepended to PATH for the run.}
 
 \item{overwrite}{Rebuild even if the seed/label FASTAs already exist. When
-`FALSE` (default) an existing DB is reused (no download) and its paths
+\code{FALSE} (default) an existing DB is reused (no download) and its paths
 returned.}
 }
 \value{
-(invisibly) a list with `seeds` and `labels` file paths (both `NA`
-  for `count_only`).
+(invisibly) a list with \code{seeds} and \code{labels} file paths (both \code{NA}
+for \code{count_only}).
 }
 \description{
 Downloads 18S / 5.8S / 28S / ITS records for a GenBank taxonomic query and
-builds the GetOrganelle seed + label FASTAs used by [new_project()]
-(`custom_seeds_db` / `custom_labels_db`). Run this once per clade, before
+builds the GetOrganelle seed + label FASTAs used by \code{\link[=new_project]{new_project()}}
+(\code{custom_seeds_db} / \code{custom_labels_db}). Run this once per clade, before
 running the pipeline; point every project for that clade at the result.
 }
 \details{
 Requires Entrez Direct + biopython (in the RiboPilot conda env). Pass
-`conda_env` to put them on PATH.
+\code{conda_env} to put them on PATH.
 
 This is the CLI entry point for building a database outside the app. The
-RiboPilot app's Reference tab builds databases through its own Nextflow
+RiboPilot app's Reference step builds databases through its own Nextflow
 workflow instead and does not call this function; use it directly for
 scripted or headless use, or to build a database ahead of time.
 }

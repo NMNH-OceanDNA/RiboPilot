@@ -82,11 +82,11 @@ SCREEN_PARAMS_DEFAULT <- list(
 #' Length ranges are for a COMPLETE, correctly assembled element; the flag/ok
 #' model has no partial concept yet, so a genuinely partial anchor is flagged
 #' short. `min_anchor_pid` is a NAMED PER-ELEMENT vector (see
-#' [RRNA_ANCHOR_PID_METAZOA]); the `curate_opts.min_anchor_pid` column and its
+#' `RRNA_ANCHOR_PID_METAZOA`); the `curate_opts.min_anchor_pid` column and its
 #' options-modal control are still a single scalar and are not read by the
 #' engine, which is tracked separately.
 #'
-#' @param ruleset Clade key; one of [RRNA_RULESETS]. Unknown keys error rather
+#' @param ruleset Clade key; one of `RRNA_RULESETS`. Unknown keys error rather
 #'   than silently falling back, so a typo cannot mis-curate a sample.
 #' @return list(name, lengths = named list el -> c(min,max), min_anchor_pid,
 #'   min_ref_coverage, min_anchor_coverage, check_contaminant, screen).
@@ -159,7 +159,7 @@ RRNA_RULESETS <- c("metazoa_generic", "actinopterygii",
 #' and the older Alcyonacea/Pennatulacea are all matched so the result is robust
 #' to which classification NCBI's lineage uses.
 #' @param lineage A "; "- or ","-joined lineage string.
-#' @return a key in [RRNA_RULESETS].
+#' @return a key in `RRNA_RULESETS`.
 #' @noRd
 ruleset_for_lineage <- function(lineage) {
   if (length(lineage) == 0 || is.na(lineage[1]) || !nzchar(trimws(lineage[1]))) {

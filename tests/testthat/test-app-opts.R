@@ -161,7 +161,7 @@ test_that("the assembly modal shows the preset's seed and label databases", {
   expect_true(grepl("/refs/seeds/actinopterygii_rrna_seeds.fasta", html, fixed = TRUE))
   expect_true(grepl("/refs/labels/actinopterygii_rrna_labels.fasta", html, fixed = TRUE))
   # says where the paths came from
-  expect_true(grepl("Reference tab for clade Actinopterygii", html, fixed = TRUE))
+  expect_true(grepl("Reference step for clade Actinopterygii", html, fixed = TRUE))
   # the stale claim that databases are set at project creation is gone
   expect_false(grepl("databases are set at project creation", html, fixed = TRUE))
 })
@@ -173,7 +173,7 @@ test_that("a preset no reference group owns does not claim the Reference tab set
     seeds_db = NA_character_, labels_db = NA_character_)
   html <- shiny::withReactiveDomain(shiny::MockShinySession$new(),
     as.character(RiboPilot:::assemble_opts_modal(cur, "default", 1)))
-  expect_false(grepl("Reference tab for clade", html, fixed = TRUE))
+  expect_false(grepl("Reference step for clade", html, fixed = TRUE))
   expect_true(grepl("Set at project creation", html, fixed = TRUE))
 })
 

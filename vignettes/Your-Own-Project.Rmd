@@ -77,8 +77,7 @@ Then open the app and follow the five steps, as in
 RiboPilot::RiboPilot("~/my_project")
 ```
 
-Do the Reference step before you assemble, unless your samples are ray-finned
-fishes.
+Do the Reference step before you assemble.
 
 # Already have an assembly?
 

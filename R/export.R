@@ -119,7 +119,7 @@ find_n_runs <- function(seq, min_len = MIN_ASSEMBLY_GAP) {
 #' Feature table (.tbl) text for one assembly unit from an open connection
 #'
 #' Emits the rRNA/spacer features plus an `assembly_gap` feature for each N-run
-#' (>= [MIN_ASSEMBLY_GAP]) so table2asn does not reject fabricated gap runs, and
+#' (>= `MIN_ASSEMBLY_GAP`) so table2asn does not reject fabricated gap runs, and
 #' marks the first/last real feature partial (`<`/`>`) when it reaches a
 #' sequence end or when `force_partial` is set (a curator-flagged partial repeat,
 #' so it is not submitted as a complete cistron). `seqid` is the FASTA/feature id.
@@ -228,13 +228,13 @@ has_screen_risk <- function(risk) {
 #' The Checks column: what the checks found, per unit or per sample
 #'
 #' Findings are listed worst first. The red ones (off target, contaminant,
-#' severe chimera, ITSx chimeric) are the tags [has_screen_risk()] reads, so
+#' severe chimera, ITSx chimeric) are the tags `has_screen_risk()` reads, so
 #' Lock and Export ask about them. "ok" needs every unit screened on_target;
 #' with nothing flagged and no usable screen the cell says "no reference".
 #' Only kept scaffolds count.
 #' @param con Open project DB connection.
 #' @param by "unit" (one row per ID, path, scaffold) or "sample" (one per ID).
-#' @return data.frame(ID, [path, scaffold,] checks, checks_tone)
+#' @return data.frame(ID, \[path, scaffold,\] checks, checks_tone)
 #' @noRd
 unit_checks <- function(con, by = c("unit", "sample")) {
   by <- match.arg(by)
@@ -327,9 +327,9 @@ submission_readme <- function(label, itsx_check = TRUE) {
     "               (severe chimera call), or ITSx calls it chimeric (chimeric(ITSx))",
     "  gap_in_rDNA  an assembly-gap (N-run) falls inside the 18S..28S span",
     "  misassembly  features overlap or are out of 5'->3' order",
-    "  off_target(<taxon>)  the contamination screen's GenBank hits agree on",
+    "  off_target(<taxon>)  the BLAST screen's hits agree on",
     "               <taxon>, which is not on the sample's lineage",
-    "  contaminant  the best GenBank hit shares no phylum with the sample",
+    "  contaminant  the BLAST screen's best hit shares no phylum with the sample",
     "  taxon_differs(<name>)  your Taxon differs from <name>, the name set in",
     "               the Taxonomy step. The organism column shows which one was",
     "               exported: <name> when your Taxon matched it exactly or you",
@@ -366,7 +366,7 @@ submission_readme <- function(label, itsx_check = TRUE) {
 #' Per-unit export summary data.frame
 #'
 #' `units` is a data.frame(ID, path, scaffold, seqid). Includes a
-#' `submission_risk` column ([risk_flags]) so the CSV and HTML report both
+#' `submission_risk` column (`risk_flags`) so the CSV and HTML report both
 #' surface portal-parity risk flags.
 #' @noRd
 export_summary_df <- function(con, units) {
@@ -490,7 +490,7 @@ export_left_out <- function(con, group) {
 #' Records that a unit is one of N intragenomic variants detected in its sample
 #' and the anchor identity between them. It answers doc 08's open question 7
 #' without imposing a submission policy: the fact is recorded, the choice stays
-#' the curator's. Deliberately NOT routed through [risk_flags()] -- a
+#' the curator's. Deliberately NOT routed through `risk_flags()` -- a
 #' paralog is real biology, and warning on export is the behaviour this
 #' sub-project exists to remove.
 #'
@@ -537,7 +537,7 @@ xml_escape <- function(x) {
 
 #' Hand-written SVG for the five-box rRNA feature diagram
 #'
-#' Right-pointing gene arrows on one row, filled from [RRNA_ELEMENT_COLORS],
+#' Right-pointing gene arrows on one row, filled from `RRNA_ELEMENT_COLORS`,
 #' with centred element labels and a bp axis. Written by hand rather than
 #' rendered: the HTML report embeds one of these for every exported unit.
 #'
@@ -591,7 +591,7 @@ feature_map_svg_text <- function(d, width = 900, height = 110) {
 #' Write a self-contained HTML report for an export group / selection
 #'
 #' `units` is a data.frame(ID, path, scaffold, seqid) - one row per exported unit.
-#' `smry` is the already-computed [export_summary_df()] for those units.
+#' `smry` is the already-computed `export_summary_df()` for those units.
 #' @noRd
 export_report_html <- function(con, units, out_html, label, smry = export_summary_df(con, units)) {
   hdr <- c("seqid", "ID", "organism", "length", "n_features", "missing", "reviewed", "submission_risk",

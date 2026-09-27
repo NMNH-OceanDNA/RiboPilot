@@ -60,7 +60,8 @@ url_status <- function(u) {
 #' Only Docker Hub images are checkable; anything with an explicit registry
 #' host, or a locally built image, is left alone. Warns rather than errors
 #' because a locally built image is legitimate and invisible to this check.
-#' @param container e.g. "macguigand/ribopilot:0.0.0.9000". @noRd
+#' @param container e.g. "macguigand/ribopilot:0.0.0.9000".
+#' @noRd
 check_container_image <- function(container) {
   if (is.null(container) || is.na(container) || !nzchar(container)) return(invisible(container))
   # Skip explicit registries (host contains a dot or a port) and local images.

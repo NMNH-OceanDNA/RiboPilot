@@ -59,7 +59,7 @@ have_taxdump <- function(dir) {
 #'
 #' The ~500 MB of extracted dmp files are not persisted in the project; they are
 #' unpacked to a temporary location only while the cached index is built (see
-#' [build_tax_index()]) and then deleted by the caller.
+#' `build_tax_index()`) and then deleted by the caller.
 #' @return temp directory containing names.dmp / nodes.dmp / merged.dmp / delnodes.dmp
 #' @noRd
 extract_taxdump <- function(dir) {
@@ -79,7 +79,7 @@ extract_taxdump <- function(dir) {
 #'
 #' Stores only the about 80 MB compressed tarball plus a provenance file. The
 #' dmp files are extracted to a temp location once, when the project's
-#' taxonomy index is built (see [build_tax_index()]), and are not persisted.
+#' taxonomy index is built (see `build_tax_index()`), and are not persisted.
 #'
 #' @param dir Destination directory (e.g. `<project>/.taxonomy`).
 #' @param force Re-download even if a tarball already exists.
@@ -124,7 +124,7 @@ rank_kingdom <- function(lineage) {
   }, character(1), USE.NAMES = FALSE)
 }
 
-#' Describe homonym candidates for review: "name [taxid] (kingdom)" per taxid
+#' Describe homonym candidates for review: "name \[taxid\] (kingdom)" per taxid
 #' @noRd
 describe_candidates <- function(taxids, con) {
   info <- td_taxid_info(con, taxids)
@@ -138,7 +138,7 @@ describe_candidates <- function(taxids, con) {
 #'
 #' The lineage is the same seven rank-aligned fields [tk_ranked_lineage()]
 #' produces, names and taxids alike. Alignment is the whole point: consumers read
-#' these strings positionally ([parse_rank_names()], [parse_rank_taxids()]), so a
+#' these strings positionally (`parse_rank_names()`, `parse_rank_taxids()`), so a
 #' taxon missing a rank must carry a filled placeholder there rather than have
 #' the slot collapsed away and every deeper rank shifted up one.
 #' @return data.frame(taxid, sci_name, rank, lineage, lineage_taxids)
@@ -313,9 +313,9 @@ classification_to_lineage <- function(cl) {
 #' The network path used to join whatever ranks NCBI happened to return, so a
 #' taxon with no class produced a shorter string and every rank below it shifted
 #' up one slot. Consumers read these strings positionally, so absent ranks must
-#' be left empty rather than closed up. Domain is dropped: [RRNA_LINEAGE_RANKS]
+#' be left empty rather than closed up. Domain is dropped: `RRNA_LINEAGE_RANKS`
 #' starts at kingdom.
-#' @param lin data.frame(rank, id, name) from [classification_to_lineage()].
+#' @param lin data.frame(rank, id, name) from `classification_to_lineage()`.
 #' @return list(names, taxids), each a ";"-joined 7-field string.
 #' @noRd
 rank_aligned_lineage <- function(lin) {
@@ -387,7 +387,7 @@ resolve_taxon_one <- function(taxon) {
 #' is returned for user confirmation (see `match_type`), not only failures.
 #'
 #' @param taxa Character vector of Taxon strings (duplicates de-duplicated).
-#' @param taxdump_dir Directory of a pinned taxdump (see [ensure_taxdump()]). If
+#' @param taxdump_dir Directory of a pinned taxdump (see `ensure_taxdump()`). If
 #'   it contains a taxdump, resolution is local (an unreadable taxdump is an
 #'   error); otherwise network `datasets` is used.
 #' @return data.frame, one row per unique Taxon: `match_type` in

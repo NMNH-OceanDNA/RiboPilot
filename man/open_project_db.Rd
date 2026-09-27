@@ -11,6 +11,6 @@ open_project_db(db)
 \item{db}{Path to the project SQLite file.}
 }
 \description{
-The busy timeout is set first: `journal_mode` takes an exclusive lock, so
+The busy timeout is set first: \code{journal_mode} takes an exclusive lock, so
 setting it before the timeout would run that one statement with no timeout.
 }

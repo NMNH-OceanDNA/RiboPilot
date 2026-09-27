@@ -7,7 +7,7 @@
 ribopilot_ref_dir()
 }
 \description{
-A per-user, cross-project location (override with the `RIBOPILOT_REF_DIR`
+A per-user, cross-project location (override with the \code{RIBOPILOT_REF_DIR}
 environment variable). Kept outside project directories so a clade DB built
-once is reused by every project. Uses [tools::R_user_dir()].
+once is reused by every project. Uses \code{\link[tools:R_user_dir]{tools::R_user_dir()}}.
 }

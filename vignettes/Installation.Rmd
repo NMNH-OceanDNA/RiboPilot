@@ -57,11 +57,12 @@ Install each of these once, and check it with the command beside it.
 **Private preview.** While the RiboPilot repository is private, installing it
 and downloading the practice reads need a GitHub personal access token. Put
 `GITHUB_PAT=<your token>` in your `~/.Renviron` file (in R,
-`usethis::edit_r_environ()` opens it), then restart R. The built-in fish
-reference database cannot be downloaded until the repository is public, so new
-projects warn that it is not reachable. Build your reference databases in the
-app's Reference step instead.
+`usethis::edit_r_environ()` opens it), then restart R.
 :::
+
+RiboPilot does not ship a reference database. New projects may warn that the
+default fish reference database is not reachable; that is expected. Build a
+reference database for each group of samples in the app's Reference step.
 
 # Check that it works
 
@@ -85,3 +86,50 @@ it is then stored in the project's `.config` file and shows in the Nextflow
 command of the run window.
 
 Never paste your key into a screenshot, an email, or an issue.
+
+# Upgrading RiboPilot
+
+To upgrade, run `remotes::install_github("dmacguigan/RiboPilot")` again, then
+restart R. While RiboPilot is in development its version number stays at
+0.0.0.9018, so the number does not tell you whether you have the newest code:
+read the [changelog](../news/index.html) instead.
+
+What an upgrade means for your projects:
+
+- **Existing projects are not converted.** RiboPilot does not yet update a
+  project's database to a newer layout. When the changelog says the project
+  database changed, make a new project with `new_project()`, in a new folder,
+  from the same mapping file and reads, and go through the steps again. Keep the
+  old folder until the new project is done. Reference databases in your
+  reference folder are kept and reused, so the Reference step is quick.
+- **The container image must match.** A project names its container image when
+  you create it, in the `container = '...'` line of its `.config` file. Each run
+  uses the pipeline scripts of the RiboPilot installed in R together with the R
+  code inside that image. When the two do not match, the run stops before doing
+  any work, with a message such as:
+
+  ```
+  Version mismatch: this run was started by RiboPilot 0.0.0.9018, but the
+  container image has RiboPilot 0.0.0.9018 built from different code. Set
+  container in the project's .config to the image made from RiboPilot 0.0.0.9018
+  (macguigand/ribopilot:0.0.0.9018, or your own build of the same code) and run
+  again.
+  ```
+
+To get the image that matches your RiboPilot:
+
+- **Docker:** `docker pull macguigand/ribopilot:<version>`. Docker keeps an image
+  it already has, so pull again when the image for your version was rebuilt.
+- **Singularity:** delete the image file for that version from your image cache
+  (see [Disk space, caches, and offline use](Caches-and-Offline.html)); the next
+  run downloads it again.
+- **Code newer than the published image:** build the image yourself from a copy
+  of the RiboPilot source at the same commit you installed. From its top folder,
+  run `docker/deploy-local.sh`, which tags the image `ribopilot:<version>` (while
+  the repository is private it needs the `gh` command, signed in). Then change the
+  `container` line in the project's `.config` to that tag, or pass it to
+  `new_project()` as `container`. See the
+  [docker folder's README](https://github.com/dmacguigan/RiboPilot/blob/main/docker/README.md).
+
+Each image takes about 7.7 GB. Once no project uses an old one, remove it with
+`docker image rm <image>`.

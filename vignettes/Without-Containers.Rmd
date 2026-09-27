@@ -52,6 +52,9 @@ RiboPilot::build_reference_db('"Littorinimorpha"[Organism]', "littorinimorpha",
   and RiboPilot yourself.
 - Ribotyper (part of Ribovore) is not on bioconda, so the chimera check skips its
   ribotyper step unless you install Ribovore 1.0.5 yourself.
+- The bundled rDNA database is only in the container, so every BLAST screen search
+  goes to NCBI, unless you point the Reference step's **Settings** at a downloaded
+  copy.
 
 # BLAST errors about GNUTLS
 

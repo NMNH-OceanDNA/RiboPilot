@@ -28,7 +28,7 @@ Every cell carries the ribosomal RNA genes in a repeated unit that is
 copied hundreds to thousands of times in a row. Because there are so
 many copies, even a shallow, inexpensive "genome skim" sequences this
 region very deeply, essentially for free. RiboPilot reconstructs that
-repeat unit:
+repeat:
 
 ``` 
   ETS       18S      ITS1   5.8S   ITS2         28S         IGS
@@ -36,10 +36,11 @@ repeat unit:
           (SSU)                               (LSU)
 ```
 
-This is one repeat unit; units follow one another head to tail, hundreds
-of times. SSU and LSU are the small and large subunit genes (18S and
-28S). ITS is ITS1, 5.8S, and ITS2 together. ETS and IGS are spacers
-outside the genes; the IGS of one unit runs into the ETS of the next.
+This is one copy of the repeat; copies follow one another head to tail,
+hundreds of times. SSU and LSU are the small and large subunit genes
+(18S and 28S). ITS is ITS1, 5.8S, and ITS2 together. ETS and IGS are
+spacers outside the genes; the IGS of one copy runs into the ETS of the
+next.
 
 From it you get the most widely used nuclear markers for phylogenetics
 and DNA barcoding: **18S**, **28S**, **ITS1**, **ITS2**, and the full
@@ -64,9 +65,9 @@ The app walks each project through five steps, in order:
     reference database of known rDNA sequences for each group, from
     GenBank.
 3.  **Assemble.** One run cleans the reads, assembles the ribosomal
-    repeat for each sample, picks the best reconstruction, finds the
-    five features (18S, ITS1, 5.8S, ITS2, 28S), and checks each result
-    for problems such as a missing gene, an unusual length, a possible
+    repeat for each sample, picks the best assembly path, finds the five
+    features (18S, ITS1, 5.8S, ITS2, 28S), and checks each result for
+    problems such as a missing gene, an unusual length, a possible
     contaminant, or a chimera. You keep or drop scaffolds and lock the
     samples you are happy with.
 4.  **Annotation Review.** You check the features and quality flags of
@@ -86,9 +87,9 @@ them yourself.
 
 # Which organisms it works with
 
-Ray-finned fishes can use a built-in reference; any other group builds
-its own reference database in the app, from GenBank. This is a one-time
-setup step per group; see the [reference database
+Each group of samples, fishes included, needs a reference database of
+known rDNA sequences. You build it once per group in the app, from
+GenBank; see the [reference database
 guide](https://dmacguigan.github.io/RiboPilot/articles/Reference-Databases.html).
 
 It also runs automatic quality checks tuned for a taxonomic group. Five
@@ -129,6 +130,13 @@ GB).
 From there, the [Get started
 guide](https://dmacguigan.github.io/RiboPilot/articles/RiboPilot.html)
 walks you through the five steps in the app.
+
+# Citing RiboPilot
+
+Run `citation("RiboPilot")` in R. The [Citing
+RiboPilot](https://dmacguigan.github.io/RiboPilot/articles/Citing.html)
+page lists the tools RiboPilot runs, with their versions and references,
+for your methods section.
 
 # Getting help
 

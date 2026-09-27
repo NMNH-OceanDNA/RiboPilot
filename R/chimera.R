@@ -556,7 +556,7 @@ chimera_snapshot <- function(con, id, path, scaffold) {
   }, error = function(e) NA_character_)
 }
 
-#' Put back the chimera result and windows saved by [chimera_snapshot()]
+#' Put back the chimera result and windows saved by `chimera_snapshot()`
 #' @noRd
 chimera_restore <- function(con, id, path, scaffold, snap) {
   s <- jsonlite::fromJSON(snap)

@@ -31,7 +31,7 @@ ref_config <- function(con) {
 #' Write project-level reference settings (only the arguments supplied)
 #' @param con Open project DB connection.
 #' @param ref_dir,min_records,max_records,blastdb New values, or NULL to leave as is.
-#' @return (invisibly) the resulting [ref_config()].
+#' @return (invisibly) the resulting `ref_config()`.
 #' @noRd
 set_ref_config <- function(con, ref_dir = NULL, min_records = NULL, max_records = NULL,
                            blastdb = NULL) {
@@ -106,7 +106,7 @@ ref_manifest_path <- function(dir) file.path(path.expand(dir), "manifest.tsv")
 REF_MANIFEST_COLS <- c("clade", "taxid", "rank", "query", "n_records", "built", "seeds", "labels")
 
 #' Read a reference folder's manifest
-#' @return data.frame with [REF_MANIFEST_COLS]; zero rows when there is no manifest.
+#' @return data.frame with `REF_MANIFEST_COLS`; zero rows when there is no manifest.
 #' @noRd
 read_ref_manifest <- function(dir) {
   empty <- data.frame(clade = character(0), taxid = integer(0), rank = character(0),

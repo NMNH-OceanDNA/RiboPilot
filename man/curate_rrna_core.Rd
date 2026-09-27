@@ -18,37 +18,37 @@ curate_rrna_core(
 }
 \arguments{
 \item{features}{data.frame(element, type, start, stop, length, strand, ...)
-as produced by [reconcile_features()] / stored in the `annotations` table.}
+as produced by \code{reconcile_features()} / stored in the \code{annotations} table.}
 
-\item{params}{A ruleset from [rrna_params()].}
+\item{params}{A ruleset from \code{rrna_params()}.}
 
 \item{ref_pid}{Optional named numeric vector (element -> percent identity to
-the top reference), from the `blast_ref_alignment` table. Missing elements
+the top reference), from the \code{blast_ref_alignment} table. Missing elements
 are skipped (identity check is opportunistic).}
 
 \item{ref_cov}{Optional named numeric vector (element -> fraction of the
-element covered by the reference alignment, `blast_ref_alignment.aln_cov`).
-The identity check is skipped when coverage is below `min_ref_coverage`, so
+element covered by the reference alignment, \code{blast_ref_alignment.aln_cov}).
+The identity check is skipped when coverage is below \code{min_ref_coverage}, so
 a partial reference cannot raise a false low_identity flag.}
 
 \item{sample_lineage, hit_lineage}{Optional lineage strings for the contaminant
-check: the sample's assigned lineage vs. the lineage of the top hit over
-*all* of core_nt (`blast_screen.lineage`), not the nuclear-rDNA reference
-panel. An unknown lineage on either side raises `contaminant_unchecked`
+check: the sample's assigned lineage vs. the lineage of the BLAST screen's
+unfiltered top hit (\code{blast_screen.lineage}), not the nuclear-rDNA reference
+candidates. An unknown lineage on either side raises \code{contaminant_unchecked}
 rather than passing silently.}
 
-\item{hit_is_nuclear_rrna}{Optional 0/1 (`blast_screen.is_nuclear_rrna`):
+\item{hit_is_nuclear_rrna}{Optional 0/1 (\code{blast_screen.is_nuclear_rrna}):
 whether that top hit is a nuclear rDNA record at all. 0 raises
-`not_nuclear_rdna`.}
+\code{not_nuclear_rdna}.}
 
 \item{sample_taxids, hit_taxids}{Optional rank-aligned taxid strings matching
-those lineages (`samples.lineage_taxids`, `blast_screen.lineage_taxids`).
+those lineages (\code{samples.lineage_taxids}, \code{blast_screen.lineage_taxids}).
 The comparison prefers them and falls back to the names when absent.}
 }
 \value{
-list(features, flags, n_flags, notes) where `features` gains `status`
-  ("ok"/"flag") and `flags` (comma-separated per-feature codes), and the
-  sample-level `flags`/`notes` summarize missing anchors, ordering, etc.
+list(features, flags, n_flags, notes) where \code{features} gains \code{status}
+("ok"/"flag") and \code{flags} (comma-separated per-feature codes), and the
+sample-level \code{flags}/\code{notes} summarize missing anchors, ordering, etc.
 }
 \description{
 Curate one reconciled nrDNA feature model against a clade ruleset (pure)

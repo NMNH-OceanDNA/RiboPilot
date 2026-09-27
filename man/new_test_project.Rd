@@ -34,15 +34,15 @@ the small rDNA-filtered subsets (default FALSE).}
 reads of a pair (2000000 is 1000000 pairs). A sample below it is not
 assembled and is marked Failed with a note.}
 
-\item{sra_bin}{Directory holding `fasterq-dump` (for the SRA fallback);
-default searches `PATH`.}
+\item{sra_bin}{Directory holding \code{fasterq-dump} (for the SRA fallback);
+default searches \code{PATH}.}
 
 \item{Rproj}{Initialize an RStudio project (default TRUE; no effect outside
 RStudio).}
 
 \item{force}{Recreate an existing project database / config (default FALSE).}
 
-\item{...}{Passed to [new_project()] (e.g. `custom_seeds_db`).}
+\item{...}{Passed to \code{\link[=new_project]{new_project()}} (e.g. \code{custom_seeds_db}).}
 }
 \value{
 (invisibly) the project path.
@@ -57,10 +57,10 @@ project database and config.
 \details{
 By default the reads are the rDNA-filtered subsets published with the
 RiboPilot GitHub releases (a few MB per sample, seconds to fetch). With
-`full_size = TRUE` the complete read sets are fetched instead, from ENA when
-reachable and falling back to NCBI SRA (`fasterq-dump`, which must be on
-`PATH` or given via `sra_bin`) on networks where the ENA fastq mirror is
-blocked; that is several GB and takes a while. Use `n` to fetch fewer
+\code{full_size = TRUE} the complete read sets are fetched instead, from ENA when
+reachable and falling back to NCBI SRA (\code{fasterq-dump}, which must be on
+\code{PATH} or given via \code{sra_bin}) on networks where the ENA fastq mirror is
+blocked; that is several GB and takes a while. Use \code{n} to fetch fewer
 samples. Already-downloaded, valid read files are skipped, so an interrupted
 run resumes cleanly.
 }

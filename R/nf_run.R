@@ -296,7 +296,7 @@ failure_hint <- function(note) {
       "See \"Contigs not carried forward\" below. If the rDNA is split across contigs, assemble from reads instead.")
   } else if (grepl("no usable (seed|label) database", note)) {
     h("This sample has no seed or label database the fallback assembler could read, so nothing was assembled.",
-      paste0(asm, "set Seed database and Label database to FASTA files you have (the Reference tab builds them for a group)", done))
+      paste0(asm, "set Seed database and Label database to FASTA files you have (the Reference step builds them for a group)", done))
   } else if (grepl("return value: -9|out of memory|bad_alloc", note)) {
     h("The assembler ran out of memory.", paste0(asm, "raise Memory (GB)", done))
   } else {

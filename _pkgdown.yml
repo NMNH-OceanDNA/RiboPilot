@@ -15,6 +15,7 @@ home:
   description: Nuclear ribosomal repeat assembly, annotation, and curation
   sidebar:
     structure:
+    - citation
     - authors
     - dev
 
@@ -26,6 +27,7 @@ navbar:
     - intro
     - reference
     - articles
+    - news
     right:
     - search
     - github
@@ -49,6 +51,7 @@ articles:
   - 'Curation-Flags'
   - 'GenBank-Submission'
   - 'Scripting'
+  - 'Citing'
 
 - title: "Computing environments"
   navbar: Computing environments
@@ -91,7 +94,6 @@ reference:
   - annotate_records
   - auto_triage_sample
   - bitscore_weighted_lca
-  - check_container_image
   - chimera_unit
   - compute_ref_alignment
   - curate_one

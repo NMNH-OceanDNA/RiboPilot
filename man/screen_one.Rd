@@ -17,12 +17,12 @@ screen_one(con, id, path = 1L, scaffold = 1L, force = FALSE)
 (invisibly) the verdict written, or the stored one when skipped.
 }
 \description{
-Skips a row already stored at the current [SCREEN_VERSION] unless `force`, so
+Skips a row already stored at the current \code{SCREEN_VERSION} unless \code{force}, so
 re-running the pipeline is cheap and a scoring change forces a recompute
 without a schema migration.
 }
 \details{
-A stored `no_reference` is always recomputed: it records missing evidence,
+A stored \code{no_reference} is always recomputed: it records missing evidence,
 and the evidence routinely arrives later. A unit screened before BLAST ran,
 or before the sample's lineage was resolved, would otherwise keep that
 verdict for the life of the project.

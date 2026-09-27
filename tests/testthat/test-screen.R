@@ -448,8 +448,8 @@ test_that("an unanswered local search suggests a remote one", {
   RiboPilot:::screen_one(con, "S1", 1, 1)
   r <- DBI::dbGetQuery(con, "SELECT screen_verdict, screen_reason FROM screen")
   expect_equal(r$screen_verdict[1], "no_reference")
-  expect_match(r$screen_reason[1], "local")
-  expect_match(r$screen_reason[1], "remote")
+  expect_match(r$screen_reason[1], "bundled")
+  expect_match(r$screen_reason[1], "NCBI")
 })
 
 test_that("an unanswered remote search does not suggest another remote one", {
@@ -476,8 +476,8 @@ test_that("a local search whose hits all fail to resolve suggests a remote one",
   RiboPilot:::screen_one(con, "S1", 1, 1)
   r <- DBI::dbGetQuery(con, "SELECT screen_verdict, screen_reason FROM screen")
   expect_equal(r$screen_verdict[1], "no_reference")
-  expect_match(r$screen_reason[1], "local")
-  expect_match(r$screen_reason[1], "remote")
+  expect_match(r$screen_reason[1], "bundled")
+  expect_match(r$screen_reason[1], "NCBI")
 })
 
 test_that("a remote search whose hits all fail to resolve does not suggest another remote one", {

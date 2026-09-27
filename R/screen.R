@@ -29,9 +29,9 @@ SCREEN_NO_REF_CODES <- c("no_hits", "no_taxdump", "unresolved_sample_lineage",
 
 #' Confidence weights, and the gate below which a verdict is uncertain.
 #'
-#' Both are views on [SCREEN_PARAMS_DEFAULT] (R/params_rrna.R) so a clade
+#' Both are views on `SCREEN_PARAMS_DEFAULT` (R/params_rrna.R) so a clade
 #' ruleset and the shipped default cannot drift apart. Any change must bump
-#' [SCREEN_VERSION].
+#' `SCREEN_VERSION`.
 #' @noRd
 SCREEN_WEIGHTS <- SCREEN_PARAMS_DEFAULT[c("support", "resolution", "separation")]
 
@@ -115,7 +115,7 @@ SCREEN_KINGDOM_TAXIDS <- c(
 #' with itself about which (doc 08 line 510 vs taxonomy_ranks.R:24). Matching
 #' the whole path is correct under either reading.
 #' @param lca_taxids Rank-aligned taxid path of the LCA (";"-joined string or
-#'   integer vector from [parse_rank_taxids()]).
+#'   integer vector from `parse_rank_taxids()`).
 #' @param lca_taxon The LCA's own taxon label (used only for the human check).
 #' @noRd
 screen_class_for <- function(lca_taxids, lca_taxon) {
@@ -165,7 +165,7 @@ screen_max <- function(x) {
 #' @param hits Frame with `hit_class`, `bitscore`, `lineage_taxids`, `lineage`
 #'   and optionally `hit_rank` (one rank per subject accession).
 #' @param sample_taxids The sample's rank-aligned taxid path.
-#' @param params The `screen` sublist of a ruleset (see [rrna_params()]).
+#' @param params The `screen` sublist of a ruleset (see `rrna_params()`).
 #' @return list(verdict, class, confidence, reason, reason_code, terms,
 #'   lca_taxid, lca_taxon, lca_rank, lca_n_hits, host_concordant, margin,
 #'   hit_class).
@@ -307,7 +307,7 @@ screen_channel_taxonomy <- function(hits, sample_taxids,
 
 #' Score and store one unit's screen verdict
 #'
-#' Skips a row already stored at the current [SCREEN_VERSION] unless `force`, so
+#' Skips a row already stored at the current `SCREEN_VERSION` unless `force`, so
 #' re-running the pipeline is cheap and a scoring change forces a recompute
 #' without a schema migration.
 #'
@@ -349,11 +349,11 @@ screen_one <- function(con, id, path = 1L, scaffold = 1L, force = FALSE) {
       params = list(id, path, scaffold))$source
     if (length(searched_source) > 0 && identical(searched_source[1], "local")) {
       r$reason <- if (identical(r$reason_code, "no_hits")) {
-        paste("the local reference panel returned no usable hit for this",
-          "scaffold; a remote BLAST search may identify it")
+        paste("the bundled rDNA database returned no usable hit for this",
+          "scaffold; a search at NCBI (BLAST Options, Search) may identify it")
       } else {
-        paste("the local reference panel returned no hit that resolved to a",
-          "usable lineage; a remote BLAST search may identify it")
+        paste("the bundled rDNA database returned no hit that resolved to a",
+          "usable lineage; a search at NCBI (BLAST Options, Search) may identify it")
       }
     }
   }

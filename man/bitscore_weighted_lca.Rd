@@ -29,7 +29,7 @@ list(taxid, taxon, rank, n_hits).
 }
 \description{
 Defence against a single mislabelled GenBank accession, which a one-hit
-screen cannot survive. Considers only hits within `frac` of the top bitscore
-(always at least `min_hits` when that many are available) and returns the
+screen cannot survive. Considers only hits within \code{frac} of the top bitscore
+(always at least \code{min_hits} when that many are available) and returns the
 deepest rank at which they all agree.
 }

@@ -98,7 +98,7 @@ itsx_is_chimeric <- function(pos_lines) {
 #'
 #' barrnap is authoritative for 18S/28S extent; ITSx for ITS1/5.8S/ITS2. Missing
 #' spacers are derived by subtraction between adjacent anchors.
-#' @param bar,its data.frames from [parse_barrnap()] / [parse_itsx()].
+#' @param bar,its data.frames from `parse_barrnap()` / `parse_itsx()`.
 #' @return data.frame(element, type, start, stop, length, strand, tool)
 #' @noRd
 reconcile_features <- function(bar, its) {
@@ -351,7 +351,7 @@ run_itsx <- function(fasta, cpu = 2, taxon = "all", complement = NULL) {
 #'
 #' pybarrnap is the pipeline default (`annotate_opts.rrna_tool`) and, unlike the
 #' Perl barrnap on some installs, reliably calls eukaryote 18S/5.8S/28S. Both
-#' emit the same GFF3 `Name=` tags, so [parse_barrnap()] handles either.
+#' emit the same GFF3 `Name=` tags, so `parse_barrnap()` handles either.
 #' @return data.frame(element, start, stop, strand) or an empty data.frame.
 #' @noRd
 call_rrna_anchors <- function(fasta, kingdom = "euk") {
@@ -486,13 +486,13 @@ reconcile_records <- function(bar, its) {
 #' Annotate every record in a multi-record fasta
 #'
 #' Runs the rRNA anchor caller once over the whole file and ITSx once per strand
-#' group, then reconciles per record. Records longer than [ITSX_MAX_BP] are kept
+#' group, then reconciles per record. Records longer than `ITSX_MAX_BP` are kept
 #' but get anchors only, because ITSx aborts the entire run on an oversized
 #' target rather than skipping it.
 #'
 #' barrnap reports coordinates in the input frame; on a genuinely minus-strand
 #' record those anchors run 28S -> 5.8S -> 18S in ascending position, the
-#' opposite of the ascending order [reconcile_features()]'s spacer-clipping
+#' opposite of the ascending order `reconcile_features()`'s spacer-clipping
 #' assumes. ITSx, run on a reverse-complemented copy of those records, reports
 #' its regions in the frame where the anchors DO ascend. So minus-strand
 #' records are reconciled in that revcomp frame -- barrnap's anchors are

@@ -20,7 +20,7 @@ update_sample_metadata(
 directory).}
 
 \item{mapping_fn}{Path to a comma-separated mapping file. Same shape as
-[new_project()]'s mapping file. Every `ID` must already be in the
+\code{\link[=new_project]{new_project()}}'s mapping file. Every \code{ID} must already be in the
 project.}
 
 \item{mapping_id}{Column in the mapping file with unique ids (default
@@ -36,17 +36,17 @@ file (checked, not stored).}
 mapping file (checked, not stored).}
 
 \item{check_reads}{(logical) Check that the read files named in the
-mapping file exist under `data_path` (default TRUE).}
+mapping file exist under \code{data_path} (default TRUE).}
 
 \item{check_assemblies}{(logical) Check that the assembly files named in
-the mapping file exist under `assembly_path` (default TRUE).}
+the mapping file exist under \code{assembly_path} (default TRUE).}
 }
 \description{
 Updates metadata columns for samples already in a project's database
 (adding new columns if needed). Never touches R1, R2, Assembly, or any
 pipeline state or lock column, except that a sample whose Taxon changes
 has its resolved taxonomy cleared, unlocked, and queued for the Taxonomy
-step again. Use [add_samples()] to change what a sample reads or
+step again. Use \code{\link[=add_samples]{add_samples()}} to change what a sample reads or
 assembles from. Runs the same read_mapping()/check_mapping()
-checks as [new_project()].
+checks as \code{\link[=new_project]{new_project()}}.
 }

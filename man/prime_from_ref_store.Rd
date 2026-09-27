@@ -9,7 +9,7 @@ prime_from_ref_store(con, ref_dir, ids = NULL)
 \arguments{
 \item{con}{Open project DB connection.}
 
-\item{ref_dir}{Reference folder, as resolved by [ref_config()].}
+\item{ref_dir}{Reference folder, as resolved by \code{ref_config()}.}
 
 \item{ids}{Optional sample IDs to limit to; default is every candidate.}
 }
@@ -18,6 +18,6 @@ prime_from_ref_store(con, ref_dir, ids = NULL)
 }
 \description{
 The fetch step selects only candidate accessions absent from
-`blast_ref_sequences`, so anything copied here is not fetched again. An
+\code{blast_ref_sequences}, so anything copied here is not fetched again. An
 accession the project already holds is left alone.
 }

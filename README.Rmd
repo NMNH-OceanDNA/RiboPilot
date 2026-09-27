@@ -27,7 +27,7 @@ You do not need to be a programmer to use RiboPilot. Most of your work happens i
 
 # What RiboPilot recovers
 
-Every cell carries the ribosomal RNA genes in a repeated unit that is copied hundreds to thousands of times in a row. Because there are so many copies, even a shallow, inexpensive "genome skim" sequences this region very deeply, essentially for free. RiboPilot reconstructs that repeat unit:
+Every cell carries the ribosomal RNA genes in a repeated unit that is copied hundreds to thousands of times in a row. Because there are so many copies, even a shallow, inexpensive "genome skim" sequences this region very deeply, essentially for free. RiboPilot reconstructs that repeat:
 
 ```
   ETS       18S      ITS1   5.8S   ITS2         28S         IGS
@@ -35,7 +35,7 @@ Every cell carries the ribosomal RNA genes in a repeated unit that is copied hun
           (SSU)                               (LSU)
 ```
 
-This is one repeat unit; units follow one another head to tail, hundreds of times. SSU and LSU are the small and large subunit genes (18S and 28S). ITS is ITS1, 5.8S, and ITS2 together. ETS and IGS are spacers outside the genes; the IGS of one unit runs into the ETS of the next.
+This is one copy of the repeat; copies follow one another head to tail, hundreds of times. SSU and LSU are the small and large subunit genes (18S and 28S). ITS is ITS1, 5.8S, and ITS2 together. ETS and IGS are spacers outside the genes; the IGS of one copy runs into the ETS of the next.
 
 From it you get the most widely used nuclear markers for phylogenetics and DNA barcoding: **18S**, **28S**, **ITS1**, **ITS2**, and the full **ITS** region.
 
@@ -47,7 +47,7 @@ The app walks each project through five steps, in order:
 
 1. **Taxonomy.** RiboPilot matches the `Taxon` you give each sample to the NCBI taxonomy, using a local copy, and you check and lock each match. Samples must be reviewed and locked here before they move on to assembly, so the taxonomy that guides scoring and curation is one you have signed off on. The first time, RiboPilot downloads about 80 MB and builds an index of about 0.5 GB in the project, which takes a few minutes.
 2. **Reference.** RiboPilot groups related samples and builds a reference database of known rDNA sequences for each group, from GenBank.
-3. **Assemble.** One run cleans the reads, assembles the ribosomal repeat for each sample, picks the best reconstruction, finds the five features (18S, ITS1, 5.8S, ITS2, 28S), and checks each result for problems such as a missing gene, an unusual length, a possible contaminant, or a chimera. You keep or drop scaffolds and lock the samples you are happy with.
+3. **Assemble.** One run cleans the reads, assembles the ribosomal repeat for each sample, picks the best assembly path, finds the five features (18S, ITS1, 5.8S, ITS2, 28S), and checks each result for problems such as a missing gene, an unusual length, a possible contaminant, or a chimera. You keep or drop scaffolds and lock the samples you are happy with.
 4. **Annotation Review.** You check the features and quality flags of each kept scaffold, adjust boundaries if needed, and lock it.
 5. **Export.** RiboPilot writes a tidy, GenBank-ready submission package, and asks about any flagged record first.
 
@@ -55,7 +55,7 @@ Behind the scenes RiboPilot uses established bioinformatics tools ([fastp](https
 
 # Which organisms it works with
 
-Ray-finned fishes can use a built-in reference; any other group builds its own reference database in the app, from GenBank. This is a one-time setup step per group; see the [reference database guide](https://dmacguigan.github.io/RiboPilot/articles/Reference-Databases.html).
+Each group of samples, fishes included, needs a reference database of known rDNA sequences. You build it once per group in the app, from GenBank; see the [reference database guide](https://dmacguigan.github.io/RiboPilot/articles/Reference-Databases.html).
 
 It also runs automatic quality checks tuned for a taxonomic group. Five settings ship, picked from each sample's lineage: a generic animal setting, and settings for ray-finned fishes, sea stars, true jellyfish, and octocorals; see the [curation guide](https://dmacguigan.github.io/RiboPilot/articles/Curation-Flags.html).
 
@@ -80,6 +80,10 @@ RiboPilot::RiboPilot("~/ribopilot_test")
 By default this fetches small rDNA-filtered read subsets published with the RiboPilot releases, so setup takes under a minute. Pass `full_size = TRUE` to download the complete read sets from ENA/SRA instead (several GB). The first run also downloads the container image once (about 2.6 GB).
 
 From there, the [Get started guide](https://dmacguigan.github.io/RiboPilot/articles/RiboPilot.html) walks you through the five steps in the app.
+
+# Citing RiboPilot
+
+Run `citation("RiboPilot")` in R. The [Citing RiboPilot](https://dmacguigan.github.io/RiboPilot/articles/Citing.html) page lists the tools RiboPilot runs, with their versions and references, for your methods section.
 
 # Getting help
 

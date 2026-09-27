@@ -337,7 +337,7 @@ rt_shares_badge <- function() {
       else if (v === 'none') { tone = 'danger' }
       else               { tone = 'warning' }
       var t = cellInfo.row['screen_species'] ? cellInfo.row['screen_species'] : ''
-      return '<span title=\"top GenBank hit: ' + t + '\" class=\"mp-pill mp-pill-' + tone + '\">' + v + '</span>'
+      return '<span title=\"top BLAST hit: ' + t + '\" class=\"mp-pill mp-pill-' + tone + '\">' + v + '</span>'
     }")
 }
 
@@ -354,10 +354,10 @@ rt_blast_source_badge <- function() {
     "function(cellInfo) {
       var v = cellInfo.value
       if (v === 'core_nt')
-        return '<span title=\"remote megablast against NCBI core_nt\" class=\"mp-pill mp-pill-success\">GenBank</span>'
+        return '<span title=\"BLAST at NCBI core_nt\" class=\"mp-pill mp-pill-success\">NCBI</span>'
       if (v === 'local_rrna')
-        return '<span title=\"local BLAST against the configured rDNA reference panel\"' +
-          ' class=\"mp-pill mp-pill-success\">local panel</span>'
+        return '<span title=\"BLAST against the bundled rDNA database\"' +
+          ' class=\"mp-pill mp-pill-success\">bundled</span>'
       if (v === 'seeds')
         return '<span title=\"local BLAST against the GetOrganelle seed file: the closest bait' +
           ' sequence, NOT a GenBank identification\" class=\"mp-pill mp-pill-warning\">seed file</span>'
@@ -386,7 +386,7 @@ rt_odd_badge <- function() {
 #' Render the contamination-screen verdict: is the scaffold on this sample's
 #' own lineage.
 #'
-#' `no_reference` renders NEUTRAL GREY like [rt_shares_badge()]'s "no
+#' `no_reference` renders NEUTRAL GREY like `rt_shares_badge()`'s "no
 #' reference": for an offline project or a sparse clade it is the normal
 #' state, not a problem. A missing screen row (never run) reads the same way,
 #' since the app should not tell the two apart.
@@ -441,7 +441,7 @@ rt_checks_badge <- function() {
 #' Render the intragenomic variant class: is this scaffold one of several rDNA
 #' copies, or the same molecule assembled twice.
 #'
-#' NEITHER class is a defect, so neither may borrow [rt_screen_badge()]'s
+#' NEITHER class is a defect, so neither may borrow `rt_screen_badge()`'s
 #' off-target red. An isomer renders NEUTRAL, because it is telling the curator a
 #' decision does NOT matter. A paralog renders as INFORMATION: it is real
 #' biology, documented in Octocorallia, Scyphozoa and other groups, and colouring

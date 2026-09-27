@@ -208,7 +208,7 @@ find_unmatched_brace <- function(x) {
 #' can show it live while the user is still typing.
 #'
 #' @param template The header template.
-#' @param data Token data (from [export_header_data()]); the first row is used
+#' @param data Token data (from `export_header_data()`); the first row is used
 #'   for a dry run. NULL skips the dry run.
 #' @param require_seqid Demand `{seqid}` (an error when any sample exports more
 #'   than one unit, a warning otherwise).
@@ -290,10 +290,10 @@ fill_header <- function(template, row) {
 #' Resolve a template against token data
 #'
 #' A sample that exports more than one record gets `[isolate=<seqid>]` appended,
-#' so all of its records can go into one GenBank submission. [validate_fasta_header()]
+#' so all of its records can go into one GenBank submission. `validate_fasta_header()`
 #' refuses a template's own `[isolate=]` for such samples.
 #'
-#' @param template Header template. @param data rows from [export_header_data()].
+#' @param template Header template. @param data rows from `export_header_data()`.
 #' @return character vector of headers, one per row, without the leading ">".
 #' @noRd
 render_fasta_headers <- function(template, data) {

@@ -13,13 +13,13 @@ run_assembly(
 )
 }
 \arguments{
-\item{path}{Project directory (contains `.sqlite` and `.config`).}
+\item{path}{Project directory (contains \code{.sqlite} and \code{.config}).}
 
-\item{nextflow}{Path to the `nextflow` binary.}
+\item{nextflow}{Path to the \code{nextflow} binary.}
 
-\item{work}{Nextflow work directory (default `<path>/work`).}
+\item{work}{Nextflow work directory (default \verb{<path>/work}).}
 
-\item{conda_env}{Optional conda env providing the pipeline tools; its `bin/`
+\item{conda_env}{Optional conda env providing the pipeline tools; its \verb{bin/}
 is prepended to PATH for the run.}
 
 \item{ribopilot_src}{Path to the RiboPilot package source for the R-script

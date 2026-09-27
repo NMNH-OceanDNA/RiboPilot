@@ -12,13 +12,13 @@ select_rrna_contigs(gff_lines, lengths = NULL, max_contigs = 10)
 \item{lengths}{Optional named numeric of contig lengths, names = contig ids.}
 
 \item{max_contigs}{Most contigs to keep, best first (default 10). Fed from
-the sample's `assemble_opts.max_scaffolds`, which is also the gate
-[load_assemblies()] applies afterwards.}
+the sample's \code{assemble_opts.max_scaffolds}, which is also the gate
+\code{\link[=load_assemblies]{load_assemblies()}} applies afterwards.}
 }
 \value{
-list with `candidates` (contig ids, best first) and `evidence` (one
-  row per contig scored: contig, length, rrna_features, rrna_bases, rank,
-  selected, reason)
+list with \code{candidates} (contig ids, best first) and \code{evidence} (one
+row per contig scored: contig, length, rrna_features, rrna_bases, rank,
+selected, reason)
 }
 \description{
 Given the merged barrnap GFF for one sample's supplied assembly, keep the

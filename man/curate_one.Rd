@@ -13,15 +13,15 @@ curate_one(con, id, path = 1L, scaffold = 1L, ruleset = NULL)
 
 \item{path, scaffold}{Assembly unit within the sample.}
 
-\item{ruleset}{Optional ruleset override (else read from `curate_opts`).}
+\item{ruleset}{Optional ruleset override (else read from \code{curate_opts}).}
 }
 \value{
 (invisibly) the curate_rrna_core() result.
 }
 \description{
-Reads the reconciled `annotations`, the sample's `curate_opts` ruleset, any
-per-feature reference identities (`blast_ref_alignment`), and the sample vs.
-hit lineages, runs [curate_rrna_core()], then updates each feature's
-`status`/`flags` and the per-sample `annotate` summary (`n_flags`,
-`curate_flags`) in one transaction.
+Reads the reconciled \code{annotations}, the sample's \code{curate_opts} ruleset, any
+per-feature reference identities (\code{blast_ref_alignment}), and the sample vs.
+hit lineages, runs \code{\link[=curate_rrna_core]{curate_rrna_core()}}, then updates each feature's
+\code{status}/\code{flags} and the per-sample \code{annotate} summary (\code{n_flags},
+\code{curate_flags}) in one transaction.
 }

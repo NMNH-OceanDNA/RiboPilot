@@ -64,7 +64,7 @@ REF_STORE_ANN_DDL <- "CREATE TABLE IF NOT EXISTS ref_annotations (
 
 #' Open the reference store under a reference folder
 #'
-#' @param ref_dir Reference folder, as resolved by [ref_config()].
+#' @param ref_dir Reference folder, as resolved by `ref_config()`.
 #' @param write TRUE to create the store if absent and open it writable.
 #' @return A DBI connection, or NULL when the store does not exist and `write`
 #'   is FALSE.
@@ -207,7 +207,7 @@ prime_copy_accession <- function(con, acc, seq_row, ann_rows, ts) {
 #' accession the project already holds is left alone.
 #'
 #' @param con Open project DB connection.
-#' @param ref_dir Reference folder, as resolved by [ref_config()].
+#' @param ref_dir Reference folder, as resolved by `ref_config()`.
 #' @param ids Optional sample IDs to limit to; default is every candidate.
 #' @return (invisibly) the number of accessions copied.
 #' @export
