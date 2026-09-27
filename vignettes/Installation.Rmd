@@ -109,11 +109,10 @@ What an upgrade means for your projects:
   any work, with a message such as:
 
   ```
-  Version mismatch: this run was started by RiboPilot 0.0.0.9018, but the
-  container image has RiboPilot 0.0.0.9018 built from different code. Set
-  container in the project's .config to the image made from RiboPilot 0.0.0.9018
-  (macguigand/ribopilot:0.0.0.9018, or your own build of the same code) and run
-  again.
+  Version mismatch: this run was started by RiboPilot 0.0.0.9018, but this task
+  loaded RiboPilot 0.0.0.9018 built from different code. Build an image from the
+  RiboPilot that starts the run (docker/deploy-local.sh in its source folder) and
+  set container in the project's .config to it. Then run again.
   ```
 
 To get the image that matches your RiboPilot:

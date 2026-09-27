@@ -127,7 +127,7 @@ SCAFFOLD_COL_HELP <- list(
   source_contig = paste("What this contig was called in the assembly you supplied, so a",
     "scaffold here can be traced back to your own file."),
   path_score = paste("Rates the whole candidate path this scaffold came from, from its length,",
-    "depth, anchor genes and GenBank hit. The same value repeats across every",
+    "depth, anchor genes and BLAST hit. The same value repeats across every",
     "scaffold of one path."),
   depth = paste("Median read depth per position (a mean is inflated by the conserved",
     "18S/28S cores). The bar compares it with this sample's deepest scaffold:",

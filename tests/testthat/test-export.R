@@ -276,7 +276,7 @@ test_that("the export done dialog names flagged records and is green only when n
   smry <- data.frame(seqid = c("A", "B_p1_s1"), itsx_check = c("", ""),
     submission_risk = c("", "off_target(Actiniaria);contaminant"))
   html <- as.character(RiboPilot:::export_check_summary_ui(smry))
-  expect_match(html, "B_p1_s1 (GenBank hits agree on Actiniaria; the best GenBank hit is from another phylum)",
+  expect_match(html, "B_p1_s1 (BLAST hits agree on Actiniaria; the best BLAST hit is from another phylum)",
     fixed = TRUE)
   expect_false(grepl("mp-fg-success", html, fixed = TRUE))
   expect_lt(regexpr("Submission-risk", html), regexpr("Final ITSx", html))

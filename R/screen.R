@@ -193,7 +193,7 @@ screen_channel_taxonomy <- function(hits, sample_taxids,
     return(out)
   }
   if (is.null(hits) || nrow(hits) == 0) {
-    out$reason <- "no GenBank hits are stored for this scaffold"
+    out$reason <- "no BLAST hits are stored for this scaffold"
     return(out)
   }
   hits <- screen_one_vote_per_subject(hits)

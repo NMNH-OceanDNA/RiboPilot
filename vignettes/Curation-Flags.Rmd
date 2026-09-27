@@ -140,7 +140,7 @@ RiboPilot reports the scaffold as unjudged rather than guessing that it is not
 nuclear rDNA.
 
 Rule 6 is a separate check from the rest of the table: it asks whether the
-scaffold's GenBank hits agree on a taxon, and whether that taxon sits on your
+scaffold's BLAST hits agree on a taxon, and whether that taxon sits on your
 sample's own lineage. This is the check that catches a fungal, bacterial or
 plant contaminant riding along with a metazoan sample. It compares only
 against your sample's own lineage, at phylum rank, so it cannot separate two

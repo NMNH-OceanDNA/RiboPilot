@@ -47,7 +47,7 @@ test_that("a scaffold with no usable hit is flagged, never dropped", {
   d <- RiboPilot:::triage_rules(us(list(feats = 5, nuc = NA)))
   expect_equal(d$new_rule, "no_screen")
   expect_true(is.na(d$new_triage))
-  expect_match(d$new_reason, "no GenBank hit says")
+  expect_match(d$new_reason, "no BLAST hit says")
 })
 
 test_that("the 2x2 over the two channels is exhaustive", {
@@ -175,7 +175,7 @@ test_that("the no_screen reason covers an unclassifiable hit, not just a missing
   d <- RiboPilot:::triage_rules(us(list(feats = 5, nuc = NA)))
   expect_equal(d$new_rule, "no_screen")
   expect_false(grepl("has not run for this scaffold", d$new_reason, fixed = TRUE))
-  expect_match(d$new_reason, "no GenBank hit says")
+  expect_match(d$new_reason, "no BLAST hit says")
 })
 
 test_that("the screen rule fires only on an off_target verdict", {

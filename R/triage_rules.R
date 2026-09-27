@@ -33,7 +33,7 @@ TRIAGE_RULE_DEFS <- list(
     default = "flag",
     test = function(d, i, ctx) {
       if (isTRUE(ctx$screened[i])) return(NA_character_)
-      "no GenBank hit says whether this scaffold is nuclear rDNA"
+      "no BLAST hit says whether this scaffold is nuclear rDNA"
     }
   ),
   list(
@@ -82,7 +82,7 @@ TRIAGE_RULE_DEFS <- list(
     default = "flag",
     test = function(d, i, ctx) {
       if (!identical(ctx$screen[i], "off_target")) return(NA_character_)
-      sprintf("the scaffold's GenBank hits agree on %s, which does not sit on this sample's lineage",
+      sprintf("the scaffold's BLAST hits agree on %s, which does not sit on this sample's lineage",
         ctx$screen_taxon[i] %|NA|% "another taxon")
     }
   ),
@@ -94,7 +94,7 @@ TRIAGE_RULE_DEFS <- list(
     default = "flag",
     test = function(d, i, ctx) {
       if (!isTRUE(ctx$screened[i]) || !isTRUE(ctx$sib$odd_one_out[i])) return(NA_character_)
-      sprintf("top GenBank hit (%s) differs from this sample's other scaffolds (%s at %s)",
+      sprintf("top BLAST hit (%s) differs from this sample's other scaffolds (%s at %s)",
         ctx$sp[i], ctx$sib$sib_taxon[i] %|NA|% "the majority",
         ctx$sib$sib_rank[i] %|NA|% "an agreed rank")
     }

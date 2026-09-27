@@ -152,7 +152,7 @@ chimera_panel <- function() {
     tags$p(class = "mp-help-text", style = "margin:2px 0 4px;",
       "A chimera is one scaffold built from pieces of different origin: two organisms, ",
       "or rDNA copies joined in the wrong place. Four checks look for one: the 18S, 5.8S, and 28S ",
-      "GenBank hits must agree on a lineage; 500 bp windows BLASTed against the bundled rDNA database ",
+      "BLAST hits must agree on a lineage; 500 bp windows BLASTed against the bundled rDNA database ",
       "are grouped into segments by class; ribotyper checks the 18S and 28S structure; and reads ",
       "clipped at one position, or a lasting step in read depth, mark a possible join."),
     tags$p(class = "mp-help-text", style = "margin:2px 0 4px;",
@@ -273,8 +273,8 @@ risk_reasons <- function(risk) {
     arg <- function(tag) regmatches(r, regexec(paste0(tag, "\\(([^)]*)\\)"), r))[[1]][2]
     tx <- arg("off_target")
     nm <- arg("taxon_differs")
-    paste(c(if (!is.na(tx)) sprintf("GenBank hits agree on %s", tx),
-      if (grepl("(^|;)contaminant(;|$)", r)) "the best GenBank hit is from another phylum",
+    paste(c(if (!is.na(tx)) sprintf("BLAST hits agree on %s", tx),
+      if (grepl("(^|;)contaminant(;|$)", r)) "the best BLAST hit is from another phylum",
       if (grepl("(^|;)chimeric\\(ITSx\\)", r)) "ITSx, the tool NCBI runs on submissions, calls it chimeric"
       else if (grepl("(^|;)chimeric", r)) "parts of the scaffold match organisms from different phyla or kingdoms",
       if (grepl("(^|;)gap_in_rDNA", r)) "an assembly gap inside the rDNA",
