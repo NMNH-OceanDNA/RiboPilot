@@ -282,6 +282,7 @@ The task named install prerequisites, troubleshooting, a glossary, NEWS, and cit
 - Problem: `.config` fixes the image tag when the project is made. After an upgrade, old projects run the new `main.nf` and `bin/` scripts from the installed package against the old image's R code, with no check or warning. Every old image (7.66 GB each) must also be kept.
 - Why it matters: A lab that upgrades mid-project can get silent mismatches between pipeline scripts and the R code inside the image.
 - Fix: Document the rule: finish open projects before upgrading, or change `container` in each project's `.config` to the new tag. Better, warn at run time when the `.config` tag does not match `packageVersion()`.
+- Status: fixed on `review/2026-09-full-review` (fourth batch, docs: an Upgrading section). See [Fourth batch](REVIEW_SUMMARY.md#fourth-batch-working-at-scale-reproducibility-and-docs).
 - See also: [CODE_REVIEW.md](CODE_REVIEW.md) PIPE-M15
 
 <a id="doc-08"></a>**DOC-08. No troubleshooting page; the only troubleshooting text is a conda-only BLAST box.** Major. Confirmed. ids: D-intermediate-12, D-novice-45, D-intermediate-33, O-edge-27 (part), D-editor-17 (part). Seen by 4 (docs-editor, docs-intermediate, docs-novice, op-edge).
@@ -326,6 +327,7 @@ The task named install prerequisites, troubleshooting, a glossary, NEWS, and cit
 - Problem: There is no changelog although Docker Hub already has 16 dev tags (0.0.0.9000 to 0.0.0.9018). There is no "How to cite" and no list of the tools to cite: GetOrganelle, SPAdes, ITSx, barrnap/pybarrnap, BLAST, fastp, bowtie2, Nextflow, and Ribovore/ribotyper (run by the chimera check but never named). The Dockerfile leaves pybarrnap, barrnap, and itsx unpinned, so tool versions are not tied to an image tag. The intragenomic-variation claim ("real, documented biology in Octocorallia, Scyphozoa and other groups") has no references.
 - Why it matters: Journal reviewers will ask how to cite RiboPilot and which tool versions produced the records.
 - Fix: Add `NEWS.md`, `inst/CITATION` (and `CITATION.cff`, as MitoPilot has), a "Citing RiboPilot" section with tool citations, and a per-tag tool-version table. Pin every tool in the Dockerfile. Cite the paralog literature.
+- Status: fixed on `review/2026-09-full-review` (fourth batch, docs: NEWS, CITATION, and a Citing page with a tool-version table). See [Fourth batch](REVIEW_SUMMARY.md#fourth-batch-working-at-scale-reproducibility-and-docs).
 - See also: [CODE_REVIEW.md](CODE_REVIEW.md) PIPE-M12
 
 <a id="doc-13"></a>**DOC-13. No screenshots, and many app features are never described.** Major. Confirmed. ids: D-novice-18, D-appclaims-19, D-editor-17 (part). Seen by 3 (docs-appclaims, docs-editor, docs-novice).
@@ -453,6 +455,7 @@ Items are grouped by the page they mostly affect; the Where line gives every pla
   - The Export empty message says "samples" for units; "Neighbouring" is British spelling; the README's "repeat unit" means the rDNA repeat while the app's "unit" means one scaffold.
 - Why it matters: Users cannot match instructions to the screen.
 - Fix: Adopt the app's toolbar vocabulary (Step names, Warnings, Run from App) in the docs and in app strings, and define the rest in the glossary.
+- Status: fixed on `review/2026-09-full-review` (fourth batch, docs: the docs and the app use the same names). See [Fourth batch](REVIEW_SUMMARY.md#fourth-batch-working-at-scale-reproducibility-and-docs).
 - See also: [UX-77](USABILITY_REVIEW.md#ux-77), [UX-50](USABILITY_REVIEW.md#ux-50)
 
 <a id="doc-16"></a>**DOC-16. The unsupported conda route is the main install recipe, and the code still defaults to it.** Major. Confirmed. ids: D-novice-9, D-hpc-10, D-novice-34, D-editor-20, D-hpc-25. Seen by 3 (docs-editor, docs-hpc, docs-novice).
@@ -793,6 +796,7 @@ Also on this page: [DOC-36](#doc-36) ("you can keep working in the app while it 
   - The count shows sample-level flags only: SRR22396758 shows 0 warnings while its 28S carries "length,truncated", and the panel says "No curation warnings" above a table of feature warnings. Only feature-level warnings get a "select" link.
 - Why it matters: Users cannot tell which warnings matter or what to do about them.
 - Fix: List every emitted code with its threshold and a "what to do" column. Fix the sentences. Count feature flags too, or label the count "sample-level".
+- Status: fixed on `review/2026-09-full-review` (fourth batch, docs: the warnings table lists every code and says what happens without a lookup). See [Fourth batch](REVIEW_SUMMARY.md#fourth-batch-working-at-scale-reproducibility-and-docs).
 - See also: [UX-51](USABILITY_REVIEW.md#ux-51)
 
 <a id="doc-54"></a>**DOC-54. Five rulesets ship and are picked from the lineage; the docs describe two.** Major. Confirmed. ids: D-novice-16, D-domain-7, D-editor-12, D-appclaims-10, O-novel-9, D-intermediate-19 (part). Seen by 6 (docs-appclaims, docs-domain, docs-editor, docs-intermediate, docs-novice, op-novel).
@@ -855,6 +859,7 @@ Also on this page: [DOC-36](#doc-36) ("you can keep working in the app while it 
   - The Hit Source column, the BLAST Options "Search" choice, and `RIBOPILOT_NO_LOCAL_BLAST` are never explained.
 - Why it matters: A methods section written from the docs ("screened against GenBank core_nt") would be wrong, and the contaminant and not_nuclear_rdna flags depend on which database answered.
 - Fix: Call it the "rDNA screen", and say what it searches by default, when it goes to NCBI, and how to force a remote search. Explain the Hit Source column, show which database answered next to each verdict, fix the column help and the two man pages, and describe what an offline run looks like.
+- Status: fixed on `review/2026-09-full-review` (fourth batch, docs: "BLAST screen" and "bundled rDNA database" in the app and docs). See [Fourth batch](REVIEW_SUMMARY.md#fourth-batch-working-at-scale-reproducibility-and-docs).
 
 <a id="doc-61"></a>**DOC-61. The depth explanation does not match how depth is computed.** Minor. Confirmed. ids: D-domain-18. Seen by 1 (docs-domain).
 - Where: `vignettes/Curation-Flags.Rmd:161-170`; triage window `R/app_modals.R:277-280`; column help `R/constants.R:134-136`; `inst/nextflow/modules/coverage.nf:21-54`.
@@ -1117,6 +1122,7 @@ Also on this page: [DOC-41](#doc-41) (Problematic tip), [DOC-42](#doc-42) (Parti
 - Problem: The site report says "In DESCRIPTION, URL is missing package url (https://dmacguigan.github.io/RiboPilot)" and "Package logo is newer than favicons". Lux upper-cases all headings, including long step titles; the Articles menu is not upper-cased while the other navbar items are; the home sidebar has no citation or license links.
 - Why it matters: The build is not clean, and long upper-case headings are hard to read.
 - Fix: `URL: https://github.com/dmacguigan/RiboPilot, https://dmacguigan.github.io/RiboPilot/`; rerun `build_favicons()`; override the heading `text-transform` or pick another theme; add citation and license to the sidebar.
+- Status: fixed on `review/2026-09-full-review` (fourth batch, reproducibility: site URL in DESCRIPTION). See [Fourth batch](REVIEW_SUMMARY.md#fourth-batch-working-at-scale-reproducibility-and-docs).
 
 <a id="doc-96"></a>**DOC-96. The deploy workflow only builds when a commit message contains "BUILD SITE".** Minor. Confirmed. ids: D-editor-30. Seen by 1 (docs-editor).
 - Where: `.github/workflows/pkgdown.yaml:18`.

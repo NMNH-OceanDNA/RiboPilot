@@ -165,6 +165,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: the refresh observer calls `updateReactable("tbl", data = ...)` with data only. When data is given, reactable resets page, selection, and expanded rows (checked in the installed source). The comment above the code says the page survives; it does not.
 - Why it matters: a reviewer on page 3 who clicks Mark reviewed, Lock and Close, K or D, assigns a group, or saves options lands back on page 1 with nothing selected. Background reference polls also bump refresh, so this can happen with no click at all.
 - Fix: pass `page = getReactableState("tbl", "page")` and re-select by key, as `set_flag` already does.
+- Status: fixed on `review/2026-09-full-review` (fourth batch, working at scale: a refresh keeps the page and the ticked rows). See [Fourth batch](REVIEW_SUMMARY.md#fourth-batch-working-at-scale-reproducibility-and-docs).
 
 **APP-M6. `custom.js` re-triggers itself about 20 times a second while idle**
 - Ids: C-shiny-8. Severity: medium. Status: confirmed.
@@ -172,6 +173,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: `rpReportVisible()` adds a probe element inside `#tbl`, sets its class, and removes it. A body-wide MutationObserver watches exactly those changes and queues another report 50 ms later, so the loop never stops. Each pass calls `getComputedStyle` on every row. Headless Chrome counted 56 calls in 2.8 s of idle time after one DOM change.
 - Why it matters: any open project burns CPU continuously, worse with hundreds of rows and on laptops.
 - Fix: observe only the `#tbl` subtree and skip mutations on the probe, or call `rpReportVisible` only from reactable's state-change hook and the filter event.
+- Status: fixed on `review/2026-09-full-review` (fourth batch, working at scale: the busy loop is gone). See [Fourth batch](REVIEW_SUMMARY.md#fourth-batch-working-at-scale-reproducibility-and-docs).
 
 **APP-M7. Annotation-locked units can still be edited, trimmed, and restored**
 - Ids: C-shiny-10 (medium), C-security-10 (low). Severity: medium. Status: confirmed.
@@ -219,6 +221,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: the target list falls back to every row when nothing is selected, and it is re-read live. A refresh clears the selection (see APP-M5), and refreshes fire while the modal is open when a Nextflow run or a reference build finishes. `auto_triage_sample()` skips annotation-locked units but not assemble-locked ones, and rows hidden by filters are included.
 - Why it matters: the user selects 2 samples and opens Triage; a background refresh fires; Apply now changes every sample, while the title still says "2 samples".
 - Fix: snapshot the target ids when the modal opens (as the options and taxonomy modals do), and exclude assemble-locked samples.
+- Status: fixed on `review/2026-09-full-review` (fourth batch, working at scale: Triage acts only on the ticked, unlocked samples). See [Fourth batch](REVIEW_SUMMARY.md#fourth-batch-working-at-scale-reproducibility-and-docs).
 
 **APP-M13. The Curation Options "Min anchor identity" and "Flag contaminants" controls do nothing**
 - Ids: C-science-17, C-ponytail-2, C-pkg-3. Severity: medium. Status: confirmed (all three).
@@ -401,6 +404,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: the Dockerfile leaves sqlite, fastqc, BLAST (`>=2.12` only), seqtk, seqkit, pybarrnap, barrnap, ITSx, hmmer, entrez-direct, biopython, and datasets unpinned, and runs the ribovore `install.sh` from a moving tag with no checksum. `environment.yml` pins barrnap 0.9, which has no `fun` kingdom, while the pipeline translates `euk` to `fun` for barrnap.
 - Why it matters: rebuilding the same image tag later can change annotation results with no version change. In an env built from `environment.yml`, choosing barrnap fails every annotation task (pybarrnap, the default, is not affected).
 - Fix: pin every tool in the Dockerfile to the versions that were validated (the image has barrnap 1.10.5), use the same pins in `environment.yml`, and check the install script's sha256 before running it.
+- Status: fixed on `review/2026-09-full-review` (fourth batch, reproducibility: every tool pinned in the Dockerfile and environment.yml, unused R packages dropped, and the ribovore installer checksummed). See [Fourth batch](REVIEW_SUMMARY.md#fourth-batch-working-at-scale-reproducibility-and-docs).
 
 **PIPE-M13. A space in a project, read, or reference path breaks every container task**
 - Ids: C-security-5. Severity: medium. Status: confirmed.
@@ -424,6 +428,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: for normal installs, `nf_command()` passes the installed package folder as `--ribopilot_src`, which `rp_env.R` rejects, so every task logs "Uncommitted package edits are NOT in this run ... rebuild the image". The project's container tag is fixed when the project is made, and nothing compares the image's RiboPilot version with the package's.
 - Why it matters: after a package upgrade, the app writes new-format data while every task runs the older image code against the same database (and there are no migrations pre-release). Meanwhile every end user's logs carry a misleading warning.
 - Fix: pass the package version to the tasks and stop (or warn loudly) in `rp_env.R` when the image version differs. Pass `--ribopilot_src` only for a real source checkout.
+- Status: fixed on `review/2026-09-full-review` (fourth batch, reproducibility: each pipeline R step stops with a clear message when the launching RiboPilot and the container's differ in version or pipeline scripts; limit: a same-version build that changes only R/ code is not caught). See [Fourth batch](REVIEW_SUMMARY.md#fourth-batch-working-at-scale-reproducibility-and-docs).
 
 **PIPE-M16. With no usable reference, the bait fallback assembles the whole genome and keeps every contig**
 - Ids: C-nextflow-13 (low), C-tests-8 (medium). Severity: medium. Status: confirmed (both).
@@ -439,6 +444,7 @@ Each item gives: code, title, ids, severity, status, where, the problem, why it 
 - Problem: the script calls `record_blastdb_provenance()`, which is not exported, without `RiboPilot:::`, inside `tryCatch(error = function(e) NULL)`. From a source checkout `load_all()` exposes it, so it works for the author. In the Docker or Singularity image `library(RiboPilot)` is used, so the call fails and the error is swallowed. `R CMD check` fails on exactly this (test-nextflow.R:1051), but CI skips that test because its runner has no Nextflow.
 - Why it matters: for discovered or baked-in local panels, the project never records which panel version it searched. Panels configured at launch are still recorded, so the loss is display-only provenance, but the bug class (bare calls to internals from bin scripts) can hide worse failures.
 - Fix: call `RiboPilot:::record_blastdb_provenance`, and log instead of swallowing the error. Extend the existing check in `test-reference-workflow.R:293` to scan every `inst/nextflow/bin/*.R` for bare calls to unexported functions.
+- Status: fixed on `review/2026-09-full-review` (fourth batch, reproducibility: which database answered each BLAST search is recorded and shown). See [Fourth batch](REVIEW_SUMMARY.md#fourth-batch-working-at-scale-reproducibility-and-docs).
 
 #### Low
 
@@ -805,6 +811,7 @@ No reviewer found SQL injection: every query value is a bound parameter. The app
 - Problem: 44 of the roughly 54 Rd files contain literal backticks, 25 contain literal `[fn()]` brackets, and there are no `\link` entries at all. Turning markdown on (in a copy) produced 16 links from exported pages to internal, undocumented topics (`detect_headless`, `rrna_params`, `ref_config`, `ribopilot_config_dir`, and others).
 - Why it matters: `?new_project` and the unpublished pkgdown reference show raw markdown with no links. If markdown is simply turned on, `R CMD check` gains "Missing link" warnings.
 - Fix: add `Roxygen: list(markdown = TRUE)`, re-document, and replace links to internal topics in exported docs with plain code text.
+- Status: fixed on `review/2026-09-full-review` (fourth batch, reproducibility: roxygen markdown on, and every help page regenerated). See [Fourth batch](REVIEW_SUMMARY.md#fourth-batch-working-at-scale-reproducibility-and-docs).
 
 #### Low
 
@@ -899,6 +906,7 @@ What this means:
 - Problem: tracing the whole suite shows `curate_one`, `reconcile_one`, `score_one`, and `blast_scaffolds_local` are never called, and no test runs `rp_curate.R`, `rp_reconcile.R`, `rp_score.R`, `rp_triage.R`, `rp_chimera.R`, `rp_coverage.R`, `rp_fallback.R`, `rp_ref_align.R`, or `rp_rederive.R`. No `.nf` process has a `stub:` block, so a stub run is impossible, and `main.nf` wiring is checked only by regex over its text. The Nextflow run tests use small synthetic harnesses, not the real `main.nf`.
 - Why it matters: rename a column that `curate_one()` writes, and in the pipeline the curate step fails on every unit (and is ignored), curation silently stops, and the suite stays green. The same is true of a channel-shape change in `main.nf` that still matches the grep patterns.
 - Fix: add database-level tests for `curate_one()`, `reconcile_one()`, and `score_one()` on a `new_db()` project. Add `stub:` blocks and one test that runs `nextflow run main.nf -stub-run` on a small project using the bundled CHIM00 and CHIM01 reads, checking that the database ends with assemblies, annotations, screen, and triage rows.
+- Status: fixed on `review/2026-09-full-review` (fourth batch, reproducibility: tests now run the real pipeline R scripts and main.nf with stand-in tools). See [Fourth batch](REVIEW_SUMMARY.md#fourth-batch-working-at-scale-reproducibility-and-docs).
 
 #### Low
 

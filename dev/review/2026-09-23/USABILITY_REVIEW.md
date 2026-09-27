@@ -617,6 +617,7 @@ Timings at 504 samples were good (see [Things that work well](#things-that-work-
 - Problem: with 504 samples and State = Failed, the status line says "Showing 42 of 504", but pages 1 to 6 are empty; the 42 rows are on pages 7 and 8. The footer still says "1-50 of 504 rows" and 11 pages.
 - Why it matters: "show me the failures" looks like "there are none".
 - Fix: filter the data itself (server side or with reactable's filter API). As a stopgap, switch to page size All, or jump to the first page with a match, while a filter is on.
+- Status: fixed on `review/2026-09-full-review` (fourth batch, working at scale: the Lock and State filters drop rows from the table, so pages are never blank). See [Fourth batch](REVIEW_SUMMARY.md#fourth-batch-working-at-scale-reproducibility-and-docs).
 
 ![State = Failed at 504 samples: page 1 is empty](screenshots/ux_16_failed_filter_blank_page.png)
 
@@ -625,6 +626,7 @@ Timings at 504 samples were good (see [Things that work well](#things-that-work-
 - Problem: with 5 rows selected under one search, the user changed the search, ticked 1 visible row, and pressed Lock: "6 samples locked". In Annotation Review with column filters showing 9 of 14, the header checkbox toggled between 5 selected (all hidden) and 14. "Download selected rows" includes hidden rows too. Under a Lock or State filter the header checkbox stays unchecked when every visible row is selected, and there is no "Clear selection".
 - Why it matters: bulk Lock, State, Reviewed, and group changes reach rows the user cannot see.
 - Fix: intersect the selection with the visible rows (the client already computes them), or clear it when the search or a filter changes. Show "N selected (M hidden)" with a "Clear selection" link, and make the header checkbox reflect the visible rows.
+- Status: fixed on `review/2026-09-full-review` (fourth batch, working at scale: bulk actions skip rows the search or column filters hide). See [Fourth batch](REVIEW_SUMMARY.md#fourth-batch-working-at-scale-reproducibility-and-docs).
 
 ![Search shows 2 rows, 1 ticked; Lock locked 6](screenshots/ux_15_hidden_rows_locked.png)
 
