@@ -48,11 +48,10 @@ RiboPilot::build_reference_db('"Littorinimorpha"[Organism]', "littorinimorpha",
 
 # Known gaps
 
-- `environment.yml` does not include R, jq, or sqlite3, which the pipeline also
-  calls. Install them yourself.
-- Some tool versions differ from the container's (for example barrnap,
-  Entrez Direct, and the NCBI datasets tool), so results can differ from a
-  container run.
+- `environment.yml` does not include R or RiboPilot's R packages. Install R 4.4
+  and RiboPilot yourself.
+- Ribotyper (part of Ribovore) is not on bioconda, so the chimera check skips its
+  ribotyper step unless you install Ribovore 1.0.5 yourself.
 
 # BLAST errors about GNUTLS
 
@@ -61,7 +60,7 @@ BLAST in your environment is too old to connect to NCBI. Update it, then run the
 pipeline again:
 
 ```bash
-conda install -n ribopilot 'blast>=2.12'
+conda install -n ribopilot 'blast=2.17.0'
 ```
 
 Environments created from the current `environment.yml` already include a new

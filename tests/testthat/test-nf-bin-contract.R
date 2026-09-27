@@ -84,7 +84,7 @@ test_that("a script run with too few arguments exits non-zero", {
   expect_match(paste(readLines(err, warn = FALSE), collapse = " "), "usage:")
 })
 
-test_that("environment.yml pins every tool the Dockerfile pins, to the same version", {
+test_that("environment.yml and the Dockerfile pin the same tools to the same versions", {
   root <- RiboPilot:::ribopilot_src_default()
   env_yml <- file.path(root, "environment.yml")
   dockerfile <- file.path(root, "docker", "Dockerfile")
@@ -100,16 +100,33 @@ test_that("environment.yml pins every tool the Dockerfile pins, to the same vers
   env_lines <- env_lines[seq(grep("^dependencies:", env_lines)[1] + 1, length(env_lines))]
   env_specs <- parse_specs(env_lines,
     "^\\s*-\\s*([A-Za-z0-9_.-]+)\\s*([<>=][^ #]*)\\s*(?:#.*)?$")
-  docker_specs <- parse_specs(readLines(dockerfile, warn = FALSE),
-    "^\\s*'([A-Za-z0-9_.-]+)([<>=][^']*)'")
-
-  shared <- intersect(names(docker_specs), names(env_specs))
-  expect_true(all(c("fastp", "getorganelle", "spades", "bowtie2", "samtools") %in% shared))
-  for (p in shared) expect_equal(unname(env_specs[p]), unname(docker_specs[p]), info = p)
 
   # nothing in the tool chain left floating
   unpinned <- grep("^\\s*-\\s*[A-Za-z0-9_.-]+\\s*(#.*)?$", env_lines, value = TRUE)
   expect_length(unpinned, 0)
+
+  docker_lines <- readLines(dockerfile, warn = FALSE)
+  docker_specs <- parse_specs(docker_lines, "^\\s*'([A-Za-z0-9_.-]+)([<>=][^']*)'")
+  # nothing installed by name alone
+  expect_length(grep("^\\s*'[A-Za-z0-9_.-]+'\\s*(\\\\|&&)", docker_lines, value = TRUE), 0)
+  # exact versions, not ranges
+  expect_true(all(startsWith(docker_specs, "=")))
+  tools <- docker_specs[!grepl("^(r|bioconductor)-", names(docker_specs))]
+  expect_setequal(names(tools), setdiff(names(env_specs), "nextflow"))
+  for (p in names(tools)) expect_equal(unname(env_specs[p]), unname(tools[p]), info = p)
+})
+
+test_that("bin scripts reach package internals the way a container will", {
+  ns <- asNamespace("RiboPilot")
+  ex <- getNamespaceExports("RiboPilot")
+  for (f in list.files(bin_dir, pattern = "\\.R$", full.names = TRUE)) {
+    pd <- utils::getParseData(parse(f, keep.source = TRUE))
+    fc <- pd[pd$token == "SYMBOL_FUNCTION_CALL", ]
+    qualified <- fc$parent %in% pd$parent[pd$token %in% c("NS_GET", "NS_GET_INT")]
+    bare <- unique(fc$text[!qualified])
+    bad <- bare[vapply(bare, exists, NA, envir = ns, inherits = FALSE) & !bare %in% ex]
+    expect_length(bad, 0)
+  }
 })
 
 test_that("format_assembly.sh numbers paths by GetOrganelle's path number", {

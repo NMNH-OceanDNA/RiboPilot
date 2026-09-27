@@ -207,3 +207,52 @@ test_that("a closure clusterOptions is left out of the head job", {
   s <- RiboPilot:::job_script(proj, "nextflow run x", NULL, "ribopilot")
   expect_false(grepl("{", s, fixed = TRUE))
 })
+
+test_that("the Hydra profile never asks SGE for h_rss", {
+  skip_on_cran()
+  skip_if_not_installed("withr")
+  skip_if(Sys.which("nextflow") == "", "nextflow not installed")
+  pin <- RiboPilot:::nf_pin_version()
+  skip_if(is.na(pin), "no supported Nextflow")
+  dir <- withr::local_tempdir()
+  withr::local_dir(dir)
+  dir.create("fake")
+  writeLines(c("#!/bin/sh", "echo 'Your job 4242 (\"nf\") has been submitted'"), "fake/qsub")
+  writeLines(c("#!/bin/sh", "true"), "fake/qstat")
+  Sys.chmod(c("fake/qsub", "fake/qstat"), "755")
+  writeLines(c(
+    "process find_rrna_scan {", "  cpus { nthreads as int }",
+    "  memory { \"${(mem as int) * task.attempt} GB\" }",
+    "  input: tuple val(id), val(nthreads), val(mem)", "  script: 'true'", "}",
+    "process find_rrna_pick {", "  cpus 1", "  memory { \"${4 * task.attempt} GB\" }",
+    "  input: val(id)", "  script: 'true'", "}",
+    "process stage_assembly {", "  cpus 1", "  memory 2.GB",
+    "  input: val(id)", "  script: 'true'", "}",
+    "workflow find_rrna {", "  take: x", "  main:", "  find_rrna_scan(x)",
+    "  find_rrna_pick(x.map { it[0] })", "}",
+    "workflow {", "  find_rrna(Channel.of(tuple('S1', 4, 12)))",
+    "  stage_assembly(Channel.of('S1'))", "}"), "main.nf")
+  cfg <- RiboPilot:::fill_config(readLines(RiboPilot:::app_sys("config.NMNH_Hydra")),
+    list(CONTAINER_ID = "", RAW_DIR = "NA", ASMB_DIR = dir, MIN_DEPTH = "0",
+      NCBI_API_KEY = "", EXTRA_MOUNTS = ""))
+  writeLines(c(cfg, "singularity.enabled = false", "executor.pollInterval = '1 sec'"),
+    "hydra.config")
+  p <- processx::process$new("nextflow", c("-q", "run", "main.nf", "-c", "hydra.config",
+      "-work-dir", "work", "--projectDir", dir),
+    env = c("current", PATH = paste(file.path(dir, "fake"), Sys.getenv("PATH"), sep = ":"),
+      NXF_VER = pin, NXF_DISABLE_CHECK_LATEST = "true"),
+    stdout = NULL, stderr = NULL, cleanup_tree = TRUE)
+  withr::defer(p$kill_tree())
+  runs <- character(0)
+  t0 <- Sys.time()
+  while (length(runs) < 3 && difftime(Sys.time(), t0, units = "secs") < 120) {
+    Sys.sleep(1)
+    runs <- list.files("work", pattern = "^\\.command\\.run$", recursive = TRUE,
+      all.files = TRUE, full.names = TRUE)
+  }
+  expect_length(runs, 3)
+  hdr <- unlist(lapply(runs, function(f) grep("^#\\$ -l ", readLines(f), value = TRUE)))
+  expect_false(any(grepl("h_rss|mem_free", hdr)))
+  expect_true(any(grepl("mres=12G,h_data=3G", hdr, fixed = TRUE)))
+  expect_equal(sum(grepl("mres=4G,h_data=4G", hdr, fixed = TRUE)), 2L)
+})

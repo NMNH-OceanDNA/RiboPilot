@@ -5,11 +5,6 @@ rp_file <- sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE
 if (length(rp_file) != 1) stop("run with Rscript: cannot locate rp_env.R", call. = FALSE)
 source(file.path(dirname(rp_file), "rp_env.R"))
 rp_args(a, 3, "rp_score.R <db> <id> <dir> [taxdump_dir]")
-if (!"dir" %in% names(formals(load_assemblies))) {
-  stop("the RiboPilot installed here (", utils::packageVersion("RiboPilot"),
-    ") is older than the pipeline scripts; rebuild or pull the container image",
-    call. = FALSE)
-}
 local({
   con <- open_project_db(a[1])
   on.exit(DBI::dbDisconnect(con))

@@ -330,17 +330,18 @@ rederive_blast_products <- function(con, ids = NULL) {
 #' @param query_md5 md5 of the query sequence and the search settings, as blast.nf computes it.
 #' @param n_hits Number of hits the search returned.
 #' @param source Which search produced the hits, "local" or "remote".
+#' @param db The database that answered: "core_nt", or the local panel's name and release.
 #' @return (invisibly) TRUE.
 #' @export
 mark_unit_searched <- function(con, id, path = 1L, scaffold = 1L, query_md5,
-                               n_hits = 0L, source = "remote") {
+                               n_hits = 0L, source = "remote", db = "") {
   source <- match.arg(source, c("remote", "local"))
   DBI::dbExecute(con,
     "INSERT OR REPLACE INTO blast_searched
-       (ID, path, scaffold, query_md5, n_hits, source, time_stamp)
-     VALUES (?, ?, ?, ?, ?, ?, ?)",
+       (ID, path, scaffold, query_md5, n_hits, source, db, time_stamp)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     params = list(id, as.integer(path), as.integer(scaffold), query_md5,
-      as.integer(n_hits), source, as.integer(Sys.time())))
+      as.integer(n_hits), source, db, as.integer(Sys.time())))
   # new hits: the stored verdict was judged on the old ones
   if (DBI::dbExistsTable(con, "screen")) {
     DBI::dbExecute(con, "DELETE FROM screen WHERE ID = ? AND path = ? AND scaffold = ?",

@@ -519,7 +519,9 @@ test_that("with no NCBI key the variable is left out, and tasks read it unset-sa
   txt <- readLines(system.file("nextflow", "nextflow.config", package = "RiboPilot"), warn = FALSE)
   k <- grep("NCBI_API_KEY\\s*:", txt)
   expect_false(grepl("?: ''", txt[k], fixed = TRUE))
-  expect_match(txt[k + 1], "^\\].findAll \\{ it.value \\}")
+  close <- grep("^\\].findAll \\{ it.value \\}", txt)
+  expect_length(close, 1)
+  expect_gt(close, k)
   nf <- readLines(system.file("nextflow", "modules/blast_ref.nf", package = "RiboPilot"), warn = FALSE)
   expect_false(any(grepl("\\$NCBI_API_KEY\"", nf, fixed = TRUE)))
 })
@@ -583,7 +585,7 @@ test_that("an empty ribopilot_src argument does not become the string true", {
   writeLines(c("params {", "  rawDir = '/data/raw'", "}"), file.path(proj, ".config"))
   a <- RiboPilot:::nf_command(proj, resume = FALSE, ribopilot_src = "")
   v <- a[which(a == "--ribopilot_src") + 1]
-  expect_true(nzchar(v))
+  expect_true(all(nzchar(v)))
 })
 
 test_that("an empty minDepth in the config falls back to 0", {
@@ -1116,9 +1118,10 @@ test_that("blast_genbank records provenance for a discovered, unconfigured panel
 
   con2 <- DBI::dbConnect(RSQLite::SQLite(), db_path)
   on.exit(DBI::dbDisconnect(con2), add = TRUE)
-  searched <- DBI::dbGetQuery(con2, "SELECT source FROM blast_searched WHERE ID='S1'")
+  searched <- DBI::dbGetQuery(con2, "SELECT source, db FROM blast_searched WHERE ID='S1'")
   expect_equal(searched$source[1], "local",
     info = "the stub only answers non-remote calls; a wrong source means the panel was not used")
+  expect_equal(searched$db[1], "ribopilot_rrna 2026.08.1")
   expect_equal(RiboPilot:::blastdb_provenance(con2), "ribopilot_rrna 2026.08.1")
 
   # discovery must never leak the container-side path into the host-config column

@@ -43,6 +43,20 @@ test_that("the report names each task whose last attempt failed, with its exit c
   expect_match(f$tasks$cause[f$tasks$item == "S4"], "Missing output")
 })
 
+test_that("a version mismatch is the report's lead", {
+  d <- withr::local_tempdir()
+  work <- file.path(d, "work")
+  dir.create(file.path(work, "e8", "41c41e"), recursive = TRUE)
+  writeLines(c("SPAdes started", "",
+    "Version mismatch: this run was started by RiboPilot 9.9.9, but ..."),
+    file.path(work, "e8", "41c41e", ".command.err"))
+  log <- file.path(d, "run.nextflow.log")
+  writeLines(nf_log_lines(work), log)
+
+  rep <- RiboPilot:::nf_run_report(d, log, 0L, "pipeline", 0)
+  expect_match(rep$lead, "^Version mismatch:")
+})
+
 test_that("the run error is the abort cause, or else the first ERROR line", {
   d <- withr::local_tempdir()
   a <- file.path(d, "a.log")

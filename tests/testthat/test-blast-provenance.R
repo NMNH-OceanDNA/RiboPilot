@@ -69,3 +69,34 @@ test_that("rt_blast_source_badge labels all three sources distinctly", {
   expect_true(grepl("v === 'seeds'", js, fixed = TRUE))
   expect_true(grepl(">seed file<", js, fixed = TRUE))
 })
+
+test_that("the GenBank evidence names the database that answered", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "INSERT INTO blast_screen
+    (ID, path, scaffold, accession, species, pident, qcovs) VALUES
+    ('S1',2,2,'MW829490.1','Danio rerio',99,98)")
+  DBI::dbExecute(con, "INSERT INTO blast_screen
+    (ID, path, scaffold, accession, species, pident, qcovs) VALUES
+    ('S1',1,1,'MW829490.1','Danio rerio',99,98)")
+  DBI::dbExecute(con, "INSERT INTO blast_searched
+    (ID, path, scaffold, query_md5, n_hits, source, db, time_stamp) VALUES
+    ('S1',2,2,'x',3,'local','ribopilot_rrna 2026.08.18',1790000000)")
+  DBI::dbDisconnect(con)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    sel_id("S1")
+    session$flushReact()
+    session$setInputs(scaf_examine = "S1|2|2")
+    session$flushReact()
+    expect_match(output$unit_screen$html, "local reference panel ribopilot_rrna 2026.08.18",
+      fixed = TRUE)
+
+    session$setInputs(scaf_examine = "S1|1|1")
+    session$flushReact()
+    expect_match(output$unit_screen$html, "NCBI core_nt (remote)", fixed = TRUE)
+  })
+})

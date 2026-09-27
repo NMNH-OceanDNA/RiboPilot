@@ -109,6 +109,20 @@ no_screen_note <- function(failed, blast_on, running) {
   }
 }
 
+#' Which database answered a scaffold's BLAST search, and when
+#' @param r One row of [unit_evidence()].
+#' @noRd
+searched_in <- function(r) {
+  at <- r$searched_at %||% NA
+  when <- if (is.na(at)) "" else format(as.POSIXct(at, origin = "1970-01-01"), ", searched %Y-%m-%d")
+  db <- r$searched_db %|NA|% ""
+  if (identical(r$searched_source, "local")) {
+    paste0("the local reference panel ", if (nzchar(db)) db else "(release not recorded)", when)
+  } else {
+    paste0("NCBI core_nt (remote)", when)
+  }
+}
+
 #' Prev / picker / next sample navigation for the detail modals
 #'
 #' The order is whatever the main table shows when the modal opens: sort,

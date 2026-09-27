@@ -325,7 +325,7 @@ test_that("record_blastdb_provenance stores the manifest version beside the pane
   writeLines('{"db_name":"ribopilot_rrna","db_version":"2026.08.1"}',
     file.path(d, "manifest.json"))
   file.create(file.path(d, "ribopilot_rrna.nin"))
-  expect_equal(record_blastdb_provenance(con, file.path(d, "ribopilot_rrna")), "2026.08.1")
+  expect_equal(record_blastdb_provenance(con, file.path(d, "ribopilot_rrna")), "ribopilot_rrna 2026.08.1")
   expect_equal(blastdb_provenance(con), "ribopilot_rrna 2026.08.1")
 })
 
@@ -345,7 +345,7 @@ test_that("provenance can be recorded from a discovered panel", {
   for (e in c("nin", "nsq", "nhr", "ndb")) writeLines("x", file.path(d, paste0("ribopilot_rrna.", e)))
   writeLines('{"db_name":"ribopilot_rrna","db_version":"2026.08.1"}', file.path(d, "manifest.json"))
   p <- discover_panel(r)
-  expect_equal(record_blastdb_provenance(con, p), "2026.08.1")
+  expect_equal(record_blastdb_provenance(con, p), "ribopilot_rrna 2026.08.1")
   expect_equal(blastdb_provenance(con), "ribopilot_rrna 2026.08.1")
 })
 

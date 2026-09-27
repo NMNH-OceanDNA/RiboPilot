@@ -1,16 +1,12 @@
 # Shared bootstrap sourced by the WF1/WF2 R-script processes.
 #
-# RIBOPILOT_SRC WINS over an installed package. nf_command() always passes
-# --ribopilot_src for the running package, and preferring the installed copy
-# meant a stale install silently shadowed it: the development version is
-# 0.0.0.9000 and so is every older install, so nothing detects the mismatch and
-# the pipeline runs old code with new data. That surfaces as an argument-
-# signature error at best and wrong results at worst.
+# RIBOPILOT_SRC wins over an installed package. nf_command() passes
+# --ribopilot_src only from a source checkout, so a stale install cannot shadow
+# the code being developed.
 #
-# The source directory is often invisible from inside a container, which is not
-# an error: the image ships an installed RiboPilot and that is what should run.
-# It IS worth saying out loud, because "my edit had no effect" is otherwise
-# indistinguishable from a bug in the edit.
+# Otherwise the installed RiboPilot runs (in a container, the image's). The
+# scripts in this folder come from the RiboPilot that started the run, and the
+# two must be the same version and build.
 
 # Positional Rscript arguments: a missing one is NA, NA flows into a query that
 # matches nothing, and the script still exits 0, so Nextflow reads a no-op as
@@ -32,6 +28,20 @@ rp_args <- function(a, n, usage) {
 rp_is_source_dir <- function(d) {
   nzchar(d) && dir.exists(d) && file.exists(file.path(d, "DESCRIPTION")) &&
     length(list.files(file.path(d, "R"), pattern = "\\.[Rr]$")) > 0
+}
+
+# NULL when the scripts in `bin` and the RiboPilot in `img` are the same build of
+# version `want`, else a message saying what differs
+rp_mismatch <- function(bin, img, want, have) {
+  f <- list.files(bin, pattern = "\\.(R|sh)$")
+  same <- identical(f, list.files(img, pattern = "\\.(R|sh)$")) &&
+    identical(unname(tools::md5sum(file.path(bin, f))), unname(tools::md5sum(file.path(img, f))))
+  if (!nzchar(want)) want <- have
+  if (want == have && same) return(NULL)
+  paste0("Version mismatch: this run was started by RiboPilot ", want,
+    ", but the container image has RiboPilot ", have, if (want == have) " built from different code",
+    ". Set container in the project's .config to the image made from RiboPilot ", want,
+    " (macguigand/ribopilot:", want, ", or your own build of the same code) and run again.")
 }
 
 rp_src <- Sys.getenv("RIBOPILOT_SRC")
@@ -57,4 +67,13 @@ if (length(rp_cand) == 0 && nzchar(rp_src)) {
     else " (not a package source directory)",
     "; using the installed RiboPilot instead. Uncommitted package edits are NOT",
     " in this run -- rebuild the image, or run without a container.")
+}
+
+if (length(rp_cand) == 0 && exists("rp_file")) {
+  rp_why <- rp_mismatch(dirname(rp_file), system.file("nextflow", "bin", package = "RiboPilot"),
+    Sys.getenv("RIBOPILOT_VERSION"), as.character(utils::packageVersion("RiboPilot")))
+  if (!is.null(rp_why)) {
+    message(rp_why)
+    quit(save = "no", status = 1)
+  }
 }

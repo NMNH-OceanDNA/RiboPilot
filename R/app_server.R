@@ -1539,7 +1539,8 @@ app_server <- function(input, output, session) {
     tagList(
       tags$b(lbl),
       div(style = "margin-top:4px;",
-        tags$span(style = "color:#555;", "Best match anywhere in core_nt, NOT restricted to nuclear rDNA:")),
+        tags$span(style = "color:#555;",
+          paste0("Best match in ", searched_in(r), ", NOT restricted to nuclear rDNA:"))),
       div(class = "code-block", style = "white-space:normal; margin-top:3px;",
         HTML(sprintf("<b>%s</b> &nbsp; %s &nbsp; %s%% id &nbsp; %s%% cov<br><span style='color:#666;'>%s</span>",
           r$screen_species %|NA|% "unknown",
