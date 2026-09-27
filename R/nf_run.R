@@ -339,6 +339,8 @@ nf_run_report <- function(project, log, status, kind, since, how = "done") {
   } else {
     list(type = "message", title = "Run finished", lead = "Run finished with no failures.")
   }
+  mm <- grep("^Version mismatch:", f$tasks$stderr, value = TRUE)
+  if (how == "done" && length(mm)) out$lead <- mm[1]
   if (how == "done" && !failed && n_t + n_s == 0) return(c(out, text = ""))
   cnt <- function(k) sum(f$stats[k], na.rm = TRUE)
   tasks <- if (n_t == 0) character(0) else c("",

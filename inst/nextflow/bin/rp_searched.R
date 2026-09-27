@@ -9,17 +9,19 @@ local({
   con <- open_project_db(a[1])
   on.exit(DBI::dbDisconnect(con))
   src <- if (length(a) >= 7 && nzchar(a[7])) a[7] else "remote"
+  db <- "core_nt"
+  if (src == "local") {
+    db <- tryCatch(RiboPilot:::record_blastdb_provenance(con, if (length(a) >= 8) a[8] else ""),
+      error = function(e) {
+        message("could not record the reference panel release: ", conditionMessage(e))
+        ""
+      })
+  }
   mark_unit_searched(con, a[2], as.integer(a[3]), as.integer(a[4]), a[5], as.integer(a[6]),
-    source = src)
+    source = src, db = db)
   # the blast_searched row now exists, so re-derive from it: on a unit's first
   # local search, parse_blast_candidates ran before this row existed and
   # defaulted the label to core_nt.
   derive_blast_products(con, a[2], as.integer(a[3]), as.integer(a[4]))
-  # panel is the prefix DBARG actually resolved to for this unit's local
-  # search (blast.nf passes "" when the unit did not search locally); a panel
-  # with no manifest beside it records nothing, defensively, not an error.
-  if (length(a) >= 8 && nzchar(a[8])) {
-    tryCatch(record_blastdb_provenance(con, a[8]), error = function(e) NULL)
-  }
 })
 cat("searched:", a[2], a[3], a[4], "\n")

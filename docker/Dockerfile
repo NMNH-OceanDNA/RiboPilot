@@ -14,7 +14,6 @@ ARG DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && \
     apt-get install -y \
-        jq \
         parallel \
         default-jre \
         build-essential \
@@ -25,29 +24,30 @@ RUN conda config --set channel_priority strict && \
     conda config --add channels bioconda && \
     conda config --add channels conda-forge
 
-# --- Bioinformatics tool chain (mirrors environment.yml; nextflow itself runs on
-#     the host and is not needed inside the image). sqlite provides the sqlite3
-#     CLI the shell/R-script processes call directly. blast>=2.12 has TLS for the
-#     HTTPS-only NCBI remote BLAST service.
+# --- Bioinformatics tool chain, pinned; environment.yml carries the same pins.
+#     nextflow runs on the host and is not needed inside the image. sqlite
+#     provides the sqlite3 CLI the shell/R-script processes call directly.
 RUN mamba install -y \
-        'sqlite' \
+        'python=3.12' \
+        'sqlite=3.53.4' \
+        'jq=1.8.2' \
         'fastp=0.23.4' \
-        'fastqc' \
+        'fastqc=0.12.1' \
         'getorganelle=1.7.7.1' \
         'spades=4.1.0' \
-        'blast>=2.12' \
+        'blast=2.17.0' \
         'bowtie2=2.5.4' \
         'minimap2=2.28' \
         'samtools=1.21' \
-        'seqtk' \
-        'seqkit' \
-        'pybarrnap' \
-        'barrnap' \
-        'itsx' \
-        'hmmer' \
-        'entrez-direct' \
-        'biopython' \
-        'ncbi-datasets-cli' && \
+        'seqtk=1.5' \
+        'seqkit=2.13.0' \
+        'pybarrnap=0.5.2' \
+        'barrnap=1.10.6' \
+        'itsx=1.1.3' \
+        'hmmer=3.4' \
+        'entrez-direct=26.0' \
+        'biopython=1.88' \
+        'ncbi-datasets-cli=18.36.0' && \
     mamba clean -a -y
 
 # --- ribovore is not on bioconda (checked: no ribovore or ribotyper package),
@@ -56,8 +56,10 @@ RUN mamba install -y \
 #     the full "linux" install pulls those extra tools too but they sit unused.
 RUN mkdir -p /opt/ribovore && cd /opt/ribovore && \
     wget -q https://raw.githubusercontent.com/ncbi/ribovore/ribovore-1.0.5/install.sh -O install.sh && \
+    echo "a23e58b4a30306dbc4d5e8bba0127c20b016fb1bd0d7921221ffbb25feb97bde  install.sh" > install.sh.sha256 && \
+    sha256sum -c install.sh.sha256 && \
     sh install.sh linux && \
-    rm install.sh
+    rm install.sh install.sh.sha256
 ENV RIBOINSTALLDIR=/opt/ribovore
 ENV RIBOSCRIPTSDIR=$RIBOINSTALLDIR/ribovore
 ENV RIBOINFERNALDIR=$RIBOINSTALLDIR/infernal/binaries
@@ -74,35 +76,30 @@ ENV PATH=$RIBOSCRIPTSDIR:$PATH
 #     itself installs with dependencies = FALSE below). Biostrings is the one
 #     Bioconductor dep. Kept in its own layer so tool-chain edits don't rebuild R.
 RUN mamba install -y \
-        'r-base=4.4.*' \
-        'r-remotes' \
-        'bioconductor-biostrings' \
-        'bioconductor-pwalign' \
-        'bioconductor-decipher' \
-        'r-cli' \
-        'r-config' \
-        'r-crayon' \
-        'r-dbi' \
-        'r-dbplyr' \
-        'r-dplyr' \
-        'r-gggenes' \
-        'r-ggplot2' \
-        'r-glue' \
-        'r-golem' \
-        'r-jsonlite' \
-        'r-later' \
-        'r-msar' \
-        'r-processx' \
-        'r-purrr' \
-        'r-reactable' \
-        'r-readr' \
-        'r-rsqlite' \
-        'r-shiny' \
-        'r-shinyjs' \
-        'r-shinywidgets' \
-        'r-stringr' \
-        'r-htmlwidgets' \
-        'r-svglite' && \
+        'r-base=4.4.3' \
+        'r-remotes=2.5.0' \
+        'bioconductor-biostrings=2.74.0' \
+        'bioconductor-pwalign=1.2.0' \
+        'bioconductor-decipher=3.2.0' \
+        'r-cli=3.6.6' \
+        'r-dbi=1.3.0' \
+        'r-dbplyr=2.6.0' \
+        'r-dplyr=1.2.1' \
+        'r-ggplot2=4.0.3' \
+        'r-glue=1.8.1' \
+        'r-htmltools=0.5.9' \
+        'r-htmlwidgets=1.6.4' \
+        'r-jsonlite=2.0.0' \
+        'r-later=1.4.8' \
+        'r-msar=0.6.0' \
+        'r-processx=3.9.0' \
+        'r-ps=1.9.3' \
+        'r-reactable=0.4.5' \
+        'r-readr=2.2.0' \
+        'r-rsqlite=3.53.3' \
+        'r-shiny=1.14.0' \
+        'r-shinyjs=2.1.1' \
+        'r-shinywidgets=0.9.1' && \
     mamba clean -a -y
 
 # The panel and its decoys are versioned quarterly while the image versions on

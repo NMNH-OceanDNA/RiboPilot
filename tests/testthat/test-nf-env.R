@@ -28,6 +28,24 @@ test_that("the pipeline is pointed at a package source root, not inst/", {
   # what rp_env.R checks before it will load from source at all
   expect_true(file.exists(file.path(passed, "DESCRIPTION")))
   expect_gt(length(list.files(file.path(passed, "R"), pattern = "\\.[Rr]$")), 0)
+  expect_equal(args[which(args == "--ribopilot_version") + 1],
+    as.character(utils::packageVersion("RiboPilot")))
+})
+
+test_that("an installed package passes no source folder", {
+  skip_if_not_installed("withr")
+  tmp <- withr::local_tempdir()
+  dir.create(file.path(tmp, "lib", "RiboPilot"), recursive = TRUE)
+  file.create(file.path(tmp, "lib", "RiboPilot", "DESCRIPTION"))
+  testthat::local_mocked_bindings(app_sys = function(...) file.path(tmp, "lib", "RiboPilot"),
+    .package = "RiboPilot")
+  expect_equal(RiboPilot:::ribopilot_src_default(), "")
+
+  dir <- withr::local_tempdir()
+  file.create(file.path(dir, ".sqlite"))
+  writeLines(c("params {", "  rawDir = '/data/raw'", "}"), file.path(dir, ".config"))
+  args <- RiboPilot:::nf_command(dir)
+  expect_false("--ribopilot_src" %in% args)
 })
 
 test_that("an installed library directory is not mistaken for a source checkout", {
@@ -84,4 +102,38 @@ test_that("rp_env.R says so when it falls back to the installed package", {
     env = "RIBOPILOT_SRC=/nonexistent/ribopilot", stdout = TRUE, stderr = TRUE))
   expect_true(any(grepl("not visible from this process", out)))
   expect_true(any(grepl("installed RiboPilot", out)))
+})
+
+test_that("rp_env.R names a version or build mismatch", {
+  skip_on_cran()
+  skip_if_not_installed("withr")
+  env_r <- system.file("nextflow", "bin", "rp_env.R", package = "RiboPilot")
+  skip_if(!nzchar(env_r), "rp_env.R not found")
+
+  env <- new.env()
+  for (e in as.list(parse(env_r))) {
+    eval(e, env)
+    if (exists("rp_mismatch", envir = env, inherits = FALSE)) break
+  }
+
+  a <- withr::local_tempdir()
+  b <- withr::local_tempdir()
+  writeLines("x1", file.path(a, "rp_x.R"))
+  writeLines("f1", file.path(a, "fmt.sh"))
+  file.copy(list.files(a, full.names = TRUE), b)
+
+  expect_null(env$rp_mismatch(a, b, "1.0.0", "1.0.0"))
+  expect_null(env$rp_mismatch(a, b, "", "1.0.0"))
+
+  m <- env$rp_mismatch(a, b, "1.1.0", "1.0.0")
+  expect_match(m, "^Version mismatch:")
+  expect_match(m, "started by RiboPilot 1.1.0", fixed = TRUE)
+  expect_match(m, "has RiboPilot 1.0.0", fixed = TRUE)
+
+  writeLines("x2", file.path(b, "rp_x.R"))
+  expect_match(env$rp_mismatch(a, b, "1.0.0", "1.0.0"), "built from different code", fixed = TRUE)
+
+  writeLines("x1", file.path(b, "rp_x.R"))
+  file.create(file.path(b, "rp_new.R"))
+  expect_false(is.null(env$rp_mismatch(a, b, "1.0.0", "1.0.0")))
 })

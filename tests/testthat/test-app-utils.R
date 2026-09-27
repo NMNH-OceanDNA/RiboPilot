@@ -162,6 +162,7 @@ test_that("unit_evidence surfaces the screen reason", {
   DBI::dbExecute(con, "CREATE TABLE annotate(ID TEXT, path INT, scaffold INT, itsx_warnings TEXT)")
   DBI::dbExecute(con, RiboPilot:::SCREEN_DDL)
   DBI::dbExecute(con, RiboPilot:::CHIMERA_DDL)
+  DBI::dbExecute(con, RiboPilot:::BLAST_SEARCHED_DDL)
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S1','Danio rerio',NULL)")
   DBI::dbExecute(con, "INSERT INTO assemblies (ID,path,scaffold,length) VALUES('S1',1,1,500)")
   DBI::dbExecute(con,

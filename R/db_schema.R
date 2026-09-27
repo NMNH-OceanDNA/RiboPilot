@@ -45,6 +45,9 @@ BLAST_HITS_DDL <- "CREATE TABLE IF NOT EXISTS blast_hits (
 #' row, which is what stops it being re-searched on every retry and every re-run.
 #' `remote_fallback_failed` marks a unit whose escalation to NCBI failed, so the
 #' next run tries it again.
+#' `db` is the database that answered: `core_nt` for a remote search, the local
+#' panel's name and release (from its manifest) for a local one, "" when a local
+#' panel has no manifest.
 #' @noRd
 BLAST_SEARCHED_DDL <- "CREATE TABLE IF NOT EXISTS blast_searched (
   ID TEXT NOT NULL,
@@ -53,6 +56,7 @@ BLAST_SEARCHED_DDL <- "CREATE TABLE IF NOT EXISTS blast_searched (
   query_md5 TEXT NOT NULL,
   n_hits INTEGER,
   source TEXT,
+  db TEXT,
   time_stamp INTEGER,
   PRIMARY KEY (ID, path, scaffold)
 );"

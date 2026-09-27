@@ -51,7 +51,7 @@ nf_command <- function(path, resume = TRUE,
     "--projectDir", path,
     if (nzchar(raw_dir)) c("--rawDir", raw_dir),
     "--minDepth", min_depth,
-    "--ribopilot_src", src,
+    nf_pkg_args(src),
     "--taxdump_dir", taxdump,
     if (nzchar(ref_dir)) c("--ref_dir", ref_dir),
     if (nzchar(blastdb)) c("--blastdb", blastdb),
@@ -141,16 +141,19 @@ nf_record_blastdb_launch <- function(path) {
 
 #' Where the pipeline's R processes should load RiboPilot from
 #'
-#' `app_sys()` returns `<root>/inst` in a source checkout, which has no
-#' `DESCRIPTION`, so passing it made `rp_env.R` skip its source branch and fall
-#' back to the container's installed copy every time -- exactly the stale-install
-#' shadowing that branch exists to prevent. Pass the package root instead when
-#' one is there.
+#' The package root in a source checkout; "" for an installed package, whose
+#' tasks load the installed copy (in a container, the image's).
 #' @noRd
 ribopilot_src_default <- function() {
-  s <- app_sys()
-  root <- dirname(s)
-  if (file.exists(file.path(root, "DESCRIPTION")) && dir.exists(file.path(root, "R"))) root else s
+  root <- dirname(app_sys())
+  if (file.exists(file.path(root, "DESCRIPTION")) && dir.exists(file.path(root, "R"))) root else ""
+}
+
+#' Arguments that tell the pipeline's R steps which RiboPilot started the run
+#' @noRd
+nf_pkg_args <- function(src = ribopilot_src_default()) {
+  c(if (nzchar(src)) c("--ribopilot_src", src),
+    "--ribopilot_version", as.character(utils::packageVersion("RiboPilot")))
 }
 
 #' Count the work one run would do (for the Update modal header)

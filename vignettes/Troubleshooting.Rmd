@@ -150,6 +150,7 @@ gives a message that a run is already going (see below).
 | "Nextflow ... is below the minimum supported version (24.10.0)." | Your Nextflow is too old. | Install Nextflow 24.10 through 25.10; see [Installation](Installation.html). |
 | "Nextflow ... is newer than RiboPilot has verified ... Runs will be pinned to Nextflow 25.10.6 via NXF_VER." | RiboPilot runs a supported version instead, downloading it once. | Nothing, or install a supported version. |
 | "Container image ... is not published on Docker Hub, so container executors will fail at image pull." | The project names an image Docker cannot download. | Check the `container` you passed to `new_project()`, and your network. |
+| "Version mismatch: this run was started by RiboPilot ..., but the container image has RiboPilot ..." | The project's container image holds a different RiboPilot from the one running the app, and the two would write the project database differently. | Set `container` in the project's `.config` to the image for your RiboPilot version, then press **Update** again. |
 | A BLAST error with "GNUTLS" or "secure session" | Conda setups only: BLAST is too old to reach NCBI. | See [Installing tools without a container](Without-Containers.html). |
 
 # Asking for help

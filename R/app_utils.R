@@ -201,6 +201,7 @@ unit_evidence <- function(id) {
        b.pident AS screen_pident, b.qcovs AS screen_qcovs, b.bitscore AS screen_bitscore,
        b.lineage AS screen_lineage, b.lineage_taxids AS screen_taxids,
        b.rank_distance, b.is_nuclear_rrna,
+       bs.source AS searched_source, bs.db AS searched_db, bs.time_stamp AS searched_at,
        sc.screen_verdict, sc.screen_class, sc.screen_confidence, sc.screen_reason, sc.lca_taxon,
        sc.variant_class, sc.variant_group, sc.variant_identity,
        ROUND(ps.score, 3) AS path_score,
@@ -214,6 +215,7 @@ unit_evidence <- function(id) {
      FROM assemblies a
      LEFT JOIN coverage c    ON c.ID = a.ID AND c.path = a.path AND c.scaffold = a.scaffold
      LEFT JOIN blast_screen b ON b.ID = a.ID AND b.path = a.path AND b.scaffold = a.scaffold
+     LEFT JOIN blast_searched bs ON bs.ID = a.ID AND bs.path = a.path AND bs.scaffold = a.scaffold
      LEFT JOIN screen sc      ON sc.ID = a.ID AND sc.path = a.path AND sc.scaffold = a.scaffold
      -- scored per path, shown per scaffold: the whole path is the thing scored
      LEFT JOIN path_scores ps ON ps.ID = a.ID AND ps.path = a.path

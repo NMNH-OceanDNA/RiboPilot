@@ -166,7 +166,7 @@ nf_reference_command <- function(project, entry, manifest, ref_dir, out_dir,
     "--clades", path.expand(manifest),
     "--refDir", path.expand(ref_dir),
     "--outDir", path.expand(out_dir),
-    "--ribopilot_src", ribopilot_src_default(),
+    nf_pkg_args(),
     if (isTRUE(refseq)) c("--refseq", "true"),
     if (nzchar(api_key %||% "")) c("--ncbi_api_key", api_key))
 }
