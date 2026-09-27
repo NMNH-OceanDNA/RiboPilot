@@ -38,19 +38,30 @@ rp_mismatch <- function(bin, img, want, have) {
     identical(unname(tools::md5sum(file.path(bin, f))), unname(tools::md5sum(file.path(img, f))))
   if (!nzchar(want)) want <- have
   if (want == have && same) return(NULL)
-  paste0("Version mismatch: this run was started by RiboPilot ", want,
-    ", but the container image has RiboPilot ", have, if (want == have) " built from different code",
-    ". Set container in the project's .config to the image made from RiboPilot ", want,
-    " (macguigand/ribopilot:", want, ", or your own build of the same code) and run again.")
+  ctr <- file.exists("/.dockerenv") || nzchar(Sys.getenv("SINGULARITY_NAME")) ||
+    nzchar(Sys.getenv("APPTAINER_NAME"))
+  fix <- if (!ctr) {
+    paste0(" Install the same RiboPilot in the R library this task uses (",
+      dirname(dirname(dirname(img))), ").")
+  } else if (want != have) {
+    paste0(" Set container in the project's .config to the image made from RiboPilot ", want,
+      " (macguigand/ribopilot:", want, ", or your own build of the same code).")
+  } else {
+    paste0(" Build an image from the RiboPilot that starts the run (docker/deploy-local.sh in its",
+      " source folder) and set container in the project's .config to it.")
+  }
+  paste0("Version mismatch: this run was started by RiboPilot ", want, ", but this task loaded RiboPilot ",
+    have, if (want == have) " built from different code", ".", fix, " Then run again.")
 }
 
 rp_src <- Sys.getenv("RIBOPILOT_SRC")
 # accept either the package root or its inst/ (what system.file() returns)
 rp_cand <- Filter(rp_is_source_dir, c(rp_src, dirname(rp_src)))
 rp_have_pkgload <- requireNamespace("pkgload", quietly = TRUE)
+rp_loaded_src <- length(rp_cand) > 0 && rp_have_pkgload
 
 suppressMessages({
-  if (length(rp_cand) > 0 && rp_have_pkgload) {
+  if (rp_loaded_src) {
     pkgload::load_all(rp_cand[1], quiet = TRUE, attach_testthat = FALSE)
   } else if (requireNamespace("RiboPilot", quietly = TRUE)) {
     library(RiboPilot)
@@ -60,16 +71,16 @@ suppressMessages({
 })
 
 # Outside the suppressMessages() above, or the whole point of saying it is lost.
-if (length(rp_cand) == 0 && nzchar(rp_src)) {
+if (!rp_loaded_src && nzchar(rp_src)) {
   message("RIBOPILOT_SRC='", rp_src, "' is not usable here",
     if (!dir.exists(rp_src)) " (not visible from this process)"
-    else if (!rp_have_pkgload) " (no pkgload)"
-    else " (not a package source directory)",
+    else if (length(rp_cand) == 0) " (not a package source directory)"
+    else " (no pkgload)",
     "; using the installed RiboPilot instead. Uncommitted package edits are NOT",
     " in this run -- rebuild the image, or run without a container.")
 }
 
-if (length(rp_cand) == 0 && exists("rp_file")) {
+if (!rp_loaded_src && exists("rp_file")) {
   rp_why <- rp_mismatch(dirname(rp_file), system.file("nextflow", "bin", package = "RiboPilot"),
     Sys.getenv("RIBOPILOT_VERSION"), as.character(utils::packageVersion("RiboPilot")))
   if (!is.null(rp_why)) {
