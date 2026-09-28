@@ -43,6 +43,24 @@ test_that("only unlocked units with all five features are eligible, with reasons
     c("not trimmed", "not trimmed", "annotation locked", "not trimmed"))
 })
 
+test_that("Assemble-tab batch skips assembly-locked samples; a run skips queued units", {
+  skip_if_not_installed("withr")
+  dir <- mk_batch_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "UPDATE assemble SET assemble_lock = 1, assemble_switch = 2")
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_switch = 2")
+  expect_equal(RiboPilot:::batch_trim_plan(con, units4, asm_lock = TRUE)$reason,
+    c("assembly locked", "assembly locked", "annotation locked", "assembly locked"))
+  expect_equal(RiboPilot:::batch_trim_plan(con, units4)$reason, c(NA, "missing ITS2, 28S", "annotation locked", NA))
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_switch = 1 WHERE path = 1 AND scaffold = 1")
+  expect_equal(RiboPilot:::batch_trim_plan(con, units4, running = TRUE)$reason,
+    c("in the active run", "missing ITS2, 28S", "annotation locked", NA))
+  expect_true(is.na(RiboPilot:::batch_trim_plan(con, units4)$reason[1]))
+  DBI::dbExecute(con, "UPDATE assemble SET assemble_switch = 4")
+  expect_equal(RiboPilot:::batch_trim_plan(con, units4, running = TRUE)$reason[4], "in the active run")
+})
+
 test_that("batch trim cuts to gene ends or a flank, sets no partial ends, and restores", {
   skip_if_not_installed("withr")
   dir <- mk_batch_project()
@@ -99,9 +117,14 @@ test_that("the Trim and Restore buttons on both tables act on eligible units onl
   toasts <- character(0)
   local_mocked_bindings(mp_toast = function(text, ...) toasts <<- c(toasts, text))
   lens <- function() RiboPilot:::app_query("SELECT length FROM assemblies ORDER BY path, scaffold")$length
+  set_asm_lock <- function(v) {
+    con <- DBI::dbConnect(RSQLite::SQLite(), ".sqlite"); on.exit(DBI::dbDisconnect(con))
+    DBI::dbExecute(con, "UPDATE assemble SET assemble_lock = ?", params = list(v))
+  }
 
   shiny::testServer(RiboPilot:::app_server, {
-    # Assemble: one ticked sample covers all four of its scaffolds
+    # Assemble: one ticked, unlocked sample covers all four of its scaffolds
+    set_asm_lock(0L)
     session$setInputs(mode = "Assemble")
     session$flushReact()
     session$setInputs(tbl__reactable__selected = 1L, asmb_trim_btn = 1)
@@ -120,6 +143,7 @@ test_that("the Trim and Restore buttons on both tables act on eligible units onl
     expect_equal(lens(), rep(600L, 4))
 
     # Annotation Review: only the ticked unit
+    set_asm_lock(1L)
     session$setInputs(mode = "Annotate")
     session$flushReact()
     d <- samples_data()

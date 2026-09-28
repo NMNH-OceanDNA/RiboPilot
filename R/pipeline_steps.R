@@ -759,15 +759,24 @@ trim_bounds <- function(a, b, n, flank = 0L) {
 #' @param u data.frame(ID, path, scaffold).
 #' @param flank bp kept past the gene ends (0 = gene ends).
 #' @param restore TRUE plans a Restore instead: only trimmed units qualify.
+#' @param asm_lock TRUE skips assembly-locked samples (the Assemble tab).
+#' @param running TRUE when a run holds the project: queued units are skipped.
 #' @return `u` with from, to and reason (NA where the unit qualifies).
 #' @noRd
-batch_trim_plan <- function(con, u, flank = 0L, restore = FALSE) {
+batch_trim_plan <- function(con, u, flank = 0L, restore = FALSE, asm_lock = FALSE, running = FALSE) {
   u$from <- rep(NA_integer_, nrow(u)); u$to <- u$from; u$reason <- rep(NA_character_, nrow(u))
   key <- "WHERE ID = ? AND path = ? AND scaffold = ?"
   for (i in seq_len(nrow(u))) {
     q <- function(sql) DBI::dbGetQuery(con, paste(sql, key), params = list(u$ID[i], u$path[i], u$scaffold[i]))
     if (isTRUE(q("SELECT annotate_lock FROM annotate")$annotate_lock[1] == 1)) {
       u$reason[i] <- "annotation locked"; next
+    }
+    st <- DBI::dbGetQuery(con, "SELECT assemble_lock, assemble_switch FROM assemble WHERE ID = ?",
+      params = list(u$ID[i]))
+    if (asm_lock && isTRUE(st$assemble_lock[1] == 1)) { u$reason[i] <- "assembly locked"; next }
+    if (running && (isTRUE(st$assemble_switch[1] %in% c(1, 4)) ||
+        isTRUE(q("SELECT annotate_switch FROM annotate")$annotate_switch[1] %in% c(1, 4)))) {
+      u$reason[i] <- "in the active run"; next
     }
     if (restore) {
       if (!any(unit_trimmed(con, u$ID[i], u$path[i], u$scaffold[i]))) u$reason[i] <- "not trimmed"

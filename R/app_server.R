@@ -852,7 +852,7 @@ app_server <- function(input, output, session) {
          WHERE COALESCE(asm.ignore, 0) = 0 AND an.ID IN (%s) ORDER BY an.ID, an.path, an.scaffold",
         paste(rep("?", length(ids)), collapse = ",")), params = as.list(ids))
     }
-    batch_trim(list(u = u, restore = restore))
+    batch_trim(list(u = u, restore = restore, asm_lock = !identical(input$mode, "Annotate")))
     showModal(batch_trim_modal(restore))
   }
   observeEvent(list(input$asmb_trim_btn, input$annot_trim_btn), ignoreInit = TRUE, open_batch_trim(FALSE))
@@ -867,7 +867,8 @@ app_server <- function(input, output, session) {
   batch_trim_plan_now <- function() {
     b <- batch_trim(); req(b)
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    batch_trim_plan(con, b$u, batch_flank(), b$restore)
+    batch_trim_plan(con, b$u, batch_flank(), b$restore, b$asm_lock,
+      running = !is.null(run_lock_holder(app_project())))
   }
   observe(shinyjs::toggleState("batch_trim_go", condition = !batch_flank_bad()))
   output$batch_trim_summary <- renderUI({

@@ -394,7 +394,7 @@ MP_TRIM_TIP <- function(what = c("units", "samples")) {
   scope <- if (match.arg(what) == "units") "the selected units" else "every kept scaffold of the selected samples"
   c(trim = paste0("Trim ", scope, " to their gene ends, or gene ends plus a flank. ",
       "Only units with all five features (", paste(BATCH_TRIM_FEATURES, collapse = ", "),
-      ") are trimmed; locked units are skipped."),
+      ") are trimmed; locked units and units queued in a running run are skipped."),
     restore = paste0("Undo the trim on ", scope, ". Untrimmed and locked units are skipped."))
 }
 
