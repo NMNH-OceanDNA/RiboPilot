@@ -6,8 +6,9 @@ read this page, not the number, to see what changed.
 ## Before you upgrade
 
 * Recreate your projects. The project database changed, and RiboPilot does not
-  yet convert an existing project. See "Upgrading RiboPilot" in the Installation
-  guide.
+  yet convert an existing project. See
+  ["Upgrading RiboPilot"](https://dmacguigan.github.io/RiboPilot/articles/Installation.html#upgrading-ribopilot)
+  in the Installation guide.
 * Use a container image built from this code. The published 0.0.0.9018 image
   holds older code, and a run with it can fail in its R steps.
 

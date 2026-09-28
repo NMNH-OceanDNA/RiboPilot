@@ -7,7 +7,9 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
-After it annotates a unit, RiboPilot runs a set of automatic quality checks and
+After it annotates a unit (one kept scaffold, see
+[Get started](RiboPilot.html#samples-scaffolds-and-records)), RiboPilot runs a
+set of automatic quality checks and
 raises a **curation warning** for anything that looks unusual. Warnings guide
 your attention in the Annotation Review step. They do not change your data, and a
 warning does not always mean something is wrong: it means "please check this".
@@ -31,7 +33,7 @@ You see them in three places:
 | `missing_ITS1`, `missing_ITS2` | unit | A spacer was not found between its two genes. | Usually follows a missing gene. If both genes are there, check the boundaries in **Edit active feature boundaries**. |
 | `out_of_order` | unit | The features are not in the order 18S, ITS1, 5.8S, ITS2, 28S. | Likely a misassembly; the export marks it `misassembly`. Check the feature map and read coverage before you submit it. |
 | `overlap` | unit and feature | A feature overlaps the one before it. | Move the boundary in **Edit active feature boundaries**. The export marks it `misassembly`. |
-| `gap` | unit and feature | More than 5 bases between two neighboring features belong to neither. Gaps of 5 bases or fewer are closed when the unit is annotated. | Check the boundaries, and extend the gene or spacer if the gap is part of it. |
+| `gap` | unit and feature | Bases between two neighboring features that belong to neither. Gaps of 5 bases or fewer are closed when the unit is annotated, so a new unit only gets `gap` for a larger one; after you edit a boundary, any gap is flagged. | Check the boundaries, and extend the gene or spacer if the gap is part of it. |
 | `wrong_strand` | unit and feature | A feature lies on the opposite strand from the rest. | Likely a misassembly or a wrong call. Check the feature model. |
 | `length` | feature | The feature is shorter or longer than the range for its group (tables below). | Common for the spacers, and often fine. Check that the boundaries look right. |
 | `truncated` | feature | Less than 90 percent of the gene's rRNA model was recovered. | Nothing: the export writes the gene as partial. |
@@ -82,16 +84,19 @@ container: about 600,000 animal nuclear rDNA records from GenBank, plus NCBI's
 16S, eukaryote small subunit, and eukaryote large subunit rRNA sets, so that a
 bacterial, fungal, or plant scaffold still finds its match. Only a scaffold that
 matches nothing there is sent on to NCBI's full nucleotide database (core_nt),
-over the internet. The search is not limited to rDNA records, so a scaffold that
-is really mitochondrial or bacterial is caught.
+over the internet. Neither search is filtered to nuclear rDNA titles, and a
+scaffold the bundled database cannot match goes on to core_nt, so a
+mitochondrial or bacterial scaffold is still caught (unless you choose
+"Bundled database only").
 
 To change this, open a sample's **BLAST Options** in the Assemble step and pick a
 **Search** choice: "Bundled database only" never goes to NCBI, and "NCBI only
 (core_nt)" skips the bundled database. The BLAST Options window also names the
 version of the bundled database.
 
-The first line of the **BLAST evidence** panel (click a sample's ID in the
-Assemble step) says which database gave a scaffold's best match. In Annotation
+The line under the scaffold name in the **BLAST evidence** panel (click a
+sample's ID in the Assemble step, "Best match in ...") says which database
+gave the scaffold's best match. In Annotation
 Review, the **Hit Source** column (in the **BLAST** column group) says which
 database named the unit's best rDNA reference: "bundled", "NCBI", or "seed file"
 (the assembly's own seed database, which is only a hint).
