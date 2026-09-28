@@ -45,6 +45,44 @@ test_that("truncated anchor is flagged from model coverage", {
   expect_true(grepl("truncated", fl))
 })
 
+test_that("a truncated feature is partial only at the end that meets no neighbour", {
+  f <- good_feats(); f$model_coverage[f$element == "18S"] <- 70
+  r <- RiboPilot:::curate_rrna_core(f, RiboPilot:::rrna_params())
+  x <- r$features[r$features$element == "18S", ]
+  expect_equal(c(x$partial_start, x$partial_stop), c(1L, 0L))  # 3' end meets ITS1
+  expect_true(all(r$features$partial_start[r$features$element != "18S"] == 0L))
+
+  # meets neighbours at both ends: cannot tell which is short, so both
+  f$model_coverage[f$element == "18S"] <- 100; f$model_coverage[f$element == "5.8S"] <- 50
+  r <- RiboPilot:::curate_rrna_core(f, RiboPilot:::rrna_params())
+  x <- r$features[r$features$element == "5.8S", ]
+  expect_equal(c(x$partial_start, x$partial_stop), c(1L, 1L))
+
+  # a gap wider than the snap distance does not count as meeting; strand flips ends
+  f <- good_feats()[good_feats()$element %in% c("18S", "ITS1"), ]
+  f$model_coverage[1] <- 70; f$start[2] <- 1807; f$strand <- "-"
+  x <- RiboPilot:::curate_rrna_core(f, RiboPilot:::rrna_params())$features[1, ]
+  expect_equal(c(x$partial_start, x$partial_stop), c(1L, 1L))
+  f$start[2] <- 1806
+  x <- RiboPilot:::curate_rrna_core(f, RiboPilot:::rrna_params())$features[1, ]
+  expect_equal(c(x$partial_start, x$partial_stop), c(0L, 1L))
+})
+
+test_that("curate_one fills partial ends once and keeps the curator's choice", {
+  con <- chimera_test_con(); on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "DELETE FROM annotations")
+  f <- good_feats()
+  f$model_coverage[f$element == "28S"] <- 60
+  DBI::dbAppendTable(con, "annotations", cbind(ID = "S1", path = 1L, scaffold = 1L, f))
+  RiboPilot::curate_one(con, "S1", 1L, 1L)
+  p <- function() DBI::dbGetQuery(con,
+    "SELECT partial_start s, partial_stop e FROM annotations WHERE element = '28S'")
+  expect_equal(unlist(p()), c(s = 0L, e = 1L))
+  DBI::dbExecute(con, "UPDATE annotations SET partial_stop = 0 WHERE element = '28S'")
+  RiboPilot::curate_one(con, "S1", 1L, 1L)
+  expect_equal(unlist(p()), c(s = 0L, e = 0L))
+})
+
 test_that("low_identity respects coverage and per-element floors", {
   f <- good_feats()
   # partial reference (low coverage): low pid must NOT flag

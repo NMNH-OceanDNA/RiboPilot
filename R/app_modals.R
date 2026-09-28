@@ -467,12 +467,14 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
           div(tags$label("3' end", class = "control-label"),
             div(style = "display:flex; gap:4px;", nt_nudge("nt_3_in", "-", "Trim 3' end"),
               nt_nudge("nt_3_out", "+", "Extend 3' end"))),
+          uiOutput("partial_ctrls"),
           div(style = "display:flex; gap:6px; align-items:flex-end;",
             actionButton("feat_save", "Save", icon = icon("floppy-disk"), class = "btn-sm btn-success"),
             actionButton("feat_reset", "Reset", icon = icon("rotate-left"), class = "btn-sm"))))
       ),
       tags$p(class = "mp-help-text", style = "margin-top:4px;",
-        "Check Edit to adjust boundaries; + extends outward, - trims inward. Save to keep, Reset to discard."),
+        paste("Check Edit to adjust boundaries; + extends outward, - trims inward.",
+          "Partial 5' and 3' mark an end that is not the gene's real end. Save to keep, Reset to discard.")),
       div(class = "code-block", style = "margin-top:6px; white-space:normal; word-break:break-all;",
         uiOutput("nudge_seq"))),
 

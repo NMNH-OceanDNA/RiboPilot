@@ -106,16 +106,19 @@ export group that holds such a sample. It is allowed otherwise.
 
 # Complete or partial
 
-A gene is written as partial (`<` or `>` in the feature table, and "partial
-sequence" in the definition line) when:
+A gene end is written as partial (`<` for the 5' end or `>` for the 3' end in
+the feature table, and "partial sequence" in the definition line) when:
 
 - it runs into the end of the scaffold;
-- the quality check found it truncated, meaning less than 90 percent of the
-  gene was recovered; or
-- you pressed **Mark Partial** on the unit, which marks its first and last genes.
+- the quality check found the gene truncated, meaning less than 90 percent of
+  it was recovered. The end that meets no neighbouring spacer or gene is marked;
+  if both ends meet one, both are marked; or
+- you set it with the **5'** or **3'** button under **Partial** in the unit
+  window (check **Edit**, pick the feature, then **Save**).
 
-A truncated gene is marked partial at both ends, even when one end meets a
-spacer.
+The quality check sets these marks once, after annotation. Your own choice is
+kept when the unit is curated again. **Mark Partial** on the unit only changes
+`{completeness}` to "partial sequence"; it does not mark any gene end.
 
 # Flanking sequence
 
@@ -172,7 +175,7 @@ unit of the group that is left out, and why.
 |---|---|
 | **Mark Reviewed** | Lock and the Export window no longer ask about the unit's contamination or chimera flags. The summary's `reviewed` column says yes. |
 | **Exclude from export** | The unit is left out of every export. |
-| **Mark Partial** | The unit's first and last genes are written as partial. |
+| **Mark Partial** | `{completeness}` reads "partial sequence". Gene ends are set per feature (see above). |
 
 # What is in the export folder
 

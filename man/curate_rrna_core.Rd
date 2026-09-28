@@ -47,7 +47,9 @@ The comparison prefers them and falls back to the names when absent.}
 }
 \value{
 list(features, flags, n_flags, notes) where \code{features} gains \code{status}
-("ok"/"flag") and \code{flags} (comma-separated per-feature codes), and the
+("ok"/"flag"), \code{flags} (comma-separated per-feature codes), and
+\code{partial_start}/\code{partial_stop} (0/1, 5'/3' end in the feature's
+orientation; set on the free ends of a truncated feature), and the
 sample-level \code{flags}/\code{notes} summarize missing anchors, ordering, etc.
 }
 \description{

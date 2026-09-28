@@ -727,6 +727,11 @@ app_server <- function(input, output, session) {
         " again unless ", if (one) "it is" else "they are", " marked Reviewed."),
       action_label = "Lock anyway", danger = TRUE)
   }
+  # Excluded units are never exported, so Lock does not ask about them.
+  lock_flagged <- function(u) {
+    f <- screen_flagged(u)
+    if (nrow(f)) f[!(f$problematic %in% "yes"), , drop = FALSE] else f
+  }
   lock_sql <- function(mm, to) sprintf("UPDATE %s SET %s_lock = %d WHERE ID = ?", mm$tbl, mm$pfx, to)
   next_step <- c(taxonomy = "Assemble", assemble = "Annotation Review", annotate = "Export")
   observeEvent(list(input$tax_lock_btn, input$asmb_lock_btn, input$annot_lock_btn), ignoreInit = TRUE, {
@@ -770,7 +775,7 @@ app_server <- function(input, output, session) {
          JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
          WHERE COALESCE(asm.ignore, 0) = 0 AND an.ID IN (%s)",
         paste(rep("?", length(ids)), collapse = ",")), params = as.list(ids))
-    f <- screen_flagged(units)
+    f <- lock_flagged(units)
     if (nrow(f)) return(confirm_flagged_lock(f, do_lock))
     do_lock()
   })
@@ -1849,8 +1854,27 @@ app_server <- function(input, output, session) {
     }
   })
 
+  # the active feature's 5'/3' partial flags
+  active_partial <- reactive({
+    edit_tick(); u <- sel_unit(); el <- active_feature(); req(u, el)
+    app_query("SELECT partial_start, partial_stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?",
+      params = c(uargs(), list(el)))
+  })
   output$feat_edit_active <- renderText({
-    el <- active_feature(); if (is.null(el)) "No active feature" else paste("Active feature:", el)
+    el <- active_feature(); if (is.null(el)) return("No active feature")
+    p <- active_partial()
+    ends <- c(if (isTRUE(p$partial_start[1] == 1)) "5'", if (isTRUE(p$partial_stop[1] == 1)) "3'")
+    paste0("Active feature: ", el, if (length(ends)) paste0(" (partial ", paste(ends, collapse = ", "), ")"))
+  })
+  output$partial_ctrls <- renderUI({
+    req(edit_active())
+    p <- active_partial()
+    btn <- function(id, label, on) actionButton(id, label,
+      class = paste("btn-sm", if (on) "btn-warning" else "btn-default"))
+    div(tags$label("Partial", class = "control-label"),
+      div(style = "display:flex; gap:4px;",
+        btn("toggle_partial_start", "5'", isTRUE(p$partial_start[1] == 1)),
+        btn("toggle_partial_stop", "3'", isTRUE(p$partial_stop[1] == 1))))
   })
 
   output$coverage_plot <- renderPlot({
@@ -2052,8 +2076,8 @@ app_server <- function(input, output, session) {
   # ---- gene list (feature model); click a row -> active feature ----
   feature_rows <- reactive({
     edit_tick(); u <- sel_unit(); req(u)
-    app_query("SELECT element, type, start, stop, length, strand, status, flags FROM annotations
-       WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start", params = uargs())
+    app_query("SELECT element, type, start, stop, length, strand, partial_start, partial_stop, status, flags
+       FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start", params = uargs())
   })
   output$feature_tbl <- reactable::renderReactable({
     d <- feature_rows(); act <- active_feature()
@@ -2070,6 +2094,20 @@ app_server <- function(input, output, session) {
         stop = reactable::colDef(name = "Stop", width = 70),
         length = reactable::colDef(name = "Length", width = 70),
         strand = reactable::colDef(name = "Strand", width = 70),
+        partial_start = reactable::colDef(name = "Partial", width = 80, html = TRUE, align = "center",
+          cell = htmlwidgets::JS("
+            function(cellInfo) {
+              var row = cellInfo.row || {};
+              function pill(t) {
+                return '<span style=\"background:#FAA34A30;color:#111111;border:1px solid #FAA34A;' +
+                  'border-radius:3px;padding:1px 4px;font-size:11px;white-space:nowrap;\">' + t + '</span>';
+              }
+              var out = [];
+              if (row.partial_start == 1) out.push(pill(\"5'\"));
+              if (row.partial_stop == 1) out.push(pill(\"3'\"));
+              return out.join(' ');
+            }")),
+        partial_stop = reactable::colDef(show = FALSE),
         status = reactable::colDef(name = "Status", width = 70),
         flags = reactable::colDef(name = "Warnings", html = TRUE, cell = rt_longtext())),
       rowStyle = function(index) {
@@ -2131,8 +2169,10 @@ app_server <- function(input, output, session) {
     u <- sel_unit()
     app_write(DBI::dbWithTransaction(con, for (i in seq_len(nrow(b))) {
       DBI::dbExecute(con,
-        "UPDATE annotations SET start = ?, stop = ?, length = ? WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?",
-        params = list(b$start[i], b$stop[i], b$stop[i] - b$start[i] + 1, u$ID, u$path, u$scaffold, b$element[i]))
+        "UPDATE annotations SET start = ?, stop = ?, length = ?, partial_start = ?, partial_stop = ?
+         WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?",
+        params = list(b$start[i], b$stop[i], b$stop[i] - b$start[i] + 1, b$partial_start[i], b$partial_stop[i],
+          u$ID, u$path, u$scaffold, b$element[i]))
     }))
   }
   save_edits <- function() {
@@ -2152,7 +2192,8 @@ app_server <- function(input, output, session) {
         shinyWidgets::updatePrettyCheckbox(session, "feat_edit", value = FALSE)
         rp_toast("Select a feature first.", type = "warning"); return()
       }
-      edit_backup(app_query("SELECT element, start, stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs()))
+      edit_backup(app_query("SELECT element, start, stop, partial_start, partial_stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?",
+        params = uargs()))
       edit_active(TRUE); edit_dirty(FALSE)
       shinyjs::show("feat_edit_ctrls")
     } else {
@@ -2371,6 +2412,17 @@ app_server <- function(input, output, session) {
   observeEvent(input$nt_5_in,  nudge_boundary("5", "in"))
   observeEvent(input$nt_3_out, nudge_boundary("3", "out"))
   observeEvent(input$nt_3_in,  nudge_boundary("3", "in"))
+  toggle_partial <- function(col) {
+    if (!isTRUE(edit_active()) || lock_blocked()) return()
+    el <- active_feature(); req(el)
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    if (!app_write(DBI::dbExecute(con, sprintf(
+      "UPDATE annotations SET %s = 1 - COALESCE(%s, 0), edited = 1 WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?",
+      col, col), params = c(uargs(), list(el))))) return()
+    edit_dirty(TRUE); edit_tick(edit_tick() + 1)
+  }
+  observeEvent(input$toggle_partial_start, toggle_partial("partial_start"))
+  observeEvent(input$toggle_partial_stop, toggle_partial("partial_stop"))
   # per-unit curator flag toggles + Lock & Close in the annotate modal
   modal_flag_toggle <- function(col) {
     u <- sel_unit(); req(u)
@@ -2410,7 +2462,7 @@ app_server <- function(input, output, session) {
     u <- sel_unit(); req(u)
     if (edits_block()) return()
     if (!need_one_path(as.data.frame(u))) return()
-    f <- screen_flagged(as.data.frame(u))
+    f <- lock_flagged(as.data.frame(u))
     if (nrow(f)) return(confirm_flagged_lock(f, function() lock_unit_now(close)))
     lock_unit_now(close)
   }

@@ -44,6 +44,12 @@ score_one <- function(con, id, dir, taxdump_dir = NULL) {
     blast_db = blast_db, taxdump_dir = td, with_staxids = FALSE)
   write_path_scores(con, id, scored)
   tryCatch(blast_scaffolds_local(con, id, blast_db), error = function(e) NULL)
+  # a unit BLAST will skip as already searched keeps its GenBank/panel hit
+  done <- tryCatch(DBI::dbGetQuery(con, "SELECT path, scaffold FROM blast_searched WHERE ID = ?",
+    params = list(id)), error = function(e) data.frame())
+  for (i in seq_len(nrow(done))) {
+    tryCatch(derive_blast_products(con, id, done$path[i], done$scaffold[i]), error = function(e) NULL)
+  }
   invisible(scored)
 }
 
@@ -492,12 +498,12 @@ load_assemblies <- function(con, dir, ID) {
      LEFT JOIN (SELECT annotate_opts, curate_opts FROM annotate WHERE ID = ? LIMIT 1) o
      WHERE a.ID = ? AND COALESCE(a.ignore,0) = 0",
     params = list(ID, ID))
-  # Drop annotate units (and their orphaned annotations/coverage) whose scaffold
+  # Drop annotate units (and their orphaned evidence rows) whose scaffold
   # no longer exists after this (re)assembly. Deliberately NOT gated on
   # assemblies.ignore: a curator-dropped scaffold still exists, and treating it
   # as an orphan here would delete on the next WF1 run exactly the annotation
   # that reconcile_ignore_unit now takes care to preserve.
-  for (tbl in c("annotate", "annotations", "coverage")) {
+  for (tbl in intersect(c("annotate", UNIT_EVIDENCE_TABLES), DBI::dbListTables(con))) {
     DBI::dbExecute(con, sprintf(
       "DELETE FROM %s WHERE ID = ? AND NOT EXISTS
          (SELECT 1 FROM assemblies a WHERE a.ID = %s.ID AND a.path = %s.path

@@ -26,7 +26,11 @@
 #' @return (invisibly) the number of units written.
 #' @export
 write_coverage_units <- function(con, id, depth_file, clips_file = NULL) {
-  DBI::dbExecute(con, "DELETE FROM coverage WHERE ID = ?", params = list(id))
+  # a dropped scaffold is not re-measured, so its track is kept for a put-back
+  DBI::dbExecute(con,
+    "DELETE FROM coverage WHERE ID = ? AND NOT EXISTS (SELECT 1 FROM assemblies a
+       WHERE a.ID = coverage.ID AND a.path = coverage.path AND a.scaffold = coverage.scaffold
+         AND COALESCE(a.ignore, 0) = 1)", params = list(id))
   if (!file.exists(depth_file) || file.info(depth_file)$size == 0) {
     return(invisible(0L))
   }
@@ -53,6 +57,8 @@ write_coverage_units <- function(con, id, depth_file, clips_file = NULL) {
     sub <- d[d$ref == r, ]
     dep <- sub$depth[order(sub$pos)]
     if (length(dep) == 0) next
+    DBI::dbExecute(con, "DELETE FROM coverage WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = list(id, as.integer(ps[1]), as.integer(ps[2])))
     DBI::dbAppendTable(con, "coverage", data.frame(ID = id,
       path = as.integer(ps[1]), scaffold = as.integer(ps[2]),
       mean_depth = round(mean(dep), 2), median_depth = round(stats::median(dep), 2),

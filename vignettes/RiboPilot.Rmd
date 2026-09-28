@@ -303,7 +303,7 @@ the ticked units, or the buttons at the top of a unit's window:
 |---|---|---|
 | **Mark Reviewed** | You checked this unit. | Lock and the Export window no longer ask about its contamination or chimera flags. |
 | **Exclude from export** | This unit should not be submitted. | The unit is left out of every export, and the Export window says so. **Include in export** undoes it. |
-| **Mark Partial** | The unit does not hold a complete repeat. | Its first and last genes are written as partial. |
+| **Mark Partial** | The unit does not hold a complete repeat. | `{completeness}` reads "partial sequence". Which gene ends are partial is set per feature with the 5' and 3' buttons. |
 
 **Lock** locks the unit and keeps the window open; **Lock & Close** locks it and
 closes the window. Neither marks it Reviewed. If the unit has a red Checks

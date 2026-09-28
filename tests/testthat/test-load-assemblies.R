@@ -437,6 +437,26 @@ test_that("a re-assembly that changes a unit's sequence clears its old evidence 
   expect_equal(ev("screen", 2), 1)
 })
 
+test_that("a scaffold gone after a re-assembly leaves no evidence rows behind", {
+  dir <- withr::local_tempdir()
+  con <- mk_asm_db(dir)
+  on.exit(DBI::dbDisconnect(con))
+  tbls <- c("screen", "blast_hits", "blast_screen", "blast_searched", "chimera", "chimera_windows")
+  for (t in tbls) DBI::dbExecute(con, sprintf("CREATE TABLE %s(ID TEXT, path INT, scaffold INT)", t))
+  write_asm_fasta(dir)
+  RiboPilot:::load_assemblies(con, dir, "S1")
+  for (t in c(tbls, "annotations", "coverage")) {
+    DBI::dbExecute(con, sprintf("INSERT INTO %s (ID, path, scaffold) VALUES ('S1', 1, 1), ('S1', 1, 2)", t))
+  }
+  writeLines(c(">S1.1.1 circular scaffold_1--101+,102+", strrep("ACGT", 200)),
+    file.path(dir, "S1_assembly_1.fasta"))
+  RiboPilot:::load_assemblies(con, dir, "S1")
+  for (t in c(tbls, "annotations", "coverage", "annotate")) {
+    got <- DBI::dbGetQuery(con, sprintf("SELECT scaffold FROM %s WHERE ID = 'S1'", t))$scaffold
+    expect_equal(got, 1L, info = t)
+  }
+})
+
 test_that("a circular unit is rotated to start in the IGS before it is stored", {
   dir <- withr::local_tempdir()
   con <- mk_asm_db(dir)
@@ -501,6 +521,28 @@ test_that("score_one scores the fastas and graph in the folder it is given", {
   RiboPilot:::score_one(con, "S1", dir)
   expect_equal(got$fastas, "S1_assembly_1.fasta")
   expect_equal(got$gfa, "x.K115.graph1.selected_graph.gfa")
+})
+
+test_that("score_one re-derives the stored hits of a unit BLAST will skip", {
+  dir <- withr::local_tempdir()
+  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, assemble_opts TEXT)")
+  DBI::dbExecute(con, "CREATE TABLE assemble_opts(assemble_opts TEXT, seeds_db TEXT)")
+  DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT, lineage TEXT, lineage_taxids TEXT)")
+  DBI::dbExecute(con, RiboPilot:::BLAST_SEARCHED_DDL)
+  DBI::dbExecute(con, "INSERT INTO assemble VALUES('S1', 'default')")
+  DBI::dbExecute(con, "INSERT INTO assemble_opts VALUES('default', NULL)")
+  DBI::dbExecute(con, "INSERT INTO samples VALUES('S1', NULL, NULL)")
+  DBI::dbExecute(con, "INSERT INTO blast_searched (ID, path, scaffold, query_md5) VALUES ('S1', 1, 2, 'x')")
+  writeLines(c(">S1.1.1 linear", "ACGT"), file.path(dir, "S1_assembly_1.fasta"))
+  got <- NULL
+  local_mocked_bindings(.package = "RiboPilot",
+    score_assembly = function(...) data.frame(),
+    write_path_scores = function(...) invisible(),
+    derive_blast_products = function(con, id, path, scaffold, ...) got <<- c(got, paste(id, path, scaffold)))
+  RiboPilot:::score_one(con, "S1", dir)
+  expect_equal(got, "S1 1 2")
 })
 
 # --- triage decisions across a re-assembly -------------------------------------

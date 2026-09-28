@@ -148,14 +148,9 @@ export_header_data <- function(con, units) {
       params = list(id, p, s))
     seq_len_bp <- if (nrow(asm)) asm$length[1] else NA_integer_
     unit_partial <- isTRUE(nrow(ann) > 0 && identical(ann$partial[1], "yes"))
-    # A terminal feature that runs into the end of the scaffold is partial; so is
-    # a truncated gene, and everything on a unit the curator marked partial.
-    part <- is_truncated(feat)
-    if (nrow(feat) > 0) {
-      part[1] <- part[1] || feat$start[1] <= 1
-      part[nrow(feat)] <- part[nrow(feat)] || (!is.na(seq_len_bp) && feat$stop[nrow(feat)] >= seq_len_bp)
-      if (unit_partial) part[c(1, nrow(feat))] <- TRUE
-    }
+    # A unit marked partial changes only the completeness wording.
+    ends <- partial_ends(feat, seq_len_bp)
+    part <- ends$p5 | ends$p3
     extra <- data.frame(
       path = p, scaffold = s,
       length = seq_len_bp,

@@ -33,7 +33,9 @@
 #'   whether that top hit is a nuclear rDNA record at all. 0 raises
 #'   `not_nuclear_rdna`.
 #' @return list(features, flags, n_flags, notes) where `features` gains `status`
-#'   ("ok"/"flag") and `flags` (comma-separated per-feature codes), and the
+#'   ("ok"/"flag"), `flags` (comma-separated per-feature codes), and
+#'   `partial_start`/`partial_stop` (0/1, 5'/3' end in the feature's
+#'   orientation; set on the free ends of a truncated feature), and the
 #'   sample-level `flags`/`notes` summarize missing anchors, ordering, etc.
 #' @export
 curate_rrna_core <- function(features, params = rrna_params(),
@@ -152,6 +154,22 @@ curate_rrna_core <- function(features, params = rrna_params(),
       if (is.null(fl)) "" else paste(unique(fl), collapse = ",")
     }, character(1))
     features$status <- ifelse(nzchar(features$flags), "flag", "ok")
+    # A truncated feature is partial at each end that meets no neighbour, or at
+    # both when it meets two (we cannot tell which end is short).
+    trunc <- vapply(features$element, function(el) "truncated" %in% feat_flags[[el]], logical(1),
+      USE.NAMES = FALSE)
+    s <- features$start; e <- features$stop
+    left <- right <- rep(FALSE, nrow(features))
+    for (i in which(trunc)) {
+      o <- seq_len(nrow(features))[-i]
+      left[i] <- any(s[o] < s[i] & s[i] - e[o] - 1 <= ITS_SNAP_BP, na.rm = TRUE)
+      right[i] <- any(s[o] > s[i] & s[o] - e[i] - 1 <= ITS_SNAP_BP, na.rm = TRUE)
+    }
+    pl <- trunc & (!left | right)
+    pr <- trunc & (!right | left)
+    minus <- (features$strand %||% rep(NA, nrow(features))) %in% "-"
+    features$partial_start <- as.integer(ifelse(minus, pr, pl))
+    features$partial_stop <- as.integer(ifelse(minus, pl, pr))
   } else {
     features <- data.frame()
   }
@@ -263,7 +281,8 @@ resolve_ruleset <- function(con, id, path = 1L, scaffold = 1L, ruleset = NULL) {
 #' per-feature reference identities (`blast_ref_alignment`), and the sample vs.
 #' hit lineages, runs [curate_rrna_core()], then updates each feature's
 #' `status`/`flags` and the per-sample `annotate` summary (`n_flags`,
-#' `curate_flags`) in one transaction.
+#' `curate_flags`) in one transaction. `partial_start`/`partial_stop` are only
+#' filled where still NULL, so a curator's own choice is kept.
 #'
 #' @param con Open DBI connection.
 #' @param id Sample ID.
@@ -329,9 +348,12 @@ curate_one <- function(con, id, path = 1L, scaffold = 1L, ruleset = NULL) {
     if (nrow(res$features) > 0) {
       for (i in seq_len(nrow(res$features))) {
         DBI::dbExecute(con,
-          "UPDATE annotations SET status = ?, flags = ? WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?",
+          "UPDATE annotations SET status = ?, flags = ?, partial_start = COALESCE(partial_start, ?),
+             partial_stop = COALESCE(partial_stop, ?)
+           WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?",
           params = list(res$features$status[i],
             if (nzchar(res$features$flags[i])) res$features$flags[i] else NA_character_,
+            res$features$partial_start[i], res$features$partial_stop[i],
             id, path, scaffold, res$features$element[i]))
       }
     }

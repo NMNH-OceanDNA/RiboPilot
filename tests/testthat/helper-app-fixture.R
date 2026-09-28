@@ -45,6 +45,8 @@ fixture_fill_schema <- function(con) {
   add_col("annotate", "curate_flags", "TEXT")
   add_col("annotations", "model_coverage", "REAL")
   add_col("annotations", "status", "TEXT")
+  add_col("annotations", "partial_start", "INTEGER")
+  add_col("annotations", "partial_stop", "INTEGER")
   add_col("coverage", "median_depth", "REAL")
   add_col("samples", "ref_id", "TEXT")
   add_col("samples", "tax_alternatives", "TEXT")

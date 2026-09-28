@@ -36,6 +36,20 @@ test_that("write_coverage_units stores an aligned clip track", {
   expect_equal(r$clips, "0,0,0,0,7,1,0,0")
 })
 
+test_that("a dropped scaffold keeps its coverage track through a coverage re-run", {
+  skip_if_not_installed("withr")
+  con <- chimera_test_con()
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "INSERT INTO assemblies (ID, path, scaffold, sequence, ignore) VALUES ('S1', 1, 1, 'ACGT', 0)")
+  DBI::dbExecute(con, "INSERT INTO assemblies (ID, path, scaffold, sequence, ignore) VALUES ('S1', 1, 2, 'ACGT', 1)")
+  DBI::dbExecute(con, "INSERT INTO coverage (ID, path, scaffold, depths) VALUES ('S1', 1, 1, 'old'), ('S1', 1, 2, '9,9')")
+  dep <- tempfile()
+  writeLines(sprintf("1.1\t%d\t5", 1:4), dep)
+  RiboPilot:::write_coverage_units(con, "S1", dep)
+  r <- DBI::dbGetQuery(con, "SELECT scaffold, depths FROM coverage WHERE ID = 'S1' ORDER BY scaffold")
+  expect_equal(r$depths, c("5,5,5,5", "9,9"))
+})
+
 test_that("tiling anchors the last window and handles short scaffolds", {
   t <- RiboPilot:::chimera_tile(1200, win = 500, step = 250)
   expect_equal(t$start, c(1, 251, 501, 701))

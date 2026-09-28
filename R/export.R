@@ -119,12 +119,12 @@ find_n_runs <- function(seq, min_len = MIN_ASSEMBLY_GAP) {
 #' Feature table (.tbl) text for one assembly unit from an open connection
 #'
 #' Emits the rRNA/spacer features plus an `assembly_gap` feature for each N-run
-#' (>= `MIN_ASSEMBLY_GAP`) so table2asn does not reject fabricated gap runs, and
-#' marks the first/last real feature partial (`<`/`>`) when it reaches a
-#' sequence end or when `force_partial` is set (a curator-flagged partial repeat,
-#' so it is not submitted as a complete cistron). `seqid` is the FASTA/feature id.
+#' (>= `MIN_ASSEMBLY_GAP`) so table2asn does not reject fabricated gap runs.
+#' A feature's 5' end is marked `<` and its 3' end `>` when that end is partial
+#' (`partial_start`/`partial_stop`) or reaches a sequence end. A '-' feature is
+#' written stop then start. `seqid` is the FASTA/feature id.
 #' @noRd
-feature_table_text_con <- function(con, id, path = 1L, scaffold = 1L, seqid = id, force_partial = FALSE) {
+feature_table_text_con <- function(con, id, path = 1L, scaffold = 1L, seqid = id) {
   d <- DBI::dbGetQuery(con,
     "SELECT * FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
     params = list(id, path, scaffold))
@@ -137,17 +137,16 @@ feature_table_text_con <- function(con, id, path = 1L, scaffold = 1L, seqid = id
   seq <- if (nrow(st)) st$sequence[1] else NA_character_
   seqlen <- if (nrow(st) && !is.na(st$length[1])) st$length[1] else max(d$stop)
 
+  ends <- partial_ends(d, seqlen)
+  minus <- (d$strand %||% rep(NA, nrow(d))) %in% "-"
   gaps <- find_n_runs(seq)
   feats <- rbind(
     data.frame(start = d$start, stop = d$stop, type = d$type, element = d$element,
-      kind = "rna", trunc = is_truncated(d), stringsAsFactors = FALSE),
+      kind = "rna", p5 = ends$p5, p3 = ends$p3, minus = minus, stringsAsFactors = FALSE),
     if (nrow(gaps) > 0) data.frame(start = gaps$start, stop = gaps$stop,
-      type = "assembly_gap", element = NA_character_, kind = "gap", trunc = FALSE,
-      stringsAsFactors = FALSE))
+      type = "assembly_gap", element = NA_character_, kind = "gap", p5 = FALSE, p3 = FALSE,
+      minus = FALSE, stringsAsFactors = FALSE))
   feats <- feats[order(feats$start), , drop = FALSE]
-  rna <- which(feats$kind == "rna")
-  first_rna <- if (length(rna)) min(rna) else NA_integer_
-  last_rna <- if (length(rna)) max(rna) else NA_integer_
 
   lines <- hdr
   for (i in seq_len(nrow(feats))) {
@@ -159,18 +158,9 @@ feature_table_text_con <- function(con, id, path = 1L, scaffold = 1L, seqid = id
         "\t\t\tlinkage_evidence\tunspecified")
       next
     }
-    # a truncated gene is partial whichever end is missing, so it gets both marks
-    s <- if (feats$trunc[i] || (i == first_rna && (feats$start[i] <= 1 || isTRUE(force_partial)))) {
-      paste0("<", feats$start[i])
-    } else {
-      as.character(feats$start[i])
-    }
-    e <- if (feats$trunc[i] || (i == last_rna && (feats$stop[i] >= seqlen || isTRUE(force_partial)))) {
-      paste0(">", feats$stop[i])
-    } else {
-      as.character(feats$stop[i])
-    }
-    lines <- c(lines, paste0(s, "\t", e, "\t", feats$type[i]),
+    loc <- if (feats$minus[i]) c(feats$stop[i], feats$start[i]) else c(feats$start[i], feats$stop[i])
+    lines <- c(lines,
+      paste0(if (feats$p5[i]) "<", loc[1], "\t", if (feats$p3[i]) ">", loc[2], "\t", feats$type[i]),
       paste0("\t\t\tproduct\t", rrna_element_product(feats$element[i])))
     if (identical(feats$type[i], "misc_RNA")) lines <- c(lines, paste0("\t\t\tnote\t", feats$element[i]))
   }
@@ -210,12 +200,20 @@ risk_flags <- function(chimeric, ann, seq, chimera_label = NA_character_, chimer
     note = paste(flags, collapse = ";"))
 }
 
-#' Which annotation rows the curation step flagged truncated (too little of the
-#' rRNA model recovered). `d` is annotation rows; FALSE when it has no flags column.
+#' Is each annotation row partial at its 5' and 3' end?
+#'
+#' An end is partial when its `partial_start`/`partial_stop` flag is 1 or it
+#' reaches a sequence end (base 1 or `seqlen`), read in the row's own strand.
+#' @param d Annotation rows. @param seqlen Sequence length (NA: no end check).
+#' @return list(p5, p3) of logical vectors.
 #' @noRd
-is_truncated <- function(d) {
-  if (is.null(d$flags)) return(rep(FALSE, nrow(d)))
-  grepl("(^|,)truncated(,|$)", ifelse(is.na(d$flags), "", d$flags))
+partial_ends <- function(d, seqlen) {
+  flag <- function(col) if (is.null(d[[col]])) rep(FALSE, nrow(d)) else d[[col]] %in% 1L
+  left <- d$start <= 1
+  right <- !is.na(seqlen) & d$stop >= seqlen
+  minus <- (d$strand %||% rep(NA, nrow(d))) %in% "-"
+  list(p5 = flag("partial_start") | ifelse(minus, right, left),
+    p3 = flag("partial_stop") | ifelse(minus, left, right))
 }
 
 #' TRUE where a submission_risk string carries a tag the export window asks
@@ -751,10 +749,7 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
       params = list(id, upath, uscaf))$sequence[1]
     defline <- paste0(">", headers[ui])
     writeLines(c(defline, seq), file.path(sdir, paste0(seqid, ".fasta")))
-    is_partial <- identical(DBI::dbGetQuery(con,
-      "SELECT partial FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?",
-      params = list(id, upath, uscaf))$partial[1], "yes")
-    tbl <- feature_table_text_con(con, id, upath, uscaf, seqid = seqid, force_partial = is_partial)
+    tbl <- feature_table_text_con(con, id, upath, uscaf, seqid = seqid)
     writeLines(tbl, file.path(sdir, paste0(seqid, ".tbl")))
     group_fsa <- c(group_fsa, defline, seq)
     group_tbl <- c(group_tbl, tbl)

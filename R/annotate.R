@@ -94,6 +94,11 @@ itsx_is_chimeric <- function(pos_lines) {
   length(pos_lines) > 0 && any(grepl("Chimeric!", pos_lines, fixed = TRUE))
 }
 
+#' Largest gap (bp) between a gene end and the spacer beside it that still counts
+#' as the two meeting
+#' @noRd
+ITS_SNAP_BP <- 5L
+
 #' Reconcile barrnap + ITSx features into a gap-free 5'->3' model
 #'
 #' barrnap is authoritative for 18S/28S extent; ITSx for ITS1/5.8S/ITS2. Missing
@@ -209,7 +214,7 @@ reconcile_features <- function(bar, its) {
     ri <- which(out$element == pr[2])
     if (length(li) != 1 || length(ri) != 1) next
     gap <- out$start[ri] - out$stop[li] - 1L
-    if (gap < 1L || gap > 5L) next
+    if (gap < 1L || gap > ITS_SNAP_BP) next
     if (pr[1] %in% RRNA_GENES) {
       out$stop[li] <- out$start[ri] - 1L
       out$tool[li] <- paste0(out$tool[li], "+ITSx")

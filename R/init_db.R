@@ -454,6 +454,7 @@ new_db <- function(
 
   # annotations (nrDNA feature model per assembly unit) ----
   # status/flags are filled by curation (curate_one); tool/edited by annotation.
+  # partial_start/partial_stop: 5'/3' end partial in the feature's own orientation.
   DBI::dbExecute(
     con,
     "CREATE TABLE annotations (
@@ -467,6 +468,8 @@ new_db <- function(
       length INTEGER,
       strand TEXT,
       model_coverage REAL,
+      partial_start INTEGER,
+      partial_stop INTEGER,
       tool TEXT,
       status TEXT,
       flags TEXT,

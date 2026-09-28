@@ -28,45 +28,71 @@ test_that("feature_table_text_con emits partials, gaps, and ITS notes", {
   expect_match(tbl, "internal transcribed spacer 1")
 })
 
-test_that("force_partial marks a curator-flagged partial record at both ends", {
+test_that("partial ends are marked per feature, strand-aware, and minus is written stop first", {
   con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
   on.exit(DBI::dbDisconnect(con))
-  DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT, type TEXT, start INT, stop INT)")
+  DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT, type TEXT,
+    start INT, stop INT, strand TEXT, partial_start INT, partial_stop INT)")
   DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, sequence TEXT, length INT)")
-  seq <- strrep("A", 500)
-  DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',1,1, ?, 500)", params = list(seq))
-  # 18S well inside the sequence (100-260), so no positional partial
-  DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,1,'18S','rRNA',100,260)")
-  DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,1,'28S','rRNA',300,460)")
-  complete <- RiboPilot:::feature_table_text_con(con, "S1", force_partial = FALSE)
-  expect_match(complete, "100\t260\trRNA")     # not marked partial
-  partial <- RiboPilot:::feature_table_text_con(con, "S1", force_partial = TRUE)
-  expect_match(partial, "<100\t260\trRNA")     # 5' partial on first feature
-  expect_match(partial, "300\t>460\trRNA")     # 3' partial on last feature
+  DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',1,1, ?, 500)", params = list(strrep("A", 500)))
+  DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,1,'18S','rRNA',100,260,'+',1,0)")
+  DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,1,'28S','rRNA',300,460,'+',0,1)")
+  tbl <- RiboPilot:::feature_table_text_con(con, "S1")
+  expect_match(tbl, "\n<100\t260\trRNA")
+  expect_match(tbl, "\n300\t>460\trRNA")
+
+  # minus strand: 5' end is the genomic right end, written first
+  DBI::dbExecute(con, "UPDATE annotations SET strand = '-'")
+  tbl <- RiboPilot:::feature_table_text_con(con, "S1")
+  expect_match(tbl, "\n<260\t100\trRNA")
+  expect_match(tbl, "\n460\t>300\trRNA")
+
+  # a minus feature touching base 1 is 3' partial there
+  DBI::dbExecute(con, "UPDATE annotations SET start = 1, partial_start = 0 WHERE element = '18S'")
+  expect_match(RiboPilot:::feature_table_text_con(con, "S1"), "\n260\t>1\trRNA")
 })
 
-test_that("a truncated gene is exported partial, in the feature table and the defline", {
+test_that("a unit marked partial changes only the completeness wording", {
   con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
   on.exit(DBI::dbDisconnect(con))
   DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT, Taxon TEXT)")
   DBI::dbExecute(con, "CREATE TABLE annotate(ID TEXT, path INT, scaffold INT, n_features INT, missing TEXT,
     partial TEXT, reviewed TEXT, export_group TEXT)")
   DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT, type TEXT,
-    start INT, stop INT, flags TEXT)")
+    start INT, stop INT, partial_start INT, partial_stop INT)")
+  DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, sequence TEXT, length INT, topology TEXT)")
+  DBI::dbExecute(con, "INSERT INTO samples VALUES('S1','Genus species')")
+  DBI::dbExecute(con, "INSERT INTO annotate VALUES('S1',1,1,1,'','yes','yes',NULL)")
+  DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',1,1, ?, 500, 'linear')", params = list(strrep("A", 500)))
+  DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,1,'18S','rRNA',100,260,0,0)")
+  expect_match(RiboPilot:::feature_table_text_con(con, "S1"), "\n100\t260\trRNA")
+  h <- RiboPilot:::export_header_data(con, data.frame(ID = "S1", path = 1L, scaffold = 1L, seqid = "S1"))
+  expect_equal(h$completeness, "partial sequence")
+  expect_equal(h$rrna_definition, "18S ribosomal RNA gene, complete sequence.")
+})
+
+test_that("a partial end is exported partial, in the feature table and the defline", {
+  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT, Taxon TEXT)")
+  DBI::dbExecute(con, "CREATE TABLE annotate(ID TEXT, path INT, scaffold INT, n_features INT, missing TEXT,
+    partial TEXT, reviewed TEXT, export_group TEXT)")
+  DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT, type TEXT,
+    start INT, stop INT, flags TEXT, partial_start INT, partial_stop INT)")
   DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, sequence TEXT, length INT, topology TEXT)")
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S1','Genus species')")
   DBI::dbExecute(con, "INSERT INTO annotate VALUES('S1',1,1,1,'','no','yes',NULL)")
   DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',1,1, ?, 1694, 'linear')", params = list(strrep("A", 1694)))
-  # 28S well inside the scaffold, but only part of the gene model was found
-  DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,1,'28S','rRNA',155,1488,'length,truncated')")
-  expect_match(RiboPilot:::feature_table_text_con(con, "S1"), "<155\t>1488\trRNA")
+  # 28S well inside the scaffold, 3' end not recovered
+  DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,1,'28S','rRNA',155,1488,'length,truncated',0,1)")
+  expect_match(RiboPilot:::feature_table_text_con(con, "S1"), "\n155\t>1488\trRNA")
   units <- data.frame(ID = "S1", path = 1L, scaffold = 1L, seqid = "S1")
   h <- RiboPilot:::export_header_data(con, units)
   expect_equal(h$completeness, "partial sequence")
   expect_match(h$rrna_definition, "28S ribosomal RNA gene, partial sequence")
 
-  # without the flag the same feature is complete
-  DBI::dbExecute(con, "UPDATE annotations SET flags = 'length'")
+  # the truncated flag alone does not mark ends: curation sets partial_start/stop
+  DBI::dbExecute(con, "UPDATE annotations SET partial_stop = 0")
   expect_match(RiboPilot:::feature_table_text_con(con, "S1"), "\n155\t1488\trRNA")
   expect_equal(RiboPilot:::export_header_data(con, units)$completeness, "complete sequence")
 })
