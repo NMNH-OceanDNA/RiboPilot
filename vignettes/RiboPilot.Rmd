@@ -236,9 +236,10 @@ never overwrites a call you made by hand. The **Triage** button runs the
 proposal again on the ticked samples, skipping any whose assembly is locked.
 [Quality checks and flags](Curation-Flags.html) explains the rules.
 
-In this step you only keep or drop scaffolds. Trimming a scaffold and moving
-gene boundaries happen in the Annotation Review step, and apply at once, with no
-new run.
+In this step you mostly keep or drop scaffolds. Moving gene boundaries happens
+in the Annotation Review step. **Trim** and **Restore** here act on every kept
+scaffold of the ticked samples, as described in that step; like every edit
+there, they apply at once, with no new run.
 
 ## Rescue a sample that failed
 
@@ -315,6 +316,14 @@ change its marks, unlock it first. Only units that are locked here, and whose
 sample is locked in the Assemble step, can be exported. Only one assembly path
 can be locked per sample: paths are alternative reconstructions of the same
 rDNA repeat, and a sample exports one.
+
+To trim many units at once, tick them and press **Trim** in the toolbar. Choose
+**Match gene ends** to keep only the span of the annotated features, or **Gene
+ends + flank** to keep a few extra bases on each side. Only units
+with all five features (18S, ITS1, 5.8S, ITS2, and 28S) are trimmed; the window
+lists the others and why, such as a missing feature or a lock, before you
+confirm. **Restore** next to it undoes the trim on the ticked units, as
+**Restore assembly** does in a unit's window.
 
 Changes here apply at once: a trim or a boundary edit re-checks the unit right
 away. Press **Update** in the Assemble step again only after you change an

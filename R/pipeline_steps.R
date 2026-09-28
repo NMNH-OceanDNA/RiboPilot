@@ -743,3 +743,59 @@ restore_assembly <- function(con, id, path = 1L, scaffold = 1L) {
   }
   invisible(bak$length[1])
 }
+
+#' Kept window for a trim preset: gene ends widened by `flank`, clipped to the unit
+#' @param a,b Annotated span. @param n Unit length. @param flank bp added each side.
+#' @noRd
+trim_bounds <- function(a, b, n, flank = 0L) {
+  flank <- suppressWarnings(as.integer(flank))[1]
+  if (is.na(flank) || flank < 0) flank <- 0L
+  c(max(1L, a - flank), min(n, b + flank))
+}
+
+#' Which units a batch Trim (or Restore) can act on
+#'
+#' @param con Open DBI connection.
+#' @param u data.frame(ID, path, scaffold).
+#' @param flank bp kept past the gene ends (0 = gene ends).
+#' @param restore TRUE plans a Restore instead: only trimmed units qualify.
+#' @return `u` with from, to and reason (NA where the unit qualifies).
+#' @noRd
+batch_trim_plan <- function(con, u, flank = 0L, restore = FALSE) {
+  u$from <- rep(NA_integer_, nrow(u)); u$to <- u$from; u$reason <- rep(NA_character_, nrow(u))
+  key <- "WHERE ID = ? AND path = ? AND scaffold = ?"
+  for (i in seq_len(nrow(u))) {
+    q <- function(sql) DBI::dbGetQuery(con, paste(sql, key), params = list(u$ID[i], u$path[i], u$scaffold[i]))
+    if (isTRUE(q("SELECT annotate_lock FROM annotate")$annotate_lock[1] == 1)) {
+      u$reason[i] <- "annotation locked"; next
+    }
+    if (restore) {
+      if (!unit_trimmed(con, u$ID[i], u$path[i], u$scaffold[i])) u$reason[i] <- "not trimmed"
+      next
+    }
+    n <- q("SELECT LENGTH(sequence) n FROM assemblies")$n
+    if (!length(n) || is.na(n[1]) || n[1] == 0) { u$reason[i] <- "no sequence"; next }
+    a <- q("SELECT element, start, stop FROM annotations")
+    miss <- setdiff(BATCH_TRIM_FEATURES, a$element)
+    if (length(miss)) { u$reason[i] <- paste("missing", paste(miss, collapse = ", ")); next }
+    w <- trim_bounds(min(a$start), max(a$stop), n[1], flank)
+    if (w[1] == 1L && w[2] == n[1]) { u$reason[i] <- "nothing to trim"; next }
+    u$from[i] <- w[1]; u$to[i] <- w[2]
+  }
+  u
+}
+
+#' Trim (or restore) each planned unit and re-curate it; one failure does not
+#' stop the rest.
+#' @param con Open DBI connection. @param p Eligible rows of [batch_trim_plan()].
+#' @param restore TRUE restores instead of trimming.
+#' @return Error message per unit, NA where it worked.
+#' @noRd
+batch_trim_apply <- function(con, p, restore = FALSE) {
+  vapply(seq_len(nrow(p)), function(i) tryCatch({
+    if (restore) restore_assembly(con, p$ID[i], p$path[i], p$scaffold[i])
+    else trim_assembly(con, p$ID[i], p$path[i], p$scaffold[i], p$from[i], p$to[i])
+    tryCatch(curate_one(con, p$ID[i], p$path[i], p$scaffold[i]), error = function(e) NULL)
+    NA_character_
+  }, error = function(e) conditionMessage(e)), character(1))
+}

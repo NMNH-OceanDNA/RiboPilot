@@ -658,6 +658,39 @@ trim_modal <- function(n, a_from, a_to) {
   )
 }
 
+#' Batch Trim / Restore window; the count and skipped list render into
+#' `batch_trim_summary` (see [batch_trim_summary()]).
+#' @param restore TRUE for the Restore window.
+#' @noRd
+batch_trim_modal <- function(restore = FALSE) {
+  modalDialog(
+    title = if (restore) "Restore trimmed units" else "Trim units", easyClose = TRUE,
+    if (!restore) tagList(
+      shinyWidgets::prettyRadioButtons("batch_trim_mode", "Trim to:",
+        choices = c("Match gene ends" = "annotated", "Gene ends + flank" = "flank"),
+        selected = "annotated", status = "primary", inline = TRUE),
+      conditionalPanel("input.batch_trim_mode == 'flank'",
+        numericInput("batch_trim_flank", "Flank (bp)", value = 100, min = 1, step = 50))),
+    uiOutput("batch_trim_summary"),
+    footer = mp_footer(danger = actionButton("batch_trim_go", if (restore) "Restore" else "Trim",
+      icon = icon(if (restore) "rotate-left" else "scissors")))
+  )
+}
+
+#' How many units a batch Trim / Restore acts on, and a scrolling list of the rest
+#' @param p [batch_trim_plan()] result. @param restore TRUE for Restore.
+#' @noRd
+batch_trim_summary <- function(p, restore = FALSE) {
+  ok <- sum(is.na(p$reason)); bad <- p[!is.na(p$reason), , drop = FALSE]
+  tagList(
+    tags$p(paste0(mp_n(ok, "unit"), if (ok == 1) " is" else " are",
+      if (restore) " restored to full length and re-curated." else " trimmed and re-curated.")),
+    if (nrow(bad)) tagList(
+      tags$p(style = "margin:8px 0 4px;", paste0("Skipped (", nrow(bad), "):")),
+      div(style ="max-height:200px; overflow-y:auto; border:1px solid #ddd; padding:4px 8px; font-size:0.9em;",
+        lapply(sprintf("%s p%s s%s: %s", bad$ID, bad$path, bad$scaffold, bad$reason), div))))
+}
+
 #' Assign-export-group modal: name the group for the selected samples
 #' @noRd
 group_modal <- function() {

@@ -15,6 +15,10 @@ RRNA_SPACERS <- c("ITS1", "ITS2")
 #' @noRd
 RRNA_ELEMENT_ORDER <- c("ETS", "18S", "ITS1", "5.8S", "ITS2", "28S", "IGS")
 
+#' Features a unit needs before a batch Trim will cut it.
+#' @noRd
+BATCH_TRIM_FEATURES <- setdiff(RRNA_ELEMENT_ORDER, c("ETS", "IGS"))
+
 #' Default GetOrganelle nrDNA reference databases (broad Actinopterygii).
 #'
 #' Single source of truth for the packaged defaults; these are only resolvable
@@ -383,6 +387,16 @@ MP_LOCK_DEF <- function(mod = c("taxonomy", "assemble", "annotate")) {
 #' @noRd
 MP_UNIT_LOCKED <- paste("This unit is locked, so it is read only here.",
   "To change it, select it in the Annotation Review table and press Unlock.")
+
+#' Batch Trim / Restore tooltips; `what` is what the table's rows are.
+#' @noRd
+MP_TRIM_TIP <- function(what = c("units", "samples")) {
+  scope <- if (match.arg(what) == "units") "the selected units" else "every scaffold of the selected samples"
+  c(trim = paste0("Trim ", scope, " to their gene ends, or gene ends plus a flank. ",
+      "Only units with all five features (", paste(BATCH_TRIM_FEATURES, collapse = ", "),
+      ") are trimmed; locked units are skipped."),
+    restore = paste0("Undo the trim on ", scope, ". Untrimmed and locked units are skipped."))
+}
 
 #' Curator marks: what each toolbar button and window toggle says it will do,
 #' what the toast says it did, and what the mark means for export.

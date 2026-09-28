@@ -839,6 +839,49 @@ app_server <- function(input, output, session) {
   observeEvent(input$problematic_btn, toolbar_flag("problematic"))
   observeEvent(input$partial_btn, toolbar_flag("partial"))
 
+  # ---- batch Trim / Restore: ticked units, or every kept scaffold of ticked samples ----
+  batch_trim <- reactiveVal(NULL)
+  open_batch_trim <- function(restore) {
+    u <- selected_units()
+    if (!need_selection(NROW(u))) return()
+    if (!identical(input$mode, "Annotate")) {
+      ids <- unique(u$ID)
+      u <- app_query(sprintf(
+        "SELECT an.ID, an.path, an.scaffold FROM annotate an
+         JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
+         WHERE COALESCE(asm.ignore, 0) = 0 AND an.ID IN (%s) ORDER BY an.ID, an.path, an.scaffold",
+        paste(rep("?", length(ids)), collapse = ",")), params = as.list(ids))
+    }
+    batch_trim(list(u = u, restore = restore))
+    showModal(batch_trim_modal(restore))
+  }
+  observeEvent(list(input$asmb_trim_btn, input$annot_trim_btn), ignoreInit = TRUE, open_batch_trim(FALSE))
+  observeEvent(list(input$asmb_restore_btn, input$annot_restore_btn), ignoreInit = TRUE, open_batch_trim(TRUE))
+  batch_trim_plan_now <- function() {
+    b <- batch_trim(); req(b)
+    flank <- if (identical(input$batch_trim_mode, "flank")) input$batch_trim_flank else 0L
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    batch_trim_plan(con, b$u, flank, b$restore)
+  }
+  output$batch_trim_summary <- renderUI({
+    batch_trim_summary(batch_trim_plan_now(), batch_trim()$restore)
+  })
+  observeEvent(input$batch_trim_go, {
+    b <- batch_trim(); req(b)
+    p <- batch_trim_plan_now()
+    ok <- p[is.na(p$reason), , drop = FALSE]
+    if (!nrow(ok)) return(mp_toast("Nothing to change: every unit is skipped.", type = "warning"))
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    err <- batch_trim_apply(con, ok, b$restore)
+    removeModal(); batch_trim(NULL); refresh(refresh() + 1)
+    skipped <- nrow(p) - nrow(ok)
+    mp_toast(paste0(mp_n(sum(is.na(err)), "unit"), if (b$restore) " restored" else " trimmed",
+      if (skipped) paste0(", ", skipped, " skipped"), "."))
+    if (any(!is.na(err))) rp_alert(paste0(mp_n(sum(!is.na(err)), "unit"), " failed: ",
+      paste(sprintf("%s p%s s%s (%s)", ok$ID, ok$path, ok$scaffold, err)[!is.na(err)], collapse = "; ")),
+      type = "error")
+  })
+
   # ---- Export group actions ----
   observeEvent(input$assign_group_btn, {
     if (!need_selection(length(selected_ids()))) return()
@@ -2275,9 +2318,7 @@ app_server <- function(input, output, session) {
     mode <- input$trim_mode %||% "annotated"
     if (mode == "custom") return(NULL)
     sp <- trim_span()
-    x <- if (mode == "flank") suppressWarnings(as.integer(input$trim_flank)) else 0L
-    if (is.na(x) || x < 0) x <- 0L
-    c(max(1L, sp[["a"]] - x), min(sp[["n"]], sp[["b"]] + x))
+    trim_bounds(sp[["a"]], sp[["b"]], sp[["n"]], if (mode == "flank") input$trim_flank else 0L)
   })
   observeEvent(trim_preset(), {
     p <- trim_preset(); req(p)

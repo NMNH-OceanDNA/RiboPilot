@@ -77,6 +77,10 @@ read this page, not the number, to see what changed.
 
 ## Working at scale, reproducibility, and clusters
 
+* Trim and Restore buttons on the Assemble and Annotation Review toolbars trim
+  many units at once, to their gene ends or gene ends plus a flank, and undo it.
+  Only units with all five features are trimmed; the window lists the rest and
+  why before you confirm.
 * The Lock and State filters now drop rows from the underlying table instead of
   hiding them with CSS, so the table's paging and counts always match what the
   filters allow; refreshing the table keeps its page and selection. The header
