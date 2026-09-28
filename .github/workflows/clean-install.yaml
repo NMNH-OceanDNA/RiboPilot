@@ -46,6 +46,11 @@ jobs:
         run: |
           install.packages("remotes")
           remotes::install_github("dmacguigan/RiboPilot", ref = Sys.getenv("RP_REF"))
+          stopifnot(requireNamespace("RiboPilot", quietly = TRUE))
+        shell: Rscript {0}
+
+      - name: Install rstudioapi (so the RStudio guard in new_project() is exercised)
+        run: install.packages("rstudioapi")
         shell: Rscript {0}
 
       - name: Make the practice project from Rscript
