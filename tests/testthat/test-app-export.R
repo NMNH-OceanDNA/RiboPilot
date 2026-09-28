@@ -440,6 +440,29 @@ test_that("Lock asks before locking a flagged unit that is not marked Reviewed",
   })
 })
 
+test_that("a row's lock icon asks about a flagged unit every time", {
+  skip_if_not_installed("withr")
+  dir <- mk_export_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_lock = 0, reviewed = 'no', curate_flags = 'contaminant'")
+  DBI::dbExecute(con, "UPDATE assemble SET assemble_lock = 0")
+  DBI::dbDisconnect(con)
+  withr::local_dir(dir)
+  q <- function(sql) RiboPilot:::app_query(sql)[[1]]
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble", lock_confirm_skip = TRUE)
+    session$flushReact()
+    session$setInputs(lock_row = "1")
+    expect_equal(q("SELECT assemble_lock FROM assemble"), 0L)
+    session$setInputs(lock_confirm = TRUE)
+    expect_equal(q("SELECT assemble_lock FROM assemble"), 1L)
+    session$setInputs(mode = "Annotate")
+    session$flushReact()
+    session$setInputs(lock_row = "1")
+    expect_equal(q("SELECT annotate_lock FROM annotate"), 0L)
+  })
+})
+
 test_that("Lock does not ask about a flagged unit marked Exclude from export", {
   skip_if_not_installed("withr")
   dir <- mk_export_project()

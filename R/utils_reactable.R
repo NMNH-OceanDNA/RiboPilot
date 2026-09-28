@@ -42,9 +42,9 @@ mp_js_obj <- function(x) {
 
 #' Lock glyph shared by the main table lock columns
 #' @noRd
-rt_lock_icon <- function() {
+rt_lock_icon <- function(inputId = NULL) {
   rt_dynamicIcon(c(`0` = "fa fa-lock-open mp-fg-neutral", `1` = "fa fa-lock mp-fg-neutral"),
-    labels = c(`0` = "Unlocked", `1` = "Locked"))
+    labels = c(`0` = "Unlocked", `1` = "Locked"), inputId = inputId)
 }
 
 #' Dynamic Icon
@@ -54,9 +54,11 @@ rt_lock_icon <- function() {
 #'   `icons`, giving the accessible name of each state. When supplied the
 #'   glyph gets `role="img"`, `aria-label` and `title`; without it the markup
 #'   is unchanged.
+#' @param inputId optional Shiny input id. When supplied the icon is a button
+#'   that sends its 1-based row index to this input.
 #'
 #' @noRd
-rt_dynamicIcon <- function(icons = NULL, labels = NULL) {
+rt_dynamicIcon <- function(icons = NULL, labels = NULL, inputId = NULL) {
   if (length(icons) == 0) {
     return({
       htmlwidgets::JS("function(cellInfo) {return cellInfo.value}")
@@ -73,11 +75,17 @@ rt_dynamicIcon <- function(icons = NULL, labels = NULL) {
       var label = labels[value];
       var name = label ?
         ` role='img' aria-label='${label}' title='${label}'` : '';
-      return `<i class='${icon}'${name} ` +
-        `style='padding-left: 0.2em;'></i>`
+      var html = `<i class='${icon}'${name} ` +
+        `style='padding-left: 0.2em;'></i>`;
+      var clickid = '%s';
+      if (!clickid) return html;
+      return `<a href='#' class='grow mp-icon-btn' data-row='${cellInfo.index + 1}' ` +
+        `onclick='event.preventDefault(); event.stopPropagation(); ` +
+        `Shiny.setInputValue(&#39;${clickid}&#39;, this.dataset.row, {priority: &#39;event&#39;})'>` +
+        html + `</a>`;
     }
     ",
-    mp_js_obj(icons), mp_js_obj(labels)
+    mp_js_obj(icons), mp_js_obj(labels), inputId %||% ""
   ) |> htmlwidgets::JS()
 }
 

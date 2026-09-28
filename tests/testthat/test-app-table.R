@@ -125,3 +125,46 @@ test_that("a refresh right after a re-render does not carry the old table's sele
     expect_equal(last$data$ID[last$selected], samples_data()$ID[2])
   })
 })
+
+test_that("a row's lock icon acts on that row alone, with the same prompts as Lock", {
+  skip_if_not_installed("withr")
+  dir <- mk_table_project()
+  withr::local_dir(dir)
+  asked <- 0L
+  testthat::local_mocked_bindings(confirmSweetAlert = function(...) asked <<- asked + 1L,
+    .package = "shinyWidgets")
+  lk <- function() RiboPilot:::app_query("SELECT ID FROM assemble WHERE assemble_lock = 1 ORDER BY ID")$ID
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble", Assemble_lock_filter = "0")
+    row <- function(id) match(id, samples_data()$ID)
+    session$setInputs(tbl__reactable__selected = row(c("S2", "S3")))
+    session$setInputs(tbl_visible = list(rows = row("S4")))   # the search hides S2 and S3
+    session$setInputs(lock_row = as.character(row("S4")))
+    expect_equal(lk(), c("S1", "S4"))
+    expect_equal(asked, 0L)
+    session$setInputs(Assemble_lock_filter = c("0", "1"), tbl_visible = NULL)
+    session$setInputs(lock_row = as.character(row("S4")))     # unlocking asks
+    expect_equal(c(asked, length(lk())), c(1L, 2L))
+    session$setInputs(lock_confirm = TRUE)
+    expect_equal(lk(), "S1")
+    session$setInputs(lock_row = as.character(row("S1")))
+    session$setInputs(lock_confirm_skip = TRUE, lock_confirm = FALSE)
+    expect_equal(c(asked, length(lk())), c(2L, 1L))
+    session$setInputs(lock_row = as.character(row("S1")))     # not asked again
+    expect_equal(c(asked, length(lk())), c(2L, 0L))
+  })
+})
+
+test_that("a row's state icon sets the state of that row alone", {
+  skip_if_not_installed("withr")
+  dir <- mk_table_project()
+  withr::local_dir(dir)
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    row <- function(id) match(id, samples_data()$ID)
+    session$setInputs(tbl__reactable__selected = row(c("S2", "S3")))
+    session$setInputs(state_row = as.character(row("S4")))
+    session$setInputs(new_state = "0", update_state = 1)
+    expect_equal(RiboPilot:::app_query("SELECT ID FROM assemble WHERE assemble_switch = 0")$ID, "S4")
+  })
+})

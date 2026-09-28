@@ -346,12 +346,13 @@ app_server <- function(input, output, session) {
     )
     if (lock_col %in% names(d)) {
       cols[[lock_col]] <- cd(lock_col, sticky = "left", html = TRUE, width = 52,
-        align = "center", filterable = FALSE, cell = rt_lock_icon())
+        align = "center", filterable = FALSE, cell = rt_lock_icon("lock_row"))
     }
     if (state_col %in% names(d) && mm$pfx %in% names(MP_STATE_CODES)) {
       cols[[state_col]] <- cd(state_col, sticky = "left", html = TRUE, width = 54,
         align = "center", filterable = FALSE,
-        cell = rt_dynamicIcon(icons = mp_state_icon_classes(mm$pfx), labels = mp_state_titles(mm$pfx)))
+        cell = rt_dynamicIcon(icons = mp_state_icon_classes(mm$pfx), labels = mp_state_titles(mm$pfx),
+          inputId = "state_row"))
     }
     if (mode == "Export") {
       cols[["ID"]] <- cd("ID", sticky = "left", width = mp_fit_width(d$ID))
@@ -624,8 +625,7 @@ app_server <- function(input, output, session) {
   selected_ids <- function() samples_data()$ID[selected_rows()]
   # Visible selected rows as (ID, path, scaffold) units (path/scaffold = 1 when the
   # active table has no unit columns).
-  selected_units <- function() {
-    sel <- selected_rows()
+  selected_units <- function(sel = selected_rows()) {
     if (!length(sel)) return(NULL)
     d <- samples_data()
     data.frame(ID = d$ID[sel],
@@ -684,9 +684,9 @@ app_server <- function(input, output, session) {
   # In Annotate mode each row is a (path, scaffold) unit, so the bulk update keys
   # on the unit; the annotate `sql` (ending "WHERE ID = ?") is rewritten to add
   # the unit predicate.
-  set_flag <- function(sql, verb = "updated") {
-    if (identical(input$mode %||% "Assemble", "Annotate")) return(set_unit_flag(sql, verb))
-    ids <- selected_ids()
+  set_flag <- function(sql, verb = "updated", u = selected_units()) {
+    if (identical(input$mode %||% "Assemble", "Annotate")) return(set_unit_flag(sql, verb, u))
+    ids <- u$ID
     if (!need_selection(length(ids))) return()
     con <- app_con()
     on.exit(DBI::dbDisconnect(con))
@@ -734,25 +734,25 @@ app_server <- function(input, output, session) {
   }
   lock_sql <- function(mm, to) sprintf("UPDATE %s SET %s_lock = %d WHERE ID = ?", mm$tbl, mm$pfx, to)
   next_step <- c(taxonomy = "Assemble", assemble = "Annotation Review", annotate = "Export")
-  observeEvent(list(input$tax_lock_btn, input$asmb_lock_btn, input$annot_lock_btn), ignoreInit = TRUE, {
+  lock_rows <- function(s) {
     mm <- mode_meta(input$mode)
-    u <- selected_units()
+    u <- selected_units(s)
     if (!need_selection(NROW(u))) return()
     lc <- paste0(mm$pfx, "_lock")
     d <- samples_data()
-    cur <- d[[lc]][selected_rows()]
+    cur <- d[[lc]][s]
     to <- if (identical(mp_flag_next(cur, on = 1L, off = 0L), 0L)) 0L else 1L
     n <- nrow(u)
     if (to == 0L) {
-      lock_next(function() set_flag(lock_sql(mm, 0L), verb = "unlocked"))
-      mp_confirm("lock_confirm", title = paste0("Unlock ", mp_n(n, MP_UNIT[[mm$pfx]]), "?"),
+      unlock <- function() set_flag(lock_sql(mm, 0L), verb = "unlocked", u = u)
+      skip <- mp_confirm("lock_confirm", title = paste0("Unlock ", mp_n(n, MP_UNIT[[mm$pfx]]), "?"),
         text = sprintf("Unlocked rows leave the %s table until locked again.", next_step[[mm$pfx]]),
-        action_label = "Unlock", danger = TRUE)
+        action_label = "Unlock", danger = TRUE, skippable = TRUE)
+      if (skip) unlock() else lock_next(unlock)
       return()
     }
-    do_lock <- function() set_flag(lock_sql(mm, 1L), verb = "locked")
+    do_lock <- function() set_flag(lock_sql(mm, 1L), verb = "locked", u = u)
     if (identical(mm$pfx, "taxonomy")) {
-      s <- selected_rows()
       weak <- d$ID[s][is.na(d$taxid[s])]
       if (length(weak) > 0) {
         lock_next(do_lock)
@@ -778,25 +778,38 @@ app_server <- function(input, output, session) {
     f <- lock_flagged(units)
     if (nrow(f)) return(confirm_flagged_lock(f, do_lock))
     do_lock()
-  })
-  observeEvent(list(input$tax_state_btn, input$asmb_state_btn, input$annot_state_btn),
-    ignoreInit = TRUE, {  # open a picker to choose the target state
-    ids <- selected_ids()
-    if (!need_selection(length(ids))) return()
+  }
+  observeEvent(list(input$tax_lock_btn, input$asmb_lock_btn, input$annot_lock_btn), ignoreInit = TRUE,
+    lock_rows(selected_rows()))
+  # Row icons send their index into samples_data(); search, filters, sort and
+  # paging leave it unchanged.
+  clicked_row <- function(i) {
+    i <- suppressWarnings(as.integer(i))
+    req(isTRUE(i >= 1 && i <= nrow(samples_data())))
+    i
+  }
+  observeEvent(input$lock_row, lock_rows(clicked_row(input$lock_row)))
+  state_units <- reactiveVal(NULL)
+  open_state <- function(s) {
+    if (!need_selection(length(s))) return()
     mm <- mode_meta(input$mode)
+    state_units(selected_units(s))
     # preselect only when every selected row agrees
-    cur <- unique(samples_data()[[paste0(mm$pfx, "_switch")]][selected_rows()])
-    showModal(mp_state_modal(ids,
+    cur <- unique(samples_data()[[paste0(mm$pfx, "_switch")]][s])
+    showModal(mp_state_modal(samples_data()$ID[s],
       current = if (length(cur) == 1 && !is.na(cur)) as.character(cur) else character(0),
       mode = mm$pfx))
-  })
+  }
+  observeEvent(list(input$tax_state_btn, input$asmb_state_btn, input$annot_state_btn),
+    ignoreInit = TRUE, open_state(selected_rows()))
+  observeEvent(input$state_row, open_state(clicked_row(input$state_row)))
   observeEvent(input$update_state, {
     if (is.null(input$new_state)) {
       mp_toast("Choose a state first.", type = "warning"); return()
     }
     mm <- mode_meta(input$mode)
     st <- as.integer(input$new_state)
-    set_flag(sprintf("UPDATE %s SET %s_switch = %d WHERE ID = ?", mm$tbl, mm$pfx, st))
+    set_flag(sprintf("UPDATE %s SET %s_switch = %d WHERE ID = ?", mm$tbl, mm$pfx, st), u = state_units())
     removeModal()
   })
   # Toolbar marks: the unlocked part of the selection goes one way

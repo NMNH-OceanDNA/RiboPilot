@@ -88,6 +88,10 @@ read this page, not the number, to see what changed.
   tick box, bulk actions, and Triage all act only on rows the search and column
   filters still show, and Triage skips assembly-locked samples with a toast
   rather than silently including them.
+* Clicking a row's lock or state icon on the Taxonomy, Assemble, and Annotation
+  Review tables locks, unlocks, or sets the state of that row alone, with the
+  same questions as the toolbar buttons. The Unlock and "Edit beyond the
+  selection" questions have a "Don't ask again this session" box.
 * Every tool chain package in the container image is pinned to the version
   actually installed, and the pins match `environment.yml`.
 * Opening a project whose container image is for another RiboPilot version shows

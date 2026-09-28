@@ -15,6 +15,25 @@ test_that("rt_dynamicIcon only names the glyph when labels are supplied", {
   expect_true(grepl("Unlocked", named, fixed = TRUE))
 })
 
+test_that("rt_dynamicIcon with an inputId sends its row to that input", {
+  expect_true(grepl("var clickid = '';", as.character(rt_lock_icon()), fixed = TRUE))
+  js <- as.character(rt_lock_icon("lock_row"))
+  expect_true(grepl("var clickid = 'lock_row';", js, fixed = TRUE))
+  expect_true(grepl("cellInfo.index + 1", js, fixed = TRUE))
+})
+
+test_that("a skippable confirm stops asking once its box is ticked", {
+  shown <- 0L
+  local_mocked_bindings(confirmSweetAlert = function(...) shown <<- shown + 1L,
+    .package = "shinyWidgets")
+  s <- shiny::MockShinySession$new()
+  expect_false(mp_confirm("x", "T", "body", "Go", skippable = TRUE, session = s))
+  s$setInputs(x_skip = TRUE)
+  expect_true(mp_confirm("x", "T", "body", "Go", skippable = TRUE, session = s))
+  expect_false(mp_confirm("x", "T", "body", "Go", session = s))
+  expect_equal(shown, 2L)
+})
+
 test_that("rt_icon_bttn_text keeps the cell value as the render gate", {
   js <- as.character(rt_icon_bttn_text("id", "fa fa-eye", "view",
                                        label = "Coverage", title = "Show it"))

@@ -460,9 +460,8 @@ opts_handlers <- function(input, output, session, deps) {
         return()
       }
       if (identical(chk$action, "confirm")) {
-        mp_confirm(paste0(p, "_confirm_edit"), title = "Edit beyond the selection",
-          text = chk$msg, action_label = "Continue", danger = TRUE)
-        return()
+        if (!mp_confirm(paste0(p, "_confirm_edit"), title = "Edit beyond the selection",
+          text = chk$msg, action_label = "Continue", danger = TRUE, skippable = TRUE)) return()
       }
       opts_apply(p, sp, input, deps, targets(), cur_row())
     })

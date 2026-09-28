@@ -84,6 +84,12 @@ Two buttons appear in every step:
   have their options for that step changed, the next update does not re-run
   them, and they move on to the next step. You can unlock at any time.
 
+The lock and state icons at the left of each row are buttons too: clicking a
+row's lock icon locks or unlocks that row alone, and clicking its state icon
+sets the state of that row alone, with the same questions the toolbar buttons
+ask. Unlocking asks first; tick **Don't ask again this session** to skip that
+question until you close the app.
+
 ::: {.alert .alert-warning}
 **Keep this browser tab open while a run is going.** Closing the tab, reloading
 the page, closing the run window, or pressing **Stop / Interrupt** stops the
