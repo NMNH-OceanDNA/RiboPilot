@@ -43,6 +43,7 @@ Imports:
     grDevices,
     utils
 Suggests:
+    devtools,
     knitr,
     rmarkdown,
     rstudioapi,

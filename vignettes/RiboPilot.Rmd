@@ -48,6 +48,12 @@ fish reference database is not reachable. That is expected: RiboPilot does not s
 a reference database, and the Reference step below builds the ones the practice
 project needs.
 
+The downloaded image can hold older code than the RiboPilot you installed,
+since its version number does not change during development; that can make a
+run fail in its R steps. See
+[Upgrading RiboPilot](Installation.html#upgrading-ribopilot) for building an
+image from current code.
+
 The 10 fish are real genome skims from GenBank's Sequence Read Archive. CHIM00
 and CHIM01 are synthetic: CHIM00 is a clean copy of one fish's rDNA, and CHIM01
 joins that fish's 18S to the 28S of a *Penicillium* mold. Both are labeled
@@ -62,11 +68,13 @@ RiboPilot::RiboPilot("~/ribopilot_test")
 ```
 
 The app opens in your browser on the Taxonomy step. The toolbar shows the five
-steps in order, and each step has its own table. The **Lock** and **State**
-filters, and the search box, can hide rows from the table entirely; the header
-tick box ticks only the rows still shown, and the toolbar buttons act only on
-ticked rows the search and column filters still show. Click a sample's ID, or
-its **details** button, to open its details.
+steps in order, and each step has its own table. Click a row to tick it, or
+tick the box in the header to tick every row still shown. The **Lock** and
+**State** filters, the search box, and the filter boxes under the column names
+can hide rows from the table entirely; the header tick box ticks only the rows
+still shown, and the toolbar buttons act only on ticked rows those filters
+still show. Click a sample's ID, or its **details** button, to open its
+details.
 
 Two buttons appear in every step:
 

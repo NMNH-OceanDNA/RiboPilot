@@ -71,6 +71,14 @@ check_container_image <- function(container) {
   }
   ref <- strsplit(utils::tail(parts, 1), ":", fixed = TRUE)[[1]]
   if (length(ref) != 2) return(invisible(container))
+  # A one-part name (no namespace) is also what a locally built image looks
+  # like; skip the Docker Hub check when docker already has it.
+  docker <- Sys.which("docker")
+  if (length(parts) == 1 && nzchar(docker) &&
+      identical(system2(docker, c("image", "inspect", container),
+                         stdout = FALSE, stderr = FALSE), 0L)) {
+    return(invisible(container))
+  }
   ns <- if (length(parts) == 2) parts[1] else "library"
   u <- sprintf("https://hub.docker.com/v2/repositories/%s/%s/tags/%s", ns, ref[1], ref[2])
   if (identical(url_status(u), "missing")) {

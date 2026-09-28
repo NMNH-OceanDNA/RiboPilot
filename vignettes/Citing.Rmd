@@ -50,7 +50,7 @@ setup without a container (unsupported) uses whatever versions you installed.
 | barrnap | `barrnap` | 1.10.6 | Finds the rRNA genes when chosen as rRNA anchor tool in Annotate Options. | Seemann, barrnap |
 | ITSx | `itsx` | 1.1.3 | Finds ITS1 and ITS2, and runs the final ITSx check at export. | Bengtsson-Palme et al. 2013 |
 | HMMER | `hmmer` | 3.4 | Used by ITSx. | Eddy 2011 |
-| Ribovore | `ribovore` | 1.0.5 | Its ribotyper checks the 18S and 28S structure in the chimera check. | Schaffer et al. 2021 |
+| Ribovore | (GitHub release) | 1.0.5 | Its ribotyper checks the 18S and 28S structure in the chimera check. | Schaffer et al. 2021 |
 | Infernal | (installed with Ribovore) | 1.1.5 | Used by ribotyper. | Nawrocki and Eddy 2013 |
 | Entrez Direct | `entrez-direct` | 26.0 | Downloads GenBank records for reference databases. | Kans 2013- |
 | R | `r-base` | 4.4.3 | Runs RiboPilot inside the container. | R Core Team 2025 |

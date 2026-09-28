@@ -83,7 +83,8 @@ shared lineage.
 If you press **Update** in the Assemble step while some groups have no database,
 RiboPilot warns you but goes ahead: those samples assemble with whatever database
 their **Assembly Options** name, as if you had left them on their current
-database.
+database. For a new project that is the fish database RiboPilot does not ship,
+so those samples fail.
 
 # The reference folder
 

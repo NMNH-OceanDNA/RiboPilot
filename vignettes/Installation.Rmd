@@ -92,7 +92,8 @@ Never paste your key into a screenshot, an email, or an issue.
 To upgrade, run `remotes::install_github("dmacguigan/RiboPilot")` again, then
 restart R. While RiboPilot is in development its version number stays at
 0.0.0.9018, so the number does not tell you whether you have the newest code:
-read the [changelog](../news/index.html) instead.
+read the [changelog](https://dmacguigan.github.io/RiboPilot/news/index.html)
+instead.
 
 What an upgrade means for your projects:
 
@@ -119,11 +120,20 @@ To get the image that matches your RiboPilot:
   (see [Disk space, caches, and offline use](Caches-and-Offline.html)); the next
   run downloads it again.
 - **Code newer than the published image:** build the image yourself from a copy
-  of the RiboPilot source at the same commit you installed. From its top folder,
-  run `docker/deploy-local.sh`, which tags the image `ribopilot:<version>` (while
-  the repository is private it needs the `gh` command, signed in). Then change the
-  `container` line in the project's `.config` to that tag, or pass it to
-  `new_project()` as `container`. See the
+  of the RiboPilot source at the same commit you installed. This needs a machine
+  with Docker; it does not work under Singularity/Apptainer alone. From its top
+  folder, run `docker/deploy-local.sh`, which needs the `devtools` R package and
+  (while the repository is private) the `gh` command, signed in; it tags the
+  image `ribopilot:<version>`. Then:
+    - **Docker:** change the `container` line in the project's `.config` to that
+      tag, or pass it to `new_project()` as `container`. `new_project()` will
+      warn that the tag "is not published on Docker Hub"; ignore that for an
+      image you built yourself.
+    - **Singularity/Apptainer (cluster):** on the machine with Docker, run
+      `singularity build ribopilot_<version>.sif docker-daemon://ribopilot:<version>`,
+      copy the `.sif` file to the cluster, and set the `container` line (or the
+      `container` argument to `new_project()`) to the path of that `.sif` file.
+  See the
   [docker folder's README](https://github.com/dmacguigan/RiboPilot/blob/main/docker/README.md).
 
 Each image takes about 7.7 GB. Once no project uses an old one, remove it with
