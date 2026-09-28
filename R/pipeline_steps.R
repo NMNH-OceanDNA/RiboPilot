@@ -561,17 +561,17 @@ trim_assembly <- function(con, id, path = 1L, scaffold = 1L, from, to) {
   from <- max(1L, as.integer(from)); to <- min(n, as.integer(to))
   if (from > to) stop("Invalid trim range.", call. = FALSE)
 
-  # Snapshot the original (pre-trim) unit state once, so [restore_assembly()] can
-  # undo this. Only the first trim writes it, so restore always returns the full unit.
+  # Snapshot the untrimmed unit state, so [restore_assembly()] can undo this.
+  # A trim of an already trimmed unit keeps the snapshot, so restore always
+  # returns the full unit.
   ensure_assembly_backup(con)
-  if (DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM assembly_backup WHERE ID = ? AND path = ? AND scaffold = ?",
-      params = list(id, path, scaffold))$n == 0) {
+  if (!any(unit_trimmed(con, id, path, scaffold))) {
     ann0 <- DBI::dbGetQuery(con, "SELECT * FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?",
       params = list(id, path, scaffold))
     cov0 <- DBI::dbGetQuery(con, "SELECT depths FROM coverage WHERE ID = ? AND path = ? AND scaffold = ?",
       params = list(id, path, scaffold))
     DBI::dbExecute(con,
-      "INSERT INTO assembly_backup (ID, path, scaffold, sequence, length, annotations, coverage, chimera, time_stamp)
+      "INSERT OR REPLACE INTO assembly_backup (ID, path, scaffold, sequence, length, annotations, coverage, chimera, time_stamp)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
       params = list(id, path, scaffold, s$sequence[1], n,
         as.character(jsonlite::toJSON(ann0, dataframe = "rows", na = "null")),
@@ -770,7 +770,7 @@ batch_trim_plan <- function(con, u, flank = 0L, restore = FALSE) {
       u$reason[i] <- "annotation locked"; next
     }
     if (restore) {
-      if (!unit_trimmed(con, u$ID[i], u$path[i], u$scaffold[i])) u$reason[i] <- "not trimmed"
+      if (!any(unit_trimmed(con, u$ID[i], u$path[i], u$scaffold[i]))) u$reason[i] <- "not trimmed"
       next
     }
     n <- q("SELECT LENGTH(sequence) n FROM assemblies")$n
@@ -778,6 +778,7 @@ batch_trim_plan <- function(con, u, flank = 0L, restore = FALSE) {
     a <- q("SELECT element, start, stop FROM annotations")
     miss <- setdiff(BATCH_TRIM_FEATURES, a$element)
     if (length(miss)) { u$reason[i] <- paste("missing", paste(miss, collapse = ", ")); next }
+    a <- a[a$element %in% BATCH_TRIM_FEATURES, , drop = FALSE]
     w <- trim_bounds(min(a$start), max(a$stop), n[1], flank)
     if (w[1] == 1L && w[2] == n[1]) { u$reason[i] <- "nothing to trim"; next }
     u$from[i] <- w[1]; u$to[i] <- w[2]

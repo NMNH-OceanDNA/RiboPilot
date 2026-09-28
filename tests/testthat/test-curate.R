@@ -72,6 +72,11 @@ test_that("a truncated feature is partial only at the end that meets no neighbou
   f$model_coverage[1] <- 70; f$start[2] <- 1500; f$stop[2] <- 1600
   x <- RiboPilot:::curate_rrna_core(f, RiboPilot:::rrna_params())$features[1, ]
   expect_equal(c(x$partial_start, x$partial_stop), c(1L, 1L))
+
+  # a neighbour overlapping by a few bp still meets it
+  f$start[2] <- 1798; f$stop[2] <- 2200
+  x <- RiboPilot:::curate_rrna_core(f, RiboPilot:::rrna_params())$features[1, ]
+  expect_equal(c(x$partial_start, x$partial_stop), c(1L, NA))
 })
 
 test_that("curate_one fills partial ends once and keeps the curator's choice", {

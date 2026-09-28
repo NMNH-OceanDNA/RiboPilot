@@ -11,10 +11,11 @@ mk_batch_project <- function(env = parent.frame()) {
   on.exit(DBI::dbDisconnect(con))
   for (sql in c("ALTER TABLE assemblies ADD COLUMN edited INT",
     "ALTER TABLE annotations ADD COLUMN length INT", "ALTER TABLE annotations ADD COLUMN edited INT",
-    "ALTER TABLE annotations ADD COLUMN strand TEXT", "ALTER TABLE coverage ADD COLUMN clips TEXT")) {
+    "ALTER TABLE annotations ADD COLUMN strand TEXT", "ALTER TABLE annotations ADD COLUMN type TEXT",
+    "ALTER TABLE annotations ADD COLUMN flags TEXT", "ALTER TABLE coverage ADD COLUMN clips TEXT")) {
     DBI::dbExecute(con, sql)
   }
-  DBI::dbExecute(con, "UPDATE assemblies SET sequence = ?, length = 600", params = list(strrep("ACGT", 150)))
+  DBI::dbExecute(con, "UPDATE assemblies SET sequence = ?, length = 600", params = list(withr::with_seed(1, paste(sample(c("A", "C", "G", "T"), 600, TRUE), collapse = ""))))
   for (u in list(c(1, 1), c(1, 2), c(2, 1), c(2, 2))) {
     feats <- if (all(u == c(1, 2))) FIVE[1:3] else FIVE
     for (f in feats) DBI::dbExecute(con,
@@ -130,5 +131,87 @@ test_that("the Trim and Restore buttons on both tables act on eligible units onl
     session$setInputs(annot_restore_btn = 1, batch_trim_go = 4)
     expect_equal(lens(), rep(600L, 4))
     expect_equal(utils::tail(toasts, 1), "1 unit restored.")
+  })
+})
+
+test_that("only the trimmed end of a unit stops being an assembly end", {
+  skip_if_not_installed("withr")
+  dir <- mk_batch_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "UPDATE annotations SET start = 1 WHERE path = 1 AND scaffold = 1 AND element = '18S'")
+  RiboPilot:::trim_assembly(con, "S1", 1L, 1L, 1, 550)
+  tr <- RiboPilot:::unit_trimmed(con, "S1", 1L, 1L)
+  expect_equal(tr, c(FALSE, TRUE))
+  d <- DBI::dbGetQuery(con, "SELECT * FROM annotations WHERE path = 1 AND scaffold = 1 ORDER BY start")
+  e <- RiboPilot:::partial_ends(d, 550, tr)
+  expect_true(e$p5[1])
+  expect_false(e$p3[5])
+  # on the minus strand the untouched left end is the 3' end
+  d$strand <- "-"
+  e <- RiboPilot:::partial_ends(d, 550, tr)
+  expect_true(e$p3[1])
+  expect_false(e$p5[5])
+  RiboPilot:::restore_assembly(con, "S1", 1L, 1L)
+  expect_equal(RiboPilot:::unit_trimmed(con, "S1", 1L, 1L), c(FALSE, FALSE))
+})
+
+test_that("a trim after a restore snapshots the edits made in between", {
+  skip_if_not_installed("withr")
+  dir <- mk_batch_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  on.exit(DBI::dbDisconnect(con))
+  el18 <- function() DBI::dbGetQuery(con,
+    "SELECT start FROM annotations WHERE path = 1 AND scaffold = 1 AND element = '18S'")$start
+  RiboPilot:::trim_assembly(con, "S1", 1L, 1L, 51, 550)
+  RiboPilot:::restore_assembly(con, "S1", 1L, 1L)
+  DBI::dbExecute(con, "UPDATE annotations SET start = 41 WHERE path = 1 AND scaffold = 1 AND element = '18S'")
+  RiboPilot:::trim_assembly(con, "S1", 1L, 1L, 41, 550)
+  RiboPilot:::trim_assembly(con, "S1", 1L, 1L, 2, 500)
+  RiboPilot:::restore_assembly(con, "S1", 1L, 1L)
+  expect_equal(el18(), 41L)
+  expect_equal(len(con)[1], 600L)
+})
+
+test_that("ETS and IGS do not widen the gene-ends window", {
+  skip_if_not_installed("withr")
+  dir <- mk_batch_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "INSERT INTO annotations (ID, path, scaffold, element, start, stop, strand)
+    VALUES ('S1', 1, 1, 'ETS', 1, 50, '+'), ('S1', 1, 1, 'IGS', 551, 600, '+')")
+  p <- RiboPilot:::batch_trim_plan(con, units4[1, ])
+  expect_equal(c(p$from, p$to), c(51L, 550L))
+})
+
+test_that("a batch trim refreshes an open unit window, and flank mode needs a flank", {
+  skip_if_not_installed("withr")
+  dir <- mk_batch_project()
+  withr::local_dir(dir)
+  local_mocked_bindings(mp_toast = function(text, ...) NULL)
+  db <- function() RiboPilot:::app_query(
+    "SELECT element, start, stop FROM annotations WHERE path = 2 AND scaffold = 2 ORDER BY start")
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Annotate")
+    session$flushReact()
+    d <- samples_data()
+    row <- which(d$path == 2 & d$scaffold == 2)
+    session$setInputs(ann_details = row)
+    expect_equal(feature_rows()$start[1], 51L)
+    session$setInputs(annotate_close = 1)
+    session$setInputs(tbl__reactable__selected = row, annot_trim_btn = 1)
+
+    session$setInputs(batch_trim_mode = "flank", batch_trim_flank = NA)
+    expect_match(output$batch_trim_summary$html, "Enter a flank of at least 1 bp.", fixed = TRUE)
+    session$setInputs(batch_trim_go = 1)
+    expect_equal(db()$start[1], 51L)
+
+    session$setInputs(batch_trim_mode = "annotated", batch_trim_go = 2)
+    session$setInputs(ann_details = row)
+    f <- feature_rows()
+    expect_equal(f$start, db()$start)
+    expect_equal(f$stop, db()$stop)
+    expect_equal(unname(trim_span()), c(1, 500, 500))
   })
 })

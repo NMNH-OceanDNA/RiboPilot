@@ -66,8 +66,12 @@ test_that("a scaffold end marks a gene partial only on an untrimmed unit", {
   expect_match(RiboPilot:::feature_table_text_con(con, "S1"), "\n<1\t>300\trRNA")
   # trimmed: the snapshot holds a longer sequence, so the ends are cut, not assembly ends
   DBI::dbExecute(con, "INSERT INTO assembly_backup (ID, path, scaffold, sequence) VALUES ('S1',1,1,?)",
-    params = list(strrep("A", 400)))
+    params = list(paste0(strrep("C", 50), strrep("A", 300), strrep("G", 50))))
   expect_match(RiboPilot:::feature_table_text_con(con, "S1"), "\n1\t300\trRNA")
+  # only the 3' tail cut: base 1 is still an assembly end
+  DBI::dbExecute(con, "UPDATE assembly_backup SET sequence = ?",
+    params = list(paste0(strrep("A", 300), strrep("G", 50))))
+  expect_match(RiboPilot:::feature_table_text_con(con, "S1"), "\n<1\t300\trRNA")
   # restored: snapshot and sequence agree again
   DBI::dbExecute(con, "UPDATE assembly_backup SET sequence = ?", params = list(strrep("A", 300)))
   expect_match(RiboPilot:::feature_table_text_con(con, "S1"), "\n<1\t>300\trRNA")

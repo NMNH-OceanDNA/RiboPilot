@@ -162,8 +162,8 @@ curate_rrna_core <- function(features, params = rrna_params(),
     left <- right <- rep(FALSE, nrow(features))
     for (i in which(trunc)) {
       o <- seq_len(nrow(features))[-i]
-      left[i] <- any(e[o] < s[i] & s[i] - e[o] - 1 <= ITS_SNAP_BP, na.rm = TRUE)
-      right[i] <- any(s[o] > e[i] & s[o] - e[i] - 1 <= ITS_SNAP_BP, na.rm = TRUE)
+      left[i] <- any(s[o] < s[i] & e[o] < e[i] & s[i] - e[o] - 1 <= ITS_SNAP_BP, na.rm = TRUE)
+      right[i] <- any(s[o] > s[i] & e[o] > e[i] & s[o] - e[i] - 1 <= ITS_SNAP_BP, na.rm = TRUE)
     }
     pl <- trunc & (!left | right)
     pr <- trunc & (!right | left)
