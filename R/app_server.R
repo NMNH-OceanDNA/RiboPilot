@@ -180,7 +180,7 @@ app_server <- function(input, output, session) {
            TRIM(COALESCE(a.assemble_notes,'') ||
              CASE WHEN COALESCE(a.find_rrna_notes,'') = '' THEN ''
                   WHEN COALESCE(a.assemble_notes,'') = '' THEN a.find_rrna_notes
-                  ELSE '; ' || a.find_rrna_notes END) AS notes, a.time_stamp,
+                  ELSE '; ' || a.find_rrna_notes END) AS notes, a.user_notes, a.time_stamp,
            'details' AS details, 'output' AS output
          FROM samples s LEFT JOIN assemble a ON s.ID = a.ID
            LEFT JOIN preprocess pp ON s.ID = pp.ID
@@ -289,16 +289,16 @@ app_server <- function(input, output, session) {
       match_type = cd("match_type", minWidth = 110, html = TRUE, align = "center",
         cell = rt_confidence_badge()),
       tax_alternatives = cd("tax_alternatives", minWidth = 260, html = TRUE, cell = rt_longtext()),
-      checks = cd("checks", width = 180, html = TRUE, cell = rt_checks_badge()),
+      checks = cd("checks", minWidth = 180, html = TRUE, cell = rt_checks_badge()),
       checks_tone = reactable::colDef(show = FALSE),
       reviewed = cd("reviewed", html = TRUE, align = "center", cell = rt_bool_badge(hide_no = TRUE)),
       problematic = cd("problematic", width = 110, html = TRUE, align = "center",
         cell = rt_bool_badge(hide_no = TRUE, yes_tone = "warning")),
       partial = cd("partial", width = 80, html = TRUE, align = "center",
-        cell = rt_bool_badge(hide_no = TRUE, yes_tone = "warning")),
+        cell = rt_bool_badge(yes_tone = "warning")),
       n_flags = cd("n_flags", width = 100, html = TRUE, filterable = FALSE, align = "center",
         cell = rt_flag_badge()),
-      annotate_notes = reactable::colDef(show = FALSE),
+      annotate_notes = cd("annotate_notes", minWidth = 160, html = TRUE, class = "mp-note-cell", cell = rt_longtext()),
       curate_flags = reactable::colDef(show = FALSE),
       itsx_warnings = cd("itsx_warnings", minWidth = 130, html = TRUE, cell = rt_itsx_badge()),
       screen_verdict = cd("screen_verdict", width = 110, html = TRUE, align = "center",
@@ -342,6 +342,7 @@ app_server <- function(input, output, session) {
       annotate_lock = cd("annotate_lock", width = 34, align = "center", filterable = FALSE,
         html = TRUE, cell = rt_lock_icon()),
       notes = cd("notes", minWidth = 160, html = TRUE, class = "mp-note-cell", cell = rt_longtext()),
+      user_notes = cd("user_notes", minWidth = 160, html = TRUE, class = "mp-note-cell", cell = rt_longtext()),
       time_stamp = cd("time_stamp", width = 150, filterable = FALSE, cell = rt_ts_date())
     )
     if (lock_col %in% names(d)) {
@@ -1969,22 +1970,22 @@ app_server <- function(input, output, session) {
     list(ID = id, path = h$path, scaffold = h$scaffold)
   })
   output$chimera_plot <- renderPlot({
-    u <- hit_unit(); grid::grid.draw(fixed_gutter(plot_chimera(u$ID, u$path, u$scaffold)))
+    edit_tick(); refresh(); u <- hit_unit(); grid::grid.draw(fixed_gutter(plot_chimera(u$ID, u$path, u$scaffold)))
   }, height = 296)
   output$chimera_result <- renderText({
-    refresh(); u <- hit_unit()
+    edit_tick(); refresh(); u <- hit_unit()
     ch <- app_query("SELECT label, reason FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", list(u$ID, u$path, u$scaffold))
     req(nrow(ch) == 1, !is.na(ch$label[1]))
     chimera_result_text(ch$label[1], ch$reason[1])
   })
   output$chimera_db_source <- renderText({
-    refresh(); u <- hit_unit()
+    edit_tick(); refresh(); u <- hit_unit()
     ch <- app_query("SELECT db_source FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", list(u$ID, u$path, u$scaffold))
     req(nrow(ch) == 1, !is.na(ch$db_source[1]))
     paste("windows searched against:", paste(basename(strsplit(ch$db_source[1], " ", fixed = TRUE)[[1]]), collapse = ", "))
   })
   output$chimera_segments <- reactable::renderReactable({
-    refresh()
+    edit_tick(); refresh()
     u <- hit_unit()
     ch <- app_query("SELECT segments FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", list(u$ID, u$path, u$scaffold))
     req(nrow(ch) == 1, !is.na(ch$segments[1]))
@@ -2005,7 +2006,7 @@ app_server <- function(input, output, session) {
         n_windows = reactable::colDef(width = 100, html = TRUE, header = rt_help_header("Windows", CHIMERA_COL_HELP$n_windows))))
   })
   output$chimera_windows <- reactable::renderReactable({
-    refresh()
+    edit_tick(); refresh()
     u <- hit_unit()
     w <- app_query("SELECT start, stop, species, lineage, pident, bitscore, rank_distance, depth_median, clip_frac FROM chimera_windows WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
       list(u$ID, u$path, u$scaffold))
@@ -2461,6 +2462,21 @@ app_server <- function(input, output, session) {
     if (!app_write(DBI::dbExecute(con, "UPDATE annotate SET annotate_notes = NULL WHERE ID = ? AND path = ? AND scaffold = ?",
       params = uargs()))) return()
     updateTextAreaInput(session, "annotate_notes", value = "")
+    rp_toast("Notes cleared.", type = "message")
+  })
+  observeEvent(input$assemble_user_notes, ignoreInit = TRUE, {
+    id <- sel_id(); req(id)
+    new <- input$assemble_user_notes %||% ""
+    cur <- app_query("SELECT user_notes FROM assemble WHERE ID = ?", params = list(id))$user_notes[1] %|NA|% ""
+    if (identical(new, cur) || (!nzchar(new) && nzchar(cur))) return()
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    app_write(DBI::dbExecute(con, "UPDATE assemble SET user_notes = ? WHERE ID = ?", params = list(new, id)))
+  })
+  observeEvent(input$assemble_user_notes_clear, {
+    id <- sel_id(); req(id)
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    if (!app_write(DBI::dbExecute(con, "UPDATE assemble SET user_notes = NULL WHERE ID = ?", params = list(id)))) return()
+    updateTextAreaInput(session, "assemble_user_notes", value = "")
     rp_toast("Notes cleared.", type = "message")
   })
 

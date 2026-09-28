@@ -178,6 +178,7 @@ new_db <- function(
       scaffolds INTEGER,
       assemble_notes TEXT,
       find_rrna_notes TEXT,
+      user_notes TEXT,
       assemble_switch INTEGER,
       assemble_lock INTEGER,
       assemble_opts TEXT,
@@ -503,7 +504,7 @@ new_db <- function(
       itsx_warnings TEXT,
       reviewed TEXT,
       problematic TEXT,
-      partial TEXT,
+      partial TEXT DEFAULT 'no',
       export_group TEXT,
       time_stamp INTEGER,
       PRIMARY KEY (ID, path, scaffold)

@@ -78,6 +78,14 @@ read this page, not the number, to see what changed.
 
 ## Working at scale, reproducibility, and clusters
 
+* The Assemble details window has a Notes box for your own notes on a sample.
+  They show in the Assemble table's User notes column, and a unit's notes show
+  in the Annotation Review table's User notes column.
+* The Partial column reads "no" for every unit not marked Partial, so a filter
+  on "no" lists only complete units.
+* The Checks column can be dragged wider.
+* The chimera check plot, segments, and windows redraw after a trim, a Restore,
+  or a feature boundary edit, instead of only when another unit is picked.
 * Trim and Restore buttons on the Assemble and Annotation Review toolbars trim
   many units at once, to their gene ends or gene ends plus a flank, and undo it.
   Only units with all five features are trimmed; the window lists the rest and

@@ -211,7 +211,14 @@ assemble_modal <- function(id) {
     # Only a supplied assembly has these: the contigs the rDNA search found but
     # did not carry forward. They never become assembly units, so this is the
     # one place they are visible at all.
-    rejected_contigs_section(id)
+    rejected_contigs_section(id),
+
+    rp_details("Notes", open = FALSE,
+      textAreaInput("assemble_user_notes", label = NULL, width = "100%",
+        value = app_query("SELECT user_notes FROM assemble WHERE ID = ?", params = list(id))$user_notes[1] %|NA|% "",
+        placeholder = "Notes for this sample"),
+      tags$p(class = "mp-help-text", "Saved as you type. Deleting the text does not clear the stored note; use Clear notes."),
+      actionButton("assemble_user_notes_clear", "Clear notes", class = "btn-sm"))
   )
 }
 

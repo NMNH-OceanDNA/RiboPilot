@@ -239,3 +239,27 @@ test_that("a batch trim refreshes an open unit window, and flank mode needs a fl
     expect_equal(unname(trim_span()), c(1, 500, 500))
   })
 })
+
+test_that("the chimera plot redraws after a trim, not only when the unit changes", {
+  skip_if_not_installed("withr")
+  dir <- mk_batch_project()
+  withr::local_dir(dir)
+  local_mocked_bindings(mp_toast = function(text, ...) NULL)
+  drawn <- 0L
+  local_mocked_bindings(plot_chimera = function(...) { drawn <<- drawn + 1L; ggplot2::ggplot() })
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Annotate")
+    session$flushReact()
+    d <- samples_data()
+    row <- which(d$path == 1 & d$scaffold == 1)
+    session$setInputs(ann_details = row)
+    output$chimera_plot
+    n <- drawn
+    session$setInputs(annotate_close = 1)
+    session$setInputs(tbl__reactable__selected = row, annot_trim_btn = 1,
+      batch_trim_mode = "annotated", batch_trim_go = 1)
+    output$chimera_plot
+    expect_gt(drawn, n)
+  })
+})

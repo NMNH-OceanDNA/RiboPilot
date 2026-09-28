@@ -227,6 +227,8 @@ The columns to look at first:
   is the check NCBI runs on rRNA and ITS submissions.
 - **Notes**: what the pipeline noted about the sample, for example why it
   failed.
+- **User notes**: your own notes on the sample, typed in the **Notes** box at
+  the bottom of its details window.
 
 The **Columns** menu above the table shows or hides the **Stats** and
 **Options** column groups.
@@ -307,7 +309,8 @@ hides them under **Check details**.
 Click a unit's ID to open it. The window shows the feature model (18S, ITS1,
 5.8S, ITS2, 28S), **Read coverage** with colored feature bands, **Edit active
 feature boundaries**, the **Reference alignment**, **Curation warnings**, the
-**Chimera check**, and **Notes**:
+**Chimera check**, and **Notes**. Your notes also show in the table's **User
+notes** column:
 
 ![A reviewed unit: its five features and read coverage](figures/get-started/annotation-details.png)
 
@@ -318,7 +321,7 @@ the ticked units, or the buttons at the top of a unit's window:
 |---|---|---|
 | **Mark Reviewed** | You checked this unit. | Lock and the Export window no longer ask about its contamination or chimera flags. |
 | **Exclude from export** | This unit should not be submitted. | The unit is left out of every export, and the Export window says so. **Include in export** undoes it. |
-| **Mark Partial** | The unit does not hold a complete repeat. | `{completeness}` reads "partial sequence". Gene ends are marked partial on their own (untrimmed scaffold ends, truncated genes, trims into a gene); the 5' and 3' buttons in the unit window override that per feature. |
+| **Mark Partial** | The unit does not hold a complete repeat. The Partial column reads "no" otherwise, so filter it with "no" to list only complete units. | `{completeness}` reads "partial sequence". Gene ends are marked partial on their own (untrimmed scaffold ends, truncated genes, trims into a gene); the 5' and 3' buttons in the unit window override that per feature. |
 
 **Lock** locks the unit and keeps the window open; **Lock & Close** locks it and
 closes the window. Neither marks it Reviewed. If the unit has a red Checks
