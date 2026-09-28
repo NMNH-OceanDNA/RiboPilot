@@ -206,28 +206,35 @@ risk_flags <- function(chimeric, ann, seq, chimera_label = NA_character_, chimer
 #' end is partial if it reaches a sequence end (base 1 or `seqlen`) of an
 #' untrimmed unit, read in the row's own strand.
 #' @param d Annotation rows. @param seqlen Sequence length (NA: no end check).
-#' @param trimmed Was the unit trimmed? Then its ends are not assembly ends.
+#' @param trimmed Is the unit's left / right end trimmed ([unit_trimmed()])? A
+#'   trimmed end is not an assembly end. One value covers both ends.
 #' @return list(p5, p3) of logical vectors.
 #' @noRd
 partial_ends <- function(d, seqlen, trimmed = FALSE) {
   flag <- function(col) if (is.null(d[[col]])) rep(NA, nrow(d)) else d[[col]]
-  left <- !trimmed & d$start <= 1
-  right <- !trimmed & !is.na(seqlen) & d$stop >= seqlen
+  trimmed <- rep_len(trimmed, 2)
+  left <- !trimmed[1] & d$start <= 1
+  right <- !trimmed[2] & !is.na(seqlen) & d$stop >= seqlen
   minus <- (d$strand %||% rep(NA, nrow(d))) %in% "-"
   eff <- function(f, auto) ifelse(is.na(f), auto, f %in% 1L)
   list(p5 = eff(flag("partial_start"), ifelse(minus, right, left)),
     p3 = eff(flag("partial_stop"), ifelse(minus, left, right)))
 }
 
-#' Is a unit trimmed now? (its pre-trim snapshot differs from its sequence)
+#' Is each end of a unit trimmed now? (compared with its pre-trim snapshot)
+#' @return c(left, right); any() says whether the unit is trimmed at all.
 #' @noRd
 unit_trimmed <- function(con, id, path, scaffold) {
   b <- tryCatch(DBI::dbGetQuery(con,
-    "SELECT b.sequence = a.sequence same FROM assembly_backup b JOIN assemblies a
+    "SELECT b.sequence bak, a.sequence cur FROM assembly_backup b JOIN assemblies a
        ON a.ID = b.ID AND a.path = b.path AND a.scaffold = b.scaffold
      WHERE b.ID = ? AND b.path = ? AND b.scaffold = ?",
     params = list(id, as.integer(path), as.integer(scaffold))), error = function(e) data.frame())
-  nrow(b) > 0 && !isTRUE(b$same[1] == 1)
+  if (nrow(b) == 0 || is.na(b$bak[1])) return(c(FALSE, FALSE))
+  if (is.na(b$cur[1])) return(c(TRUE, TRUE))
+  off <- as.integer(regexpr(b$cur[1], b$bak[1], fixed = TRUE))
+  if (off < 1) return(c(TRUE, TRUE))
+  c(off > 1, off + nchar(b$cur[1]) - 1 < nchar(b$bak[1]))
 }
 
 #' TRUE where a submission_risk string carries a tag the export window asks

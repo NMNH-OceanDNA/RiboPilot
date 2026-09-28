@@ -857,23 +857,32 @@ app_server <- function(input, output, session) {
   }
   observeEvent(list(input$asmb_trim_btn, input$annot_trim_btn), ignoreInit = TRUE, open_batch_trim(FALSE))
   observeEvent(list(input$asmb_restore_btn, input$annot_restore_btn), ignoreInit = TRUE, open_batch_trim(TRUE))
+  batch_flank <- function() {
+    if (!identical(input$batch_trim_mode, "flank")) return(0L)
+    suppressWarnings(as.integer(input$batch_trim_flank))[1]
+  }
+  batch_flank_bad <- function() identical(input$batch_trim_mode, "flank") &&
+    (is.na(batch_flank()) || batch_flank() < 1)
+  flank_msg <- "Enter a flank of at least 1 bp."
   batch_trim_plan_now <- function() {
     b <- batch_trim(); req(b)
-    flank <- if (identical(input$batch_trim_mode, "flank")) input$batch_trim_flank else 0L
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    batch_trim_plan(con, b$u, flank, b$restore)
+    batch_trim_plan(con, b$u, batch_flank(), b$restore)
   }
+  observe(shinyjs::toggleState("batch_trim_go", condition = !batch_flank_bad()))
   output$batch_trim_summary <- renderUI({
+    if (batch_flank_bad()) return(tags$p(style = "color:#c0392b; font-weight:bold;", flank_msg))
     batch_trim_summary(batch_trim_plan_now(), batch_trim()$restore)
   })
   observeEvent(input$batch_trim_go, {
     b <- batch_trim(); req(b)
+    if (batch_flank_bad()) return(mp_toast(flank_msg, type = "warning"))
     p <- batch_trim_plan_now()
     ok <- p[is.na(p$reason), , drop = FALSE]
     if (!nrow(ok)) return(mp_toast("Nothing to change: every unit is skipped.", type = "warning"))
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
     err <- batch_trim_apply(con, ok, b$restore)
-    removeModal(); batch_trim(NULL); refresh(refresh() + 1)
+    removeModal(); batch_trim(NULL); edit_tick(edit_tick() + 1); refresh(refresh() + 1)
     skipped <- nrow(p) - nrow(ok)
     mp_toast(paste0(mp_n(sum(is.na(err)), "unit"), if (b$restore) " restored" else " trimmed",
       if (skipped) paste0(", ", skipped, " skipped"), "."))

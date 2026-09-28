@@ -391,7 +391,7 @@ MP_UNIT_LOCKED <- paste("This unit is locked, so it is read only here.",
 #' Batch Trim / Restore tooltips; `what` is what the table's rows are.
 #' @noRd
 MP_TRIM_TIP <- function(what = c("units", "samples")) {
-  scope <- if (match.arg(what) == "units") "the selected units" else "every scaffold of the selected samples"
+  scope <- if (match.arg(what) == "units") "the selected units" else "every kept scaffold of the selected samples"
   c(trim = paste0("Trim ", scope, " to their gene ends, or gene ends plus a flank. ",
       "Only units with all five features (", paste(BATCH_TRIM_FEATURES, collapse = ", "),
       ") are trimmed; locked units are skipped."),

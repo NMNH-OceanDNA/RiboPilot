@@ -318,7 +318,7 @@ can be locked per sample: paths are alternative reconstructions of the same
 rDNA repeat, and a sample exports one.
 
 To trim many units at once, tick them and press **Trim** in the toolbar. Choose
-**Match gene ends** to keep only the span of the annotated features, or **Gene
+**Match gene ends** to keep only the span from 18S to 28S, or **Gene
 ends + flank** to keep a few extra bases on each side. Only units
 with all five features (18S, ITS1, 5.8S, ITS2, and 28S) are trimmed; the window
 lists the others and why, such as a missing feature or a lock, before you
