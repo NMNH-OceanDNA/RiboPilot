@@ -334,7 +334,7 @@ MP_COL_TIPS <- c(
   annotate_lock    = "Locked rows are finished with this step",
   reviewed         = "Checked by a curator; Lock and Export do not ask again about its contamination flags",
   problematic      = "Excluded units are left out of every export",
-  partial          = "A partial unit is described as 'partial sequence'; partial gene ends are set per feature in the unit window",
+  partial          = "A partial unit is described as 'partial sequence'; gene ends are partial at untrimmed scaffold ends, in truncated genes, and where a trim cut a gene, unless set with 5'/3' in the unit window",
   path             = "Assembly path number for this unit",
   scaffold         = "Scaffold number within the path",
   sci_name         = "Taxon assigned from the NCBI taxdump",
@@ -398,5 +398,6 @@ MP_FLAG_WORDS <- list(
       "project; include it again to export it.")),
   partial = c(set = "Mark Partial", clear = "Clear Partial",
     did_set = "marked partial", did_clear = "cleared of partial",
-    tip = paste("Export describes a partial unit as 'partial sequence'. Which gene ends",
-      "are partial (< and >) is set per feature with the 5' and 3' buttons.")))
+    tip = paste("Export describes a partial unit as 'partial sequence'. Gene ends are",
+      "marked partial (< and >) at untrimmed scaffold ends, in truncated genes, and where",
+      "a trim cut a gene; the 5' and 3' buttons in the unit window override that.")))

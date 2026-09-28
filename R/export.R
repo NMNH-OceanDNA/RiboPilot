@@ -121,8 +121,8 @@ find_n_runs <- function(seq, min_len = MIN_ASSEMBLY_GAP) {
 #' Emits the rRNA/spacer features plus an `assembly_gap` feature for each N-run
 #' (>= `MIN_ASSEMBLY_GAP`) so table2asn does not reject fabricated gap runs.
 #' A feature's 5' end is marked `<` and its 3' end `>` when that end is partial
-#' (`partial_start`/`partial_stop`) or reaches a sequence end. A '-' feature is
-#' written stop then start. `seqid` is the FASTA/feature id.
+#' (see [partial_ends()]). A '-' feature is written stop then start. `seqid` is
+#' the FASTA/feature id.
 #' @noRd
 feature_table_text_con <- function(con, id, path = 1L, scaffold = 1L, seqid = id) {
   d <- DBI::dbGetQuery(con,
@@ -137,7 +137,7 @@ feature_table_text_con <- function(con, id, path = 1L, scaffold = 1L, seqid = id
   seq <- if (nrow(st)) st$sequence[1] else NA_character_
   seqlen <- if (nrow(st) && !is.na(st$length[1])) st$length[1] else max(d$stop)
 
-  ends <- partial_ends(d, seqlen)
+  ends <- partial_ends(d, seqlen, unit_trimmed(con, id, path, scaffold))
   minus <- (d$strand %||% rep(NA, nrow(d))) %in% "-"
   gaps <- find_n_runs(seq)
   feats <- rbind(
@@ -202,18 +202,32 @@ risk_flags <- function(chimeric, ann, seq, chimera_label = NA_character_, chimer
 
 #' Is each annotation row partial at its 5' and 3' end?
 #'
-#' An end is partial when its `partial_start`/`partial_stop` flag is 1 or it
-#' reaches a sequence end (base 1 or `seqlen`), read in the row's own strand.
+#' A set `partial_start`/`partial_stop` (0 or 1) is final. When it is NULL, the
+#' end is partial if it reaches a sequence end (base 1 or `seqlen`) of an
+#' untrimmed unit, read in the row's own strand.
 #' @param d Annotation rows. @param seqlen Sequence length (NA: no end check).
+#' @param trimmed Was the unit trimmed? Then its ends are not assembly ends.
 #' @return list(p5, p3) of logical vectors.
 #' @noRd
-partial_ends <- function(d, seqlen) {
-  flag <- function(col) if (is.null(d[[col]])) rep(FALSE, nrow(d)) else d[[col]] %in% 1L
-  left <- d$start <= 1
-  right <- !is.na(seqlen) & d$stop >= seqlen
+partial_ends <- function(d, seqlen, trimmed = FALSE) {
+  flag <- function(col) if (is.null(d[[col]])) rep(NA, nrow(d)) else d[[col]]
+  left <- !trimmed & d$start <= 1
+  right <- !trimmed & !is.na(seqlen) & d$stop >= seqlen
   minus <- (d$strand %||% rep(NA, nrow(d))) %in% "-"
-  list(p5 = flag("partial_start") | ifelse(minus, right, left),
-    p3 = flag("partial_stop") | ifelse(minus, left, right))
+  eff <- function(f, auto) ifelse(is.na(f), auto, f %in% 1L)
+  list(p5 = eff(flag("partial_start"), ifelse(minus, right, left)),
+    p3 = eff(flag("partial_stop"), ifelse(minus, left, right)))
+}
+
+#' Is a unit trimmed now? (its pre-trim snapshot differs from its sequence)
+#' @noRd
+unit_trimmed <- function(con, id, path, scaffold) {
+  b <- tryCatch(DBI::dbGetQuery(con,
+    "SELECT b.sequence = a.sequence same FROM assembly_backup b JOIN assemblies a
+       ON a.ID = b.ID AND a.path = b.path AND a.scaffold = b.scaffold
+     WHERE b.ID = ? AND b.path = ? AND b.scaffold = ?",
+    params = list(id, as.integer(path), as.integer(scaffold))), error = function(e) data.frame())
+  nrow(b) > 0 && !isTRUE(b$same[1] == 1)
 }
 
 #' TRUE where a submission_risk string carries a tag the export window asks

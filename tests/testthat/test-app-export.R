@@ -639,6 +639,7 @@ test_that("the 5' and 3' partial toggles keep with Save and undo with Reset", {
     active_feature("18S")
     session$setInputs(toggle_partial_start = 1)   # not editing: ignored
     expect_equal(p(), c(NA_integer_, NA_integer_))
+    expect_equal(output$feat_edit_active, "Active feature: 18S")
 
     session$setInputs(feat_edit = TRUE)
     session$setInputs(toggle_partial_start = 2)
@@ -653,6 +654,15 @@ test_that("the 5' and 3' partial toggles keep with Save and undo with Reset", {
     session$setInputs(toggle_partial_start = 3)
     session$setInputs(toggle_partial_start = 4)   # toggled back off
     session$setInputs(feat_save = 1)
+    expect_equal(p(), c(0L, 1L))
+
+    # a gene at the scaffold end is automatically partial; a click clears it explicitly
+    c2 <- RiboPilot:::app_con(); DBI::dbExecute(c2, "UPDATE annotations SET start = 1, partial_start = NULL WHERE element = '18S'")
+    DBI::dbDisconnect(c2)
+    edit_tick(edit_tick() + 1)
+    session$flushReact()
+    expect_equal(output$feat_edit_active, "Active feature: 18S (partial 5', 3')")
+    session$setInputs(toggle_partial_start = 5)
     expect_equal(p(), c(0L, 1L))
 
     # a locked unit is read only

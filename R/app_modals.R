@@ -474,7 +474,7 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
       ),
       tags$p(class = "mp-help-text", style = "margin-top:4px;",
         paste("Check Edit to adjust boundaries; + extends outward, - trims inward.",
-          "Partial 5' and 3' mark an end that is not the gene's real end. Save to keep, Reset to discard.")),
+          "Partial 5' and 3' show whether an end is partial and set it by hand. Save to keep, Reset to discard.")),
       div(class = "code-block", style = "margin-top:6px; white-space:normal; word-break:break-all;",
         uiOutput("nudge_seq"))),
 

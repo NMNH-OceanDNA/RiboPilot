@@ -1854,11 +1854,23 @@ app_server <- function(input, output, session) {
     }
   })
 
-  # the active feature's 5'/3' partial flags
+  # effective 5'/3' partial state of the unit's features (curator's flag, else automatic)
+  unit_partial_rows <- function(d) {
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    u <- sel_unit()
+    n <- DBI::dbGetQuery(con, "SELECT length FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = uargs())$length
+    e <- partial_ends(d, if (length(n)) n[1] else NA, unit_trimmed(con, u$ID, u$path, u$scaffold))
+    d$partial_start <- as.integer(e$p5); d$partial_stop <- as.integer(e$p3)
+    d
+  }
+  partial_state <- function(el) {
+    unit_partial_rows(app_query("SELECT * FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?",
+      params = c(uargs(), list(el))))
+  }
   active_partial <- reactive({
     edit_tick(); u <- sel_unit(); el <- active_feature(); req(u, el)
-    app_query("SELECT partial_start, partial_stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?",
-      params = c(uargs(), list(el)))
+    partial_state(el)
   })
   output$feat_edit_active <- renderText({
     el <- active_feature(); if (is.null(el)) return("No active feature")
@@ -2076,8 +2088,8 @@ app_server <- function(input, output, session) {
   # ---- gene list (feature model); click a row -> active feature ----
   feature_rows <- reactive({
     edit_tick(); u <- sel_unit(); req(u)
-    app_query("SELECT element, type, start, stop, length, strand, partial_start, partial_stop, status, flags
-       FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start", params = uargs())
+    unit_partial_rows(app_query("SELECT element, type, start, stop, length, strand, partial_start, partial_stop, status, flags
+       FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start", params = uargs()))
   })
   output$feature_tbl <- reactable::renderReactable({
     d <- feature_rows(); act <- active_feature()
@@ -2415,10 +2427,11 @@ app_server <- function(input, output, session) {
   toggle_partial <- function(col) {
     if (!isTRUE(edit_active()) || lock_blocked()) return()
     el <- active_feature(); req(el)
+    to <- if (isTRUE(partial_state(el)[[col]][1] == 1)) 0L else 1L
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
     if (!app_write(DBI::dbExecute(con, sprintf(
-      "UPDATE annotations SET %s = 1 - COALESCE(%s, 0), edited = 1 WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?",
-      col, col), params = c(uargs(), list(el))))) return()
+      "UPDATE annotations SET %s = ?, edited = 1 WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?",
+      col), params = c(list(to), uargs(), list(el))))) return()
     edit_dirty(TRUE); edit_tick(edit_tick() + 1)
   }
   observeEvent(input$toggle_partial_start, toggle_partial("partial_start"))

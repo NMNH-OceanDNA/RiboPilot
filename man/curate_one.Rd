@@ -24,5 +24,5 @@ per-feature reference identities (\code{blast_ref_alignment}), and the sample vs
 hit lineages, runs \code{\link[=curate_rrna_core]{curate_rrna_core()}}, then updates each feature's
 \code{status}/\code{flags} and the per-sample \code{annotate} summary (\code{n_flags},
 \code{curate_flags}) in one transaction. \code{partial_start}/\code{partial_stop} are only
-filled where still NULL, so a curator's own choice is kept.
+set (to 1) where still NULL, so a curator's own choice is kept.
 }

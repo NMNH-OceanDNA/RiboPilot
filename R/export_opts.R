@@ -149,7 +149,7 @@ export_header_data <- function(con, units) {
     seq_len_bp <- if (nrow(asm)) asm$length[1] else NA_integer_
     unit_partial <- isTRUE(nrow(ann) > 0 && identical(ann$partial[1], "yes"))
     # A unit marked partial changes only the completeness wording.
-    ends <- partial_ends(feat, seq_len_bp)
+    ends <- partial_ends(feat, seq_len_bp, unit_trimmed(con, id, p, s))
     part <- ends$p5 | ends$p3
     extra <- data.frame(
       path = p, scaffold = s,

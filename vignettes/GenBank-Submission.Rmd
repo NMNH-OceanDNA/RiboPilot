@@ -109,16 +109,19 @@ export group that holds such a sample. It is allowed otherwise.
 A gene end is written as partial (`<` for the 5' end or `>` for the 3' end in
 the feature table, and "partial sequence" in the definition line) when:
 
-- it runs into the end of the scaffold;
+- it runs into the end of a scaffold that has not been trimmed (the gene ran
+  off the assembled contig);
 - the quality check found the gene truncated, meaning less than 90 percent of
   it was recovered. The end that meets no neighbouring spacer or gene is marked;
   if both ends meet one, both are marked; or
-- you set it with the **5'** or **3'** button under **Partial** in the unit
-  window (check **Edit**, pick the feature, then **Save**).
+- a trim cut through the gene. A trim that lands on a gene boundary marks
+  nothing.
 
-The quality check sets these marks once, after annotation. Your own choice is
-kept when the unit is curated again. **Mark Partial** on the unit only changes
-`{completeness}` to "partial sequence"; it does not mark any gene end.
+Your own choice always wins: the **5'** and **3'** buttons under **Partial** in
+the unit window (check **Edit**, pick the feature, then **Save**) show whether
+each end is partial now, and a click sets it to the other state for good.
+**Mark Partial** on the unit only changes `{completeness}` to "partial
+sequence"; it does not mark any gene end.
 
 # Flanking sequence
 

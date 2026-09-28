@@ -47,9 +47,30 @@ test_that("partial ends are marked per feature, strand-aware, and minus is writt
   expect_match(tbl, "\n<260\t100\trRNA")
   expect_match(tbl, "\n460\t>300\trRNA")
 
-  # a minus feature touching base 1 is 3' partial there
-  DBI::dbExecute(con, "UPDATE annotations SET start = 1, partial_start = 0 WHERE element = '18S'")
-  expect_match(RiboPilot:::feature_table_text_con(con, "S1"), "\n260\t>1\trRNA")
+  # a minus feature touching base 1 is 3' partial there, unless set otherwise
+  DBI::dbExecute(con, "UPDATE annotations SET start = 1, partial_stop = NULL WHERE element = '18S'")
+  expect_match(RiboPilot:::feature_table_text_con(con, "S1"), "\n<260\t>1\trRNA")
+  DBI::dbExecute(con, "UPDATE annotations SET partial_stop = 0 WHERE element = '18S'")
+  expect_match(RiboPilot:::feature_table_text_con(con, "S1"), "\n<260\t1\trRNA")
+})
+
+test_that("a scaffold end marks a gene partial only on an untrimmed unit", {
+  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT, type TEXT,
+    start INT, stop INT, strand TEXT, partial_start INT, partial_stop INT)")
+  DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, sequence TEXT, length INT)")
+  DBI::dbExecute(con, RiboPilot:::ASSEMBLY_BACKUP_DDL)
+  DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',1,1, ?, 300)", params = list(strrep("A", 300)))
+  DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,1,'18S','rRNA',1,300,'+',NULL,NULL)")
+  expect_match(RiboPilot:::feature_table_text_con(con, "S1"), "\n<1\t>300\trRNA")
+  # trimmed: the snapshot holds a longer sequence, so the ends are cut, not assembly ends
+  DBI::dbExecute(con, "INSERT INTO assembly_backup (ID, path, scaffold, sequence) VALUES ('S1',1,1,?)",
+    params = list(strrep("A", 400)))
+  expect_match(RiboPilot:::feature_table_text_con(con, "S1"), "\n1\t300\trRNA")
+  # restored: snapshot and sequence agree again
+  DBI::dbExecute(con, "UPDATE assembly_backup SET sequence = ?", params = list(strrep("A", 300)))
+  expect_match(RiboPilot:::feature_table_text_con(con, "S1"), "\n<1\t>300\trRNA")
 })
 
 test_that("a unit marked partial changes only the completeness wording", {

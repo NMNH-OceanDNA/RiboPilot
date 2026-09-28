@@ -49,8 +49,8 @@ test_that("a truncated feature is partial only at the end that meets no neighbou
   f <- good_feats(); f$model_coverage[f$element == "18S"] <- 70
   r <- RiboPilot:::curate_rrna_core(f, RiboPilot:::rrna_params())
   x <- r$features[r$features$element == "18S", ]
-  expect_equal(c(x$partial_start, x$partial_stop), c(1L, 0L))  # 3' end meets ITS1
-  expect_true(all(r$features$partial_start[r$features$element != "18S"] == 0L))
+  expect_equal(c(x$partial_start, x$partial_stop), c(1L, NA))  # 3' end meets ITS1
+  expect_true(all(is.na(r$features$partial_start[r$features$element != "18S"])))
 
   # meets neighbours at both ends: cannot tell which is short, so both
   f$model_coverage[f$element == "18S"] <- 100; f$model_coverage[f$element == "5.8S"] <- 50
@@ -65,7 +65,13 @@ test_that("a truncated feature is partial only at the end that meets no neighbou
   expect_equal(c(x$partial_start, x$partial_stop), c(1L, 1L))
   f$start[2] <- 1806
   x <- RiboPilot:::curate_rrna_core(f, RiboPilot:::rrna_params())$features[1, ]
-  expect_equal(c(x$partial_start, x$partial_stop), c(0L, 1L))
+  expect_equal(c(x$partial_start, x$partial_stop), c(NA, 1L))
+
+  # a feature nested inside the truncated one is not a neighbour
+  f <- good_feats()[good_feats()$element %in% c("18S", "ITS1"), ]
+  f$model_coverage[1] <- 70; f$start[2] <- 1500; f$stop[2] <- 1600
+  x <- RiboPilot:::curate_rrna_core(f, RiboPilot:::rrna_params())$features[1, ]
+  expect_equal(c(x$partial_start, x$partial_stop), c(1L, 1L))
 })
 
 test_that("curate_one fills partial ends once and keeps the curator's choice", {
@@ -77,10 +83,10 @@ test_that("curate_one fills partial ends once and keeps the curator's choice", {
   RiboPilot::curate_one(con, "S1", 1L, 1L)
   p <- function() DBI::dbGetQuery(con,
     "SELECT partial_start s, partial_stop e FROM annotations WHERE element = '28S'")
-  expect_equal(unlist(p()), c(s = 0L, e = 1L))
+  expect_equal(unlist(p()), c(s = NA, e = 1L))
   DBI::dbExecute(con, "UPDATE annotations SET partial_stop = 0 WHERE element = '28S'")
   RiboPilot::curate_one(con, "S1", 1L, 1L)
-  expect_equal(unlist(p()), c(s = 0L, e = 0L))
+  expect_equal(unlist(p()), c(s = NA, e = 0L))
 })
 
 test_that("low_identity respects coverage and per-element floors", {

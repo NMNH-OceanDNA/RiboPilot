@@ -583,7 +583,7 @@ trim_assembly <- function(con, id, path = 1L, scaffold = 1L, from, to) {
   DBI::dbExecute(con, "UPDATE assemblies SET sequence = ?, length = ?, edited = 1 WHERE ID = ? AND path = ? AND scaffold = ?",
     params = list(new_seq, new_len, id, path, scaffold))
 
-  ann <- DBI::dbGetQuery(con, "SELECT element, start, stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?",
+  ann <- DBI::dbGetQuery(con, "SELECT * FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?",
     params = list(id, path, scaffold))
   for (i in seq_len(nrow(ann))) {
     ns <- ann$start[i] - from + 1; nt <- ann$stop[i] - from + 1
@@ -591,6 +591,15 @@ trim_assembly <- function(con, id, path = 1L, scaffold = 1L, from, to) {
       DBI::dbExecute(con, "DELETE FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?",
         params = list(id, path, scaffold, ann$element[i]))
       next
+    }
+    # a cut through the gene makes that end partial
+    minus <- identical(ann$strand[i], "-")
+    cut <- c(if (ns < 1) (if (minus) "partial_stop" else "partial_start"),
+      if (nt > new_len) (if (minus) "partial_start" else "partial_stop"))
+    for (col in cut) {
+      DBI::dbExecute(con, sprintf(
+        "UPDATE annotations SET %s = 1 WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?", col),
+        params = list(id, path, scaffold, ann$element[i]))
     }
     ns <- max(1L, ns); nt <- min(new_len, nt)
     DBI::dbExecute(con,
