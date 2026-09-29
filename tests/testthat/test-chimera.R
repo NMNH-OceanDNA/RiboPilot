@@ -500,9 +500,12 @@ test_that("chimera table column help covers every displayed column", {
 
 test_that("the chimera panel opens with the unit's own level and reason", {
   expect_match(as.character(RiboPilot:::chimera_panel()), "chimera_result", fixed = TRUE)
-  expect_equal(RiboPilot:::chimera_result_text("minor", "18S resolves to Chordata: agree only to phylum"),
-    "This unit: minor (18S resolves to Chordata: agree only to phylum)")
-  expect_equal(RiboPilot:::chimera_result_text("clean", NA), "This unit: clean")
+  x <- as.character(RiboPilot:::chimera_result_text("minor", "18S resolves to Chordata: agree only to phylum"))
+  expect_match(x, '<span class="mp-pill mp-pill-warning">minor</span>', fixed = TRUE)
+  expect_match(x, 'title="18S resolves to Chordata: agree only to phylum"', fixed = TRUE)
+  x <- as.character(RiboPilot:::chimera_result_text("clean", NA))
+  expect_match(x, '<span class="mp-pill mp-pill-success">clean</span>', fixed = TRUE)
+  expect_false(grepl("title=", x, fixed = TRUE))
 })
 
 test_that("the junction table names the checks behind each junction and why", {

@@ -1979,7 +1979,7 @@ app_server <- function(input, output, session) {
   output$chimera_plot <- renderPlot({
     edit_tick(); refresh(); u <- hit_unit(); grid::grid.draw(fixed_gutter(plot_chimera(u$ID, u$path, u$scaffold)))
   }, height = 296)
-  output$chimera_result <- renderText({
+  output$chimera_result <- renderUI({
     edit_tick(); refresh(); u <- hit_unit()
     ch <- app_query("SELECT label, reason FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", list(u$ID, u$path, u$scaffold))
     req(nrow(ch) == 1, !is.na(ch$label[1]))

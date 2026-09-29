@@ -148,19 +148,12 @@ rp_sample_nav <- function() {
 #' @noRd
 chimera_panel <- function() {
   tagList(
-    tags$p(style = "margin:2px 0 4px; font-weight:600;", textOutput("chimera_result", inline = TRUE)),
+    tags$p(style = "margin:2px 0 4px; font-weight:600;", uiOutput("chimera_result", inline = TRUE)),
     tags$p(class = "mp-help-text", style = "margin:2px 0 4px;",
-      "A chimera is one scaffold built from pieces of different origin: two organisms, ",
-      "or rDNA copies joined in the wrong place. Four checks look for one: the 18S, 5.8S, and 28S ",
-      "BLAST hits must agree on a lineage; 500 bp windows BLASTed against the bundled rDNA database ",
-      "are grouped into segments by class; ribotyper checks the 18S and 28S structure; and reads ",
-      "clipped at one position, or a lasting step in read depth, mark a possible join."),
-    tags$p(class = "mp-help-text", style = "margin:2px 0 4px;",
-      "Severe: two parts match different phyla or kingdoms. The export calls the record chimeric ",
-      "and asks before including it. Minor: weaker evidence, such as a class-level switch or read ",
-      "evidence alone. It is listed in the export report but not flagged to GenBank. Windows in ",
-      "conserved 18S or 28S that match several classes equally well are shown as unresolved and ",
-      "do not count."),
+      "Looks for pieces of different origin joined in one scaffold, using the genes' BLAST hits, ",
+      "500 bp BLAST windows, ribotyper, and read depth and clipping. Severe (different phyla or ",
+      "kingdoms) is flagged at export; minor is only reported. Unresolved windows match several ",
+      "classes equally and do not count."),
     tags$p(class = "mp-help-text", style = "margin:2px 0 4px;", textOutput("chimera_db_source", inline = TRUE)),
     plotOutput("chimera_plot", height = "300px"),
     reactable::reactableOutput("chimera_segments"),
@@ -974,7 +967,11 @@ chimera_seg_colors <- function(seg, sample_lt) {
 #' The chimera call for one unit, in words
 #' @noRd
 chimera_result_text <- function(label, reason) {
-  paste0("This unit: ", label, if (!is.na(reason) && nzchar(reason)) paste0(" (", reason, ")"))
+  has <- !is.na(reason) && nzchar(reason)
+  tone <- switch(label, clean = "success", severe = "danger", "warning")
+  tags$span(title = if (has) reason, "Chimera call: ",
+    tags$span(class = paste0("mp-pill mp-pill-", tone), label), if (has) tags$span(
+    class = "mp-help-text", style = "font-weight:normal;", " (hover for the full reason)"))
 }
 
 #' A unit's chimera check as first run: before its first trim, in untrimmed
