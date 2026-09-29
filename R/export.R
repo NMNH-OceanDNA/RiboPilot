@@ -493,7 +493,7 @@ exportable_units <- function(con) {
 export_left_out <- function(con, group) {
   DBI::dbGetQuery(con, paste(
     "SELECT an.ID, an.path, an.scaffold,
-       CASE WHEN COALESCE(an.problematic,'') = 'yes' THEN 'marked Exclude from export'
+       CASE WHEN COALESCE(an.problematic,'') = 'yes' THEN 'excluded from export'
             WHEN COALESCE(a.assemble_lock,0) != 1 THEN 'assembly not locked'
             WHEN COALESCE(an.annotate_lock,0) != 1 THEN 'annotation not locked'
             ELSE 'scaffold dropped' END AS why
@@ -671,8 +671,8 @@ export_report_html <- function(con, units, out_html, label, smry = export_summar
 #' @return (invisibly) the group output directory, with the summary data.frame
 #'   attached as attribute `summary`.
 #' @details A unit is exported when its sample's assembly and the unit's
-#'   annotation are both locked, its scaffold is kept, and it is not marked
-#'   Exclude from export.
+#'   annotation are both locked, its scaffold is kept, and it is not excluded
+#'   from export.
 #' @export
 export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
                           out_dir = file.path(path, "out"),
@@ -696,7 +696,7 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
   }
   if (nrow(sel) == 0) {
     stop("No units to export: a unit needs its assembly and its annotation locked, ",
-      "and must not be marked Exclude from export.", call. = FALSE)
+      "and must not be excluded from export.", call. = FALSE)
   }
   # SeqID: the sample's ID when it exports a single unit, else ID_p<path>_s<scaffold>.
   # Counted over ALL exportable units of the sample, not over this bundle's

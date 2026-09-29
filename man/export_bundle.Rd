@@ -72,6 +72,6 @@ Build a GenBank submission bundle for a set of samples (one export group)
 }
 \details{
 A unit is exported when its sample's assembly and the unit's
-annotation are both locked, its scaffold is kept, and it is not marked
-Exclude from export.
+annotation are both locked, its scaffold is kept, and it is not excluded
+from export.
 }

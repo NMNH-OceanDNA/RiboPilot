@@ -39,10 +39,11 @@ need_unlocked <- function(locked_ids, noun = "sample",
 need_one_path <- function(u, session = getDefaultReactiveDomain()) {
   ids <- unique(u$ID)
   cur <- app_query(sprintf(
-    "SELECT ID, path, scaffold, COALESCE(annotate_lock,0) AS lock FROM annotate WHERE ID IN (%s)",
+    "SELECT ID, path, scaffold, COALESCE(annotate_lock,0) AS lock, problematic FROM annotate WHERE ID IN (%s)",
     paste(rep("?", length(ids)), collapse = ",")), params = as.list(ids))
-  on <- cur$lock == 1 |
-    unit_key(cur$ID, cur$path, cur$scaffold) %in% unit_key(u$ID, u$path, u$scaffold)
+  # excluded units are never exported, so they do not count
+  on <- !(cur$problematic %in% "yes") & (cur$lock == 1 |
+    unit_key(cur$ID, cur$path, cur$scaffold) %in% unit_key(u$ID, u$path, u$scaffold))
   bad <- names(Filter(function(p) length(unique(p)) > 1, split(cur$path[on], cur$ID[on])))
   if (length(bad) == 0) return(TRUE)
   mp_alert(

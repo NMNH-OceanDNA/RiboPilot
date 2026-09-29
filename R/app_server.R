@@ -404,7 +404,7 @@ app_server <- function(input, output, session) {
       Annotate = paste("No units to show. A unit is listed once its sample's assembly is locked",
         "in the Assemble step. The Lock and State filters and the search box also hide rows."),
       Export   = paste("No units ready to export. A unit is listed once its assembly (Assemble)",
-        "and its annotation (Annotation Review) are both locked; units marked Exclude from export",
+        "and its annotation (Annotation Review) are both locked; units excluded from export",
         "are not listed."),
       "No rows.")
 
@@ -850,7 +850,18 @@ app_server <- function(input, output, session) {
     }
   })
   observeEvent(input$reviewed_btn, toolbar_flag("reviewed"))
-  observeEvent(input$problematic_btn, toolbar_flag("problematic"))
+  # Exclude & Lock: excluded units are done, so the click also locks them
+  observeEvent(input$problematic_btn, {
+    d <- samples_data(); sel <- selected_rows()
+    open <- sel[!(d$annotate_lock[sel] %in% 1)]
+    if (!length(open) || !identical(mp_flag_next(d$problematic[open]), "yes")) return(toolbar_flag("problematic"))
+    u <- selected_units()
+    lk <- d$annotate_lock[sel] %in% 1
+    set_unit_flag("UPDATE annotate SET problematic = 'yes', annotate_lock = 1 WHERE ID = ?",
+      verb = MP_FLAG_WORDS$problematic[["did_set"]], u = u[!lk, , drop = FALSE])
+    if (any(lk)) mp_toast(sprintf("Left %s unchanged: unlock before changing marks.",
+      mp_n(sum(lk), "locked unit")), type = "warning")
+  })
   observeEvent(input$partial_btn, toolbar_flag("partial"))
 
   # ---- batch Trim / Restore on ticked units ----
@@ -2548,7 +2559,18 @@ app_server <- function(input, output, session) {
       type = "message")
   }
   observeEvent(input$mark_reviewed, modal_flag_toggle("reviewed"))
-  observeEvent(input$mark_problematic, modal_flag_toggle("problematic"))
+  observeEvent(input$mark_problematic, {
+    if (!identical(mp_flag_next(modal_flags()$problematic[1]), "yes")) return(modal_flag_toggle("problematic"))
+    u <- sel_unit(); req(u)
+    if (lock_blocked() || edits_block()) return()
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    if (!app_write(DBI::dbExecute(con,
+      "UPDATE annotate SET problematic = 'yes', annotate_lock = 1 WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = uargs()))) return()
+    refresh(refresh() + 1)
+    rp_toast(paste0("1 unit ", MP_FLAG_WORDS$problematic[["did_set"]], "."), type = "message")
+    showModal(annotate_modal(u$ID, u$path, u$scaffold))
+  })
   observeEvent(input$mark_partial, modal_flag_toggle("partial"))
   # A locked unit is read only in this window (MitoPilot's lock_blocked()).
   lock_blocked <- function() {

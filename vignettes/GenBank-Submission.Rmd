@@ -171,13 +171,13 @@ risk, but it is worth a look in the app.
 
 **What your marks do.** A unit is exported when its sample is locked in the
 Assemble step, the unit is locked in the Annotation Review step, its scaffold is
-kept, and it is not marked Exclude from export. The Export window lists each
+kept, and it is not excluded from export. The Export window lists each
 unit of the group that is left out, and why.
 
 | Mark | What it does to the export |
 |---|---|
 | **Mark Reviewed** | Lock and the Export window no longer ask about the unit's contamination or chimera flags. The summary's `reviewed` column says yes. |
-| **Exclude from export** | The unit is left out of every export. |
+| **Exclude & Lock** | The unit is left out of every export and locked as done. |
 | **Mark Partial** | `{completeness}` reads "partial sequence". Gene ends are set per feature (see above). |
 
 # What is in the export folder

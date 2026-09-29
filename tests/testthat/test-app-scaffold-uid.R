@@ -517,13 +517,18 @@ test_that("toolbar marks skip locked units, and a mixed selection sets rather th
     d <- samples_data()
     row <- function(p, s) which(d$path == p & d$scaffold == s)[1]
 
-    # locked p1.s1, excluded p1.s2, plain p2.s1: the unlocked two end up excluded
+    # locked p1.s1, excluded p1.s2, plain p2.s1: the unlocked two end up excluded and locked
     session$setInputs(tbl__reactable__selected = c(row(1, 1), row(1, 2), row(2, 1)))
     session$setInputs(problematic_btn = 1)
     session$flushReact()
     expect_equal(col("problematic"), c("no", "yes", "yes", "no"))
+    expect_equal(col("COALESCE(annotate_lock,0)"), c(1L, 1L, 1L, 0L))
 
-    # every unlocked unit in the selection is now set, so the next click clears them
+    # unlocked again, every unit in the selection is set, so the next click clears them
+    c2 <- RiboPilot:::app_con()
+    DBI::dbExecute(c2, "UPDATE annotate SET annotate_lock = 0 WHERE NOT (path = 1 AND scaffold = 1)")
+    DBI::dbDisconnect(c2)
+    refresh(refresh() + 1); session$flushReact()
     session$setInputs(problematic_btn = 2)
     session$flushReact()
     expect_equal(col("problematic"), c("no", "no", "no", "no"))

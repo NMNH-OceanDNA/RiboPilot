@@ -493,6 +493,55 @@ test_that("Lock does not ask about a flagged unit marked Exclude from export", {
   })
 })
 
+test_that("Exclude & Lock excludes and locks in one click, from the toolbar and the unit window", {
+  skip_if_not_installed("withr")
+  dir <- mk_export_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_lock = 0, problematic = 'no'")
+  DBI::dbDisconnect(con)
+  withr::local_dir(dir)
+  q <- function(sql) RiboPilot:::app_query(sql)
+  set <- function(sql) { c2 <- RiboPilot:::app_con(); DBI::dbExecute(c2, sql); DBI::dbDisconnect(c2) }
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Annotate")
+    session$flushReact()
+    session$setInputs(tbl__reactable__selected = 1L, problematic_btn = 1)
+    expect_equal(q("SELECT problematic, annotate_lock FROM annotate"),
+      data.frame(problematic = "yes", annotate_lock = 1L))
+    # a locked unit is left alone
+    session$setInputs(problematic_btn = 2)
+    expect_equal(q("SELECT problematic FROM annotate")[[1]], "yes")
+    # unlocked, the same button includes it again and leaves it unlocked
+    set("UPDATE annotate SET annotate_lock = 0")
+    refresh(refresh() + 1); session$flushReact()
+    session$setInputs(problematic_btn = 3)
+    expect_equal(q("SELECT problematic, annotate_lock FROM annotate"),
+      data.frame(problematic = "no", annotate_lock = 0L))
+
+    sel_unit(list(ID = "S1", path = 1L, scaffold = 1L))
+    session$flushReact()
+    session$setInputs(mark_problematic = 1)
+    expect_equal(q("SELECT problematic, annotate_lock FROM annotate"),
+      data.frame(problematic = "yes", annotate_lock = 1L))
+  })
+})
+
+test_that("an excluded path does not count against one locked path per sample", {
+  skip_if_not_installed("withr")
+  dir <- mk_export_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "INSERT INTO annotate (ID, path, scaffold, annotate_lock, problematic) VALUES ('S1', 2, 1, 1, 'yes')")
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_lock = 0 WHERE path = 1")
+  DBI::dbDisconnect(con)
+  withr::local_dir(dir)
+  local_mocked_bindings(mp_alert = function(...) NULL)
+  u <- data.frame(ID = "S1", path = 1L, scaffold = 1L)
+  expect_true(RiboPilot:::need_one_path(u, session = NULL))
+  c2 <- RiboPilot:::app_con(); DBI::dbExecute(c2, "UPDATE annotate SET problematic = 'no' WHERE path = 2"); DBI::dbDisconnect(c2)
+  expect_false(RiboPilot:::need_one_path(u, session = NULL))
+})
+
 # trim_assembly() writes these; the export fixture was made without them
 add_trim_cols <- function(dir) {
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
@@ -588,7 +637,7 @@ test_that("export needs both locks, and the export window names what it leaves o
     session$setInputs(refresh = 1)
     session$flushReact()
     expect_equal(nrow(export_units_df()), 0)
-    expect_match(output$export_summary$html, "S1 p1.s1 (marked Exclude from export)", fixed = TRUE)
+    expect_match(output$export_summary$html, "S1 p1.s1 (excluded from export)", fixed = TRUE)
   })
 })
 
