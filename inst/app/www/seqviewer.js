@@ -205,10 +205,11 @@
   };
   // One bar per pixel column, the max of the positions under it. Depth is
   // blue; clipped-read fraction is grey with bars at or over the chimera
-  // check's cutoff in Okabe-Ito orange.
+  // check's cutoff in Okabe-Ito orange. Runs of bars are filled as one shape,
+  // since separate 1 px bars leave seams on scaled displays.
   Viewer.prototype.drawTrack = function (c, W, y, h, vals, vmax, label, flag) {
     var base = flag ? '#a0a0a0' : cssVar('--mp-primary', '#337ab7'), red = '#e69f00', muted = cssVar('--mp-text-muted', '#6a6a6a');
-    var cut = this.clipFlag;
+    var cut = this.clipFlag, cols = [];
     c.fillStyle = cssVar('--mp-surface-alt', '#f5f5f5'); c.fillRect(GUTTER, y, W - GUTTER, h);
     for (var px = GUTTER; px < W; px++) {
       var a = Math.floor(this.viewStart + (px - GUTTER) / this.ppb), b = Math.floor(this.viewStart + (px + 1 - GUTTER) / this.ppb);
@@ -219,14 +220,25 @@
         if (v === null || d > v) v = d;
         if (d === 0) gap = true;
       }
-      if (v === null) continue;
-      // a column holding any uncovered base gets a full-height red wash, so
-      // gaps survive the per-column max when zoomed out
-      if (!flag && gap) { c.fillStyle = 'rgba(217, 83, 79, 0.35)'; c.fillRect(px, y, 1, h); }
-      var bh = Math.min(h, Math.round(v / vmax * h));
-      c.fillStyle = flag && v >= cut ? red : base;
-      if (bh > 0) c.fillRect(px, y + h - bh, 1, bh);
+      cols.push(v === null ? null : { v: v, gap: gap });
     }
+    // columns holding any uncovered base get a full-height red wash, so gaps
+    // survive the per-column max when zoomed out
+    var area = function (fill, keep, full) {
+      c.fillStyle = fill; c.beginPath();
+      var open = false;
+      for (var i = 0; i <= cols.length; i++) {
+        var k = i < cols.length && cols[i] && keep(cols[i]);
+        var top = k ? (full ? y : y + h - Math.min(h, cols[i].v / vmax * h)) : 0;
+        if (k && !open) { c.moveTo(GUTTER + i, y + h); open = true; }
+        if (k) { c.lineTo(GUTTER + i, top); c.lineTo(GUTTER + i + 1, top); }
+        if (!k && open) { c.lineTo(GUTTER + i, y + h); c.closePath(); open = false; }
+      }
+      c.fill();
+    };
+    if (!flag) area('rgba(217, 83, 79, 0.35)', function (o) { return o.gap; }, true);
+    area(base, function (o) { return o.v > 0; }, false);
+    if (flag) area(red, function (o) { return o.v >= cut; }, false);
     c.strokeStyle = cssVar('--mp-border', '#ccc'); c.beginPath(); c.moveTo(GUTTER, y + h + 0.5); c.lineTo(W, y + h + 0.5); c.stroke();
     if (flag) { c.save(); c.strokeStyle = red; c.setLineDash([2, 3]); var fy = y + h - cut / vmax * h;
       c.beginPath(); c.moveTo(GUTTER, fy + 0.5); c.lineTo(W, fy + 0.5); c.stroke(); c.restore(); }
