@@ -32,6 +32,8 @@ test_that("the empty-table message stays readable and clear of the header", {
   expect_length(rule, 1L)
   expect_match(rule, "line-height:\\s*[1-9]")
   expect_match(rule, "position:\\s*static")
+  # tables with rows keep an empty message node, which must take no space
+  expect_match(css, "\\.rt-tbody-no-data \\.rt-no-data\\s*\\{")
 })
 
 test_that("the settings modal groups the folder and the record window", {

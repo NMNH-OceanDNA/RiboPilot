@@ -730,8 +730,9 @@ a.mp-link:focus-visible {
        height while the table is empty, so the block straddles the header row
        and disappears behind the sticky header.
    Putting it in normal flow inside the empty body fixes both: the body then
-   takes its height from the message, so nothing can overlap it. */
-.rt-no-data {
+   takes its height from the message, so nothing can overlap it. Scoped to
+   empty bodies: reactable keeps an empty message node in every table. */
+.rt-tbody-no-data .rt-no-data {
   position: static;
   transform: none;
   margin: 0 auto;

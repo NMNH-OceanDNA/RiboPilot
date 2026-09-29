@@ -2034,7 +2034,7 @@ app_server <- function(input, output, session) {
       s <- jsonlite::fromJSON(ch$segments[1])
       chimera_seg_colors(s, if (nrow(samp)) samp$lineage_taxids[1] else NA_character_)[findInterval(w$start, s$start)]
     } else rep("#FFFFFF", nrow(w))
-    reactable::reactable(w, compact = TRUE, pagination = TRUE, defaultPageSize = 15, searchable = TRUE,
+    reactable::reactable(w, compact = TRUE, pagination = TRUE, defaultPageSize = 15,
       defaultColDef = reactable::colDef(na = "", minWidth = 70, headerStyle = list(whiteSpace = "nowrap")),
       rowStyle = function(index) list(background = grDevices::adjustcolor(cols[index], alpha.f = CHIMERA_SEG_ALPHA)),
       columns = list(
