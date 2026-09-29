@@ -60,6 +60,9 @@ $( document ).ready(function(){
     if (over) Shiny.setInputValue('msa_relayout', Date.now(), {priority: 'event'});
   }
   $(document).on('shown.bs.modal', '#shiny-modal', function() { relayout(this); });
+  $(document).on('hidden.bs.modal', '#shiny-modal', function() {
+    Shiny.setInputValue('modal_hidden', Date.now(), {priority: 'event'});
+  });
   document.addEventListener('toggle', function(e) {
     var d = e.target;
     if (d.tagName !== 'DETAILS' || !d.open) return;

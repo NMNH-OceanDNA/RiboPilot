@@ -28,3 +28,26 @@ test_that("the Assemble details notes box saves, shows in the table, and clears"
     expect_true(is.na(note()))
   })
 })
+
+test_that("typed notes reach the table once the details window closes", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    sel_id("S1")
+    session$flushReact()
+    session$setInputs(assemble_user_notes = "check the 28S end")
+    session$setInputs(modal_hidden = 1)
+    expect_equal(samples_data()$user_notes[samples_data()$ID == "S1"], "check the 28S end")
+
+    session$setInputs(mode = "Annotate")
+    sel_unit(list(ID = "S1", path = 1L, scaffold = 1L))
+    session$flushReact()
+    session$setInputs(annotate_notes = "recheck ITS2")
+    session$setInputs(modal_hidden = 2)
+    d <- samples_data()
+    expect_equal(d$annotate_notes[d$ID == "S1" & d$path == 1 & d$scaffold == 1], "recheck ITS2")
+  })
+})

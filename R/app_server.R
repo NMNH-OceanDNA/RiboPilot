@@ -2446,6 +2446,12 @@ app_server <- function(input, output, session) {
   })
 
   # ---- notes ----
+  # the table reloads once the window closes, not on every keystroke
+  notes_dirty <- reactiveVal(FALSE)
+  observeEvent(input$modal_hidden, {
+    if (!notes_dirty()) return()
+    notes_dirty(FALSE); refresh(refresh() + 1)
+  })
   observeEvent(input$annotate_notes, ignoreInit = TRUE, {
     u <- sel_unit(); req(u)
     new <- input$annotate_notes %||% ""
@@ -2458,8 +2464,8 @@ app_server <- function(input, output, session) {
     if (!nzchar(new) && nzchar(cur)) return()
     if (lock_blocked()) return()
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    app_write(DBI::dbExecute(con, "UPDATE annotate SET annotate_notes = ? WHERE ID = ? AND path = ? AND scaffold = ?",
-      params = c(list(new), uargs())))
+    if (app_write(DBI::dbExecute(con, "UPDATE annotate SET annotate_notes = ? WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = c(list(new), uargs())))) notes_dirty(TRUE)
   })
   observeEvent(input$annotate_notes_clear, {
     u <- sel_unit(); req(u)
@@ -2467,6 +2473,7 @@ app_server <- function(input, output, session) {
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
     if (!app_write(DBI::dbExecute(con, "UPDATE annotate SET annotate_notes = NULL WHERE ID = ? AND path = ? AND scaffold = ?",
       params = uargs()))) return()
+    notes_dirty(TRUE)
     updateTextAreaInput(session, "annotate_notes", value = "")
     rp_toast("Notes cleared.", type = "message")
   })
@@ -2476,12 +2483,13 @@ app_server <- function(input, output, session) {
     cur <- app_query("SELECT user_notes FROM assemble WHERE ID = ?", params = list(id))$user_notes[1] %|NA|% ""
     if (identical(new, cur) || (!nzchar(new) && nzchar(cur))) return()
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    app_write(DBI::dbExecute(con, "UPDATE assemble SET user_notes = ? WHERE ID = ?", params = list(new, id)))
+    if (app_write(DBI::dbExecute(con, "UPDATE assemble SET user_notes = ? WHERE ID = ?", params = list(new, id)))) notes_dirty(TRUE)
   })
   observeEvent(input$assemble_user_notes_clear, {
     id <- sel_id(); req(id)
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
     if (!app_write(DBI::dbExecute(con, "UPDATE assemble SET user_notes = NULL WHERE ID = ?", params = list(id)))) return()
+    notes_dirty(TRUE)
     updateTextAreaInput(session, "assemble_user_notes", value = "")
     rp_toast("Notes cleared.", type = "message")
   })
