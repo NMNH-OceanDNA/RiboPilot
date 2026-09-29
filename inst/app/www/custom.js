@@ -51,14 +51,21 @@ $( document ).ready(function(){
 // msa.js measures its container when it renders. A modal that is still fading
 // in can measure as zero width, and msa.js then falls back to the page width
 // and overflows the dialog. Once the modal is shown, ask the server to draw
-// again any alignment that overflowed.
+// again any alignment that overflowed. Same when a collapsed section opens.
 $( document ).ready(function(){
-  $(document).on('shown.bs.modal', '#shiny-modal', function() {
-    var over = Array.prototype.some.call(this.querySelectorAll('.msaR'), function(el) {
+  function relayout(root) {
+    var over = Array.prototype.some.call(root.querySelectorAll('.msaR'), function(el) {
       return el.parentNode && el.scrollWidth > el.parentNode.clientWidth + 2;
     });
     if (over) Shiny.setInputValue('msa_relayout', Date.now(), {priority: 'event'});
-  });
+  }
+  $(document).on('shown.bs.modal', '#shiny-modal', function() { relayout(this); });
+  document.addEventListener('toggle', function(e) {
+    var d = e.target;
+    if (d.tagName !== 'DETAILS' || !d.open) return;
+    $(d).trigger('shown');
+    setTimeout(function() { relayout(d); }, 0);
+  }, true);
 });
 
 // Add an "All" choice to the sample-table page-size dropdowns. reactable

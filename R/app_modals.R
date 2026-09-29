@@ -456,7 +456,7 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
     # are per-scaffold evidence the reviewer picks through.
     rp_details("Read coverage", plotOutput("coverage_plot", height = "130px")),
 
-    rp_details("Edit active feature boundaries",
+    rp_details("Edit active feature boundaries", open = FALSE,
       # normalize control heights so the step box, +/- buttons, and Save/Reset
       # sit on one baseline
       tags$style(HTML(paste0(
@@ -491,7 +491,7 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
       div(class = "code-block", style = "margin-top:6px; white-space:normal; word-break:break-all;",
         uiOutput("nudge_seq"))),
 
-    rp_details("Reference alignment (active feature)",
+    rp_details("Reference alignment (active feature)", open = FALSE,
       uiOutput("msa_header"),
       uiOutput("feat_align_ui")),
 
