@@ -253,9 +253,7 @@ proposal again on the ticked samples, skipping any whose assembly is locked.
 [Quality checks and flags](Curation-Flags.html) explains the rules.
 
 In this step you mostly keep or drop scaffolds. Moving gene boundaries happens
-in the Annotation Review step. **Trim** and **Restore** here act on every kept
-scaffold of the ticked samples, as described in that step; like every edit
-there, they apply at once, with no new run.
+in the Annotation Review step.
 
 ## Rescue a sample that failed
 
@@ -339,8 +337,7 @@ To trim many units at once, tick them and press **Trim** in the toolbar. Choose
 ends + flank** to keep a few extra bases on each side. Only units
 with all five features (18S, ITS1, 5.8S, ITS2, and 28S) are trimmed; the window
 lists the others and why, such as a missing feature or a lock, before you
-confirm. In the Assemble step, samples with a locked assembly are skipped, and
-while a run is going, units still queued in it are skipped. **Restore** next to it undoes the trim on the ticked units, as
+confirm. While a run is going, units still queued in it are skipped. **Restore** next to it undoes the trim on the ticked units, as
 **Restore assembly** does in a unit's window.
 
 Changes here apply at once: a trim or a boundary edit re-checks the unit right

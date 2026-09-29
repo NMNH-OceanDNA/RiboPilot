@@ -853,24 +853,16 @@ app_server <- function(input, output, session) {
   observeEvent(input$problematic_btn, toolbar_flag("problematic"))
   observeEvent(input$partial_btn, toolbar_flag("partial"))
 
-  # ---- batch Trim / Restore: ticked units, or every kept scaffold of ticked samples ----
+  # ---- batch Trim / Restore on ticked units ----
   batch_trim <- reactiveVal(NULL)
   open_batch_trim <- function(restore) {
     u <- selected_units()
     if (!need_selection(NROW(u))) return()
-    if (!identical(input$mode, "Annotate")) {
-      ids <- unique(u$ID)
-      u <- app_query(sprintf(
-        "SELECT an.ID, an.path, an.scaffold FROM annotate an
-         JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
-         WHERE COALESCE(asm.ignore, 0) = 0 AND an.ID IN (%s) ORDER BY an.ID, an.path, an.scaffold",
-        paste(rep("?", length(ids)), collapse = ",")), params = as.list(ids))
-    }
-    batch_trim(list(u = u, restore = restore, asm_lock = !identical(input$mode, "Annotate")))
+    batch_trim(list(u = u, restore = restore))
     showModal(batch_trim_modal(restore))
   }
-  observeEvent(list(input$asmb_trim_btn, input$annot_trim_btn), ignoreInit = TRUE, open_batch_trim(FALSE))
-  observeEvent(list(input$asmb_restore_btn, input$annot_restore_btn), ignoreInit = TRUE, open_batch_trim(TRUE))
+  observeEvent(input$annot_trim_btn, open_batch_trim(FALSE))
+  observeEvent(input$annot_restore_btn, open_batch_trim(TRUE))
   batch_flank <- function() {
     if (!identical(input$batch_trim_mode, "flank")) return(0L)
     suppressWarnings(as.integer(input$batch_trim_flank))[1]
@@ -881,7 +873,7 @@ app_server <- function(input, output, session) {
   batch_trim_plan_now <- function() {
     b <- batch_trim(); req(b)
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    batch_trim_plan(con, b$u, batch_flank(), b$restore, b$asm_lock,
+    batch_trim_plan(con, b$u, batch_flank(), b$restore,
       running = !is.null(run_lock_holder(app_project())))
   }
   observe(shinyjs::toggleState("batch_trim_go", condition = !batch_flank_bad()))

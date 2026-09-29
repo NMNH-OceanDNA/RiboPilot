@@ -43,15 +43,13 @@ test_that("only unlocked units with all five features are eligible, with reasons
     c("not trimmed", "not trimmed", "annotation locked", "not trimmed"))
 })
 
-test_that("Assemble-tab batch skips assembly-locked samples; a run skips queued units", {
+test_that("a run skips queued units", {
   skip_if_not_installed("withr")
   dir <- mk_batch_project()
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
   on.exit(DBI::dbDisconnect(con))
   DBI::dbExecute(con, "UPDATE assemble SET assemble_lock = 1, assemble_switch = 2")
   DBI::dbExecute(con, "UPDATE annotate SET annotate_switch = 2")
-  expect_equal(RiboPilot:::batch_trim_plan(con, units4, asm_lock = TRUE)$reason,
-    c("assembly locked", "assembly locked", "annotation locked", "assembly locked"))
   expect_equal(RiboPilot:::batch_trim_plan(con, units4)$reason, c(NA, "missing ITS2, 28S", "annotation locked", NA))
   DBI::dbExecute(con, "UPDATE annotate SET annotate_switch = 1 WHERE path = 1 AND scaffold = 1")
   expect_equal(RiboPilot:::batch_trim_plan(con, units4, running = TRUE)$reason,
@@ -110,24 +108,18 @@ test_that("one failing unit does not stop the rest", {
   expect_equal(len(con)[4], 500L)
 })
 
-test_that("the Trim and Restore buttons on both tables act on eligible units only", {
+test_that("the Trim and Restore buttons act on eligible ticked units only", {
   skip_if_not_installed("withr")
   dir <- mk_batch_project()
   withr::local_dir(dir)
   toasts <- character(0)
   local_mocked_bindings(mp_toast = function(text, ...) toasts <<- c(toasts, text))
   lens <- function() RiboPilot:::app_query("SELECT length FROM assemblies ORDER BY path, scaffold")$length
-  set_asm_lock <- function(v) {
-    con <- DBI::dbConnect(RSQLite::SQLite(), ".sqlite"); on.exit(DBI::dbDisconnect(con))
-    DBI::dbExecute(con, "UPDATE assemble SET assemble_lock = ?", params = list(v))
-  }
 
   shiny::testServer(RiboPilot:::app_server, {
-    # Assemble: one ticked, unlocked sample covers all four of its scaffolds
-    set_asm_lock(0L)
-    session$setInputs(mode = "Assemble")
+    session$setInputs(mode = "Annotate")
     session$flushReact()
-    session$setInputs(tbl__reactable__selected = 1L, asmb_trim_btn = 1)
+    session$setInputs(tbl__reactable__selected = seq_len(nrow(samples_data())), annot_trim_btn = 1)
     html <- output$batch_trim_summary$html
     expect_match(html, "2 units are trimmed", fixed = TRUE)
     expect_match(html, "S1 p1 s2: missing ITS2, 28S", fixed = TRUE)
@@ -137,15 +129,12 @@ test_that("the Trim and Restore buttons on both tables act on eligible units onl
     expect_equal(lens(), c(540L, 600L, 600L, 540L))
     expect_equal(utils::tail(toasts, 1), "2 units trimmed, 2 skipped.")
 
-    session$setInputs(asmb_restore_btn = 1)
+    session$setInputs(annot_restore_btn = 1)
     expect_match(output$batch_trim_summary$html, "S1 p1 s2: not trimmed", fixed = TRUE)
     session$setInputs(batch_trim_go = 2)
     expect_equal(lens(), rep(600L, 4))
 
-    # Annotation Review: only the ticked unit
-    set_asm_lock(1L)
-    session$setInputs(mode = "Annotate")
-    session$flushReact()
+    # only the ticked unit
     d <- samples_data()
     row <- which(d$path == 2 & d$scaffold == 2)
     session$setInputs(tbl__reactable__selected = row, annot_trim_btn = 1)
