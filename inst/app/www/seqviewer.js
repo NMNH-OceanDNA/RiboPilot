@@ -74,7 +74,7 @@
 
   Viewer.prototype.load = function (p) {
     var sameSeq = this.seq === (p.seq || '');
-    this.len = p.len; this.seq = p.seq || ''; this.input = p.input;
+    this.len = p.len; this.seq = p.seq || ''; this.input = p.input; this.unit = p.unit || 'unit';
     this.feats = (p.features || []).map(function (f) { return Object.assign({}, f); });
     this.nLanes = G.lanes(this.feats);
     this.depth = p.depth || null; this.clip = p.clip || null;
@@ -89,25 +89,29 @@
   Viewer.prototype.width = function () { return Math.max(200, this.wrap.clientWidth - GUTTER); };
   Viewer.prototype.minPpb = function () { return this.width() / this.len; };
   Viewer.prototype.viewLen = function () { return this.width() / this.ppb; };
+  // a whole view stays whole when the box is resized
   Viewer.prototype.clamp = function () {
+    if (this.isWhole) { this.ppb = this.minPpb(); this.viewStart = 1; }
     this.ppb = Math.min(MAX_PPB, Math.max(this.minPpb(), this.ppb));
     this.viewStart = Math.max(1, Math.min(this.len - this.viewLen() + 1, this.viewStart));
   };
-  Viewer.prototype.whole = function () { this.ppb = this.minPpb(); this.viewStart = 1; this.clamp(); this.draw(); };
+  Viewer.prototype.whole = function () { this.isWhole = true; this.clamp(); this.draw(); };
   Viewer.prototype.zoom = function (factor, atPos) {
     var centre = atPos || (this.viewStart + this.viewLen() / 2);
     var newPpb = Math.min(MAX_PPB, Math.max(this.minPpb(), this.ppb * factor));
+    this.isWhole = false;
     this.viewStart = centre - (centre - this.viewStart) * (this.ppb / newPpb);
     this.ppb = newPpb; this.clamp(); this.draw();
   };
   Viewer.prototype.goto = function (pos) {
+    this.isWhole = false;
     if (this.ppb < NT_LETTER) this.ppb = 10;
     this.viewStart = pos - this.viewLen() / 2; this.clamp(); this.draw();
   };
   Viewer.prototype.fit = function (row) {
     var f = this.feats.find(function (x) { return x.row === row; });
     if (!f) return;
-    this.selected = row;
+    this.selected = row; this.isWhole = false;
     var s = G.span(f), margin = Math.max(3, s * 0.05);
     this.ppb = Math.min(MAX_PPB, this.width() / (s + 2 * margin));
     this.viewStart = f.pos1 - margin; this.clamp();
@@ -261,6 +265,20 @@
     c.fillText('nt', GUTTER - 6, y + NT_H / 2, GUTTER - 10);
   };
 
+  // The bases in view as FASTA, header ">unit:start-end", 60 per line.
+  Viewer.prototype.visibleFasta = function () {
+    var a = Math.max(1, Math.ceil(this.viewStart)), b = Math.min(this.len, Math.floor(this.viewStart + this.viewLen()));
+    var s = this.seq.substring(a - 1, b);
+    return { n: s.length, text: '>' + this.unit + ':' + a + '-' + b + '\n' + (s.match(/.{1,60}/g) || []).join('\n') + '\n' };
+  };
+  // Plain http off localhost has no Clipboard API, so fall back to a textarea.
+  function copyText(t) {
+    if (navigator.clipboard && window.isSecureContext) { navigator.clipboard.writeText(t); return; }
+    var a = document.createElement('textarea'); a.value = t; a.style.position = 'fixed'; a.style.opacity = '0';
+    document.body.appendChild(a); a.select();
+    try { document.execCommand('copy'); } finally { document.body.removeChild(a); }
+  }
+
   // ---- interaction ----
   Viewer.prototype.hitTest = function (px, py) {
     for (var i = this.hits.length - 1; i >= 0; i--) {
@@ -285,13 +303,13 @@
       e.preventDefault();
       var rect = cv.getBoundingClientRect(), px = e.clientX - rect.left;
       var pan = e.shiftKey ? e.deltaY : Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : 0;
-      if (pan) { self.viewStart += pan / self.ppb; self.clamp(); self.draw(); return; }
+      if (pan) { self.isWhole = false; self.viewStart += pan / self.ppb; self.clamp(); self.draw(); return; }
       self.zoom(Math.pow(1.15, -e.deltaY / 100), self.viewStart + (px - GUTTER) / self.ppb);
     }, { passive: false });
     cv.addEventListener('mousedown', function (e) { dragging = { x: e.clientX, start: self.viewStart, moved: false }; });
     window.addEventListener('mousemove', function (e) {
       if (!dragging) return;
-      var dx = e.clientX - dragging.x; if (Math.abs(dx) > 2) dragging.moved = true;
+      var dx = e.clientX - dragging.x; if (Math.abs(dx) > 2) { dragging.moved = true; self.isWhole = false; }
       self.viewStart = dragging.start - dx / self.ppb; self.clamp(); self.draw();
     });
     window.addEventListener('mouseup', function (e) {
@@ -320,6 +338,11 @@
         var a = btn.getAttribute('data-rpseq');
         if (a === 'zoom_in') self.zoom(2); else if (a === 'zoom_out') self.zoom(0.5);
         else if (a === 'whole') self.whole(); else if (a === 'fit' && self.selected !== null) self.fit(self.selected);
+        else if (a === 'copy') {
+          var f = self.visibleFasta(); copyText(f.text);
+          var old = btn.textContent; btn.textContent = 'Copied ' + f.n.toLocaleString() + ' bp';
+          setTimeout(function () { btn.textContent = old; }, 1500);
+        }
       });
     });
     [['show_nt', 'showNt'], ['show_cov', 'showCov'], ['show_clip', 'showClip']].forEach(function (pair) {
@@ -364,6 +387,7 @@
     return { len: v.len, viewStart: v.viewStart, ppb: v.ppb, selected: v.selected, height: v.height(), nLanes: v.nLanes,
              features: v.feats.map(function (f) { return { row: f.row, gene: f.gene, pos1: f.pos1, pos2: f.pos2, lane: f.lane }; }) };
   };
+  window.rpseq.fasta = function (id) { var v = get(id); return v ? v.visibleFasta() : null; };
   window.rpseq.hitTest = function (id, px, py) { var v = get(id); return v ? v.hitTest(px, py) : null; };
   window.rpseq.click = function (id, px, py) { var v = get(id); if (v) v.click(px, py); };
   window.rpseq.laneY = function (id, lane) { var v = get(id); return v ? v.laneY(lane) + 8 : 0; };

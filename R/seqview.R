@@ -17,7 +17,7 @@ seqview_payload <- function(seq, feats, depths = NULL, clips = NULL, selected = 
     features = lapply(ok, function(i) list(
       row = feats$element[i], gene = feats$element[i],
       pos1 = as.integer(feats$start[i]), pos2 = as.integer(feats$stop[i]),
-      dir = feats$strand[i] %|NA|% "+",
+      dir = if (identical(feats$strand[i], "-")) "-" else "+",
       partial5 = isTRUE(feats$partial_start[i] == 1), partial3 = isTRUE(feats$partial_stop[i] == 1),
       color = unname(RRNA_ELEMENT_COLORS[feats$element[i]] %|NA|% "#888888"))))
   if (length(selected) == 1L) out$selected <- selected
@@ -56,10 +56,11 @@ seqview_ui <- function(prefix, summary, open = TRUE, pick = TRUE) {
       btn("whole", "Whole sequence"),
       btn("zoom_in", NULL, icon("magnifying-glass-plus"), "Zoom in"),
       btn("zoom_out", NULL, icon("magnifying-glass-minus"), "Zoom out"),
+      btn("copy", "Copy sequence", title = "Copy the bases in view as FASTA"),
       box("show_cov", "Coverage"), box("show_clip", "Clipped reads"), box("show_nt", "Nucleotides")),
     tags$p(class = "mp-help-text", style = "margin:2px 0 4px;",
       paste0("Drag or scroll sideways to pan, scroll to zoom", if (pick) "; click a gene to select it",
-        ". Letters appear when zoomed in. "),
+        ". Letters appear when zoomed in. Copy sequence copies the bases in view. "),
       sprintf("Clipped reads is the share of reads soft-clipped at each base (shown where depth is at least 10); bars turn orange at %d%%, the chimera check's cutoff.",
         round(100 * CHIMERA_CLIP_FRAC))),
     div(class = "rp-seqview",
@@ -84,6 +85,6 @@ seqview_send <- function(session, canvas, input, id, path, scaffold, selected = 
   dep <- if (nrow(cov)) parse_depths(cov$depths[1]) else NULL
   clp <- if (nrow(cov) && !is.null(cov$clips)) parse_depths(cov$clips[1]) else NULL
   pl <- seqview_payload(s$sequence[1], f, dep, clp, selected)
-  pl$id <- canvas; pl$input <- input
+  pl$id <- canvas; pl$input <- input; pl$unit <- sprintf("%s_p%s_s%s", id, path, scaffold)
   session$sendCustomMessage("rpseq", pl)
 }
