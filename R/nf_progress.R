@@ -13,7 +13,7 @@ NF_FOOTER_MAX <- 200L
 #' An empty Nextflow progress state
 #' @noRd
 nf_progress_empty <- function() {
-  list(header = character(0), executor = "", proc = list(), footer = character(0))
+  list(header = character(0), executor = "", proc = list(), more = "", footer = character(0))
 }
 
 #' Fold raw Nextflow output lines into a progress state
@@ -23,6 +23,9 @@ nf_progress_parse <- function(state, lines) {
   for (ln in lines) {
     if (grepl("^executor\\s*>", ln)) {
       state$executor <- ln
+      state$more <- ""
+    } else if (grepl("^Plus \\d+ more processes", ln)) {
+      state$more <- ln
     } else if (grepl(nf_proc_rx, ln, perl = TRUE)) {
       key <- sub(nf_proc_rx, "\\1", ln, perl = TRUE)
       state$proc[[key]] <- ln
@@ -47,6 +50,7 @@ nf_progress_text <- function(state, footer_n = 40) {
     paste(state$header, collapse = "\n"),
     state$executor,
     paste(unlist(state$proc), collapse = "\n"),
+    state$more %||% "",
     paste(utils::tail(state$footer, footer_n), collapse = "\n")
   )
   paste(parts[nzchar(parts)], collapse = "\n")
