@@ -183,7 +183,7 @@ CHIMERA_COL_HELP <- list(
   species = "Species of the strongest single hit inside the segment.",
   pident = "Mean percent identity of the windows' best hits.",
   n_windows = "Number of 500 bp windows (step 250) collapsed into this segment.",
-  win_species = "Species of the best hit for this window. '+N tied' means N more hits scored about the same, and the lineage is cut back to the rank they share.",
+  win_species = "Species of the best hit for this window. When several hits score about the same, it names the clade they share and the number of tied hits instead, and the lineage is cut back to that clade.",
   lineage = "Best-hit lineage, last three ranks shown; hover for the full ranked lineage.",
   win_pident = "Percent identity of the window's best hit.",
   bitscore = "BLAST bit score of the best hit.",

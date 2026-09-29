@@ -153,7 +153,11 @@ chimera_window_hits <- function(hits, tiles, sample_taxids = NA_character_,
       integer(1), USE.NAMES = FALSE)
   } else rep(NA_integer_, length(i))
   sp <- extract_species(best$title[i])
-  sp <- ifelse(!is.na(tied[i]) & tied[i] > 0L, sprintf("%s +%d tied", sp, tied[i]), sp)
+  # a tie names the clade the tied hits share, not one arbitrary hit
+  clade <- vapply(strsplit(ifelse(is.na(best$lineage[i]), "", best$lineage[i]), ";", fixed = TRUE),
+    function(p) utils::tail(c(NA_character_, p[nzchar(p)]), 1), character(1))
+  sp <- ifelse(!is.na(tied[i]) & tied[i] > 0L & !is.na(clade),
+    sprintf("%s (%d tied hits)", clade, tied[i] + 1L), sp)
   data.frame(start = tiles$start, stop = tiles$stop,
     accession = best$accession[i], species = sp,
     staxid = best$staxid[i], lineage = best$lineage[i],

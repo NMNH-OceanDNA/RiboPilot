@@ -182,7 +182,7 @@ test_that("window hits tied at the top bitscore resolve to the rank they share",
   testthat::local_mocked_bindings(tk_ranked_lineage = fake_lin, .package = "RiboPilot")
   w <- RiboPilot:::chimera_window_hits(hits, data.frame(start = c(1L, 251L), stop = c(500L, 750L)))
   expect_equal(RiboPilot:::chimera_rank_name(w$lineage, "class"), c(NA, "Actinopteri"))
-  expect_match(w$species[1], "+1 tied", fixed = TRUE)
+  expect_equal(w$species, c("Chordata (2 tied hits)", "Paralichthys sp."))
   expect_equal(RiboPilot:::chimera_segments(w)$taxon, c("unresolved", "Actinopteri"))
   fish <- "33208;7711;186623;8256;8257;8258;8259"
   s <- RiboPilot:::chimera_segments(rbind(
