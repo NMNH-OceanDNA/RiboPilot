@@ -2007,7 +2007,7 @@ app_server <- function(input, output, session) {
         start = reactable::colDef(width = 80, html = TRUE, header = rt_help_header("Start", CHIMERA_COL_HELP$start)),
         stop = reactable::colDef(width = 80, html = TRUE, header = rt_help_header("Stop", CHIMERA_COL_HELP$stop)),
         taxon = reactable::colDef(minWidth = 140, html = TRUE, header = rt_help_header("Taxon", CHIMERA_COL_HELP$taxon)),
-        species = reactable::colDef(minWidth = 220, na = "", html = TRUE, header = rt_help_header("Species", CHIMERA_COL_HELP$species)),
+        species = reactable::colDef(minWidth = 220, na = "", html = TRUE, header = rt_help_header("Best Match", CHIMERA_COL_HELP$species)),
         pident = reactable::colDef(width = 100, format = reactable::colFormat(digits = 1), html = TRUE,
           header = rt_help_header("Identity %", CHIMERA_COL_HELP$pident)),
         n_windows = reactable::colDef(width = 100, html = TRUE, header = rt_help_header("Windows", CHIMERA_COL_HELP$n_windows))))
@@ -2051,7 +2051,7 @@ app_server <- function(input, output, session) {
       columns = list(
         start = reactable::colDef(width = 75, html = TRUE, header = rt_help_header("Start", CHIMERA_COL_HELP$start)),
         stop = reactable::colDef(width = 75, html = TRUE, header = rt_help_header("Stop", CHIMERA_COL_HELP$stop)),
-        species = reactable::colDef(minWidth = 150, html = TRUE, header = rt_help_header("Taxon", CHIMERA_COL_HELP$win_species)),
+        species = reactable::colDef(minWidth = 150, html = TRUE, header = rt_help_header("Best Match", CHIMERA_COL_HELP$win_species)),
         lineage_short = reactable::colDef(minWidth = 180, html = TRUE, header = rt_help_header("Lineage", CHIMERA_COL_HELP$lineage),
           cell = htmlwidgets::JS("function(c){ if (c.value == null) return ''; var full = c.row.lineage || ''; return '<span title=\"' + String(full).replace(/\"/g, '&quot;') + '\">' + c.value + '</span>'; }")),
         lineage = reactable::colDef(show = FALSE),
