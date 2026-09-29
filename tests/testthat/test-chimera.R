@@ -431,6 +431,29 @@ test_that("plot_chimera builds from stored windows and segments", {
   expect_true(any(vapply(g$layers, function(l) inherits(l$geom, "GeomRect"), logical(1))))
 })
 
+test_that("plot_chimera keeps the original check after a trim and marks the cut", {
+  con <- chimera_test_con()
+  db <- DBI::dbGetInfo(con)$dbname
+  sq <- withr::with_seed(1, paste(sample(c("A", "C", "G", "T"), 4500, TRUE), collapse = ""))
+  DBI::dbExecute(con, "INSERT INTO assemblies (ID, path, scaffold, sequence, length) VALUES ('S1',1,1,?,4500)", params = list(sq))
+  DBI::dbExecute(con, "INSERT INTO annotations (ID, path, scaffold, element, start, stop, strand) VALUES ('S1',1,1,'18S',1001,2800,'+')")
+  DBI::dbExecute(con, "INSERT INTO chimera (ID, path, scaffold, score, label, junctions) VALUES ('S1',1,1,0.9,'severe','3500')")
+  DBI::dbExecute(con, "INSERT INTO chimera_windows (ID, path, scaffold, start, stop, pident) VALUES ('S1',1,1,1,500,99), ('S1',1,1,3001,3500,97)")
+  RiboPilot:::trim_assembly(con, "S1", 1L, 1L, 501, 3000)
+  DBI::dbExecute(con, "UPDATE annotations SET stop = stop - 100")
+  DBI::dbDisconnect(con)
+  g <- RiboPilot:::plot_chimera("S1", 1L, 1L, db = db)
+  b <- ggplot2::ggplot_build(g)
+  expect_equal(b$layout$panel_params[[1]]$x.range, c(0, 4500))
+  geoms <- vapply(g$layers, function(l) class(l$geom)[1], "")
+  gene <- b$data[[which(geoms == "GeomRect")[1]]]
+  expect_equal(c(gene$xmin, gene$xmax), c(1001, 2700))
+  expect_equal(nrow(b$data[[which(geoms == "GeomSegment")[1]]]), 2L)
+  expect_true(3500 %in% unlist(lapply(b$data[geoms == "GeomVline"], `[[`, "xintercept")))
+  cut <- unlist(lapply(b$data[geoms == "GeomVline"], `[[`, "xintercept"))
+  expect_true(all(c(500, 3000) %in% cut))
+})
+
 test_that("plot_chimera with NULL junctions/segments has no junction line", {
   con <- chimera_test_con()
   db <- DBI::dbGetInfo(con)$dbname
@@ -480,4 +503,20 @@ test_that("the chimera panel opens with the unit's own level and reason", {
   expect_equal(RiboPilot:::chimera_result_text("minor", "18S resolves to Chordata: agree only to phylum"),
     "This unit: minor (18S resolves to Chordata: agree only to phylum)")
   expect_equal(RiboPilot:::chimera_result_text("clean", NA), "This unit: clean")
+})
+
+test_that("the junction table names the checks behind each junction and why", {
+  ch <- list(
+    genes = list(score = 0, junctions = list()),
+    windows = list(score = 0.5, junctions = 2400, reason = "1-2300 Actinopteri (Salmo salar, 99.0%); 2501-4500 Eurotiomycetes (Penicillium sp., 97.0%); different class"),
+    ribotyper = list(score = 0, junctions = list(), reason = "ribotyper passed"),
+    reads = list(score = 0.7, junctions = c(750, 2500), reason = "depth step at 750; clip pileup at 2500"))
+  j <- RiboPilot:::chimera_junction_table("750,2400", as.character(jsonlite::toJSON(ch, auto_unbox = TRUE)))
+  expect_equal(j$position, c(750L, 2400L))
+  expect_equal(j$checks, c("reads", "windows, reads"))
+  expect_match(j$why[1], "depth changes", fixed = TRUE)
+  expect_match(j$why[1], "read evidence alone", fixed = TRUE)
+  expect_match(j$why[2], "Eurotiomycetes", fixed = TRUE)
+  expect_match(j$why[2], "clipped", fixed = TRUE)
+  expect_equal(nrow(RiboPilot:::chimera_junction_table("", NA_character_)), 0L)
 })

@@ -351,6 +351,43 @@ chimera_score <- function(channels) {
       else sort(unique(unlist(js))))
 }
 
+#' One row per possible junction: the checks that point to it and why, in words
+#' @param junctions Comma-separated positions. @param channels Channels JSON.
+#' @noRd
+chimera_junction_table <- function(junctions, channels) {
+  j <- suppressWarnings(as.integer(strsplit(junctions %|NA|% "", ",", fixed = TRUE)[[1]]))
+  j <- j[!is.na(j)]
+  out <- data.frame(position = j, checks = character(length(j)), why = character(length(j)))
+  if (!length(j) || is.na(channels)) return(out)
+  ch <- jsonlite::fromJSON(channels, simplifyVector = FALSE)
+  near <- function(x, p) any(abs(as.integer(unlist(x)) - p) <= CHIMERA_JUNCTION_TOL)
+  at <- function(reason, what) {
+    m <- regmatches(reason, regexpr(paste0(what, " at [0-9,]+"), reason))
+    if (length(m)) as.integer(strsplit(sub(".* at ", "", m), ",", fixed = TRUE)[[1]]) else integer(0)
+  }
+  for (i in seq_along(j)) {
+    p <- j[i]
+    who <- names(ch)[vapply(ch, function(x) near(x$junctions, p), logical(1))]
+    why <- character(0)
+    if ("genes" %in% who) why <- c(why, paste0("The genes' own BLAST hits disagree: ", ch$genes$reason, "."))
+    if ("windows" %in% who) why <- c(why, paste0("BLAST windows switch lineage here: ", ch$windows$reason, "."))
+    if ("reads" %in% who) {
+      r <- ch$reads$reason %||% ""
+      for (d in at(r, "depth step")[abs(at(r, "depth step") - p) <= CHIMERA_JUNCTION_TOL])
+        why <- c(why, sprintf("Read depth changes at least %gx at %d bp (median of %d bp on each side).",
+          CHIMERA_DEPTH_STEP, d, CHIMERA_STEP))
+      for (d in at(r, "clip pileup")[abs(at(r, "clip pileup") - p) <= CHIMERA_JUNCTION_TOL])
+        why <- c(why, sprintf("At least %d%% of reads are clipped at %d bp, so reads stop matching there.",
+          round(100 * CHIMERA_CLIP_FRAC), d))
+    }
+    if (identical(who, "reads")) why <- c(why,
+      "Only read evidence points here; read evidence alone gives a minor call at most.")
+    out$checks[i] <- paste(who, collapse = ", ")
+    out$why[i] <- paste(why, collapse = " ")
+  }
+  out
+}
+
 #' @noRd
 chimera_reason <- function(segments, channels, junctions) {
   segtxt <- if (!is.null(segments) && nrow(segments)) paste(sprintf("%d-%d %s (%s, %.1f%%)",

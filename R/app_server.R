@@ -1997,6 +1997,20 @@ app_server <- function(input, output, session) {
           header = rt_help_header("Identity %", CHIMERA_COL_HELP$pident)),
         n_windows = reactable::colDef(width = 100, html = TRUE, header = rt_help_header("Windows", CHIMERA_COL_HELP$n_windows))))
   })
+  output$chimera_junctions <- renderUI({
+    edit_tick(); refresh(); u <- hit_unit()
+    o <- chimera_original(app_query, u$ID, u$path, u$scaffold)
+    req(NROW(o$ch) == 1)
+    j <- chimera_junction_table(o$ch$junctions[1], o$ch$channels[1])
+    if (!nrow(j)) return(tags$p(class = "mp-help-text", "No possible junction was found."))
+    if (!is.null(o$kept)) j$why <- ifelse(j$position <= o$kept[1] | j$position > o$kept[2],
+      paste(j$why, "This part is now trimmed away."), j$why)
+    reactable::reactable(j, compact = TRUE, pagination = FALSE, wrap = TRUE,
+      columns = list(
+        position = reactable::colDef(width = 90, html = TRUE, header = rt_help_header("Position", CHIMERA_COL_HELP$position)),
+        checks = reactable::colDef(width = 130, html = TRUE, header = rt_help_header("Checks", CHIMERA_COL_HELP$checks)),
+        why = reactable::colDef(minWidth = 300, html = TRUE, header = rt_help_header("Why", CHIMERA_COL_HELP$why))))
+  })
   output$chimera_windows <- reactable::renderReactable({
     edit_tick(); refresh()
     u <- hit_unit()

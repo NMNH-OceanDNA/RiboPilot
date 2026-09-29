@@ -188,6 +188,9 @@ CHIMERA_COL_HELP <- list(
   bitscore = "BLAST bit score of the best hit.",
   rank_distance = "Ranks between the hit and this sample's own lineage: 0 = same species, 7 = nothing shared.",
   depth_median = "Median read depth across the window.",
+  position = "Estimated join position (bp), on the same scale as the plot.",
+  checks = "Checks that put a junction near this position: genes (the 18S, 5.8S, and 28S BLAST hits), windows (500 bp BLAST windows), and reads (read depth and clipped reads).",
+  why = "What each check saw here.",
   clip_frac = "Largest fraction of reads soft-clipped at one position in the window; high values mark a read-level breakpoint."
 )
 

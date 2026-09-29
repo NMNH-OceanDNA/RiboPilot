@@ -750,3 +750,16 @@ a.mp-link:focus-visible {
   gap: 4px;
 }
 .mp-nav select { width: 220px; }
+
+/* Sub-sections of a section sit in one bordered box, each indented with its
+   content indented again beneath it (as MitoPilot's export token groups). */
+.rp-sub-list {
+  margin: 8px 0; padding: 8px 14px 6px; border: 1px solid var(--mp-border);
+  border-radius: var(--mp-radius); background: var(--mp-surface-alt);
+}
+details.rp-subsection { margin: 0 0 2px 16px; }
+details.rp-subsection > summary {
+  font-size: var(--mp-fs-body); font-weight: 600; border-bottom: none;
+  padding: 2px 0; margin: 2px 0;
+}
+details.rp-subsection > div { margin-left: 18px; }
