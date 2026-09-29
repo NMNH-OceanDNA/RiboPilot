@@ -213,9 +213,9 @@ app_server <- function(input, output, session) {
            -- and its column was already defined but never selected.
            asm.blast_species, asm.blast_accession, asm.blast_pident, asm.blast_qcovs,
            asm.blast_source,
-           an.n_flags, an.curate_flags, an.annotate_notes, an.itsx_warnings, sc.screen_verdict,
+           an.n_flags, an.curate_flags, an.itsx_warnings, sc.screen_verdict,
            ch.label AS chimera_label, ch.reason AS chimera_reason, an.reviewed,
-           an.problematic, an.partial, an.time_stamp,
+           an.problematic, an.partial, an.annotate_notes, an.time_stamp,
            'details' AS details, 'output' AS output
          FROM annotate an
            JOIN samples s ON s.ID = an.ID
@@ -295,7 +295,7 @@ app_server <- function(input, output, session) {
       problematic = cd("problematic", width = 110, html = TRUE, align = "center",
         cell = rt_bool_badge(hide_no = TRUE, yes_tone = "warning")),
       partial = cd("partial", width = 80, html = TRUE, align = "center",
-        cell = rt_bool_badge(yes_tone = "warning")),
+        cell = rt_bool_badge(yes_tone = "warning", no_tone = "success")),
       n_flags = cd("n_flags", width = 100, html = TRUE, filterable = FALSE, align = "center",
         cell = rt_flag_badge()),
       annotate_notes = cd("annotate_notes", minWidth = 160, html = TRUE, class = "mp-note-cell", cell = rt_longtext()),

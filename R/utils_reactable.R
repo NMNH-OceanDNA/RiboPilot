@@ -167,9 +167,9 @@ rt_pill <- function(map, labels = NULL, empty = "not set", hide = NULL) {
 #' @param yes_tone pill tone for "yes" when invert is FALSE; "warning" for a
 #'   flag whose "yes" asks for attention (problematic, partial).
 #' @noRd
-rt_bool_badge <- function(invert = FALSE, hide_no = FALSE, yes_tone = "success") {
+rt_bool_badge <- function(invert = FALSE, hide_no = FALSE, yes_tone = "success", no_tone = "neutral") {
   rt_pill(
-    map = c(yes = if (invert) "danger" else yes_tone, no = "neutral"),
+    map = c(yes = if (invert) "danger" else yes_tone, no = no_tone),
     empty = if (hide_no) "" else "not set",
     hide = if (hide_no) "no" else NULL
   )

@@ -1,5 +1,12 @@
 # Shiny app helpers.
 
+#' A www/ file's URL, tagged with its modification time so browsers fetch it
+#' again after an update instead of reusing a cached copy
+#' @noRd
+www_url <- function(f) {
+  paste0("www/", f, "?v=", as.integer(file.mtime(app_sys("app", "www", f))))
+}
+
 #' Attach external resources (CSS/JS/favicon), mirroring MitoPilot styling
 #' @noRd
 add_external_resources <- function() {
@@ -7,9 +14,9 @@ add_external_resources <- function() {
   shiny::tags$head(
     shiny::tags$title("RiboPilot"),
     shiny::tags$link(rel = "shortcut icon", href = "www/favicon.ico"),
-    shiny::tags$link(rel = "stylesheet", href = "www/custom.css"),
-    shiny::tags$script(src = "www/custom.js"),
-    shiny::tags$script(src = "www/seqviewer.js"),
+    shiny::tags$link(rel = "stylesheet", href = www_url("custom.css")),
+    shiny::tags$script(src = www_url("custom.js")),
+    shiny::tags$script(src = www_url("seqviewer.js")),
     shinyjs::useShinyjs()
   )
 }

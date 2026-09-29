@@ -57,6 +57,18 @@ test_that("rt_bool_badge uses pill classes and never a green no", {
   expect_true(grepl("var hide = ['no']", hidden, fixed = TRUE))
 })
 
+test_that("the Partial column shows no as a green pill", {
+  js <- as.character(rt_bool_badge(yes_tone = "warning", no_tone = "success"))
+  expect_true(grepl("'no': 'success'", js, fixed = TRUE))
+  expect_true(grepl("'yes': 'warning'", js, fixed = TRUE))
+})
+
+test_that("app script and style URLs carry a version tag", {
+  expect_match(www_url("custom.js"), "^www/custom\\.js\\?v=[0-9]+$")
+  head <- htmltools::renderTags(add_external_resources())$head
+  expect_match(head, "www/seqviewer.js?v=", fixed = TRUE)
+})
+
 test_that("rt_header returns plain text without a tip", {
   expect_identical(rt_header("Gene Order"), "Gene Order")
   expect_true(grepl(
