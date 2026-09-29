@@ -101,6 +101,7 @@ test_that("report_elements lists every annotated element in canonical order", {
 test_that("export_report renders the Rmd with an alignment section", {
   skip_if_not_installed("rmarkdown")
   skip_if_not_installed("msaR")
+  skip_if_not(rmarkdown::pandoc_available(), "pandoc not installed")
   skip_on_cran()
   dir <- mk_report_project()
   con <- open_project(dir)
