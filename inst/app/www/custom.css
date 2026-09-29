@@ -763,3 +763,23 @@ details.rp-subsection > summary {
   padding: 2px 0; margin: 2px 0;
 }
 details.rp-subsection > div { margin-left: 18px; }
+
+/* Sequence viewer (R/seqview.R, inst/app/www/seqviewer.js) */
+.rp-seqview-controls {
+  display: flex; flex-wrap: wrap; align-items: center;
+  gap: var(--mp-space-2); margin: 0 0 var(--mp-space-2);
+}
+.rp-seqview-check { font-weight: normal; margin: 0; display: inline-flex; align-items: center; gap: 4px; }
+.rp-seqview {
+  position: relative; border: 1px solid var(--mp-border);
+  border-radius: var(--mp-radius); background: var(--mp-surface); overflow: hidden;
+}
+.rp-seqview-canvas { display: block; width: 100%; cursor: grab; }
+.rp-seqview-canvas:active { cursor: grabbing; }
+.rp-seqview-tip {
+  position: absolute; z-index: 100; pointer-events: none;
+  background: var(--mp-surface); color: var(--mp-text);
+  border: 1px solid var(--mp-border); border-radius: var(--mp-radius);
+  padding: var(--mp-space-1) var(--mp-space-2); font-size: var(--mp-fs-meta);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .2);
+}

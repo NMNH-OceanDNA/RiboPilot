@@ -29,7 +29,7 @@ You see them in three places:
 
 | Warning | On | What it means | What to do |
 |---|---|---|---|
-| `missing_18S`, `missing_5.8S`, `missing_28S` | unit | One of the three rRNA genes was not found. | Expected when the scaffold holds only part of the repeat. Otherwise look at **Read coverage** for a break. |
+| `missing_18S`, `missing_5.8S`, `missing_28S` | unit | One of the three rRNA genes was not found. | Expected when the scaffold holds only part of the repeat. Otherwise look at **Sequence and read coverage** for a break. |
 | `missing_ITS1`, `missing_ITS2` | unit | A spacer was not found between its two genes. | Usually follows a missing gene. If both genes are there, check the boundaries in **Edit active feature boundaries**. |
 | `out_of_order` | unit | The features are not in the order 18S, ITS1, 5.8S, ITS2, 28S. | Likely a misassembly; the export marks it `misassembly`. Check the feature map and read coverage before you submit it. |
 | `overlap` | unit and feature | A feature overlaps the one before it. | Move the boundary in **Edit active feature boundaries**. The export marks it `misassembly`. |

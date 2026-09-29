@@ -236,7 +236,7 @@ The **Columns** menu above the table shows or hides the **Stats** and
 Click a sample's ID to open its details. The window lists the sample's
 scaffolds, each with **K** (keep) and **D** (drop) buttons and a Screen verdict
 from the BLAST screen. Below the list are three panels for the scaffold
-you click: **BLAST evidence**, **Read coverage**, and **Chimera check**. For
+you click: **BLAST evidence**, **Sequence and read coverage**, and **Chimera check**. For
 CHIM01, the BLAST evidence shows that the best match is a *Penicillium* mold,
 which shares nothing with *Upeneus parvus*:
 
@@ -305,12 +305,18 @@ Chimera columns further right hold the details; the **Columns** menu shows or
 hides them under **Check details**.
 
 Click a unit's ID to open it. The window shows the feature model (18S, ITS1,
-5.8S, ITS2, 28S), **Read coverage** with colored feature bands, **Edit active
-feature boundaries**, the **Reference alignment**, **Curation warnings**, the
+5.8S, ITS2, 28S), **Sequence and read coverage**, **Edit active feature
+boundaries**, the **Reference alignment**, **Curation warnings**, the
 **Chimera check**, and **Notes**. Your notes also show in the table's **User
-notes** column:
+notes** column once you close the window.
 
-![A reviewed unit: its five features and read coverage](figures/get-started/annotation-details.png)
+**Sequence and read coverage** draws the unit as a zoomable map: read depth,
+the share of reads clipped at each base, the genes as arrows (dashed ends are
+partial), and the bases once you zoom in. Scroll to zoom, drag to pan, or type a
+position. Clicking a gene makes it the active feature, the one that **Edit
+active feature boundaries** and the **Reference alignment** act on.
+
+![A unit: its five features, read coverage, and gene map](figures/get-started/annotation-details.png)
 
 Three marks record what you decided about a unit. Use the toolbar buttons for
 the ticked units, or the buttons at the top of a unit's window:

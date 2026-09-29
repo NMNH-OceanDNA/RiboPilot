@@ -1659,10 +1659,11 @@ app_server <- function(input, output, session) {
       h <- sel_hit_unit(); req(!is.null(h)); sprintf("p%s.s%s", h$path, h$scaffold)
     })
   })
-  output$unit_coverage_plot <- renderPlot({
+  observe({
+    edit_tick(); refresh()
     h <- sel_hit_unit(); id <- sel_id(); req(!is.null(h), id)
-    grid::grid.draw(fixed_gutter(plot_coverage(id, h$path, h$scaffold)))
-  }, height = 130)
+    try(seqview_send(session, "seqv_asm-canvas", NULL, id, h$path, h$scaffold))
+  })
   # Triage one scaffold: keep / drop / undecided. `assemblies.ignore` is derived
   # from the verdict by set_unit_triage(), so nothing downstream changes.
   # Dropping is no longer destructive (the annotate row is held, not deleted),
@@ -1948,9 +1949,12 @@ app_server <- function(input, output, session) {
         btn("toggle_partial_stop", "3'", isTRUE(p$partial_stop[1] == 1))))
   })
 
-  output$coverage_plot <- renderPlot({
-    edit_tick(); u <- sel_unit(); req(u); plot_coverage(u$ID, u$path, u$scaffold)
-  }, height = 128)
+  observe({
+    edit_tick(); refresh(); u <- sel_unit(); req(u)
+    try(seqview_send(session, "seqv_ann-canvas", "seqv_ann_pick", u$ID, u$path, u$scaffold, active_feature()))
+  })
+  seqview_fit <- function(el) session$sendCustomMessage("rpseq_select", list(id = "seqv_ann-canvas", row = el))
+  observeEvent(input$seqv_ann_pick, active_feature(input$seqv_ann_pick$row))
 
   # Chimera panels follow the annotate modal's unit, or the assemble modal's
   # highlighted scaffold.
@@ -2208,7 +2212,7 @@ app_server <- function(input, output, session) {
   observeEvent(input$feat_select, {
     i <- suppressWarnings(as.integer(input$feat_select)); d <- feature_rows()
     req(!is.na(i), i >= 1, i <= nrow(d))
-    active_feature(d$element[i])
+    active_feature(d$element[i]); seqview_fit(d$element[i])
   })
 
   # ---- curation flags panel ----
@@ -2243,7 +2247,7 @@ app_server <- function(input, output, session) {
   observeEvent(input$flag_jump, {
     i <- suppressWarnings(as.integer(input$flag_jump)); d <- flag_rows()
     req(!is.na(i), i >= 1, i <= nrow(d))
-    active_feature(d$element[i])
+    active_feature(d$element[i]); seqview_fit(d$element[i])
   })
 
   # ---- edit / save / reset state machine (Edit is a checkbox) ----

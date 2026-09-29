@@ -9,6 +9,7 @@ add_external_resources <- function() {
     shiny::tags$link(rel = "shortcut icon", href = "www/favicon.ico"),
     shiny::tags$link(rel = "stylesheet", href = "www/custom.css"),
     shiny::tags$script(src = "www/custom.js"),
+    shiny::tags$script(src = "www/seqviewer.js"),
     shinyjs::useShinyjs()
   )
 }
