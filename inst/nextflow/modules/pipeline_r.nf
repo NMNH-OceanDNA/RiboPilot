@@ -17,13 +17,13 @@ process query_samples {
     # Header is written explicitly (sqlite3 -header emits nothing for 0 rows, and
     # splitCsv(header:true) then fails); an empty result becomes a header-only
     # file so the workflow simply does nothing instead of crashing.
-    printf 'ID\tR1\tR2\tpre_cpus\tpre_mem\tasm_cpus\tasm_mem\tfastp\tgetOrganelle\tseeds_db\tlabels_db\tassembler\tAssembly\tfind_rrna\trrna_tool\trrna_kingdom\n' > samplesheet.tsv
+    printf 'ID\tR1\tR2\tpre_cpus\tpre_mem\tasm_cpus\tasm_mem\tfastp\tgetOrganelle\tseeds_db\tlabels_db\tassembler\tAssembly\tfind_rrna\trrna_tool\trrna_kingdom\tbowtie2\tspades\n' > samplesheet.tsv
     sqlite3 -cmd '.timeout 10000' -separator '\t' '${params.db}' "
       SELECT p.ID, p.R1, p.R2,
              COALESCE(po.cpus,4) AS pre_cpus, COALESCE(po.memory,8) AS pre_mem,
              COALESCE(ao.cpus,4) AS asm_cpus, COALESCE(ao.memory,16) AS asm_mem,
              po.fastp AS fastp,
-             ao.getOrganelle || ' --max-paths-num ' || COALESCE(ao.max_paths, 10) AS getOrganelle,
+             ao.getOrganelle || CASE WHEN ao.max_paths > 0 THEN ' --max-paths-num ' || (ao.max_paths + 1) ELSE '' END AS getOrganelle,
              ao.seeds_db, ao.labels_db,
              COALESCE(ao.assembler, 'getorganelle') AS assembler,
              COALESCE(s.Assembly, '') AS Assembly,
@@ -31,13 +31,14 @@ process query_samples {
              (SELECT COALESCE(rrna_tool, 'pybarrnap') FROM annotate_opts
                 WHERE annotate_opts = 'default') AS rrna_tool,
              (SELECT COALESCE(rrna_kingdom, 'euk') FROM annotate_opts
-                WHERE annotate_opts = 'default') AS rrna_kingdom
+                WHERE annotate_opts = 'default') AS rrna_kingdom,
+             ao.bowtie2, ao.spades
       FROM assemble a
       JOIN preprocess p     ON a.ID = p.ID
       JOIN samples s        ON s.ID = a.ID
       JOIN assemble_opts ao ON a.assemble_opts = ao.assemble_opts
       JOIN pre_opts po      ON p.pre_opts = po.pre_opts
-      WHERE a.assemble_switch IN (1,4) AND a.assemble_lock = 0;" >> samplesheet.tsv
+      WHERE a.assemble_switch IN (1,4) AND a.assemble_lock = 0 AND s.taxonomy_lock = 1;" >> samplesheet.tsv
     """
 }
 
@@ -64,9 +65,11 @@ process query_annotate_units {
     path 'annotate_units.tsv'
     script:
     """
-    printf 'ID\tpath\tscaffold\tcpus\tmem\n' > annotate_units.tsv
+    printf 'ID\tpath\tscaffold\tcpus\tmem\tsearched\n' > annotate_units.tsv
     sqlite3 -cmd '.timeout 10000' -separator '\t' '${params.db}' "
-      SELECT an.ID, an.path, an.scaffold, COALESCE(ao.cpus,4) AS cpus, COALESCE(ao.memory,8) AS mem
+      SELECT an.ID, an.path, an.scaffold, COALESCE(ao.cpus,4) AS cpus, COALESCE(ao.memory,8) AS mem,
+        EXISTS (SELECT 1 FROM blast_searched bs WHERE bs.ID = an.ID AND bs.path = an.path
+          AND bs.scaffold = an.scaffold) AS searched
       FROM annotate an
       JOIN annotate_opts ao ON an.annotate_opts = ao.annotate_opts
       JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
@@ -104,9 +107,8 @@ process query_sample_units {
     """
 }
 
-// Load assemblies + score candidate paths (auto-select). Reads the published
-// assembly fastas from the project out/ dir; the staged inputs force ordering
-// after assemble.
+// Load assemblies + score candidate paths (auto-select) from the assembly
+// files staged into this task.
 process score {
     cache false
     tag "${id}"
@@ -120,8 +122,7 @@ process score {
     val id
     script:
     """
-    RIBOPILOT_SRC='${params.ribopilot_src}' rp_score.R '${params.db}' '${id}' \
-        '${params.projectDir}/${params.publishDir}' '${params.taxdump_dir}'
+    RIBOPILOT_SRC='${params.ribopilot_src}' rp_score.R '${params.db}' '${id}' . '${params.taxdump_dir}'
     """
 }
 

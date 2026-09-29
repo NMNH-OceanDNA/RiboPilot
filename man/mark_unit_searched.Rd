@@ -11,7 +11,8 @@ mark_unit_searched(
   scaffold = 1L,
   query_md5,
   n_hits = 0L,
-  source = "remote"
+  source = "remote",
+  db = ""
 )
 }
 \arguments{
@@ -21,11 +22,13 @@ mark_unit_searched(
 
 \item{path, scaffold}{Assembly unit within the sample.}
 
-\item{query_md5}{md5 of the exact query sequence submitted.}
+\item{query_md5}{md5 of the query sequence and the search settings, as blast.nf computes it.}
 
 \item{n_hits}{Number of hits the search returned.}
 
 \item{source}{Which search produced the hits, "local" or "remote".}
+
+\item{db}{The database that answered: "core_nt", or the local panel's name and release.}
 }
 \value{
 (invisibly) TRUE.

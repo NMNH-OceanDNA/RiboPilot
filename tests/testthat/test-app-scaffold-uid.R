@@ -3,50 +3,6 @@
 # number, so any change to the display order acted on the WRONG scaffold -- and
 # the action on the other end DELETEs that unit's annotation and curation.
 
-mk_app_project <- function(env = parent.frame()) {
-  dir <- withr::local_tempdir(.local_envir = env)
-  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
-  DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT, Taxon TEXT, sci_name TEXT, taxid INT, rank TEXT,
-    match_type TEXT, lineage TEXT, lineage_taxids TEXT, taxonomy_switch INT, taxonomy_lock INT,
-    export_group TEXT, time_stamp INT)")
-  DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, assemble_lock INT, assemble_switch INT,
-    assemble_opts TEXT, blast_opts TEXT, paths INT, scaffolds INT, length TEXT, assemble_notes TEXT, find_rrna_notes TEXT, time_stamp INT)")
-  DBI::dbExecute(con, "CREATE TABLE preprocess(ID TEXT, pre_opts TEXT)")
-  DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, topology TEXT, length INT,
-    sequence TEXT, ignore INT, blast_species TEXT, blast_accession TEXT, blast_pident REAL,
-    blast_qcovs REAL, blast_source TEXT, source_contig TEXT)")
-  DBI::dbExecute(con, "CREATE TABLE annotate(ID TEXT, path INT, scaffold INT, annotate_switch INT,
-    annotate_lock INT, annotate_opts TEXT, curate_opts TEXT, reviewed TEXT, problematic TEXT,
-    partial TEXT, n_features INT, missing TEXT, n_flags INT, annotate_notes TEXT, itsx_warnings TEXT, export_group TEXT, time_stamp INT)")
-  DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT, start INT)")
-  DBI::dbExecute(con, "CREATE TABLE coverage(ID TEXT, path INT, scaffold INT, mean_depth REAL,
-    min_depth INT, max_depth INT, depths TEXT)")
-  DBI::dbExecute(con, "CREATE TABLE blast_screen(ID TEXT, path INT, scaffold INT, accession TEXT, title TEXT,
-    species TEXT, staxid INT, lineage TEXT, lineage_taxids TEXT, rank_distance INT, pident REAL,
-    qcovs REAL, evalue REAL, bitscore REAL, is_nuclear_rrna INT)")
-  DBI::dbExecute(con, "CREATE TABLE blast_ref_candidates(ID TEXT, path INT, scaffold INT, rank INT,
-    accession TEXT, species TEXT, title TEXT, pident REAL, qcovs REAL, bitscore REAL, evalue REAL)")
-  DBI::dbExecute(con, "CREATE TABLE path_scores(ID TEXT, path INT, length INT, depth REAL, anchors TEXT,
-    blast_pident REAL, hit_id TEXT, hit_species TEXT, score REAL, rank INT, auto_select INT)")
-  DBI::dbExecute(con, "INSERT INTO path_scores (ID,path,score,rank,auto_select) VALUES('S1',1,0.912,1,1)")
-  DBI::dbExecute(con, "INSERT INTO path_scores (ID,path,score,rank,auto_select) VALUES('S1',2,0.431,2,0)")
-  DBI::dbExecute(con, "INSERT INTO samples VALUES('S1','Danio rerio','Danio rerio',7955,'species','exact',NULL,NULL,1,1,NULL,1)")
-  DBI::dbExecute(con, "INSERT INTO assemble VALUES('S1',1,2,'default','default',2,4,'100',NULL,NULL,1)")
-  DBI::dbExecute(con, "INSERT INTO preprocess VALUES('S1','default')")
-  # four units; the SHORTEST is p2.s2, so a length-sorted view reorders the table
-  for (u in list(c(1,1,6120), c(1,2,1442), c(2,1,5980), c(2,2,890))) {
-    DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',?,?,'linear',?,'ACGT',0,'Danio rerio','A1',99,88,'core_nt',NULL)",
-      params = list(u[1], u[2], u[3]))
-    DBI::dbExecute(con, "INSERT INTO annotate VALUES('S1',?,?,1,0,'default','default','no','no','no',3,'',0,NULL,NULL,NULL,1)",
-      params = list(u[1], u[2]))
-    DBI::dbExecute(con, "INSERT INTO coverage (ID,path,scaffold,mean_depth) VALUES('S1',?,?,100)",
-      params = list(u[1], u[2]))
-  }
-  fixture_fill_schema(con)
-  DBI::dbDisconnect(con)
-  dir
-}
-
 test_that("triaging by uid acts on that exact scaffold, whatever the row order", {
   skip_if_not_installed("withr")
   dir <- mk_app_project()
@@ -133,10 +89,18 @@ test_that("the evidence table exposes a uid for every unit", {
   expect_equal(nrow(RiboPilot:::unit_evidence("")), 0L)
 })
 
+# bulk triage leaves assembly-locked samples alone
+unlock_assembly <- function(dir) {
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE assemble SET assemble_lock = 0")
+  DBI::dbDisconnect(con)
+}
+
 test_that("bulk triage previews before it writes, and applying honours the preview", {
   skip_if_not_installed("withr")
   dir <- mk_app_project()
   withr::local_dir(dir)
+  unlock_assembly(dir)
   # make every unit droppable: no features, and a non-rDNA top hit
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
   DBI::dbExecute(con, "DELETE FROM annotations")
@@ -152,7 +116,7 @@ test_that("bulk triage previews before it writes, and applying honours the previ
     session$flushReact()
 
     # opening the modal must not change anything
-    session$setInputs(triage_btn = 1, triage_overwrite_user = FALSE)
+    session$setInputs(tbl__reactable__selected = 1L, triage_btn = 1, triage_overwrite_user = FALSE)
     session$flushReact()
     expect_true(all(RiboPilot:::app_query("SELECT COALESCE(ignore,0) i FROM assemblies WHERE ID='S1'")$i == 0))
     prev <- output$triage_preview$html      # renderUI returns list(html, deps)
@@ -176,6 +140,7 @@ test_that("the modal previews the stored preset, not the shipped defaults", {
   skip_if_not_installed("withr")
   dir <- mk_app_project()
   withr::local_dir(dir)
+  unlock_assembly(dir)
   # same droppable evidence, but the project's preset says flag, not drop. No
   # triage_rule_* input is ever set here, standing in for the window before the
   # browser echoes the controls back: the preview must already honour the preset.
@@ -192,7 +157,7 @@ test_that("the modal previews the stored preset, not the shipped defaults", {
     session$setInputs(mode = "Assemble")
     sel_id("S1")
     session$flushReact()
-    session$setInputs(triage_btn = 1, triage_overwrite_user = FALSE)
+    session$setInputs(tbl__reactable__selected = 1L, triage_btn = 1, triage_overwrite_user = FALSE)
     session$flushReact()
 
     expect_equal(triage_actions()$no_feat_non_rdna, "flag")
@@ -208,6 +173,7 @@ test_that("preview says so when a Drop rule is armed but everything it matches i
   skip_if_not_installed("withr")
   dir <- mk_app_project()
   withr::local_dir(dir)
+  unlock_assembly(dir)
   # same droppable evidence as above, but every unit is already a user
   # decision: with overwrite off, auto-triage must skip all of them
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
@@ -225,7 +191,7 @@ test_that("preview says so when a Drop rule is armed but everything it matches i
     session$setInputs(mode = "Assemble")
     sel_id("S1")
     session$flushReact()
-    session$setInputs(triage_btn = 1, triage_overwrite_user = FALSE)
+    session$setInputs(tbl__reactable__selected = 1L, triage_btn = 1, triage_overwrite_user = FALSE)
     session$flushReact()
     prev <- output$triage_preview$html
     expect_true(nzchar(prev))
@@ -240,6 +206,7 @@ test_that("turning every rule off says Apply changes nothing, not 'Would drop'",
   skip_if_not_installed("withr")
   dir <- mk_app_project()
   withr::local_dir(dir)
+  unlock_assembly(dir)
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
   # p1.s1 hand-decided drop, p1.s2 hand-decided keep: standing curator calls
   DBI::dbExecute(con,
@@ -258,7 +225,7 @@ test_that("turning every rule off says Apply changes nothing, not 'Would drop'",
     session$setInputs(mode = "Assemble")
     sel_id("S1")
     session$flushReact()
-    session$setInputs(triage_btn = 1, triage_overwrite_user = FALSE)
+    session$setInputs(tbl__reactable__selected = 1L, triage_btn = 1, triage_overwrite_user = FALSE)
     off_inputs <- stats::setNames(as.list(rep("off", length(RiboPilot:::triage_rule_keys()))),
       paste0("triage_rule_", RiboPilot:::triage_rule_keys()))
     do.call(session$setInputs, off_inputs)
@@ -277,12 +244,13 @@ test_that("the all-off message replaces the no-Drop note instead of also printin
   skip_if_not_installed("withr")
   dir <- mk_app_project()
   withr::local_dir(dir)
+  unlock_assembly(dir)
 
   shiny::testServer(RiboPilot:::app_server, {
     session$setInputs(mode = "Assemble")
     sel_id("S1")
     session$flushReact()
-    session$setInputs(triage_btn = 1, triage_overwrite_user = FALSE)
+    session$setInputs(tbl__reactable__selected = 1L, triage_btn = 1, triage_overwrite_user = FALSE)
     off_inputs <- stats::setNames(as.list(rep("off", length(RiboPilot:::triage_rule_keys()))),
       paste0("triage_rule_", RiboPilot:::triage_rule_keys()))
     do.call(session$setInputs, off_inputs)
@@ -477,33 +445,99 @@ test_that("the Annotation Review title always names the unit", {
   expect_match(ttl("S1", 1L, 1L), "path 1 / scaffold 1")
 })
 
-test_that("locking two paths asks first, and 'lock anyway' goes through", {
+test_that("a second assembly path is refused from the toolbar and from Lock & Close", {
   skip_if_not_installed("withr")
   dir <- mk_app_project()
   withr::local_dir(dir)
+  locks <- function() RiboPilot:::app_query(
+    "SELECT COALESCE(annotate_lock,0) AS lock, reviewed FROM annotate WHERE ID='S1'
+      ORDER BY path, scaffold")
 
   shiny::testServer(RiboPilot:::app_server, {
     session$setInputs(mode = "Annotate")
     session$flushReact()
     d <- samples_data()
-    sel <- c(which(d$path == 1 & d$scaffold == 1)[1],
-             which(d$path == 2 & d$scaffold == 1)[1])
-    session$setInputs(tbl__reactable__selected = sel)
-    session$flushReact()
+    row <- function(p, s) which(d$path == p & d$scaffold == s)[1]
 
-    # one unit from each path: the click must not write anything on its own
+    # one unit from each path in one click: nothing is locked
+    session$setInputs(tbl__reactable__selected = c(row(1, 1), row(2, 1)))
     session$setInputs(annot_lock_btn = 1)
     session$flushReact()
-    lk <- RiboPilot:::app_query("SELECT COALESCE(annotate_lock,0) AS lock FROM annotate WHERE ID='S1'")
-    expect_true(all(lk$lock == 0))
+    expect_equal(locks()$lock, c(0L, 0L, 0L, 0L))
 
-    # answering the warning applies exactly the toggle that was asked for
-    session$setInputs(lock_anyway = 1)
+    # path 1 alone locks
+    session$setInputs(tbl__reactable__selected = row(1, 1))
+    session$setInputs(annot_lock_btn = 2)
     session$flushReact()
-    lk <- RiboPilot:::app_query(
-      "SELECT path, scaffold, COALESCE(annotate_lock,0) AS lock FROM annotate WHERE ID='S1'
-        ORDER BY path, scaffold")
-    expect_equal(lk$lock, c(1L, 0L, 1L, 0L))
+    expect_equal(locks()$lock, c(1L, 0L, 0L, 0L))
+
+    # Lock & Close locks another unit of the same path, and is not a review sign-off
+    sel_unit(list(ID = "S1", path = 1L, scaffold = 2L))
+    session$setInputs(lock_and_close = 1)
+    session$flushReact()
+    expect_equal(locks()$lock, c(1L, 1L, 0L, 0L))
+    expect_equal(locks()$reviewed[2], "no")
+
+    # ...and refuses a unit of the other path, as the toolbar does
+    sel_unit(list(ID = "S1", path = 2L, scaffold = 1L))
+    session$setInputs(lock_and_close = 2)
+    session$flushReact()
+    expect_equal(locks()$lock, c(1L, 1L, 0L, 0L))
+
+    # Lock keeps the window open and follows the same rules
+    c2 <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+    DBI::dbExecute(c2, "UPDATE annotate SET annotate_lock = 0 WHERE path = 1 AND scaffold = 2")
+    DBI::dbDisconnect(c2)
+    sel_unit(list(ID = "S1", path = 1L, scaffold = 2L))
+    session$setInputs(modal_lock = 1)
+    session$flushReact()
+    expect_equal(locks()$lock, c(1L, 1L, 0L, 0L))
+    expect_equal(locks()$reviewed[2], "no")
+    sel_unit(list(ID = "S1", path = 2L, scaffold = 1L))
+    session$setInputs(modal_lock = 2)
+    session$flushReact()
+    expect_equal(locks()$lock, c(1L, 1L, 0L, 0L))
+  })
+})
+
+test_that("toolbar marks skip locked units, and a mixed selection sets rather than clears", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE annotate SET problematic = 'yes' WHERE path = 1 AND scaffold = 2")
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_lock = 1 WHERE path = 1 AND scaffold = 1")
+  DBI::dbDisconnect(con)
+  col <- function(x) RiboPilot:::app_query(sprintf(
+    "SELECT %s AS v FROM annotate WHERE ID='S1' ORDER BY path, scaffold", x))$v
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Annotate")
+    session$flushReact()
+    d <- samples_data()
+    row <- function(p, s) which(d$path == p & d$scaffold == s)[1]
+
+    # locked p1.s1, excluded p1.s2, plain p2.s1: the unlocked two end up excluded and locked
+    session$setInputs(tbl__reactable__selected = c(row(1, 1), row(1, 2), row(2, 1)))
+    session$setInputs(problematic_btn = 1)
+    session$flushReact()
+    expect_equal(col("problematic"), c("no", "yes", "yes", "no"))
+    expect_equal(col("COALESCE(annotate_lock,0)"), c(1L, 1L, 1L, 0L))
+
+    # unlocked again, every unit in the selection is set, so the next click clears them
+    c2 <- RiboPilot:::app_con()
+    DBI::dbExecute(c2, "UPDATE annotate SET annotate_lock = 0 WHERE NOT (path = 1 AND scaffold = 1)")
+    DBI::dbDisconnect(c2)
+    refresh(refresh() + 1); session$flushReact()
+    session$setInputs(problematic_btn = 2)
+    session$flushReact()
+    expect_equal(col("problematic"), c("no", "no", "no", "no"))
+
+    # a Lock click over a locked and an unlocked unit locks, it does not unlock
+    session$setInputs(tbl__reactable__selected = c(row(1, 1), row(1, 2)))
+    session$setInputs(annot_lock_btn = 1)
+    session$flushReact()
+    expect_equal(col("COALESCE(annotate_lock,0)"), c(1L, 1L, 0L, 0L))
   })
 })
 
@@ -730,5 +764,28 @@ test_that("Download selected rows writes only the ticked visible rows", {
     expect_equal(nrow(got), 1)
     expect_equal(got$scaffold, samples_data()$scaffold[2])
     expect_equal(nrow(utils::read.csv(output$table_csv)), n)
+  })
+})
+
+test_that("the BLAST evidence names the database that answered", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "INSERT INTO blast_screen (ID, path, scaffold, accession, species, pident, qcovs,
+    is_nuclear_rrna) VALUES ('S1',1,1,'X1.1','Danio rerio',99,90,1), ('S1',1,2,'X2.1','Danio rerio',99,90,1)")
+  DBI::dbExecute(con, "INSERT INTO blast_searched (ID, path, scaffold, query_md5, source)
+    VALUES ('S1',1,1,'m','local')")
+  DBI::dbDisconnect(con)
+  withr::local_dir(dir)
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    sel_id("S1")
+    session$flushReact()
+    session$setInputs(scaf_examine = "S1|1|1")
+    session$flushReact()
+    expect_match(output$unit_screen$html, "bundled rDNA database", fixed = TRUE)
+    session$setInputs(scaf_examine = "S1|1|2")
+    session$flushReact()
+    expect_match(output$unit_screen$html, "NCBI core_nt", fixed = TRUE)
   })
 })

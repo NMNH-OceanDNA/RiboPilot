@@ -2,7 +2,7 @@
 % Please edit documentation in R/blast_genbank.R
 \name{parse_blast_candidates}
 \alias{parse_blast_candidates}
-\title{Parse remote blastn hits into ranked reference candidates + a contamination
+\title{Parse blastn hits into ranked reference candidates + a contamination
 screen}
 \usage{
 parse_blast_candidates(
@@ -31,15 +31,18 @@ than treats as clean.}
 (invisibly) the ranked candidate data.frame.
 }
 \description{
-Reads a blastn `-outfmt "6 saccver stitle pident qcovs evalue staxids"` file
+Reads a blastn \verb{-outfmt "6 saccver stitle pident qcovs evalue staxids"} file
 for one sample and splits it two ways:
 }
 \details{
-* **Reference panel** - hits whose title is nuclear rDNA. Deduped by
-  accession (best pident*qcovs), ranked into `blast_ref_candidates`, rank-1
-  set as the sample's reference (`assemble.blast_*`). Same records the restricted search returned before.
-* **Contamination screen** - the top hit over *all* of core_nt, unfiltered,
-  into `blast_screen`. This is the only signal that can distinguish "the host"
-  from "a symbiont" or "not nuclear rDNA at all", so it is deliberately taken
-  before the nuclear-rDNA filter.
+\itemize{
+\item \strong{Reference panel} - hits whose title is nuclear rDNA. Deduped by
+accession (best pident*qcovs), ranked into \code{blast_ref_candidates}, rank-1
+written to the unit's \verb{assemblies.blast_*} columns. Same records the restricted search returned before.
+\item \strong{Contamination screen} - the top hit of the whole search (the bundled
+rDNA database with its decoys, or NCBI core_nt), unfiltered, into
+\code{blast_screen}. This is the only signal that can distinguish "the host"
+from "a symbiont" or "not nuclear rDNA at all", so it is deliberately taken
+before the nuclear-rDNA filter.
+}
 }

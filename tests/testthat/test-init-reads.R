@@ -87,19 +87,33 @@ test_that("new_project checks the reads and writes a private .config", {
   proj <- withr::local_tempdir()
 
   expect_error(
-    suppressMessages(new_project(path = proj, mapping_fn = p$mapping_fn,
+    suppressWarnings(suppressMessages(new_project(path = proj, mapping_fn = p$mapping_fn,
       data_path = p$dir, executor = "conda", Rproj = FALSE,
       custom_seeds_db = p$mapping_fn, custom_labels_db = p$mapping_fn,
-      ncbi_api_key = "secret")),
+      ncbi_api_key = "secret"))),
     "not found"
   )
 
-  suppressMessages(new_project(path = proj, mapping_fn = p$mapping_fn,
+  expect_warning(suppressMessages(new_project(path = proj, mapping_fn = p$mapping_fn,
     data_path = p$data_dir, executor = "conda", Rproj = FALSE, force = TRUE,
     custom_seeds_db = p$mapping_fn, custom_labels_db = p$mapping_fn,
-    ncbi_api_key = "secret"))
+    ncbi_api_key = "secret")), "not supported")
 
   cfg <- file.path(proj, ".config")
   expect_true(file.exists(cfg))
   expect_equal(as.character(file.info(cfg)$mode), "600")
+  # capped at this machine, so an oversized request cannot end the run
+  lim <- grep("resourceLimits", readLines(cfg), value = TRUE)
+  expect_match(lim, sprintf("cpus: %d, memory: %d.GB", ps::ps_cpu_count(),
+    as.integer(floor(ps::ps_system_memory()$total / 1024^3))), fixed = TRUE)
+})
+
+test_that("new_project runs outside RStudio with the default Rproj = TRUE", {
+  skip_if(requireNamespace("rstudioapi", quietly = TRUE) && rstudioapi::isAvailable())
+  p <- mk_reads_project("S1")
+  proj <- withr::local_tempdir()
+  expect_no_error(suppressWarnings(suppressMessages(new_project(path = proj,
+    mapping_fn = p$mapping_fn, data_path = p$data_dir, executor = "conda",
+    custom_seeds_db = p$mapping_fn, custom_labels_db = p$mapping_fn))))
+  expect_true(file.exists(file.path(proj, ".config")))
 })

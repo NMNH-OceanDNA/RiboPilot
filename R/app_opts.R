@@ -41,7 +41,7 @@ opts_modal_shell <- function(title, n, name_row, ..., update_id) {
     name_row,
     opts_help("Reusable named set applied to the selected samples; check Edit to ",
       "change values, or type a new name to create a set.",
-      " Saving re-queues the selected samples: their state becomes Ready to run."),
+      " Saving queues the selected samples for the next Update."),
     ...,
     footer = mp_footer(primary = shiny::actionButton(update_id, "Save")))
 }
@@ -54,7 +54,7 @@ ref_db_origin <- function(cur) {
   if (length(clade) != 1 || is.na(clade) || !nzchar(trimws(clade))) {
     return("Set at project creation, or by hand.")
   }
-  sprintf("Set by the Reference tab for clade %s.", clade)
+  sprintf("Set by the Reference step for clade %s.", clade)
 }
 
 #' "" -> NA, so an emptied path is stored as absent rather than as an empty path
@@ -149,7 +149,7 @@ assemble_opts_modal <- function(cur, choices, n) {
       shinyjs::disabled(shiny::textInput("ao_labels", "Label database:",
         value = cur$labels_db %|NA|% "", width = "100%")),
       opts_help(ref_db_origin(cur), " Editing these points this parameter set at a ",
-        "different database; the Reference tab overwrites them the next time it ",
+        "different database; the Reference step overwrites them the next time it ",
         "builds or reuses one for this group.", id = "help_ao_refdb")),
     shiny::div(style = "display:flex; gap:2em;",
       shiny::div(style = "flex:1", shinyjs::disabled(shiny::numericInput("ao_minlen",
@@ -299,13 +299,7 @@ curate_opts_modal <- function(cur, choices, n) {
     opts_name_row("co_name", "co_edit", choices, cur$curate_opts),
     shinyjs::disabled(shiny::selectInput("co_ruleset", "Clade ruleset:",
       choices = RRNA_RULESETS, selected = cur$ruleset %|NA|% "metazoa_generic", width = "100%")),
-    opts_help("Per-clade expected feature lengths + anchor-identity thresholds ",
-      "used to flag oddities during curation."),
-    shiny::div(style = "display:flex; gap:2em;",
-      shiny::div(style = "flex:1", shinyjs::disabled(shiny::numericInput("co_pid",
-        "Min anchor identity (%):", value = cur$min_anchor_pid %|NA|% 85, min = 0, max = 100, width = "100%"))),
-      shiny::div(style = "flex:1; margin-top:32px;", shinyjs::disabled(shinyWidgets::prettyCheckbox("co_contam",
-        "Flag contaminants", value = (cur$check_contaminant %|NA|% 1) == 1, status = "primary")))),
+    opts_help("Per-clade expected feature lengths and anchor-identity thresholds used to flag oddities during curation."),
     update_id = "update_co")
 }
 
@@ -361,7 +355,7 @@ opts_handlers <- function(input, output, session, deps) {
     if (length(ids) == 0) return(character(0))
     con <- deps$con(); on.exit(DBI::dbDisconnect(con))
     ph <- paste(rep("?", length(ids)), collapse = ",")
-    DBI::dbGetQuery(con, sprintf("SELECT ID FROM %s WHERE %s = 1 AND ID IN (%s)",
+    DBI::dbGetQuery(con, sprintf("SELECT DISTINCT ID FROM %s WHERE %s = 1 AND ID IN (%s)",
       tbl, lock_col, ph), params = as.list(ids))$ID
   }
 
@@ -376,14 +370,21 @@ opts_handlers <- function(input, output, session, deps) {
     if (length(sel) && clicked %in% sel) sel else clicked
   }
 
-  open_modal <- function(pfx) {
+  open_modal <- function(pfx, set = NULL) {
     sp <- specs[[pfx]]
     ids <- targets()
     con <- deps$con(); on.exit(DBI::dbDisconnect(con))
-    # current set for the first target, joined to its opts row
-    q <- sprintf("SELECT o.* FROM %s x JOIN %s o ON x.%s = o.%s WHERE x.ID = ?",
-      sp$link_tbl, sp$table, sp$key, sp$key)
-    cur <- tryCatch(DBI::dbGetQuery(con, q, params = list(ids[1])), error = function(e) NULL)
+    # the named set, else the first target's current set (for annotate, its
+    # first unit, as the table shows)
+    q <- if (is.null(set)) {
+      sprintf("SELECT o.* FROM %s x JOIN %s o ON x.%s = o.%s WHERE x.ID = ?%s LIMIT 1",
+        sp$link_tbl, sp$table, sp$key, sp$key,
+        if (sp$link_tbl == "annotate") " ORDER BY x.path, x.scaffold" else "")
+    } else {
+      sprintf("SELECT * FROM %s WHERE %s = ?", sp$table, sp$key)
+    }
+    cur <- tryCatch(DBI::dbGetQuery(con, q, params = list(set %||% ids[1])),
+      error = function(e) NULL)
     if (is.null(cur) || nrow(cur) == 0) {
       cur <- DBI::dbGetQuery(con, sprintf("SELECT * FROM %s WHERE %s = 'default'", sp$table, sp$key))
     }
@@ -411,7 +412,7 @@ opts_handlers <- function(input, output, session, deps) {
            "ao_findrrna"),
     bo = c("bo_run", "bo_source", "bo_entrez", "bo_extra", "bo_mts"),
     no = c("no_cpus", "no_mem", "no_tool", "no_kingdom", "no_itsxtaxon", "no_itsxopts"),
-    co = c("co_ruleset", "co_pid", "co_contam")
+    co = c("co_ruleset")
   )
   for (pfx in names(specs)) local({
     p <- pfx; sp <- specs[[p]]; fids <- field_ids[[p]]
@@ -419,13 +420,18 @@ opts_handlers <- function(input, output, session, deps) {
       ids <- click_ids(input[[paste0("set_", sp$table)]])
       if (!need_selection(length(ids))) return()
       locked <- locked_ids(ids, sp$lock, sp$queue_tbl)
+      what <- if (identical(sp$lock, "annotate_lock")) "annotation" else "assembly"
       if (length(locked) == length(ids)) {
-        need_unlocked(locked, "sample"); return()
+        need_unlocked(locked, "sample", how = if (what == "annotation") {
+          paste("Their annotation is locked. Unlock their units in Annotation Review first;",
+            "a sample is listed there only while its assembly is locked")
+        } else "Their assembly is locked. Select them on this tab and press Unlock first")
+        return()
       }
       targets(setdiff(ids, locked))
       open_modal(p)
-      if (length(locked)) mp_toast(sprintf("Skipping %s locked for this step: %s.",
-        mp_n(length(locked), "sample"), mp_id_list(locked)), type = "warning")
+      if (length(locked)) mp_toast(sprintf("Skipping %s whose %s is locked: %s.",
+        mp_n(length(locked), "sample"), what, mp_id_list(locked)), type = "warning")
     })
     # enable fields on Edit; auto-check Edit when a new (unknown) name is typed
     shiny::observeEvent(input[[paste0(p, "_edit")]], ignoreInit = TRUE, {
@@ -436,9 +442,14 @@ opts_handlers <- function(input, output, session, deps) {
         con <- deps$con(); on.exit(DBI::dbDisconnect(con))
         DBI::dbGetQuery(con, sprintf("SELECT %s FROM %s", sp$key, sp$table))[[1]]
       }, error = function(e) character(0))
-      if (!(input[[paste0(p, "_name")]] %in% known)) {
+      nm <- input[[paste0(p, "_name")]]
+      if (!(nm %in% known)) {
         shinyWidgets::updatePrettyCheckbox(session, paste0(p, "_edit"), value = TRUE)
         for (f in fids) shinyjs::enable(f)
+      } else if (!identical(nm, cur_row()[[sp$key]][1]) ||
+                 isTRUE(input[[paste0(p, "_edit")]])) {
+        # a known set shows its own values, read-only
+        open_modal(p, set = nm)
       }
     })
     shiny::observeEvent(input[[paste0("update_", p)]], {
@@ -449,9 +460,8 @@ opts_handlers <- function(input, output, session, deps) {
         return()
       }
       if (identical(chk$action, "confirm")) {
-        mp_confirm(paste0(p, "_confirm_edit"), title = "Edit beyond the selection",
-          text = chk$msg, action_label = "Continue", danger = TRUE)
-        return()
+        if (!mp_confirm(paste0(p, "_confirm_edit"), title = "Edit beyond the selection",
+          text = chk$msg, action_label = "Continue", danger = TRUE, skippable = TRUE)) return()
       }
       opts_apply(p, sp, input, deps, targets(), cur_row())
     })
@@ -497,7 +507,7 @@ opts_edit_check <- function(sp, nm, ids, editing, deps) {
   if (length(others) == 0) return(list(action = "ok"))
   ph <- paste(rep("?", length(others)), collapse = ",")
   locked <- DBI::dbGetQuery(con,
-    sprintf("SELECT ID FROM %s WHERE %s = 1 AND ID IN (%s)", sp$queue_tbl, sp$lock, ph),
+    sprintf("SELECT DISTINCT ID FROM %s WHERE %s = 1 AND ID IN (%s)", sp$queue_tbl, sp$lock, ph),
     params = as.list(others))$ID
   if (length(locked) > 0) {
     return(list(action = "refuse", msg = sprintf(
@@ -520,7 +530,7 @@ opts_row <- function(pfx, nm, input, base) {
       memory = as.integer(input$ao_mem), getOrganelle = input$ao_getorg %||% "",
       seeds_db = blank_to_na(input$ao_seeds %||% base$seeds_db),
       labels_db = blank_to_na(input$ao_labels %||% base$labels_db),
-      target = base$target %||% NA_character_, max_paths = as.integer(input$ao_maxpaths),
+      max_paths = as.integer(input$ao_maxpaths),
       max_scaffolds = as.integer(input$ao_maxscaf),
       min_assembly_length = as.integer(input$ao_minlen),
       assembler = input$ao_assembler %||% "getorganelle",
@@ -537,9 +547,7 @@ opts_row <- function(pfx, nm, input, base) {
       memory = as.integer(input$no_mem), rrna_tool = input$no_tool,
       rrna_kingdom = input$no_kingdom, itsx_taxon = input$no_itsxtaxon %||% "all",
       itsx_opts = input$no_itsxopts %||% "", stringsAsFactors = FALSE),
-    co = data.frame(curate_opts = nm, ruleset = input$co_ruleset,
-      min_anchor_pid = as.numeric(input$co_pid),
-      check_contaminant = as.integer(isTRUE(input$co_contam)), stringsAsFactors = FALSE)
+    co = data.frame(curate_opts = nm, ruleset = input$co_ruleset, stringsAsFactors = FALSE)
   )
 }
 
@@ -573,24 +581,25 @@ opts_apply <- function(pfx, sp, input, deps, ids, cur) {
   base <- if (!is.null(cur) && nrow(cur)) as.list(cur) else list()
 
   con <- deps$con(); on.exit(DBI::dbDisconnect(con))
+  known <- DBI::dbGetQuery(con, sprintf("SELECT %s FROM %s", sp$key, sp$table))[[1]]
   warns <- character(0)
-  if (editing) {
-    row <- opts_row(pfx, nm, input, base)
-    dplyr::rows_upsert(dplyr::tbl(con, sp$table), row, by = sp$key, in_place = TRUE, copy = TRUE)
-    # a database that is not there yet is saved anyway (it may live on a share
-    # that is not mounted, or be built later), but it is said out loud now
-    # rather than surfacing as a failed assembly
-    warns <- unusable_db_warnings(row)
-  }
-
-  for (id in ids) {
-    DBI::dbExecute(con, sprintf("UPDATE %s SET %s = ? WHERE ID = ?", sp$link_tbl, sp$key),
-      params = list(nm, id))
-    DBI::dbExecute(con, sprintf("UPDATE %s SET %s = 1 WHERE ID = ?", sp$queue_tbl, sp$queue),
-      params = list(id))
-    # re-queuing annotation gives the sample work again, so it is no longer done
-    if (identical(sp$queue_tbl, "annotate")) refresh_sample_state(con, id)
-  }
+  saved <- app_write({
+    if (editing || !(nm %in% known)) {
+      row <- opts_row(pfx, nm, input, base)
+      dplyr::rows_upsert(dplyr::tbl(con, sp$table), row, by = sp$key, in_place = TRUE, copy = TRUE)
+      # a database that is not there yet is saved anyway (it may live on a share
+      # that is not mounted, or be built later), but it is said out loud now
+      # rather than surfacing as a failed assembly
+      warns <- unusable_db_warnings(row)
+    }
+    for (id in ids) {
+      DBI::dbExecute(con, sprintf("UPDATE %s SET %s = ? WHERE ID = ?", sp$link_tbl, sp$key),
+        params = list(nm, id))
+      DBI::dbExecute(con, sprintf("UPDATE %s SET %s = 1 WHERE ID = ?", sp$queue_tbl, sp$queue),
+        params = list(id))
+    }
+  })
+  if (!saved) return()
   deps$refresh(deps$refresh() + 1)
   shiny::removeModal()
   # one alert, not one per warning: a second sweet alert replaces the first

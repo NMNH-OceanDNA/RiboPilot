@@ -47,7 +47,7 @@ parse_gfa_depth <- function(gfa_path) {
 #'   `scaffold_1--24280-,32579-,31679-` (segment ids after `--`, orientation sign
 #'   stripped). Merged segments carry underscores (`62361_60645`), so only the
 #'   trailing `+`/`-` may be removed; the rest of the id is literal.
-#' @param gfa_depth data.frame from [parse_gfa_depth()].
+#' @param gfa_depth data.frame from `parse_gfa_depth()`.
 #' @return numeric mean depth (NA if no segments matched)
 #' @noRd
 scaffold_depth <- function(header, gfa_depth) {
@@ -72,7 +72,7 @@ scaffold_depth <- function(header, gfa_depth) {
 
 #' Taxonomic match between a candidate lineage and the sample lineage
 #'
-#' Both are rank-aligned lineages (see [parse_rank_names()]). Scored on the
+#' Both are rank-aligned lineages (see `parse_rank_names()`). Scored on the
 #' DEEPEST rank the two agree at, not on an unbroken prefix: a real lineage that
 #' agrees at genus agrees at every rank above it, so a taxon with an unassigned
 #' intermediate rank should still score as the close match it is. The prefix walk
@@ -84,7 +84,7 @@ scaffold_depth <- function(header, gfa_depth) {
 #'
 #' @param candidate_lineage,sample_lineage Rank-aligned ";"-joined lineages.
 #' @param use_taxids Treat both as taxid strings rather than names.
-#' @return numeric in [0, 1]; 1 = agrees at species, 0 = agrees nowhere.
+#' @return numeric in \[0, 1\]; 1 = agrees at species, 0 = agrees nowhere.
 #' @noRd
 taxonomic_match <- function(candidate_lineage, sample_lineage, use_taxids = FALSE) {
   parse <- if (use_taxids) parse_rank_taxids else parse_rank_names
@@ -112,7 +112,7 @@ taxonomic_match <- function(candidate_lineage, sample_lineage, use_taxids = FALS
 #'   scored on taxids instead of names.
 #' @param expected_length Numeric length-2 c(min, max) plausible rDNA repeat unit length
 #'   for the clade (default c(4000, 12000)).
-#' @param weights Named weights (see [DEFAULT_SCORE_WEIGHTS]).
+#' @param weights Named weights (see `DEFAULT_SCORE_WEIGHTS`).
 #' @return `candidates` with added sub-score columns (`s_tax`, `s_identity`,
 #'   `s_anchors`, `s_depth`, `s_length`), a `score`, a `rank` (1 = best), and an
 #'   `auto_select` logical flagging the top candidate.

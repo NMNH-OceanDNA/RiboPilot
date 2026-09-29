@@ -8,7 +8,7 @@ mk_asmb_project <- function(mapping, assemblies = character(0), reads = characte
   dir.create(data_dir)
   dir.create(asmb_dir)
   file.create(file.path(data_dir, reads))
-  file.create(file.path(asmb_dir, assemblies))
+  for (a in assemblies) writeLines(c(">c1", "ACGT"), file.path(asmb_dir, a))
   map_fn <- file.path(dir, "mapping.csv")
   utils::write.csv(mapping, map_fn, row.names = FALSE)
   list(dir = dir, data_dir = data_dir, asmb_dir = asmb_dir, mapping_fn = map_fn,
@@ -163,6 +163,29 @@ test_that("a container project mounts what exists and nothing else", {
   expect_false(grepl("rawDir", run))
   expect_false(grepl("NA:NA", run))
   expect_match(grep("rawDir", cfg, value = TRUE)[1], "'NA'")
+})
+
+test_that("an assembly-only project on a generated Singularity profile mounts no read folder", {
+  skip_on_os("windows")
+  p <- mk_asmb_project(
+    data.frame(ID = "S1", Taxon = "Danio rerio", R1 = "", R2 = "",
+      Assembly = "S1.fa", stringsAsFactors = FALSE),
+    assemblies = "S1.fa")
+  proj <- withr::local_tempdir()
+  prof <- withr::local_tempdir()
+  suppressMessages(generate_config("sing", scheduler = "slurm", queue = "q",
+    container_cache = "/c", profile_dir = prof))
+
+  suppressMessages(suppressWarnings(new_project(path = proj,
+    mapping_fn = p$mapping_fn, assembly_path = p$asmb_dir,
+    container = "ghcr.io/example/ribopilot:test", executor = "sing",
+    profile_dir = prof, Rproj = FALSE, force = TRUE)))
+
+  cfg <- readLines(file.path(proj, ".config"))
+  run <- grep("^\\s*runOptions", cfg, value = TRUE)
+  expect_length(run, 1)
+  expect_false(grepl("rawDir", run, fixed = TRUE))
+  expect_match(run, paste("-B", normalizePath(p$asmb_dir)), fixed = TRUE)
 })
 
 test_that("a failed rDNA search writes its note to one column only", {

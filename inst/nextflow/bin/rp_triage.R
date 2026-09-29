@@ -1,6 +1,6 @@
 #!/usr/bin/env Rscript
-# Propose keep/drop/undecided for every unit of one sample, once its evidence
-# (annotation, GenBank screen, coverage) is in place.
+# Classify a sample's on-target variants, then propose keep/drop/undecided for
+# every unit, once its evidence (annotation, GenBank screen, coverage) is in place.
 # Args: <db> <id>
 a <- commandArgs(trailingOnly = TRUE)
 rp_file <- sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE))
@@ -15,6 +15,8 @@ res <- local({
   # database already updated.
   off <- RiboPilot:::triage_all_off(
     RiboPilot:::normalize_triage_actions(RiboPilot:::triage_opts_for(con, a[2])))
+  tryCatch(RiboPilot:::screen_variants(con, a[2]),
+    error = function(e) message("variant check skipped for ", a[2], ": ", conditionMessage(e)))
   list(off = off, n = auto_triage_sample(con, a[2]))
 })
 cat("auto-triage: ", a[2], " - ", res$n, " unit(s) updated",

@@ -82,11 +82,11 @@ SCREEN_PARAMS_DEFAULT <- list(
 #' Length ranges are for a COMPLETE, correctly assembled element; the flag/ok
 #' model has no partial concept yet, so a genuinely partial anchor is flagged
 #' short. `min_anchor_pid` is a NAMED PER-ELEMENT vector (see
-#' [RRNA_ANCHOR_PID_METAZOA]); the `curate_opts.min_anchor_pid` column and its
+#' `RRNA_ANCHOR_PID_METAZOA`); the `curate_opts.min_anchor_pid` column and its
 #' options-modal control are still a single scalar and are not read by the
 #' engine, which is tracked separately.
 #'
-#' @param ruleset Clade key; one of [RRNA_RULESETS]. Unknown keys error rather
+#' @param ruleset Clade key; one of `RRNA_RULESETS`. Unknown keys error rather
 #'   than silently falling back, so a typo cannot mis-curate a sample.
 #' @return list(name, lengths = named list el -> c(min,max), min_anchor_pid,
 #'   min_ref_coverage, min_anchor_coverage, check_contaminant, screen).
@@ -138,18 +138,10 @@ rrna_params <- function(ruleset = "metazoa_generic") {
   )
 }
 
-#' The reference-identity floor for an element (handles a per-element named
-#' vector or a single scalar for back-compatibility)
+#' The reference-identity floor for an element (NA when the ruleset has none)
 #' @noRd
 anchor_pid_floor <- function(min_anchor_pid, element) {
-  if (is.null(min_anchor_pid)) return(NA_real_)
-  if (!is.null(names(min_anchor_pid)) && element %in% names(min_anchor_pid)) {
-    return(unname(min_anchor_pid[[element]]))
-  }
-  if (length(min_anchor_pid) == 1 && is.null(names(min_anchor_pid))) {
-    return(unname(min_anchor_pid[1]))
-  }
-  NA_real_
+  unname(min_anchor_pid[element]) %||% NA_real_
 }
 
 #' Available curation rulesets (for app selectors / validation).
@@ -167,7 +159,7 @@ RRNA_RULESETS <- c("metazoa_generic", "actinopterygii",
 #' and the older Alcyonacea/Pennatulacea are all matched so the result is robust
 #' to which classification NCBI's lineage uses.
 #' @param lineage A "; "- or ","-joined lineage string.
-#' @return a key in [RRNA_RULESETS].
+#' @return a key in `RRNA_RULESETS`.
 #' @noRd
 ruleset_for_lineage <- function(lineage) {
   if (length(lineage) == 0 || is.na(lineage[1]) || !nzchar(trimws(lineage[1]))) {

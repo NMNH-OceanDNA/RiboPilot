@@ -27,13 +27,13 @@ TRIAGE_RULE_DEFS <- list(
   ),
   list(
     key = "no_screen",
-    label = "GenBank screen has not run",
-    meaning = "No usable core_nt hit is recorded, so the scaffold cannot be judged against GenBank.",
+    label = "BLAST screen has not run",
+    meaning = "No usable BLAST hit is recorded, so the scaffold cannot be judged.",
     actions = c("off", "flag"),
     default = "flag",
     test = function(d, i, ctx) {
       if (isTRUE(ctx$screened[i])) return(NA_character_)
-      "no GenBank hit says whether this scaffold is nuclear rDNA"
+      "no BLAST hit says whether this scaffold is nuclear rDNA"
     }
   ),
   list(
@@ -82,7 +82,7 @@ TRIAGE_RULE_DEFS <- list(
     default = "flag",
     test = function(d, i, ctx) {
       if (!identical(ctx$screen[i], "off_target")) return(NA_character_)
-      sprintf("the scaffold's GenBank hits agree on %s, which does not sit on this sample's lineage",
+      sprintf("the scaffold's BLAST hits agree on %s, which does not sit on this sample's lineage",
         ctx$screen_taxon[i] %|NA|% "another taxon")
     }
   ),
@@ -94,20 +94,20 @@ TRIAGE_RULE_DEFS <- list(
     default = "flag",
     test = function(d, i, ctx) {
       if (!isTRUE(ctx$screened[i]) || !isTRUE(ctx$sib$odd_one_out[i])) return(NA_character_)
-      sprintf("top GenBank hit (%s) differs from this sample's other scaffolds (%s at %s)",
+      sprintf("top BLAST hit (%s) differs from this sample's other scaffolds (%s at %s)",
         ctx$sp[i], ctx$sib$sib_taxon[i] %|NA|% "the majority",
         ctx$sib$sib_rank[i] %|NA|% "an agreed rank")
     }
   ),
   list(
     key = "chimeric",
-    label = "Likely chimeric assembly",
-    meaning = "Two or more independent signals place a junction between different lineages or array copies inside this scaffold.",
+    label = "Chimeric assembly (severe)",
+    meaning = "Parts of this scaffold match organisms from different phyla or kingdoms.",
     actions = c("off", "flag"),
     default = "flag",
     test = function(d, i, ctx) {
-      if (!identical(ctx$chimera[i], "likely")) return(NA_character_)
-      ctx$chimera_reason[i] %|NA|% "chimera detector scored this scaffold as likely"
+      if (!identical(ctx$chimera[i], "severe")) return(NA_character_)
+      ctx$chimera_reason[i] %|NA|% "parts of this scaffold match different phyla or kingdoms"
     }
   )
 )
@@ -197,8 +197,8 @@ triage_rule_matrix <- function(d) {
 #'
 #' First enabled rule that matches wins. Nothing matching means keep.
 #'
-#' @param d Frame from [unit_triage_state()].
-#' @param opts Named list key -> action; see [normalize_triage_actions()].
+#' @param d Frame from `unit_triage_state()`.
+#' @param opts Named list key -> action; see `normalize_triage_actions()`.
 #' @param m Rule matrix for `d`, for callers that already built one.
 #' @return `d` with `new_triage`, `new_reason` and `new_rule` columns.
 #' @noRd

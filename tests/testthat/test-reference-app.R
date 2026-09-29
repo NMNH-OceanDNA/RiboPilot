@@ -32,6 +32,8 @@ test_that("the empty-table message stays readable and clear of the header", {
   expect_length(rule, 1L)
   expect_match(rule, "line-height:\\s*[1-9]")
   expect_match(rule, "position:\\s*static")
+  # tables with rows keep an empty message node, which must take no space
+  expect_match(css, "\\.rt-tbody-no-data \\.rt-no-data\\s*\\{")
 })
 
 test_that("the settings modal groups the folder and the record window", {
@@ -84,7 +86,7 @@ test_that("the row action modal names what skipping actually costs", {
     expect_true(grepl(id, html, fixed = TRUE), info = id)
   }
   expect_true(grepl("Asteroidea", html, fixed = TRUE))
-  expect_true(grepl("fish", html, fixed = TRUE))
+  expect_true(grepl("their current database", html, fixed = TRUE))
   # a stack of short buttons opts out of the app's 600px modal floor
   expect_true(grepl("rp-modal-narrow", html, fixed = TRUE))
   # the hint sits under a bare button, which has no bottom margin for

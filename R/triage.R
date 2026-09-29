@@ -24,7 +24,7 @@ TRIAGE_VERDICTS <- c("keep", "drop")
 #'
 #' Writes the verdict, its justification and its owner, derives
 #' `assemblies.ignore` from the verdict, and reconciles the unit's annotate row
-#' (held on drop, restored on keep) through [reconcile_ignore_unit()].
+#' (held on drop, restored on keep) through `reconcile_ignore_unit()`.
 #'
 #' @param con Open project DB connection.
 #' @param id,path,scaffold Assembly unit.
@@ -69,7 +69,7 @@ unit_triage_state <- function(con, id) {
   DBI::dbGetQuery(con,
     "SELECT a.path, a.scaffold, a.length, COALESCE(a.ignore,0) AS ignore,
        a.triage, a.triage_reason, a.triage_source, a.triage_rule,
-       COALESCE(c.median_depth, c.mean_depth) AS depth,
+       c.median_depth AS depth,
        b.species AS screen_species, b.lineage AS screen_lineage,
        b.lineage_taxids AS screen_taxids,
        b.rank_distance, b.is_nuclear_rrna,

@@ -18,9 +18,24 @@ mp_alert <- function(title, text = NULL, type, html = FALSE,
 #' `confirmSweetAlert()` reads `btn_labels[1]` as the cancel button and
 #' `btn_labels[2]` as the confirm button; `reverseButtons` makes sweetalert2
 #' render that order left to right, so the verb sits right-most.
+#'
+#' `skippable = TRUE` adds a "Don't ask again this session" checkbox. Once it
+#' is ticked the dialog is not shown again and this returns TRUE, so the caller
+#' should act straight away; otherwise it returns FALSE.
 #' @noRd
 mp_confirm <- function(id, title, text, action_label, danger = FALSE, html = FALSE,
-                       session = getDefaultReactiveDomain()) {
+                       skippable = FALSE, session = getDefaultReactiveDomain()) {
+  if (isTRUE(skippable)) {
+    skip_id <- paste0(id, "_skip")
+    if (isTRUE(shiny::isolate(session$input[[skip_id]]))) return(invisible(TRUE))
+    text <- shiny::tagList(
+      if (html) text else shiny::tags$p(text),
+      shiny::tags$label(style = "font-weight: normal; font-size: 0.9em;",
+        shiny::tags$input(type = "checkbox",
+          onchange = sprintf("Shiny.setInputValue('%s', this.checked)", session$ns(skip_id))),
+        " Don't ask again this session"))
+    html <- TRUE
+  }
   accent <- if (isTRUE(danger)) "danger" else "primary"
   shinyWidgets::confirmSweetAlert(
     session = session, inputId = id, title = title, text = text,
@@ -28,8 +43,10 @@ mp_confirm <- function(id, title, text, action_label, danger = FALSE, html = FAL
     btn_labels = c("Cancel", action_label),
     btn_colors = unname(MP_COLORS[c("grey", accent)]),
     html = html,
-    reverseButtons = TRUE
+    reverseButtons = TRUE,
+    focusCancel = isTRUE(danger)
   )
+  invisible(FALSE)
 }
 
 #' Two-way choice: both buttons are answers, dismissing is neither.
@@ -58,12 +75,12 @@ mp_toast <- function(text, type = c("message", "warning", "error", "success"),
   showNotification(text, type = type, duration = duration, session = session)
 }
 
-#' Next value for a review-flag toggle over a mixed selection.
+#' Next value for a flag or lock toggle over a selection.
 #'
-#' If any selected unit is already `on`, the toggle clears; otherwise it sets.
-#' Drives both the database write and the toolbar label (theme T02).
+#' Clears only when every selected value is already `on`; a mixed selection
+#' sets. Drives both the database write and the button label.
 #'
 #' @noRd
 mp_flag_next <- function(x, on = "yes", off = "no") {
-  if (any(x == on, na.rm = TRUE)) off else on
+  if (length(x) && all(x %in% on)) off else on
 }

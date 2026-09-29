@@ -62,14 +62,14 @@ itsx_check_command <- function(project, workdir, which = Sys.which) {
     }, character(1))
     user <- if (all(nzchar(ids))) c("-u", paste(ids, collapse = ":")) else character(0)
     return(list(bin = bin,
-      prefix = c("run", "--rm", user, "-v", paste0(wd, ":", wd), "-w", wd, img, "ITSx"),
+      prefix = c("run", "--rm", user, "-v", shQuote(paste0(wd, ":", wd)), "-w", shQuote(wd), img, "ITSx"),
       message = ""))
   }
   w <- which(c("singularity", "apptainer"))
   w <- w[nzchar(w)]
   if (length(w) < 1) return(none("singularity/apptainer not on PATH"))
   list(bin = unname(w[1]),
-    prefix = c("exec", "--bind", wd, "--pwd", wd, singularity_image_ref(img, project, lines), "ITSx"),
+    prefix = c("exec", "--bind", shQuote(wd), "--pwd", shQuote(wd), singularity_image_ref(img, project, lines), "ITSx"),
     message = "")
 }
 
@@ -81,7 +81,7 @@ itsx_check_command <- function(project, workdir, which = Sys.which) {
 #' @param fasta Input FASTA; must sit inside the directory `cmd` was built for.
 #' @param out_prefix Output prefix (ITSx appends its own suffixes); same rule.
 #' @param cpu Threads.
-#' @param cmd list(bin, prefix, message) from [itsx_check_command()].
+#' @param cmd list(bin, prefix, message) from `itsx_check_command()`.
 #' @return list(ok, positions, results, problematic, no_detections, chimeric,
 #'   message); `ok = FALSE` and a message when ITSx could not run.
 #' @noRd
@@ -206,10 +206,10 @@ itsx_expected_origins <- function(lineage) {
 #' @param seqid Record ID as written in the checked FASTA.
 #' @param seq Record sequence (or NA).
 #' @param ann data.frame(element, start, stop) of RiboPilot's annotation (or NULL).
-#' @param its data.frame from [parse_itsx()] over the positions file.
-#' @param notes data.frame from [parse_itsx_notes()].
-#' @param res data.frame from [parse_itsx_results()].
-#' @param prob data.frame from [parse_itsx_problematic()].
+#' @param its data.frame from `parse_itsx()` over the positions file.
+#' @param notes data.frame from `parse_itsx_notes()`.
+#' @param res data.frame from `parse_itsx_results()`.
+#' @param prob data.frame from `parse_itsx_problematic()`.
 #' @param no_detections IDs ITSx listed as not containing an ITS.
 #' @param chimeric_ids IDs ITSx wrote to its chimeric FASTA (domains out of order).
 #' @param lineage Sample lineage string ("Metazoa;Chordata;...") or NA.
@@ -286,7 +286,7 @@ itsx_check_flags <- function(seqid, seq, ann, its, notes, res, prob,
 #' @param con Project DB connection.
 #' @param units data.frame(ID, path, scaffold, seqid); `seqid` is the record ID
 #'   as written in the checked FASTA.
-#' @param out list from [run_itsx_check()] / [read_itsx_outputs()], plus `ok`
+#' @param out list from `run_itsx_check()` / `read_itsx_outputs()`, plus `ok`
 #'   and `message` when the run itself failed.
 #' @return data.frame(seqid, itsx_check, itsx_origin, itsx_ITS1, itsx_5.8S,
 #'   itsx_ITS2, itsx_notes). `itsx_check` is "" when clean, the flag list when
@@ -379,7 +379,7 @@ itsx_store_warnings <- function(con, units, chk) {
 #' @param id Sample ID.
 #' @param path,scaffold Assembly unit within the sample.
 #' @param out_prefix ITSx output prefix (files `<out_prefix>.positions.txt` etc.).
-#' @return one-row data.frame as from [itsx_check_units()], invisibly.
+#' @return one-row data.frame as from `itsx_check_units()`, invisibly.
 #' @export
 itsx_check_one <- function(con, id, path = 1L, scaffold = 1L, out_prefix) {
   units <- data.frame(ID = id, path = as.integer(path), scaffold = as.integer(scaffold),
@@ -405,8 +405,8 @@ itsx_check_one <- function(con, id, path = 1L, scaffold = 1L, out_prefix) {
 #' @param label Bundle label.
 #' @param cpu Threads for ITSx.
 #' @param project Project directory; its `.config` decides the container.
-#' @param cmd Override for [itsx_check_command()] (tests).
-#' @return data.frame as from [itsx_check_units()].
+#' @param cmd Override for `itsx_check_command()` (tests).
+#' @return data.frame as from `itsx_check_units()`.
 #' @noRd
 itsx_export_check <- function(con, units, gdir, label, cpu = 2L, project = ".", cmd = NULL) {
   if (nrow(units) == 0) return(itsx_check_units(con, units, list(ok = TRUE)))

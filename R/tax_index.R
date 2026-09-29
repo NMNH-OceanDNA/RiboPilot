@@ -134,8 +134,8 @@ build_tax_index <- function(taxdump_dir, rebuild = FALSE) {
 
     n_nodes <- DBI::dbGetQuery(con, "SELECT COUNT(*) AS n FROM tax_nodes")$n
     n_names <- DBI::dbGetQuery(con, "SELECT COUNT(*) AS n FROM tax_names")$n
-    if (n_nodes == 0 || n_names == 0) {
-      stop("no records parsed from nodes.dmp / names.dmp", call. = FALSE)
+    if (n_nodes < getOption("ribopilot.tax_min_nodes", 2e6) || n_names == 0) {
+      stop("only ", n_nodes, " taxa were read; the taxdump is incomplete", call. = FALSE)
     }
     DBI::dbExecute(con, "CREATE INDEX i_names_name ON tax_names(name COLLATE NOCASE)")
     DBI::dbExecute(con, "CREATE INDEX i_names_taxid ON tax_names(taxid)")
@@ -252,7 +252,7 @@ td_paths <- function(con, taxids) {
 #' Missing ranks are filled the way `taxonkit reformat -F -t` filled them: an
 #' "unclassified <nearest known ancestor> <rank>" placeholder name and an EMPTY
 #' taxid, so the seven slots always line up positionally and a filled rank stays
-#' distinguishable from a real one ([parse_rank_names()] reads the placeholder
+#' distinguishable from a real one (`parse_rank_names()` reads the placeholder
 #' back as NA).
 #' @param path data.frame(taxid, rank, name), root first.
 #' @return list(names, taxids), each a ";"-joined 7-field string.
@@ -281,6 +281,8 @@ td_rank_align <- function(path) {
 }
 
 #' Exact (case-insensitive) name -> taxid lookup, synonyms included
+#'
+#' When a name is some taxon's scientific name, only those taxa are returned.
 #' @return Named list: input name -> integer vector of taxids (ascending).
 #' @noRd
 td_name2taxid <- function(con, names) {
@@ -290,15 +292,17 @@ td_name2taxid <- function(con, names) {
     return(out)
   }
   rows <- tax_in_query(con,
-    "SELECT DISTINCT n.name AS name, n.taxid AS taxid FROM tax_names n
-      WHERE n.name COLLATE NOCASE IN (%s) ORDER BY n.taxid", names)
+    "SELECT n.name AS name, n.taxid AS taxid, MAX(n.sci) AS sci FROM tax_names n
+      WHERE n.name COLLATE NOCASE IN (%s) GROUP BY n.name, n.taxid ORDER BY n.taxid", names)
   if (is.null(rows) || nrow(rows) == 0) {
     return(out)
   }
-  i <- match(tolower(rows$name), tolower(names))
-  for (k in which(!is.na(i))) {
-    nm <- names[i[k]]
-    out[[nm]] <- unique(c(out[[nm]], as.integer(rows$taxid[k])))
+  low <- tolower(rows$name)
+  for (nm in names) {
+    r <- rows[low == tolower(nm), , drop = FALSE]
+    if (nrow(r) == 0) next
+    if (any(r$sci == 1)) r <- r[r$sci == 1, , drop = FALSE]
+    out[[nm]] <- unique(as.integer(r$taxid))
   }
   out
 }

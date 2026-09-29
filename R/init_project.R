@@ -5,25 +5,30 @@
 #' `.config` Nextflow config from the chosen executor template.
 #'
 #' @param path Path to the project directory (default = current working dir).
-#' @param mapping_fn Path to a mapping CSV. Minimally an `ID` column (unique
-#'   sample id), a `Taxon` column, and `R1`/`R2` columns naming the paired read
-#'   inputs. Extra metadata columns are preserved.
+#' @param mapping_fn Path to a comma-separated mapping file. Minimally an `ID`
+#'   column (unique sample id), a `Taxon` column, and `R1`/`R2` columns naming
+#'   the paired read files relative to `data_path` (or an `Assembly` column).
+#'   Column names are matched ignoring case. Extra metadata columns are
+#'   preserved.
 #' @param mapping_id Column in the mapping file with unique ids (default "ID").
-#' @param data_path Directory where the raw read data is located. Not needed
-#'   when every sample supplies its own assembly.
+#' @param data_path Directory where the raw read data is located. Required
+#'   when any sample lists reads; not needed when every sample supplies its own
+#'   assembly.
 #' @param assembly_path Directory holding the assembly files named in the
 #'   mapping file's optional `Assembly` column. A sample with an assembly is
 #'   searched for its nuclear rDNA contigs instead of being assembled from
 #'   reads, and its `R1`/`R2` may be left blank. See
 #'   dev/design/20_USER_ASSEMBLIES.md.
-#' @param min_depth Minimum trimmed paired reads to proceed with assembly.
+#' @param min_depth Minimum number of reads left after trimming, counting both
+#'   reads of a pair (2000000 is 1000000 pairs). A sample below it is not
+#'   assembled and is marked Failed with a note.
 #' @param executor Executor for the Nextflow pipeline. Ready to use as-is:
-#'   "conda" (default) for a local conda env, and "docker"/"local" for the
-#'   RiboPilot container. Every scheduler ("slurm", "sge", "pbs", "lsf",
-#'   "awsbatch", "NMNH_Hydra", "NOAA_SEDNA") is a template, not a usable
-#'   executor: it needs a queue and cluster options that only [generate_config()]
-#'   supplies, so build a profile there first and pass its name here. Passing a
-#'   bare scheduler name is an error rather than a config Nextflow cannot parse.
+#'   "docker" (default) and "local" run the RiboPilot container on this
+#'   machine, and "NMNH_Hydra" and "NOAA_SEDNA" are ready-made Singularity
+#'   profiles for those clusters. "conda" uses a self-installed conda env (not
+#'   supported; warns). For any other cluster, build a profile with
+#'   generate_config() and pass its name here. A bare scheduler name ("slurm",
+#'   "sge", "pbs", "lsf") is an error: it has no queue or cluster options yet.
 #' @param container Container to use for pipeline execution.
 #' @param custom_seeds_db Path/URL to a custom GetOrganelle nr seeds database.
 #' @param custom_labels_db Path/URL to a custom GetOrganelle nr labels database.
@@ -37,8 +42,11 @@
 #'   be staged later.
 #' @param check_assemblies (logical) Check that the assembly files named in the
 #'   mapping file exist under `assembly_path` (default TRUE).
-#' @param Rproj (logical) Initialize/open an RStudio project (default TRUE).
-#' @param force (logical) Recreate an existing project database (default FALSE).
+#' @param Rproj (logical) Initialize/open an RStudio project (default TRUE; no
+#'   effect outside RStudio).
+#' @param force (logical) Recreate an existing project database (default
+#'   FALSE). Without it, `new_project()` stops when the folder already holds a
+#'   project.
 #' @param ... Additional default processing parameters passed to [new_db()].
 #'
 #' @export
@@ -49,7 +57,7 @@ new_project <- function(
     data_path = NULL,
     assembly_path = NULL,
     min_depth = 2000000,
-    executor = c("conda", "docker", "local", "awsbatch", "slurm", "pbs", "sge", "lsf", "NMNH_Hydra", "NOAA_SEDNA"),
+    executor = c("docker", "conda", "local", "slurm", "pbs", "sge", "lsf", "NMNH_Hydra", "NOAA_SEDNA"),
     container = paste0("macguigand/ribopilot:", utils::packageVersion("RiboPilot")),
     custom_seeds_db = NULL,
     custom_labels_db = NULL,
@@ -62,27 +70,23 @@ new_project <- function(
     Rproj = TRUE,
     force = FALSE,
     ...) {
-  # Create directory ----
-  if (!dir.exists(path)) {
-    message("Creating project directory: ", path)
-    dir.create(path, recursive = TRUE)
-  }
-  path <- normalizePath(path)
-
+  # Every check runs before anything is written ----
+  path <- check_project_path(path, force)
   if (length(data_path) == 1) {
-    data_path <- normalizePath(data_path)
+    data_path <- normalizePath(data_path, mustWork = FALSE)
   }
   if (length(assembly_path) == 1) {
-    assembly_path <- normalizePath(assembly_path)
+    assembly_path <- normalizePath(assembly_path, mustWork = FALSE)
   }
+  stop_unsafe_paths(c(data_path = data_path %||% NA, assembly_path = assembly_path %||% NA,
+    custom_seeds_db = custom_seeds_db %||% NA, custom_labels_db = custom_labels_db %||% NA))
 
   # Mapping file ----
-  if (is.null(mapping_fn) || !file.exists(mapping_fn)) {
-    stop("A mapping file is required to initialize a new project")
-  }
-  mapping_out <- file.path(path, "mapping.csv")
-  if (!identical(normalizePath(mapping_fn), mapping_out)) {
-    file.copy(mapping_fn, mapping_out, overwrite = TRUE)
+  mapping <- read_mapping(mapping_fn, mapping_id, list(...)[["mapping_taxon"]] %||% "Taxon") |>
+    check_mapping(mapping_id, data_path, assembly_path, check_reads, check_assemblies)
+  if (any(!is.na(mapping$R1)) && length(data_path) != 1) {
+    stop("Samples list read files (R1, R2), but no data_path was given. ",
+      "Pass data_path = the folder that holds them.", call. = FALSE)
   }
 
   # Executor ----
@@ -93,41 +97,11 @@ new_project <- function(
   if (!is.null(executor) && executor %in% CONTAINER_EXECUTORS) {
     check_container_image(container)
   }
-
-  # RStudio project (optional) ----
-  if (Rproj && !isFALSE(Sys.getenv("RSTUDIO", FALSE))) {
-    if (isFALSE(requireNamespace("rstudioapi", quietly = TRUE))) {
-      message("package 'rstudioapi' not available. Skipping RStudio project initialization.")
-    } else {
-      rstudioapi::initializeProject(path)
-      on.exit(rstudioapi::openProject(path, newSession = TRUE))
-    }
+  if (identical(executor, "conda")) {
+    warning("executor = \"conda\" is not supported: it needs every pipeline tool ",
+      "installed by hand. Use executor = \"docker\" (or a Singularity profile on a cluster).",
+      call. = FALSE)
   }
-
-  # Database ----
-  db <- file.path(path, ".sqlite")
-  if (file.exists(db) && !force) {
-    message("Database already exists. Use force = TRUE to overwrite (old data will be lost).")
-    return(invisible())
-  }
-  if (file.exists(db) && force) {
-    message("Overwriting existing database")
-    file.remove(db)
-  }
-
-  new_db(
-    db_path = db,
-    mapping_fn = mapping_out,
-    mapping_id = mapping_id,
-    data_path = data_path,
-    assembly_path = assembly_path,
-    check_reads = check_reads,
-    check_assemblies = check_assemblies,
-    seeds_db = custom_seeds_db,
-    labels_db = custom_labels_db,
-    ref_dir = ref_dir,
-    ...
-  )
 
   # Config file ----
   config <- config %||% resolve_config(executor, profile_dir = profile_dir)
@@ -177,9 +151,10 @@ new_project <- function(
       RAW_DIR = if (length(data_path) == 1 && nzchar(data_path)) data_path else "NA",
       ASMB_DIR = if (length(assembly_path) == 1) assembly_path else "NA",
       MIN_DEPTH = format(min_depth, scientific = FALSE),
-      GENETIC_CODE = "1",
       NCBI_API_KEY = ncbi_api_key %||% "",
-      EXTRA_MOUNTS = extra_mounts
+      EXTRA_MOUNTS = extra_mounts,
+      HOST_CPUS = ps::ps_cpu_count(),
+      HOST_MEMORY = floor(ps::ps_system_memory()$total / 1024^3)
     ))
   # Scheduler templates carry tokens only generate_config() fills (queue,
   # cluster options, container engine). Writing them through produces a config
@@ -191,11 +166,47 @@ new_project <- function(
       "{paste(left, collapse = ', ')}. Build a profile with generate_config() ",
       "first, then pass its name as `executor`."), call. = FALSE)
   }
+
+  # Write ----
+  if (!dir.exists(path)) {
+    message("Creating project directory: ", path)
+    dir.create(path, recursive = TRUE)
+  }
+  mapping_out <- file.path(path, "mapping.csv")
+  if (!identical(normalizePath(mapping_fn), mapping_out)) {
+    file.copy(mapping_fn, mapping_out, overwrite = TRUE)
+  }
+  db <- file.path(path, ".sqlite")
+  if (file.exists(db)) {
+    message("Overwriting existing database")
+    file.remove(db)
+  }
+  done <- FALSE
+  on.exit(if (!done) unlink(db), add = TRUE)
+  # column renames were already reported by the check above
+  suppressMessages(new_db(
+    db_path = db,
+    mapping_fn = mapping_out,
+    mapping_id = mapping_id,
+    data_path = data_path,
+    assembly_path = assembly_path,
+    check_reads = check_reads,
+    check_assemblies = check_assemblies,
+    seeds_db = custom_seeds_db,
+    labels_db = custom_labels_db,
+    ref_dir = ref_dir,
+    ...
+  ))
   config_out <- file.path(path, ".config")
   writeLines(out_lines, config_out)
   # the config carries the NCBI API key, so keep it owner-only
   Sys.chmod(config_out, "0600")
+  done <- TRUE
 
   message("Project initialized successfully.")
   message("Please open and review the .config file to ensure all required options are specified.")
+  if (Rproj && requireNamespace("rstudioapi", quietly = TRUE) && rstudioapi::isAvailable()) {
+    rstudioapi::initializeProject(path)
+    rstudioapi::openProject(path, newSession = TRUE)
+  }
 }

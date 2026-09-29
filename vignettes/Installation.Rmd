@@ -1,0 +1,140 @@
+---
+title: "Installation"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Installation}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+# Before you start
+
+RiboPilot runs its analysis inside a container: Docker on a workstation, or
+Singularity (also called Apptainer) on a computing cluster. The container holds
+every analysis tool, so you do not install them yourself.
+
+RiboPilot is developed and tested on Linux. On a Mac it needs Docker Desktop;
+Apple Silicon Macs run the container through emulation, which is slower. On
+Windows, use WSL2 and run R inside WSL. On a cluster, use Singularity or
+Apptainer (see [Running on a cluster](Clusters.html)).
+
+What your computer needs:
+
+- **Time.** The practice project (12 samples) took about 16 minutes on a Linux
+  workstation with 16 CPU cores and 61 GB of memory. RiboPilot caps every task
+  at your computer's CPUs and memory, so a small computer runs more slowly
+  rather than failing.
+- **Disk.** The container image is about 2.6 GB to download and 7.7 GB on
+  disk. Each project also needs room for its own files: the practice project
+  used 1.6 GB, mostly Nextflow's working files (0.9 GB) and the taxonomy copy
+  (0.5 GB). Reference databases are small: the two built for the practice
+  project took 4 MB and 16 MB.
+  [Disk space, caches, and offline use](Caches-and-Offline.html) says where
+  each of these goes, and how to move it.
+
+# Install the tools
+
+Install each of these once, and check it with the command beside it.
+
+1. **Docker** (workstation). On Linux, add yourself to the `docker` group so
+   Docker runs without `sudo`. On a Mac, start Docker Desktop. Check:
+   `docker run hello-world`. On a cluster, use **Singularity** or
+   **Apptainer** instead. Check: `singularity --version`.
+2. **Java** 17 or newer. Check: `java -version`.
+3. **[Nextflow](https://www.nextflow.io/docs/latest/install.html)**, a version
+   from 24.10 through 25.10. Check: `nextflow -v`. If you have a newer
+   Nextflow, RiboPilot runs version 25.10.6 instead, downloading it once. To set
+   this yourself, add `export NXF_VER=25.10.6` to your shell profile.
+4. **[R](https://www.r-project.org/)** 4.4.0 or newer. Check: `R --version`.
+5. **RiboPilot**, in R:
+
+   ```r
+   install.packages("remotes")
+   remotes::install_github("dmacguigan/RiboPilot")
+   ```
+
+::: {.alert .alert-info}
+**Private preview.** While the RiboPilot repository is private, installing it
+and downloading the practice reads need a GitHub personal access token. Put
+`GITHUB_PAT=<your token>` in your `~/.Renviron` file (in R,
+`usethis::edit_r_environ()` opens it), then restart R.
+:::
+
+RiboPilot does not ship a reference database. New projects may warn that the
+default fish reference database is not reachable; that is expected. Build a
+reference database for each group of samples in the app's Reference step.
+
+# Check that it works
+
+Run the practice project: see [Get started](RiboPilot.html). It exercises every
+tool above, and the first run downloads the container image.
+
+# Optional: an NCBI API key
+
+An [NCBI API key](https://www.ncbi.nlm.nih.gov/datasets/docs/v2/api/api-keys/) lets
+RiboPilot query NCBI faster. It is free. The simplest place for it is your
+`~/.Renviron` file, next to any other keys:
+
+```
+NCBI_API_KEY=<your key>
+```
+
+Restart R after you edit the file. RiboPilot then passes the key to every run
+and every reference build, without writing it into the project's `.config`
+file. You can instead pass it to `RiboPilot::new_project()` as `ncbi_api_key`;
+it is then stored in the project's `.config` file and shows in the Nextflow
+command of the run window.
+
+Never paste your key into a screenshot, an email, or an issue.
+
+# Upgrading RiboPilot
+
+To upgrade, run `remotes::install_github("dmacguigan/RiboPilot")` again, then
+restart R. While RiboPilot is in development its version number stays at
+0.0.0.9018, so the number does not tell you whether you have the newest code:
+read the [changelog](https://dmacguigan.github.io/RiboPilot/news/index.html)
+instead.
+
+What an upgrade means for your projects:
+
+- **Existing projects are not converted.** RiboPilot does not yet update a
+  project's database to a newer layout. When the changelog says the project
+  database changed, make a new project with `new_project()`, in a new folder,
+  from the same mapping file and reads, and go through the steps again. Keep the
+  old folder until the new project is done. Reference databases in your
+  reference folder are kept and reused, so the Reference step is quick.
+- **The container image should match.** A project names its container image
+  when you create it, in the `container = '...'` line of its `.config` file. Each
+  run uses the pipeline scripts of the RiboPilot installed in R together with the
+  R code and tools inside that image. When you open a project whose image is for
+  another RiboPilot version, the app says "Container version does not match
+  RiboPilot" and carries on: runs still work, with the image's code. An image with
+  the same version number but older code is not detected, and a run with it can
+  fail in its R steps.
+
+To get the image that matches your RiboPilot:
+
+- **Docker:** `docker pull macguigand/ribopilot:<version>`. Docker keeps an image
+  it already has, so pull again when the image for your version was rebuilt.
+- **Singularity:** delete the image file for that version from your image cache
+  (see [Disk space, caches, and offline use](Caches-and-Offline.html)); the next
+  run downloads it again.
+- **Code newer than the published image:** build the image yourself from a copy
+  of the RiboPilot source at the same commit you installed. This needs a machine
+  with Docker; it does not work under Singularity/Apptainer alone. From its top
+  folder, run `docker/deploy-local.sh`, which needs the `devtools` R package and
+  (while the repository is private) the `gh` command, signed in; it tags the
+  image `ribopilot:<version>`. Then:
+    - **Docker:** change the `container` line in the project's `.config` to that
+      tag, or pass it to `new_project()` as `container`. `new_project()` will
+      warn that the tag "is not published on Docker Hub"; ignore that for an
+      image you built yourself.
+    - **Singularity/Apptainer (cluster):** on the machine with Docker, run
+      `singularity build ribopilot_<version>.sif docker-daemon://ribopilot:<version>`,
+      copy the `.sif` file to the cluster, and set the `container` line (or the
+      `container` argument to `new_project()`) to the path of that `.sif` file.
+  See the
+  [docker folder's README](https://github.com/dmacguigan/RiboPilot/blob/main/docker/README.md).
+
+Each image takes about 7.7 GB. Once no project uses an old one, remove it with
+`docker image rm <image>`.

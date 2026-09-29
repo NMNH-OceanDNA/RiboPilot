@@ -11,8 +11,8 @@ new_project(
   data_path = NULL,
   assembly_path = NULL,
   min_depth = 2e+06,
-  executor = c("conda", "docker", "local", "awsbatch", "slurm", "pbs", "sge", "lsf",
-    "NMNH_Hydra", "NOAA_SEDNA"),
+  executor = c("docker", "conda", "local", "slurm", "pbs", "sge", "lsf", "NMNH_Hydra",
+    "NOAA_SEDNA"),
   container = paste0("macguigand/ribopilot:", utils::packageVersion("RiboPilot")),
   custom_seeds_db = NULL,
   custom_labels_db = NULL,
@@ -30,30 +30,35 @@ new_project(
 \arguments{
 \item{path}{Path to the project directory (default = current working dir).}
 
-\item{mapping_fn}{Path to a mapping CSV. Minimally an `ID` column (unique
-sample id), a `Taxon` column, and `R1`/`R2` columns naming the paired read
-inputs. Extra metadata columns are preserved.}
+\item{mapping_fn}{Path to a comma-separated mapping file. Minimally an \code{ID}
+column (unique sample id), a \code{Taxon} column, and \code{R1}/\code{R2} columns naming
+the paired read files relative to \code{data_path} (or an \code{Assembly} column).
+Column names are matched ignoring case. Extra metadata columns are
+preserved.}
 
 \item{mapping_id}{Column in the mapping file with unique ids (default "ID").}
 
-\item{data_path}{Directory where the raw read data is located. Not needed
-when every sample supplies its own assembly.}
+\item{data_path}{Directory where the raw read data is located. Required
+when any sample lists reads; not needed when every sample supplies its own
+assembly.}
 
 \item{assembly_path}{Directory holding the assembly files named in the
-mapping file's optional `Assembly` column. A sample with an assembly is
+mapping file's optional \code{Assembly} column. A sample with an assembly is
 searched for its nuclear rDNA contigs instead of being assembled from
-reads, and its `R1`/`R2` may be left blank. See
+reads, and its \code{R1}/\code{R2} may be left blank. See
 dev/design/20_USER_ASSEMBLIES.md.}
 
-\item{min_depth}{Minimum trimmed paired reads to proceed with assembly.}
+\item{min_depth}{Minimum number of reads left after trimming, counting both
+reads of a pair (2000000 is 1000000 pairs). A sample below it is not
+assembled and is marked Failed with a note.}
 
 \item{executor}{Executor for the Nextflow pipeline. Ready to use as-is:
-"conda" (default) for a local conda env, and "docker"/"local" for the
-RiboPilot container. Every scheduler ("slurm", "sge", "pbs", "lsf",
-"awsbatch", "NMNH_Hydra", "NOAA_SEDNA") is a template, not a usable
-executor: it needs a queue and cluster options that only [generate_config()]
-supplies, so build a profile there first and pass its name here. Passing a
-bare scheduler name is an error rather than a config Nextflow cannot parse.}
+"docker" (default) and "local" run the RiboPilot container on this
+machine, and "NMNH_Hydra" and "NOAA_SEDNA" are ready-made Singularity
+profiles for those clusters. "conda" uses a self-installed conda env (not
+supported; warns). For any other cluster, build a profile with
+generate_config() and pass its name here. A bare scheduler name ("slurm",
+"sge", "pbs", "lsf") is an error: it has no queue or cluster options yet.}
 
 \item{container}{Container to use for pipeline execution.}
 
@@ -62,7 +67,7 @@ bare scheduler name is an error rather than a config Nextflow cannot parse.}
 \item{custom_labels_db}{Path/URL to a custom GetOrganelle nr labels database.}
 
 \item{ref_dir}{Folder for built reference databases (default: the
-`RIBOPILOT_REF_DIR` environment variable, else [ribopilot_ref_dir()]).}
+\code{RIBOPILOT_REF_DIR} environment variable, else \code{\link[=ribopilot_ref_dir]{ribopilot_ref_dir()}}).}
 
 \item{config}{Optional path to an existing custom Nextflow config file.}
 
@@ -71,20 +76,23 @@ bare scheduler name is an error rather than a config Nextflow cannot parse.}
 \item{ncbi_api_key}{Optional NCBI API key (raises request rate limits).}
 
 \item{check_reads}{(logical) Check that the read files named in the mapping
-file exist under `data_path` (default TRUE). Set FALSE when the data will
+file exist under \code{data_path} (default TRUE). Set FALSE when the data will
 be staged later.}
 
 \item{check_assemblies}{(logical) Check that the assembly files named in the
-mapping file exist under `assembly_path` (default TRUE).}
+mapping file exist under \code{assembly_path} (default TRUE).}
 
-\item{Rproj}{(logical) Initialize/open an RStudio project (default TRUE).}
+\item{Rproj}{(logical) Initialize/open an RStudio project (default TRUE; no
+effect outside RStudio).}
 
-\item{force}{(logical) Recreate an existing project database (default FALSE).}
+\item{force}{(logical) Recreate an existing project database (default
+FALSE). Without it, \code{new_project()} stops when the folder already holds a
+project.}
 
-\item{...}{Additional default processing parameters passed to [new_db()].}
+\item{...}{Additional default processing parameters passed to \code{\link[=new_db]{new_db()}}.}
 }
 \description{
-Mirrors MitoPilot's `new_project()`. Creates the project directory, copies
+Mirrors MitoPilot's \code{new_project()}. Creates the project directory, copies
 the mapping file, initializes the SQLite tracking database, and writes a
-`.config` Nextflow config from the chosen executor template.
+\code{.config} Nextflow config from the chosen executor template.
 }

@@ -137,6 +137,11 @@ p.mp-help-text { margin: 2px 0 6px; }
   transform: scale(1.15);
 }
 
+.mp-icon-btn {
+  display: inline-block;
+  color: inherit;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .grow:hover {
     transition: none;
@@ -725,8 +730,9 @@ a.mp-link:focus-visible {
        height while the table is empty, so the block straddles the header row
        and disappears behind the sticky header.
    Putting it in normal flow inside the empty body fixes both: the body then
-   takes its height from the message, so nothing can overlap it. */
-.rt-no-data {
+   takes its height from the message, so nothing can overlap it. Scoped to
+   empty bodies: reactable keeps an empty message node in every table. */
+.rt-tbody-no-data .rt-no-data {
   position: static;
   transform: none;
   margin: 0 auto;
@@ -745,3 +751,36 @@ a.mp-link:focus-visible {
   gap: 4px;
 }
 .mp-nav select { width: 220px; }
+
+/* Sub-sections of a section sit in one bordered box, each indented with its
+   content indented again beneath it (as MitoPilot's export token groups). */
+.rp-sub-list {
+  margin: 8px 0; padding: 8px 14px 6px; border: 1px solid var(--mp-border);
+  border-radius: var(--mp-radius); background: var(--mp-surface-alt);
+}
+details.rp-subsection { margin: 0 0 2px 16px; }
+details.rp-subsection > summary {
+  font-size: var(--mp-fs-body); font-weight: 600; border-bottom: none;
+  padding: 2px 0; margin: 2px 0;
+}
+details.rp-subsection > div { margin-left: 18px; }
+
+/* Sequence viewer (R/seqview.R, inst/app/www/seqviewer.js) */
+.rp-seqview-controls {
+  display: flex; flex-wrap: wrap; align-items: center;
+  gap: var(--mp-space-2); margin: 0 0 var(--mp-space-2);
+}
+.rp-seqview-check { font-weight: normal; margin: 0; display: inline-flex; align-items: center; gap: 4px; }
+.rp-seqview {
+  position: relative; border: 1px solid var(--mp-border);
+  border-radius: var(--mp-radius); background: var(--mp-surface); overflow: hidden;
+}
+.rp-seqview-canvas { display: block; width: 100%; cursor: grab; }
+.rp-seqview-canvas:active { cursor: grabbing; }
+.rp-seqview-tip {
+  position: absolute; z-index: 100; pointer-events: none;
+  background: var(--mp-surface); color: var(--mp-text);
+  border: 1px solid var(--mp-border); border-radius: var(--mp-radius);
+  padding: var(--mp-space-1) var(--mp-space-2); font-size: var(--mp-fs-meta);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .2);
+}

@@ -39,12 +39,12 @@ config_param <- function(config_lines, key) {
 
 #' Run the assembly workflow (WF1) for a project
 #'
-#' Launches the self-contained Nextflow pipeline: it reads samples from the
-#' project database, runs fastp + GetOrganelle, then scores and annotates each
-#' assembly and computes the assembly-review aids (reference BLAST + coverage),
-#' writing everything back to the database. Annotation and curation are handled
-#' by re-running this workflow after you review and lock
-#' the assemblies in the app.
+#' Launches the self-contained Nextflow pipeline, the same run as the app's
+#' Update button. For every taxonomy-locked sample that is Ready to run, one run
+#' cleans the reads, assembles, scores, BLASTs, maps coverage, annotates,
+#' curates, screens, checks for chimeras, and triages every scaffold, writing
+#' everything back to the database. Run it again (or press Update) only after
+#' changing a selection, an option set, or a State.
 #'
 #' @param path Project directory (contains `.sqlite` and `.config`).
 #' @param nextflow Path to the `nextflow` binary.
@@ -67,6 +67,10 @@ run_assembly <- function(path = ".", nextflow = "nextflow", work = file.path(pat
   path <- normalizePath(path)
   stopifnot(file.exists(file.path(path, ".sqlite")), file.exists(file.path(path, ".config")))
   check_nextflow_version("run_assembly", nextflow = nextflow)
+  held <- run_lock_holder(path)
+  if (!is.null(held)) stop(run_lock_message(held, path), call. = FALSE)
+  marker <- run_lock_take(path, "console pipeline")
+  on.exit(run_lock_release(path, marker), add = TRUE)
 
   message("Running Nextflow assembly (WF1) - self-contained DB I/O...")
   args <- nf_command(path, resume = TRUE, work = work, ribopilot_src = ribopilot_src)

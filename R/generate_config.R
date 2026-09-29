@@ -14,9 +14,10 @@ ribopilot_config_dir <- function() {
 #' Build a Nextflow container-engine block
 #'
 #' The RiboPilot pipeline opens the project SQLite database directly by path, so
-#' the container must see the project and raw-read directories. Every engine
-#' block therefore bind-mounts `${params.projectDir}` and `${params.rawDir}`
-#' (resolved by Nextflow at run time from the `--projectDir`/`--rawDir` args).
+#' the container must see the project directory. Every engine block bind-mounts
+#' `${params.projectDir}` (resolved by Nextflow at run time from `--projectDir`);
+#' new_project() adds the read, assembly, and reference folders through
+#' `<<EXTRA_MOUNTS>>`.
 #'
 #' @param engine One of "docker", "singularity", "apptainer".
 #' @param cache Optional cacheDir (singularity/apptainer only).
@@ -24,26 +25,38 @@ ribopilot_config_dir <- function() {
 #' @noRd
 container_engine_block <- function(engine, cache = NULL, run_options = NULL) {
   extra <- if (!is.null(run_options) && nzchar(run_options)) run_options else ""
-  # <<EXTRA_MOUNTS>> is filled by new_project() with mounts for any local
-  # reference-database directories (empty otherwise).
+  # <<EXTRA_MOUNTS>> is filled by new_project() with the read, assembly,
+  # and local reference folders (empty otherwise).
   if (engine == "docker") {
     # -u / fixOwnership stop SQLite leaving root-owned .sqlite-wal / .sqlite-shm
     # files in the project directory, which the Shiny app then cannot open.
     binds <- paste0(
       "-u \\$(id -u):\\$(id -g) ",
-      "-v ${params.projectDir}:${params.projectDir} -v ${params.rawDir}:${params.rawDir}<<EXTRA_MOUNTS>>")
+      "-v ${params.projectDir}:${params.projectDir}<<EXTRA_MOUNTS>>")
     ro <- trimws(paste(binds, extra))
     return(paste0("docker {\n  enabled = true\n  fixOwnership = true\n  runOptions = \"", ro, "\"\n}"))
   }
-  binds <- "-B ${params.projectDir} -B ${params.rawDir}<<EXTRA_MOUNTS>>"
+  binds <- "-B ${params.projectDir}<<EXTRA_MOUNTS>>"
   ro <- trimws(paste(binds, extra))
-  lines <- c(paste0(engine, " {"), "  enabled = true", "  autoMounts = true")
+  lines <- c(paste0(engine, " {"), "  enabled = true", "  autoMounts = true", "  pullTimeout = '60 min'")
   if (!is.null(cache) && nzchar(cache)) {
     lines <- c(lines, paste0("  cacheDir = '", cache, "'"))
   }
   lines <- c(lines, paste0("  runOptions = \"", ro, "\""))
   lines <- c(lines, "}")
   paste(lines, collapse = "\n")
+}
+
+#' Config tokens filled later, by new_project() rather than generate_config()
+#' @noRd
+PROJECT_CONFIG_TOKENS <- c("CONTAINER_ID", "RAW_DIR", "ASMB_DIR", "MIN_DEPTH",
+                           "NCBI_API_KEY", "EXTRA_MOUNTS",
+                           "HOST_CPUS", "HOST_MEMORY")
+
+#' Placeholder tokens still present in config lines
+#' @noRd
+config_tokens <- function(lines) {
+  unique(unlist(regmatches(lines, gregexpr("<<[A-Z_]+>>", lines))))
 }
 
 #' Substitute `<<PLACEHOLDER>>` tokens in config template lines
@@ -53,23 +66,12 @@ container_engine_block <- function(engine, cache = NULL, run_options = NULL) {
 #' @param lines Character vector of config file lines.
 #' @param replacements Named list; name `FOO` replaces token `<<FOO>>`.
 #' @noRd
-#' Config tokens filled later, by new_project() rather than generate_config()
-#' @noRd
-PROJECT_CONFIG_TOKENS <- c("CONTAINER_ID", "RAW_DIR", "ASMB_DIR", "MIN_DEPTH",
-                           "GENETIC_CODE", "NCBI_API_KEY", "EXTRA_MOUNTS")
-
-#' Placeholder tokens still present in config lines
-#' @noRd
-config_tokens <- function(lines) {
-  unique(unlist(regmatches(lines, gregexpr("<<[A-Z_]+>>", lines))))
-}
-
 fill_config <- function(lines, replacements) {
   for (nm in names(replacements)) {
     val <- replacements[[nm]]
     if (is.null(val)) next
     token <- paste0("<<", nm, ">>")
-    lines <- stringr::str_replace_all(lines, stringr::fixed(token), as.character(val))
+    lines <- gsub(token, as.character(val), lines, fixed = TRUE)
   }
   lines
 }
@@ -80,7 +82,7 @@ fill_config <- function(lines, replacements) {
 #' first, then a package built-in (`inst/config.<executor>`).
 #'
 #' @param executor Executor / profile name.
-#' @param profile_dir User profile directory (see [ribopilot_config_dir()]).
+#' @param profile_dir User profile directory (see `ribopilot_config_dir()`).
 #' @noRd
 resolve_config <- function(executor, profile_dir = ribopilot_config_dir()) {
   user_path <- file.path(profile_dir, paste0("config.", executor))
@@ -104,7 +106,7 @@ resolve_config <- function(executor, profile_dir = ribopilot_config_dir()) {
 #' Reports the package built-in templates plus any saved cluster profiles. The
 #' `name` column is what you pass to `new_project(executor = ...)`.
 #'
-#' @param profile_dir User profile directory (see [ribopilot_config_dir()]).
+#' @param profile_dir User profile directory (see `ribopilot_config_dir()`).
 #'
 #' @return A data.frame with columns `name`, `type` ("builtin" or "saved"),
 #'   and `path`.
@@ -142,16 +144,22 @@ list_configs <- function(profile_dir = ribopilot_config_dir()) {
 #' Configure your HPC cluster once and reuse it for every project. Mirrors
 #' MitoPilot's `generate_config()`. Builds a Nextflow config from a generic
 #' scheduler template, fills in cluster-level settings, and saves it as a named
-#' profile in [ribopilot_config_dir()]. Afterwards
+#' profile in `ribopilot_config_dir()`. Afterwards
 #' `new_project(executor = "<name>")` will find and use it automatically.
 #'
 #' @param name Profile name. Saved as `config.<name>`; pass as `executor`.
-#' @param scheduler Base template. One of "slurm", "sge", "pbs", "lsf",
-#'   "local", or "awsbatch".
-#' @param container_engine "auto" picks docker for local/awsbatch and
-#'   singularity for HPC schedulers; or "singularity"/"apptainer"/"docker".
-#' @param container_cache Optional cacheDir for singularity/apptainer.
-#' @param container_run_options Optional runOptions for singularity/apptainer.
+#' @param scheduler Base template: "slurm", "sge", "pbs", "lsf", or "local"
+#'   (Docker on one machine, the same as executor = "local").
+#' @param container_engine "auto" (default) picks singularity for the schedulers
+#'   and docker for "local". "singularity", "apptainer", and "docker" apply to
+#'   slurm, sge, pbs, and lsf; "local" always uses Docker.
+#' @param container_cache Folder where Singularity or Apptainer keeps the pulled
+#'   image, shared by every project that uses this profile; it must be visible
+#'   from the compute nodes. Default: `NXF_SINGULARITY_CACHEDIR` (or
+#'   `NXF_APPTAINER_CACHEDIR`) when set, otherwise a "containers" folder in the
+#'   reference folder (`RIBOPILOT_REF_DIR`, see ribopilot_ref_dir()). Pass "" to
+#'   leave it to Nextflow (the project's work/singularity folder).
+#' @param container_run_options Optional extra runOptions for the container engine (any engine), appended to the bind mounts.
 #' @param queue Partition / queue name. If `NULL`, the directive is omitted.
 #' @param walltime Per-job walltime, in a form your scheduler accepts (e.g.
 #'   "24h", "48:00:00"). Many SLURM and PBS sites reject a job that requests no
@@ -168,7 +176,7 @@ list_configs <- function(profile_dir = ribopilot_config_dir()) {
 #' @export
 generate_config <- function(
     name,
-    scheduler = c("slurm", "sge", "pbs", "lsf", "local", "awsbatch"),
+    scheduler = c("slurm", "sge", "pbs", "lsf", "local"),
     container_engine = c("auto", "singularity", "apptainer", "docker"),
     container_cache = NULL,
     container_run_options = NULL,
@@ -185,9 +193,17 @@ generate_config <- function(
   }
   scheduler <- match.arg(scheduler)
   container_engine <- match.arg(container_engine)
+  if (scheduler == "local" && !(container_engine %in% c("auto", "docker"))) {
+    stop("A \"local\" profile runs the Docker image. container_engine = \"", container_engine,
+      "\" works with the slurm, sge, pbs, and lsf schedulers.", call. = FALSE)
+  }
 
   if (container_engine == "auto") {
-    container_engine <- if (scheduler %in% c("local", "awsbatch")) "docker" else "singularity"
+    container_engine <- if (scheduler == "local") "docker" else "singularity"
+  }
+  if (container_engine != "docker" && is.null(container_cache)) {
+    env <- Sys.getenv(c("NXF_SINGULARITY_CACHEDIR", "NXF_APPTAINER_CACHEDIR"))
+    container_cache <- c(env[nzchar(env)], file.path(ribopilot_ref_dir(), "containers"))[[1]]
   }
 
   if (isTRUE(interactive) && base::interactive()) {
@@ -198,7 +214,7 @@ generate_config <- function(
       ans <- trimws(readline(msg))
       if (nzchar(ans)) ans else NULL
     }
-    if (scheduler %nin% c("local", "awsbatch")) {
+    if (scheduler != "local") {
       queue <- prompt_if_null(queue, "Queue / partition (blank = cluster default): ")
       walltime <- prompt_if_null(walltime, "Walltime per job, e.g. 24h (blank = site default): ")
       account <- prompt_if_null(account, "Account / project (blank = none): ")
@@ -239,8 +255,8 @@ generate_config <- function(
     PENV = if (scheduler == "sge") penv else NULL
   ))
 
-  # awsbatch carries region / CLI path / batch queue tokens that neither this
-  # function nor new_project() fills; say so now rather than at run time.
+  # a token neither round fills (sge with penv = NULL) would stop
+  # new_project() later; say so now
   manual <- setdiff(config_tokens(lines), paste0("<<", PROJECT_CONFIG_TOKENS, ">>"))
   if (length(manual)) {
     warning(glue::glue(
@@ -262,6 +278,10 @@ generate_config <- function(
   writeLines(lines, out_path)
 
   message("Saved cluster profile '", name, "' to ", out_path)
+  if (container_engine != "docker" && nzchar(container_cache)) {
+    message("Container images are cached in ", container_cache,
+      " (shared by every project that uses this profile).")
+  }
   message("Use it with: new_project(..., executor = '", name, "')")
   invisible(out_path)
 }

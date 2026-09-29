@@ -1,0 +1,69 @@
+---
+title: "Installing tools without a container (unsupported)"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Installing tools without a container (unsupported)}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+::: {.alert .alert-warning}
+**Not supported.** RiboPilot supports Docker and Singularity only. This page
+keeps the old conda instructions for setups that already depend on them. They
+are not tested, and known gaps mean some steps fail.
+:::
+
+# The conda environment
+
+The file `environment.yml` is in the RiboPilot source repository (it is not
+part of the installed package). With conda installed, create and activate the
+environment from a copy of the repository:
+
+```bash
+conda env create -f environment.yml
+conda activate ribopilot
+```
+
+Create projects with `executor = "conda"`; RiboPilot warns that it is not
+supported:
+
+```r
+RiboPilot::new_project(
+  path       = "~/my_project",
+  mapping_fn = "~/my_samples.csv",
+  data_path  = "~/my_reads",
+  executor   = "conda"
+)
+```
+
+Start R from a terminal where the environment is active, so the app and
+Nextflow find the tools. The console functions can also put the environment on
+the PATH for you with `conda_env`:
+
+```r
+RiboPilot::run_assembly("~/my_project", conda_env = "ribopilot")
+RiboPilot::build_reference_db('"Littorinimorpha"[Organism]', "littorinimorpha",
+  conda_env = "ribopilot")
+```
+
+# Known gaps
+
+- `environment.yml` does not include R or RiboPilot's R packages. Install R 4.4
+  and RiboPilot yourself.
+- Ribotyper (part of Ribovore) is not on bioconda, so the chimera check skips its
+  ribotyper step unless you install Ribovore 1.0.5 yourself.
+- The bundled rDNA database is only in the container, so every BLAST screen
+  search goes to NCBI.
+
+# BLAST errors about GNUTLS
+
+If a run reports a BLAST error mentioning "GNUTLS" or "secure session", the
+BLAST in your environment is too old to connect to NCBI. Update it, then run the
+pipeline again:
+
+```bash
+conda install -n ribopilot 'blast=2.17.0'
+```
+
+Environments created from the current `environment.yml` already include a new
+enough version.

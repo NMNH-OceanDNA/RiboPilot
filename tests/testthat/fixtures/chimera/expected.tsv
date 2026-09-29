@@ -1,5 +1,5 @@
 file	label	junction	note
 clean.fa	clean	NA	NA
-host_fungal.fa	suspect	2650	NA
+host_fungal.fa	severe	2650	NA
 host_variant.fa	clean	NA	channel 2 only; needs read evidence or ribotyper
 tandem_18S.fa	clean	NA	channel 2 only; needs read evidence or ribotyper

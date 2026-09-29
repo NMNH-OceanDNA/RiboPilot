@@ -129,6 +129,23 @@ test_that("config_container_image reads the image out of a project config", {
   expect_equal(RiboPilot:::config_container_image(c("process {", "}")), "")
 })
 
+test_that("container_version_gap flags an official image for another version only", {
+  skip_if_not_installed("withr")
+  d <- withr::local_tempdir()
+  cfg <- function(img) writeLines(c("process {", sprintf("    container = '%s'", img), "}"),
+    file.path(d, ".config"))
+  expect_null(RiboPilot:::container_version_gap(d))
+  now <- paste0("macguigand/ribopilot:", utils::packageVersion("RiboPilot"))
+  cfg(now)
+  expect_null(RiboPilot:::container_version_gap(d))
+  cfg("ribopilot:batch4")
+  expect_null(RiboPilot:::container_version_gap(d))
+  cfg("macguigand/ribopilot:0.0.0.1")
+  g <- RiboPilot:::container_version_gap(d)
+  expect_equal(g$configured, "macguigand/ribopilot:0.0.0.1")
+  expect_equal(g$expected, now)
+})
+
 test_that("the note falls back to asking the image, and caches what it learns", {
   skip_if_not_installed("withr")
   d <- withr::local_tempdir()

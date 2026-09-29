@@ -8,7 +8,7 @@
 #' Distinct rRNA anchors (18S/5.8S/28S) present in a fasta
 #'
 #' Uses the same caller and kingdom translation as the annotation path
-#' ([rrna_caller()], [rrna_kingdom_for()]) so the two cannot disagree: the
+#' (`rrna_caller()`, `rrna_kingdom_for()`) so the two cannot disagree: the
 #' `anchors` term carries a fifth of the composite path score, so a caller that
 #' silently finds nothing zeroes it for every candidate.
 #'
@@ -82,7 +82,7 @@ sseqid_species <- function(sseqid) {
 
 #' Score GetOrganelle candidate paths from real assembly output
 #'
-#' @param path_fastas Character vector of per-path fasta files.
+#' @param path_fastas Per-path fasta files, each named with its path number last (`<id>_assembly_<n>.fasta`); `n` becomes the `path` column.
 #' @param gfa_path The assembly graph `.gfa` (for depth). May be NA.
 #' @param sample_lineage The sample's resolved rank-aligned lineage.
 #' @param sample_taxids The sample's rank-aligned lineage taxids. Preferred over
@@ -106,6 +106,10 @@ score_assembly <- function(path_fastas,
                            weights = DEFAULT_SCORE_WEIGHTS) {
   gd <- if (!is.na(gfa_path) && file.exists(gfa_path)) parse_gfa_depth(gfa_path) else NULL
 
+  pnum <- as.integer(sub(".*[^0-9]([0-9]+)\\.fasta$", "\\1", basename(path_fastas)))
+  path_fastas <- path_fastas[order(pnum)]
+  pnum <- sort(pnum)
+
   per_path <- lapply(seq_along(path_fastas), function(i) {
     fa <- path_fastas[i]
     seqs <- readLines(fa, warn = FALSE)
@@ -117,10 +121,10 @@ score_assembly <- function(path_fastas,
       NA_real_
     }
     anchors <- paste(assembly_anchors(fa), collapse = ",")
-    bh <- if (!is.null(blast_db)) blast_best_hits(fa, blast_db, with_staxids) else data.frame()
+    bh <- if (!is.null(blast_db) && !is.na(blast_db)) blast_best_hits(fa, blast_db, with_staxids) else data.frame()
     top <- if (nrow(bh) > 0) bh[which.max(bh$bitscore), ] else NULL
     data.frame(
-      path = i,
+      path = pnum[i],
       length = len,
       depth = depth,
       anchors = anchors,
@@ -150,4 +154,59 @@ score_assembly <- function(path_fastas,
 
   score_candidates(cand, sample_lineage = sample_lineage, sample_taxids = sample_taxids,
     expected_length = expected_length, weights = weights)
+}
+
+#' Resolve a seeds/BLAST reference to a local file (download a URL to temp); NA when it cannot be read
+#' @noRd
+local_ref <- function(ref) {
+  if (is.na(ref) || !nzchar(ref)) {
+    return(NA_character_)
+  }
+  if (grepl("^https?://", ref)) {
+    dest <- tempfile(fileext = ".fasta")
+    ok <- tryCatch(utils::download.file(ref, dest, quiet = TRUE, mode = "wb") == 0,
+      error = function(e) FALSE)
+    return(if (ok) dest else NA_character_)
+  }
+  if (file.exists(ref)) ref else NA_character_
+}
+
+#' Build a nucleotide BLAST db from a fasta (returns db prefix or NA)
+#' @noRd
+make_blast_db <- function(fasta) {
+  if (is.na(fasta) || !nzchar(unname(Sys.which("makeblastdb")))) {
+    return(NA_character_)
+  }
+  db <- tempfile("rp_scoredb_")
+  ok <- system2("makeblastdb", c("-in", shQuote(fasta), "-dbtype", "nucl", "-out", shQuote(db)),
+    stdout = FALSE, stderr = FALSE)
+  if (ok == 0) db else NA_character_
+}
+
+#' Write scored candidate paths for a sample into the `path_scores` table
+#'
+#' @param con Open DBI connection to the project database.
+#' @param ID Sample ID.
+#' @param scored A scored candidate data.frame from [score_assembly()] /
+#'   [score_candidates()].
+#' @return (invisibly) NULL. Existing rows for `ID` are replaced.
+#' @export
+write_path_scores <- function(con, ID, scored) {
+  if (is.null(scored) || nrow(scored) == 0) {
+    return(invisible())
+  }
+  cols <- c("length", "depth", "anchors", "blast_pident", "hit_id", "hit_taxid",
+    "hit_species", "blast_lineage", "s_tax", "s_identity", "s_anchors",
+    "s_depth", "s_length", "score", "rank", "auto_select")
+  df <- data.frame(ID = ID, path = scored$path, stringsAsFactors = FALSE)
+  for (c in cols) df[[c]] <- if (!is.null(scored[[c]])) scored[[c]] else NA
+  df$auto_select <- as.integer(df$auto_select)
+  df$time_stamp <- as.integer(Sys.time())
+  # one transaction: a failed append after a committed delete would leave the
+  # sample with no path scores at all
+  DBI::dbWithTransaction(con, {
+    DBI::dbExecute(con, "DELETE FROM path_scores WHERE ID = ?", params = list(ID))
+    DBI::dbAppendTable(con, "path_scores", df)
+  })
+  invisible()
 }

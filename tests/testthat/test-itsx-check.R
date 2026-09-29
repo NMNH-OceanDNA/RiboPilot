@@ -128,7 +128,7 @@ test_that("itsx_check_command runs ITSx through docker when .config enables it",
   cmd <- RiboPilot:::itsx_check_command(dir, wd, which = fake_which("docker"))
   expect_equal(cmd$bin, "/bin/docker")
   expect_equal(cmd$prefix[1:2], c("run", "--rm"))
-  expect_true(any(grepl(paste0(":", wd, "$"), cmd$prefix)))   # workdir mounted at itself
+  expect_true(shQuote(paste0(wd, ":", wd)) %in% cmd$prefix)   # workdir mounted at itself
   expect_equal(utils::tail(cmd$prefix, 2), c("ribopilot:test", "ITSx"))
   # engine enabled but nothing to run it with
   expect_equal(RiboPilot:::itsx_check_command(dir, wd, which = fake_which("ITSx"))$bin, "")
@@ -141,7 +141,7 @@ test_that("itsx_check_command uses singularity or apptainer for a singularity co
   wd <- file.path(dir, "wd")
   cmd <- RiboPilot:::itsx_check_command(dir, wd, which = fake_which("apptainer"))
   expect_equal(cmd$bin, "/bin/apptainer")
-  expect_equal(cmd$prefix, c("exec", "--bind", wd, "--pwd", wd, sif, "ITSx"))
+  expect_equal(cmd$prefix, c("exec", "--bind", shQuote(wd), "--pwd", shQuote(wd), sif, "ITSx"))
   expect_match(RiboPilot:::itsx_check_command(dir, wd, which = fake_which("ITSx"))$message, "singularity")
 })
 
@@ -173,6 +173,8 @@ mk_itsx_project <- function() {
   DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,1,'18S','rRNA',1,200)")
   DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,1,'28S','rRNA',201,400)")
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S1','Genus species',NULL,NULL,'Metazoa;Chordata')")
+  DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, assemble_lock INT)")
+  DBI::dbExecute(con, "INSERT INTO assemble VALUES('S1',1)")
   dir
 }
 
@@ -231,6 +233,8 @@ test_that("a real ITSx run in the project's container over a genuine rDNA record
   DBI::dbExecute(con, "INSERT INTO samples VALUES('REAL','Fish sp.','Metazoa;Chordata')")
   DBI::dbExecute(con, "INSERT INTO assemblies VALUES('REAL',1,1,?,?,'linear',0)", params = list(seq, nchar(seq)))
   DBI::dbExecute(con, "INSERT INTO annotate VALUES('REAL',1,1,1,'no','no','yes',0,5,'',NULL)")
+  DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, assemble_lock INT)")
+  DBI::dbExecute(con, "INSERT INTO assemble VALUES('REAL',1)")
   for (i in seq_len(nrow(ann))) {
     DBI::dbExecute(con, "INSERT INTO annotations VALUES('REAL',1,1,?,?,?,?)",
       params = list(ann$element[i], ann$type[i], ann$start[i], ann$stop[i]))
@@ -306,4 +310,25 @@ test_that("export refreshes itsx_warnings on the annotate row", {
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
   withr::defer(DBI::dbDisconnect(con))
   expect_match(DBI::dbGetQuery(con, "SELECT itsx_warnings FROM annotate")$itsx_warnings, "^not_run\\(")
+})
+
+test_that("the ITSx container call keeps a folder with a space as one argument", {
+  skip_on_os("windows")
+  root <- file.path(withr::local_tempdir(), "Batch 1")
+  wd <- file.path(root, "itsx_check")
+  dir.create(wd, recursive = TRUE)
+  write_cfg(root, "docker {", "  enabled = true", "}", "process {", "  container = 'ribopilot:test'", "}")
+  seen <- file.path(root, "args.txt")
+  fake <- file.path(root, "docker")
+  writeLines(c("#!/bin/sh", sprintf("for a in \"$@\"; do printf '%%s\\n' \"$a\"; done > '%s'", seen),
+    "exit 1"), fake)
+  Sys.chmod(fake, "0755")
+  cmd <- RiboPilot:::itsx_check_command(root, wd, which = function(x) stats::setNames(fake, x))
+  fa <- file.path(wd, "records.fasta")
+  writeLines(c(">a", "ACGT"), fa)
+  RiboPilot:::run_itsx_check(fa, file.path(wd, "itsx"), cmd = cmd)
+  a <- readLines(seen)
+  wdn <- normalizePath(wd)
+  expect_equal(a[which(a == "-v") + 1], paste0(wdn, ":", wdn))
+  expect_equal(a[which(a == "-w") + 1], wdn)
 })

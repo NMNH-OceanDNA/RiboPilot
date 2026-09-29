@@ -1,6 +1,6 @@
 # Reference-guided curation of the nuclear rDNA feature model. Follows
 # MitoPilot's design: a shared core (curate_rrna_core) driven by per-clade
-# params (params_rrna.R), plus thin clade wrappers. The core is pure (no DB);
+# params (params_rrna.R), selected by ruleset. The core is pure (no DB);
 # curate_one() is the DB driver called by the Nextflow curate process,
 # right after reconcile writes the annotations table.
 #
@@ -12,8 +12,8 @@
 #' Curate one reconciled nrDNA feature model against a clade ruleset (pure)
 #'
 #' @param features data.frame(element, type, start, stop, length, strand, ...)
-#'   as produced by [reconcile_features()] / stored in the `annotations` table.
-#' @param params A ruleset from [rrna_params()].
+#'   as produced by `reconcile_features()` / stored in the `annotations` table.
+#' @param params A ruleset from `rrna_params()`.
 #' @param ref_pid Optional named numeric vector (element -> percent identity to
 #'   the top reference), from the `blast_ref_alignment` table. Missing elements
 #'   are skipped (identity check is opportunistic).
@@ -22,9 +22,9 @@
 #'   The identity check is skipped when coverage is below `min_ref_coverage`, so
 #'   a partial reference cannot raise a false low_identity flag.
 #' @param sample_lineage,hit_lineage Optional lineage strings for the contaminant
-#'   check: the sample's assigned lineage vs. the lineage of the top hit over
-#'   *all* of core_nt (`blast_screen.lineage`), not the nuclear-rDNA reference
-#'   panel. An unknown lineage on either side raises `contaminant_unchecked`
+#'   check: the sample's assigned lineage vs. the lineage of the BLAST screen's
+#'   unfiltered top hit (`blast_screen.lineage`), not the nuclear-rDNA reference
+#'   candidates. An unknown lineage on either side raises `contaminant_unchecked`
 #'   rather than passing silently.
 #' @param sample_taxids,hit_taxids Optional rank-aligned taxid strings matching
 #'   those lineages (`samples.lineage_taxids`, `blast_screen.lineage_taxids`).
@@ -32,16 +32,16 @@
 #' @param hit_is_nuclear_rrna Optional 0/1 (`blast_screen.is_nuclear_rrna`):
 #'   whether that top hit is a nuclear rDNA record at all. 0 raises
 #'   `not_nuclear_rdna`.
-#' @param chimeric Unused; chimera risk is now reported by [risk_flags()] from
-#'   the `chimera` table, not by this function.
 #' @return list(features, flags, n_flags, notes) where `features` gains `status`
-#'   ("ok"/"flag") and `flags` (comma-separated per-feature codes), and the
+#'   ("ok"/"flag"), `flags` (comma-separated per-feature codes), and
+#'   `partial_start`/`partial_stop` (1 on the free 5'/3' ends of a truncated
+#'   feature, in its own orientation; NA elsewhere), and the
 #'   sample-level `flags`/`notes` summarize missing anchors, ordering, etc.
 #' @export
 curate_rrna_core <- function(features, params = rrna_params(),
                              ref_pid = NULL, ref_cov = NULL,
                              sample_lineage = NA, hit_lineage = NA,
-                             hit_is_nuclear_rrna = NA, chimeric = NA,
+                             hit_is_nuclear_rrna = NA,
                              sample_taxids = NA_character_,
                              hit_taxids = NA_character_) {
   sample_flags <- character(0)
@@ -63,12 +63,17 @@ curate_rrna_core <- function(features, params = rrna_params(),
     canon <- RRNA_ELEMENT_ORDER[RRNA_ELEMENT_ORDER %in% fo$element]
     if (!identical(fo$element, canon)) sample_flags <- c(sample_flags, "out_of_order")
 
-    # 3. Overlaps between adjacent features ----
+    # 3. Overlaps and gaps between adjacent features ----
     if (nrow(fo) > 1) {
       for (i in 2:nrow(fo)) {
-        if (!is.na(fo$start[i]) && !is.na(fo$stop[i - 1]) && fo$start[i] <= fo$stop[i - 1]) {
+        if (is.na(fo$start[i]) || is.na(fo$stop[i - 1])) next
+        if (fo$start[i] <= fo$stop[i - 1]) {
           add_feat_flag(fo$element[i], "overlap")
           sample_flags <- c(sample_flags, "overlap")
+        } else if (fo$start[i] > fo$stop[i - 1] + 1 && isTRUE(
+            match(fo$element[i], RRNA_ELEMENT_ORDER) == match(fo$element[i - 1], RRNA_ELEMENT_ORDER) + 1L)) {
+          add_feat_flag(fo$element[i], "gap")
+          sample_flags <- c(sample_flags, "gap")
         }
       }
     }
@@ -149,6 +154,23 @@ curate_rrna_core <- function(features, params = rrna_params(),
       if (is.null(fl)) "" else paste(unique(fl), collapse = ",")
     }, character(1))
     features$status <- ifelse(nzchar(features$flags), "flag", "ok")
+    # A truncated feature is partial at each end that meets no neighbour, or at
+    # both when it meets two (we cannot tell which end is short).
+    trunc <- vapply(features$element, function(el) "truncated" %in% feat_flags[[el]], logical(1),
+      USE.NAMES = FALSE)
+    s <- features$start; e <- features$stop
+    left <- right <- rep(FALSE, nrow(features))
+    for (i in which(trunc)) {
+      o <- seq_len(nrow(features))[-i]
+      left[i] <- any(s[o] < s[i] & e[o] < e[i] & s[i] - e[o] - 1 <= ITS_SNAP_BP, na.rm = TRUE)
+      right[i] <- any(s[o] > s[i] & e[o] > e[i] & s[o] - e[i] - 1 <= ITS_SNAP_BP, na.rm = TRUE)
+    }
+    pl <- trunc & (!left | right)
+    pr <- trunc & (!right | left)
+    minus <- (features$strand %||% rep(NA, nrow(features))) %in% "-"
+    one <- function(x) ifelse(x, 1L, NA_integer_)
+    features$partial_start <- one(ifelse(minus, pr, pl))
+    features$partial_stop <- one(ifelse(minus, pl, pr))
   } else {
     features <- data.frame()
   }
@@ -156,20 +178,6 @@ curate_rrna_core <- function(features, params = rrna_params(),
   sample_flags <- unique(sample_flags)
   notes <- if (length(sample_flags)) paste(sample_flags, collapse = "; ") else NA_character_
   list(features = features, flags = sample_flags, n_flags = length(sample_flags), notes = notes)
-}
-
-#' Thin actinopterygii curation wrapper.
-#' @param features,ref_pid,ref_cov,sample_lineage,hit_lineage,hit_is_nuclear_rrna,chimeric see
-#'   [curate_rrna_core()].
-#' @return see [curate_rrna_core()].
-#' @noRd
-curate_actinopterygii_rrna <- function(features, ref_pid = NULL, ref_cov = NULL,
-                                       sample_lineage = NA, hit_lineage = NA,
-                                       hit_is_nuclear_rrna = NA, chimeric = NA) {
-  curate_rrna_core(features, rrna_params("actinopterygii"),
-    ref_pid = ref_pid, ref_cov = ref_cov, sample_lineage = sample_lineage,
-    hit_lineage = hit_lineage, hit_is_nuclear_rrna = hit_is_nuclear_rrna,
-    chimeric = chimeric)
 }
 
 #' Is a lineage string present at all (before any placeholder test)?
@@ -274,7 +282,8 @@ resolve_ruleset <- function(con, id, path = 1L, scaffold = 1L, ruleset = NULL) {
 #' per-feature reference identities (`blast_ref_alignment`), and the sample vs.
 #' hit lineages, runs [curate_rrna_core()], then updates each feature's
 #' `status`/`flags` and the per-sample `annotate` summary (`n_flags`,
-#' `annotate_notes`) in one transaction.
+#' `curate_flags`) in one transaction. `partial_start`/`partial_stop` are only
+#' set (to 1) where still NULL, so a curator's own choice is kept.
 #'
 #' @param con Open DBI connection.
 #' @param id Sample ID.
@@ -290,12 +299,10 @@ curate_one <- function(con, id, path = 1L, scaffold = 1L, ruleset = NULL) {
      WHERE ID = ? AND path = ? AND scaffold = ?",
     params = list(id, path, scaffold))
 
-  sample_lineage <- DBI::dbGetQuery(con, "SELECT lineage FROM samples WHERE ID = ?",
-    params = list(id))$lineage[1]
-  # pre-v9 projects have no taxid column; the comparison falls back to names
-  sample_taxids <- tryCatch(DBI::dbGetQuery(con,
-    "SELECT lineage_taxids t FROM samples WHERE ID = ?", params = list(id))$t[1],
-    error = function(e) NA_character_)
+  smp <- DBI::dbGetQuery(con, "SELECT lineage, lineage_taxids FROM samples WHERE ID = ?",
+    params = list(id))
+  sample_lineage <- smp$lineage[1]
+  sample_taxids <- smp$lineage_taxids[1]
 
   rs <- resolve_ruleset(con, id, path, scaffold, ruleset)
   ruleset <- rs$ruleset
@@ -342,14 +349,17 @@ curate_one <- function(con, id, path = 1L, scaffold = 1L, ruleset = NULL) {
     if (nrow(res$features) > 0) {
       for (i in seq_len(nrow(res$features))) {
         DBI::dbExecute(con,
-          "UPDATE annotations SET status = ?, flags = ? WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?",
+          "UPDATE annotations SET status = ?, flags = ?, partial_start = COALESCE(partial_start, ?),
+             partial_stop = COALESCE(partial_stop, ?)
+           WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?",
           params = list(res$features$status[i],
             if (nzchar(res$features$flags[i])) res$features$flags[i] else NA_character_,
+            res$features$partial_start[i], res$features$partial_stop[i],
             id, path, scaffold, res$features$element[i]))
       }
     }
     DBI::dbExecute(con,
-      "UPDATE annotate SET n_flags = ?, annotate_notes = ?, time_stamp = ? WHERE ID = ? AND path = ? AND scaffold = ?",
+      "UPDATE annotate SET n_flags = ?, curate_flags = ?, time_stamp = ? WHERE ID = ? AND path = ? AND scaffold = ?",
       params = list(res$n_flags, res$notes, ts, id, path, scaffold))
   })
   invisible(res)

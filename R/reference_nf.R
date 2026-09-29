@@ -59,9 +59,9 @@ container_bind_opts <- function(cfg_lines, dirs) {
   if (length(dirs) == 0) return(character(0))
   switch(config_container_engine(cfg_lines) %|NA|% "",
     docker = c("-process.containerOptions",
-      paste(paste0("-v ", dirs, ":", dirs), collapse = " ")),
+      paste(paste0("-v ", shQuote(dirs), ":", shQuote(dirs)), collapse = " ")),
     singularity = c("-process.containerOptions",
-      paste(paste0("--bind ", dirs), collapse = " ")),
+      paste(paste0("--bind ", shQuote(dirs)), collapse = " ")),
     character(0))
 }
 
@@ -94,7 +94,7 @@ config_mounted_dirs <- function(cfg_lines) {
 #' @return character vector of directories, possibly empty.
 #' @noRd
 reference_mount_dirs <- function(project, mounted = character(0)) {
-  con <- tryCatch(DBI::dbConnect(RSQLite::SQLite(), file.path(project, ".sqlite")),
+  con <- tryCatch(open_project_db(file.path(project, ".sqlite")),
     error = function(e) NULL)
   if (is.null(con)) return(character(0))
   on.exit(DBI::dbDisconnect(con), add = TRUE)
@@ -151,13 +151,8 @@ nf_reference_command <- function(project, entry, manifest, ref_dir, out_dir,
   entry <- match.arg(entry, c("COUNT", "BUILD"))
   main_nf <- app_sys("nextflow", "main_reference.nf")
   cfg <- file.path(project, ".config")
-  cfg_lines <- if (file.exists(cfg)) readLines(cfg) else character(0)
-  # every container executor template interpolates params.projectDir and
-  # params.rawDir into docker/singularity runOptions, so a run that omits them
-  # cannot even parse the project config (see nf_command())
   proj_dir <- path.expand(project)
-  raw_dir <- config_param(cfg_lines, "rawDir") %||% ""
-  if (length(raw_dir) == 0 || is.na(raw_dir) || !nzchar(raw_dir)) raw_dir <- proj_dir
+  raw <- if (file.exists(cfg)) config_param(readLines(cfg, warn = FALSE), "rawDir") else NA
   # ref_dir is deliberately not bind-mounted: the tasks write into their own
   # work directory and Nextflow publishes to the folder from the host, so the
   # mount only gave Singularity a missing path to refuse
@@ -165,12 +160,13 @@ nf_reference_command <- function(project, entry, manifest, ref_dir, out_dir,
     if (file.exists(cfg)) c("-c", cfg),
     "-work-dir", work,
     if (isTRUE(resume)) "-resume",
+    # the container runOptions interpolate params.projectDir
     "--projectDir", proj_dir,
-    "--rawDir", path.expand(raw_dir),
+    if (!is.na(raw) && !raw %in% c("", "NA")) c("--rawDir", raw),
     "--clades", path.expand(manifest),
     "--refDir", path.expand(ref_dir),
     "--outDir", path.expand(out_dir),
-    "--ribopilot_src", ribopilot_src_default(),
+    nf_pkg_args(),
     if (isTRUE(refseq)) c("--refseq", "true"),
     if (nzchar(api_key %||% "")) c("--ncbi_api_key", api_key))
 }
@@ -199,17 +195,12 @@ project_ncbi_key <- function(project) {
 #' @param log Optional file the run's output is written to, so a failure has a
 #'   diagnostic instead of a discarded stream.
 #' @noRd
-nf_run_blocking <- function(project, args, log = NULL) {
+nf_run_blocking <- function(wd, args, log = NULL) {
   if (!nzchar(Sys.which("nextflow"))) {
     stop("Nextflow not found on PATH.", call. = FALSE)
   }
-  # unpinned, a Nextflow 26 install rejects -entry with "not supported with the
-  # strict parser", so every count run fails on an otherwise fine workflow
-  nf_env <- c("current", COLUMNS = "500")
-  pin <- nf_pin_version()
-  if (!is.na(pin)) nf_env <- c(nf_env, NXF_VER = pin)
-  p <- processx::run("nextflow", args, wd = project, error_on_status = FALSE,
-    env = nf_env, stdout = "|", stderr = "2>&1")
+  p <- processx::run("nextflow", args, wd = wd, error_on_status = FALSE,
+    env = nf_env(), stdout = "|", stderr = "2>&1")
   if (!is.null(log) && nzchar(log %||% "")) {
     append_run_log(log, strsplit(p$stdout %||% "", "\n", fixed = TRUE)[[1]])
   }
@@ -222,7 +213,7 @@ nf_run_blocking <- function(project, args, log = NULL) {
 #' died stays in its work directory and never reaches the user. The task hash in
 #' the NOTE is what connects the two.
 #'
-#' @param log The run log written by [nf_run_blocking()].
+#' @param log The run log written by `nf_run_blocking()`.
 #' @param work The run's work directory.
 #' @param n Lines kept from the end of each task's stderr.
 #' @return Unique error strings, newest run only; character(0) when none failed.
@@ -240,11 +231,7 @@ failed_task_errors <- function(log, work, n = 2L) {
     d <- list.dirs(file.path(work, p[1]), recursive = FALSE, full.names = TRUE)
     d <- d[startsWith(basename(d), p[2])]
     if (length(d) == 0) return("")
-    f <- file.path(d[1], ".command.err")
-    if (!file.exists(f)) return("")
-    y <- trimws(readLines(f, warn = FALSE))
-    y <- y[nzchar(y)]
-    if (length(y) == 0) "" else paste(utils::tail(y, n), collapse = " ")
+    task_err_tail(d[1], n)
   }, character(1), USE.NAMES = FALSE)
   unique(errs[nzchar(errs)])
 }
@@ -267,6 +254,10 @@ run_clade_counts <- function(project, ref_dir, clades, api_key = "", refseq = FA
   need$taxid <- as.integer(need$taxid)
   need <- need[!duplicated(need$taxid), , drop = FALSE]
   if (nrow(need) == 0) return(cache)
+  held <- run_lock_holder(project)
+  if (!is.null(held)) stop(run_lock_message(held, project), call. = FALSE)
+  marker <- run_lock_take(project, "reference count")
+  on.exit(run_lock_release(project, marker), add = TRUE)
   rundir <- file.path(project, ".reference")
   out <- file.path(rundir, "counts")
   unlink(out, recursive = TRUE)
@@ -279,7 +270,7 @@ run_clade_counts <- function(project, ref_dir, clades, api_key = "", refseq = FA
     api_key = api_key, refseq = refseq, resume = FALSE, work = work)
   # a non-zero status is not fatal: clades that did report are still worth
   # keeping, and the walk treats a missing count as unknown
-  status <- runner(project, args, log)
+  status <- runner(rundir, args, log)
   # ignored failures leave the run status at 0, so the errors are collected
   # whatever the status says
   errs <- tryCatch(failed_task_errors(log, work), error = function(e) character(0))

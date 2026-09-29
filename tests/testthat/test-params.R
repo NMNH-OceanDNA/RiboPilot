@@ -27,9 +27,8 @@ test_that("min_anchor_pid is per-element and ordered 28S < 5.8S <= 18S", {
   f28 <- RiboPilot:::anchor_pid_floor(p$min_anchor_pid, "28S")
   expect_true(f28 < f58)
   expect_true(f58 <= f18)
-  # scalar back-compat
-  expect_equal(RiboPilot:::anchor_pid_floor(85, "18S"), 85)
   expect_true(is.na(RiboPilot:::anchor_pid_floor(NULL, "18S")))
+  expect_true(is.na(RiboPilot:::anchor_pid_floor(c("18S" = 90), "ITS1")))
 })
 
 test_that("every ruleset carries a screen sublist and its weights still sum to 1", {

@@ -90,3 +90,34 @@ test_that("score_assembly carries the top hit's identity into the score", {
   # identical on every other term, so the better identity must rank first
   expect_equal(out$path[1], 2L)
 })
+
+test_that("score_assembly numbers paths from the file names, not the order given", {
+  dir <- withr::local_tempdir()
+  fas <- vapply(1:10, function(k) {
+    f <- file.path(dir, sprintf("S1_assembly_%d.fasta", k))
+    writeLines(c(sprintf(">S1.%d.1 linear scaffold_1", k), strrep("ACGT", 1000 + k)), f)
+    f
+  }, character(1))
+  local_mocked_bindings(assembly_anchors = function(...) c("18S", "28S"), .package = "RiboPilot")
+  # glob order puts _10 before _2 in every locale
+  out <- score_assembly(fas[c(10, 1:9)])
+  expect_equal(out$length[match(1:10, out$path)], 4 * (1000 + 1:10))
+  # every path ties, so the lowest path number wins in any locale
+  expect_equal(out$path[out$auto_select], 1L)
+})
+
+test_that("a seed database that cannot be downloaded leaves a note and the sample still scores", {
+  withr::local_options(timeout = 5)
+  local_mocked_bindings(assembly_anchors = function(...) character(0), .package = "RiboPilot")
+  con <- chimera_test_con()   # new_db() fixture from helper-chimera.R, sample S1
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "UPDATE assemble_opts SET seeds_db = 'http://127.0.0.1:9/seeds.fasta'")
+  out <- withr::local_tempdir()
+  ad <- out
+  writeLines(c(">S1.1.1 linear x", strrep("ACGT", 200)), file.path(ad, "S1_assembly_1.fasta"))
+  expect_true(is.na(suppressWarnings(RiboPilot:::local_ref("http://127.0.0.1:9/seeds.fasta"))))
+  expect_no_error(suppressWarnings(RiboPilot::score_one(con, "S1", out)))
+  expect_equal(nrow(DBI::dbGetQuery(con, "SELECT * FROM path_scores WHERE ID = 'S1'")), 1L)
+  expect_match(DBI::dbGetQuery(con, "SELECT assemble_notes FROM assemble WHERE ID = 'S1'")$assemble_notes,
+    "seed database could not be read", fixed = TRUE)
+})

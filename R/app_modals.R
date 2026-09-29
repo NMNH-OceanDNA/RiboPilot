@@ -21,9 +21,9 @@ status_badge <- function(label, state, invert = FALSE, neutral_no = FALSE) {
 #' against the GetOrganelle seed file. The seed file is the same set of
 #' sequences that baited the assembly, so its hit answers "which seed does this
 #' scaffold resemble", not "what is this"; the other two are real reference
-#' searches. Shown where no GenBank screen exists, and never without saying
+#' searches. Shown where no BLAST screen exists, and never without saying
 #' which search it came from.
-#' @param r One row of [unit_evidence()].
+#' @param r One row of `unit_evidence()`.
 #' @noRd
 seed_hit_block <- function(r) {
   sp <- r$blast_species %||% NA_character_
@@ -39,9 +39,9 @@ seed_hit_block <- function(r) {
     tags$span(style = "color:#555;", if (from_seeds) {
       "Closest sequence in the local seed file (a hint, NOT a GenBank identification):"
     } else if (from_local) {
-      "Best nuclear rDNA reference from the local reference panel search:"
+      "Best nuclear rDNA reference from the bundled rDNA database:"
     } else {
-      "Best nuclear rDNA reference from the GenBank search:"
+      "Best nuclear rDNA reference from the NCBI core_nt search:"
     }),
     div(class = "code-block", style = "white-space:normal; margin-top:3px;",
       HTML(sprintf("<b>%s</b> &nbsp; %s &nbsp; %s%% id", sp,
@@ -75,14 +75,61 @@ modal_taxon_header <- function(id) {
       tags$span(style = "color:#999;", sprintf(" (input: %s)", s$Taxon[1])))
 }
 
+#' Why a failed sample failed and what to try next, or nothing
+#' @param id Sample ID.
+#' @noRd
+failure_banner <- function(id) {
+  r <- app_query("SELECT assemble_switch, TRIM(COALESCE(assemble_notes, '') || ' ' ||
+      COALESCE(find_rrna_notes, '')) AS note FROM assemble WHERE ID = ?", params = list(id))
+  if (nrow(r) == 0 || !identical(as.integer(r$assemble_switch[1]), 3L)) {
+    return(NULL)
+  }
+  h <- failure_hint(r$note[1])
+  div(class = "mp-fg-danger",
+    style = "border:1px solid currentColor; border-radius:4px; padding:8px 12px; margin:0 0 8px;",
+    tags$b("This sample failed. "), h$why, tags$br(), tags$b("Next step: "), h$next_step,
+    if (nzchar(r$note[1] %|NA|% "")) div(style = "margin-top:4px; color:#555;",
+      "Pipeline note: ", r$note[1]))
+}
+
+#' Why a scaffold has no BLAST screen
+#' @noRd
+no_screen_note <- function(failed, blast_on, running) {
+  if (failed) {
+    "No BLAST screen for this scaffold. BLAST did not run because the assembly failed."
+  } else if (!blast_on) {
+    paste("BLAST is switched off for this sample (Assemble step, BLAST Options).",
+      "Switch Run BLAST on there, then press Update to screen this scaffold.")
+  } else if (running) {
+    paste("No BLAST screen for this scaffold yet. A run is going for this project,",
+      "and its BLAST search may still be working on it.")
+  } else {
+    paste("No BLAST screen for this scaffold: the search found no match, or it could",
+      "not finish (for example, NCBI could not be reached).")
+  }
+}
+
+#' Which database answered a scaffold's BLAST search, and when
+#' @param r One row of `unit_evidence()`.
+#' @noRd
+searched_in <- function(r) {
+  at <- r$searched_at %||% NA
+  when <- if (is.na(at)) "" else format(as.POSIXct(at, origin = "1970-01-01"), ", searched %Y-%m-%d")
+  db <- r$searched_db %|NA|% ""
+  if (identical(r$searched_source, "local")) {
+    paste0("the bundled rDNA database ", if (nzchar(db)) db else "(release not recorded)", when)
+  } else {
+    paste0("NCBI core_nt", when)
+  }
+}
+
 #' Prev / picker / next sample navigation for the detail modals
 #'
-#' The order is whatever the main table shows when the modal opens: sort,
-#' column filters, search, and the lock/state rows the filter CSS hides. The
-#' script snapshots it into input$nav_order; the server renders the controls.
-#' @param pfx "assemble" or "annotate": names the lock/state row classes.
+#' The order is whatever the main table shows when the modal opens: its Lock
+#' and State filters, column filters, search, and sort. The script snapshots it
+#' into input$nav_order; the server renders the controls.
 #' @noRd
-rp_sample_nav <- function(pfx) {
+rp_sample_nav <- function() {
   tagList(
     uiOutput("sample_nav", inline = TRUE),
     tags$script(HTML(
@@ -101,19 +148,25 @@ rp_sample_nav <- function(pfx) {
 #' @noRd
 chimera_panel <- function() {
   tagList(
+    tags$p(style = "margin:2px 0 4px; font-weight:600;", uiOutput("chimera_result", inline = TRUE)),
     tags$p(class = "mp-help-text", style = "margin:2px 0 4px;",
-      "A chimera is one scaffold stitched from two organisms. ",
-      "Overlapping 500 bp windows are BLASTed against the local rDNA panel. ",
-      "Neighbouring windows whose best hits share a class form one lineage segment. ",
-      "Two segments from different classes, or reads clipped at one position, flag a candidate. ",
-      "This warns only; it never blocks export."),
+      "Looks for pieces of different origin joined in one scaffold, using the genes' BLAST hits, ",
+      "500 bp BLAST windows, ribotyper, and read depth and clipping. Severe (different phyla or ",
+      "kingdoms) is flagged at export; minor is only reported. Unresolved windows match several ",
+      "classes equally and do not count."),
     tags$p(class = "mp-help-text", style = "margin:2px 0 4px;", textOutput("chimera_db_source", inline = TRUE)),
     plotOutput("chimera_plot", height = "300px"),
     reactable::reactableOutput("chimera_segments"),
-    rp_details("All windows",
-      tags$p(class = "mp-help-text", style = "margin:2px 0 4px;",
-        "One row per window: its best BLAST hit in the local panel, the hit identity, and the read evidence over that stretch."),
-      reactable::reactableOutput("chimera_windows"), open = FALSE))
+    div(class = "rp-sub-list",
+      htmltools::tagAppendAttributes(class = "rp-subsection", rp_details("Possible junctions",
+        tags$p(class = "mp-help-text", style = "margin:2px 0 4px;",
+          "Where the checks think two pieces may be joined, which checks point there, and why. ",
+          "Positions match the plot above."),
+        uiOutput("chimera_junctions"))),
+      htmltools::tagAppendAttributes(class = "rp-subsection", rp_details("All windows",
+        tags$p(class = "mp-help-text", style = "margin:2px 0 4px;",
+          "One row per window: its best BLAST hit in the bundled rDNA database, the hit identity, and the read evidence over that stretch."),
+        reactable::reactableOutput("chimera_windows"), open = FALSE))))
 }
 
 #' Assemble details modal: scaffolds, their evidence, and keep/drop
@@ -122,11 +175,12 @@ assemble_modal <- function(id) {
   modalDialog(
     title = div(class = "mp-sticky-head", paste0("Assemble - ", id)),
     size = "l", easyClose = TRUE,
-    footer = div(class = "mp-sticky-foot", rp_sample_nav("assemble"), mp_footer(dismiss = "Close")),
+    footer = div(class = "mp-sticky-foot", rp_sample_nav(), mp_footer(dismiss = "Close")),
     modal_taxon_header(id),
+    failure_banner(id),
     h5("Scaffolds", style = "margin:2px 0 4px;"),
     tags$p(class = "mp-help-text", style = "margin-bottom:4px;",
-      paste("Click on a scaffold row to examine GenBank evidence and coverage below")),
+      "Click a scaffold row to see its BLAST evidence, read coverage, and chimera check below."),
     reactable::reactableOutput("assemble_scaffolds"),
     div(style = "margin-top:6px;",
       actionButton("copy_fasta", "Copy FASTA", icon = icon("clipboard"), class = "btn-sm"),
@@ -141,14 +195,14 @@ assemble_modal <- function(id) {
     # All start collapsed, and collapse again when another scaffold is picked
     # (examine_unit), so the modal opens short for every scaffold.
     div(id = "asm_unit_panels",
-      rp_details(tagList("GenBank evidence for ", textOutput("hl_scaf_ev", inline = TRUE)), open = FALSE,
+      rp_details(tagList("BLAST evidence for ", textOutput("hl_scaf_ev", inline = TRUE)), open = FALSE,
         uiOutput("unit_screen"),
         div(style = "margin-top:8px; color:#555;",
           "Best matches among records whose title says nuclear rDNA:"),
         reactable::reactableOutput("unit_candidates")),
 
-      rp_details(tagList("Read coverage for ", textOutput("hl_scaf_cov", inline = TRUE)), open = FALSE,
-        plotOutput("unit_coverage_plot", height = "140px")),
+      seqview_ui("seqv_asm", tagList("Sequence and read coverage for ", textOutput("hl_scaf_cov", inline = TRUE)),
+        open = FALSE, pick = FALSE),
 
       rp_details(tagList("Chimera check for ", textOutput("hl_scaf_chim", inline = TRUE)), open = FALSE,
         chimera_panel())),
@@ -156,7 +210,14 @@ assemble_modal <- function(id) {
     # Only a supplied assembly has these: the contigs the rDNA search found but
     # did not carry forward. They never become assembly units, so this is the
     # one place they are visible at all.
-    rejected_contigs_section(id)
+    rejected_contigs_section(id),
+
+    rp_details("Notes", open = FALSE,
+      textAreaInput("assemble_user_notes", label = NULL, width = "100%",
+        value = app_query("SELECT user_notes FROM assemble WHERE ID = ?", params = list(id))$user_notes[1] %|NA|% "",
+        placeholder = "Notes for this sample"),
+      tags$p(class = "mp-help-text", "Saved as you type. Deleting the text does not clear the stored note; use Clear notes."),
+      actionButton("assemble_user_notes_clear", "Clear notes", class = "btn-sm"))
   )
 }
 
@@ -188,31 +249,6 @@ rejected_contigs_section <- function(id) {
         `Why it was left out` = reactable::colDef(minWidth = 200))))
 }
 
-#' Warn that locking would leave a sample with two locked assembly paths
-#'
-#' A corner-of-the-screen notification was too easy to miss for something that
-#' silently does nothing, so this blocks until the reviewer answers. Locking two
-#' paths is unusual rather than impossible -- alternative resolutions of the same
-#' repeat are normally competing answers, not both right -- so "Lock anyway"
-#' stays available.
-#' @param ids Sample IDs that would end up with more than one locked path.
-#' @noRd
-multi_path_lock_modal <- function(ids) {
-  modalDialog(
-    title = mp_modal_title("More than one assembly path would be locked"),
-    size = "m", easyClose = FALSE,
-    div(style = "font-size:1.02em; line-height:1.5;",
-      tags$p(paste("Paths are competing reconstructions of the same rDNA repeat, so a",
-        "sample normally carries one locked path. This would leave more than one",
-        "locked for:")),
-      tags$p(style = "font-weight:600; margin:6px 0;", paste(ids, collapse = ", ")),
-      tags$p(style = "color:#666;",
-        paste("Unlock the other path first, or proceed if you mean to keep both",
-          "(both will be annotated and exported)."))),
-    footer = mp_footer(danger = actionButton("lock_anyway", "Lock anyway"))
-  )
-}
-
 #' Warn that exporting will replace an export folder that already exists
 #'
 #' The group folder is rebuilt from scratch on every export, so a previous
@@ -232,6 +268,53 @@ export_overwrite_modal <- function(dir, n) {
     footer = mp_footer(dismiss = NULL,
       extra = actionButton("export_overwrite_back", "Cancel"),
       danger = actionButton("export_overwrite_go", "Replace it"))
+  )
+}
+
+#' Plain words for the tags of submission_risk strings, one string per record
+#' @noRd
+risk_reasons <- function(risk) {
+  vapply(risk, function(r) {
+    r <- r %|NA|% ""
+    arg <- function(tag) regmatches(r, regexec(paste0(tag, "\\(([^)]*)\\)"), r))[[1]][2]
+    tx <- arg("off_target")
+    nm <- arg("taxon_differs")
+    paste(c(if (!is.na(tx)) sprintf("BLAST hits agree on %s", tx),
+      if (grepl("(^|;)contaminant(;|$)", r)) "the best BLAST hit is from another phylum",
+      if (grepl("(^|;)chimeric\\(ITSx\\)", r)) "ITSx, the tool NCBI runs on submissions, calls it chimeric"
+      else if (grepl("(^|;)chimeric", r)) "parts of the scaffold match organisms from different phyla or kingdoms",
+      if (grepl("(^|;)gap_in_rDNA", r)) "an assembly gap inside the rDNA",
+      if (grepl("(^|;)misassembly", r)) "features overlap or are out of order",
+      if (!is.na(nm)) sprintf("your Taxon differs from %s", nm),
+      if (grepl("(^|;)missing_organism", r)) "no organism name"),
+      collapse = "; ")
+  }, character(1), USE.NAMES = FALSE)
+}
+
+#' Ask before exporting units the contamination checks flagged
+#'
+#' `flagged` is rows of `export_summary_df()` whose submission_risk carries an
+#' off_target or contaminant tag and that no curator has marked Reviewed.
+#' @noRd
+export_screen_modal <- function(flagged) {
+  why <- risk_reasons(flagged$submission_risk)
+  items <- lapply(seq_len(nrow(flagged)), function(i) tags$li(
+    tags$b(sprintf("%s p%s.s%s", flagged$ID[i], flagged$path[i], flagged$scaffold[i])),
+    sprintf(" (%s): %s.", flagged$organism[i] %|NA|% "no Taxon", why[i])))
+  modalDialog(
+    title = mp_modal_title("Possible contamination or chimera"),
+    size = "m", easyClose = FALSE,
+    div(style = "font-size:1.02em; line-height:1.5;",
+      tags$p(sprintf("%s in this group may contain another organism's rDNA, exported under the sample's name:",
+        mp_n(nrow(flagged), "unit"))),
+      tags$ul(items),
+      tags$p(style = "color:#666;",
+        "Leave them out unless you have checked them. Marking a unit Reviewed in",
+        "Annotation Review means it will not be asked about again.")),
+    footer = mp_footer(dismiss = NULL,
+      extra = actionButton("export_screen_back", "Cancel"),
+      danger = actionButton("export_screen_keep", "Export anyway"),
+      primary = actionButton("export_screen_skip", "Leave them out"))
   )
 }
 
@@ -257,7 +340,7 @@ triage_rule_control <- function(def, current) {
 #' so it always shows what it would do first, per rule, including how many
 #' samples would end up with NOTHING kept. Never applied without the counts.
 #' @param n_samples Number of samples the action would cover.
-#' @param actions Named list key -> action, from [triage_opts_for()].
+#' @param actions Named list key -> action, from `triage_opts_for()`.
 #' @noRd
 triage_modal <- function(n_samples, actions = triage_actions_default()) {
   rows <- lapply(TRIAGE_RULE_DEFS, function(def) {
@@ -277,7 +360,8 @@ triage_modal <- function(n_samples, actions = triage_actions_default()) {
       paste("Proposes keep / drop / undecided per scaffold from the evidence already",
         "in the database. Depth is shown in the scaffold table but never decides:",
         "high depth is often k-mer collapse across the conserved core or IGS",
-        "subrepeats, and low depth is often isomer paths splitting reads.")),
+        "subrepeats, and low depth is often a repeat inside the scaffold, where reads",
+        "map to two places and are left out.")),
     tags$table(style = "width:100%; font-size:0.9em;",
       tags$thead(tags$tr(
         tags$th(style = "text-align:left;", "Rule"),
@@ -322,10 +406,15 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
   # identical() value to sel_unit, which does not invalidate the reactiveVal, so
   # the server-side reset observer never fires; a value-less textAreaInput then
   # reports "" and the write observer persists it over the stored note.
-  notes <- tryCatch(app_query(
-    "SELECT annotate_notes FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?",
-    params = list(id, as.integer(path), as.integer(scaffold)))$annotate_notes[1],
-    error = function(e) NA_character_)
+  row <- tryCatch(app_query(
+    "SELECT annotate_notes, annotate_lock FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(id, as.integer(path), as.integer(scaffold))),
+    error = function(e) data.frame())
+  notes <- if (nrow(row)) row$annotate_notes[1] else NA_character_
+  # A locked unit is read only here, as in MitoPilot's details window; the
+  # server refuses the same edits (lock_blocked() in app_server.R).
+  locked <- isTRUE(row$annotate_lock[1] == 1)
+  off <- function(x) if (locked) shinyjs::disabled(x) else x
   modalDialog(
     # Flags sit in the pinned header beside the badges they mirror, as in
     # MitoPilot, so they stay in reach while the body scrolls.
@@ -336,27 +425,31 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
         uiOutput("modal_status_toggles", inline = TRUE, style = "display: contents;"))),
     size = "l", easyClose = FALSE,
     # Close is a server button so unsaved boundary edits can stop it.
-    footer = div(class = "mp-sticky-foot", rp_sample_nav("annotate"), mp_footer(
-      primary = actionButton("lock_and_close", "Lock & Close"), dismiss = NULL,
-      extra = actionButton("annotate_close", "Close"))),
+    footer = div(class = "mp-sticky-foot", rp_sample_nav(), if (locked) {
+      mp_footer(primary = actionButton("annotate_close", "Close"), dismiss = NULL)
+    } else {
+      mp_footer(primary = actionButton("lock_and_close", "Lock & Close"), dismiss = NULL,
+        extra = tagList(actionButton("annotate_close", "Close"), actionButton("modal_lock", "Lock")))
+    }),
     modal_taxon_header(id),
+    if (locked) div(class = "alert alert-warning", role = "status", icon("lock"), " ", MP_UNIT_LOCKED),
     # ---- gene list (drives the active feature for the editor + alignment) ----
     h5("Feature model", style = "margin:2px 0 4px;"),
     tags$p(class = "mp-help-text", style = "margin-bottom:4px;",
       "Click a feature to make it active for editing + reference alignment below."),
     reactable::reactableOutput("feature_tbl"),
     div(style = "margin:6px 0; display:flex; gap:6px;",
-      actionButton("trim_btn", "Trim assembly...", icon = icon("scissors"), class = "btn-sm"),
-      actionButton("restore_btn", "Restore assembly", icon = icon("rotate-left"), class = "btn-sm")),
+      off(actionButton("trim_btn", "Trim assembly...", icon = icon("scissors"), class = "btn-sm")),
+      off(actionButton("restore_btn", "Restore assembly", icon = icon("rotate-left"), class = "btn-sm"))),
     tags$hr(style = "margin:10px 0;"),
 
     # ---- collapsible detail panels ----
     # Coverage, boundary editing, and the alignment are the review itself, so
     # they open by default; the Assemble window opens short because its panels
     # are per-scaffold evidence the reviewer picks through.
-    rp_details("Read coverage", plotOutput("coverage_plot", height = "130px")),
+    seqview_ui("seqv_ann", "Sequence and read coverage"),
 
-    rp_details("Edit active feature boundaries",
+    rp_details("Edit active feature boundaries", open = FALSE,
       # normalize control heights so the step box, +/- buttons, and Save/Reset
       # sit on one baseline
       tags$style(HTML(paste0(
@@ -368,8 +461,8 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
         div(style = "align-self:flex-end; padding-bottom:6px; font-weight:bold;",
           textOutput("feat_edit_active", inline = TRUE)),
         div(style = "align-self:flex-end; padding-bottom:6px;",
-          shinyWidgets::prettyCheckbox("feat_edit", "Edit", value = FALSE,
-            status = "primary", inline = TRUE)),
+          off(shinyWidgets::prettyCheckbox("feat_edit", "Edit", value = FALSE,
+            status = "primary", inline = TRUE))),
         shinyjs::hidden(div(id = "feat_edit_ctrls",
           style = "display:flex; flex-flow:row wrap; gap:1.2em; align-items:flex-end;",
           div(class = "rp-step-box", style = "width:70px;",
@@ -380,16 +473,18 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
           div(tags$label("3' end", class = "control-label"),
             div(style = "display:flex; gap:4px;", nt_nudge("nt_3_in", "-", "Trim 3' end"),
               nt_nudge("nt_3_out", "+", "Extend 3' end"))),
+          uiOutput("partial_ctrls"),
           div(style = "display:flex; gap:6px; align-items:flex-end;",
             actionButton("feat_save", "Save", icon = icon("floppy-disk"), class = "btn-sm btn-success"),
             actionButton("feat_reset", "Reset", icon = icon("rotate-left"), class = "btn-sm"))))
       ),
       tags$p(class = "mp-help-text", style = "margin-top:4px;",
-        "Check Edit to adjust boundaries; + extends outward, - trims inward. Save to keep, Reset to discard."),
+        paste("Check Edit to adjust boundaries; + extends outward, - trims inward.",
+          "Partial 5' and 3' show whether an end is partial and set it by hand. Save to keep, Reset to discard.")),
       div(class = "code-block", style = "margin-top:6px; white-space:normal; word-break:break-all;",
         uiOutput("nudge_seq"))),
 
-    rp_details("Reference alignment (active feature)",
+    rp_details("Reference alignment (active feature)", open = FALSE,
       uiOutput("msa_header"),
       uiOutput("feat_align_ui")),
 
@@ -400,11 +495,11 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
     rp_details("Chimera check", open = FALSE, chimera_panel()),
 
     rp_details("Notes", open = FALSE,
-      textAreaInput("annotate_notes", label = NULL, width = "100%",
+      off(textAreaInput("annotate_notes", label = NULL, width = "100%",
         value = (notes %||% NA_character_) %|NA|% "",
-        placeholder = "Notes for this annotation unit"),
+        placeholder = "Notes for this annotation unit")),
       tags$p(class = "mp-help-text", "Saved as you type. Deleting the text does not clear the stored note; use Clear notes."),
-      actionButton("annotate_notes_clear", "Clear notes", class = "btn-sm"))
+      off(actionButton("annotate_notes_clear", "Clear notes", class = "btn-sm")))
   )
 }
 
@@ -431,9 +526,9 @@ run_modal <- function(n, headless = FALSE, sched = NULL, script = "") {
       h5("Submit to cluster", style = "margin:6px 0 4px;"),
       tags$p(class = "mp-help-text", style = "margin-bottom:4px;",
         if (is.null(sched)) {
-          "No scheduler (sbatch/qsub/bsub) found on PATH. Save the script and submit it yourself; running from the login node is discouraged."
+          "No scheduler (sbatch, qsub, or bsub) found on PATH. Save the script and submit it from a machine that has one, or reopen the app with headless = FALSE to run here."
         } else {
-          sprintf("%s detected. Edit the job script if needed, then Submit as job (or Save script).", sched$name)
+          sprintf("%s found. Check the queue or partition, account, and walltime in the script, then Submit as job (or Save script). The job log goes to logs/ and the Nextflow log to nextflow_logs/ in the project folder. This window does not follow the job: use the reload button above the table to see new results.", sched$name)
         }),
       tags$textarea(id = "submit_script_text", rows = 11,
         style = "width:100%; font-family:monospace; font-size:0.78em;", script))
@@ -460,7 +555,7 @@ run_modal <- function(n, headless = FALSE, sched = NULL, script = "") {
         actionButton("nf_close", "Close")))
   }
   modalDialog(
-    title = run_modal_title(sprintf("%s - %d sample(s) to update", wf, n), "rp_gears"),
+    title = run_modal_title(sprintf("%s - %d sample(s) or unit(s) to update", wf, n), "rp_gears"),
     size = "l",
     shinyWidgets::prettyCheckbox("nf_resume", "Resume previous run?", value = TRUE,
       status = "primary", inline = TRUE),
@@ -474,7 +569,7 @@ run_modal <- function(n, headless = FALSE, sched = NULL, script = "") {
 
 #' Reference build modal: run the reference workflow with live progress
 #'
-#' The same shape as [run_modal()] so a database build looks like any other
+#' The same shape as `run_modal()` so a database build looks like any other
 #' RiboPilot run: command preview, progress board, Run / Stop / Close, and the
 #' cluster-submit section when the app is served headless.
 #' @param api_key Key to prefill; the project's own key, not just the env var.
@@ -487,9 +582,9 @@ reference_run_modal <- function(n, ref_dir, headless = FALSE, sched = NULL, scri
       h5("Submit to cluster", style = "margin:6px 0 4px;"),
       tags$p(class = "mp-help-text", style = "margin-bottom:4px;",
         if (is.null(sched)) {
-          "No scheduler (sbatch/qsub/bsub) found on PATH. Save the script and submit it yourself; running from the login node is discouraged."
+          "No scheduler (sbatch, qsub, or bsub) found on PATH. Save the script and submit it from a machine that has one, or reopen the app with headless = FALSE to run here."
         } else {
-          sprintf("%s detected. Edit the job script if needed, then Submit as job (or Save script).", sched$name)
+          sprintf("%s found. Check the queue or partition, account, and walltime in the script, then Submit as job (or Save script). The job log goes to logs/ and the Nextflow log to nextflow_logs/ in the project folder. This window does not follow the job: use the reload button above the table to see new results.", sched$name)
         }),
       tags$textarea(id = "ref_submit_script_text", rows = 11,
         style = "width:100%; font-family:monospace; font-size:0.78em;", script))
@@ -569,12 +664,46 @@ trim_modal <- function(n, a_from, a_to) {
   )
 }
 
+#' Batch Trim / Restore window; the count and skipped list render into
+#' `batch_trim_summary` (see [batch_trim_summary()]).
+#' @param restore TRUE for the Restore window.
+#' @noRd
+batch_trim_modal <- function(restore = FALSE) {
+  modalDialog(
+    title = if (restore) "Restore trimmed units" else "Trim units", easyClose = TRUE,
+    if (!restore) tagList(
+      shinyWidgets::prettyRadioButtons("batch_trim_mode", "Trim to:",
+        choices = c("Match gene ends" = "annotated", "Gene ends + flank" = "flank"),
+        selected = "annotated", status = "primary", inline = TRUE),
+      conditionalPanel("input.batch_trim_mode == 'flank'",
+        numericInput("batch_trim_flank", "Flank (bp)", value = 100, min = 1, step = 50))),
+    uiOutput("batch_trim_summary"),
+    footer = mp_footer(danger = actionButton("batch_trim_go", if (restore) "Restore" else "Trim",
+      icon = icon(if (restore) "rotate-left" else "scissors")))
+  )
+}
+
+#' How many units a batch Trim / Restore acts on, and a scrolling list of the rest
+#' @param p [batch_trim_plan()] result. @param restore TRUE for Restore.
+#' @noRd
+batch_trim_summary <- function(p, restore = FALSE) {
+  ok <- sum(is.na(p$reason)); bad <- p[!is.na(p$reason), , drop = FALSE]
+  tagList(
+    tags$p(paste0(mp_n(ok, "unit"), if (ok == 1) " is" else " are",
+      if (restore) " restored to full length and re-curated." else " trimmed and re-curated.")),
+    if (nrow(bad)) tagList(
+      tags$p(style = "margin:8px 0 4px;", paste0("Skipped (", nrow(bad), "):")),
+      div(style ="max-height:200px; overflow-y:auto; border:1px solid #ddd; padding:4px 8px; font-size:0.9em;",
+        lapply(sprintf("%s p%s s%s: %s", bad$ID, bad$path, bad$scaffold, bad$reason), div))))
+}
+
 #' Assign-export-group modal: name the group for the selected samples
 #' @noRd
 group_modal <- function() {
   modalDialog(
     title = "Assign export group", size = "s", easyClose = TRUE,
-    textInput("group_name", "Group name", placeholder = "e.g. batch_2026_01"),
+    textInput("group_name", "Group name",
+      placeholder = "letters, digits, dot, dash, underscore; e.g. batch_2026_01"),
     footer = mp_footer(primary = actionButton("assign_group_go", "Assign"))
   )
 }
@@ -619,10 +748,14 @@ export_modal <- function(groups, templates = "default", template = "default",
         tags$code("ID_p<path>_s<scaffold>"), " when one sample exports more than ",
         "one record. Columns from your mapping file work here even when the ",
         "table does not show them.", nested = TRUE),
-      opts_help(tags$b("isolate"), " is filled by RiboPilot: records of a sample ",
-        "that exports more than one unit get ", tags$code("[isolate=ID_p<path>_s<scaffold>]"),
-        " appended, because GenBank rejects several sequences with the same ID and ",
-        "voucher. Leave it out of the template.", nested = TRUE),
+      opts_help(tags$code("{organism}"), " is the name set in the Taxonomy step when ",
+        "your Taxon matched it exactly or you picked a species there; otherwise it is ",
+        "your Taxon, so a label like \"Upeneus sp. A\" is kept. ", tags$code("{Taxon}"),
+        " and ", tags$code("{sci_name}"), " give either name on its own.", nested = TRUE),
+      opts_help(tags$b("isolate"), ": each record of a sample that exports more than one ",
+        "scaffold gets ", tags$code("[isolate=ID_p<path>_s<scaffold>]"), " added, so all of ",
+        "them can go into one GenBank submission. Your own ", tags$code("[isolate=...]"),
+        " works only in a group where every sample exports one record.", nested = TRUE),
       tags$p(tags$b("Your columns: "), if (length(yours)) paste(yours, collapse = ", ") else "none"),
       tags$p(tags$b("RiboPilot columns: "), if (length(ours)) paste(ours, collapse = ", ") else "none")),
     mp_checkbox("export_markers", "Per-marker FASTA files", value = TRUE),
@@ -646,16 +779,22 @@ export_modal <- function(groups, templates = "default", template = "default",
 
 #' One-paragraph verdict for the export-complete dialog
 #'
-#' Reads the summary attached to [export_bundle()]'s return value and says how
-#' many records the ITSx check and the submission-risk gate flagged, so a
-#' curator sees it before opening the CSV.
-#' @param smry data.frame from [export_summary_df()] (possibly with `itsx_check`).
+#' Reads the summary attached to [export_bundle()]'s return value; names the
+#' records the submission-risk gate flagged, and why, and says how many the
+#' ITSx check flagged, so a curator sees it before opening the CSV.
+#' @param smry data.frame from `export_summary_df()` (possibly with `itsx_check`).
 #' @noRd
 export_check_summary_ui <- function(smry) {
   if (is.null(smry) || nrow(smry) == 0) return(NULL)
   n <- nrow(smry)
-  risk <- sum(nzchar(smry$submission_risk %||% ""))
+  risky <- nzchar(smry$submission_risk %||% "")
   lines <- list()
+  if (any(risky)) {
+    lines[[1]] <- tags$p(class = "mp-fg-warning", style = "font-weight:bold;",
+      sprintf("Submission-risk flags on %d of %d record(s): %s. See the submission_risk column in the summary CSV.",
+        sum(risky), n, mp_id_list(sprintf("%s (%s)", smry$seqid[risky],
+          risk_reasons(smry$submission_risk[risky])), max = 10)))
+  }
   if (!is.null(smry$itsx_check)) {
     not_run <- startsWith(smry$itsx_check, "not_run(")
     if (all(not_run)) {
@@ -664,7 +803,7 @@ export_check_summary_ui <- function(smry) {
     } else {
       flagged <- sum(nzchar(smry$itsx_check) & !not_run)
       lines[[length(lines) + 1]] <- if (flagged == 0) {
-        tags$p(class = "mp-fg-success", HTML("&#10003; "),
+        tags$p(class = if (!any(risky)) "mp-fg-success", if (!any(risky)) HTML("&#10003; "),
           sprintf("Final ITSx check: nothing flagged on %d record(s).", n))
       } else {
         tags$p(class = "mp-fg-warning", style = "font-weight:bold;",
@@ -673,16 +812,12 @@ export_check_summary_ui <- function(smry) {
       }
     }
   }
-  if (risk > 0) {
-    lines[[length(lines) + 1]] <- tags$p(class = "mp-fg-warning",
-      sprintf("Submission-risk flags on %d record(s) (submission_risk column).", risk))
-  }
   if (length(lines) == 0) return(NULL)
   do.call(tagList, lines)
 }
 
 #' Coloured one-line verdict for a header template
-#' @param chk result of [validate_fasta_header()].
+#' @param chk result of `validate_fasta_header()`.
 #' @noRd
 header_status_ui <- function(chk) {
   if (is.null(chk)) return(NULL)
@@ -719,8 +854,6 @@ tint_colors <- function(cols, f = 0.80) {
   stats::setNames(grDevices::rgb(m[1, ], m[2, ], m[3, ], maxColorValue = 255), names(cols))
 }
 
-#' Read-coverage track for one assembly unit, with feature regions shaded
-#' @noRd
 #' Pad a plot's left gutter (y title, axis text, strips) to a fixed width so
 #' plots stacked in a modal share one x axis. Returns a gtable; draw it with
 #' grid::grid.draw().
@@ -733,6 +866,8 @@ fixed_gutter <- function(g, left_cm = 3.2) {
   gt
 }
 
+#' Read-coverage track for one assembly unit, with feature regions shaded
+#' @noRd
 plot_coverage <- function(id, path = 1L, scaffold = 1L) {
   if (is.null(id)) {
     return(NULL)
@@ -751,7 +886,7 @@ plot_coverage <- function(id, path = 1L, scaffold = 1L) {
       ggplot2::annotate("text", 0, 0, label = msg) +
       ggplot2::theme_void())
   }
-  dep <- as.numeric(strsplit(cov$depths[1], ",")[[1]])
+  dep <- parse_depths(cov$depths)
   df <- data.frame(pos = seq_along(dep), depth = dep)
   feats <- app_query("SELECT element, start, stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
     params = list(id, path, scaffold))
@@ -789,7 +924,7 @@ plot_coverage <- function(id, path = 1L, scaffold = 1L) {
 
 #' Coverage + annotation plot for the trim modal, with the kept window marked
 #'
-#' Reuses [plot_coverage()] and overlays the trim window: the flanks that would
+#' Reuses `plot_coverage()` and overlays the trim window: the flanks that would
 #' be cut are greyed out and the two boundaries drawn as dashed lines.
 #' @noRd
 plot_trim <- function(id, path = 1L, scaffold = 1L, from = NA, to = NA) {
@@ -821,7 +956,7 @@ CHIMERA_SEG_ALPHA <- 0.6  # shared by the lineage bar and the table row fills
 #' @noRd
 chimera_seg_colors <- function(seg, sample_lt) {
   seg_lt <- if (!is.null(seg$lineage_taxids)) seg$lineage_taxids else rep(NA_character_, nrow(seg))
-  nohit <- seg$taxon %in% c("nohit", "high_id", "low_id")
+  nohit <- seg$taxon %in% c("nohit", "unresolved", "high_id", "low_id")
   host <- !is.na(sample_lt) & vapply(seg_lt, function(x)
     !is.na(x) && rank_distance(x, sample_lt) < 5, logical(1))
   other <- unique(seg$taxon[!host & !nohit])
@@ -829,21 +964,57 @@ chimera_seg_colors <- function(seg, sample_lt) {
   ifelse(nohit, "#FFFFFF", ifelse(host, "#B3B3B3", pal[seg$taxon]))
 }
 
-#' Lineage segments, window identity, and junctions under the depth track
+#' The chimera call for one unit, in words
 #' @noRd
+chimera_result_text <- function(label, reason) {
+  has <- !is.na(reason) && nzchar(reason)
+  tone <- switch(label, clean = "success", severe = "danger", "warning")
+  tags$span(title = if (has) reason, "Chimera call: ",
+    tags$span(class = paste0("mp-pill mp-pill-", tone), label), if (has) tags$span(
+    class = "mp-help-text", style = "font-weight:normal;", " (hover for the full reason)"))
+}
+
+#' A unit's chimera check as first run: before its first trim, in untrimmed
+#' coordinates, with the current genes moved to match and the kept span
+#' @param q Query function (sql, params).
+#' @noRd
+chimera_original <- function(q, id, path, scaffold) {
+  ch <- q("SELECT label, junctions, segments, channels FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", list(id, path, scaffold))
+  win <- q("SELECT start, stop, pident, lineage FROM chimera_windows WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start", list(id, path, scaffold))
+  feats <- q("SELECT element, start, stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?", list(id, path, scaffold))
+  n <- q("SELECT length FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?", list(id, path, scaffold))$length
+  # a trimmed unit shows the check from before its first trim, in untrimmed coordinates
+  kept <- NULL
+  bak <- tryCatch(q("SELECT b.sequence bak, b.length, b.chimera, a.sequence cur FROM assembly_backup b
+    JOIN assemblies a ON a.ID = b.ID AND a.path = b.path AND a.scaffold = b.scaffold
+    WHERE b.ID = ? AND b.path = ? AND b.scaffold = ?", list(id, path, scaffold)), error = function(e) data.frame())
+  if (nrow(bak) && !is.na(bak$bak[1]) && !is.na(bak$cur[1])) {
+    off <- as.integer(regexpr(bak$cur[1], bak$bak[1], fixed = TRUE)) - 1L
+    if (off >= 0L && nchar(bak$cur[1]) < bak$length[1]) {
+      kept <- c(off, off + nchar(bak$cur[1]))
+      feats$start <- feats$start + off; feats$stop <- feats$stop + off
+      n <- bak$length[1]
+      if (!is.na(bak$chimera[1])) {
+        s <- jsonlite::fromJSON(bak$chimera[1])
+        ch <- s$chimera
+        win <- if (is.data.frame(s$windows)) s$windows[order(s$windows$start), ] else win[0, ]
+      }
+    }
+  }
+  list(ch = ch, win = win, feats = feats, n = n, kept = kept)
+}
+
 plot_chimera <- function(id, path = 1L, scaffold = 1L, db = NULL) {
   q <- if (is.null(db)) app_query else {
     con <- open_project_db(db); on.exit(DBI::dbDisconnect(con))
     function(sql, params = NULL) DBI::dbGetQuery(con, sql, params = params)
   }
   empty <- function(msg) ggplot2::ggplot() + ggplot2::annotate("text", 0, 0, label = msg) + ggplot2::theme_void()
-  ch <- q("SELECT label, junctions, segments, channels FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", list(id, path, scaffold))
-  if (nrow(ch) == 0) return(empty("no chimera check yet (run the pipeline from Assemble > Update)"))
+  o <- chimera_original(q, id, path, scaffold)
+  ch <- o$ch; win <- o$win; feats <- o$feats; n <- o$n; kept <- o$kept
+  if (NROW(ch) == 0) return(empty("no chimera check yet (run the pipeline from Assemble > Update)"))
   seg <- if (!is.na(ch$segments[1])) jsonlite::fromJSON(ch$segments[1]) else data.frame()
-  win <- q("SELECT start, stop, pident, lineage FROM chimera_windows WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start", list(id, path, scaffold))
-  feats <- q("SELECT element, start, stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?", list(id, path, scaffold))
   junc <- if (nzchar(ch$junctions[1] %|NA|% "")) as.integer(strsplit(ch$junctions[1], ",")[[1]]) else integer(0)
-  n <- q("SELECT length FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?", list(id, path, scaffold))$length
   xmax <- max(c(n, feats$stop, win$stop, seg$stop, 1), na.rm = TRUE)
   # one facet per row; the two bar rows span 0..12 so facet heights come out
   # roughly 1:1:3 against the 68..102 identity panel
@@ -879,11 +1050,22 @@ plot_chimera <- function(id, path = 1L, scaffold = 1L, db = NULL) {
       ggplot2::geom_point(data = fr(win, "ident"), ggplot2::aes(x = (start + stop) / 2, y = y),
         shape = 21, size = 3, fill = win$col, colour = ifelse(win$nohit, "grey60", "grey30"))
   }
+  sev <- identical(ch$label[1], "severe")
+  jcol <- if (sev) "#c0392b" else "#b9770e"
   if (length(junc)) g <- g +
-    ggplot2::geom_vline(xintercept = junc, colour = "#c0392b", linetype = "dashed", linewidth = 0.7) +
+    ggplot2::geom_vline(xintercept = junc, colour = jcol, linetype = "dashed", linewidth = 0.7) +
     ggplot2::geom_label(data = fr(data.frame(x = junc, y = 12), "genes"), ggplot2::aes(x = x, y = y),
-      label = sprintf("suspected chimera\njunction at %d bp", junc), vjust = 0, size = 3.8, lineheight = 0.9,
-      colour = "#c0392b", fill = "white", linewidth = 0)
+      label = sprintf("%s\njunction at %d bp", if (sev) "chimera" else "possible", junc), vjust = 0,
+      size = 3.8, lineheight = 0.9, colour = jcol, fill = "white", linewidth = 0)
+  if (!is.null(kept)) {
+    cuts <- c(if (kept[1] > 0) kept[1], if (kept[2] < n) kept[2])
+    g <- g +
+      ggplot2::annotate("rect", xmin = c(0, kept[2]), xmax = c(kept[1], n), ymin = -Inf, ymax = Inf,
+        fill = "#5b5b5b", alpha = 0.32) +
+      ggplot2::geom_vline(xintercept = cuts, linetype = "dashed", colour = "#111111", linewidth = 0.7) +
+      ggplot2::geom_text(data = fr(data.frame(x = cuts, y = 12), "genes"), ggplot2::aes(x = x, y = y),
+        label = "trim", vjust = -0.3, size = 3.2, colour = "#111111")
+  }
   g + ggplot2::facet_grid(row ~ ., scales = "free_y", space = "free_y", switch = "y",
       labeller = ggplot2::as_labeller(c(genes = "", lineage = "lineage", ident = "% identity"))) +
     ggplot2::scale_x_continuous(breaks = seq(0, xmax, 1000), minor_breaks = seq(0, xmax, 500), expand = c(0, 0)) +
@@ -900,7 +1082,3 @@ plot_chimera <- function(id, path = 1L, scaffold = 1L, db = NULL) {
       axis.text = ggplot2::element_text(size = 10), panel.spacing.y = grid::unit(3, "pt"),
       plot.margin = ggplot2::margin(36, 6, 6, 6))
 }
-
-#' Synteny map: the sample's annotations over its BLAST reference's
-#' (when the reference has been fetched + annotated), aligned by element color.
-#' @noRd

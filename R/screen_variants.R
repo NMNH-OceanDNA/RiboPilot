@@ -66,7 +66,7 @@ screen_anchor_pid <- function(a, b) {
 #' concatenated, in transcription order, and the pair is comparable only when the
 #' shared span is long enough to mean something and the alignment covers enough of
 #' BOTH sides.
-#' @param pa,pb Named anchor vectors from [screen_anchor_parts()].
+#' @param pa,pb Named anchor vectors from `screen_anchor_parts()`.
 #' @return list(pid, comparable, shared, n_bp, coverage)
 #' @noRd
 screen_anchor_pair <- function(pa, pb, params = SCREEN_PARAMS_DEFAULT) {
@@ -107,7 +107,7 @@ screen_anchor_pair <- function(pa, pb, params = SCREEN_PARAMS_DEFAULT) {
 #' several rDNA copies on the strength of a measurement that was never made.
 #'
 #' @param units data.frame(key, total_length), one row per unit.
-#' @param parts List of named anchor vectors from [screen_anchor_parts()], same
+#' @param parts List of named anchor vectors from `screen_anchor_parts()`, same
 #'   order and length as `units`. An empty entry is not comparable.
 #' @param params The `screen` sublist in force for this sample.
 #' @return data.frame(key, variant_class, variant_group, variant_identity,
@@ -247,7 +247,7 @@ screen_anchor_parts <- function(seq, ann) {
 
 #' All of one unit's anchors as a single string (display and length only)
 #'
-#' NOT used for comparison: see [screen_anchor_pair()], which compares only the
+#' NOT used for comparison: see `screen_anchor_pair()`, which compares only the
 #' elements two units share.
 #' @noRd
 screen_anchor_string <- function(seq, ann) {
@@ -299,8 +299,9 @@ screen_reason_base <- function(reason) {
 #' question the screen already owns, and a unit that has changed verdict has any
 #' stale finding cleared.
 #'
-#' No version guard: the only caller is the per-sample `screen` pipeline process,
-#' once per run, and identical anchors short-circuit without aligning.
+#' No version guard: it runs once per sample per run, from the pipeline's triage
+#' step (after annotation) and from [screen_sample()], and identical anchors
+#' short-circuit without aligning.
 #' @param con Open project DB connection.
 #' @param id Sample ID.
 #' @return (invisibly) the number of units given a variant class.

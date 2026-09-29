@@ -27,7 +27,7 @@ ribopilot_ref_dir <- function() {
 #' `conda_env` to put them on PATH.
 #'
 #' This is the CLI entry point for building a database outside the app. The
-#' RiboPilot app's Reference tab builds databases through its own Nextflow
+#' RiboPilot app's Reference step builds databases through its own Nextflow
 #' workflow instead and does not call this function; use it directly for
 #' scripted or headless use, or to build a database ahead of time.
 #'

@@ -22,7 +22,7 @@ HIT_CLASSES <- c("rdna", "other", "uninformative")
 #' phrasing; and anything unrecognised stays "other", as it was before.
 #'
 #' @param title Character vector of defline titles.
-#' @return Character vector of the same length, each one of [HIT_CLASSES].
+#' @return Character vector of the same length, each one of `HIT_CLASSES`.
 #' @noRd
 classify_hit_title <- function(title) {
   t <- as.character(title)
@@ -50,7 +50,7 @@ classify_hit_title <- function(title) {
 #' GenBank accession that [bitscore_weighted_lca()] uses. Uninformative hits are
 #' dropped from the vote rather than counted against rDNA.
 #'
-#' @param hit_class Character vector of [HIT_CLASSES].
+#' @param hit_class Character vector of `HIT_CLASSES`.
 #' @param bitscore Numeric vector, same length.
 #' @return `1L` (nuclear rDNA), `0L` (not), or `NA_integer_` when no hit is
 #'   informative.

@@ -20,7 +20,7 @@ triage_opts preset.}
 (invisibly) the number of units changed.
 }
 \description{
-Skips any unit a human has already decided (`triage_source = 'user'`) and any
+Skips any unit a human has already decided (\code{triage_source = 'user'}) and any
 unit whose annotation is locked, so re-running is safe. If every rule is set
 to "off", this is a complete no-op and writes nothing: see
 dev/design/09_TRIAGE_RULES_AND_DEPTH.md section 3.3 for why that special

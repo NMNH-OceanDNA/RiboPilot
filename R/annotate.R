@@ -4,8 +4,8 @@
 #
 # Split so the tools (barrnap, ITSx) can run as Nextflow processes while R
 # does the parsing + reconciliation: parse_barrnap()/parse_itsx() consume tool
-# output; reconcile_features() combines them; run_barrnap()/run_itsx()/
-# annotate_seq() are the all-in-R convenience path.
+# output; reconcile_features() combines them; run_barrnap()/run_itsx()
+# run the tools from R.
 
 #' Parse barrnap GFF3 text into rRNA gene features
 #'
@@ -94,15 +94,42 @@ itsx_is_chimeric <- function(pos_lines) {
   length(pos_lines) > 0 && any(grepl("Chimeric!", pos_lines, fixed = TRUE))
 }
 
+#' Largest gap (bp) between a gene end and the spacer beside it that still counts
+#' as the two meeting
+#' @noRd
+ITS_SNAP_BP <- 5L
+
 #' Reconcile barrnap + ITSx features into a gap-free 5'->3' model
 #'
 #' barrnap is authoritative for 18S/28S extent; ITSx for ITS1/5.8S/ITS2. Missing
 #' spacers are derived by subtraction between adjacent anchors.
-#' @param bar,its data.frames from [parse_barrnap()] / [parse_itsx()].
+#' @param bar,its data.frames from `parse_barrnap()` / `parse_itsx()`.
 #' @return data.frame(element, type, start, stop, length, strand, tool)
 #' @noRd
 reconcile_features <- function(bar, its) {
   pick <- function(df, el) if (!is.null(df) && nrow(df) > 0 && any(df$element == el)) df[df$element == el, ][1, ] else NULL
+  if (is.null(bar)) bar <- data.frame()
+  if (nrow(bar) > 0 && "strand" %in% names(bar)) {
+    st <- table(bar$strand[bar$strand %in% c("+", "-")])
+    if (length(st) == 2 && st[[1]] != st[[2]]) bar <- bar[bar$strand %in% names(which.max(st)), , drop = FALSE]
+  }
+  # 18S and 28S are the copies nearest the ITS region, upstream and downstream
+  core <- if (!is.null(its) && nrow(its) > 0) its[its$element %in% c("ITS1", "5.8S", "ITS2"), , drop = FALSE] else data.frame()
+  if (nrow(core) == 0 && nrow(bar) > 0 && any(bar$element == "5.8S")) {
+    core <- bar[bar$element == "5.8S", , drop = FALSE]
+    core <- core[which.max(core$stop - core$start), ]
+  }
+  hub <- if (nrow(core) > 0) (min(core$start) + max(core$stop)) / 2 else NA_real_
+  near <- function(el, side) {
+    d <- if (nrow(bar) > 0) bar[bar$element == el, , drop = FALSE] else data.frame()
+    if (nrow(d) == 0) return(NULL)
+    if (is.na(hub)) return(d[which.max(d$stop - d$start), ])
+    if (side == "up") d <- d[d$start < hub, , drop = FALSE]
+    if (side == "down") d <- d[d$stop > hub, , drop = FALSE]
+    if (nrow(d) == 0) return(NULL)
+    d[which.min(switch(side, up = hub - d$start, down = d$start - hub,
+      abs((d$start + d$stop) / 2 - hub))), ]
+  }
   feats <- list()
   add <- function(element, start, stop, tool, strand = NA_character_, model_cov = NA_real_) {
     if (is.null(start) || is.null(stop) || is.na(start) || is.na(stop) || stop < start) {
@@ -114,9 +141,9 @@ reconcile_features <- function(bar, its) {
       model_cov = as.numeric(model_cov), tool = tool, stringsAsFactors = FALSE)
   }
 
-  b18 <- pick(bar, "18S"); i18 <- pick(its, "18S")
-  b58 <- pick(bar, "5.8S"); i58 <- pick(its, "5.8S")
-  b28 <- pick(bar, "28S"); i28 <- pick(its, "28S")
+  b18 <- near("18S", "up"); i18 <- pick(its, "18S")
+  b58 <- near("5.8S", "at"); i58 <- pick(its, "5.8S")
+  b28 <- near("28S", "down"); i28 <- pick(its, "28S")
   its1 <- pick(its, "ITS1"); its2 <- pick(its, "ITS2")
 
   s18 <- b18 %||% i18
@@ -179,6 +206,23 @@ reconcile_features <- function(bar, its) {
   out <- clip_spacer(out, "ITS1", "18S", "5.8S")
   out <- clip_spacer(out, "ITS2", "5.8S", "28S")
   out <- out[out$stop >= out$start, , drop = FALSE]
+
+  # A gene end up to 5 bp short of the ITSx spacer beside it is moved to meet
+  # it: ITSx places these boundaries, as it does at NCBI.
+  for (pr in list(c("18S", "ITS1"), c("ITS1", "5.8S"), c("5.8S", "ITS2"), c("ITS2", "28S"))) {
+    li <- which(out$element == pr[1])
+    ri <- which(out$element == pr[2])
+    if (length(li) != 1 || length(ri) != 1) next
+    gap <- out$start[ri] - out$stop[li] - 1L
+    if (gap < 1L || gap > ITS_SNAP_BP) next
+    if (pr[1] %in% RRNA_GENES) {
+      out$stop[li] <- out$start[ri] - 1L
+      out$tool[li] <- paste0(out$tool[li], "+ITSx")
+    } else {
+      out$start[ri] <- out$stop[li] + 1L
+      out$tool[ri] <- paste0(out$tool[ri], "+ITSx")
+    }
+  }
 
   out$length <- out$stop - out$start + 1
   out <- out[order(out$start),
@@ -312,7 +356,7 @@ run_itsx <- function(fasta, cpu = 2, taxon = "all", complement = NULL) {
 #'
 #' pybarrnap is the pipeline default (`annotate_opts.rrna_tool`) and, unlike the
 #' Perl barrnap on some installs, reliably calls eukaryote 18S/5.8S/28S. Both
-#' emit the same GFF3 `Name=` tags, so [parse_barrnap()] handles either.
+#' emit the same GFF3 `Name=` tags, so `parse_barrnap()` handles either.
 #' @return data.frame(element, start, stop, strand) or an empty data.frame.
 #' @noRd
 call_rrna_anchors <- function(fasta, kingdom = "euk") {
@@ -365,14 +409,31 @@ orient_rrna_sense <- function(seq, kingdom = "euk") {
   list(seq = seq, flipped = FALSE)
 }
 
-#' Annotate the nuclear rDNA feature model on a single sequence (all in R)
+#' Rotate a circular rDNA unit so it starts in the IGS
 #'
-#' @param fasta Path to a single-sequence fasta (e.g. a stitched path).
-#' @param cpu CPUs for ITSx.
-#' @return data.frame(element, type, start, stop, length, strand, tool).
+#' Position 1 becomes the middle of the stretch from the end of 28S to the
+#' start of the next 18S. Anchors are called on the unit written twice, so a
+#' gene cut by the current start point is still seen whole once. Returned
+#' unchanged when no plus-strand 28S precedes an 18S.
+#' @param seq Sense-strand sequence of one circular unit.
+#' @param kingdom Anchor-caller kingdom (default "euk").
+#' @return The rotated sequence, same length.
 #' @noRd
-annotate_seq <- function(fasta, cpu = 2) {
-  reconcile_features(run_barrnap(fasta), run_itsx(fasta, cpu = cpu))
+rotate_to_igs <- function(seq, kingdom = "euk") {
+  L <- nchar(seq)
+  fa <- tempfile(fileext = ".fasta")
+  on.exit(unlink(fa), add = TRUE)
+  writeLines(c(">seq", paste0(seq, seq)), fa)
+  bar <- call_rrna_anchors(fa, kingdom = kingdom)
+  if (is.null(bar) || nrow(bar) == 0) return(seq)
+  bar <- bar[bar$strand %in% "+", , drop = FALSE]
+  end28 <- bar$stop[bar$element == "28S"]
+  s18 <- bar[bar$element == "18S" & vapply(bar$start, function(x) any(end28 < x), logical(1)), , drop = FALSE]
+  if (nrow(s18) == 0) return(seq)
+  g <- s18[which.max(s18$stop - s18$start), ]
+  e <- max(end28[end28 < g$start])
+  s <- (e + (g$start - e - 1L) %/% 2L) %% L + 1L
+  if (s == 1L) seq else paste0(substr(seq, s, L), substr(seq, 1L, s - 1L))
 }
 
 #' Sequence ids short enough for ITSx
@@ -430,13 +491,13 @@ reconcile_records <- function(bar, its) {
 #' Annotate every record in a multi-record fasta
 #'
 #' Runs the rRNA anchor caller once over the whole file and ITSx once per strand
-#' group, then reconciles per record. Records longer than [ITSX_MAX_BP] are kept
+#' group, then reconciles per record. Records longer than `ITSX_MAX_BP` are kept
 #' but get anchors only, because ITSx aborts the entire run on an oversized
 #' target rather than skipping it.
 #'
 #' barrnap reports coordinates in the input frame; on a genuinely minus-strand
 #' record those anchors run 28S -> 5.8S -> 18S in ascending position, the
-#' opposite of the ascending order [reconcile_features()]'s spacer-clipping
+#' opposite of the ascending order `reconcile_features()`'s spacer-clipping
 #' assumes. ITSx, run on a reverse-complemented copy of those records, reports
 #' its regions in the frame where the anchors DO ascend. So minus-strand
 #' records are reconciled in that revcomp frame -- barrnap's anchors are

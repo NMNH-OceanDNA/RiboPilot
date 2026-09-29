@@ -28,6 +28,24 @@ test_that("the pipeline is pointed at a package source root, not inst/", {
   # what rp_env.R checks before it will load from source at all
   expect_true(file.exists(file.path(passed, "DESCRIPTION")))
   expect_gt(length(list.files(file.path(passed, "R"), pattern = "\\.[Rr]$")), 0)
+  expect_equal(args[which(args == "--ribopilot_version") + 1],
+    as.character(utils::packageVersion("RiboPilot")))
+})
+
+test_that("an installed package passes no source folder", {
+  skip_if_not_installed("withr")
+  tmp <- withr::local_tempdir()
+  dir.create(file.path(tmp, "lib", "RiboPilot"), recursive = TRUE)
+  file.create(file.path(tmp, "lib", "RiboPilot", "DESCRIPTION"))
+  testthat::local_mocked_bindings(app_sys = function(...) file.path(tmp, "lib", "RiboPilot"),
+    .package = "RiboPilot")
+  expect_equal(RiboPilot:::ribopilot_src_default(), "")
+
+  dir <- withr::local_tempdir()
+  file.create(file.path(dir, ".sqlite"))
+  writeLines(c("params {", "  rawDir = '/data/raw'", "}"), file.path(dir, ".config"))
+  args <- RiboPilot:::nf_command(dir)
+  expect_false("--ribopilot_src" %in% args)
 })
 
 test_that("an installed library directory is not mistaken for a source checkout", {

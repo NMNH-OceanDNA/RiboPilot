@@ -319,7 +319,8 @@ install_ribopilot_db <- function(version = RP_DB_VERSION,
 #'
 #' Written when a run launches so a result can be traced to the database that
 #' produced it. Silent and non-fatal on a project predating the column.
-#' @return (invisibly) the recorded version, or "" when there is nothing to record.
+#' @return (invisibly) the panel's name and release, for example
+#'   "ribopilot_rrna 2026.08.18", or "" when there is nothing to record.
 #' @noRd
 record_blastdb_provenance <- function(con, prefix) {
   prefix <- trimws(prefix %||% "")
@@ -327,17 +328,14 @@ record_blastdb_provenance <- function(con, prefix) {
   m <- read_panel_manifest(dirname(path.expand(prefix)))
   if (is.null(m)) return(invisible(""))
   v <- paste(m$db_name, m$db_version)
-  ok <- tryCatch({
-    DBI::dbExecute(con, "UPDATE reference_config SET blastdb_version = ? WHERE rowid_key = 1",
-      params = list(v))
-    TRUE
-  }, error = function(e) FALSE)
+  tryCatch(DBI::dbExecute(con, "UPDATE reference_config SET blastdb_version = ? WHERE rowid_key = 1",
+    params = list(v)), error = function(e) NULL)
   # The panel usually lives inside the container, where the app cannot read its
   # manifest, so the run writes the display line out for the options modal.
   tryCatch(DBI::dbExecute(con,
     "UPDATE reference_config SET blastdb_info = ? WHERE rowid_key = 1",
     params = list(panel_summary(m))), error = function(e) NULL)
-  invisible(if (ok) as.character(m$db_version) else "")
+  invisible(v)
 }
 
 #' Thousands-separated count, or "" for anything unusable
@@ -405,6 +403,27 @@ config_container_image <- function(cfg_lines) {
   # a "strip a leading quote OR a trailing quote and the rest" pattern ate the
   # whole string
   trimws(sub("^['\"]?([^'\"]*).*$", "\\1", trimws(v)))
+}
+
+#' The project's container tag against the installed RiboPilot
+#'
+#' Pipeline steps run the RiboPilot inside the image, so a project on an older
+#' tag runs older code. Only the official image is compared; a custom image has
+#' no version to compare against.
+#' @param path Project directory containing `.config`.
+#' @return NULL when they match, the image is custom, or `.config` cannot be
+#'   read; else a list with `configured` and `expected`.
+#' @noRd
+container_version_gap <- function(path) {
+  cfg <- file.path(path, ".config")
+  if (!file.exists(cfg)) return(NULL)
+  lines <- tryCatch(readLines(cfg, warn = FALSE), error = function(e) NULL)
+  if (is.null(lines)) return(NULL)
+  configured <- config_container_image(lines)
+  if (!grepl("^macguigand/ribopilot:", configured)) return(NULL)
+  expected <- paste0("macguigand/ribopilot:", utils::packageVersion("RiboPilot"))
+  if (identical(configured, expected)) return(NULL)
+  list(configured = configured, expected = expected)
 }
 
 #' Image reference singularity/apptainer can open for a config's container

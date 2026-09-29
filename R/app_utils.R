@@ -1,29 +1,42 @@
 # Shiny app helpers.
 
+#' A www/ file's URL, tagged with its modification time so browsers fetch it
+#' again after an update instead of reusing a cached copy
+#' @noRd
+www_url <- function(f) {
+  paste0("www/", f, "?v=", as.integer(file.mtime(app_sys("app", "www", f))))
+}
+
 #' Attach external resources (CSS/JS/favicon), mirroring MitoPilot styling
 #' @noRd
 add_external_resources <- function() {
-  golem::add_resource_path("www", app_sys("app", "www"))
+  shiny::addResourcePath("www", app_sys("app", "www"))
   shiny::tags$head(
-    golem::favicon(),
-    golem::bundle_resources(path = app_sys("app", "www"), app_title = "RiboPilot"),
+    shiny::tags$title("RiboPilot"),
+    shiny::tags$link(rel = "shortcut icon", href = "www/favicon.ico"),
+    shiny::tags$link(rel = "stylesheet", href = www_url("custom.css")),
+    shiny::tags$script(src = www_url("custom.js")),
+    shiny::tags$script(src = www_url("seqviewer.js")),
     shinyjs::useShinyjs()
   )
 }
 
 #' Enumerate Nextflow task work directories for one sample
 #'
-#' Parses the project's `.nextflow.log*` files (the app launches Nextflow from
-#' the project dir) for completed-task records, which Nextflow writes for every
-#' attempt (success or failure), each with its own work dir. Mirrors MitoPilot's
-#' work-dir browser.
+#' Parses the project's .nextflow.log* files (runs started from the app) and
+#' nextflow_logs/*.nextflow.log (submitted jobs) for completed-task records,
+#' which Nextflow writes for every attempt (success or failure), each with its
+#' own work dir. Mirrors MitoPilot's work-dir browser.
 #' @noRd
 find_workdirs <- function(project_dir, sample_id) {
   empty <- data.frame(process = character(0), status = character(0),
     modified = character(0), workdir = character(0), exists = logical(0),
     stringsAsFactors = FALSE)
   if (is.null(project_dir) || is.null(sample_id) || !nzchar(sample_id)) return(empty)
-  logs <- list.files(project_dir, pattern = "^\\.nextflow\\.log", full.names = TRUE, all.files = TRUE)
+  logs <- c(
+    list.files(project_dir, pattern = "^\\.nextflow\\.log", full.names = TRUE, all.files = TRUE),
+    list.files(file.path(project_dir, JOB_DIRS$nextflow), pattern = "\\.nextflow\\.log",
+      full.names = TRUE))
   if (length(logs) == 0) return(empty)
   lines <- unlist(lapply(logs, function(f) tryCatch(readLines(f, warn = FALSE), error = function(e) character(0))))
   th <- grep("Task completed > TaskHandler\\[", lines, value = TRUE)
@@ -58,18 +71,19 @@ find_workdirs <- function(project_dir, sample_id) {
 #'
 #' Two different situations, and the desktop assumption is wrong in one of them.
 #' On a desktop session the R process and the user are on the same machine, so
-#' the platform's file manager is the right answer. In an RStudio Server session
-#' (a cluster login node) the R process is on a host the user has no desktop on:
-#' `xdg-open` there reaches nothing, and RStudio Server intercepts it and serves
-#' a URL that 404s. The Files pane is the only file browser that session has in
-#' front of the user, so navigate that instead.
+#' the platform's file manager is the right answer. In an RStudio Server session,
+#' in cluster mode, or when the browser is on another computer, the R process is
+#' on a host the user has no desktop on: `xdg-open` there reaches nothing, and
+#' RStudio Server intercepts it and serves a URL that 404s. The Files pane is
+#' the only file browser that session has in front of the user, so navigate
+#' that instead.
 #'
 #' @return invisibly `TRUE` if a browser was opened, `FALSE` if this session has
 #'   no way to show a directory (the caller then has to say where it is).
 #' @noRd
 open_path <- function(path) {
   if (length(path) != 1 || is.na(path) || !nzchar(path)) return(invisible(FALSE))
-  if (app_headless()) {
+  if (app_headless() || !isTRUE(getOption("RiboPilot.local_browser", TRUE))) {
     return(invisible(rstudio_show_dir(path)))
   }
   cmd <- if (Sys.info()[["sysname"]] == "Darwin") "open" else
@@ -98,10 +112,10 @@ rstudio_show_dir <- function(path) {
   }, error = function(e) FALSE)
 }
 
-#' Active project directory (from golem options, else cwd)
+#' Active project directory (from the app options, else cwd)
 #' @noRd
 app_project <- function() {
-  golem::get_golem_options("project") %||% getwd()
+  shiny::getShinyOption("project") %||% getwd()
 }
 
 #' Open a connection to the project database
@@ -120,6 +134,29 @@ app_query <- function(sql, params = NULL) {
   con <- app_con()
   on.exit(DBI::dbDisconnect(con))
   if (is.null(params)) DBI::dbGetQuery(con, sql) else DBI::dbGetQuery(con, sql, params = params)
+}
+
+#' Run an app database write, reporting a failure instead of ending the session
+#'
+#' An error inside an observer closes the Shiny session, and a write can fail
+#' while a pipeline task holds the project database.
+#' @param expr The write.
+#' @return TRUE when `expr` ran, FALSE after an error alert.
+#' @noRd
+app_write <- function(expr) {
+  tryCatch({
+    expr
+    TRUE
+  }, error = function(e) {
+    busy <- grepl("locked|busy", conditionMessage(e), ignore.case = TRUE)
+    rp_alert(if (busy) {
+      paste("The project database is busy, most likely because a pipeline run is",
+        "writing to it, so this change was not saved. Wait a moment and try again.")
+    } else {
+      paste("This change was not saved:", conditionMessage(e))
+    }, type = "error", title = if (busy) "Database busy" else "Not saved")
+    FALSE
+  })
 }
 
 #' Is the remote GenBank BLAST switched on for this sample?
@@ -151,7 +188,7 @@ blast_enabled <- function(id) {
 #' @param id Sample ID.
 #' @return data.frame with one row per (path, scaffold), ordered path/scaffold,
 #'   including a `uid` key, relative depth, and the sibling-concordance columns
-#'   from [unit_concordance()]. Empty data.frame when the sample has no units.
+#'   from `unit_concordance()`. Empty data.frame when the sample has no units.
 #' @noRd
 unit_evidence <- function(id) {
   if (is.null(id) || !nzchar(id)) {
@@ -165,14 +202,14 @@ unit_evidence <- function(id) {
     "SELECT a.path, a.scaffold, a.length, COALESCE(a.ignore,0) AS ignore,
        a.triage, a.triage_reason, a.triage_source, a.source_contig,
        a.blast_species, a.blast_accession, a.blast_pident, a.blast_qcovs, a.blast_source,
-       ROUND(COALESCE(c.median_depth, c.mean_depth), 1) AS depth,
-       CASE WHEN c.median_depth IS NULL THEN 'mean' ELSE 'median' END AS depth_stat,
+       ROUND(c.median_depth, 1) AS depth,
        ROUND(c.mean_depth, 1) AS depth_mean,
        c.depths AS depths_raw,
        b.species AS screen_species, b.accession AS screen_accession, b.title AS screen_title,
        b.pident AS screen_pident, b.qcovs AS screen_qcovs, b.bitscore AS screen_bitscore,
        b.lineage AS screen_lineage, b.lineage_taxids AS screen_taxids,
        b.rank_distance, b.is_nuclear_rrna,
+       bs.source AS searched_source, bs.db AS searched_db, bs.time_stamp AS searched_at,
        sc.screen_verdict, sc.screen_class, sc.screen_confidence, sc.screen_reason, sc.lca_taxon,
        sc.variant_class, sc.variant_group, sc.variant_identity,
        ROUND(ps.score, 3) AS path_score,
@@ -182,10 +219,14 @@ unit_evidence <- function(id) {
           AND an.scaffold = a.scaffold LIMIT 1) AS itsx_warnings,
        (SELECT GROUP_CONCAT(n.element) FROM
           (SELECT element FROM annotations WHERE ID = a.ID AND path = a.path
-             AND scaffold = a.scaffold ORDER BY start) n) AS elements
+             AND scaffold = a.scaffold ORDER BY start) n) AS elements,
+       (SELECT GROUP_CONCAT(n.element || ': ' || REPLACE(n.flags, ',', ', '), '; ') FROM
+          (SELECT element, flags FROM annotations WHERE ID = a.ID AND path = a.path
+             AND scaffold = a.scaffold AND status = 'flag' ORDER BY start) n) AS element_flags
      FROM assemblies a
      LEFT JOIN coverage c    ON c.ID = a.ID AND c.path = a.path AND c.scaffold = a.scaffold
      LEFT JOIN blast_screen b ON b.ID = a.ID AND b.path = a.path AND b.scaffold = a.scaffold
+     LEFT JOIN blast_searched bs ON bs.ID = a.ID AND bs.path = a.path AND bs.scaffold = a.scaffold
      LEFT JOIN screen sc      ON sc.ID = a.ID AND sc.path = a.path AND sc.scaffold = a.scaffold
      -- scored per path, shown per scaffold: the whole path is the thing scored
      LEFT JOIN path_scores ps ON ps.ID = a.ID AND ps.path = a.path
@@ -203,13 +244,10 @@ unit_evidence <- function(id) {
   # Median per position, not mean: an rDNA scaffold's conserved 18S/28S cores
   # recruit multi-mapping reads that the spacers do not, so a mean is inflated in
   # proportion to how much core the scaffold contains -- which is composition,
-  # not abundance. Pre-v10 rows have no median and fall back to the mean until
-  # backfill_coverage_median() runs; depth_stat records which is in play.
+  # not abundance.
   #
-  # Either way this is a WITHIN-SAMPLE ratio only. coverage.nf maps reads against
-  # all of a sample's scaffolds at once and GetOrganelle paths are near-identical
-  # isomers, so bowtie2 splits multireads across them: comparable within a path,
-  # not across.
+  # Either way this is a WITHIN-SAMPLE ratio only. coverage.nf maps one path at
+  # a time, so depths compare within a path, not across paths.
   mx <- suppressWarnings(max(d$depth, na.rm = TRUE))
   d$depth_max <- if (is.finite(mx) && mx > 0) mx else NA_real_
   d$shares <- rank_distance_label(d$rank_distance)

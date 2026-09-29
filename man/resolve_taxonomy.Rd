@@ -9,17 +9,19 @@ resolve_taxonomy(taxa, taxdump_dir = NULL)
 \arguments{
 \item{taxa}{Character vector of Taxon strings (duplicates de-duplicated).}
 
-\item{taxdump_dir}{Directory of a pinned taxdump (see [ensure_taxdump()]). If
-it contains a taxdump, resolution is local; otherwise network `datasets` is
-used.}
+\item{taxdump_dir}{Directory of a pinned taxdump (see \code{ensure_taxdump()}). If
+it contains a taxdump, resolution is local (an unreadable taxdump is an
+error); otherwise network \code{datasets} is used.}
 }
 \value{
-data.frame, one row per unique Taxon: `match_type` in
-  "exact"/"ambiguous"/"fuzzy_species"/"fuzzy_genus"/"unresolved", plus `taxid`,
-  `sci_name`, `rank`, `lineage`, `alternatives`.
+data.frame, one row per unique Taxon: \code{match_type} in
+"exact"/"ambiguous"/"fuzzy_species"/"fuzzy_genus"/"unresolved", plus \code{taxid},
+\code{sci_name}, \code{rank}, \code{lineage}, \code{alternatives}. An ambiguous name (several
+taxa share it) gets no taxid; \code{alternatives} lists each candidate
+with its kingdom.
 }
 \description{
 Prefers a pinned local taxdump (fast, offline, reproducible) when
-`taxdump_dir` has one; otherwise falls back to live NCBI `datasets`. EVERY row
-is returned for user confirmation (see `match_type`), not only failures.
+\code{taxdump_dir} has one; otherwise falls back to live NCBI \code{datasets}. EVERY row
+is returned for user confirmation (see \code{match_type}), not only failures.
 }

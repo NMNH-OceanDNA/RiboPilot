@@ -222,6 +222,8 @@ test_that("a partial-coverage pick splits the uncovered sample into a new group"
   orig <- ref[ref$ref_id == "forcipulatida", ]
   expect_equal(orig$clade_name, "Forcipulatida")
   expect_equal(orig$n_samples, 1L)
+  expect_equal(DBI::dbGetQuery(con,
+    "SELECT query FROM reference WHERE ref_id = 'forcipulatida'")$query, "txid41692[Organism:exp]")
   split_key <- s$ref_id[s$ID == "S2"]
   spl <- ref[ref$ref_id == split_key, ]
   expect_equal(nrow(spl), 1L)
@@ -310,7 +312,7 @@ test_that("Suggest sends the uncached rungs to the runner", {
     while (!later::loop_empty()) later::run_now()
   })
   expect_setequal(sent$taxid, c(7607L, 41693L))
-  expect_true(all(grepl("[Organism]", sent$query, fixed = TRUE)))
+  expect_true(all(grepl("^txid[0-9]+\\[Organism:exp\\]$", sent$query)))
   # the stub runner produced no count files, so the two dropped rungs are still
   # missing from the cache, which is what proves the walk stayed offline
   after <- RiboPilot:::read_counts_cache(file.path(dir, "refs"))
@@ -541,6 +543,7 @@ test_that("an emptied script textarea falls back to a generated script", {
 
   script <- paste(readLines(Sys.glob(file.path(dir, "jobs", "ribopilot_ref_*.sh"))), collapse = "\n")
   expect_match(script, "'-entry' 'BUILD'", fixed = TRUE)
+  expect_match(script, paste0("cd ", shQuote(file.path(dir, ".reference")), "\n'nextflow'"), fixed = TRUE)
 })
 
 test_that("the in-app Build run pins NXF_VER and passes what the project config needs", {
@@ -558,11 +561,12 @@ test_that("the in-app Build run pins NXF_VER and passes what the project config 
   # already finished so the streaming observer runs its exit branch too
   fake <- list(get_pid = function() 424242L, is_alive = function() FALSE,
     read_output_lines = function() c("executor >  local (1)", "run finished ok"),
-    read_error_lines = function() character(0), kill = function() TRUE)
+    read_error_lines = function() character(0), kill = function() TRUE,
+    interrupt = function() TRUE, wait = function(...) NULL, get_exit_status = function() 0L)
   testthat::local_mocked_bindings(
     nf_pin_version = function(...) "25.10.6",
     nf_spawn = function(cmd, args, wd, env) {
-      seen$cmd <- cmd; seen$args <- args; seen$env <- env; fake
+      seen$cmd <- cmd; seen$args <- args; seen$env <- env; seen$wd <- wd; fake
     }, .package = "RiboPilot")
 
   shiny::testServer(function(input, output, session) {
@@ -582,11 +586,49 @@ test_that("the in-app Build run pins NXF_VER and passes what the project config 
   expect_equal(seen$args[which(seen$args == "-entry") + 1], "BUILD")
   expect_equal(seen$args[which(seen$args == "--projectDir") + 1], path.expand(dir))
   expect_equal(seen$args[which(seen$args == "--rawDir") + 1], "/data/raw")
+  # its own launch folder, so a bare -resume of the pipeline never picks up this session
+  expect_equal(seen$wd, file.path(dir, ".reference"))
+  expect_true("-log" %in% seen$args)
+  expect_false(file.exists(RiboPilot:::run_lock_path(dir)))
 
   con <- DBI::dbConnect(RSQLite::SQLite(), dbfile); on.exit(DBI::dbDisconnect(con))
   log <- DBI::dbGetQuery(con, "SELECT log_file FROM reference WHERE ref_id = 'asteroidea'")$log_file[1]
   expect_true(!is.na(log) && file.exists(log))
   expect_true(any(grepl("run finished ok", readLines(log), fixed = TRUE)))
+})
+
+test_that("a build stopped from its window records that the user stopped it", {
+  skip_if_not_installed("withr")
+  dir <- withr::local_tempdir()
+  dbfile <- mk_split_db(dir)
+  deps <- mk_split_deps(dbfile, dir)
+  deps$selected_ids <- function() "asteroidea"
+  writeLines(c(RiboPilot:::container_engine_block("docker"),
+    "process { executor = 'local' }"), file.path(dir, ".config"))
+  st <- new.env(); st$alive <- TRUE
+  fake <- list(get_pid = function() 424242L, is_alive = function() st$alive,
+    read_output_lines = function() "WARN: There's no process matching config selector: x",
+    read_error_lines = function() character(0), kill = function() TRUE,
+    interrupt = function() st$alive <- FALSE, wait = function(...) NULL, get_exit_status = function() 1L)
+  testthat::local_mocked_bindings(
+    nf_pin_version = function(...) "25.10.6",
+    nf_spawn = function(cmd, args, wd, env) fake,
+    process_alive = function(pid) st$alive, .package = "RiboPilot")
+  shiny::testServer(function(input, output, session) {
+    h <- RiboPilot:::reference_handlers(input, output, session, deps)
+    do_build <- h$do_build
+  }, {
+    do_build("asteroidea")
+    session$flushReact()
+    session$setInputs(ref_nf_start = 1)
+    session$elapse(300)
+    session$setInputs(ref_nf_stop = 1)
+    session$elapse(300)
+  })
+  con <- DBI::dbConnect(RSQLite::SQLite(), dbfile); on.exit(DBI::dbDisconnect(con))
+  r <- DBI::dbGetQuery(con, "SELECT reference_switch, fail_reason FROM reference WHERE ref_id = 'asteroidea'")
+  expect_equal(r$reference_switch, 3L)
+  expect_match(r$fail_reason, "Stopped by the user.", fixed = TRUE)
 })
 
 test_that("a hand-edited script is written as edited", {
@@ -714,4 +756,32 @@ test_that("the sample view names each sample's group and who set it", {
   expect_equal(d$set_by, c("you", "auto"))
   expect_equal(d$user_group, c("A", ""))
   expect_equal(nrow(RiboPilot:::reference_members(con)), 2L)
+})
+
+test_that("Build is refused while another run holds the project lock", {
+  skip_if_not_installed("withr")
+  skip_on_os("windows")
+  dir <- withr::local_tempdir()
+  dbfile <- mk_split_db(dir)
+  deps <- mk_split_deps(dbfile, dir)
+  deps$selected_ids <- function() "asteroidea"
+  m <- RiboPilot:::run_lock_take(dir, "pipeline")
+  other <- processx::process$new("sleep", "30")
+  Sys.unsetenv(m)
+  on.exit(other$kill(), add = TRUE)
+  seen <- new.env()
+  testthat::local_mocked_bindings(
+    nf_spawn = function(...) { seen$spawned <- TRUE; stop("must not launch") },
+    rp_alert = function(msg, ...) seen$msg <- msg, .package = "RiboPilot")
+  shiny::testServer(function(input, output, session) {
+    h <- RiboPilot:::reference_handlers(input, output, session, deps)
+    do_build <- h$do_build
+  }, {
+    do_build("asteroidea")
+    session$flushReact()
+    session$setInputs(ref_nf_start = 1)
+    session$flushReact()
+  })
+  expect_null(seen$spawned)
+  expect_match(seen$msg, "already going")
 })

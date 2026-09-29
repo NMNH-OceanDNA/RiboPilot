@@ -26,47 +26,52 @@ export_bundle(
 \arguments{
 \item{path}{Project directory.}
 
-\item{ids}{Sample IDs to export (default: every exportable unit). If `group`
+\item{ids}{Sample IDs to export (default: every exportable unit). If \code{group}
 is given, restricted to that group. Sample-grain: every exportable unit of
-a listed sample is included. Use `units` to pick individual scaffolds.}
+a listed sample is included. Use \code{units} to pick individual scaffolds.}
 
 \item{units}{Optional data.frame(ID, path, scaffold) restricting the export to
-those exact assembly units. Applied on top of `ids` / `group`.}
+those exact assembly units. Applied on top of \code{ids} / \code{group}.}
 
 \item{group}{Export-group name to filter by and label the bundle.}
 
-\item{out_dir}{Project "out" directory (default `<path>/out`); files land in
-`<out_dir>/export/<label>`, mirroring MitoPilot.}
+\item{out_dir}{Project "out" directory (default \verb{<path>/out}); files land in
+\verb{<out_dir>/export/<label>}, mirroring MitoPilot.}
 
-\item{label}{Bundle label (default: `group` or "export").}
+\item{label}{Bundle label (default: \code{group} or "export").}
 
 \item{markers, report}{Also write per-marker fastas / an HTML report.}
 
-\item{template}{Optional path to a GenBank submission template (`.sbt`);
-copied into the bundle as `<label>.sbt` so table2asn picks it up.}
+\item{template}{Optional path to a GenBank submission template (\code{.sbt});
+copied into the bundle as \verb{<label>.sbt} so table2asn picks it up.}
 
 \item{run_table2asn}{Run table2asn if on PATH.}
 
-\item{zip}{Also write `<out_dir>/<label>.zip`.}
+\item{zip}{Also write \verb{<out_dir>/export/<label>.zip}.}
 
 \item{export_opts}{Name of the saved FASTA-header configuration to use.}
 
 \item{fasta_header, fasta_header_marker}{Optional header templates
-(\code{\{token\}} glue syntax) overriding the saved configuration.}
+(\code{\{column\}} tokens) overriding the saved configuration.}
 
 \item{itsx_check}{Run stock ITSx (default parameters, no organism group) over
 the exported records, the way NCBI's Submission Portal does, and report
-what it would flag in the `itsx_check` column of the summary CSV and in
-`<label>_itsx_check.csv`. Warn-only. ITSx runs inside the project's
-container (docker / singularity per `.config`); a conda-executor project
-uses the ITSx on PATH. Otherwise the column reads `not_run(...)`.}
+what it would flag in the \code{itsx_check} column of the summary CSV and in
+\verb{<label>_itsx_check.csv}. Warn-only. ITSx runs inside the project's
+container (docker / singularity per \code{.config}); a conda-executor project
+uses the ITSx on PATH. Otherwise the column reads \code{not_run(...)}.}
 
 \item{itsx_cpu}{Threads for the ITSx check.}
 }
 \value{
 (invisibly) the group output directory, with the summary data.frame
-  attached as attribute `summary`.
+attached as attribute \code{summary}.
 }
 \description{
 Build a GenBank submission bundle for a set of samples (one export group)
+}
+\details{
+A unit is exported when its sample's assembly and the unit's
+annotation are both locked, its scaffold is kept, and it is not excluded
+from export.
 }

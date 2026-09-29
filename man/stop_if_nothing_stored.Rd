@@ -7,17 +7,17 @@
 stop_if_nothing_stored(fasta_file, n_stored)
 }
 \arguments{
-\item{fasta_file}{Path to the fasta passed to [write_blast_refs()]; named
+\item{fasta_file}{Path to the fasta passed to \code{\link[=write_blast_refs]{write_blast_refs()}}; named
 in the error and re-read here to count input records.}
 
-\item{n_stored}{Number of records [write_blast_refs()] actually stored.}
+\item{n_stored}{Number of records \code{\link[=write_blast_refs]{write_blast_refs()}} actually stored.}
 }
 \value{
-(invisibly) `n_stored`, when the check passes.
+(invisibly) \code{n_stored}, when the check passes.
 }
 \description{
-Mirrors the old per-accession guard (`WANTED > 0 && STORED == 0`): a fasta
+Mirrors the old per-accession guard (\code{WANTED > 0 && STORED == 0}): a fasta
 that held at least one input record but stored none means NCBI returned
 bytes that then failed to store, which is worth stopping on even though
-`refs.fa` itself was non-empty.
+\code{refs.fa} itself was non-empty.
 }

@@ -42,3 +42,5 @@ out/
 # Claude Code local config (hooks, worktrees)
 /.claude/
 !inst/test_data/*.fastq.gz
+update-version.log
+tests/testthat/testthat-problems.rds

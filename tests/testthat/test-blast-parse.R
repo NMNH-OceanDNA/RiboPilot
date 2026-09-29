@@ -11,6 +11,7 @@ hit <- function(acc, title, pident, qcovs, bits, len, qs, qe, staxid = 7955) {
 mk_blast_db <- function() {
   con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
   DBI::dbExecute(con, RiboPilot:::BLAST_HITS_DDL)
+  DBI::dbExecute(con, RiboPilot:::BLAST_SEARCHED_DDL)
   DBI::dbExecute(con, "CREATE TABLE blast_ref_candidates(ID TEXT, path INT, scaffold INT, rank INT,
     accession TEXT, species TEXT, title TEXT, pident REAL, qcovs REAL, evalue REAL, bitscore REAL, time_stamp INT)")
   DBI::dbExecute(con, "CREATE TABLE blast_screen(ID TEXT, path INT, scaffold INT, accession TEXT, title TEXT,
@@ -326,6 +327,10 @@ test_that("a searched unit records which search produced it", {
   r <- DBI::dbGetQuery(con, "SELECT source, n_hits FROM blast_searched")
   expect_equal(r$source[1], "local")
   expect_equal(r$n_hits[1], 3L)
+
+  RiboPilot:::mark_unit_searched(con, "S1", 1, 1, "abc", 3L, source = "local",
+    db = "ribopilot_rrna 2026.08.1")
+  expect_equal(DBI::dbGetQuery(con, "SELECT db FROM blast_searched")$db[1], "ribopilot_rrna 2026.08.1")
 })
 
 test_that("the search source defaults to remote", {

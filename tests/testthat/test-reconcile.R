@@ -84,3 +84,52 @@ test_that("a single-record positions line still parses exactly as before", {
   expect_equal(d$element, c("18S", "ITS1", "5.8S", "ITS2", "28S"))
   expect_equal(d$start, c(1L, 1801L, 2101L, 2259L, 2501L))
 })
+
+test_that("reconcile moves a gene end up to 5 bp to meet its ITSx spacer", {
+  bar <- data.frame(element = c("18S", "28S"), start = c(1, 2362), stop = c(1799, 6000),
+    strand = "+", model_cov = 100, stringsAsFactors = FALSE)
+  its <- data.frame(element = c("ITS1", "5.8S", "ITS2"), start = c(1801, 2001, 2161),
+    stop = c(2000, 2160, 2357), stringsAsFactors = FALSE)
+  rec <- RiboPilot:::reconcile_features(bar, its)
+  expect_equal(rec$stop[rec$element == "18S"], 1800)          # 1 bp gap closed
+  expect_equal(rec$start[rec$element == "28S"], 2358)         # 4 bp gap closed
+  expect_equal(rec$tool[rec$element == "18S"], "barrnap+ITSx")
+  expect_equal(rec$start[-1], rec$stop[-nrow(rec)] + 1)       # every feature abuts the next
+
+  bar$stop[1] <- 1794                                         # 6 bp: left for curation to flag
+  rec2 <- RiboPilot:::reconcile_features(bar, its)
+  expect_equal(rec2$stop[rec2$element == "18S"], 1794)
+  expect_equal(rec2$tool[rec2$element == "18S"], "barrnap")
+})
+
+test_that("reconcile anchors 18S and 28S on the copies nearest the ITS region", {
+  # a 28S tail from the previous repeat opens the scaffold, and a second 28S
+  # copy runs off its end
+  bar <- data.frame(element = c("28S", "18S", "5.8S", "28S"),
+    start = c(1L, 2001L, 4101L, 4501L), stop = c(900L, 3800L, 4258L, 6000L),
+    strand = "+", model_cov = c(25, 100, 100, 40), stringsAsFactors = FALSE)
+  its <- data.frame(element = c("ITS1", "5.8S", "ITS2"), start = c(3801L, 4101L, 4259L),
+    stop = c(4100L, 4258L, 4500L), stringsAsFactors = FALSE)
+  rec <- RiboPilot:::reconcile_features(bar, its)
+  expect_equal(rec$element, c("18S", "ITS1", "5.8S", "ITS2", "28S"))
+  expect_equal(rec$start[rec$element == "28S"], 4501L)
+  expect_equal(rec$stop[rec$element == "ITS2"], 4500L)
+})
+
+test_that("reconcile ignores a minority-strand anchor copy", {
+  bar <- data.frame(element = c("18S", "5.8S", "28S", "28S"),
+    start = c(1L, 2001L, 2300L, 2401L), stop = c(1800L, 2160L, 2350L, 6000L),
+    strand = c("+", "+", "-", "+"), model_cov = 100, stringsAsFactors = FALSE)
+  its <- data.frame(element = c("ITS1", "5.8S", "ITS2"), start = c(1801L, 2001L, 2161L),
+    stop = c(2000L, 2160L, 2400L), stringsAsFactors = FALSE)
+  rec <- RiboPilot:::reconcile_features(bar, its)
+  expect_equal(rec$start[rec$element == "28S"], 2401L)
+  expect_true(all(rec$strand == "+"))
+})
+
+test_that("with no ITS region the longest copy of a gene is used", {
+  bar <- data.frame(element = c("18S", "18S"), start = c(1L, 5001L), stop = c(300L, 6800L),
+    strand = "+", model_cov = c(15, 100), stringsAsFactors = FALSE)
+  rec <- RiboPilot:::reconcile_features(bar, data.frame())
+  expect_equal(rec$start, 5001L)
+})

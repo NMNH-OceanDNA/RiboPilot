@@ -29,9 +29,9 @@ SCREEN_NO_REF_CODES <- c("no_hits", "no_taxdump", "unresolved_sample_lineage",
 
 #' Confidence weights, and the gate below which a verdict is uncertain.
 #'
-#' Both are views on [SCREEN_PARAMS_DEFAULT] (R/params_rrna.R) so a clade
+#' Both are views on `SCREEN_PARAMS_DEFAULT` (R/params_rrna.R) so a clade
 #' ruleset and the shipped default cannot drift apart. Any change must bump
-#' [SCREEN_VERSION].
+#' `SCREEN_VERSION`.
 #' @noRd
 SCREEN_WEIGHTS <- SCREEN_PARAMS_DEFAULT[c("support", "resolution", "separation")]
 
@@ -93,7 +93,7 @@ screen_confidence_terms <- function(lca_n_hits, lca_rank, margin, top_bitscore,
 #' Classification keys off the taxid rather than the kingdom-rank NAME:
 #' taxids are immune to synonyms, homonyms and defline formatting, exactly the
 #' reason [rank_distance()] compares taxids and treats names as display-only.
-#' @noRd
+#'
 #' NCBI's 2024 prokaryote reclassification put a kingdom rank under Bacteria and
 #' Archaea, so `{K}` resolves to one of these rather than to 2 / 2157 and a
 #' bacterial contaminant would otherwise fall through to "other_euk". Both the
@@ -115,7 +115,7 @@ SCREEN_KINGDOM_TAXIDS <- c(
 #' with itself about which (doc 08 line 510 vs taxonomy_ranks.R:24). Matching
 #' the whole path is correct under either reading.
 #' @param lca_taxids Rank-aligned taxid path of the LCA (";"-joined string or
-#'   integer vector from [parse_rank_taxids()]).
+#'   integer vector from `parse_rank_taxids()`).
 #' @param lca_taxon The LCA's own taxon label (used only for the human check).
 #' @noRd
 screen_class_for <- function(lca_taxids, lca_taxon) {
@@ -165,7 +165,7 @@ screen_max <- function(x) {
 #' @param hits Frame with `hit_class`, `bitscore`, `lineage_taxids`, `lineage`
 #'   and optionally `hit_rank` (one rank per subject accession).
 #' @param sample_taxids The sample's rank-aligned taxid path.
-#' @param params The `screen` sublist of a ruleset (see [rrna_params()]).
+#' @param params The `screen` sublist of a ruleset (see `rrna_params()`).
 #' @return list(verdict, class, confidence, reason, reason_code, terms,
 #'   lca_taxid, lca_taxon, lca_rank, lca_n_hits, host_concordant, margin,
 #'   hit_class).
@@ -193,7 +193,7 @@ screen_channel_taxonomy <- function(hits, sample_taxids,
     return(out)
   }
   if (is.null(hits) || nrow(hits) == 0) {
-    out$reason <- "no GenBank hits are stored for this scaffold"
+    out$reason <- "no BLAST hits are stored for this scaffold"
     return(out)
   }
   hits <- screen_one_vote_per_subject(hits)
@@ -307,7 +307,7 @@ screen_channel_taxonomy <- function(hits, sample_taxids,
 
 #' Score and store one unit's screen verdict
 #'
-#' Skips a row already stored at the current [SCREEN_VERSION] unless `force`, so
+#' Skips a row already stored at the current `SCREEN_VERSION` unless `force`, so
 #' re-running the pipeline is cheap and a scoring change forces a recompute
 #' without a schema migration.
 #'
@@ -343,20 +343,17 @@ screen_one <- function(con, id, path = 1L, scaffold = 1L, force = FALSE) {
   # about the sample's own taxonomy or a missing taxdump, and a remote search
   # would not help either one.
   if (r$reason_code %in% c("no_hits", "unresolved_hit_lineages")) {
-    # a missing row (or table, for a project that predates blast_searched) means
-    # remote, which preserves current behaviour for every existing project.
-    searched_source <- tryCatch(
-      DBI::dbGetQuery(con,
-        "SELECT source FROM blast_searched WHERE ID = ? AND path = ? AND scaffold = ?",
-        params = list(id, path, scaffold))$source,
-      error = function(e) NA_character_)
+    # a missing row means remote.
+    searched_source <- DBI::dbGetQuery(con,
+      "SELECT source FROM blast_searched WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = list(id, path, scaffold))$source
     if (length(searched_source) > 0 && identical(searched_source[1], "local")) {
       r$reason <- if (identical(r$reason_code, "no_hits")) {
-        paste("the local reference panel returned no usable hit for this",
-          "scaffold; a remote BLAST search may identify it")
+        paste("the bundled rDNA database returned no usable hit for this",
+          "scaffold; a search at NCBI (BLAST Options, Search) may identify it")
       } else {
-        paste("the local reference panel returned no hit that resolved to a",
-          "usable lineage; a remote BLAST search may identify it")
+        paste("the bundled rDNA database returned no hit that resolved to a",
+          "usable lineage; a search at NCBI (BLAST Options, Search) may identify it")
       }
     }
   }
@@ -378,53 +375,20 @@ screen_one <- function(con, id, path = 1L, scaffold = 1L, force = FALSE) {
   invisible(r$verdict)
 }
 
-#' Screen every unit of one sample and refresh its reference support
+#' Screen every unit of one sample
 #' @param con Open project DB connection.
 #' @param id Sample ID.
 #' @param force Recompute rows already at the current version.
+#' @param variants Also classify on-target units as isomers or paralogs. The pipeline's screen step passes FALSE; its triage step runs that check once annotation is done.
 #' @return (invisibly) the number of units screened.
 #' @export
-screen_sample <- function(con, id, force = FALSE) {
+screen_sample <- function(con, id, force = FALSE, variants = TRUE) {
   u <- DBI::dbGetQuery(con,
     "SELECT path, scaffold FROM assemblies WHERE ID = ? ORDER BY path, scaffold",
     params = list(id))
   for (i in seq_len(nrow(u))) screen_one(con, id, u$path[i], u$scaffold[i], force = force)
-  update_reference_support(con, id)
   # after the loop, never before: screen_one() rewrites a row with DELETE plus
   # append, so a variant column written first would be silently wiped
-  screen_variants(con, id)
+  if (isTRUE(variants)) screen_variants(con, id)
   invisible(nrow(u))
-}
-
-#' Refresh a sample's reference support
-#'
-#' The minimum rank distance across the sample's ON-TARGET units only. Computed
-#' from on-target units because a sample whose only resolvable hits belong to a
-#' contaminant would otherwise report excellent support for the wrong organism.
-#'
-#' Recomputed fresh from each hit's `lineage_taxids` against the sample's own
-#' lineage, rather than read from the stored `blast_hits.rank_distance` column:
-#' that column is only ever populated at BLAST time when the sample lineage
-#' was already resolved, and stays NULL for every hit otherwise, which would
-#' silently starve this of a value for exactly the samples still awaiting
-#' taxonomy resolution.
-#' @noRd
-update_reference_support <- function(con, id) {
-  samp <- tryCatch(DBI::dbGetQuery(con,
-    "SELECT lineage_taxids t FROM samples WHERE ID = ?", params = list(id))$t[1],
-    error = function(e) NA_character_)
-  h <- DBI::dbGetQuery(con,
-    "SELECT h.lineage_taxids FROM blast_hits h
-       JOIN screen s ON s.ID = h.ID AND s.path = h.path AND s.scaffold = h.scaffold
-     WHERE h.ID = ? AND s.screen_verdict = 'on_target'", params = list(id))
-  v <- NA_integer_
-  if (nrow(h) > 0 && !is.na(samp %|NA|% NA) && nzchar(samp %|NA|% "")) {
-    d <- vapply(h$lineage_taxids, function(x) {
-      if (is.na(x)) NA_integer_ else as.integer(rank_distance(x, samp))
-    }, integer(1), USE.NAMES = FALSE)
-    if (!all(is.na(d))) v <- min(d, na.rm = TRUE)
-  }
-  DBI::dbExecute(con, "UPDATE samples SET reference_support = ? WHERE ID = ?",
-    params = list(v, id))
-  invisible(v)
 }

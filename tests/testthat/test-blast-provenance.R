@@ -38,7 +38,7 @@ test_that("the stored hit is labelled by the search that produced it", {
 
   r$blast_source <- "core_nt"
   html <- as.character(RiboPilot:::seed_hit_block(r))
-  expect_match(html, "GenBank search")
+  expect_match(html, "NCBI core_nt search")
   expect_false(grepl("seed file", html, fixed = TRUE))
 })
 
@@ -55,7 +55,7 @@ test_that("a local reference-panel hit is not shown as a seed hit", {
   r <- data.frame(blast_species = "Danio rerio", blast_accession = "MW829490.1",
     blast_pident = 99.5, blast_source = "local_rrna", stringsAsFactors = FALSE)
   html <- as.character(RiboPilot:::seed_hit_block(r))
-  expect_match(html, "local reference panel search")
+  expect_match(html, "bundled rDNA database")
   expect_false(grepl("NOT a GenBank identification", html, fixed = TRUE))
   expect_false(grepl("seed file", html, fixed = TRUE))
 })
@@ -63,9 +63,40 @@ test_that("a local reference-panel hit is not shown as a seed hit", {
 test_that("rt_blast_source_badge labels all three sources distinctly", {
   js <- as.character(RiboPilot:::rt_blast_source_badge())
   expect_true(grepl("v === 'core_nt'", js, fixed = TRUE))
-  expect_true(grepl(">GenBank<", js, fixed = TRUE))
+  expect_true(grepl(">NCBI<", js, fixed = TRUE))
   expect_true(grepl("v === 'local_rrna'", js, fixed = TRUE))
-  expect_true(grepl(">local panel<", js, fixed = TRUE))
+  expect_true(grepl(">bundled<", js, fixed = TRUE))
   expect_true(grepl("v === 'seeds'", js, fixed = TRUE))
   expect_true(grepl(">seed file<", js, fixed = TRUE))
+})
+
+test_that("the GenBank evidence names the database that answered", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "INSERT INTO blast_screen
+    (ID, path, scaffold, accession, species, pident, qcovs) VALUES
+    ('S1',2,2,'MW829490.1','Danio rerio',99,98)")
+  DBI::dbExecute(con, "INSERT INTO blast_screen
+    (ID, path, scaffold, accession, species, pident, qcovs) VALUES
+    ('S1',1,1,'MW829490.1','Danio rerio',99,98)")
+  DBI::dbExecute(con, "INSERT INTO blast_searched
+    (ID, path, scaffold, query_md5, n_hits, source, db, time_stamp) VALUES
+    ('S1',2,2,'x',3,'local','ribopilot_rrna 2026.08.18',1790000000)")
+  DBI::dbDisconnect(con)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    sel_id("S1")
+    session$flushReact()
+    session$setInputs(scaf_examine = "S1|2|2")
+    session$flushReact()
+    expect_match(output$unit_screen$html, "bundled rDNA database ribopilot_rrna 2026.08.18",
+      fixed = TRUE)
+
+    session$setInputs(scaf_examine = "S1|1|1")
+    session$flushReact()
+    expect_match(output$unit_screen$html, "NCBI core_nt", fixed = TRUE)
+  })
 })

@@ -35,6 +35,8 @@ mk_hdr_project <- function() {
   }
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S1','Genus speciesA',NULL,NULL,'Reef A')")
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S2','Genus speciesB',NULL,NULL,'Reef B')")
+  DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, assemble_lock INT)")
+  DBI::dbExecute(con, "INSERT INTO assemble VALUES('S1',1),('S2',1)")
   dir
 }
 
@@ -127,7 +129,10 @@ test_that("the bundle uses the samples/ layout and README.txt", {
   expect_false(file.exists(file.path(g, "README_SUBMISSION.txt")))
   expect_true(file.exists(file.path(g, "layout.fasta")))
   expect_true(file.exists(file.path(g, "layout_summary.csv")))
-  expect_match(paste(readLines(file.path(g, "README.txt")), collapse = "\n"), "samples/")
+  readme <- paste(readLines(file.path(g, "README.txt")), collapse = "\n")
+  expect_match(readme, "samples/")
+  expect_match(readme, "asks whether to leave them out")
+  expect_no_match(readme, "warn-only")
 })
 
 test_that("a saved configuration is used when named", {
@@ -155,9 +160,44 @@ test_that("multi-unit samples get an automatic [isolate=seqid]; single-unit ones
   expect_true(any(grepl("^>S1_p1_s1_18S .*\\[isolate=S1_p1_s1\\]$", m)))
 })
 
-test_that("isolate in a template is rejected: RiboPilot owns that modifier", {
+test_that("[isolate=] in a template is refused only where RiboPilot sets the isolate", {
   dir <- mk_hdr_project()
   expect_error(hdr_bundle(dir, label = "iso2", fasta_header = "{seqid} [isolate={ID}] {Taxon}"),
     "isolate")
-  expect_equal(validate_fasta_header("{seqid} [Isolate=x]")$level, "error")
+  multi <- data.frame(ID = c("S1", "S1"), seqid = c("S1_p1_s1", "S1_p1_s2"))
+  single <- data.frame(ID = "S2", seqid = "S2")
+  expect_equal(validate_fasta_header("{seqid} [Isolate=x]", multi)$level, "error")
+  expect_equal(validate_fasta_header("{seqid} [isolate={ID}]", single)$level, "ok")
+  expect_equal(validate_fasta_header("{seqid} [note=isolated from gut]", multi)$level, "ok")
+})
+
+test_that("an empty source modifier on any record is a warning, not only on the first", {
+  dir <- mk_hdr_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "ALTER TABLE samples ADD COLUMN voucher TEXT")
+  DBI::dbExecute(con, "UPDATE samples SET voucher = 'USNM:1' WHERE ID = 'S1'")
+  DBI::dbDisconnect(con)
+  expect_warning(suppressMessages(export_bundle(dir, out_dir = file.path(dir, "out"), report = FALSE,
+    zip = FALSE, itsx_check = FALSE, label = "vou", fasta_header = "{seqid} [specimen-voucher={voucher}]")),
+    "Empty \\[specimen-voucher=\\] on 1 of 3 record\\(s\\) \\(S2\\)")
+  d <- data.frame(ID = "S1", seqid = "S1", t = NA)
+  expect_equal(validate_fasta_header("{seqid} [note={t}]", d)$level, "warn")
+})
+
+test_that("a header template is filled by lookup and never runs code", {
+  dir <- mk_hdr_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  on.exit(DBI::dbDisconnect(con))
+  u <- data.frame(ID = "S2", path = 1L, scaffold = 1L, seqid = "S2")
+  d <- RiboPilot:::export_header_data(con, u)
+  f <- tempfile("rp_hdr_")
+  tpl <- sprintf('{seqid} {file.create("%s")}', f)
+  expect_equal(RiboPilot:::validate_fasta_header(tpl, d)$level, "error")
+  expect_error(RiboPilot:::render_fasta_headers(tpl, d), "is not in the database")
+  expect_false(file.exists(f))
+  nested <- sprintf('{seqid} {file.create("%s"); {seqid}}', f)
+  RiboPilot:::validate_fasta_header(nested, d)
+  expect_false(file.exists(f))
+  expect_equal(RiboPilot:::render_fasta_headers("{seqid} [organism={Taxon}] site={collection_site}", d),
+    "S2 [organism=Genus speciesB] site=Reef B")
 })

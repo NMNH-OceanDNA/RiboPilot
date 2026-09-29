@@ -99,8 +99,8 @@ test_that("opts_row falls back to getorganelle if the picker is missing", {
 test_that("opts_row still builds the other opts tables", {
   expect_equal(opts_row("po", "p", list(po_cpus = 2, po_mem = 4, po_fastp = "-x"),
     base = list())$fastp, "-x")
-  expect_equal(opts_row("co", "c", list(co_ruleset = "strict", co_pid = 0.9,
-    co_contam = TRUE), base = list())$check_contaminant, 1L)
+  expect_named(opts_row("co", "c", list(co_ruleset = "strict"), base = list()),
+    c("curate_opts", "ruleset"))
 })
 
 test_that("annotation and curation presets are set from the Assemble surface", {
@@ -161,7 +161,7 @@ test_that("the assembly modal shows the preset's seed and label databases", {
   expect_true(grepl("/refs/seeds/actinopterygii_rrna_seeds.fasta", html, fixed = TRUE))
   expect_true(grepl("/refs/labels/actinopterygii_rrna_labels.fasta", html, fixed = TRUE))
   # says where the paths came from
-  expect_true(grepl("Reference tab for clade Actinopterygii", html, fixed = TRUE))
+  expect_true(grepl("Reference step for clade Actinopterygii", html, fixed = TRUE))
   # the stale claim that databases are set at project creation is gone
   expect_false(grepl("databases are set at project creation", html, fixed = TRUE))
 })
@@ -173,7 +173,7 @@ test_that("a preset no reference group owns does not claim the Reference tab set
     seeds_db = NA_character_, labels_db = NA_character_)
   html <- shiny::withReactiveDomain(shiny::MockShinySession$new(),
     as.character(RiboPilot:::assemble_opts_modal(cur, "default", 1)))
-  expect_false(grepl("Reference tab for clade", html, fixed = TRUE))
+  expect_false(grepl("Reference step for clade", html, fixed = TRUE))
   expect_true(grepl("Set at project creation", html, fixed = TRUE))
 })
 
@@ -207,4 +207,105 @@ test_that("saving a database that is missing or empty warns, naming the file", {
   expect_length(RiboPilot:::unusable_db_warnings(
     data.frame(seeds_db = NA_character_, labels_db = NA_character_,
       stringsAsFactors = FALSE)), 0L)
+})
+
+# ---- opts modal targeting on a multi-unit sample ----
+
+test_that("the Annotation and Curation options open for a sample with several units", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    session$flushReact()
+    session$setInputs(set_annotate_opts = 1)
+    session$setInputs(set_curate_opts = 1)
+    expect_false(session$isClosed())
+  })
+})
+
+test_that("a sample whose units are all annotation-locked never opens the options for zero samples", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_lock = 1")
+  DBI::dbDisconnect(con)
+
+  seen_n <- integer(0)
+  local_mocked_bindings(annotate_opts_modal = function(cur, choices, n) {
+    seen_n <<- c(seen_n, n); shiny::modalDialog()
+  }, .package = "RiboPilot")
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    session$flushReact()
+    session$setInputs(set_annotate_opts = 1)
+    expect_false(0L %in% seen_n)
+  })
+})
+
+test_that("picking an existing parameter set loads that set's values", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "INSERT INTO annotate_opts VALUES ('alt',16,32,'barrnap','fun','all','')")
+  DBI::dbDisconnect(con)
+
+  seen <- character(0)
+  local_mocked_bindings(annotate_opts_modal = function(cur, choices, n) {
+    seen <<- c(seen, cur$annotate_opts[1]); shiny::modalDialog()
+  }, .package = "RiboPilot")
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    session$flushReact()
+    session$setInputs(set_annotate_opts = 1)
+    session$setInputs(no_edit = TRUE, no_name = "alt")
+    expect_equal(seen, c("default", "alt"))
+  })
+})
+
+test_that("a new set name saved with Edit unticked creates the set", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    session$flushReact()
+    session$setInputs(set_annotate_opts = 1)
+    session$setInputs(no_name = "fresh", no_edit = FALSE, no_cpus = 2, no_mem = 4,
+      no_tool = "pybarrnap", no_kingdom = "euk", no_itsxtaxon = "all", no_itsxopts = "")
+    session$setInputs(update_no = 1)
+    expect_equal(RiboPilot:::app_query(
+      "SELECT COUNT(*) n FROM annotate_opts WHERE annotate_opts = 'fresh'")$n, 1L)
+    expect_equal(unique(RiboPilot:::app_query(
+      "SELECT annotate_opts FROM annotate WHERE ID = 'S1'")$annotate_opts), "fresh")
+  })
+})
+
+test_that("saving annotation options re-queues the units, not the assembly", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE assemble SET assemble_lock = 0, assemble_switch = 2")
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_switch = 2")
+  DBI::dbDisconnect(con)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    session$flushReact()
+    session$setInputs(set_annotate_opts = 1)
+    session$setInputs(no_name = "fresh", no_edit = TRUE, no_cpus = 2, no_mem = 4,
+      no_tool = "pybarrnap", no_kingdom = "euk", no_itsxtaxon = "all", no_itsxopts = "")
+    session$setInputs(update_no = 1)
+    expect_equal(RiboPilot:::app_query(
+      "SELECT assemble_switch FROM assemble WHERE ID = 'S1'")$assemble_switch, 2L)
+    expect_equal(unique(RiboPilot:::app_query(
+      "SELECT annotate_switch FROM annotate WHERE ID = 'S1'")$annotate_switch), 1L)
+  })
 })

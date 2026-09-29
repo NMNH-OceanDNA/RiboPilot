@@ -12,6 +12,12 @@ test_that("nf_version_status classifies against the supported range", {
   expect_equal(f("26.1.0"), "too_new")
 })
 
+test_that("nf_parse_version reads the version line and drops edge suffixes", {
+  expect_equal(RiboPilot:::nf_parse_version(c("  N E X T F L O W", "  version 25.10.6 build 10000")), "25.10.6")
+  expect_equal(RiboPilot:::nf_parse_version(c("version 24.10.0-edge build 1")), "24.10.0")
+  expect_true(is.na(RiboPilot:::nf_parse_version("no version here")))
+})
+
 test_that("nf_pin_for pins in-range to itself and out-of-range to the max", {
   f <- RiboPilot:::nf_pin_for
   expect_true(is.na(f(NA_character_)))
@@ -84,7 +90,7 @@ test_that("query_samples selects the assembler and declares it in the header", {
   # rows, so it and the select list must agree on column count or splitCsv
   # misreads every field.
   n_hdr <- length(strsplit(sub(".*printf '", "", sub("\\\\n' > .*", "", hdr)), "\\\\t")[[1]])
-  expect_equal(n_hdr, 16L)
+  expect_equal(n_hdr, 18L)
 })
 
 test_that("main.nf branches on the assembler and merges both arms into score", {
@@ -175,6 +181,7 @@ mk_units_db <- function() {
   DBI::dbExecute(con, "CREATE TABLE annotate_opts(annotate_opts TEXT, cpus INT, memory INT)")
   DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, ignore INT)")
   DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, assemble_switch INT, assemble_lock INT)")
+  DBI::dbExecute(con, "CREATE TABLE blast_searched(ID TEXT, path INT, scaffold INT)")
   DBI::dbExecute(con, "INSERT INTO annotate_opts VALUES('default',4,8)")
   con
 }
@@ -454,7 +461,7 @@ test_that("a sample with no seeds database goes to the fallback, not to file('')
   # sqlite3 renders a SQL NULL as '', and file('') throws during channel
   # construction, killing the run before any task is submitted
   txt <- paste(main_nf, collapse = "\n")
-  expect_match(txt, "asm_opts = rows.map \\{ r -> tuple\\(r.ID, r.asm_cpus, r.asm_mem, r.getOrganelle, live_db\\(r.seeds_db\\), live_db\\(r.labels_db\\), r.assembler\\)")
+  expect_match(txt, "asm_opts = rows.map \\{ r -> tuple\\(r.ID, r.asm_cpus, r.asm_mem, r.getOrganelle, live_db\\(r.seeds_db\\), live_db\\(r.labels_db\\), r.assembler, r.bowtie2, r.spades\\)")
   expect_match(txt, "go: it[7] == 'getorganelle' && it[5] && it[6]", fixed = TRUE)
   expect_match(txt, "fb: true", fixed = TRUE)
 })
@@ -506,6 +513,17 @@ test_that("nextflow.config still supplies NCBI_API_KEY from params", {
   line <- grep("NCBI_API_KEY\\s*[:=]", txt, value = TRUE)
   expect_length(line, 1)
   expect_match(line, "ncbi_api_key", fixed = TRUE)
+})
+
+test_that("with no NCBI key the variable is left out, and tasks read it unset-safe", {
+  txt <- readLines(system.file("nextflow", "nextflow.config", package = "RiboPilot"), warn = FALSE)
+  k <- grep("NCBI_API_KEY\\s*:", txt)
+  expect_false(grepl("?: ''", txt[k], fixed = TRUE))
+  close <- grep("^\\].findAll \\{ it.value \\}", txt)
+  expect_length(close, 1)
+  expect_gt(close, k)
+  nf <- readLines(system.file("nextflow", "modules/blast_ref.nf", package = "RiboPilot"), warn = FALSE)
+  expect_false(any(grepl("\\$NCBI_API_KEY\"", nf, fixed = TRUE)))
 })
 
 test_that("nextflow.config forwards RIBOPILOT_NO_LOCAL_BLAST to tasks", {
@@ -567,7 +585,7 @@ test_that("an empty ribopilot_src argument does not become the string true", {
   writeLines(c("params {", "  rawDir = '/data/raw'", "}"), file.path(proj, ".config"))
   a <- RiboPilot:::nf_command(proj, resume = FALSE, ribopilot_src = "")
   v <- a[which(a == "--ribopilot_src") + 1]
-  expect_true(nzchar(v))
+  expect_true(all(nzchar(v)))
 })
 
 test_that("an empty minDepth in the config falls back to 0", {
@@ -768,6 +786,7 @@ test_that("blast.nf falls back to remote when a configured local panel fails ins
     "params.taxdump_dir = ''",
     sprintf("params.ribopilot_src = '%s'", src),
     "process {",
+    "    resourceLimits = [cpus: 1]",
     "    withName: 'blast_genbank' {",
     "        errorStrategy = 'terminate'",
     "        maxRetries = 0",
@@ -862,6 +881,7 @@ mk_dbarg_project <- function(root, blastdb) {
     "params.taxdump_dir = ''",
     sprintf("params.ribopilot_src = '%s'", src_root),
     "process {",
+    "    resourceLimits = [cpus: 1]",
     "    withName: 'blast_genbank' {",
     "        errorStrategy = 'terminate'",
     "        maxRetries = 0",
@@ -915,6 +935,61 @@ test_that("an unconfigured project falls back to remote without usage noise", {
   on.exit(DBI::dbDisconnect(con), add = TRUE)
   searched <- DBI::dbGetQuery(con, "SELECT source FROM blast_searched WHERE ID='S1'")
   expect_equal(searched$source[1], "remote")
+})
+
+test_that("a changed BLAST setting searches a unit again, an unchanged one does not", {
+  skip_on_cran()
+  skip_if_not_installed("withr")
+  skip_if(Sys.which("nextflow") == "", "nextflow not installed")
+  skip_if(Sys.which("sqlite3") == "", "sqlite3 not installed")
+  src <- RiboPilot:::ribopilot_src_default()
+  skip_if(!file.exists(file.path(src, "DESCRIPTION")), "not a source checkout")
+  root <- withr::local_tempdir()
+  empty_db_dir <- file.path(root, "no_panels"); dir.create(empty_db_dir)
+  withr::local_envvar(RIBOPILOT_DB_DIR = empty_db_dir)
+  proj <- mk_dbarg_project(root, "")
+  calls <- file.path(root, "blastn_calls.txt")
+  writeLines(c("#!/usr/bin/env bash", sprintf("echo x >> '%s'", calls),
+    "printf 'REMOTE1\\tDanio rerio 18S ribosomal RNA gene\\t99.0\\t80\\t1e-90\\t7955\\t1500\\t1600\\t1\\t1600\\t1\\t1600\\t6997\\tq1\\n'"),
+    file.path(proj$fake_bin, "blastn"))
+  n_calls <- function() if (file.exists(calls)) length(readLines(calls)) else 0L
+  expect_equal(run_dbarg_project(root, proj)$status, 0)
+  expect_equal(n_calls(), 1L)
+  run_dbarg_project(root, proj)
+  expect_equal(n_calls(), 1L)
+  con <- DBI::dbConnect(RSQLite::SQLite(), proj$db_path)
+  DBI::dbExecute(con, "UPDATE blast_opts SET max_target_seqs = 20")
+  DBI::dbDisconnect(con)
+  run_dbarg_project(root, proj)
+  expect_equal(n_calls(), 2L)
+})
+
+test_that("a failed escalation to NCBI is tried again on the next run", {
+  skip_on_cran()
+  skip_if_not_installed("withr")
+  skip_if(Sys.which("nextflow") == "", "nextflow not installed")
+  skip_if(Sys.which("sqlite3") == "", "sqlite3 not installed")
+  src <- RiboPilot:::ribopilot_src_default()
+  skip_if(!file.exists(file.path(src, "DESCRIPTION")), "not a source checkout")
+  root <- withr::local_tempdir()
+  panel_dir <- file.path(root, "panel"); dir.create(panel_dir)
+  panel <- file.path(panel_dir, "ribopilot_rrna")
+  for (e in c("nin", "nsq", "nhr", "ndb")) writeLines("x", paste0(panel, ".", e))
+  proj <- mk_dbarg_project(root, panel)
+  calls <- file.path(root, "blastn_calls.txt")
+  # the panel names nothing and NCBI cannot be reached
+  writeLines(c("#!/usr/bin/env bash", sprintf("echo \"$*\" >> '%s'", calls),
+    "case \" $* \" in *\" -remote \"*) exit 1 ;; *) exit 0 ;; esac"),
+    file.path(proj$fake_bin, "blastn"))
+  remote_calls <- function() sum(grepl("-remote", readLines(calls), fixed = TRUE))
+  expect_equal(run_dbarg_project(root, proj)$status, 0)
+  expect_equal(remote_calls(), 1L)
+  con <- DBI::dbConnect(RSQLite::SQLite(), proj$db_path)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  expect_equal(DBI::dbGetQuery(con, "SELECT query_md5 FROM blast_searched")$query_md5,
+    "remote_fallback_failed")
+  run_dbarg_project(root, proj)
+  expect_equal(remote_calls(), 2L)
 })
 
 test_that("a configured panel that rp_dbarg.R cannot use is reported, not silently dropped", {
@@ -1026,6 +1101,7 @@ test_that("blast_genbank records provenance for a discovered, unconfigured panel
     "params.taxdump_dir = ''",
     sprintf("params.ribopilot_src = '%s'", src),
     "process {",
+    "    resourceLimits = [cpus: 1]",
     "    withName: 'blast_genbank' {",
     "        errorStrategy = 'terminate'",
     "        maxRetries = 0",
@@ -1045,9 +1121,10 @@ test_that("blast_genbank records provenance for a discovered, unconfigured panel
 
   con2 <- DBI::dbConnect(RSQLite::SQLite(), db_path)
   on.exit(DBI::dbDisconnect(con2), add = TRUE)
-  searched <- DBI::dbGetQuery(con2, "SELECT source FROM blast_searched WHERE ID='S1'")
+  searched <- DBI::dbGetQuery(con2, "SELECT source, db FROM blast_searched WHERE ID='S1'")
   expect_equal(searched$source[1], "local",
     info = "the stub only answers non-remote calls; a wrong source means the panel was not used")
+  expect_equal(searched$db[1], "ribopilot_rrna 2026.08.1")
   expect_equal(RiboPilot:::blastdb_provenance(con2), "ribopilot_rrna 2026.08.1")
 
   # discovery must never leak the container-side path into the host-config column
@@ -1103,6 +1180,7 @@ test_that("blast.nf warns when extra_opts sets -evalue for a local search", {
       "params.taxdump_dir = ''",
       sprintf("params.ribopilot_src = '%s'", src),
       "process {",
+      "    resourceLimits = [cpus: 1]",
       "    withName: 'blast_genbank' {",
       "        errorStrategy = 'terminate'",
       "        maxRetries = 0",
@@ -1227,6 +1305,7 @@ test_that("a local failure on one unit does not disable local search for the res
     "params.taxdump_dir = ''",
     sprintf("params.ribopilot_src = '%s'", src),
     "process {",
+    "    resourceLimits = [cpus: 1]",
     "    withName: 'blast_genbank' {",
     "        errorStrategy = 'terminate'",
     "        maxRetries = 0",
@@ -1270,6 +1349,40 @@ test_that("query_samples carries the columns the assembly branch reads", {
   expect_true(any(grepl("JOIN samples s", body)))
 })
 
+samples_sql <- function() {
+  start <- grep("^process query_samples \\{", pipeline_r_nf)
+  end <- start - 1 + which(pipeline_r_nf[start:length(pipeline_r_nf)] == "}")[1]
+  body <- pipeline_r_nf[start:end]
+  sql <- body[grep("SELECT p.ID", body):grep(";\" >> samplesheet.tsv", body, fixed = TRUE)]
+  sql <- sub(";\" >> samplesheet.tsv", "", paste(sql, collapse = "\n"), fixed = TRUE)
+  gsub("\\$\\{params\\.db\\}", "", sql)
+}
+
+test_that("query_samples skips samples whose taxonomy is not locked", {
+  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT, Assembly TEXT, taxonomy_lock INT)")
+  DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, assemble_switch INT, assemble_lock INT,
+    assemble_opts TEXT)")
+  DBI::dbExecute(con, "CREATE TABLE preprocess(ID TEXT, R1 TEXT, R2 TEXT, pre_opts TEXT)")
+  DBI::dbExecute(con, "CREATE TABLE pre_opts(pre_opts TEXT, cpus INT, memory INT, fastp TEXT)")
+  DBI::dbExecute(con, "CREATE TABLE assemble_opts(assemble_opts TEXT, cpus INT, memory INT,
+    getOrganelle TEXT, max_paths INT, seeds_db TEXT, labels_db TEXT, assembler TEXT, find_rrna INT,
+    bowtie2 TEXT, spades TEXT)")
+  DBI::dbExecute(con, "CREATE TABLE annotate_opts(annotate_opts TEXT, rrna_tool TEXT, rrna_kingdom TEXT)")
+  DBI::dbExecute(con, "INSERT INTO pre_opts VALUES('default',4,8,'')")
+  DBI::dbExecute(con, "INSERT INTO assemble_opts VALUES('default',4,16,'--flag',10,NULL,NULL,'getorganelle',1,NULL,NULL)")
+  DBI::dbExecute(con, "INSERT INTO annotate_opts VALUES('default','pybarrnap','euk')")
+  for (id in c("LOCKED", "UNLOCKED")) {
+    DBI::dbExecute(con, "INSERT INTO samples VALUES(?,NULL,?)",
+      params = list(id, if (id == "LOCKED") 1L else 0L))
+    DBI::dbExecute(con, "INSERT INTO preprocess VALUES(?,'a.fq','b.fq','default')", params = list(id))
+    DBI::dbExecute(con, "INSERT INTO assemble VALUES(?,1,0,'default')", params = list(id))
+  }
+  got <- DBI::dbGetQuery(con, samples_sql())$ID
+  expect_equal(got, "LOCKED")
+})
+
 test_that("main.nf routes supplied assemblies away from preprocess and assembly", {
   br <- grep("sample_rows = rows\\.branch", main_nf)
   expect_length(br, 1)
@@ -1290,7 +1403,7 @@ test_that("main.nf routes supplied assemblies away from preprocess and assembly"
 
 test_that("find_rrna emits the assembler's fasta contract", {
   nf <- readLines(system.file("nextflow", "modules", "find_rrna.nf", package = "RiboPilot"))
-  # published where load_assemblies() globs, named what it expects
+  # published to out/<id>/assemble, named what score() expects
   expect_true(any(grepl("\\$\\{params\\.publishDir\\}/\\$\\{id\\}/assemble", nf)))
   expect_true(any(grepl("\\$\\{id\\}_assembly_\\*\\.fasta", nf)))
   # the sentinel name load_assemblies() skips, for a sample with nothing found
@@ -1301,6 +1414,25 @@ test_that("find_rrna emits the assembler's fasta contract", {
   # runs, so a default set there reaches the splitFasta above as null
   expect_true(any(grepl("^params\\.find_rrna_chunk_size = [0-9]+", nf)))
   expect_false(any(grepl("params\\.find_rrna_chunk_size", main_nf)))
+})
+
+test_that("find_rrna_pick stages every scan chunk under its own name", {
+  nf <- readLines(system.file("nextflow", "modules", "find_rrna.nf", package = "RiboPilot"))
+  expect_true(any(grepl("tuple val(id), path(assembly), path(gffs, stageAs: 'chunk_*.gff')", nf, fixed = TRUE)))
+})
+
+test_that("query_samples asks GetOrganelle for one path over max_paths, and sets no cap for 0", {
+  start <- grep("^process query_samples \\{", pipeline_r_nf)
+  end <- start - 1 + which(pipeline_r_nf[start:length(pipeline_r_nf)] == "}")[1]
+  line <- grep("--max-paths-num", pipeline_r_nf[start:end], value = TRUE)
+  expect_length(line, 1)
+  expr <- sub("\\s+AS getOrganelle,\\s*$", "", trimws(line))
+  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "CREATE TABLE assemble_opts (getOrganelle TEXT, max_paths INTEGER)")
+  DBI::dbExecute(con, "INSERT INTO assemble_opts VALUES ('-F anonym', 10), ('-F anonym', 0), ('-F anonym', NULL)")
+  got <- DBI::dbGetQuery(con, paste("SELECT", expr, "AS go FROM assemble_opts ao"))$go
+  expect_equal(got, c("-F anonym --max-paths-num 11", "-F anonym", "-F anonym"))
 })
 
 # ---- rawDir is only required by samples that actually have reads ----
@@ -1337,4 +1469,109 @@ test_that("a project with reads and a rawDir passes it through", {
   mk_rawdir_project(proj, raw = "/data/raw", r1 = "a.fq")
   a <- RiboPilot:::nf_command(proj, resume = FALSE)
   expect_equal(a[which(a == "--rawDir") + 1], "/data/raw")
+})
+
+test_that("a reference folder with a space stays one mount argument", {
+  skip_on_os("windows")
+  d <- "/x/Library/Application Support/ref_dbs"
+  for (engine in c("docker", "singularity")) {
+    v <- RiboPilot:::container_bind_opts(RiboPilot:::container_engine_block(engine), d)[2]
+    words <- system2("bash", c("-c", shQuote(paste("printf '%s\\n'", v))), stdout = TRUE)
+    expect_equal(words[2], if (engine == "docker") paste0(d, ":", d) else d, info = engine)
+  }
+})
+
+test_that("samples below minDepth are marked failed with their read count", {
+  pre_nf <- readLines(system.file("nextflow", "modules", "preprocess.nf", package = "RiboPilot"))
+  expect_true(any(grepl("include \\{ preprocess; below_min_depth \\}", main_nf)))
+  start <- grep("^\\s*below_min_depth\\(", main_nf)
+  expect_length(start, 1)
+  block <- paste(main_nf[start:(start + 4)], collapse = "\n")
+  expect_match(block, "(after as Integer) < (params.minDepth as Integer)", fixed = TRUE)
+  # only samples assembling from reads; a supplied assembly with shallow reads is fine
+  expect_match(block, ".join(read_ids)", fixed = TRUE)
+  p <- grep("^process below_min_depth \\{", pre_nf)
+  expect_length(p, 1)
+  body <- paste(pre_nf[p:length(pre_nf)], collapse = "\n")
+  expect_match(body, "assemble_switch=3", fixed = TRUE)
+  expect_match(body, "below min_depth: ${after} reads after trimming", fixed = TRUE)
+  expect_match(body, "cache false", fixed = TRUE)
+  expect_false(grepl("'terminate'", body, fixed = TRUE))
+})
+
+test_that("score reads the assembly files staged into its task", {
+  start <- grep("^process score \\{", pipeline_r_nf)
+  end <- start - 1 + which(pipeline_r_nf[start:length(pipeline_r_nf)] == "}")[1]
+  body <- paste(pipeline_r_nf[start:end], collapse = "\n")
+  expect_match(body, "rp_score.R '${params.db}' '${id}' . '${params.taxdump_dir}'", fixed = TRUE)
+  expect_false(grepl("publishDir", body, fixed = TRUE))
+  asm <- readLines(system.file("nextflow", "modules", "assemble.nf", package = "RiboPilot"))
+  expect_true(any(grepl('tuple val(id), path("{${id}_assembly_*.fasta,*.gfa}"), emit: paths',
+    asm, fixed = TRUE)))
+})
+
+test_that("a fallback assembly's databases and tool options are task inputs", {
+  fb <- readLines(system.file("nextflow", "modules", "fallback.nf", package = "RiboPilot"))
+  expect_true(any(grepl(paste("tuple val(id), path(reads), val(nthreads), val(mem), val(method),",
+    "path(seeds, stageAs: 'seeds/*'), path(labels, stageAs: 'labels/*'), val(seeds_url), val(labels_url),",
+    "val(bowtie2), val(spades)"), fb, fixed = TRUE)))
+  expect_false(any(grepl("params.db", fb, fixed = TRUE)))
+  txt <- paste(main_nf, collapse = "\n")
+  expect_match(txt, "def s = method == 'bait' ? seeds : ''", fixed = TRUE)
+  src <- readLines(system.file("nextflow", "bin", "rp_fallback.R", package = "RiboPilot"))
+  expect_false(any(grepl("open_project_db|dbGetQuery", src)))
+})
+
+test_that("a database URL reaches the fallback as text, so a dead one fails only its sample", {
+  txt <- paste(main_nf, collapse = "\n")
+  expect_match(txt, "def stage_db(p) { p && !is_url(p) ? file(p) : [] }", fixed = TRUE)
+  expect_match(txt, "stage_db(s), stage_db(labels), url_db(s), url_db(labels), bt2, spades", fixed = TRUE)
+  fb <- paste(readLines(system.file("nextflow", "modules", "fallback.nf", package = "RiboPilot")),
+    collapse = "\n")
+  expect_match(fb, "'${seeds}' '${labels}' '${bowtie2}' '${spades}' '${seeds_url}' '${labels_url}'",
+    fixed = TRUE)
+  src <- paste(readLines(system.file("nextflow", "bin", "rp_fallback.R", package = "RiboPilot")),
+    collapse = "\n")
+  expect_match(src, "reference = db(7), labels_db = db(8)", fixed = TRUE)
+})
+
+test_that("seeds and labels with the same file name do not collide", {
+  for (f in c("fallback.nf", "assemble.nf")) {
+    nf <- paste(readLines(system.file("nextflow", "modules", f, package = "RiboPilot")), collapse = "\n")
+    expect_match(nf, "path(seeds, stageAs: 'seeds/*'), path(labels, stageAs: 'labels/*')",
+      fixed = TRUE, info = f)
+  }
+})
+
+test_that("a scaffold never searched is sent to BLAST and the screen when it is annotated", {
+  con <- mk_units_db(); on.exit(DBI::dbDisconnect(con))
+  add_unit(con, "PUTBACK")
+  add_unit(con, "SEARCHED")
+  DBI::dbExecute(con, "INSERT INTO blast_searched VALUES('SEARCHED',1,1)")
+  got <- DBI::dbGetQuery(con, paste(annotate_units_sql(), "ORDER BY an.ID"))
+  expect_equal(got$searched, c(0L, 1L))
+  code <- paste(main_nf[!grepl("^\\s*//", main_nf)], collapse = "\n")
+  expect_match(code, "filter { r -> r.searched == '0' }", fixed = TRUE)
+  expect_match(code, "blast_genbank(score.out.mix(unsearched))", fixed = TRUE)
+})
+
+test_that("find_rrna_pick and stage_assembly always run, so their database writes do", {
+  nf <- readLines(system.file("nextflow", "modules", "find_rrna.nf", package = "RiboPilot"))
+  for (p in c("find_rrna_pick", "stage_assembly")) {
+    s <- grep(paste0("^process ", p, " \\{"), nf)
+    body <- nf[s:(s - 1 + which(nf[s:length(nf)] == "}")[1])]
+    expect_true(any(grepl("^\\s*cache false$", body)), info = p)
+  }
+})
+
+test_that("the pick step runs even when every scan part failed, and scan parts retry", {
+  txt <- paste(readLines(system.file("nextflow", "modules", "find_rrna.nf", package = "RiboPilot")),
+    collapse = "\n")
+  expect_match(txt, ".join(gffs_by_id, remainder: true)", fixed = TRUE)
+  expect_match(txt, "tuple(id, assembly, gffs ?: [])", fixed = TRUE)
+  expect_match(txt, "${params.find_rrna_chunk_size} ${gffs}", fixed = TRUE)
+  cfg <- paste(readLines(system.file("nextflow", "nextflow.config", package = "RiboPilot")),
+    collapse = " ")
+  expect_match(cfg, "withName: 'assemble|fallback_assemble|preprocess|annotate_tools|find_rrna_scan'",
+    fixed = TRUE)
 })

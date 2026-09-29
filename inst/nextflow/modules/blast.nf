@@ -86,6 +86,11 @@ process blast_genbank {
         echo "WARNING: extra_opts sets -evalue \${EVAL_VAL} for the local search on ${id}; the local panel (~7x10^8 bp) is a much smaller search space than core_nt (~10^12 bp), so this threshold does not mean the same thing here" >&2
     fi
 
+    # what a search depends on besides the query; a change searches every unit again
+    PANEL_VER=""
+    if [ "\$SRC" = "local" ]; then PANEL_VER=\$(cat "\$(dirname "\$PANEL_PREFIX")/manifest.json" 2>/dev/null || true); fi
+    SETTINGS="src=\$SRC db=\$DBARG panel=\$PANEL_VER eq=\$EQ xo=\$XO mts=\${MTS:-50} rf=\${RF:-1}"
+
     for U in \$UNITS; do
         P=\${U%.*}; S=\${U#*.}
         # per-unit copy: a local failure on one unit must not leak "remote"
@@ -97,12 +102,12 @@ process blast_genbank {
         sqlite3 -cmd '.timeout 10000' '${params.db}' "SELECT '>'||ID||'.'||path||'.'||scaffold||char(10)||sequence FROM assemblies WHERE ID='${id}' AND path=\$P AND scaffold=\$S;" > query.fa
         [ -s query.fa ] || continue
 
-        # Already searched with this exact query on an earlier attempt or run: do
-        # not re-submit to NCBI. Keyed on a hash of the query sequence rather than
-        # a blast_hits row count, so a unit that found nothing is not re-searched
-        # forever, and a re-assembled or trimmed unit is searched again instead of
-        # inheriting the previous contig's hits.
-        QMD5=\$( (grep -v '^>' query.fa || true) | tr -d '[:space:]' | (md5sum 2>/dev/null || md5 -q) | awk '{print \$1}')
+        # Already searched with this exact query and these settings on an earlier
+        # attempt or run: do not re-submit to NCBI. Keyed on a hash of the query
+        # sequence and SETTINGS rather than a blast_hits row count, so a unit that
+        # found nothing is not re-searched forever, and a re-assembled or trimmed
+        # unit, or a changed setting, is searched again.
+        QMD5=\$( { (grep -v '^>' query.fa || true) | tr -d '[:space:]'; printf '|%s' "\$SETTINGS"; } | (md5sum 2>/dev/null || md5 -q) | awk '{print \$1}')
         PREV=\$(sqlite3 -cmd '.timeout 10000' '${params.db}' "SELECT query_md5 FROM blast_searched WHERE ID='${id}' AND path=\$P AND scaffold=\$S;" 2>/dev/null || echo "")
         if [ "\${PREV}" = "\${QMD5}" ]; then echo "already searched ${id} \$P.\$S"; continue; fi
 
@@ -189,7 +194,8 @@ process blast_genbank {
                     UNIT_PANEL=""
                 fi
             else
-                echo "remote fallback failed for ${id} \$P.\$S, keeping the local result" >&2
+                echo "remote fallback failed for ${id} \$P.\$S, keeping the local result; it is searched again on the next run" >&2
+                QMD5="remote_fallback_failed"
             fi
         fi
         RIBOPILOT_SRC='${params.ribopilot_src}' rp_blast.R '${params.db}' '${id}' "\$P" "\$S" hits.txt '${params.taxdump_dir}'

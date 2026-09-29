@@ -25,6 +25,8 @@ mk_project <- function() {
   }
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S1','Genus speciesA',NULL,NULL)")
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S2','Genus speciesB',NULL,NULL)")
+  DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, assemble_lock INT)")
+  DBI::dbExecute(con, "INSERT INTO assemble VALUES('S1',1),('S2',1)")
   dir
 }
 
@@ -66,6 +68,22 @@ test_that("ignored and problematic units are excluded from the bundle", {
   g <- bundle(dir, label = "kept")
   # S1 now has one exportable unit, so it loses the suffix too
   expect_setequal(basename(Sys.glob(file.path(g, "samples", "*.fasta"))), c("S1.fasta", "S2.fasta"))
+})
+
+test_that("units marked Exclude from export, or missing either lock, stay out of the bundle", {
+  dir <- mk_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE annotate SET problematic = 'yes' WHERE ID = 'S1' AND scaffold = 2")
+  DBI::dbExecute(con, "UPDATE assemble SET assemble_lock = 0 WHERE ID = 'S2'")
+  DBI::dbDisconnect(con)
+  g <- bundle(dir, label = "kept")
+  expect_equal(basename(Sys.glob(file.path(g, "samples", "*.fasta"))), "S1.fasta")
+  expect_equal(nrow(utils::read.csv(file.path(g, "kept_summary.csv"))), 1)
+
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_lock = 0 WHERE ID = 'S1' AND scaffold = 1")
+  DBI::dbDisconnect(con)
+  expect_error(bundle(dir, label = "none"), "No units to export")
 })
 
 # Add a screen table carrying a paralog pair for S1, as screen_sample() would.
@@ -150,8 +168,8 @@ test_that("bundle file contents are exactly as specified", {
   expect_equal(readLines(file.path(g, "exact_summary.csv")),
     c(paste0("\"seqid\",\"ID\",\"path\",\"scaffold\",\"organism\",\"length\",\"n_features\",",
         "\"missing\",\"reviewed\",\"partial\",\"problematic\",\"variant_class\",",
-        "\"variant_group\",\"variant_identity\",\"n_variants\",\"submission_risk\""),
-      "\"S2\",\"S2\",1,1,\"Genus speciesB\",400,2,\"\",\"yes\",\"no\",\"no\",NA,NA,NA,NA,\"\""))
+        "\"variant_group\",\"variant_identity\",\"n_variants\",\"submission_risk\",\"chimera_warning\""),
+      "\"S2\",\"S2\",1,1,\"Genus speciesB\",400,2,\"\",\"yes\",\"no\",\"no\",NA,NA,NA,NA,\"\",\"\""))
 })
 
 test_that("an empty Taxon is flagged, and never rendered as the word NA", {
@@ -161,8 +179,10 @@ test_that("an empty Taxon is flagged, and never rendered as the word NA", {
   DBI::dbExecute(con, "UPDATE samples SET Taxon = '  ' WHERE ID = 'S1'")
   DBI::dbDisconnect(con)
 
-  expect_warning(g <- suppressMessages(export_bundle(dir, out_dir = file.path(dir, "out"),
-    markers = TRUE, report = FALSE, zip = FALSE, itsx_check = FALSE, label = "notax")), "missing_organism")
+  w <- testthat::capture_warnings(g <- suppressMessages(export_bundle(dir, out_dir = file.path(dir, "out"),
+    markers = TRUE, report = FALSE, zip = FALSE, itsx_check = FALSE, label = "notax")))
+  expect_true(any(grepl("missing_organism", w)))
+  expect_true(any(grepl("Empty [organism=] on 3 of 3", w, fixed = TRUE)))
   # glue renders an NA field as the characters "NA", which reads like a real
   # organism name. The header template cannot drop a field, so the value is
   # blanked and the unit is flagged instead.
@@ -214,6 +234,30 @@ test_that("set_export_group takes one group per unit", {
   expect_error(RiboPilot:::set_export_group(con, u, c("x", "y", "z")))
 })
 
+test_that("export_project exports every locked unit when no group was made", {
+  dir <- mk_project()
+  seen <- character(0)
+  testthat::local_mocked_bindings(export_bundle = function(path, group = NULL, ...) {
+    seen <<- c(seen, if (is.null(group)) "<all>" else group); invisible(path)
+  }, .package = "RiboPilot")
+  expect_equal(RiboPilot:::export_project(dir), "export")
+  expect_equal(seen, "<all>")
+})
+
+test_that("export_project skips a group with no exportable unit", {
+  dir <- mk_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE annotate SET export_group = 'g1' WHERE ID = 'S1'")
+  DBI::dbExecute(con, "UPDATE annotate SET export_group = 'g2', annotate_lock = 0 WHERE ID = 'S2'")
+  DBI::dbDisconnect(con)
+  seen <- character(0)
+  testthat::local_mocked_bindings(export_bundle = function(path, group = NULL, ...) {
+    seen <<- c(seen, if (is.null(group)) "<all>" else group); invisible(path)
+  }, .package = "RiboPilot")
+  expect_equal(RiboPilot:::export_project(dir), "g1")
+  expect_equal(seen, "g1")
+})
+
 test_that("sample_assembler follows assemble_opts and defaults to getorganelle", {
   dir <- withr::local_tempdir()
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
@@ -224,4 +268,34 @@ test_that("sample_assembler follows assemble_opts and defaults to getorganelle",
   DBI::dbDisconnect(con)
   expect_equal(RiboPilot:::sample_assembler(dir, c("B", "A", "C", "D")),
     c("bait", "getorganelle", "getorganelle", "getorganelle"))
+})
+
+test_that("a group name that is not a safe folder name is refused before anything is deleted", {
+  dir <- mk_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  on.exit(DBI::dbDisconnect(con))
+  expect_error(RiboPilot:::set_export_group(con, "S1", "Batch 1"), "Try \"Batch_1\"", fixed = TRUE)
+  for (g in c("..", ".", "../S1", "18S/ITS", "-x")) {
+    expect_error(RiboPilot:::set_export_group(con, "S1", g), "cannot be used", info = g)
+  }
+  expect_true(all(is.na(DBI::dbGetQuery(con, "SELECT export_group FROM annotate")$export_group)))
+  RiboPilot:::set_export_group(con, "S1", "batch_2026.01-a")
+  # a bad label must not reach the recursive delete of out/export/<label>
+  dir.create(file.path(dir, "out", "keep"), recursive = TRUE)
+  expect_error(bundle(dir, label = ".."), "cannot be used")
+  expect_true(dir.exists(file.path(dir, "out", "keep")))
+})
+
+test_that("the zip lands in out/export from a relative project path, and is replaced", {
+  skip_if(!nzchar(Sys.which("zip")), "zip not on PATH")
+  dir <- mk_project()
+  withr::local_dir(dir)
+  z <- function(...) suppressWarnings(suppressMessages(export_bundle(".", label = "z",
+    markers = FALSE, report = FALSE, itsx_check = FALSE, zip = TRUE, ...)))
+  z()
+  zf <- file.path("out", "export", "z.zip")
+  expect_true(file.exists(zf))
+  n_all <- nrow(utils::unzip(zf, list = TRUE))
+  z(ids = "S2")
+  expect_lt(nrow(utils::unzip(zf, list = TRUE)), n_all)
 })

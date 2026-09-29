@@ -42,9 +42,9 @@ mp_js_obj <- function(x) {
 
 #' Lock glyph shared by the main table lock columns
 #' @noRd
-rt_lock_icon <- function() {
+rt_lock_icon <- function(inputId = NULL) {
   rt_dynamicIcon(c(`0` = "fa fa-lock-open mp-fg-neutral", `1` = "fa fa-lock mp-fg-neutral"),
-    labels = c(`0` = "Unlocked", `1` = "Locked"))
+    labels = c(`0` = "Unlocked", `1` = "Locked"), inputId = inputId)
 }
 
 #' Dynamic Icon
@@ -54,9 +54,11 @@ rt_lock_icon <- function() {
 #'   `icons`, giving the accessible name of each state. When supplied the
 #'   glyph gets `role="img"`, `aria-label` and `title`; without it the markup
 #'   is unchanged.
+#' @param inputId optional Shiny input id. When supplied the icon is a button
+#'   that sends its 1-based row index to this input.
 #'
 #' @noRd
-rt_dynamicIcon <- function(icons = NULL, labels = NULL) {
+rt_dynamicIcon <- function(icons = NULL, labels = NULL, inputId = NULL) {
   if (length(icons) == 0) {
     return({
       htmlwidgets::JS("function(cellInfo) {return cellInfo.value}")
@@ -73,11 +75,17 @@ rt_dynamicIcon <- function(icons = NULL, labels = NULL) {
       var label = labels[value];
       var name = label ?
         ` role='img' aria-label='${label}' title='${label}'` : '';
-      return `<i class='${icon}'${name} ` +
-        `style='padding-left: 0.2em;'></i>`
+      var html = `<i class='${icon}'${name} ` +
+        `style='padding-left: 0.2em;'></i>`;
+      var clickid = '%s';
+      if (!clickid) return html;
+      return `<a href='#' class='grow mp-icon-btn' data-row='${cellInfo.index + 1}' ` +
+        `onclick='event.preventDefault(); event.stopPropagation(); ` +
+        `Shiny.setInputValue(&#39;${clickid}&#39;, this.dataset.row, {priority: &#39;event&#39;})'>` +
+        html + `</a>`;
     }
     ",
-    mp_js_obj(icons), mp_js_obj(labels)
+    mp_js_obj(icons), mp_js_obj(labels), inputId %||% ""
   ) |> htmlwidgets::JS()
 }
 
@@ -159,9 +167,9 @@ rt_pill <- function(map, labels = NULL, empty = "not set", hide = NULL) {
 #' @param yes_tone pill tone for "yes" when invert is FALSE; "warning" for a
 #'   flag whose "yes" asks for attention (problematic, partial).
 #' @noRd
-rt_bool_badge <- function(invert = FALSE, hide_no = FALSE, yes_tone = "success") {
+rt_bool_badge <- function(invert = FALSE, hide_no = FALSE, yes_tone = "success", no_tone = "neutral") {
   rt_pill(
-    map = c(yes = if (invert) "danger" else yes_tone, no = "neutral"),
+    map = c(yes = if (invert) "danger" else yes_tone, no = no_tone),
     empty = if (hide_no) "" else "not set",
     hide = if (hide_no) "no" else NULL
   )
@@ -176,7 +184,7 @@ rt_flag_badge <- function() {
       if (n === null || n === undefined || n === '' ) return ''
       n = Number(n)
       if (n === 0) return '<span class=\"mp-fg-success\">&#10003;</span>'
-      var tip = cellInfo.row.annotate_notes || ''
+      var tip = cellInfo.row.curate_flags || ''
       return '<span title=\"' + String(tip).replace(/\"/g, '&quot;') + '\" class=\"mp-pill mp-pill-warning\">' + n + '</span>'
     }")
 }
@@ -239,7 +247,7 @@ rt_link <- function(InputId, title = NULL, lock_col = NULL) {
   locked <- if (is.null(lock_col)) "" else sprintf(
     "var lk = (cellInfo.row || {})['%s'];
                 if (lk == 1) {
-                  return `<span class='mp-locked-cell' title='Locked - options are set to ${cellInfo.value}. Unlock this sample with the Lock button to change them.'>${cellInfo.value}</span>`;
+                  return `<span class='mp-locked-cell' title='Locked - options are set to ${cellInfo.value}. Select the row and press Unlock to change them.'>${cellInfo.value}</span>`;
                 }",
     lock_col
   )
@@ -337,7 +345,7 @@ rt_shares_badge <- function() {
       else if (v === 'none') { tone = 'danger' }
       else               { tone = 'warning' }
       var t = cellInfo.row['screen_species'] ? cellInfo.row['screen_species'] : ''
-      return '<span title=\"top GenBank hit: ' + t + '\" class=\"mp-pill mp-pill-' + tone + '\">' + v + '</span>'
+      return '<span title=\"top BLAST hit: ' + t + '\" class=\"mp-pill mp-pill-' + tone + '\">' + v + '</span>'
     }")
 }
 
@@ -354,10 +362,10 @@ rt_blast_source_badge <- function() {
     "function(cellInfo) {
       var v = cellInfo.value
       if (v === 'core_nt')
-        return '<span title=\"remote megablast against NCBI core_nt\" class=\"mp-pill mp-pill-success\">GenBank</span>'
+        return '<span title=\"BLAST at NCBI core_nt\" class=\"mp-pill mp-pill-success\">NCBI</span>'
       if (v === 'local_rrna')
-        return '<span title=\"local BLAST against the configured rDNA reference panel\"' +
-          ' class=\"mp-pill mp-pill-success\">local panel</span>'
+        return '<span title=\"BLAST against the bundled rDNA database\"' +
+          ' class=\"mp-pill mp-pill-success\">bundled</span>'
       if (v === 'seeds')
         return '<span title=\"local BLAST against the GetOrganelle seed file: the closest bait' +
           ' sequence, NOT a GenBank identification\" class=\"mp-pill mp-pill-warning\">seed file</span>'
@@ -386,7 +394,7 @@ rt_odd_badge <- function() {
 #' Render the contamination-screen verdict: is the scaffold on this sample's
 #' own lineage.
 #'
-#' `no_reference` renders NEUTRAL GREY like [rt_shares_badge()]'s "no
+#' `no_reference` renders NEUTRAL GREY like `rt_shares_badge()`'s "no
 #' reference": for an offline project or a sparse clade it is the normal
 #' state, not a problem. A missing screen row (never run) reads the same way,
 #' since the app should not tell the two apart.
@@ -405,7 +413,7 @@ rt_screen_badge <- function() {
     }")
 }
 
-#' Render the chimera check verdict: clean, suspect, or likely, with the
+#' Render the chimera check verdict: clean, minor, or severe, with the
 #' reason as a hover tooltip.
 #' @noRd
 rt_chimera_badge <- function() {
@@ -415,17 +423,33 @@ rt_chimera_badge <- function() {
       if (v === null || v === undefined || v === '' || v === 'NA') return '';
       var tone;
       if (v === 'clean')        { tone = 'success'; }
-      else if (v === 'likely')  { tone = 'danger'; }
+      else if (v === 'severe')  { tone = 'danger'; }
       else                      { tone = 'warning'; }
       var tip = cellInfo.row.chimera_reason || '';
       return '<span title=\"' + String(tip).replace(/\"/g, '&quot;') + '\" class=\"mp-pill mp-pill-' + tone + '\">' + v + '</span>';
     }")
 }
 
+#' Render the Checks summary: the pill colour is the worst finding's tone
+#' (`checks_tone`), and the text names every finding, so colour is never the
+#' only signal
+#' @noRd
+rt_checks_badge <- function() {
+  htmlwidgets::JS(
+    "function(cellInfo) {
+      var v = cellInfo.value;
+      if (v === null || v === undefined || v === '' || v === 'NA') return '';
+      var tone = cellInfo.row.checks_tone || 'neutral';
+      var t = String(v).replace(/\"/g, '&quot;');
+      return '<span title=\"' + t + '\" class=\"mp-pill mp-pill-' + tone + '\"' +
+        ' style=\"max-width:100%; overflow:hidden; text-overflow:ellipsis; vertical-align:middle;\">' + v + '</span>';
+    }")
+}
+
 #' Render the intragenomic variant class: is this scaffold one of several rDNA
 #' copies, or the same molecule assembled twice.
 #'
-#' NEITHER class is a defect, so neither may borrow [rt_screen_badge()]'s
+#' NEITHER class is a defect, so neither may borrow `rt_screen_badge()`'s
 #' off-target red. An isomer renders NEUTRAL, because it is telling the curator a
 #' decision does NOT matter. A paralog renders as INFORMATION: it is real
 #' biology, documented in Octocorallia, Scyphozoa and other groups, and colouring
@@ -461,10 +485,8 @@ rt_variant_badge <- function() {
 
 #' Inline depth bar relative to the deepest scaffold of the same sample
 #'
-#' The value is the MEDIAN per-position depth where one is stored (see
-#' R/coverage.R for why a mean misleads on an rDNA scaffold); the tooltip names
-#' which statistic it is, so a pre-v10 row falling back to the mean is not read
-#' as a median.
+#' The value is the MEDIAN per-position depth (see R/coverage.R for why a mean
+#' misleads on an rDNA scaffold); the tooltip also shows the mean for context.
 #'
 #' The bar has no background track. A grey remainder said only "this is a
 #' fraction of something", which the fill length and the number beside it
@@ -478,10 +500,9 @@ rt_depth_bar <- function(max_col = "depth_max") {
     "function(cellInfo) {
       var v = cellInfo.value, m = cellInfo.row['%s']
       if (v === null || v === undefined || v === '') return ''
-      var stat = cellInfo.row['depth_stat'] ? cellInfo.row['depth_stat'] : 'median'
       var mean = cellInfo.row['depth_mean']
-      var tip = stat + ' depth ' + v + 'x'
-      if (mean !== null && mean !== undefined && mean !== '' && stat === 'median') tip += ' (mean ' + mean + 'x)'
+      var tip = 'median depth ' + v + 'x'
+      if (mean !== null && mean !== undefined && mean !== '') tip += ' (mean ' + mean + 'x)'
       if (!m || m <= 0) return '<span title=\"' + tip + '\">' + v + '</span>'
       var f = Math.max(0, Math.min(1, v / m))
       var w = Math.round(f * 46)
@@ -502,15 +523,20 @@ rt_element_strip <- function() {
     "function(cellInfo) {
       var want = ['18S','ITS1','5.8S','ITS2','28S']
       var have = (cellInfo.value ? String(cellInfo.value) : '').split(',')
+      var flags = cellInfo.row.element_flags ? String(cellInfo.row.element_flags) : ''
+      var flagged = flags ? flags.split('; ').map(function(x) { return x.split(':')[0] }) : []
       var out = ''
       for (var i = 0; i < want.length; i++) {
-        var on = have.indexOf(want[i]) >= 0
+        var on = have.indexOf(want[i]) >= 0, warn = on && flagged.indexOf(want[i]) >= 0
+        var bg = warn ? '#e69f00' : on ? '#2d6a4f' : 'transparent'
         out += '<span style=\"display:inline-block; margin-right:2px; padding:0 4px; font-size:0.72em;' +
-          ' border-radius:2px; border:1px solid ' + (on ? '#2d6a4f' : '#ccc') + '; color:' +
-          (on ? '#fff' : '#bbb') + '; background:' + (on ? '#2d6a4f' : 'transparent') + ';\">' +
+          ' border-radius:2px; border:1px solid ' + (on ? bg : '#ccc') + '; color:' +
+          (warn ? '#4a3000' : on ? '#fff' : '#bbb') + '; background:' + bg + ';\">' +
           want[i] + '</span>'
       }
-      return '<span title=\"rRNA/ITS features annotated on this scaffold\">' + out + '</span>'
+      var tip = flags ? 'Feature warnings (details in Annotation Review): ' + flags
+        : 'rRNA/ITS features annotated on this scaffold'
+      return '<span title=\"' + tip.replace(/\"/g, '&quot;') + '\">' + out + '</span>'
     }")
 }
 
@@ -548,7 +574,7 @@ rt_confidence_badge <- function() {
       var v = cellInfo.value;
       if (!v) v = 'unresolved';
       var colors = {exact:'#2d6a4f', manual:'#1f6feb', fuzzy_species:'#b8860b',
-                    fuzzy_genus:'#b8860b', unresolved:'#c0392b'};
+                    fuzzy_genus:'#b8860b', ambiguous:'#c0392b', unresolved:'#c0392b'};
       var c = colors[v] || '#888';
       return `<span style='background:${c}; color:#fff; padding:1px 7px; border-radius:10px; font-size:0.8em; white-space:nowrap;'>${v}</span>`;
     }")
@@ -603,70 +629,12 @@ rt_icon_bttn_text <- function(inputId, icon, text = "", label = NULL,
     htmlwidgets::JS()
 }
 
-#' Two-state in-table toggle
-#'
-#' Renders a real focusable button carrying `aria-pressed`, so the toggle is
-#' reachable by keyboard and announces its state.
-#'
-#' @param inputId shiny input id to use
-#' @param ticon font awesome icon shown when the value is true
-#' @param ficon font awesome icon shown when the value is false
-#' @param title_true,title_false tooltips for each state
-#' @param disabled TRUE, or a reason string, renders the toggle inert
-#'   (`disabled`, `aria-disabled`, no click handler). A disabled button gets
-#'   no pointer events, so the reason rides on a wrapper span.
-#'
-#' @noRd
-rt_bool_bttn <- function(inputId, ticon, ficon, title_true = NULL,
-                         title_false = NULL, disabled = FALSE) {
-  off <- !isFALSE(disabled)
-  tips <- mp_js_obj(c(
-    on = if (off || is.null(title_true)) "" else title_true,
-    off = if (off || is.null(title_false)) "" else title_false
-  ))
-  gate <- if (off) {
-    "disabled aria-disabled='true'"
-  } else {
-    sprintf(
-      paste0("onclick='event.stopPropagation(); Shiny.setInputValue(",
-             "&#39;%s&#39;, this.id, {priority: &#39;event&#39;})'"),
-      inputId
-    )
-  }
-  wrap <- if (off) {
-    c(sprintf("<span title='%s'>",
-              mp_js_attr(if (is.character(disabled)) disabled else "")),
-      "</span>")
-  } else {
-    c("", "")
-  }
-  sprintf(
-    "
-    function(cellInfo) {
-      var { index } = cellInfo;
-      var on = cellInfo.value ? true : false;
-      var icon = on ? '%s' : '%s';
-      var tips = %s;
-      var tip = on ? tips.on : tips.off;
-      var t = tip ? ` title='${tip}'` : '';
-      return `%s<button type='button' ` +
-        `class='icon-bttn-text mp-toggle%s' ` +
-        `id='${index+1}' aria-pressed='${on}'${t} %s>` +
-        `<i class='${icon}' aria-hidden='true'></i>` +
-        `</button>%s`
-    }
-    ",
-    ticon, ficon, tips, wrap[1], if (off) "" else " grow", gate, wrap[2]
-  ) |>
-    htmlwidgets::JS()
-}
-
 #' Inline depth sparkline from a comma-separated track
 #'
 #' Shown because a curator deciding keep/drop should see coverage shape, and
 #' deliberately not used by any rule: high depth is often k-mer collapse across
-#' the conserved core or IGS subrepeats, and low depth is often isomer paths
-#' splitting reads.
+#' the conserved core or IGS subrepeats, and low depth is often a repeat inside
+#' the scaffold, where reads map to two places and are left out.
 #' @noRd
 rt_depth_sparkline <- function() {
   htmlwidgets::JS(

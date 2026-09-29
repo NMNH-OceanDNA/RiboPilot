@@ -11,10 +11,13 @@ mk_trim_db <- function(dir, seq, depths) {
                        element TEXT, start INT, stop INT, length INT, edited INT)")
   DBI::dbExecute(con, "CREATE TABLE coverage(ID TEXT, path INT, scaffold INT,
                        mean_depth REAL, median_depth REAL, min_depth INT, max_depth INT,
-                       depths TEXT, time_stamp INT)")
+                       depths TEXT, clips TEXT, time_stamp INT)")
+  DBI::dbExecute(con, RiboPilot:::CHIMERA_DDL)
+  DBI::dbExecute(con, RiboPilot:::CHIMERA_WINDOWS_DDL)
   DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',1,1,?,?,0)",
     params = list(nchar(seq), seq))
-  DBI::dbExecute(con, "INSERT INTO coverage VALUES('S1',1,1,?,?,?,?,?,0)",
+  DBI::dbExecute(con, "INSERT INTO coverage (ID, path, scaffold, mean_depth, median_depth, min_depth,
+                       max_depth, depths, time_stamp) VALUES('S1',1,1,?,?,?,?,?,0)",
     params = list(mean(depths), stats::median(depths), min(depths), max(depths),
       paste(depths, collapse = ",")))
   con
@@ -86,4 +89,72 @@ test_that("a trim overlapping the end of a short depth track keeps the covered p
   cv <- cov_row(con)
   expect_equal(cv$median_depth, 9)
   expect_equal(length(strsplit(cv$depths, ",")[[1]]), 20L)
+})
+
+test_that("a trim moves the chimera junctions and windows, and a restore moves them back", {
+  dir <- withr::local_tempdir()
+  seq <- paste(sample(c("A", "C", "G", "T"), 100, TRUE), collapse = "")
+  con <- mk_trim_db(dir, seq, rep(20, 100))
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "UPDATE coverage SET clips = '0,1,2'")
+  DBI::dbExecute(con, "INSERT INTO chimera (ID, path, scaffold, label, junctions) VALUES ('S1',1,1,'severe','30,70')")
+  DBI::dbExecute(con, "INSERT INTO chimera_windows (ID, path, scaffold, start, stop, pident, lineage, lineage_taxids)
+    VALUES ('S1',1,1,1,40,99,'K;P;C1;o;f;g;s','1;2;3;;;;'), ('S1',1,1,51,90,99,'K;P;C2;o;f;g;s','1;2;4;;;;')")
+  ch <- function() DBI::dbGetQuery(con, "SELECT junctions, segments FROM chimera")
+  win <- function() DBI::dbGetQuery(con, "SELECT start, stop FROM chimera_windows ORDER BY start")
+
+  RiboPilot:::trim_assembly(con, "S1", 1L, 1L, from = 41, to = 100)
+  expect_equal(ch()$junctions, "30")
+  expect_equal(win()$start, 11L)
+  expect_equal(jsonlite::fromJSON(ch()$segments)$start, 11L)
+  expect_true(is.na(DBI::dbGetQuery(con, "SELECT clips FROM coverage")$clips))
+
+  RiboPilot:::restore_assembly(con, "S1", 1L, 1L)
+  expect_equal(ch()$junctions, "30,70")
+  expect_equal(win()$start, c(1L, 51L))
+})
+
+test_that("a trim that cuts into a gene marks that end partial; one on a boundary does not", {
+  dir <- withr::local_tempdir()
+  con <- mk_trim_db(dir, strrep("A", 100), rep(20, 100))
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "ALTER TABLE annotations ADD COLUMN strand TEXT")
+  DBI::dbExecute(con, "ALTER TABLE annotations ADD COLUMN partial_start INT")
+  DBI::dbExecute(con, "ALTER TABLE annotations ADD COLUMN partial_stop INT")
+  DBI::dbExecute(con, "INSERT INTO annotations (ID,path,scaffold,element,start,stop,strand) VALUES
+    ('S1',1,1,'18S',11,40,'+'), ('S1',1,1,'ITS1',41,60,'+'), ('S1',1,1,'5.8S',61,90,'-')")
+  p <- function() DBI::dbGetQuery(con, "SELECT element, partial_start s, partial_stop e FROM annotations ORDER BY start")
+
+  RiboPilot:::trim_assembly(con, "S1", 1L, 1L, from = 11, to = 80)
+  expect_equal(p()$s, c(NA, NA, 1L))     # minus 5.8S lost its 5' end (genomic right)
+  expect_true(all(is.na(p()$e)))
+  RiboPilot:::trim_assembly(con, "S1", 1L, 1L, from = 6, to = 70)   # second trim cuts 18S
+  expect_equal(p()$s, c(1L, NA, 1L))
+
+  RiboPilot:::restore_assembly(con, "S1", 1L, 1L)
+  expect_true(all(is.na(p()$s)))
+  expect_equal(nrow(p()), 3L)
+})
+
+test_that("trimming away every junction clears the chimera label, and a restore brings it back", {
+  dir <- withr::local_tempdir()
+  seq <- paste(sample(c("A", "C", "G", "T"), 100, TRUE), collapse = "")
+  con <- mk_trim_db(dir, seq, rep(20, 100))
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "INSERT INTO chimera (ID, path, scaffold, score, label, junctions, reason)
+    VALUES ('S1',1,1,0.9,'severe','30','1-40 C1; 41-90 C2; junction near 30')")
+  DBI::dbExecute(con, "INSERT INTO chimera_windows (ID, path, scaffold, start, stop, pident, lineage, lineage_taxids)
+    VALUES ('S1',1,1,1,40,99,'K;P;C1;o;f;g;s','1;2;3;;;;'), ('S1',1,1,51,90,99,'K;P;C2;o;f;g;s','1;2;4;;;;')")
+  ch <- function() DBI::dbGetQuery(con, "SELECT label, score, junctions, reason FROM chimera")
+
+  RiboPilot:::trim_assembly(con, "S1", 1L, 1L, from = 45, to = 100)
+  expect_equal(ch()$label, "clean")
+  expect_equal(ch()$score, 0)
+  expect_match(ch()$reason, "junctions trimmed away", fixed = TRUE)
+  expect_false(grepl("41-90", ch()$reason, fixed = TRUE))
+
+  RiboPilot:::restore_assembly(con, "S1", 1L, 1L)
+  expect_equal(ch()$label, "severe")
+  expect_equal(ch()$junctions, "30")
+  expect_equal(nrow(DBI::dbGetQuery(con, "SELECT * FROM chimera_windows")), 2L)
 })

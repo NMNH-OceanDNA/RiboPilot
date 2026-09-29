@@ -4,7 +4,7 @@
 mk_opts_db <- function() {
   con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
   DBI::dbExecute(con, RiboPilot:::TRIAGE_OPTS_DDL)
-  DBI::dbExecute(con, RiboPilot:::TRIAGE_OPTS_SEED)
+  RiboPilot:::write_triage_opts(con, RiboPilot:::triage_actions_default())
   DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, triage_opts TEXT)")
   DBI::dbExecute(con, "INSERT INTO assemble VALUES('S1','default')")
   con

@@ -2,18 +2,20 @@
 % Please edit documentation in R/export.R
 \name{export_project}
 \alias{export_project}
-\title{Export every assigned export group in a project}
+\title{Export a project's locked units as GenBank bundles}
 \usage{
 export_project(path = ".", out_dir = file.path(path, "out"))
 }
 \arguments{
 \item{path}{Project directory.}
 
-\item{out_dir}{Project "out" directory; bundles land in `<out_dir>/export`.}
+\item{out_dir}{Project "out" directory; bundles land in \verb{<out_dir>/export}.}
 }
 \value{
-(invisibly) the export groups exported.
+(invisibly) the bundle names written.
 }
 \description{
-Export every assigned export group in a project
+Writes one bundle per export group made in the app's Export step, using the
+default header template. When no group was made, writes every unit with
+both its assembly and its annotation locked into one bundle named "export".
 }

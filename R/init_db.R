@@ -23,18 +23,18 @@
 #'   mapping file exist under `assembly_path` (default TRUE).
 #' @param assemble_cpus Default number of CPUs for assembly.
 #' @param assemble_memory Default memory (GB) for assembly.
-#' @param seeds_db Path/URL to the GetOrganelle nr seeds database (built per
-#'   clade, see the reference-DB builder). May be NULL until built.
-#' @param labels_db Path/URL to the GetOrganelle nr labels database.
+#' @param seeds_db Path or URL to the GetOrganelle seeds database. NULL
+#'   (default) names an Actinopterygii database that RiboPilot does not ship;
+#'   the Reference step replaces it.
+#' @param labels_db Path or URL to the GetOrganelle labels database. NULL
+#'   (default) names an Actinopterygii database that RiboPilot does not ship;
+#'   the Reference step replaces it.
 #' @param getOrganelle Default GetOrganelle command-line options.
-#' @param target Read-recruitment target passed to GetOrganelle (default
-#'   "anonym", using the custom seed/label DBs).
 #' @param max_paths Max assembly paths for a sample to continue (default 10).
 #' @param max_scaffolds Max scaffolds within a path to continue (default 10).
 #' @param min_assembly_length Minimum contig length (bp) to retain (default 500).
 #' @param ref_dir Folder for built reference databases (default: the
 #'   `RIBOPILOT_REF_DIR` environment variable, else [ribopilot_ref_dir()]).
-#' @param ... Reserved for forward compatibility.
 #'
 #' @export
 new_db <- function(
@@ -48,55 +48,21 @@ new_db <- function(
     check_assemblies = TRUE,
     assemble_cpus = 6,
     assemble_memory = 24,
-    seeds_db = "https://raw.githubusercontent.com/dmacguigan/RiboPilot/main/ref_dbs/getOrganelle/seeds/actinopterygii_rrna_seeds.fasta",
-    labels_db = "https://raw.githubusercontent.com/dmacguigan/RiboPilot/main/ref_dbs/getOrganelle/labels/actinopterygii_rrna_labels.fasta",
+    seeds_db = NULL,
+    labels_db = NULL,
     getOrganelle = paste(
       "-F anonym",
       "-R 10 -k 21,45,65,85,105,115",
       "--larger-auto-ws"
     ),
-    target = "anonym",
     max_paths = 10,
     max_scaffolds = 10,
     min_assembly_length = 500,
-    ref_dir = NULL,
-    ...) {
-  # Read mapping file ----
-  if (is.null(mapping_fn)) {
-    mapping_fn <- "./mapping.csv"
-    if (!file.exists(mapping_fn)) {
-      stop("Mapping file not found")
-    }
-  }
-  mapping <- utils::read.csv(mapping_fn)
-  mapping[[mapping_id]] <- as.character(mapping[[mapping_id]])
-
-  # Validate ID column ----
-  if (any(duplicated(mapping[[mapping_id]]))) {
-    bad <- unique(mapping[[mapping_id]][duplicated(mapping[[mapping_id]])])
-    message("problematic IDs:\n", paste(bad, collapse = ", "))
-    stop("Duplicate IDs found in mapping file")
-  }
-  if (any(nchar(mapping[[mapping_id]]) > 18)) {
-    bad <- mapping[[mapping_id]][nchar(mapping[[mapping_id]]) > 18]
-    message("problematic IDs:\n", paste(bad, collapse = ", "))
-    stop("IDs must be no more than 18 characters")
-  }
-  if (any(!grepl("^[a-zA-Z0-9_:-]+$", mapping[[mapping_id]]))) {
-    bad <- mapping[[mapping_id]][!grepl("^[a-zA-Z0-9_:-]+$", mapping[[mapping_id]])]
-    message("problematic IDs:\n", paste(bad, collapse = ", "))
-    stop("IDs must contain only alphanumeric characters, dashes, underscores, and colons")
-  }
-
-  # Validate read files ----
-  # Fail here, not per-task inside a work/ directory as an opaque fastp error.
-  mapping <- normalize_assembly_column(mapping, mapping_id, assembly_path)
-  if (isTRUE(check_reads)) {
-    check_mapping_reads(mapping, mapping_id, data_path)
-  }
-  if (isTRUE(check_assemblies)) {
-    check_mapping_assemblies(mapping, mapping_id, assembly_path)
-  }
+    ref_dir = NULL) {
+  # Read and check the mapping file ----
+  # Fail here, not per-task inside a work/ directory as an opaque tool error.
+  mapping <- read_mapping(mapping_fn %||% "./mapping.csv", mapping_id, mapping_taxon) |>
+    check_mapping(mapping_id, data_path, assembly_path, check_reads, check_assemblies)
 
   # Default GetOrganelle nr databases (broad Actinopterygii) when unset ----
   seeds_db <- seeds_db %||% DEFAULT_SEEDS_DB
@@ -124,6 +90,7 @@ new_db <- function(
       sci_name = NA_character_,
       rank = NA_character_,
       match_type = NA_character_,
+      tax_alternatives = NA_character_,
       lineage = NA_character_,
       lineage_taxids = NA_character_,
       ref_id = NA_character_,
@@ -133,8 +100,6 @@ new_db <- function(
       ref_source = NA_character_,
       taxonomy_switch = 1L,
       taxonomy_lock = 0L,
-      export_group = NA_character_,
-      reference_support = NA_integer_,
       time_stamp = NA_integer_
     )
   glue::glue_sql(
@@ -213,18 +178,12 @@ new_db <- function(
       scaffolds INTEGER,
       assemble_notes TEXT,
       find_rrna_notes TEXT,
+      user_notes TEXT,
       assemble_switch INTEGER,
       assemble_lock INTEGER,
-      hide_switch INTEGER,
       assemble_opts TEXT,
       blast_opts TEXT,
       triage_opts TEXT DEFAULT 'default',
-      blast_accession TEXT,
-      blast_species TEXT,
-      blast_pident REAL,
-      blast_qcovs REAL,
-      blast_evalue REAL,
-      blast_lineage TEXT,
       time_stamp INTEGER,
       PRIMARY KEY (ID)
     );"
@@ -242,7 +201,6 @@ new_db <- function(
           find_rrna_notes = NA_character_,
           assemble_switch = 1,
           assemble_lock = 0,
-          hide_switch = 0,
           assemble_opts = "default",
           blast_opts = "default",
           time_stamp = NA_integer_
@@ -260,7 +218,6 @@ new_db <- function(
       getOrganelle TEXT,
       seeds_db TEXT,
       labels_db TEXT,
-      target TEXT,
       max_paths INTEGER,
       max_scaffolds INTEGER,
       min_assembly_length INTEGER,
@@ -278,9 +235,8 @@ new_db <- function(
         cpus = assemble_cpus,
         memory = assemble_memory,
         getOrganelle = getOrganelle,
-        seeds_db = seeds_db %||% NA_character_,
-        labels_db = labels_db %||% NA_character_,
-        target = target,
+        seeds_db = seeds_db,
+        labels_db = labels_db,
         max_paths = max_paths,
         max_scaffolds = max_scaffolds,
         min_assembly_length = min_assembly_length,
@@ -351,15 +307,11 @@ new_db <- function(
       scaffold INTEGER NOT NULL,
       topology TEXT,
       length INTEGER,
-      length_raw INTEGER,
       sequence TEXT,
       -- the contig name this unit had in the file it came from: the original
       -- GetOrganelle/SPAdes header, or the user's own contig name when the
       -- assembly was supplied. Only the latter is shown in the app.
       source_contig TEXT,
-      depth TEXT,
-      gc TEXT,
-      errors TEXT,
       ignore INTEGER,
       edited INTEGER,
       blast_accession TEXT,
@@ -373,7 +325,6 @@ new_db <- function(
       triage_reason TEXT,
       triage_source TEXT,
       triage_rule TEXT,
-      edit_positions TEXT,
       time_stamp INTEGER,
       PRIMARY KEY (ID, path, scaffold)
     );"
@@ -384,24 +335,6 @@ new_db <- function(
 
   # blast_searched (resume marker keyed on query hash; see BLAST_SEARCHED_DDL) ----
   DBI::dbExecute(con, BLAST_SEARCHED_DDL)
-
-  # assembly_blast (per-path BLAST hits) ----
-  DBI::dbExecute(
-    con,
-    "CREATE TABLE assembly_blast (
-      ID TEXT NOT NULL,
-      path INTEGER NOT NULL,
-      blast_opts TEXT,
-      blast_accession TEXT,
-      blast_species TEXT,
-      blast_pident REAL,
-      blast_qcovs REAL,
-      blast_evalue REAL,
-      blast_lineage TEXT,
-      time_stamp INTEGER,
-      PRIMARY KEY (ID, path)
-    );"
-  )
 
   # blast_ref_candidates (ranked remote-GenBank hits per assembly unit) ----
   DBI::dbExecute(
@@ -522,6 +455,7 @@ new_db <- function(
 
   # annotations (nrDNA feature model per assembly unit) ----
   # status/flags are filled by curation (curate_one); tool/edited by annotation.
+  # partial_start/partial_stop: 5'/3' end partial in the feature's own orientation.
   DBI::dbExecute(
     con,
     "CREATE TABLE annotations (
@@ -535,6 +469,8 @@ new_db <- function(
       length INTEGER,
       strand TEXT,
       model_coverage REAL,
+      partial_start INTEGER,
+      partial_stop INTEGER,
       tool TEXT,
       status TEXT,
       flags TEXT,
@@ -547,8 +483,8 @@ new_db <- function(
 
   # annotate (per-unit annotation + curation summary) ----
   # One row per assembly unit (ID, path, scaffold); seeded per unit by
-  # load_assemblies() after assembly. n_flags / annotate_notes filled by curation;
-  # curate_opts selects the per-clade ruleset (see curate_opts table).
+  # load_assemblies() after assembly. n_flags / curate_flags filled by curation,
+  # annotate_notes by the curator; curate_opts selects the per-clade ruleset.
   DBI::dbExecute(
     con,
     "CREATE TABLE annotate (
@@ -564,10 +500,11 @@ new_db <- function(
       curate_opts TEXT,
       n_flags INTEGER,
       annotate_notes TEXT,
+      curate_flags TEXT,
       itsx_warnings TEXT,
       reviewed TEXT,
       problematic TEXT,
-      partial TEXT,
+      partial TEXT DEFAULT 'no',
       export_group TEXT,
       time_stamp INTEGER,
       PRIMARY KEY (ID, path, scaffold)
@@ -614,21 +551,18 @@ new_db <- function(
     "CREATE TABLE curate_opts (
       curate_opts TEXT NOT NULL,
       ruleset TEXT,
-      min_anchor_pid REAL,
-      check_contaminant INTEGER,
       PRIMARY KEY (curate_opts)
     );"
   )
   dplyr::tbl(con, "curate_opts") |>
     dplyr::rows_upsert(
-      data.frame(curate_opts = "default", ruleset = "metazoa_generic",
-        min_anchor_pid = 85, check_contaminant = 1L),
+      data.frame(curate_opts = "default", ruleset = "metazoa_generic"),
       in_place = TRUE, copy = TRUE, by = "curate_opts"
     )
 
   # triage_opts (per-rule triage actions; see TRIAGE_RULE_DEFS) ----
   DBI::dbExecute(con, TRIAGE_OPTS_DDL)
-  DBI::dbExecute(con, TRIAGE_OPTS_SEED)
+  write_triage_opts(con, triage_actions_default())
 
   # rrna_candidates (user-assembly rDNA contig search; see RRNA_CANDIDATES_DDL) ----
   DBI::dbExecute(con, RRNA_CANDIDATES_DDL)
@@ -679,6 +613,184 @@ new_db <- function(
   invisible(return())
 }
 
+#' Sample columns new_db() adds itself; a mapping column may not reuse one
+#'
+#' Compared ignoring case, as SQLite compares column names.
+#' @noRd
+SAMPLE_BUILTIN_COLS <- c("taxid", "sci_name", "rank", "match_type", "tax_alternatives", "lineage",
+  "lineage_taxids", "ref_id", "user_group", "ref_source", "taxonomy_switch",
+  "taxonomy_lock", "time_stamp")
+
+#' Read a mapping CSV as typed, or stop naming the problem and the fix
+#'
+#' Every column is read as text, so IDs like 001 stay as typed. Values are
+#' trimmed, blank cells become NA, and fully blank rows are dropped. Column
+#' names are matched to ID, Taxon, R1, R2, and Assembly ignoring case.
+#'
+#' @param mapping_fn Path to the mapping CSV.
+#' @param mapping_id,mapping_taxon ID and taxon column names.
+#' @return the mapping data.frame.
+#' @noRd
+read_mapping <- function(mapping_fn, mapping_id = "ID", mapping_taxon = "Taxon") {
+  if (length(mapping_fn) != 1 || is.na(mapping_fn) || !file.exists(mapping_fn) ||
+      dir.exists(mapping_fn)) {
+    stop("Mapping file not found: ", mapping_fn %||% "(none given)", call. = FALSE)
+  }
+  excel <- "In Excel, use File > Save As > CSV UTF-8 (Comma delimited)."
+  if (any(readBin(mapping_fn, "raw", 512L) == as.raw(0))) {
+    stop("The mapping file is not a plain-text CSV (it looks like an Excel workbook ",
+      "or another binary file): ", mapping_fn, ". ", excel, call. = FALSE)
+  }
+  hdr <- readLines(mapping_fn, n = 1L, warn = FALSE)
+  if (length(hdr) == 0 || !nzchar(trimws(hdr))) {
+    stop("The mapping file is empty: ", mapping_fn, call. = FALSE)
+  }
+  if (!grepl(",", hdr) && grepl("[;\t]", hdr)) {
+    stop("The mapping file must be comma-separated, but its header uses ",
+      if (grepl(";", hdr)) "semicolons" else "tabs", ": ", mapping_fn, ". ", excel,
+      call. = FALSE)
+  }
+  mapping <- utils::read.csv(mapping_fn, colClasses = "character", na.strings = c("", "NA"))
+  mapping[] <- lapply(mapping, function(x) {
+    x <- trimws(x)
+    x[which(x == "")] <- NA_character_
+    x
+  })
+
+  for (w in setdiff(c(mapping_id, mapping_taxon, "R1", "R2", "Assembly"), names(mapping))) {
+    i <- which(tolower(names(mapping)) == tolower(w))
+    if (length(i) == 1) {
+      message("Using mapping column '", names(mapping)[i], "' as '", w, "'.")
+      names(mapping)[i] <- w
+    }
+  }
+  if ("Assembly" %in% names(mapping)) {
+    for (w in setdiff(c("R1", "R2"), names(mapping))) mapping[[w]] <- NA_character_
+  }
+  miss <- setdiff(c(mapping_id, mapping_taxon, "R1", "R2"), names(mapping))
+  if (length(miss)) {
+    stop("The mapping file is missing column(s): ", paste(miss, collapse = ", "), ".\n",
+      "Columns found: ", paste(names(mapping), collapse = ", "), ".\n",
+      "It needs ", mapping_id, " and ", mapping_taxon, ", plus R1 and R2 (paired reads) ",
+      "or Assembly, in a comma-separated file.", call. = FALSE)
+  }
+  low <- tolower(names(mapping))
+  twins <- names(mapping)[low %in% low[duplicated(low)]]
+  if (length(twins)) {
+    stop("Mapping column names must differ by more than upper/lower case: ",
+      paste(twins, collapse = ", "), ".", call. = FALSE)
+  }
+  reserved <- c(SAMPLE_BUILTIN_COLS, if (mapping_id != "ID") "ID",
+    if (mapping_taxon != "Taxon") "Taxon")
+  hit <- names(mapping)[low %in% tolower(reserved)]
+  if (length(hit)) {
+    stop("The mapping file has column(s) RiboPilot fills in itself: ",
+      paste(hit, collapse = ", "), ". Rename them (for example my_", tolower(hit[1]), ").",
+      call. = FALSE)
+  }
+
+  blank <- rowSums(!is.na(mapping)) == 0
+  no_id <- is.na(mapping[[mapping_id]]) & !blank
+  if (any(no_id)) {
+    stop("Some rows have no ", mapping_id, " (blank or NA): line(s) ",
+      paste(truncate_ids(which(no_id) + 1L), collapse = ", "), " of the mapping file.",
+      call. = FALSE)
+  }
+  mapping <- mapping[!blank, , drop = FALSE]
+  rownames(mapping) <- NULL
+  if (nrow(mapping) == 0) {
+    stop("The mapping file has a header row but no samples: ", mapping_fn, call. = FALSE)
+  }
+
+  ids <- mapping[[mapping_id]]
+  k <- tolower(ids)
+  dup <- unique(ids[k %in% k[duplicated(k)]])
+  if (length(dup)) {
+    stop("Each ", mapping_id, " must be unique, ignoring upper/lower case (sample folders ",
+      "would clash on macOS and Windows). Repeated: ",
+      paste(truncate_ids(dup), collapse = ", "), call. = FALSE)
+  }
+  bad <- ids[!grepl("^[A-Za-z0-9_:-]+$", ids)]
+  if (length(bad)) {
+    stop("IDs may use only letters, digits, dash (-), underscore (_), and colon (:), with ",
+      "no spaces, dots, or slashes. Change: ",
+      paste(truncate_ids(sQuote(bad, FALSE)), collapse = ", "), call. = FALSE)
+  }
+  long <- ids[nchar(ids) > 18]
+  if (length(long)) {
+    stop("IDs must be 18 characters or fewer. Shorten: ",
+      paste(truncate_ids(long), collapse = ", "), call. = FALSE)
+  }
+  mapping
+}
+
+#' Check a mapping's read and assembly columns against the files on disk
+#'
+#' @return the mapping, with a normalized `Assembly` column.
+#' @noRd
+check_mapping <- function(mapping, mapping_id = "ID", data_path = NULL, assembly_path = NULL,
+                          check_reads = TRUE, check_assemblies = TRUE) {
+  ids <- mapping[[mapping_id]]
+  stop_unsafe_paths(c(
+    stats::setNames(mapping$R1, paste(ids, "R1")),
+    stats::setNames(mapping$R2, paste(ids, "R2")),
+    if ("Assembly" %in% names(mapping)) stats::setNames(mapping$Assembly, paste(ids, "Assembly"))),
+    mount = FALSE)
+  mapping <- normalize_assembly_column(mapping, mapping_id, assembly_path)
+  if (isTRUE(check_reads)) check_mapping_reads(mapping, mapping_id, data_path)
+  if (isTRUE(check_assemblies)) check_mapping_assemblies(mapping, mapping_id, assembly_path)
+  mapping
+}
+
+#' Stop when a path cannot hold a new project
+#'
+#' @return (invisibly) the path, made absolute.
+#' @noRd
+check_project_path <- function(path, force = FALSE) {
+  path <- normalizePath(path, mustWork = FALSE)
+  if (!startsWith(path, "/")) path <- file.path(getwd(), path)
+  if (file.exists(path) && !dir.exists(path)) {
+    stop("The project path is a file, not a folder: ", path, call. = FALSE)
+  }
+  if (file.exists(file.path(path, ".sqlite")) && !force) {
+    stop("A RiboPilot project already exists in ", path, ". Use force = TRUE to ",
+      "replace it (its results will be lost).", call. = FALSE)
+  }
+  top <- path
+  while (!dir.exists(top) && dirname(top) != top) top <- dirname(top)
+  if (unname(file.access(top, 2)) != 0) {
+    stop("Cannot write to ", top, ": permission denied.", call. = FALSE)
+  }
+  stop_unsafe_paths(c(path = path))
+  invisible(path)
+}
+
+#' Stop on paths the pipeline passes unquoted to Docker, Singularity, and bash
+#'
+#' @param x Named character vector; names say what each path is. NA, "" and
+#'   URLs are skipped.
+#' @param mount Also refuse "," and ":", which split a container mount.
+#' @noRd
+stop_unsafe_paths <- function(x, mount = TRUE) {
+  x <- x[!is.na(x) & nzchar(x) & !grepl("^[a-z]+://", x)]
+  re <- if (mount) {
+    "[\\s'\"`$\\\\;&|<>()*?#!{}\\[\\],:]"
+  } else {
+    "[\\s'\"`$\\\\;&|<>()*?#!{}\\[\\]]"
+  }
+  hit <- regmatches(x, gregexpr(re, x, perl = TRUE))
+  bad <- which(lengths(hit) > 0)
+  if (length(bad) == 0) return(invisible())
+  lines <- vapply(bad, function(i) {
+    ch <- unique(hit[[i]])
+    what <- unique(ifelse(grepl("\\s", ch, perl = TRUE), "space", sQuote(ch, FALSE)))
+    sprintf("  %s: '%s' (remove: %s)", names(x)[i], x[i], paste(what, collapse = ", "))
+  }, character(1))
+  stop("These paths have characters the pipeline cannot pass to Docker, Singularity, ",
+    "or Nextflow:\n", paste(truncate_ids(lines), collapse = "\n"),
+    "\nRename them to use only letters, digits, and . _ - / characters.", call. = FALSE)
+}
+
 #' Check that the read files named in a mapping table exist
 #'
 #' @param mapping Mapping data frame (needs `R1` and `R2` columns).
@@ -687,9 +799,6 @@ new_db <- function(
 #'   NULL, only the paired-end check runs.
 #' @noRd
 check_mapping_reads <- function(mapping, mapping_id = "ID", data_path = NULL) {
-  if (!all(c("R1", "R2") %in% colnames(mapping))) {
-    stop("Mapping file must have R1 and R2 columns naming the paired read files")
-  }
   ids <- as.character(mapping[[mapping_id]])
   blank <- function(x) is.na(x) | !nzchar(trimws(as.character(x)))
 
@@ -715,6 +824,13 @@ check_mapping_reads <- function(mapping, mapping_id = "ID", data_path = NULL) {
       "\nSingle-end reads are not supported by the RiboPilot pipeline."
     )
   }
+  same <- !no_reads & basename(mapping$R1) == basename(mapping$R2)
+  if (any(same)) {
+    stop(
+      "R1 and R2 must name two different read files, but these use one file name for both:\n",
+      paste(truncate_ids(paste0(ids[same], ": ", mapping$R1[same])), collapse = "\n")
+    )
+  }
 
   mapping <- mapping[!no_reads, , drop = FALSE]
   ids <- ids[!no_reads]
@@ -725,9 +841,20 @@ check_mapping_reads <- function(mapping, mapping_id = "ID", data_path = NULL) {
   if (length(data_path) != 1 || is.na(data_path) || !nzchar(data_path)) {
     return(invisible())
   }
+  if (!dir.exists(data_path)) {
+    stop("data_path does not exist or is not a folder: ", data_path)
+  }
+  files <- as.vector(rbind(mapping$R1, mapping$R2))
+  full <- grepl("^[/~]", files)
+  if (any(full)) {
+    stop(
+      "R1 and R2 take file names relative to data_path (", data_path, "), not full paths:\n",
+      paste(truncate_ids(paste0(rep(ids, each = 2)[full], ": ", files[full])), collapse = "\n")
+    )
+  }
   reads <- data.frame(
     ID = rep(ids, each = 2),
-    path = file.path(data_path, as.vector(rbind(mapping$R1, mapping$R2)))
+    path = file.path(data_path, files)
   )
   bad <- reads[!file.exists(reads$path), , drop = FALSE]
   if (nrow(bad)) {
@@ -791,13 +918,45 @@ check_mapping_assemblies <- function(mapping, mapping_id = "ID", assembly_path =
   if (!any(named) || length(assembly_path) != 1 || !nzchar(assembly_path)) {
     return(invisible())
   }
+  if (!dir.exists(assembly_path)) {
+    stop("assembly_path does not exist or is not a folder: ", assembly_path)
+  }
   ids <- as.character(mapping[[mapping_id]])[named]
-  paths <- file.path(assembly_path, mapping$Assembly[named])
+  files <- mapping$Assembly[named]
+  full <- grepl("^[/~]", files)
+  if (any(full)) {
+    stop(
+      "Assembly takes file names relative to assembly_path (", assembly_path, "), not full paths:\n",
+      paste(truncate_ids(paste0(ids[full], ": ", files[full])), collapse = "\n")
+    )
+  }
+  paths <- file.path(assembly_path, files)
   bad <- !file.exists(paths)
   if (any(bad)) {
     stop(
       "Assembly files named in the mapping file were not found in ", assembly_path, ":\n",
       paste(truncate_ids(paste0(ids[bad], ": ", paths[bad])), collapse = "\n")
+    )
+  }
+  gz <- grepl("\\.gz$", files, ignore.case = TRUE)
+  if (any(gz) && !all(gz)) {
+    stop(
+      "Assembly files must be all gzipped (.gz) or all plain in one project; the pipeline ",
+      "cannot mix them. Gzipped: ", paste(truncate_ids(ids[gz]), collapse = ", "),
+      ". Plain: ", paste(truncate_ids(ids[!gz]), collapse = ", "), "."
+    )
+  }
+  first <- vapply(paths, function(p) {
+    con <- gzfile(p, "rt")
+    on.exit(close(con))
+    l <- suppressWarnings(readLines(con, n = 1L, warn = FALSE))
+    if (length(l)) l else ""
+  }, character(1), USE.NAMES = FALSE)
+  notfa <- !startsWith(first, ">")
+  if (any(notfa)) {
+    stop(
+      "Assembly files must be FASTA (first line starts with '>'), but these are not:\n",
+      paste(truncate_ids(paste0(ids[notfa], ": ", paths[notfa])), collapse = "\n")
     )
   }
   invisible()

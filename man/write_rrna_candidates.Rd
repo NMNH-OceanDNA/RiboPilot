@@ -11,7 +11,7 @@ write_rrna_candidates(con, id, evidence)
 
 \item{id}{Sample ID.}
 
-\item{evidence}{data.frame from [select_rrna_contigs()].}
+\item{evidence}{data.frame from \code{\link[=select_rrna_contigs]{select_rrna_contigs()}}.}
 }
 \value{
 (invisibly) rows written.

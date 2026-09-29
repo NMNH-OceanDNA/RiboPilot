@@ -12,7 +12,7 @@ process fallback_assemble {
     errorStrategy 'ignore'
 
     input:
-    tuple val(id), path(reads), val(nthreads), val(mem), val(method)
+    tuple val(id), path(reads), val(nthreads), val(mem), val(method), path(seeds, stageAs: 'seeds/*'), path(labels, stageAs: 'labels/*'), val(seeds_url), val(labels_url), val(bowtie2), val(spades)
 
     output:
     tuple val(id), path("${id}_assembly_*.fasta"), emit: paths
@@ -20,6 +20,7 @@ process fallback_assemble {
     script:
     """
     RIBOPILOT_SRC='${params.ribopilot_src}' rp_fallback.R \\
-        '${params.db}' '${id}' ${reads[0]} ${reads[1]} '${method}' ${task.cpus}
+        '${id}' ${reads[0]} ${reads[1]} '${method}' ${task.cpus} ${task.attempt} \\
+        '${seeds}' '${labels}' '${bowtie2}' '${spades}' '${seeds_url}' '${labels_url}'
     """
 }

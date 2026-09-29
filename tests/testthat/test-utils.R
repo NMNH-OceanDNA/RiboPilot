@@ -25,8 +25,11 @@ test_that("a connection failure is unknown even when the message contains 403", 
 })
 
 test_that("a missing reference database warns instead of killing project init", {
-  expect_warning(RiboPilot:::check_reference_db("/no/such/dir/seeds.fasta", "seeds"),
-    "not found")
+  w <- tryCatch(RiboPilot:::check_reference_db("/no/such/dir/seeds.fasta", "seeds"),
+    warning = conditionMessage)
+  expect_match(w, "not found")
+  expect_match(w, "Reference step", fixed = TRUE)
+  expect_no_match(w, "Asteroidea")
 })
 
 test_that("config_container_engine reads the enabled flag, not the block", {
@@ -46,11 +49,30 @@ test_that("app connections carry the pipeline's busy timeout", {
   on.exit(DBI::dbDisconnect(con))
   expect_equal(DBI::dbGetQuery(con, "PRAGMA busy_timeout")[[1]], 10000)
 
-  withr::local_options(golem.app.prod = FALSE)
   local_mocked_bindings(app_project = function() dir, .package = "RiboPilot")
   acon <- RiboPilot:::app_con()
   on.exit(DBI::dbDisconnect(acon), add = TRUE)
   expect_equal(DBI::dbGetQuery(acon, "PRAGMA busy_timeout")[[1]], 10000)
+})
+
+test_that("grouping, export, and the run count open the project with the busy timeout", {
+  con <- chimera_test_con()
+  dir <- dirname(DBI::dbGetInfo(con)$dbname)
+  DBI::dbDisconnect(con)
+  real <- RiboPilot::open_project_db
+  opened <- 0L
+  local_mocked_bindings(
+    open_project_db = function(db) { opened <<- opened + 1L; real(db) },
+    .package = "RiboPilot")
+  RiboPilot:::assign_export_group(dir, "S1", "g1")
+  RiboPilot:::clear_export_group(dir, "S1")
+  RiboPilot:::sample_assembler(dir, "S1")
+  RiboPilot:::nf_pending_count(dir)
+  RiboPilot:::project_has_reads(dir)
+  RiboPilot:::reference_mount_dirs(dir)
+  expect_error(RiboPilot::export_bundle(dir), "No units to export")
+  expect_error(RiboPilot::export_project(dir), "No units to export")
+  expect_equal(opened, 9L)
 })
 
 test_that("filesystem type is probed once per directory", {
@@ -76,4 +98,15 @@ test_that("sqlite journal mode is overridable", {
   expect_equal(RiboPilot:::sqlite_journal_mode("/tmp/x.sqlite"), "delete")
   Sys.setenv(RIBOPILOT_SQLITE_JOURNAL = "wal")
   expect_equal(RiboPilot:::sqlite_journal_mode("/tmp/x.sqlite"), "wal")
+})
+
+test_that("run_app hands the project to the app and RiboPilot is the same function", {
+  withr::local_options(list(RiboPilot.headless = NULL))
+  dir <- withr::local_tempdir()
+  file.create(file.path(dir, ".sqlite"))
+  local_mocked_bindings(check_nextflow_version = function(...) invisible("supported"),
+    ensure_hydra_setup = function(...) invisible(), .package = "RiboPilot")
+  app <- RiboPilot:::run_app(dir, launch.browser = FALSE, headless = FALSE)
+  expect_equal(app$appOptions$project, normalizePath(dir))
+  expect_identical(RiboPilot::RiboPilot, RiboPilot::run_app)
 })

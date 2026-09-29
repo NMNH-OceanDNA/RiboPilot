@@ -23,7 +23,7 @@
 // paying for neither assembly nor a second remote BLAST. See
 // dev/design/15_WF2_DECOMMISSION.md.
 
-include { preprocess } from './modules/preprocess.nf'
+include { preprocess; below_min_depth } from './modules/preprocess.nf'
 include { assemble } from './modules/assemble.nf'
 include { fallback_assemble } from './modules/fallback.nf'
 include { find_rrna; stage_assembly } from './modules/find_rrna.nf'
@@ -54,6 +54,11 @@ def live_db(p) {
     (p && (p ==~ '^https?://.*' || file(p).exists())) ? p : ''
 }
 
+// The fallback downloads a URL itself, so a dead one fails only its sample.
+def is_url(p) { p ==~ '^https?://.*' }
+def stage_db(p) { p && !is_url(p) ? file(p) : [] }
+def url_db(p) { is_url(p) ? p : '' }
+
 workflow {
     // samples straight from the DB (tab-separated, with header)
     rows = query_samples().splitCsv(header: true, sep: '\t')
@@ -82,8 +87,8 @@ workflow {
     // Seeds / labels stay strings here. sqlite3 renders a SQL NULL as '', and
     // assemble_opts.seeds_db is nullable, so file('') would throw for EVERY row
     // -- including fallback rows that never use seeds -- before a task is
-    // submitted. Only the getOrganelle arm below turns them into files.
-    asm_opts = rows.map { r -> tuple(r.ID, r.asm_cpus, r.asm_mem, r.getOrganelle, live_db(r.seeds_db), live_db(r.labels_db), r.assembler) }
+    // submitted. The assembler arms below turn them into files, or [] (nothing staged) when blank.
+    asm_opts = rows.map { r -> tuple(r.ID, r.asm_cpus, r.asm_mem, r.getOrganelle, live_db(r.seeds_db), live_db(r.labels_db), r.assembler, r.bowtie2, r.spades) }
     // Only samples assembling from reads: a supplied assembly may also name
     // reads (for coverage), and those must not be assembled as well.
     read_ids = sample_rows.reads.map { r -> tuple(r.ID, true) }
@@ -93,6 +98,11 @@ workflow {
         .join(read_ids)
         .map { id, reads, _flag -> tuple(id, reads) }
         .join(asm_opts)
+    below_min_depth(preprocess.out.reads
+        .filter { id, reads, after -> (after as Integer) < (params.minDepth as Integer) }
+        .map { id, reads, after -> tuple(id, after) }
+        .join(read_ids)
+        .map { id, after, _flag -> tuple(id, after) })
 
     // Per-sample assembler. The fallback arm is `true` rather than an equality
     // test on purpose: branch DROPS an item matching no condition, silently, so
@@ -105,11 +115,13 @@ workflow {
         go: it[7] == 'getorganelle' && it[5] && it[6]
         fb: true
     }
-    assemble(asm_branched.go.map { id, reads, cpus, mem, go, seeds, labels, _asm ->
+    assemble(asm_branched.go.map { id, reads, cpus, mem, go, seeds, labels, _asm, _bt2, _spades ->
         tuple(id, reads, cpus, mem, go, file(seeds), file(labels)) })
-    fallback_assemble(asm_branched.fb.map { id, reads, cpus, mem, _go, _seeds, _labels, asm ->
+    fallback_assemble(asm_branched.fb.map { id, reads, cpus, mem, _go, seeds, labels, asm, bt2, spades ->
         // a seedless getorganelle sample lands here; give it a real fallback method
-        tuple(id, reads, cpus, mem, asm == 'getorganelle' ? 'bait' : asm) })
+        def method = asm == 'getorganelle' ? 'bait' : asm
+        def s = method == 'bait' ? seeds : ''
+        tuple(id, reads, cpus, mem, method, stage_db(s), stage_db(labels), url_db(s), url_db(labels), bt2, spades) })
 
     // Load assemblies + score paths (also seeds one annotate unit per scaffold).
     // Both assemblers emit the same fasta contract, so they merge here and
@@ -118,9 +130,16 @@ workflow {
         .mix(fallback_assemble.out.paths)
         .mix(find_rrna.out.paths)
         .mix(stage_assembly.out.paths))
+    // Units queued for annotation only, on samples this run is not assembling.
+    // Same tuple shape as the freshly assembled ones, so they mix into one
+    // channel and the whole tail below is shared.
+    requeued_rows = query_annotate_units().splitCsv(header: true, sep: '\t')
+    requeued = requeued_rows.map { r -> tuple(r.ID, r.path, r.scaffold, r.cpus, r.mem) }
+    // a scaffold put back after a load-time drop was never searched or screened
+    unsearched = requeued_rows.filter { r -> r.searched == '0' }.map { r -> r.ID }.unique()
     // per-scaffold remote GenBank BLAST -> ranked reference candidates + screen,
     // then fetch each candidate reference (sequence + features) from NCBI
-    blast_genbank(score.out)
+    blast_genbank(score.out.mix(unsearched))
     blast_ref_fetch(blast_genbank.out)
     // per-unit coverage (independent branch off score)
     cov_in = score.out.join(preprocess.out.reads.map { id, reads, after -> tuple(id, reads) })
@@ -136,12 +155,6 @@ workflow {
         .flatMap { _id, tsv ->
             tsv.splitCsv(header: true, sep: '\t')
                .collect { r -> tuple(r.ID, r.path, r.scaffold, r.cpus, r.mem) } }
-    // Units queued for annotation only, on samples this run is not assembling.
-    // Same tuple shape as the freshly assembled ones, so they mix into one
-    // channel and the whole tail below is shared.
-    requeued = query_annotate_units()
-        .splitCsv(header: true, sep: '\t')
-        .map { r -> tuple(r.ID, r.path, r.scaffold, r.cpus, r.mem) }
 
     annotate_tools(units.mix(requeued))
     reconcile(annotate_tools.out)

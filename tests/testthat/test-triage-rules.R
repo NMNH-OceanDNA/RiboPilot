@@ -47,7 +47,7 @@ test_that("a scaffold with no usable hit is flagged, never dropped", {
   d <- RiboPilot:::triage_rules(us(list(feats = 5, nuc = NA)))
   expect_equal(d$new_rule, "no_screen")
   expect_true(is.na(d$new_triage))
-  expect_match(d$new_reason, "no GenBank hit says")
+  expect_match(d$new_reason, "no BLAST hit says")
 })
 
 test_that("the 2x2 over the two channels is exhaustive", {
@@ -175,7 +175,7 @@ test_that("the no_screen reason covers an unclassifiable hit, not just a missing
   d <- RiboPilot:::triage_rules(us(list(feats = 5, nuc = NA)))
   expect_equal(d$new_rule, "no_screen")
   expect_false(grepl("has not run for this scaffold", d$new_reason, fixed = TRUE))
-  expect_match(d$new_reason, "no GenBank hit says")
+  expect_match(d$new_reason, "no BLAST hit says")
 })
 
 test_that("the screen rule fires only on an off_target verdict", {
@@ -210,8 +210,8 @@ test_that("the screen rule sits after the combination rules and before odd_one_o
   expect_equal(k[length(k) - 1], "odd_one_out")
 })
 
-test_that("triage rule chimeric fires on likely with the reason text", {
-  d <- data.frame(ID = "S1", chimera_label = c("likely", "suspect"),
+test_that("triage rule chimeric fires on severe with the reason text", {
+  d <- data.frame(ID = "S1", chimera_label = c("severe", "minor"),
     chimera_reason = c("1-2500 A; 2600-4000 B", "x"),
     annotated_n = 1L, is_nuclear_rrna = 1L, n_features = 3L, stringsAsFactors = FALSE)
   ctx <- RiboPilot:::triage_rule_ctx(d)

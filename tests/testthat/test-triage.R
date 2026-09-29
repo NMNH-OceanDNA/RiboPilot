@@ -29,7 +29,7 @@ mk_triage_db <- function() {
   # has to be here or the fixture stops resembling a project database
   DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, assemble_switch INT, triage_opts TEXT)")
   DBI::dbExecute(con, RiboPilot:::TRIAGE_OPTS_DDL)
-  DBI::dbExecute(con, RiboPilot:::TRIAGE_OPTS_SEED)
+  RiboPilot:::write_triage_opts(con, RiboPilot:::triage_actions_default())
   DBI::dbExecute(con, "INSERT INTO assemble VALUES('S1',4,'default')")
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S1','Danio rerio',?)", params = list(FISH_T))
   for (s in 1:3) {

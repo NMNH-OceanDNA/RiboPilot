@@ -43,6 +43,15 @@ test_that("nf_reference_command names the entry point and every param", {
   expect_true("--clades" %in% a && "--outDir" %in% a)
 })
 
+test_that("a real rawDir in the config is passed, so an older profile's bind resolves", {
+  d <- withr::local_tempdir()
+  writeLines(c("params {", "    rawDir = '/data/reads'", "}"), file.path(d, ".config"))
+  a <- RiboPilot:::nf_reference_command(d, "COUNT", "c.tsv", "/refs", "o")
+  expect_equal(a[which(a == "--rawDir") + 1], "/data/reads")
+  writeLines(c("params {", "    rawDir = 'NA'", "}"), file.path(d, ".config"))
+  expect_false("--rawDir" %in% RiboPilot:::nf_reference_command(d, "COUNT", "c.tsv", "/refs", "o"))
+})
+
 test_that("refseq and the api key only appear when asked for", {
   d <- withr::local_tempdir()
   writeLines("process { executor = 'local' }", file.path(d, ".config"))
@@ -211,4 +220,33 @@ test_that("an unset or placeholder config key falls back to the environment", {
   expect_equal(RiboPilot:::project_ncbi_key(d), "from_env")
   writeLines(c("params {", "  ncbi_api_key = 'NA'", "}"), file.path(d, ".config"))
   expect_equal(RiboPilot:::project_ncbi_key(d), "from_env")
+})
+
+test_that("a count run launches from .reference and releases the project lock", {
+  d <- withr::local_tempdir()
+  ref <- file.path(d, "refs"); dir.create(ref)
+  seen <- new.env()
+  runner <- function(wd, args, log = NULL) {
+    seen$wd <- wd
+    seen$locked <- file.exists(RiboPilot:::run_lock_path(d))
+    0L
+  }
+  RiboPilot:::run_clade_counts(d, ref, data.frame(ref_id = "a", taxid = 7898L,
+    clade_name = "Actinopterygii", query = "q", stringsAsFactors = FALSE), runner = runner)
+  expect_equal(seen$wd, file.path(d, ".reference"))
+  expect_true(seen$locked)
+  expect_false(file.exists(RiboPilot:::run_lock_path(d)))
+})
+
+test_that("a count run is refused while another run holds the project lock", {
+  skip_on_os("windows")
+  d <- withr::local_tempdir()
+  ref <- file.path(d, "refs"); dir.create(ref)
+  m <- RiboPilot:::run_lock_take(d, "pipeline")
+  other <- processx::process$new("sleep", "30")
+  Sys.unsetenv(m)
+  on.exit(other$kill(), add = TRUE)
+  expect_error(RiboPilot:::run_clade_counts(d, ref, data.frame(ref_id = "a", taxid = 7898L,
+    clade_name = "Actinopterygii", query = "q", stringsAsFactors = FALSE),
+    runner = function(...) stop("must not launch")), "already going")
 })

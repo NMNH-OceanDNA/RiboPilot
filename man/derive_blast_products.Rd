@@ -25,7 +25,7 @@ derive_blast_products(
 (invisibly) the ranked candidate data.frame.
 }
 \description{
-Reads `blast_hits` rather than a hits file, so thresholds can change without
+Reads \code{blast_hits} rather than a hits file, so thresholds can change without
 re-running a remote search. Replaces the unit's rows in
-`blast_ref_candidates` and `blast_screen` and updates `assemblies.blast_*`.
+\code{blast_ref_candidates} and \code{blast_screen} and updates \verb{assemblies.blast_*}.
 }

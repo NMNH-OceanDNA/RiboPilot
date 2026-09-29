@@ -8,7 +8,7 @@ new_test_project(
   path = ".",
   n = Inf,
   full_size = FALSE,
-  executor = "conda",
+  executor = "docker",
   container = paste0("macguigand/ribopilot:", utils::packageVersion("RiboPilot")),
   min_depth = 500,
   sra_bin = NULL,
@@ -26,37 +26,41 @@ bundled synthetic samples CHIM00 and CHIM01 are always included.}
 \item{full_size}{Fetch the complete read sets from ENA/SRA (TRUE) instead of
 the small rDNA-filtered subsets (default FALSE).}
 
-\item{executor}{Executor / config profile (default "conda").}
+\item{executor}{Executor / config profile (default "docker").}
 
 \item{container}{Container image for the pipeline.}
 
-\item{min_depth}{Minimum trimmed paired reads to proceed with assembly.}
+\item{min_depth}{Minimum number of reads left after trimming, counting both
+reads of a pair (2000000 is 1000000 pairs). A sample below it is not
+assembled and is marked Failed with a note.}
 
-\item{sra_bin}{Directory holding `fasterq-dump` (for the SRA fallback);
-default searches `PATH`.}
+\item{sra_bin}{Directory holding \code{fasterq-dump} (for the SRA fallback);
+default searches \code{PATH}.}
 
 \item{Rproj}{Initialize an RStudio project (default TRUE; no effect outside
 RStudio).}
 
 \item{force}{Recreate an existing project database / config (default FALSE).}
 
-\item{...}{Passed to [new_project()] (e.g. `custom_seeds_db`).}
+\item{...}{Passed to \code{\link[=new_project]{new_project()}} (e.g. \code{custom_seeds_db}).}
 }
 \value{
 (invisibly) the project path.
 }
 \description{
-Sets up a ready-to-run test project from the bundled 10-sample test set (USNM
-fish genome skims, study SRP313821): downloads each sample's paired reads,
-writes the mapping file, and initializes the project database + config.
+Sets up a ready-to-run practice project from the bundled test set: 10 fish
+genome skims (USNM, study SRP313821) plus two synthetic samples, CHIM00 (a
+clean control) and CHIM01 (fish rDNA joined to a Penicillium 28S). Downloads
+each fish sample's paired reads, writes the mapping file, and initializes the
+project database and config.
 }
 \details{
 By default the reads are the rDNA-filtered subsets published with the
 RiboPilot GitHub releases (a few MB per sample, seconds to fetch). With
-`full_size = TRUE` the complete read sets are fetched instead, from ENA when
-reachable and falling back to NCBI SRA (`fasterq-dump`, which must be on
-`PATH` or given via `sra_bin`) on networks where the ENA fastq mirror is
-blocked; that is several GB and takes a while. Use `n` to fetch fewer
+\code{full_size = TRUE} the complete read sets are fetched instead, from ENA when
+reachable and falling back to NCBI SRA (\code{fasterq-dump}, which must be on
+\code{PATH} or given via \code{sra_bin}) on networks where the ENA fastq mirror is
+blocked; that is several GB and takes a while. Use \code{n} to fetch fewer
 samples. Already-downloaded, valid read files are skipped, so an interrupted
 run resumes cleanly.
 }

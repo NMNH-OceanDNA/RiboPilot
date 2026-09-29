@@ -18,12 +18,12 @@ triage_opts preset.}
 }
 \value{
 list with, for the END STATE after Apply: n_units, n_drop, n_undecided,
-  n_keep, n_samples, emptied, n_user_skipped, n_locked_skipped, by_rule; and,
-  for what Apply would actually CHANGE: n_changed (units that are not skipped
-  and whose stored triage/reason/rule differ from the proposed ones, by the
-  same comparison auto_triage_sample() uses to decide what to write), broken
-  down by proposed verdict into n_new_drop, n_new_keep and n_new_flag, which
-  therefore sum to n_changed.
+n_keep, n_samples, emptied, n_user_skipped, n_locked_skipped, by_rule; and,
+for what Apply would actually CHANGE: n_changed (units that are not skipped
+and whose stored triage/reason/rule differ from the proposed ones, by the
+same comparison auto_triage_sample() uses to decide what to write), broken
+down by proposed verdict into n_new_drop, n_new_keep and n_new_flag, which
+therefore sum to n_changed.
 }
 \description{
 A bulk write across a whole project is the highest-blast-radius action in the

@@ -16,6 +16,7 @@ test_that("a failed screen insert leaves the stored verdict in place", {
   on.exit(DBI::dbDisconnect(con))
   DBI::dbExecute(con, RiboPilot:::SCREEN_DDL)
   DBI::dbExecute(con, RiboPilot:::BLAST_HITS_DDL)
+  DBI::dbExecute(con, RiboPilot:::BLAST_SEARCHED_DDL)
   DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT, lineage_taxids TEXT, reference_support INT)")
   DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT,
     sequence TEXT, length INT)")
@@ -59,8 +60,7 @@ test_that("a failed assemblies insert leaves the sample's scaffolds in place", {
   DBI::dbExecute(con, "INSERT INTO assemble_opts VALUES('default', 10, 10, NULL)")
   DBI::dbExecute(con, "INSERT INTO assemble VALUES('S1',NULL,NULL,NULL,NULL,1,NULL,'default',NULL)")
 
-  ad <- file.path(dir, "S1", "assemble")
-  dir.create(ad, recursive = TRUE)
+  ad <- dir
   writeLines(c(
     ">S1.1.1 circular", strrep("ACGT", 200),
     ">S1.1.2 linear", strrep("TGCA", 150)),
@@ -140,18 +140,17 @@ test_that("a failed reference-record insert leaves the fetched sequence in place
   seq <- paste0(strrep("ACGT", 10), strrep("GT", 10))
   fa <- file.path(d, "MZ1.fa")
   writeLines(c(">MZ1.1 Fake species small subunit ribosomal RNA gene", seq), fa)
-  ft <- file.path(d, "MZ1.ft")
-  writeLines(c(">Feature MZ1.1", paste(1, nchar(seq), "rRNA", sep = "\t"),
-    paste("", "", "", "product", "18S ribosomal RNA", sep = "\t")), ft)
+  ann <- data.frame(seqid = "MZ1.1", element = "18S", type = "rRNA", start = 1L,
+    stop = nchar(seq), strand = "+", stringsAsFactors = FALSE)
 
-  RiboPilot:::write_blast_ref(con, "MZ1", fa, ft)
+  RiboPilot:::write_blast_refs(con, fa, ann)
   before <- DBI::dbGetQuery(con, "SELECT accession, sequence FROM blast_ref_sequences")
   expect_equal(nrow(before), 1L)
   expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM blast_ref_annotations")$n, 1L)
 
   # the features fail, and the record they belong to must not vanish with them
   block_inserts(con, "blast_ref_annotations")
-  expect_error(RiboPilot:::write_blast_ref(con, "MZ1", fa, ft), "blocked")
+  expect_error(RiboPilot:::write_blast_refs(con, fa, ann), "blocked")
   expect_equal(DBI::dbGetQuery(con, "SELECT accession, sequence FROM blast_ref_sequences"), before)
   expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM blast_ref_annotations")$n, 1L)
 })
@@ -160,6 +159,7 @@ test_that("a failed blast_hits insert leaves the unit's stored hits in place", {
   con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
   on.exit(DBI::dbDisconnect(con))
   DBI::dbExecute(con, RiboPilot:::BLAST_HITS_DDL)
+  DBI::dbExecute(con, RiboPilot:::BLAST_SEARCHED_DDL)
   DBI::dbExecute(con, "CREATE TABLE blast_ref_candidates(ID TEXT, path INT, scaffold INT, rank INT,
     accession TEXT, species TEXT, title TEXT, pident REAL, qcovs REAL, evalue REAL,
     bitscore REAL, time_stamp INT)")

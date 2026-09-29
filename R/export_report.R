@@ -4,7 +4,7 @@
 
 #' Every annotated element name across a set of exported units, in canonical order
 #'
-#' Elements outside [RRNA_ELEMENT_ORDER] are kept (sorted) at the end so a
+#' Elements outside `RRNA_ELEMENT_ORDER` are kept (sorted) at the end so a
 #' project with custom element names still gets an alignment section.
 #' @noRd
 report_elements <- function(con, units) {

@@ -140,3 +140,20 @@ test_that("a project made before this table existed still exports", {
   expect_equal(RiboPilot:::get_export_opts(con)$fasta_header_marker,
     RiboPilot:::DEFAULT_FASTA_HEADER_MARKER)
 })
+
+test_that("[organism=] is the Taxonomy name only when it matched the whole Taxon", {
+  eo <- RiboPilot:::export_organism
+  expect_equal(eo("danio_rerio", "Danio rerio", "exact", "species"), "Danio rerio")
+  expect_equal(eo("Upeneus sp. A", "Upeneus", "exact", "genus"), "Upeneus sp. A")
+  expect_equal(eo("Upeneous parvus", "Upeneus parvus", "manual", "species"), "Upeneus parvus")
+  expect_equal(eo("Gen. nov. 1", "Mullidae", "manual", "family"), "Gen. nov. 1")
+  expect_equal(eo("Upeneus parvis", "Upeneus parvus", "fuzzy_species", "species"), "Upeneus parvis")
+  expect_equal(eo("Danio rerio"), "Danio rerio")
+
+  con <- mk_opts_db(); on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "ALTER TABLE samples ADD COLUMN match_type TEXT")
+  DBI::dbExecute(con, "UPDATE samples SET Taxon = 'danio rerio', match_type = 'exact'")
+  d <- RiboPilot:::export_header_data(con, one_unit)
+  expect_match(RiboPilot:::render_fasta_headers(RiboPilot:::DEFAULT_FASTA_HEADER, d),
+    "^S1 \\[organism=Danio rerio\\] \\[moltype=genomic DNA\\] Danio rerio 18S")
+})

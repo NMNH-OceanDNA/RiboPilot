@@ -1,126 +1,37 @@
-window.MP_SAMPLE_TABLES = '#tbl, .mp-sample-table';
+window.MP_SAMPLE_TABLES = '#tbl';
 
-// Rows the main table is showing: reactable's filtered + sorted rows, minus the
-// ones the lock/state filter CSS hides. The server names the mode's lock/state
-// columns (rp_table_pfx) when it renders the table.
-window.RP_TBL_PFX = 'assemble';
+// The main table's rows in display order, after its search and column filters.
 window.rpVisibleRows = function() {
-  var tbl = document.getElementById('tbl');
-  var st = window.Reactable ? Reactable.getState('tbl') : null;
-  var rows = (st && st.sortedData) || [];
-  if (!tbl) return rows;
-  var probe = document.createElement('div'); tbl.appendChild(probe);
-  rows = rows.filter(function(r) {
-    probe.className = 'rp-lock-' + r[RP_TBL_PFX + '_lock'] + ' rp-state-' + r[RP_TBL_PFX + '_switch'];
-    return getComputedStyle(probe).display !== 'none';
-  });
-  probe.remove();
-  return rows;
+  try { return Reactable.getState('tbl').sortedData; } catch (e) { return []; }
 };
+// Report those rows (1-based data indices) whenever the table redraws. Only
+// #tbl is watched, and reporting changes nothing in it, so an idle page does
+// no work.
 $( document ).ready(function(){
-  Shiny.addCustomMessageHandler('rp_table_pfx', function(pfx) {
-    window.RP_TBL_PFX = pfx;
-    setTimeout(rpReportVisible, 0);
-  });
-  // The status line above the table counts what is actually shown.
-  var pending = null;
-  function rpReportVisible() {
-    Shiny.setInputValue('tbl_visible_n', rpVisibleRows().length);
+  var tbl = document.getElementById('tbl'), pending = null;
+  if (!tbl) return;
+  function report() {
+    try {
+      Shiny.setInputValue('tbl_visible',
+        {rows: Reactable.getInstance('tbl').rows.map(function(r) { return r.index + 1; })});
+    } catch (e) {}
   }
-  function queue() { clearTimeout(pending); pending = setTimeout(rpReportVisible, 50); }
-  function hook() {
-    if (!window.Reactable || !document.getElementById('tbl') || hook.done) return;
-    try { Reactable.onStateChange('tbl', queue); hook.done = true; } catch (e) {}
-  }
-  new MutationObserver(function() { hook(); queue(); })
-    .observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style'] });
-  $(document).on('shiny:value', function(e) { if (e.name === 'filter_css') queue(); });
+  function queue() { clearTimeout(pending); pending = setTimeout(report, 50); }
+  new MutationObserver(queue).observe(tbl, { childList: true, subtree: true, characterData: true });
+  // a data update can move rows off the page without changing the page itself
+  Shiny.addCustomMessageHandler('rp_tbl_report', queue);
 });
 
-// One help affordance: every [data-toggle="mp-popover"] on the page (modals
-// and dynamically rendered UI included) opens its data-content in a
-// Bootstrap 3 popover on click or keyboard focus.
-$( document ).ready(function(){
-  if (!$.fn.popover) return;
-  $(document.body).popover({
-    selector: '[data-toggle="mp-popover"]',
-    trigger: 'click focus',
-    placement: 'auto right',
-    container: 'body',
-    html: true
-  });
-});
+// Copy an element's text (the run report's Copy button). Plain http off
+// localhost has no Clipboard API, so select the text and copy that instead.
+window.rpCopyEl = function(id) {
+  var el = document.getElementById(id), t = el.innerText;
+  if (navigator.clipboard && window.isSecureContext) { navigator.clipboard.writeText(t); return; }
+  var r = document.createRange(); r.selectNodeContents(el);
+  var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+  document.execCommand('copy'); s.removeAllRanges();
+};
 
-// Update horizontal scroll position
-$( document ).ready(function(){
-  Shiny.addCustomMessageHandler('hScroll', function(params) {
-    // console.log(params.id)
-    var elmnt = document.getElementById(params.id);
-    if (elmnt) elmnt.scrollLeft = params.px;
-  });
-});
-
-// Update open/close state of details elements
-$( document ).ready(function(){
-  Shiny.addCustomMessageHandler('toggleDetails', function(params) {
-    // console.log(params.id);
-    $("#" + params.id).attr('open', params.state);
-  });
-});
-
-// Clipboard helper
-$( document ).ready(function(){
-  Shiny.addCustomMessageHandler('copy_to_clipboard', function(params) {
-    navigator.clipboard.writeText(params.text)
-  });
-});
-
-
-$( document ).ready(function(){
-  Shiny.addCustomMessageHandler('rightScroll', function(params) {
-    // Get the header element
-    var header = document.getElementsByClassName('biojs_msa_rheader')[0];
-    var maxScrollLeft = header.scrollWidth - header.clientWidth;
-    header.scrollLeft = maxScrollLeft;
-    var scrollEvent = new Event('scroll');
-    header.dispatchEvent(scrollEvent);
-  });
-});
-
-// Center the MSA viewer on a given alignment column (conflict-block navigation)
-// Scrolls the same horizontally-overflowing element the rightScroll handler
-// uses (.biojs_msa_rheader); the seqblock is a fixed-size canvas and does not
-// itself overflow, so scrolling it has no effect.
-$( document ).ready(function(){
-  Shiny.addCustomMessageHandler("msaScrollToCol", function(params) {
-    var attempts = 0;
-    function tryScroll() {
-      var el = document.getElementsByClassName('biojs_msa_rheader')[0]
-            || document.getElementsByClassName('biojs_msa_seqblock')[0];
-      if (!el || !el.scrollWidth || el.scrollWidth <= el.clientWidth) {
-        if (attempts++ < 20) { setTimeout(tryScroll, 150); }
-        return;
-      }
-      var colWidth = el.scrollWidth / params.alnLen;
-      var target = (params.col - 0.5) * colWidth - el.clientWidth / 2;
-      var maxScroll = el.scrollWidth - el.clientWidth;
-      target = Math.max(0, Math.min(target, maxScroll));
-      el.scrollLeft = target;
-      el.dispatchEvent(new Event('scroll'));
-    }
-    tryScroll();
-  });
-});
-
-// auto scrolling of progress box
-$( document ).ready(function(){
-  Shiny.addCustomMessageHandler("scrollProgress", function(params) {
-    var objDiv = document.getElementById(params.id);
-    if(objDiv) {
-        objDiv.scrollTop = objDiv.scrollHeight
-    }
-  });
-});
 
 // Sample-table resize: the CSS handle (resize: vertical) writes an inline
 // height, which then sticks and stops the table re-fitting the window. On
@@ -140,14 +51,24 @@ $( document ).ready(function(){
 // msa.js measures its container when it renders. A modal that is still fading
 // in can measure as zero width, and msa.js then falls back to the page width
 // and overflows the dialog. Once the modal is shown, ask the server to draw
-// again any alignment that overflowed.
+// again any alignment that overflowed. Same when a collapsed section opens.
 $( document ).ready(function(){
-  $(document).on('shown.bs.modal', '#shiny-modal', function() {
-    var over = Array.prototype.some.call(this.querySelectorAll('.msaR'), function(el) {
+  function relayout(root) {
+    var over = Array.prototype.some.call(root.querySelectorAll('.msaR'), function(el) {
       return el.parentNode && el.scrollWidth > el.parentNode.clientWidth + 2;
     });
     if (over) Shiny.setInputValue('msa_relayout', Date.now(), {priority: 'event'});
+  }
+  $(document).on('shown.bs.modal', '#shiny-modal', function() { relayout(this); });
+  $(document).on('hidden.bs.modal', '#shiny-modal', function() {
+    Shiny.setInputValue('modal_hidden', Date.now(), {priority: 'event'});
   });
+  document.addEventListener('toggle', function(e) {
+    var d = e.target;
+    if (d.tagName !== 'DETAILS' || !d.open) return;
+    $(d).trigger('shown');
+    setTimeout(function() { relayout(d); }, 0);
+  }, true);
 });
 
 // Add an "All" choice to the sample-table page-size dropdowns. reactable

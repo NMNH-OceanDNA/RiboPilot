@@ -5,10 +5,11 @@ CHIMERA_WIN <- 500L
 CHIMERA_STEP <- 250L
 CHIMERA_PID_DROP <- 90
 CHIMERA_DEPTH_STEP <- 3
-CHIMERA_CLIP_FRAC <- 0.3
+CHIMERA_CLIP_FRAC <- 0.4
 CHIMERA_JUNCTION_TOL <- 300L
-CHIMERA_TAXONOMY_CAP <- 0.7
-CHIMERA_LABELS <- c("clean", "suspect", "likely")
+CHIMERA_MIN_DEPTH <- 20
+CHIMERA_REPEAT_K <- 50L
+CHIMERA_TIE_FRAC <- 0.02
 
 #' @noRd
 chimera_tile <- function(seq_len, win = CHIMERA_WIN, step = CHIMERA_STEP) {
@@ -44,13 +45,29 @@ chimera_gene_lca <- function(hits, feats, min_cov = 0.5) {
     if (is.null(lca) || is.na(lca$taxid %||% NA)) return(base)
     base$taxon <- lca$taxon; base$rank <- lca$rank; base$taxid <- as.integer(lca$taxid)
     base$species <- h$species[1]; base$pident <- mean(h$pident, na.rm = TRUE)
-    parts <- strsplit(h$lineage_taxids[1], ";", fixed = TRUE)[[1]]
-    k <- match(lca$rank, RRNA_LINEAGE_RANKS)
-    if (!is.na(k) && k < length(parts)) parts[(k + 1L):length(parts)] <- ""
-    base$lineage_taxids <- paste(parts, collapse = ";")
+    base$lineage_taxids <- chimera_cut_lineage(h$lineage_taxids[1], lca$rank)
     base
   })
   do.call(rbind, out)
+}
+
+#' Blank the fields of a ';'-joined 7-rank lineage below `rank` ("none" blanks all)
+#' @noRd
+chimera_cut_lineage <- function(x, rank) {
+  if (is.na(x)) return(x)
+  p <- strsplit(x, ";", fixed = TRUE)[[1]]
+  k <- match(rank, RRNA_LINEAGE_RANKS, nomatch = 0L)
+  if (k < length(p)) p[(k + 1L):length(p)] <- ""
+  paste(p, collapse = ";")
+}
+
+#' Shallowest rank (1 = kingdom .. 7 = species) where both lineages resolve and
+#' differ; NA when one is an ancestor of the other
+#' @noRd
+chimera_split_rank <- function(a, b) {
+  x <- parse_rank_taxids(a); y <- parse_rank_taxids(b)
+  k <- which(!is.na(x) & !is.na(y) & x != y)
+  if (length(k)) min(k) else NA_integer_
 }
 
 #' @noRd
@@ -64,9 +81,25 @@ chimera_channel_genes <- function(gene_taxa, feats = NULL) {
   g <- gene_taxa[!is.na(gene_taxa$taxon), , drop = FALSE]
   if (nrow(g) < 2) return(chimera_unavailable("uninformative"))
   worst <- NULL
+  shallow <- NULL
   for (i in seq_len(nrow(g) - 1)) for (j in (i + 1):nrow(g)) {
-    d <- rank_distance(g$lineage_taxids[i], g$lineage_taxids[j])
-    if (!is.na(d) && d >= 5 && (is.null(worst) || d > worst$d)) worst <- list(i = i, j = j, d = d)
+    k <- chimera_split_rank(g$lineage_taxids[i], g$lineage_taxids[j])
+    sv <- isTRUE(k <= 2L && min(g$pident[i], g$pident[j]) >= CHIMERA_PID_DROP)
+    if (!is.na(k) && k <= 3L && (is.null(worst) || sv > worst$sv || (sv == worst$sv && k < worst$k)))
+      worst <- list(i = i, j = j, k = k, sv = sv)
+    if (is.na(k) && is.null(shallow)) {
+      x <- parse_rank_taxids(g$lineage_taxids[i]); y <- parse_rank_taxids(g$lineage_taxids[j])
+      shared <- deepest_shared_rank(x, y)
+      if (shared <= 2L && !identical(x, y)) shallow <- list(i = i, j = j, shared = shared)
+    }
+  }
+  if (is.null(worst) && !is.null(shallow)) {
+    a <- g[shallow$i, ]; b <- g[shallow$j, ]
+    return(list(score = 0.3, junctions = integer(0),
+      reason = sprintf("%s resolves to %s (%s, %.1f%%) and %s to %s (%s, %.1f%%): agree only to %s",
+        a$element, a$taxon, a$species, a$pident, b$element, b$taxon, b$species, b$pident,
+        RRNA_LINEAGE_RANKS[max(shallow$shared, 1L)]),
+      availability = "available", severe = FALSE))
   }
   if (is.null(worst)) return(list(score = 0, junctions = integer(0),
     reason = sprintf("elements agree: %s", paste(sprintf("%s %s", g$element, g$taxon), collapse = ", ")),
@@ -78,9 +111,10 @@ chimera_channel_genes <- function(gene_taxa, feats = NULL) {
     if (nrow(fa) && nrow(fb)) junction <- as.integer(round((min(fa$stop, fb$stop) + max(fa$start, fb$start)) / 2))
   }
   list(score = 0.6, junctions = junction[!is.na(junction)],
-    reason = sprintf("%s resolves to %s (%s, %.1f%%) but %s to %s (%s, %.1f%%)",
-      a$element, a$taxon, a$species, a$pident, b$element, b$taxon, b$species, b$pident),
-    availability = "available")
+    reason = sprintf("%s resolves to %s (%s, %.1f%%) but %s to %s (%s, %.1f%%): different %s",
+      a$element, a$taxon, a$species, a$pident, b$element, b$taxon, b$species, b$pident,
+      RRNA_LINEAGE_RANKS[worst$k]),
+    availability = "available", severe = worst$sv)
 }
 
 #' Best hit per tile from a parse_blast_hits_file() frame
@@ -96,19 +130,37 @@ chimera_window_hits <- function(hits, tiles, sample_taxids = NA_character_,
       hit_class = NA_character_, pident = NA_real_, bitscore = NA_real_,
       db_source = db_source, stringsAsFactors = FALSE))
   }
-  best <- hits[order(hits$qseqid, -hits$bitscore), , drop = FALSE]
-  best <- best[!duplicated(best$qseqid), , drop = FALSE]
+  lin <- tryCatch(tk_ranked_lineage(hits$staxid, taxdump_dir), error = function(e) data.frame())
+  li <- if (nrow(lin)) match(hits$staxid, lin$taxid) else rep(NA_integer_, nrow(hits))
+  hits$lineage <- if (nrow(lin)) lin$lineage[li] else NA_character_
+  hits$lineage_taxids <- if (nrow(lin)) lin$lineage_taxids[li] else NA_character_
+  hits <- hits[order(hits$qseqid, -hits$bitscore), , drop = FALSE]
+  best <- hits[!duplicated(hits$qseqid), , drop = FALSE]
+  tied <- integer(nrow(best))
+  for (k in seq_len(nrow(best))) {
+    h <- hits[hits$qseqid == best$qseqid[k] & !is.na(hits$lineage_taxids), , drop = FALSE]
+    if (nrow(h) < 2) next
+    lca <- bitscore_weighted_lca(h$lineage_taxids, h$bitscore, frac = CHIMERA_TIE_FRAC, min_hits = 1L)
+    if (lca$n_hits < 2 || identical(lca$rank, "species")) next
+    best$lineage[k] <- chimera_cut_lineage(best$lineage[k], lca$rank)
+    best$lineage_taxids[k] <- chimera_cut_lineage(best$lineage_taxids[k], lca$rank)
+    tied[k] <- lca$n_hits - 1L
+  }
   i <- match(ids, best$qseqid)
-  lin <- tryCatch(tk_ranked_lineage(best$staxid, taxdump_dir), error = function(e) data.frame())
-  li <- if (nrow(lin)) match(best$staxid[i], lin$taxid) else rep(NA_integer_, length(i))
-  lt <- if (nrow(lin)) lin$lineage_taxids[li] else rep(NA_character_, length(i))
+  lt <- best$lineage_taxids[i]
   rd <- if (!is.na(sample_taxids) && nzchar(sample_taxids)) {
     vapply(lt, function(x) if (is.na(x)) NA_integer_ else as.integer(rank_distance(x, sample_taxids)),
       integer(1), USE.NAMES = FALSE)
   } else rep(NA_integer_, length(i))
+  sp <- extract_species(best$title[i])
+  # a tie names the clade the tied hits share, not one arbitrary hit
+  clade <- vapply(strsplit(ifelse(is.na(best$lineage[i]), "", best$lineage[i]), ";", fixed = TRUE),
+    function(p) utils::tail(c(NA_character_, p[nzchar(p)]), 1), character(1))
+  sp <- ifelse(!is.na(tied[i]) & tied[i] > 0L & !is.na(clade),
+    sprintf("%s (%d tied hits)", clade, tied[i] + 1L), sp)
   data.frame(start = tiles$start, stop = tiles$stop,
-    accession = best$accession[i], species = extract_species(best$title[i]),
-    staxid = best$staxid[i], lineage = if (nrow(lin)) lin$lineage[li] else NA_character_,
+    accession = best$accession[i], species = sp,
+    staxid = best$staxid[i], lineage = best$lineage[i],
     lineage_taxids = lt, rank_distance = rd,
     hit_class = classify_hit_title(best$title[i]),
     pident = best$pident[i], bitscore = best$bitscore[i], db_source = db_source,
@@ -129,6 +181,7 @@ chimera_rank_name <- function(lineage, rank = "class") {
 chimera_segments <- function(windows, deciding = "class") {
   if (!nrow(windows)) return(data.frame())
   key <- chimera_rank_name(windows$lineage, deciding)
+  key[is.na(key) & !is.na(windows$lineage)] <- "unresolved"
   key[is.na(key)] <- ifelse(is.na(windows$pident[is.na(key)]), "nohit",
     ifelse(windows$pident[is.na(key)] >= CHIMERA_PID_DROP, "high_id", "low_id"))
   run <- cumsum(c(TRUE, key[-1] != key[-length(key)]))
@@ -148,28 +201,30 @@ chimera_segments <- function(windows, deciding = "class") {
 #' @noRd
 chimera_channel_windows <- function(segments, identity_only = FALSE) {
   if (!nrow(segments)) return(chimera_unavailable())
-  s <- segments[segments$n_windows >= 2, , drop = FALSE]
+  s <- segments[segments$n_windows >= 2 & !segments$taxon %in% c("nohit", "unresolved"), , drop = FALSE]
   if (nrow(s) < 2) return(list(score = 0, junctions = integer(0),
-    reason = sprintf("one lineage along the scaffold: %s", segments$taxon[1]), availability = "available"))
+    reason = sprintf("one lineage along the scaffold: %s", s$taxon[1] %|NA|% segments$taxon[1]),
+    availability = "available"))
   best <- NULL
   for (i in seq_len(nrow(s) - 1)) {
     a <- s[i, ]; b <- s[i + 1, ]
     if (identical(a$taxon, b$taxon)) next
-    if (a$taxon %in% c("nohit") || b$taxon %in% c("nohit")) next
     la <- a$stop - a$start + 1; lb <- b$stop - b$start + 1
     if (min(la, lb) < 0.25 * max(la, lb)) next
-    if (!identity_only) {
-      if (is.na(a$lineage_taxids) || is.na(b$lineage_taxids)) next
-      if (rank_distance(a$lineage_taxids, b$lineage_taxids) < 5) next
-    }
-    best <- list(a = a, b = b, junction = (a$stop + b$start) %/% 2L)
+    k <- if (identity_only) NA_integer_ else chimera_split_rank(a$lineage_taxids, b$lineage_taxids)
+    if (!identity_only && (is.na(k) || k > 3L)) next
+    sv <- !identity_only && isTRUE(k <= 2L && min(a$pident, b$pident) >= CHIMERA_PID_DROP)
+    if (is.null(best) || sv > best$sv || (sv == best$sv && isTRUE(k < best$k)))
+      best <- list(a = a, b = b, k = k, sv = sv, junction = (a$stop + b$start) %/% 2L)
   }
   if (is.null(best)) return(list(score = 0, junctions = integer(0),
     reason = "no class-level switch between comparable segments", availability = "available"))
   desc <- function(x) sprintf("%d-%d %s (%s, %.1f%%)", x$start, x$stop, x$taxon, x$species %||% "", x$pident)
   list(score = if (identity_only) 0 else 0.5, junctions = best$junction,
-    reason = paste(desc(best$a), desc(best$b), sep = "; "),
-    availability = if (identity_only) "identity_only" else "available")
+    reason = paste(c(desc(best$a), desc(best$b),
+      if (!identity_only) sprintf("different %s", RRNA_LINEAGE_RANKS[best$k])), collapse = "; "),
+    availability = if (identity_only) "identity_only" else "available",
+    severe = best$sv)
 }
 
 CHIMERA_RIBOTYPER_SCORES <- c(InconsistentHits = 0.8, DuplicateRegion = 0.8, BothStrands = 0.8,
@@ -215,18 +270,29 @@ chimera_channel_ribotyper <- function(rt, spans, itsx_chimeric = FALSE) {
     availability = "available")
 }
 
+#' Positions inside a sequence repeated elsewhere on the scaffold (exact k-mers)
 #' @noRd
-chimera_depth_steps <- function(depths, feats, step = CHIMERA_STEP, ratio = CHIMERA_DEPTH_STEP, edge = 100L) {
+chimera_repeat_mask <- function(seq, k = CHIMERA_REPEAT_K) {
+  n <- nchar(seq); m <- logical(n)
+  if (n < k) return(m)
+  km <- substring(seq, seq_len(n - k + 1L), k:n)
+  for (i in which(duplicated(km) | duplicated(km, fromLast = TRUE))) m[i:(i + k - 1L)] <- TRUE
+  m
+}
+
+#' @noRd
+chimera_depth_steps <- function(depths, feats, seq = NULL, step = CHIMERA_STEP, ratio = CHIMERA_DEPTH_STEP,
+                                edge = 100L, min_depth = CHIMERA_MIN_DEPTH) {
   n <- length(depths)
-  if (n < 2 * step) return(integer(0))
-  b <- seq.int(step, n - step, by = step)
+  if (n < 4L * step) return(integer(0))
+  if (!is.null(seq)) depths[which(chimera_repeat_mask(seq)[seq_len(n)])] <- NA
   med <- function(a, z) stats::median(depths[a:z], na.rm = TRUE)
+  edges <- c(feats$start, feats$stop)
   out <- integer(0)
-  for (p in b) {
-    l <- med(max(1, p - step + 1), p); r <- med(p + 1, min(n, p + step))
-    if (is.na(l) || is.na(r) || min(l, r) <= 0) next
+  for (p in seq.int(2L * step, n - 2L * step, by = step)) {
+    l <- med(p - step + 1L, p); r <- med(p + 1L, p + step)
+    if (is.na(l) || is.na(r) || min(l, r) <= 0 || max(l, r) < min_depth) next
     if (max(l, r) / min(l, r) < ratio) next
-    edges <- c(feats$start, feats$stop)
     if (length(edges) && any(abs(edges - p) <= edge)) next
     out <- c(out, as.integer(p))
   }
@@ -234,7 +300,7 @@ chimera_depth_steps <- function(depths, feats, step = CHIMERA_STEP, ratio = CHIM
 }
 
 #' @noRd
-chimera_clip_pileups <- function(depths, clips, min_depth = 10, frac = CHIMERA_CLIP_FRAC, end = 50L) {
+chimera_clip_pileups <- function(depths, clips, min_depth = 10, frac = CHIMERA_CLIP_FRAC, end = CHIMERA_STEP) {
   n <- min(length(depths), length(clips))
   if (n <= 2 * end) return(integer(0))
   i <- (end + 1):(n - end)
@@ -244,9 +310,9 @@ chimera_clip_pileups <- function(depths, clips, min_depth = 10, frac = CHIMERA_C
 
 #' Channel 4: depth steps and clip pileups
 #' @noRd
-chimera_channel_reads <- function(depths, clips, feats) {
+chimera_channel_reads <- function(depths, clips, feats, seq = NULL) {
   if (is.null(depths) || !length(depths)) return(chimera_unavailable())
-  steps <- chimera_depth_steps(depths, feats)
+  steps <- chimera_depth_steps(depths, feats, seq)
   pile <- if (!is.null(clips) && length(clips)) chimera_clip_pileups(depths, clips) else integer(0)
   pile <- chimera_merge_positions(pile, 50L)
   score <- max(if (length(steps)) 0.4 else 0, if (length(pile)) 0.7 else 0)
@@ -264,30 +330,66 @@ chimera_merge_positions <- function(x, gap) {
   x <- sort(unique(x)); keep <- c(TRUE, diff(x) > gap); x[keep]
 }
 
+#' Chimera label: "severe" when a taxonomy channel saw a phylum- or
+#' kingdom-level switch, "minor" for any other evidence, else "clean"
 #' @noRd
-chimera_label <- function(score) {
+chimera_label <- function(score, severe = FALSE) {
   if (is.na(score)) return(NA_character_)
-  if (score < 0.3) "clean" else if (score <= 0.7) "suspect" else "likely"
+  if (isTRUE(severe)) "severe" else if (score < 0.3) "clean" else "minor"
 }
 
-#' Combine channels: max, corroboration bonus, taxonomy-only cap
+#' Combine channels: strongest score, severe flag, corroborated junctions
 #' @noRd
 chimera_score <- function(channels) {
   sc <- vapply(channels, function(x) x$score %||% 0, numeric(1))
-  score <- max(sc, 0)
   js <- lapply(channels, function(x) as.integer(x$junctions %||% integer(0)))
   corroborated <- integer(0)
-  nm <- names(js)
   for (i in seq_along(js)) for (j in seq_along(js)) if (i < j) for (a in js[[i]]) {
     near <- js[[j]][abs(js[[j]] - a) <= CHIMERA_JUNCTION_TOL]
     if (length(near)) corroborated <- c(corroborated, min(a, near))
   }
-  if (length(corroborated)) score <- min(1, score + 0.25)
-  strong <- sc[setdiff(nm, c("genes", "windows"))]
-  if (!length(strong) || all(strong == 0)) score <- min(score, CHIMERA_TAXONOMY_CAP)
-  all_j <- sort(unique(unlist(js)))
-  list(score = score, label = chimera_label(score),
-    junctions = if (length(corroborated)) chimera_merge_positions(corroborated, CHIMERA_JUNCTION_TOL) else all_j)
+  score <- max(sc, 0)
+  severe <- any(vapply(channels, function(x) isTRUE(x$severe), logical(1)))
+  list(score = score, label = chimera_label(score, severe),
+    junctions = if (length(corroborated)) chimera_merge_positions(corroborated, CHIMERA_JUNCTION_TOL)
+      else sort(unique(unlist(js))))
+}
+
+#' One row per possible junction: the checks that point to it and why, in words
+#' @param junctions Comma-separated positions. @param channels Channels JSON.
+#' @noRd
+chimera_junction_table <- function(junctions, channels) {
+  j <- suppressWarnings(as.integer(strsplit(junctions %|NA|% "", ",", fixed = TRUE)[[1]]))
+  j <- j[!is.na(j)]
+  out <- data.frame(position = j, checks = character(length(j)), why = character(length(j)))
+  if (!length(j) || is.na(channels)) return(out)
+  ch <- jsonlite::fromJSON(channels, simplifyVector = FALSE)
+  near <- function(x, p) any(abs(as.integer(unlist(x)) - p) <= CHIMERA_JUNCTION_TOL)
+  at <- function(reason, what) {
+    m <- regmatches(reason, regexpr(paste0(what, " at [0-9,]+"), reason))
+    if (length(m)) as.integer(strsplit(sub(".* at ", "", m), ",", fixed = TRUE)[[1]]) else integer(0)
+  }
+  for (i in seq_along(j)) {
+    p <- j[i]
+    who <- names(ch)[vapply(ch, function(x) near(x$junctions, p), logical(1))]
+    why <- character(0)
+    if ("genes" %in% who) why <- c(why, paste0("The genes' own BLAST hits disagree: ", ch$genes$reason, "."))
+    if ("windows" %in% who) why <- c(why, paste0("BLAST windows switch lineage here: ", ch$windows$reason, "."))
+    if ("reads" %in% who) {
+      r <- ch$reads$reason %||% ""
+      for (d in at(r, "depth step")[abs(at(r, "depth step") - p) <= CHIMERA_JUNCTION_TOL])
+        why <- c(why, sprintf("Read depth changes at least %gx at %d bp (median of %d bp on each side).",
+          CHIMERA_DEPTH_STEP, d, CHIMERA_STEP))
+      for (d in at(r, "clip pileup")[abs(at(r, "clip pileup") - p) <= CHIMERA_JUNCTION_TOL])
+        why <- c(why, sprintf("At least %d%% of reads are clipped at %d bp, so reads stop matching there.",
+          round(100 * CHIMERA_CLIP_FRAC), d))
+    }
+    if (identical(who, "reads")) why <- c(why,
+      "Only read evidence points here; read evidence alone gives a minor call at most.")
+    out$checks[i] <- paste(who, collapse = ", ")
+    out$why[i] <- paste(why, collapse = " ")
+  }
+  out
 }
 
 #' @noRd
@@ -301,6 +403,7 @@ chimera_reason <- function(segments, channels, junctions) {
     paste(sprintf("junction near %d (%s)", junctions, who), collapse = "; ")
   } else "no junction"
   extra <- vapply(channels[c("ribotyper", "reads")], function(x) x$reason %||% NA_character_, character(1))
+  if (isTRUE(channels$genes$score > 0)) extra <- c(channels$genes$reason, extra)
   extra <- extra[!is.na(extra)]
   paste(c(segtxt, jtxt, extra), collapse = "; ")
 }
@@ -309,7 +412,7 @@ chimera_reason <- function(segments, channels, junctions) {
 chimera_run_blastn <- function(query, dbarg, task, out, threads = 1L, blastn = "blastn") {
   system2(blastn, c("-db", shQuote(dbarg), "-query", shQuote(query), "-task", task,
     "-outfmt", shQuote("6 saccver stitle pident qcovs evalue staxids bitscore length qstart qend sstart send slen qseqid"),
-    "-max_target_seqs", "5", "-max_hsps", "1", "-num_threads", threads), stdout = out, stderr = FALSE)
+    "-max_target_seqs", "50", "-max_hsps", "1", "-num_threads", threads), stdout = out, stderr = FALSE)
 }
 
 #' @noRd
@@ -412,7 +515,7 @@ chimera_unit <- function(con, id, path = 1L, scaffold = 1L, dbarg = NULL, taxdum
   # channel 4
   depths <- if (nrow(cov)) track(cov$depths[1]) else NULL
   clips <- if (nrow(cov) && "clips" %in% names(cov)) track(cov$clips[1]) else NULL
-  ch_reads <- chimera_channel_reads(depths, clips, feats)
+  ch_reads <- chimera_channel_reads(depths, clips, feats, seq)
 
   channels <- list(genes = ch_genes, windows = ch_windows, ribotyper = ch_rt, reads = ch_reads)
   sc <- chimera_score(channels)
@@ -446,4 +549,64 @@ chimera_unit <- function(con, id, path = 1L, scaffold = 1L, dbarg = NULL, taxdum
     }
   })
   as.list(row)
+}
+
+#' Move a unit's stored chimera coordinates after its sequence was trimmed or restored
+#'
+#' New position = old position - `offset`. Windows and junctions that fall
+#' outside 1..`len` are dropped, and the segments are rebuilt from the windows kept.
+#' @noRd
+chimera_shift <- function(con, id, path, scaffold, offset, len) {
+  p <- list(id, as.integer(path), as.integer(scaffold))
+  ch <- DBI::dbGetQuery(con, "SELECT junctions, label, score FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = p)
+  if (!nrow(ch)) return(invisible())
+  w <- DBI::dbGetQuery(con, "SELECT * FROM chimera_windows WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
+    params = p)
+  w$start <- w$start - offset; w$stop <- w$stop - offset
+  w <- w[w$start >= 1 & w$stop <= len, , drop = FALSE]
+  j0 <- suppressWarnings(as.integer(strsplit(ch$junctions[1] %|NA|% "", ",", fixed = TRUE)[[1]]))
+  j <- j0 - offset
+  j <- j[!is.na(j) & j >= 1 & j <= len]
+  seg <- chimera_segments(w)
+  gone <- any(!is.na(j0)) && !length(j)
+  reason <- gsub(" ()", "", chimera_reason(seg, list(), j), fixed = TRUE)
+  if (gone) reason <- sub("no junction", "junctions trimmed away", reason, fixed = TRUE)
+  DBI::dbWithTransaction(con, {
+    DBI::dbExecute(con, "DELETE FROM chimera_windows WHERE ID = ? AND path = ? AND scaffold = ?", params = p)
+    if (nrow(w)) DBI::dbAppendTable(con, "chimera_windows", w)
+    DBI::dbExecute(con,
+      "UPDATE chimera SET junctions = ?, segments = ?, reason = ?, label = ?, score = ?
+       WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = c(list(paste(j, collapse = ","),
+        if (nrow(seg)) as.character(jsonlite::toJSON(seg, dataframe = "rows")) else NA_character_,
+        reason, if (gone) "clean" else ch$label[1], if (gone) 0 else ch$score[1]), p))
+  })
+  invisible()
+}
+
+#' A unit's chimera result and windows as JSON, kept with the trim backup
+#' @noRd
+chimera_snapshot <- function(con, id, path, scaffold) {
+  p <- list(id, as.integer(path), as.integer(scaffold))
+  tryCatch({
+    ch <- DBI::dbGetQuery(con, "SELECT * FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", params = p)
+    if (!nrow(ch)) return(NA_character_)
+    w <- DBI::dbGetQuery(con, "SELECT * FROM chimera_windows WHERE ID = ? AND path = ? AND scaffold = ?", params = p)
+    as.character(jsonlite::toJSON(list(chimera = ch, windows = w), dataframe = "rows", na = "null", digits = NA))
+  }, error = function(e) NA_character_)
+}
+
+#' Put back the chimera result and windows saved by `chimera_snapshot()`
+#' @noRd
+chimera_restore <- function(con, id, path, scaffold, snap) {
+  s <- jsonlite::fromJSON(snap)
+  p <- list(id, as.integer(path), as.integer(scaffold))
+  DBI::dbWithTransaction(con, {
+    DBI::dbExecute(con, "DELETE FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", params = p)
+    DBI::dbExecute(con, "DELETE FROM chimera_windows WHERE ID = ? AND path = ? AND scaffold = ?", params = p)
+    DBI::dbAppendTable(con, "chimera", as.data.frame(s$chimera))
+    if (is.data.frame(s$windows) && nrow(s$windows)) DBI::dbAppendTable(con, "chimera_windows", s$windows)
+  })
+  invisible()
 }

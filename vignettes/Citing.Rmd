@@ -1,0 +1,78 @@
+---
+title: "Citing RiboPilot"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Citing RiboPilot}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+If you use RiboPilot in published work, please cite it and the tools it runs.
+In R, `citation("RiboPilot")` prints the citation for the version you have.
+
+# What to report in a methods section
+
+- The RiboPilot version (`packageVersion("RiboPilot")` in R) and the container
+  image your project used (the `container` line of the project's `.config`
+  file). Each run's Nextflow log (`nextflow_logs/*.nextflow.log` in the project)
+  records the Nextflow version and, in its launch command, the RiboPilot version
+  (`--ribopilot_version`).
+- The bundled rDNA database the BLAST screen searched. A sample's **BLAST
+  Options** window names it, for example "ribopilot_rrna 2026.08.18": about
+  600,000 animal (Metazoa) nuclear rDNA records downloaded from GenBank on 18
+  August 2026, with identical sequences of one taxon kept once, plus NCBI's 16S,
+  eukaryote small subunit, and eukaryote large subunit rRNA databases. Scaffolds
+  that database could not match were searched in NCBI core_nt; the **Hit
+  Source** column says which. See
+  [Quality checks and flags](Curation-Flags.html).
+- The reference database of each group: the clade, the GenBank query, the
+  number of records, and the date built are in the `manifest.tsv` file of your
+  reference folder.
+- The NCBI taxonomy copy used in the Taxonomy step, downloaded into the
+  project's `.taxonomy` folder the first time you pressed **Assign Taxonomy**.
+- The curation ruleset of each group; see
+  [Quality checks and flags](Curation-Flags.html).
+
+# Tool versions
+
+These are the versions in the container image of this RiboPilot version. A
+setup without a container (unsupported) uses whatever versions you installed.
+
+| Tool | Package | Version | What RiboPilot uses it for | Reference |
+|---|---|---|---|---|
+| fastp | `fastp` | 0.23.4 | Cleans and trims the reads. | Chen et al. 2018 |
+| GetOrganelle | `getorganelle` | 1.7.7.1 | Assembles the rDNA repeat. | Jin et al. 2020 |
+| SPAdes | `spades` | 4.1.0 | Assembles inside GetOrganelle, and in the baited rescue. | Bankevich et al. 2012 |
+| Bowtie 2 | `bowtie2` | 2.5.4 | Maps reads back for depth, and baits reads for the rescue. | Langmead and Salzberg 2012 |
+| SAMtools | `samtools` | 1.21 | Computes read depth. | Danecek et al. 2021 |
+| BLAST+ | `blast` | 2.17.0 | The BLAST screen, path scoring, and the chimera check. | Camacho et al. 2009 |
+| pybarrnap | `pybarrnap` | 0.5.2 | Finds the 18S, 5.8S, and 28S genes (default). | Shimoyama, pybarrnap |
+| barrnap | `barrnap` | 1.10.6 | Finds the rRNA genes when chosen as rRNA anchor tool in Annotate Options. | Seemann, barrnap |
+| ITSx | `itsx` | 1.1.3 | Finds ITS1 and ITS2, and runs the final ITSx check at export. | Bengtsson-Palme et al. 2013 |
+| HMMER | `hmmer` | 3.4 | Used by ITSx. | Eddy 2011 |
+| Ribovore | (GitHub release) | 1.0.5 | Its ribotyper checks the 18S and 28S structure in the chimera check. | Schaffer et al. 2021 |
+| Infernal | (installed with Ribovore) | 1.1.5 | Used by ribotyper. | Nawrocki and Eddy 2013 |
+| Entrez Direct | `entrez-direct` | 26.0 | Downloads GenBank records for reference databases. | Kans 2013- |
+| R | `r-base` | 4.4.3 | Runs RiboPilot inside the container. | R Core Team 2025 |
+| Nextflow | (on your computer) | yours (24.10 to 25.10.x), or 25.10.6 when yours is newer | Runs the pipeline. | Di Tommaso et al. 2017 |
+
+The Package column is the bioconda or conda-forge package in the image. The
+barrnap package 1.10.6 reports itself as barrnap 1.10.5.
+
+# References
+
+- Bankevich A, Nurk S, Antipov D, et al. 2012. SPAdes: a new genome assembly algorithm and its applications to single-cell sequencing. Journal of Computational Biology 19: 455-477.
+- Bengtsson-Palme J, Ryberg M, Hartmann M, et al. 2013. Improved software detection and extraction of ITS1 and ITS2 from ribosomal ITS sequences of fungi and other eukaryotes for analysis of environmental sequencing data. Methods in Ecology and Evolution 4: 914-919.
+- Camacho C, Coulouris G, Avagyan V, et al. 2009. BLAST+: architecture and applications. BMC Bioinformatics 10: 421.
+- Chen S, Zhou Y, Chen Y, Gu J. 2018. fastp: an ultra-fast all-in-one FASTQ preprocessor. Bioinformatics 34: i884-i890.
+- Danecek P, Bonfield JK, Liddle J, et al. 2021. Twelve years of SAMtools and BCFtools. GigaScience 10: giab008.
+- Di Tommaso P, Chatzou M, Floden EW, et al. 2017. Nextflow enables reproducible computational workflows. Nature Biotechnology 35: 316-319.
+- Eddy SR. 2011. Accelerated profile HMM searches. PLoS Computational Biology 7: e1002195.
+- Jin JJ, Yu WB, Yang JB, et al. 2020. GetOrganelle: a fast and versatile toolkit for accurate de novo assembly of organelle genomes. Genome Biology 21: 241.
+- Kans J. 2013-. Entrez Direct: E-utilities on the Unix command line. In: Entrez Programming Utilities Help. National Center for Biotechnology Information. https://www.ncbi.nlm.nih.gov/books/NBK179288/
+- Langmead B, Salzberg SL. 2012. Fast gapped-read alignment with Bowtie 2. Nature Methods 9: 357-359.
+- Nawrocki EP, Eddy SR. 2013. Infernal 1.1: 100-fold faster RNA homology searches. Bioinformatics 29: 2933-2935.
+- R Core Team. 2025. R: A language and environment for statistical computing. R Foundation for Statistical Computing, Vienna, Austria. https://www.R-project.org/
+- Schaffer AA, McVeigh R, Robbertse B, et al. 2021. Ribovore: ribosomal RNA sequence analysis for GenBank submissions and database curation. BMC Bioinformatics 22: 400.
+- Seemann T. barrnap: BAsic Rapid Ribosomal RNA Predictor. https://github.com/tseemann/barrnap
+- Shimoyama Y. pybarrnap: Python implementation of barrnap. https://github.com/moshi4/pybarrnap

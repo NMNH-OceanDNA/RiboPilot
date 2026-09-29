@@ -15,14 +15,14 @@ rederive_blast_products(con, ids = NULL)
 (invisibly) the number of units re-derived.
 }
 \description{
-Replays [derive_blast_products()] over `blast_hits`, so a changed threshold or
+Replays \code{\link[=derive_blast_products]{derive_blast_products()}} over \code{blast_hits}, so a changed threshold or
 a fixed filter reaches existing projects without re-running a remote search.
 }
 \details{
-Changing which candidate ranks 1 invalidates `blast_ref_alignment`
-(`compute_ref_alignment()` always aligns against the rank-1 candidate) and any
+Changing which candidate ranks 1 invalidates \code{blast_ref_alignment}
+(\code{compute_ref_alignment()} always aligns against the rank-1 candidate) and any
 curation derived from it; this function does not mark those stale.
-`inst/nextflow/bin/rp_rederive.R` is a manual tool wired into no `.nf`
+\code{inst/nextflow/bin/rp_rederive.R} is a manual tool wired into no \code{.nf}
 process, so after running it the operator must re-run the reference-fetch and
 alignment steps by hand.
 }

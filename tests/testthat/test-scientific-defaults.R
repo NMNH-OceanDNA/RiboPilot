@@ -106,7 +106,7 @@ test_that("coverage drops multi-mapping reads before depth is counted", {
   q <- as.numeric(sub("(?s).*samtools view[^|]*-q\\s+(\\d+).*", "\\1", txt, perl = TRUE))
   expect_true(!is.na(q) && q >= 10)
   # the filter has to sit inside the bowtie2 -> sort pipe, not after it
-  expect_match(txt, "bowtie2 -x ref(?s).*\\|\\s*samtools view[^|]*\\|\\s*samtools sort", perl = TRUE)
+  expect_match(txt, "bowtie2 --local -x ref(?s).*\\|\\s*samtools view[^|]*\\|\\s*samtools sort", perl = TRUE)
   expect_match(txt, "errorStrategy 'ignore'", fixed = TRUE)
   expect_match(txt, "sqlite3 -cmd '.timeout", fixed = TRUE)
 })
@@ -146,7 +146,23 @@ test_that("an empty depth file still writes no coverage rows rather than errorin
   DBI::dbExecute(con, "CREATE TABLE coverage (ID TEXT, path INT, scaffold INT,
     mean_depth REAL, median_depth REAL, min_depth INT, max_depth INT,
     depths TEXT, time_stamp INT)")
+  DBI::dbExecute(con, "CREATE TABLE assemblies (ID TEXT, path INT, scaffold INT, ignore INT)")
   f <- tempfile(); file.create(f); on.exit(unlink(f), add = TRUE)
   expect_equal(RiboPilot::write_coverage_units(con, "S1", f), 0L)
   expect_equal(nrow(DBI::dbGetQuery(con, "SELECT * FROM coverage")), 0L)
+})
+
+test_that("scaffold 10 keeps its own depth track", {
+  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "CREATE TABLE coverage (ID TEXT, path INT, scaffold INT,
+    mean_depth REAL, median_depth REAL, min_depth INT, max_depth INT,
+    depths TEXT, clips TEXT, time_stamp INT)")
+  DBI::dbExecute(con, "CREATE TABLE assemblies (ID TEXT, path INT, scaffold INT, ignore INT)")
+  f <- tempfile(); on.exit(unlink(f), add = TRUE)
+  writeLines(c("1.1\t1\t5", "1.1\t2\t5", "1.2\t1\t7", "1.2\t2\t7", "1.10\t1\t9", "1.10\t2\t9"), f)
+  expect_equal(RiboPilot::write_coverage_units(con, "S1", f), 3L)
+  cov <- DBI::dbGetQuery(con, "SELECT scaffold, depths FROM coverage ORDER BY scaffold")
+  expect_equal(cov$scaffold, c(1L, 2L, 10L))
+  expect_equal(cov$depths, c("5,5", "7,7", "9,9"))
 })

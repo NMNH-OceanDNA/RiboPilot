@@ -132,9 +132,11 @@ RP_TEST_READS_TAG <- "test-reads-2026.09.02"
 
 #' Initialize a RiboPilot test project
 #'
-#' Sets up a ready-to-run test project from the bundled 10-sample test set (USNM
-#' fish genome skims, study SRP313821): downloads each sample's paired reads,
-#' writes the mapping file, and initializes the project database + config.
+#' Sets up a ready-to-run practice project from the bundled test set: 10 fish
+#' genome skims (USNM, study SRP313821) plus two synthetic samples, CHIM00 (a
+#' clean control) and CHIM01 (fish rDNA joined to a Penicillium 28S). Downloads
+#' each fish sample's paired reads, writes the mapping file, and initializes the
+#' project database and config.
 #'
 #' By default the reads are the rDNA-filtered subsets published with the
 #' RiboPilot GitHub releases (a few MB per sample, seconds to fetch). With
@@ -150,9 +152,11 @@ RP_TEST_READS_TAG <- "test-reads-2026.09.02"
 #'   bundled synthetic samples CHIM00 and CHIM01 are always included.
 #' @param full_size Fetch the complete read sets from ENA/SRA (TRUE) instead of
 #'   the small rDNA-filtered subsets (default FALSE).
-#' @param executor Executor / config profile (default "conda").
+#' @param executor Executor / config profile (default "docker").
 #' @param container Container image for the pipeline.
-#' @param min_depth Minimum trimmed paired reads to proceed with assembly.
+#' @param min_depth Minimum number of reads left after trimming, counting both
+#'   reads of a pair (2000000 is 1000000 pairs). A sample below it is not
+#'   assembled and is marked Failed with a note.
 #' @param sra_bin Directory holding `fasterq-dump` (for the SRA fallback);
 #'   default searches `PATH`.
 #' @param Rproj Initialize an RStudio project (default TRUE; no effect outside
@@ -161,9 +165,10 @@ RP_TEST_READS_TAG <- "test-reads-2026.09.02"
 #' @param ... Passed to [new_project()] (e.g. `custom_seeds_db`).
 #' @return (invisibly) the project path.
 #' @export
-new_test_project <- function(path = ".", n = Inf, full_size = FALSE, executor = "conda",
+new_test_project <- function(path = ".", n = Inf, full_size = FALSE, executor = "docker",
                              container = paste0("macguigand/ribopilot:", utils::packageVersion("RiboPilot")),
                              min_depth = 500, sra_bin = NULL, Rproj = TRUE, force = FALSE, ...) {
+  path <- check_project_path(path, force)
   if (!dir.exists(path)) {
     message("Creating project directory: ", path)
     dir.create(path, recursive = TRUE)
@@ -179,9 +184,11 @@ new_test_project <- function(path = ".", n = Inf, full_size = FALSE, executor = 
   scratch <- file.path(tempdir(), "ribopilot_sra")
   sra_bin <- sra_bin %||% ""
 
-  message("Fetching ", nrow(mapping), " test sample(s)", if (full_size)
-    ". This downloads several GB and may take a while (go grab a coffee)..." else
-    " (rDNA-filtered reads from the RiboPilot release)...")
+  n_dl <- sum(!((mapping$Local %||% rep(FALSE, nrow(mapping))) %in% TRUE))
+  message("Preparing ", nrow(mapping), " test sample(s): ", n_dl,
+    if (full_size) " full read sets from ENA or SRA (several GB, this may take a while)"
+    else " small read sets from the RiboPilot release",
+    ", ", nrow(mapping) - n_dl, " bundled with the package...")
   .stage_test_reads(mapping, data_dir, sra_bin = sra_bin, scratch = scratch, full_size = full_size)
   unlink(scratch, recursive = TRUE)
 

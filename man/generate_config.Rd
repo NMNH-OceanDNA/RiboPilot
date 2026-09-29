@@ -6,7 +6,7 @@
 \usage{
 generate_config(
   name,
-  scheduler = c("slurm", "sge", "pbs", "lsf", "local", "awsbatch"),
+  scheduler = c("slurm", "sge", "pbs", "lsf", "local"),
   container_engine = c("auto", "singularity", "apptainer", "docker"),
   container_cache = NULL,
   container_run_options = NULL,
@@ -21,23 +21,29 @@ generate_config(
 )
 }
 \arguments{
-\item{name}{Profile name. Saved as `config.<name>`; pass as `executor`.}
+\item{name}{Profile name. Saved as \verb{config.<name>}; pass as \code{executor}.}
 
-\item{scheduler}{Base template. One of "slurm", "sge", "pbs", "lsf",
-"local", or "awsbatch".}
+\item{scheduler}{Base template: "slurm", "sge", "pbs", "lsf", or "local"
+(Docker on one machine, the same as executor = "local").}
 
-\item{container_engine}{"auto" picks docker for local/awsbatch and
-singularity for HPC schedulers; or "singularity"/"apptainer"/"docker".}
+\item{container_engine}{"auto" (default) picks singularity for the schedulers
+and docker for "local". "singularity", "apptainer", and "docker" apply to
+slurm, sge, pbs, and lsf; "local" always uses Docker.}
 
-\item{container_cache}{Optional cacheDir for singularity/apptainer.}
+\item{container_cache}{Folder where Singularity or Apptainer keeps the pulled
+image, shared by every project that uses this profile; it must be visible
+from the compute nodes. Default: \code{NXF_SINGULARITY_CACHEDIR} (or
+\code{NXF_APPTAINER_CACHEDIR}) when set, otherwise a "containers" folder in the
+reference folder (\code{RIBOPILOT_REF_DIR}, see ribopilot_ref_dir()). Pass "" to
+leave it to Nextflow (the project's work/singularity folder).}
 
-\item{container_run_options}{Optional runOptions for singularity/apptainer.}
+\item{container_run_options}{Optional extra runOptions for the container engine (any engine), appended to the bind mounts.}
 
-\item{queue}{Partition / queue name. If `NULL`, the directive is omitted.}
+\item{queue}{Partition / queue name. If \code{NULL}, the directive is omitted.}
 
 \item{walltime}{Per-job walltime, in a form your scheduler accepts (e.g.
 "24h", "48:00:00"). Many SLURM and PBS sites reject a job that requests no
-walltime instead of applying a default. If `NULL`, the directive is
+walltime instead of applying a default. If \code{NULL}, the directive is
 omitted and the site default applies.}
 
 \item{account}{Optional accounting string, folded into clusterOptions.}
@@ -48,17 +54,17 @@ omitted and the site default applies.}
 
 \item{profile_dir}{Directory to save the profile in.}
 
-\item{interactive}{If `TRUE` and interactive, prompt for unset values.}
+\item{interactive}{If \code{TRUE} and interactive, prompt for unset values.}
 
-\item{overwrite}{Overwrite an existing profile (default `FALSE`).}
+\item{overwrite}{Overwrite an existing profile (default \code{FALSE}).}
 }
 \value{
 (invisibly) the path to the saved profile.
 }
 \description{
 Configure your HPC cluster once and reuse it for every project. Mirrors
-MitoPilot's `generate_config()`. Builds a Nextflow config from a generic
+MitoPilot's \code{generate_config()}. Builds a Nextflow config from a generic
 scheduler template, fills in cluster-level settings, and saves it as a named
-profile in [ribopilot_config_dir()]. Afterwards
-`new_project(executor = "<name>")` will find and use it automatically.
+profile in \code{ribopilot_config_dir()}. Afterwards
+\code{new_project(executor = "<name>")} will find and use it automatically.
 }

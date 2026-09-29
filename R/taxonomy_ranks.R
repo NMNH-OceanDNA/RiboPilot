@@ -28,7 +28,7 @@ RRNA_RANK_DISTANCE_LABELS <- c(RRNA_LINEAGE_RANKS[7:1], "none")
 #'
 #' `uncultured`/`environmental` records dominate core_nt 18S and resolve to a
 #' kingdom-only lineage, which every rank rule would otherwise read as maximum
-#' taxonomic distance. `unclassified` is what [td_rank_align()] writes into a
+#' taxonomic distance. `unclassified` is what `td_rank_align()` writes into a
 #' rank it had to fill.
 #' @param x Character vector of taxon names.
 #' @return logical vector.
@@ -40,7 +40,7 @@ is_placeholder_taxon <- function(x) {
 }
 
 #' Split a 7-field rank-aligned taxid string into an integer vector
-#' @param x A ";"-joined taxid string from [td_rank_align()].
+#' @param x A ";"-joined taxid string from `td_rank_align()`.
 #' @return integer vector of length 7; NA where the rank is absent or filled.
 #' @noRd
 parse_rank_taxids <- function(x) {
@@ -95,7 +95,7 @@ deepest_shared_rank <- function(a, b) {
 #' with an implausibly high percent identity (see the screen envelope).
 #'
 #' @param hit_taxids,sample_taxids Rank-aligned taxid vectors from
-#'   [parse_rank_taxids()], or ";"-joined taxid strings.
+#'   `parse_rank_taxids()`, or ";"-joined taxid strings.
 #' @return integer in 0..7.
 #' @export
 rank_distance <- function(hit_taxids, sample_taxids) {
@@ -117,33 +117,13 @@ rank_distance_label <- function(d) {
 #' Is a hit at least as close as `min_rank`?
 #'
 #' @param d Distance from [rank_distance()].
-#' @param min_rank One of [RRNA_LINEAGE_RANKS]; "kingdom" is the most permissive.
+#' @param min_rank One of `RRNA_LINEAGE_RANKS`; "kingdom" is the most permissive.
 #' @return logical.
 #' @export
 rank_at_least <- function(d, min_rank = "phylum") {
   i <- match(min_rank, RRNA_LINEAGE_RANKS)
   if (is.na(i)) stop("min_rank must be one of: ", paste(RRNA_LINEAGE_RANKS, collapse = ", "), call. = FALSE)
   !is.na(d) & d <= (length(RRNA_LINEAGE_RANKS) - i)
-}
-
-#' Deepest taxon name shared between a hit and the sample
-#'
-#' The thing a biologist actually wants to read: "shares: Notropis (genus)" vs
-#' "shares: Metazoa (kingdom)" vs "shares: nothing".
-#' @param hit_names Rank-aligned names from [parse_rank_names()].
-#' @param hit_taxids,sample_taxids Rank-aligned taxid vectors.
-#' @return list(taxon, rank, distance).
-#' @export
-shared_taxon <- function(hit_names, hit_taxids, sample_taxids) {
-  a <- if (is.character(hit_taxids)) parse_rank_taxids(hit_taxids) else hit_taxids
-  b <- if (is.character(sample_taxids)) parse_rank_taxids(sample_taxids) else sample_taxids
-  nm <- if (is.character(hit_names) && length(hit_names) == 1) parse_rank_names(hit_names) else hit_names
-  pos <- deepest_shared_rank(a, b)
-  if (pos == 0L) {
-    return(list(taxon = NA_character_, rank = "none", distance = length(RRNA_LINEAGE_RANKS)))
-  }
-  list(taxon = unname(nm[pos]), rank = RRNA_LINEAGE_RANKS[pos],
-    distance = length(RRNA_LINEAGE_RANKS) - pos)
 }
 
 #' Bitscore-weighted lowest common ancestor over the top BLAST hits
@@ -201,11 +181,10 @@ bitscore_weighted_lca <- function(taxid_paths, bitscores, names_paths = NULL,
 
 #' Back-fill `samples.lineage_taxids` from `samples.taxid` where missing
 #'
-#' The rank-aligned taxid path is what [rank_distance()] compares, but taxonomy
-#' is frozen from three places (the review CSV, the Shiny taxonomy tab, and
-#' `resolve_project_taxonomy`). Rather than patch each writer, the path is
-#' derived on demand and cached back, which also upgrades projects created
-#' before schema v9.
+#' The rank-aligned taxid path is what [rank_distance()] compares, but
+#' taxonomy is written from more than one place in the Taxonomy step. Rather
+#' than patch each writer, the path is derived on demand and cached back,
+#' which also upgrades projects created before schema v9.
 #'
 #' @param con Open project DB connection.
 #' @param ids Optional character vector of sample IDs (default: all).
@@ -265,7 +244,7 @@ tk_full_lineage_taxids <- function(taxids, dir) {
 #'
 #' One batched index query. Missing ranks are filled so the seven rank slots
 #' always line up positionally, and the parallel taxid string marks a filled
-#' rank with an empty taxid (see [td_rank_align()]).
+#' rank with an empty taxid (see `td_rank_align()`).
 #'
 #' @param taxids Integer vector of NCBI taxids.
 #' @param dir Directory holding a pinned taxdump.

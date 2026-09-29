@@ -22,7 +22,7 @@
 #' @param group Group name.
 #' @noRd
 assign_export_group <- function(path, units, group) {
-  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(path, ".sqlite"))
+  con <- open_project_db(file.path(path, ".sqlite"))
   on.exit(DBI::dbDisconnect(con))
   set_export_group(con, units, group)
   invisible()
@@ -33,10 +33,23 @@ assign_export_group <- function(path, units, group) {
 #' @param units data.frame(ID, path, scaffold) or a character vector of IDs.
 #' @noRd
 clear_export_group <- function(path, units) {
-  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(path, ".sqlite"))
+  con <- open_project_db(file.path(path, ".sqlite"))
   on.exit(DBI::dbDisconnect(con))
   set_export_group(con, units, NA)
   invisible()
+}
+
+#' Why a group name cannot be used, or NULL when it can
+#'
+#' The name becomes the folder out/export/<name>, which export deletes and
+#' writes again.
+#' @noRd
+export_group_problem <- function(x) {
+  if (grepl("^[A-Za-z0-9_][A-Za-z0-9._-]*$", x)) return(NULL)
+  fix <- sub("^[.-]+", "", gsub("[^A-Za-z0-9._-]+", "_", x))
+  paste0("Group name \"", x, "\" cannot be used: it becomes a folder name, so use only ",
+    "letters, digits, dot, dash, and underscore, and start with a letter, digit, or underscore.",
+    if (nzchar(fix)) paste0(" Try \"", fix, "\"."))
 }
 
 #' Write annotate.export_group for the given units (NA clears). Accepts a
@@ -49,6 +62,10 @@ set_export_group <- function(con, units, group) {
   g <- if (length(group) == 0) NA_character_ else as.character(group)
   g <- if (length(g) == 1) rep(g, n) else g
   stopifnot(length(g) == n)
+  for (x in unique(g[!is.na(g)])) {
+    bad <- export_group_problem(x)
+    if (!is.null(bad)) stop(bad, call. = FALSE)
+  }
   # all-or-nothing: a partial group assignment is worse than none
   DBI::dbBegin(con)
   done <- FALSE
@@ -73,7 +90,7 @@ set_export_group <- function(con, units, group) {
 #' @return character vector aligned to `ids`.
 #' @noRd
 sample_assembler <- function(path, ids) {
-  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(path, ".sqlite"))
+  con <- open_project_db(file.path(path, ".sqlite"))
   on.exit(DBI::dbDisconnect(con))
   a <- tryCatch(DBI::dbGetQuery(con,
     "SELECT a.ID, COALESCE(ao.assembler, 'getorganelle') AS assembler
@@ -102,14 +119,14 @@ find_n_runs <- function(seq, min_len = MIN_ASSEMBLY_GAP) {
 #' Feature table (.tbl) text for one assembly unit from an open connection
 #'
 #' Emits the rRNA/spacer features plus an `assembly_gap` feature for each N-run
-#' (>= [MIN_ASSEMBLY_GAP]) so table2asn does not reject fabricated gap runs, and
-#' marks the first/last real feature partial (`<`/`>`) when it reaches a
-#' sequence end or when `force_partial` is set (a curator-flagged partial repeat,
-#' so it is not submitted as a complete cistron). `seqid` is the FASTA/feature id.
+#' (>= `MIN_ASSEMBLY_GAP`) so table2asn does not reject fabricated gap runs.
+#' A feature's 5' end is marked `<` and its 3' end `>` when that end is partial
+#' (see [partial_ends()]). A '-' feature is written stop then start. `seqid` is
+#' the FASTA/feature id.
 #' @noRd
-feature_table_text_con <- function(con, id, path = 1L, scaffold = 1L, seqid = id, force_partial = FALSE) {
+feature_table_text_con <- function(con, id, path = 1L, scaffold = 1L, seqid = id) {
   d <- DBI::dbGetQuery(con,
-    "SELECT element, type, start, stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
+    "SELECT * FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
     params = list(id, path, scaffold))
   hdr <- paste0(">Feature ", seqid)
   if (nrow(d) == 0) {
@@ -120,16 +137,16 @@ feature_table_text_con <- function(con, id, path = 1L, scaffold = 1L, seqid = id
   seq <- if (nrow(st)) st$sequence[1] else NA_character_
   seqlen <- if (nrow(st) && !is.na(st$length[1])) st$length[1] else max(d$stop)
 
+  ends <- partial_ends(d, seqlen, unit_trimmed(con, id, path, scaffold))
+  minus <- (d$strand %||% rep(NA, nrow(d))) %in% "-"
   gaps <- find_n_runs(seq)
   feats <- rbind(
     data.frame(start = d$start, stop = d$stop, type = d$type, element = d$element,
-      kind = "rna", stringsAsFactors = FALSE),
+      kind = "rna", p5 = ends$p5, p3 = ends$p3, minus = minus, stringsAsFactors = FALSE),
     if (nrow(gaps) > 0) data.frame(start = gaps$start, stop = gaps$stop,
-      type = "assembly_gap", element = NA_character_, kind = "gap", stringsAsFactors = FALSE))
+      type = "assembly_gap", element = NA_character_, kind = "gap", p5 = FALSE, p3 = FALSE,
+      minus = FALSE, stringsAsFactors = FALSE))
   feats <- feats[order(feats$start), , drop = FALSE]
-  rna <- which(feats$kind == "rna")
-  first_rna <- if (length(rna)) min(rna) else NA_integer_
-  last_rna <- if (length(rna)) max(rna) else NA_integer_
 
   lines <- hdr
   for (i in seq_len(nrow(feats))) {
@@ -138,67 +155,28 @@ feature_table_text_con <- function(con, id, path = 1L, scaffold = 1L, seqid = id
         paste0(feats$start[i], "\t", feats$stop[i], "\tassembly_gap"),
         paste0("\t\t\testimated_length\t", feats$stop[i] - feats$start[i] + 1),
         "\t\t\tgap_type\twithin scaffold",
-        "\t\t\tlinkage_evidence\talign genus")
+        "\t\t\tlinkage_evidence\tunspecified")
       next
     }
-    s <- if (i == first_rna && (feats$start[i] <= 1 || isTRUE(force_partial))) {
-      paste0("<", feats$start[i])
-    } else {
-      as.character(feats$start[i])
-    }
-    e <- if (i == last_rna && (feats$stop[i] >= seqlen || isTRUE(force_partial))) {
-      paste0(">", feats$stop[i])
-    } else {
-      as.character(feats$stop[i])
-    }
-    lines <- c(lines, paste0(s, "\t", e, "\t", feats$type[i]),
+    loc <- if (feats$minus[i]) c(feats$stop[i], feats$start[i]) else c(feats$start[i], feats$stop[i])
+    lines <- c(lines,
+      paste0(if (feats$p5[i]) "<", loc[1], "\t", if (feats$p3[i]) ">", loc[2], "\t", feats$type[i]),
       paste0("\t\t\tproduct\t", rrna_element_product(feats$element[i])))
     if (identical(feats$type[i], "misc_RNA")) lines <- c(lines, paste0("\t\t\tnote\t", feats$element[i]))
   }
   paste(lines, collapse = "\n")
 }
 
-#' Portal-parity submission-risk flags for one export sequence
-#'
-#' NCBI's Submission Portal accepts FASTA only for rRNA-ITS and runs ITSx (stock
-#' parameters) on it, silently removing sequences it judges chimeric, gapped
-#' between ITS regions, or misassembled
-#' (https://submit.ncbi.nlm.nih.gov/help/genbank/#annotation_rRNAITS_faq). This
-#' re-checks each sequence the same way so a curator sees the risk at export
-#' rather than as a rejection. Warn-only: nothing is dropped from the bundle.
-#' @return list(chimeric, gap_in_rdna, misassembly, note); `note` is a
-#'   `;`-joined string of the flags that fired ("" when clean).
-#' @noRd
-submission_risks <- function(con, id, path = 1L, scaffold = 1L) {
-  chim <- DBI::dbGetQuery(con,
-    "SELECT chimeric FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?",
-    params = list(id, path, scaffold))$chimeric[1]
-  chm <- tryCatch(DBI::dbGetQuery(con,
-    "SELECT label, reason FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?",
-    params = list(id, path, scaffold)), error = function(e) data.frame())
-  ann <- DBI::dbGetQuery(con,
-    "SELECT element, start, stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
-    params = list(id, path, scaffold))
-  seq <- NA_character_
-  if (nrow(ann) > 0) {
-    st <- DBI::dbGetQuery(con, "SELECT sequence FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
-      params = list(id, path, scaffold))
-    if (nrow(st)) seq <- st$sequence[1]
-  }
-  risk_flags(chim, ann, seq,
-    chimera_label = if (nrow(chm)) chm$label[1] else NA_character_,
-    chimera_reason = if (nrow(chm)) chm$reason[1] else NA_character_)
-}
-
-#' The risk computation of [submission_risks()] over already-fetched facts
+#' The risk computation over already-fetched facts
 #'
 #' `ann` is that unit's annotations ordered by start (or NULL/0 rows), `seq` its
 #' assembled sequence (length 1, may be NA). `chimera_label`/`chimera_reason`
-#' come from the `chimera` table ([chimera_unit()]); `suspect` and `likely` both
-#' raise the flag, warn-only, never blocking export.
+#' come from the `chimera` table ([chimera_unit()]); only `severe` raises the
+#' flag. ITSx's own chimeric call (`chimeric` = 1) raises it as `chimeric(ITSx)`.
 #' @noRd
 risk_flags <- function(chimeric, ann, seq, chimera_label = NA_character_, chimera_reason = NA_character_) {
-  chim <- isTRUE(chimeric[1] == 1L) || isTRUE(chimera_label %in% c("suspect", "likely"))
+  severe <- isTRUE(chimera_label[1] == "severe")
+  chim <- severe || isTRUE(chimeric[1] == 1L)
   gap_in_rdna <- FALSE
   misassembly <- FALSE
   if (!is.null(ann) && nrow(ann) > 0) {
@@ -212,14 +190,110 @@ risk_flags <- function(chimeric, ann, seq, chimera_label = NA_character_, chimer
     misassembly <- any(diff(idx) <= 0, na.rm = TRUE) ||
       (nrow(ann) > 1 && any(ann$start[-1] <= ann$stop[-nrow(ann)]))
   }
-  chim_tag <- if (chim) {
+  chim_tag <- if (severe) {
     if (!is.na(chimera_reason) && nzchar(chimera_reason)) {
       sprintf("chimeric(%s)", gsub(";", ",", chimera_reason, fixed = TRUE))
     } else "chimeric"
-  }
+  } else if (chim) "chimeric(ITSx)"
   flags <- c(chim_tag, if (gap_in_rdna) "gap_in_rDNA", if (misassembly) "misassembly")
   list(chimeric = chim, gap_in_rdna = gap_in_rdna, misassembly = misassembly,
     note = paste(flags, collapse = ";"))
+}
+
+#' Is each annotation row partial at its 5' and 3' end?
+#'
+#' A set `partial_start`/`partial_stop` (0 or 1) is final. When it is NULL, the
+#' end is partial if it reaches a sequence end (base 1 or `seqlen`) of an
+#' untrimmed unit, read in the row's own strand.
+#' @param d Annotation rows. @param seqlen Sequence length (NA: no end check).
+#' @param trimmed Is the unit's left / right end trimmed ([unit_trimmed()])? A
+#'   trimmed end is not an assembly end. One value covers both ends.
+#' @return list(p5, p3) of logical vectors.
+#' @noRd
+partial_ends <- function(d, seqlen, trimmed = FALSE) {
+  flag <- function(col) if (is.null(d[[col]])) rep(NA, nrow(d)) else d[[col]]
+  trimmed <- rep_len(trimmed, 2)
+  left <- !trimmed[1] & d$start <= 1
+  right <- !trimmed[2] & !is.na(seqlen) & d$stop >= seqlen
+  minus <- (d$strand %||% rep(NA, nrow(d))) %in% "-"
+  eff <- function(f, auto) ifelse(is.na(f), auto, f %in% 1L)
+  list(p5 = eff(flag("partial_start"), ifelse(minus, right, left)),
+    p3 = eff(flag("partial_stop"), ifelse(minus, left, right)))
+}
+
+#' Is each end of a unit trimmed now? (compared with its pre-trim snapshot)
+#' @return c(left, right); any() says whether the unit is trimmed at all.
+#' @noRd
+unit_trimmed <- function(con, id, path, scaffold) {
+  b <- tryCatch(DBI::dbGetQuery(con,
+    "SELECT b.sequence bak, a.sequence cur FROM assembly_backup b JOIN assemblies a
+       ON a.ID = b.ID AND a.path = b.path AND a.scaffold = b.scaffold
+     WHERE b.ID = ? AND b.path = ? AND b.scaffold = ?",
+    params = list(id, as.integer(path), as.integer(scaffold))), error = function(e) data.frame())
+  if (nrow(b) == 0 || is.na(b$bak[1])) return(c(FALSE, FALSE))
+  if (is.na(b$cur[1])) return(c(TRUE, TRUE))
+  off <- as.integer(regexpr(b$cur[1], b$bak[1], fixed = TRUE))
+  if (off < 1) return(c(TRUE, TRUE))
+  c(off > 1, off + nchar(b$cur[1]) - 1 < nchar(b$bak[1]))
+}
+
+#' TRUE where a submission_risk string carries a tag the export window asks
+#' about: off_target, contaminant, or chimeric.
+#' @noRd
+has_screen_risk <- function(risk) {
+  grepl("(^|;)(off_target\\(|contaminant(;|$)|chimeric(\\(|;|$))", ifelse(is.na(risk), "", risk))
+}
+
+#' The Checks column: what the checks found, per unit or per sample
+#'
+#' Findings are listed worst first. The red ones (off target, contaminant,
+#' severe chimera, ITSx chimeric) are the tags `has_screen_risk()` reads, so
+#' Lock and Export ask about them. "ok" needs every unit screened on_target;
+#' with nothing flagged and no usable screen the cell says "no reference".
+#' Only kept scaffolds count.
+#' @param con Open project DB connection.
+#' @param by "unit" (one row per ID, path, scaffold) or "sample" (one per ID).
+#' @return data.frame(ID, \[path, scaffold,\] checks, checks_tone)
+#' @noRd
+unit_checks <- function(con, by = c("unit", "sample")) {
+  by <- match.arg(by)
+  u <- DBI::dbGetQuery(con,
+    "SELECT an.ID, an.path, an.scaffold, sc.screen_verdict, ch.label AS chimera_label,
+       an.chimeric, an.curate_flags, an.itsx_warnings,
+       (SELECT COUNT(*) FROM annotations f WHERE f.ID = an.ID AND f.path = an.path
+          AND f.scaffold = an.scaffold AND f.status = 'flag') AS n_feat_flags
+     FROM annotate an
+       JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
+       LEFT JOIN screen sc ON sc.ID = an.ID AND sc.path = an.path AND sc.scaffold = an.scaffold
+       LEFT JOIN chimera ch ON ch.ID = an.ID AND ch.path = an.path AND ch.scaffold = an.scaffold
+     WHERE COALESCE(asm.ignore, 0) = 0")
+  txt <- function(x) { x <- as.character(x); x[is.na(x)] <- ""; x }
+  fl <- strsplit(txt(u$curate_flags), "; ", fixed = TRUE)
+  itsx <- txt(u$itsx_warnings)
+  hit <- cbind(
+    "off target" = u$screen_verdict %in% "off_target",
+    "contaminant" = vapply(fl, function(x) "contaminant" %in% x, logical(1)),
+    "severe chimera" = u$chimera_label %in% "severe",
+    "ITSx chimeric" = u$chimeric %in% 1,
+    "minor chimera" = u$chimera_label %in% "minor",
+    "uncertain screen" = u$screen_verdict %in% "uncertain",
+    "ITSx" = nzchar(itsx) & !startsWith(itsx, "not_run("),
+    "warnings" = vapply(fl, function(x) any(x != "contaminant"), logical(1)),
+    "feature flags" = u$n_feat_flags > 0)
+  cols <- if (by == "unit") c("ID", "path", "scaffold") else "ID"
+  key <- if (by == "unit") unit_key(u$ID, u$path, u$scaffold) else u$ID
+  rows <- split(seq_len(nrow(u)), factor(key, levels = unique(key)))
+  cell <- vapply(rows, function(i) {
+    h <- colSums(hit[i, , drop = FALSE]) > 0
+    tone <- if (any(h[1:4])) "danger" else if (any(h)) "warning"
+      else if (all(u$screen_verdict[i] %in% "on_target")) "success" else "neutral"
+    c(if (any(h)) paste(names(h)[h], collapse = ", ") else if (tone == "success") "ok" else "no reference", tone)
+  }, character(2))
+  out <- u[match(names(rows), key), cols, drop = FALSE]
+  out$checks <- cell[1, ]
+  out$checks_tone <- cell[2, ]
+  rownames(out) <- NULL
+  out
 }
 
 #' README text mapping the bundle to NCBI's two submission routes
@@ -246,8 +320,10 @@ submission_readme <- function(label, itsx_check = TRUE) {
     "",
     paste0("  -> Portal route: upload ", label, ".fasta only; NCBI annotates for you."),
     "",
-    "The .tbl / .sbt / table2asn output are for the alternate table2asn / BankIt",
-    "route only, where a feature table IS accepted.",
+    "The .tbl files are only for NCBI's command-line tool table2asn",
+    "(https://www.ncbi.nlm.nih.gov/genbank/table2asn/). Run it with -V v, read",
+    "the .val file it writes, and send the .sqn file the way NCBI's GenBank",
+    "submission page says.",
     "",
     "WHAT IS IN THIS FOLDER",
     "----------------------",
@@ -263,10 +339,26 @@ submission_readme <- function(label, itsx_check = TRUE) {
     "NCBI's ITSx evaluation may silently remove sequences it judges chimeric,",
     "gapped between ITS regions, or misassembled. RiboPilot re-checks each",
     paste0("sequence the same way; see the submission_risk column in ", label, "_summary.csv."),
-    "Flagged sequences are still exported (warn-only); review before submitting:",
-    "  chimeric     the chimera detector or ITSx flagged mixed origins",
+    "Before exporting, the app's Export window lists records flagged as possible",
+    "contamination or severe chimeras and asks whether to leave them out.",
+    "Other flags are exported as they are; review before submitting:",
+    "  chimeric     parts of the sequence match different phyla or kingdoms",
+    "               (severe chimera call), or ITSx calls it chimeric (chimeric(ITSx))",
     "  gap_in_rDNA  an assembly-gap (N-run) falls inside the 18S..28S span",
     "  misassembly  features overlap or are out of 5'->3' order",
+    "  off_target(<taxon>)  the BLAST screen's hits agree on",
+    "               <taxon>, which is not on the sample's lineage",
+    "  contaminant  the BLAST screen's best hit shares no phylum with the sample",
+    "  taxon_differs(<name>)  your Taxon differs from <name>, the name set in",
+    "               the Taxonomy step. The organism column shows which one was",
+    "               exported: <name> when your Taxon matched it exactly or you",
+    "               picked a species there, otherwise your Taxon, so labels",
+    "               like 'Genus sp. A' are kept.",
+    "Check off_target and contaminant records before submitting: the sequence",
+    "may be another organism's rDNA, exported under this sample's name.",
+    paste0("The chimera_warning column in ", label, "_summary.csv holds weaker chimera"),
+    "evidence (a class-level switch, a ribotyper code, or read evidence only).",
+    "It is not a submission risk; look at the unit's chimera check in the app.",
     "",
     if (itsx_check) c(
     "FINAL ITSx CHECK",
@@ -293,7 +385,7 @@ submission_readme <- function(label, itsx_check = TRUE) {
 #' Per-unit export summary data.frame
 #'
 #' `units` is a data.frame(ID, path, scaffold, seqid). Includes a
-#' `submission_risk` column ([submission_risks]) so the CSV and HTML report both
+#' `submission_risk` column (`risk_flags`) so the CSV and HTML report both
 #' surface portal-parity risk flags.
 #' @noRd
 export_summary_df <- function(con, units) {
@@ -305,7 +397,7 @@ export_summary_df <- function(con, units) {
   fetch <- function(sql) tryCatch(DBI::dbGetQuery(con, sprintf(sql, qs), params = as.list(ids)),
     error = function(e) data.frame())
   m <- fetch(
-    "SELECT s.ID, an.path, an.scaffold, s.Taxon AS organism, asm.length, an.n_features,
+    "SELECT s.ID, an.path, an.scaffold, asm.length, an.n_features,
        an.missing, an.reviewed, an.partial, an.problematic
      FROM samples s
      JOIN annotate an ON an.ID = s.ID
@@ -318,6 +410,9 @@ export_summary_df <- function(con, units) {
   asm <- fetch("SELECT ID, path, scaffold, sequence FROM assemblies WHERE ID IN (%s)")
   scr <- fetch("SELECT ID, path, scaffold, variant_class, variant_group, variant_identity
                 FROM screen WHERE ID IN (%s)")
+  sv <- fetch("SELECT ID, path, scaffold, screen_verdict, lca_taxon FROM screen WHERE ID IN (%s)")
+  nts <- fetch("SELECT ID, path, scaffold, curate_flags FROM annotate WHERE ID IN (%s)")
+  smp <- fetch("SELECT * FROM samples WHERE ID IN (%s)")
 
   ukey <- unit_key(units$ID, units$path, units$scaffold)
   mi <- if (nrow(m)) match(ukey, unit_key(m$ID, m$path, m$scaffold)) else rep(NA_integer_, n)
@@ -331,16 +426,28 @@ export_summary_df <- function(con, units) {
   chm_label <- if (nrow(chm)) chm$label[cmi] else rep(NA_character_, n)
   chm_reason <- if (nrow(chm)) chm$reason[cmi] else rep(NA_character_, n)
   v <- unit_variant_facts_df(scr, units)
+  svi <- if (nrow(sv)) match(ukey, unit_key(sv$ID, sv$path, sv$scaffold)) else rep(NA_integer_, n)
+  nti <- if (nrow(nts)) match(ukey, unit_key(nts$ID, nts$path, nts$scaffold)) else rep(NA_integer_, n)
 
-  organism <- pick(m, "organism", NA_character_)
+  si <- match(units$ID, smp$ID)
+  taxon <- (smp$Taxon %||% NA)[si]
+  sci <- (smp$sci_name %||% NA)[si]
+  organism <- export_organism(taxon, sci, (smp$match_type %||% NA)[si], (smp$rank %||% NA)[si])
+  norm <- function(x) tolower(trimws(gsub("[_[:space:]]+", " ", x)))
+  differs <- !is.na(sci) & nzchar(sci) & !is.na(taxon) & norm(taxon) != norm(sci)
   risk <- vapply(seq_len(n), function(i) {
     note <- risk_flags(chiv[i], ann[anni[ukey[i]][[1]], , drop = FALSE], seqv[i],
       chimera_label = chm_label[i], chimera_reason = chm_reason[i])$note
-    # NCBI rejects a record with no [organism=]; flag it rather than drop the record
-    if (is.na(organism[i]) || !nzchar(trimws(organism[i]))) {
-      note <- paste(c(if (nzchar(note)) note, "missing_organism"), collapse = ";")
-    }
-    note
+    # the sequence may be another organism's rDNA, exported under this sample's name
+    off <- isTRUE(sv$screen_verdict[svi[i]] == "off_target")
+    notes <- if (is.na(nti[i])) character(0) else strsplit(nts$curate_flags[nti[i]] %|NA|% "", "; ", fixed = TRUE)[[1]]
+    paste(c(if (nzchar(note)) note,
+      if (off) sprintf("off_target(%s)", sv$lca_taxon[svi[i]] %|NA|% "other taxon"),
+      if ("contaminant" %in% notes) "contaminant",
+      if (differs[i]) sprintf("taxon_differs(%s)", sci[i]),
+      # NCBI rejects a record with no [organism=]; flag it rather than drop the record
+      if (is.na(organism[i]) || !nzchar(trimws(organism[i]))) "missing_organism"),
+      collapse = ";")
   }, character(1))
 
   data.frame(seqid = units$seqid, ID = units$ID, path = units$path, scaffold = units$scaffold,
@@ -354,6 +461,7 @@ export_summary_df <- function(con, units) {
     variant_class = v$variant_class, variant_group = v$variant_group,
     variant_identity = v$variant_identity, n_variants = v$n_variants,
     submission_risk = risk,
+    chimera_warning = ifelse(chm_label %in% "minor", chm_reason, ""),
     stringsAsFactors = FALSE)
 }
 
@@ -363,12 +471,45 @@ unit_key <- function(id, path, scaffold) {
   paste(as.character(id), as.integer(path), as.integer(scaffold), sep = "\r")
 }
 
+#' WHERE clause for the units an export writes (aliases: an = annotate,
+#' a = assemble, asm = assemblies): both locks on, scaffold kept, not excluded.
+#' @noRd
+EXPORTABLE_WHERE <- "COALESCE(an.annotate_lock,0) = 1 AND COALESCE(a.assemble_lock,0) = 1
+  AND COALESCE(asm.ignore,0) = 0 AND COALESCE(an.problematic,'') != 'yes'"
+
+#' The units an export writes, with their export group
+#' @noRd
+exportable_units <- function(con) {
+  DBI::dbGetQuery(con, paste(
+    "SELECT an.ID, an.path, an.scaffold, an.export_group FROM annotate an
+     JOIN assemble a ON a.ID = an.ID
+     JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
+     WHERE", EXPORTABLE_WHERE, "ORDER BY an.ID, an.path, an.scaffold"))
+}
+
+#' Units of an export group that its export will leave out, and why
+#' @return data.frame(ID, path, scaffold, why)
+#' @noRd
+export_left_out <- function(con, group) {
+  DBI::dbGetQuery(con, paste(
+    "SELECT an.ID, an.path, an.scaffold,
+       CASE WHEN COALESCE(an.problematic,'') = 'yes' THEN 'excluded from export'
+            WHEN COALESCE(a.assemble_lock,0) != 1 THEN 'assembly not locked'
+            WHEN COALESCE(an.annotate_lock,0) != 1 THEN 'annotation not locked'
+            ELSE 'scaffold dropped' END AS why
+     FROM annotate an
+     LEFT JOIN assemble a ON a.ID = an.ID
+     LEFT JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
+     WHERE an.export_group = ? AND NOT (", EXPORTABLE_WHERE, ")
+     ORDER BY an.ID, an.path, an.scaffold"), params = list(group))
+}
+
 #' The intragenomic variant facts for a set of exported units
 #'
 #' Records that a unit is one of N intragenomic variants detected in its sample
 #' and the anchor identity between them. It answers doc 08's open question 7
 #' without imposing a submission policy: the fact is recorded, the choice stays
-#' the curator's. Deliberately NOT routed through [submission_risks()] -- a
+#' the curator's. Deliberately NOT routed through `risk_flags()` -- a
 #' paralog is real biology, and warning on export is the behaviour this
 #' sub-project exists to remove.
 #'
@@ -415,7 +556,7 @@ xml_escape <- function(x) {
 
 #' Hand-written SVG for the five-box rRNA feature diagram
 #'
-#' Right-pointing gene arrows on one row, filled from [RRNA_ELEMENT_COLORS],
+#' Right-pointing gene arrows on one row, filled from `RRNA_ELEMENT_COLORS`,
 #' with centred element labels and a bp axis. Written by hand rather than
 #' rendered: the HTML report embeds one of these for every exported unit.
 #'
@@ -469,10 +610,11 @@ feature_map_svg_text <- function(d, width = 900, height = 110) {
 #' Write a self-contained HTML report for an export group / selection
 #'
 #' `units` is a data.frame(ID, path, scaffold, seqid) - one row per exported unit.
-#' `smry` is the already-computed [export_summary_df()] for those units.
+#' `smry` is the already-computed `export_summary_df()` for those units.
 #' @noRd
 export_report_html <- function(con, units, out_html, label, smry = export_summary_df(con, units)) {
-  hdr <- c("seqid", "ID", "organism", "length", "n_features", "missing", "reviewed", "submission_risk", "itsx_check")
+  hdr <- c("seqid", "ID", "organism", "length", "n_features", "missing", "reviewed", "submission_risk",
+    "chimera_warning", "itsx_check")
   rows <- apply(smry[, intersect(hdr, names(smry)), drop = FALSE], 1, function(r) {
     paste0("<tr>", paste0("<td>", ifelse(is.na(r), "", r), "</td>", collapse = ""), "</tr>")
   })
@@ -515,10 +657,10 @@ export_report_html <- function(con, units, out_html, label, smry = export_summar
 #' @param template Optional path to a GenBank submission template (`.sbt`);
 #'   copied into the bundle as `<label>.sbt` so table2asn picks it up.
 #' @param run_table2asn Run table2asn if on PATH.
-#' @param zip Also write `<out_dir>/<label>.zip`.
+#' @param zip Also write `<out_dir>/export/<label>.zip`.
 #' @param export_opts Name of the saved FASTA-header configuration to use.
 #' @param fasta_header,fasta_header_marker Optional header templates
-#'   (\code{\{token\}} glue syntax) overriding the saved configuration.
+#'   (\code{\{column\}} tokens) overriding the saved configuration.
 #' @param itsx_check Run stock ITSx (default parameters, no organism group) over
 #'   the exported records, the way NCBI's Submission Portal does, and report
 #'   what it would flag in the `itsx_check` column of the summary CSV and in
@@ -528,6 +670,9 @@ export_report_html <- function(con, units, out_html, label, smry = export_summar
 #' @param itsx_cpu Threads for the ITSx check.
 #' @return (invisibly) the group output directory, with the summary data.frame
 #'   attached as attribute `summary`.
+#' @details A unit is exported when its sample's assembly and the unit's
+#'   annotation are both locked, its scaffold is kept, and it is not excluded
+#'   from export.
 #' @export
 export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
                           out_dir = file.path(path, "out"),
@@ -536,18 +681,12 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
                           export_opts = "default", fasta_header = NULL,
                           fasta_header_marker = NULL, itsx_check = TRUE,
                           itsx_cpu = 2L) {
-  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(path, ".sqlite"))
+  con <- open_project_db(file.path(path, ".sqlite"))
   on.exit(DBI::dbDisconnect(con), add = TRUE)
 
-  # Export annotation-locked, non-ignored, non-problematic UNITS (one GenBank
-  # record per (ID, path, scaffold)). Filtered by group / ids / units when given.
-  all_units <- DBI::dbGetQuery(con,
-    "SELECT an.ID, an.path, an.scaffold, an.export_group
-     FROM annotate an
-     JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
-     WHERE an.annotate_lock = 1 AND COALESCE(asm.ignore,0) = 0
-       AND COALESCE(an.problematic,'') != 'yes'
-     ORDER BY an.ID, an.path, an.scaffold")
+  # one GenBank record per exportable (ID, path, scaffold), filtered by group /
+  # ids / units when given
+  all_units <- exportable_units(con)
   sel <- all_units
   if (!is.null(group)) sel <- sel[!is.na(sel$export_group) & sel$export_group == group, , drop = FALSE]
   if (!is.null(ids)) sel <- sel[sel$ID %in% ids, , drop = FALSE]
@@ -556,7 +695,8 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
     sel <- sel[key(sel) %in% key(units), , drop = FALSE]
   }
   if (nrow(sel) == 0) {
-    stop("No annotation-locked units to export.", call. = FALSE)
+    stop("No units to export: a unit needs its assembly and its annotation locked, ",
+      "and must not be excluded from export.", call. = FALSE)
   }
   # SeqID: the sample's ID when it exports a single unit, else ID_p<path>_s<scaffold>.
   # Counted over ALL exportable units of the sample, not over this bundle's
@@ -569,6 +709,8 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
   units$seqid <- ifelse(!is.na(n_units) & n_units > 1,
     sprintf("%s_p%s_s%s", units$ID, units$path, units$scaffold), units$ID)
   label <- label %||% group %||% "export"
+  bad <- export_group_problem(label)
+  if (!is.null(bad)) stop(bad, call. = FALSE)
 
   # Headers are resolved and checked before anything is written: a bad template
   # or a header that repeats across records is a rejected submission, not a
@@ -598,6 +740,9 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
     if (identical(chk$res$level, "error")) {
       stop("The ", chk$what, " template cannot be used: ", chk$res$message, call. = FALSE)
     }
+    if (identical(chk$res$level, "warn")) {
+      warning("The ", chk$what, " template: ", chk$res$message, call. = FALSE)
+    }
   }
   headers <- render_fasta_headers(tpl_record, hdata)
   dup <- unique(headers[duplicated(headers)])
@@ -625,10 +770,7 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
       params = list(id, upath, uscaf))$sequence[1]
     defline <- paste0(">", headers[ui])
     writeLines(c(defline, seq), file.path(sdir, paste0(seqid, ".fasta")))
-    is_partial <- identical(DBI::dbGetQuery(con,
-      "SELECT partial FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?",
-      params = list(id, upath, uscaf))$partial[1], "yes")
-    tbl <- feature_table_text_con(con, id, upath, uscaf, seqid = seqid, force_partial = is_partial)
+    tbl <- feature_table_text_con(con, id, upath, uscaf, seqid = seqid)
     writeLines(tbl, file.path(sdir, paste0(seqid, ".tbl")))
     group_fsa <- c(group_fsa, defline, seq)
     group_tbl <- c(group_tbl, tbl)
@@ -724,26 +866,34 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
     "\n  GenBank Portal takes FASTA only: upload ", label,
     ".fasta; NCBI auto-annotates the rRNA-ITS region (see README.txt).")
   if (isTRUE(zip)) {
-    zf <- paste0(gdir, ".zip")
-    old <- setwd(dirname(gdir))
+    zf <- file.path(normalizePath(dirname(gdir)), paste0(label, ".zip"))
+    unlink(zf)
+    old <- setwd(dirname(zf))
     on.exit(setwd(old), add = TRUE)
-    utils::zip(zf, label, flags = "-rq")
+    if (utils::zip(zf, label, flags = "-rq") != 0) {
+      warning("Could not write ", zf, call. = FALSE)
+    }
   }
   attr(gdir, "summary") <- smry
   invisible(gdir)
 }
 
-#' Export every assigned export group in a project
+#' Export a project's locked units as GenBank bundles
+#'
+#' Writes one bundle per export group made in the app's Export step, using the
+#' default header template. When no group was made, writes every unit with
+#' both its assembly and its annotation locked into one bundle named "export".
 #' @param path Project directory.
 #' @param out_dir Project "out" directory; bundles land in `<out_dir>/export`.
-#' @return (invisibly) the export groups exported.
+#' @return (invisibly) the bundle names written.
 #' @export
 export_project <- function(path = ".", out_dir = file.path(path, "out")) {
-  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(path, ".sqlite"))
-  groups <- DBI::dbGetQuery(con, "SELECT DISTINCT export_group FROM annotate WHERE export_group IS NOT NULL")$export_group
-  DBI::dbDisconnect(con)
+  con <- open_project_db(file.path(path, ".sqlite"))
+  g <- tryCatch(exportable_units(con)$export_group, finally = DBI::dbDisconnect(con))
+  groups <- sort(unique(g[nzchar(g)]))
   if (length(groups) == 0) {
-    stop("No export groups assigned. Assign samples to a group first.", call. = FALSE)
+    export_bundle(path, out_dir = out_dir, zip = TRUE)
+    return(invisible("export"))
   }
   for (g in groups) export_bundle(path, group = g, out_dir = out_dir, zip = TRUE)
   invisible(groups)

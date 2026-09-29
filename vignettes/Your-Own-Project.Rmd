@@ -1,0 +1,146 @@
+---
+title: "Your own project"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Your own project}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+A project starts with a mapping file that lists your samples, and one command
+that sets up the project folder. After that, everything happens in the app, the
+same way as in [Get started](RiboPilot.html).
+
+# The mapping file
+
+The mapping file is a CSV file with one row per sample. For example:
+
+```
+ID,Taxon,R1,R2,Voucher
+Fish_01,Brosme brosme,Fish_01_R1.fastq.gz,Fish_01_R2.fastq.gz,USNM 123456
+Fish_02,Upeneus parvus,SRR22396758/SRR22396758_1.fastq.gz,SRR22396758/SRR22396758_2.fastq.gz,USNM 123457
+Snail_01,Tritia reticulata,Snail_01_R1.fq.gz,Snail_01_R2.fq.gz,
+```
+
+The rules:
+
+- **Columns.** It needs the columns `ID`, `Taxon`, `R1`, and `R2`. Upper and
+  lower case do not matter in column names.
+- **IDs.** Each ID must be unique, ignoring case, and at most 18 characters
+  long. Use only letters, digits, dash (`-`), underscore (`_`), and colon
+  (`:`): no spaces, dots, or slashes. IDs are kept exactly as you typed them,
+  leading zeros included.
+- **Commas only.** Save the file with commas between values. From Excel, use
+  File > Save As > CSV UTF-8 (Comma delimited).
+- **Paired reads only.** Every sample with reads needs both an `R1` and an `R2`
+  file. Single-end reads are not supported.
+- **Read file names** are relative to the read folder you pass as `data_path`.
+  Subfolders are fine (`SRR22396758/SRR22396758_1.fastq.gz`), but full paths
+  are not.
+- **No spaces or special characters in paths.** File names, folder names, and
+  the project path may use only letters, digits, and `.`, `_`, `-`, and `/`.
+  RiboPilot stops and names each path it cannot pass to Docker, Singularity, or
+  Nextflow, for example one with a space or a quote mark.
+- **Extra columns** are kept, and you can use them in your GenBank headers, for
+  example as `{Voucher}`. A column name with a space or a dash is read with a
+  dot in its place, so `Voucher ID` becomes `{Voucher.ID}`. The **Available
+  columns** list in the Export window shows every name.
+- **Reserved names.** RiboPilot adds some columns itself, so your file cannot
+  use these names: taxid, sci_name, rank, match_type, tax_alternatives,
+  lineage, lineage_taxids, ref_id, user_group, ref_source, taxonomy_switch,
+  taxonomy_lock, and time_stamp.
+
+The IDs end up in your GenBank records, so choose them with care.
+
+# Create the project
+
+```r
+RiboPilot::new_project(
+  path       = "~/my_project",
+  mapping_fn = "~/my_samples.csv",
+  data_path  = "~/my_reads"
+)
+```
+
+RiboPilot checks the mapping file and the read files before it writes
+anything, and stops with a message that names each problem. The analysis runs in
+Docker by default. On a computing cluster, pass your cluster profile as
+`executor`; see [Running on a cluster](Clusters.html).
+
+An NCBI API key is optional; see [Installation](Installation.html) for where to
+put it.
+
+Then open the app and follow the five steps, as in
+[Get started](RiboPilot.html):
+
+```r
+RiboPilot::RiboPilot("~/my_project")
+```
+
+Do the Reference step before you assemble.
+
+# Already have an assembly?
+
+If you have a genome assembly for a sample, or just the contig that holds its
+ribosomal repeat, you can use it instead of assembling from reads. Add an
+`Assembly` column to your mapping file naming that sample's FASTA file, and pass
+the folder that holds them as `assembly_path`:
+
+```r
+RiboPilot::new_project(
+  path          = "~/my_project",
+  mapping_fn    = "~/my_samples.csv",
+  data_path     = "~/my_reads",
+  assembly_path = "~/my_assemblies"
+)
+```
+
+RiboPilot searches each supplied assembly for rRNA genes and carries forward the
+contigs that carry an 18S or 28S anchor; the rest are recorded and left behind.
+A single ribosomal contig passes this search without doing anything special. If
+you supplied a fragment too short to carry an anchor (an ITS-only sequence, for
+example), turn the search off in the app's **Assembly Options** and RiboPilot
+uses your file exactly as given.
+
+A sample with an assembly does not need reads: leave its `R1` and `R2` blank.
+If your file has no reads at all, you can leave out the `R1` and `R2` columns
+and `data_path`. The assembly files must be FASTA, all gzipped (`.gz`) or all
+plain in one project, and named relative to `assembly_path`.
+
+A sample with no reads gets no depth profile, since there is nothing to map
+back; every other step runs the same. If you do have its reads, name them
+anyway, and RiboPilot uses them for depth while still starting from your
+assembly.
+
+# Adding samples later
+
+To add samples to a project you have already started, write a mapping file that
+lists only the new samples, and run:
+
+```r
+RiboPilot::add_samples(
+  "~/my_project",
+  mapping_fn = "~/more_samples.csv",
+  data_path  = "~/my_reads"
+)
+```
+
+It runs the same checks as `new_project()`, and refuses IDs that are already in
+the project. Put the new read files in the same folder as the project's other
+reads (the `data_path` you gave `new_project()`): runs look for reads there.
+The new samples then appear in the Taxonomy step, ready to assign.
+
+To fix or add metadata, such as a voucher number, for samples that are already
+in the project, list them in a mapping file with the new values and run
+`RiboPilot::update_sample_metadata()` the same way. It never changes a sample's
+reads, assembly, state, or locks.
+
+Do not rerun `new_project()` with `force = TRUE` on a project you have worked
+on: it deletes all its results.
+
+# What is in the project folder
+
+The project folder holds your results database, its settings, and the
+pipeline's working files. The table in
+[Disk space, caches, and offline use](Caches-and-Offline.html) says what each
+item is, and which you can delete.

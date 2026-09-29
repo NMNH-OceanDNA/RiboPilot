@@ -1,0 +1,8 @@
+bibentry(
+  bibtype = "Manual",
+  title = "RiboPilot: Nuclear ribosomal repeat assembly, annotation, and curation",
+  author = person("Dan", "MacGuigan"),
+  year = "2026",
+  note = paste("R package version", meta$Version),
+  url = "https://github.com/dmacguigan/RiboPilot"
+)

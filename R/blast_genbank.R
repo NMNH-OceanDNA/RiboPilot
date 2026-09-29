@@ -3,17 +3,6 @@
 # blast_genbank result handling, adapted to RiboPilot's sqlite3/R-script model
 # and targeting nuclear rRNA + ITS references.
 
-#' Does this title name a nuclear rDNA record?
-#'
-#' Thin wrapper over [classify_hit_title()] so the binary predicate and the
-#' three-state classifier can never disagree. `uninformative` reads as FALSE
-#' here, which is what every existing caller already assumed.
-#' @param title Character vector of subject titles.
-#' @noRd
-is_nuclear_rrna_title <- function(title) {
-  classify_hit_title(title) == "rdna"
-}
-
 #' Floors a subject must clear to become a reference the sample is aligned to.
 #'
 #' Applied to the reference panel only, never to the search or to the screen's
@@ -48,7 +37,7 @@ ref_candidate_ok <- function(x) {
       (!is.na(aln) & aln >= REF_CANDIDATE_MIN_ALN_BP))
 }
 
-#' Parse remote blastn hits into ranked reference candidates + a contamination
+#' Parse blastn hits into ranked reference candidates + a contamination
 #' screen
 #'
 #' Reads a blastn `-outfmt "6 saccver stitle pident qcovs evalue staxids"` file
@@ -56,9 +45,10 @@ ref_candidate_ok <- function(x) {
 #'
 #' * **Reference panel** - hits whose title is nuclear rDNA. Deduped by
 #'   accession (best pident*qcovs), ranked into `blast_ref_candidates`, rank-1
-#'   set as the sample's reference (`assemble.blast_*`). Same records the restricted search returned before.
-#' * **Contamination screen** - the top hit over *all* of core_nt, unfiltered,
-#'   into `blast_screen`. This is the only signal that can distinguish "the host"
+#'   written to the unit's `assemblies.blast_*` columns. Same records the restricted search returned before.
+#' * **Contamination screen** - the top hit of the whole search (the bundled
+#'   rDNA database with its decoys, or NCBI core_nt), unfiltered, into
+#'   `blast_screen`. This is the only signal that can distinguish "the host"
 #'   from "a symbiont" or "not nuclear rDNA at all", so it is deliberately taken
 #'   before the nuclear-rDNA filter.
 #'
@@ -88,8 +78,8 @@ parse_blast_candidates <- function(con, id, path = 1L, scaffold = 1L, hits_file,
     return(derive_blast_products(con, id, path, scaffold, ts = ts))
   }
   h$species <- extract_species(h$title)
-  h$is_nuclear_rrna <- as.integer(is_nuclear_rrna_title(h$title))
   h$hit_class <- classify_hit_title(h$title)
+  h$is_nuclear_rrna <- as.integer(h$hit_class == "rdna")
 
   # Rank SUBJECTS by their best bitscore. The old pident*qcovs score
   # systematically preferred short high-identity hits: a 400 bp conserved-18S-core
@@ -199,13 +189,10 @@ derive_blast_products <- function(con, id, path = 1L, scaffold = 1L,
     if (!is.null(df)) {
       DBI::dbAppendTable(con, "blast_ref_candidates", df)
       top <- ref[1, ]
-      searched_source <- tryCatch(
-        DBI::dbGetQuery(con,
-          "SELECT source FROM blast_searched WHERE ID = ? AND path = ? AND scaffold = ?",
-          params = list(id, path, scaffold))$source,
-        error = function(e) NA_character_)
-      # a missing row (or table, for a DB that predates blast_searched) means
-      # remote, which preserves current behaviour for every existing project.
+      searched_source <- DBI::dbGetQuery(con,
+        "SELECT source FROM blast_searched WHERE ID = ? AND path = ? AND scaffold = ?",
+        params = list(id, path, scaffold))$source
+      # a missing row means remote.
       blast_source <- if (length(searched_source) > 0 && identical(searched_source[1], "local")) {
         "local_rrna"
       } else {
@@ -290,7 +277,6 @@ parse_blast_hits_file <- function(hits_file) {
 #' @noRd
 write_blast_screen <- function(con, id, path, scaffold, top, hits,
                                ts = as.integer(Sys.time())) {
-  cols <- DBI::dbListFields(con, "blast_screen")
   row <- data.frame(
     ID = id, path = as.integer(path), scaffold = as.integer(scaffold),
     accession = top$accession, title = top$title, species = top$species,
@@ -301,7 +287,7 @@ write_blast_screen <- function(con, id, path, scaffold, top, hits,
     bitscore = top$bitscore %||% NA_real_,
     is_nuclear_rrna = consensus_hit_class(hits$hit_class, hits$bitscore),
     time_stamp = ts, stringsAsFactors = FALSE)
-  DBI::dbAppendTable(con, "blast_screen", row[, intersect(names(row), cols), drop = FALSE])
+  DBI::dbAppendTable(con, "blast_screen", row)
   invisible(row$lineage)
 }
 
@@ -342,20 +328,26 @@ rederive_blast_products <- function(con, ids = NULL) {
 #' @param con Open project DB connection.
 #' @param id Sample ID.
 #' @param path,scaffold Assembly unit within the sample.
-#' @param query_md5 md5 of the exact query sequence submitted.
+#' @param query_md5 md5 of the query sequence and the search settings, as blast.nf computes it.
 #' @param n_hits Number of hits the search returned.
 #' @param source Which search produced the hits, "local" or "remote".
+#' @param db The database that answered: "core_nt", or the local panel's name and release.
 #' @return (invisibly) TRUE.
 #' @export
 mark_unit_searched <- function(con, id, path = 1L, scaffold = 1L, query_md5,
-                               n_hits = 0L, source = "remote") {
+                               n_hits = 0L, source = "remote", db = "") {
   source <- match.arg(source, c("remote", "local"))
   DBI::dbExecute(con,
     "INSERT OR REPLACE INTO blast_searched
-       (ID, path, scaffold, query_md5, n_hits, source, time_stamp)
-     VALUES (?, ?, ?, ?, ?, ?, ?)",
+       (ID, path, scaffold, query_md5, n_hits, source, db, time_stamp)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     params = list(id, as.integer(path), as.integer(scaffold), query_md5,
-      as.integer(n_hits), source, as.integer(Sys.time())))
+      as.integer(n_hits), source, db, as.integer(Sys.time())))
+  # new hits: the stored verdict was judged on the old ones
+  if (DBI::dbExistsTable(con, "screen")) {
+    DBI::dbExecute(con, "DELETE FROM screen WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = list(id, as.integer(path), as.integer(scaffold)))
+  }
   invisible(TRUE)
 }
 

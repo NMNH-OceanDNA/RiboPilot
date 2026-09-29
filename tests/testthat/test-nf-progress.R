@@ -106,3 +106,15 @@ test_that("the footer stops growing once it is past the cap", {
   expect_equal(length(s2$footer), n)
   expect_true(grepl(paste0("warn ", n + 10), RiboPilot:::nf_progress_text(s2), fixed = TRUE))
 })
+
+test_that("the hidden-process line is kept once and cleared by a later redraw", {
+  more <- "Plus 1 more processes waiting for tasks..."
+  row <- "[a1/b2c3] preprocess (S1) | 0 of 1"
+  s <- RiboPilot:::nf_progress_parse(RiboPilot:::nf_progress_empty(),
+    rep(c("executor >  local (1)", row, more), 3))
+  txt <- RiboPilot:::nf_progress_text(s)
+  expect_equal(lengths(regmatches(txt, gregexpr("Plus 1 more", txt, fixed = TRUE))), 1L)
+  expect_length(s$footer, 0L)
+  s <- RiboPilot:::nf_progress_parse(s, c("executor >  local (2)", row))
+  expect_false(grepl("Plus 1 more", RiboPilot:::nf_progress_text(s), fixed = TRUE))
+})

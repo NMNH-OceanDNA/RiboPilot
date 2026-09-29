@@ -2,18 +2,18 @@
 % Please edit documentation in R/taxonomy_ranks.R
 \name{rank_at_least}
 \alias{rank_at_least}
-\title{Is a hit at least as close as `min_rank`?}
+\title{Is a hit at least as close as \code{min_rank}?}
 \usage{
 rank_at_least(d, min_rank = "phylum")
 }
 \arguments{
-\item{d}{Distance from [rank_distance()].}
+\item{d}{Distance from \code{\link[=rank_distance]{rank_distance()}}.}
 
-\item{min_rank}{One of [RRNA_LINEAGE_RANKS]; "kingdom" is the most permissive.}
+\item{min_rank}{One of \code{RRNA_LINEAGE_RANKS}; "kingdom" is the most permissive.}
 }
 \value{
 logical.
 }
 \description{
-Is a hit at least as close as `min_rank`?
+Is a hit at least as close as \code{min_rank}?
 }

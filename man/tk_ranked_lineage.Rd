@@ -17,5 +17,5 @@ data.frame(taxid, lineage, lineage_taxids).
 \description{
 One batched index query. Missing ranks are filled so the seven rank slots
 always line up positionally, and the parallel taxid string marks a filled
-rank with an empty taxid (see [td_rank_align()]).
+rank with an empty taxid (see \code{td_rank_align()}).
 }

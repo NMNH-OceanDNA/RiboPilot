@@ -10,9 +10,6 @@
   if (is.na(x)) y else x
 }
 
-#' Inverted %in%
-#' @noRd
-`%nin%` <- Negate(`%in%`)
 
 #' Container engine a Nextflow config actually turns on
 #'
@@ -63,7 +60,8 @@ url_status <- function(u) {
 #' Only Docker Hub images are checkable; anything with an explicit registry
 #' host, or a locally built image, is left alone. Warns rather than errors
 #' because a locally built image is legitimate and invisible to this check.
-#' @param container e.g. "macguigand/ribopilot:0.0.0.9000". @noRd
+#' @param container e.g. "macguigand/ribopilot:0.0.0.9000".
+#' @noRd
 check_container_image <- function(container) {
   if (is.null(container) || is.na(container) || !nzchar(container)) return(invisible(container))
   # Skip explicit registries (host contains a dot or a port) and local images.
@@ -73,6 +71,14 @@ check_container_image <- function(container) {
   }
   ref <- strsplit(utils::tail(parts, 1), ":", fixed = TRUE)[[1]]
   if (length(ref) != 2) return(invisible(container))
+  # A one-part name (no namespace) is also what a locally built image looks
+  # like; skip the Docker Hub check when docker already has it.
+  docker <- Sys.which("docker")
+  if (length(parts) == 1 && nzchar(docker) &&
+      identical(system2(docker, c("image", "inspect", container),
+                         stdout = FALSE, stderr = FALSE), 0L)) {
+    return(invisible(container))
+  }
   ns <- if (length(parts) == 2) parts[1] else "library"
   u <- sprintf("https://hub.docker.com/v2/repositories/%s/%s/tags/%s", ns, ref[1], ref[2])
   if (identical(url_status(u), "missing")) {
@@ -95,9 +101,9 @@ check_container_image <- function(container) {
 check_reference_db <- function(x, what) {
   if (is.null(x) || is.na(x) || !nzchar(x)) return(invisible(x))
   hint <- paste0(
-    "Fix it from the app's reference database step, or build one and pass it to new_project():\n",
-    "  db <- build_reference_db('\"Asteroidea\"[Organism]', \"asteroidea\")\n",
-    "  new_project(..., custom_seeds_db = db$seeds, custom_labels_db = db$labels)")
+    "Set up a database for your samples' group in the app's Reference step, or build one\n",
+    "with build_reference_db() and pass db$seeds and db$labels to new_project() as\n",
+    "custom_seeds_db and custom_labels_db.")
   if (!grepl("^https?://", x)) {
     if (!file.exists(x)) {
       warning(sprintf("%s reference database not found:\n  %s\n\n%s", what, x, hint),

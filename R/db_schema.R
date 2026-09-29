@@ -39,10 +39,15 @@ BLAST_HITS_DDL <- "CREATE TABLE IF NOT EXISTS blast_hits (
 
 #' DDL for blast_searched: which units have been searched, and by which search.
 #'
-#' Keyed on a hash of the query sequence, so a re-assembled or trimmed unit is
-#' searched again rather than inheriting the previous contig's hits. A unit that
-#' found nothing still gets a row, which is what stops it being re-searched on
-#' every retry and every re-run.
+#' Keyed on a hash of the query sequence and the search settings (blast.nf), so
+#' a re-assembled or trimmed unit, or a changed BLAST option, is searched again
+#' rather than keeping the previous hits. A unit that found nothing still gets a
+#' row, which is what stops it being re-searched on every retry and every re-run.
+#' `remote_fallback_failed` marks a unit whose escalation to NCBI failed, so the
+#' next run tries it again.
+#' `db` is the database that answered: `core_nt` for a remote search, the local
+#' panel's name and release (from its manifest) for a local one, "" when a local
+#' panel has no manifest.
 #' @noRd
 BLAST_SEARCHED_DDL <- "CREATE TABLE IF NOT EXISTS blast_searched (
   ID TEXT NOT NULL,
@@ -51,6 +56,7 @@ BLAST_SEARCHED_DDL <- "CREATE TABLE IF NOT EXISTS blast_searched (
   query_md5 TEXT NOT NULL,
   n_hits INTEGER,
   source TEXT,
+  db TEXT,
   time_stamp INTEGER,
   PRIMARY KEY (ID, path, scaffold)
 );"
@@ -69,14 +75,6 @@ TRIAGE_OPTS_DDL <- "CREATE TABLE IF NOT EXISTS triage_opts (
   rule_chimeric          TEXT,
   PRIMARY KEY (triage_opts)
 );"
-
-#' Seed row for triage_opts, matching TRIAGE_RULE_DEFS defaults.
-#' @noRd
-TRIAGE_OPTS_SEED <- "INSERT INTO triage_opts
-  (triage_opts, rule_not_annotated, rule_no_screen, rule_no_feat_non_rdna,
-   rule_no_feat_rdna_hit, rule_feat_non_rdna_hit, rule_odd_one_out,
-   rule_screen_off_target, rule_chimeric)
-  VALUES ('default', 'flag', 'flag', 'drop', 'flag', 'flag', 'flag', 'flag', 'flag');"
 
 #' DDL for the screen table (machine contamination verdict, one row per unit).
 #' @noRd
@@ -154,6 +152,7 @@ ASSEMBLY_BACKUP_DDL <- "CREATE TABLE IF NOT EXISTS assembly_backup (
   length INTEGER,
   annotations TEXT,
   coverage TEXT,
+  chimera TEXT,
   time_stamp INTEGER,
   PRIMARY KEY (ID, path, scaffold)
 );"
@@ -196,42 +195,6 @@ REFERENCE_CONFIG_DDL <- "CREATE TABLE IF NOT EXISTS reference_config (
   blastdb_info TEXT,
   PRIMARY KEY (rowid_key)
 );"
-
-#' Back-fill `coverage.median_depth` from the stored per-position tracks
-#'
-#' Computed lazily rather than at write time: a depth track is one comma-joined
-#' integer per base, so a large project holds hundreds of MB of them and parsing
-#' every row would make opening the app crawl. Rows with a NULL median fall back
-#' to the mean until this runs.
-#'
-#' @param con Open project DB connection.
-#' @param limit Maximum rows to fill in one call (NULL = all).
-#' @return (invisibly) the number of rows filled.
-#' @export
-backfill_coverage_median <- function(con, limit = NULL) {
-  if (!("median_depth" %in% DBI::dbListFields(con, "coverage"))) {
-    return(invisible(0L))
-  }
-  q <- "SELECT ID, path, scaffold, depths FROM coverage
-        WHERE median_depth IS NULL AND depths IS NOT NULL AND depths != ''"
-  if (!is.null(limit)) q <- paste(q, "LIMIT", as.integer(limit))
-  d <- tryCatch(DBI::dbGetQuery(con, q), error = function(e) data.frame())
-  if (nrow(d) == 0) {
-    return(invisible(0L))
-  }
-  upd <- DBI::dbSendStatement(con,
-    "UPDATE coverage SET median_depth = ? WHERE ID = ? AND path = ? AND scaffold = ?")
-  on.exit(DBI::dbClearResult(upd), add = TRUE)
-  n <- 0L
-  for (i in seq_len(nrow(d))) {
-    v <- suppressWarnings(as.numeric(strsplit(d$depths[i], ",", fixed = TRUE)[[1]]))
-    v <- v[!is.na(v)]
-    if (!length(v)) next
-    DBI::dbBind(upd, list(round(stats::median(v), 2), d$ID[i], d$path[i], d$scaffold[i]))
-    n <- n + 1L
-  }
-  invisible(n)
-}
 
 #' DDL for rrna_candidates: the rDNA contig search evidence for user assemblies.
 #'

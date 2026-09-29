@@ -109,9 +109,9 @@ reference_member_html <- function(m) {
 
 #' Preview modal: what Propose groups would change, before anything is written
 #'
-#' @param diff From [reference_group_diff()].
+#' @param diff From `reference_group_diff()`.
 #' @param n_old,n_new Group counts before and after.
-#' @param warn Character vector of warning lines (clades over the record ceiling).
+#' @param warn Character vector of warning lines (samples left out, clades over the record ceiling).
 #' @noRd
 reference_diff_modal <- function(diff, n_old, n_new, warn = character(0)) {
   hand <- diff$ID[diff$hand_set]
@@ -183,7 +183,7 @@ rung_label <- function(name, rank, n_samples, n_records, chosen, min_records = N
 #' Clade ladder modal: pick a rung, or search the taxdump for anything else
 #'
 #' @param ref_id Group key. @param clade_name Current clade.
-#' @param ladder data.frame from [group_ladder()].
+#' @param ladder data.frame from `group_ladder()`.
 #' @param chosen_taxid The group's current clade taxid.
 #' @param n_group Samples in the group.
 #' @param index_ready Is the taxdump name-search index already built? When it is
@@ -216,7 +216,7 @@ reference_ladder_modal <- function(ref_id, clade_name, ladder, chosen_taxid, n_g
 }
 
 #' Use-an-existing-database modal: manifest entries plus typed paths
-#' @param manifest From [read_ref_manifest()].
+#' @param manifest From `read_ref_manifest()`.
 #' @param label What to call the target in the title: the clade name for one
 #'   group, "N selected groups" for several. Never the raw group key, which the
 #'   table no longer shows.
@@ -252,8 +252,8 @@ SETTINGS_HEAD <- "font-weight:600; margin:2px 0 6px;"
 
 #' Settings modal: the reference folder, and the record window Propose groups uses
 #'
-#' @param cfg From [ref_config()].
-#' @param blastdb_version From [blastdb_provenance()]; "" when nothing has run yet.
+#' @param cfg From `ref_config()`.
+#' @param blastdb_version From `blastdb_provenance()`; "" when nothing has run yet.
 #' @noRd
 reference_settings_modal <- function(cfg, blastdb_version = "") {
   shiny::modalDialog(
@@ -275,13 +275,13 @@ reference_settings_modal <- function(cfg, blastdb_version = "") {
       "clade holding at least the minimum. Below that there is too little published ",
       "sequence to seed an assembly; past the maximum a clade is so broad that its ",
       "seeds stop being specific to your organism."),
-    shiny::h5("Local BLAST panel", style = SETTINGS_HEAD),
+    shiny::h5("Local rDNA database for the BLAST screen", style = SETTINGS_HEAD),
     shiny::div(
       style = "font-size:0.85em; color:#666; margin-bottom:0.4em;",
-      "Path prefix of a downloaded panel, without a file extension. ",
-      "Leave empty and RiboPilot uses a panel shipped with the image or ",
-      "installed locally if it finds one, otherwise it searches NCBI. ",
-      "To search NCBI instead, use Remote BLAST in the BLAST options; the ",
+      "Path prefix of a downloaded rDNA database, without a file extension. ",
+      "Leave empty and RiboPilot uses the bundled rDNA database in the container, ",
+      "or one installed on this computer; with neither, it searches NCBI. ",
+      "To search NCBI instead, choose NCBI only (core_nt) under Search in BLAST Options; the ",
       "environment variable RIBOPILOT_NO_LOCAL_BLAST=1 does the same for every ",
       "project when set before launching the app."),
     shiny::textInput("ref_blastdb_path", NULL, width = "100%",
@@ -330,9 +330,9 @@ reference_action_modal <- function(ids, label) {
       choice("ref_act_clade", "Change which clade this group uses",
         "Widen or narrow the group, or pick a different clade entirely.")
     },
-    choice("ref_act_skip", "Leave these samples on the built-in fish database",
-      paste("Nothing is built. These samples assemble against RiboPilot's",
-        "ray-finned fish reference, which is usually wrong outside fish.")),
+    choice("ref_act_skip", "Leave these samples on their current database",
+      paste("Nothing is built. These samples keep the seed and label databases",
+        "their Assembly Options already name.")),
     footer = mp_footer(dismiss = "Cancel"))
   # This dialog is a short stack of buttons, so the app's 600px modal floor is
   # dead space that stretches every label across it. Narrow it and let the hints
@@ -355,9 +355,7 @@ reference_handlers <- function(input, output, session, deps) {
   action_target <- shiny::reactiveVal(character(0))  # groups the row action applies to
   action_label <- shiny::reactiveVal(NULL)           # what to call them in a title
   picked <- shiny::reactiveVal(NULL)   # taxid chosen from the search box
-  ref_proc <- shiny::reactiveVal(NULL)
   ref_log <- shiny::reactiveVal("")
-  ref_state <- shiny::reactiveVal(nf_progress_empty())
   headless_open <- shiny::reactiveVal(FALSE)
   gen_scripts <- shiny::reactiveVal(character(0))   # scripts this session generated
   submitted <- shiny::reactiveVal(character(0))     # groups with a cluster job out
@@ -443,9 +441,9 @@ reference_handlers <- function(input, output, session, deps) {
                 s$groups$n_records > cfg$max_records, , drop = FALSE]
             list(prop = s, diff = reference_group_diff(con, s$groups, s$members),
               n_old = nrow(DBI::dbGetQuery(con, "SELECT ref_id FROM reference")),
-              warn = if (nrow(over) == 0) character(0) else sprintf(
+              warn = c(unplaced_note(con, l), if (nrow(over) == 0) character(0) else sprintf(
                 "%s holds %s records, above the maximum of %s.", over$clade_name,
-                format(over$n_records, big.mark = ","), format(cfg$max_records, big.mark = ",")))
+                format(over$n_records, big.mark = ","), format(cfg$max_records, big.mark = ","))))
           })
           proposal(res$prop)
           shinyWidgets::closeSweetAlert(session = session)
@@ -605,8 +603,7 @@ reference_handlers <- function(input, output, session, deps) {
     r <- tax_search(project_taxdump_dir(deps$project()), query, 20)
     if (nrow(r) == 0) return(shiny::helpText("No matches in the local taxdump."))
     shinyWidgets::prettyRadioButtons("ref_search_pick", NULL,
-      choices = stats::setNames(as.character(r$taxid),
-        sprintf("%s   [%s]   (taxid %s)", r$name, ifelse(is.na(r$rank), "?", r$rank), r$taxid)),
+      choices = tax_search_choices(r),
       shape = "round", status = "primary")
   })
 
@@ -651,7 +648,7 @@ reference_handlers <- function(input, output, session, deps) {
       cfg <- ref_config(con)
       run_clade_counts(deps$project(), cfg$ref_dir,
         data.frame(ref_id = ref_id_from_name(info$name[1]), taxid = as.integer(tid),
-          clade_name = info$name[1], query = clade_query(info$name[1]),
+          clade_name = info$name[1], query = clade_query(info$name[1], tid),
           stringsAsFactors = FALSE),
         api_key = project_ncbi_key(deps$project()), runner = count_runner())
       n <- cache_count_fn(cfg$ref_dir)(tid, info$name[1])
@@ -703,7 +700,7 @@ reference_handlers <- function(input, output, session, deps) {
       error = function(e) e)
     if (inherits(res, "error")) { notify(conditionMessage(res), "error"); return() }
     bump()
-    notify(sprintf("Left %d group(s) on the built-in fish database.", res))
+    notify(sprintf("Left %d group(s) on their current database.", res))
   }
 
   # ---- use existing ----
@@ -765,7 +762,6 @@ reference_handlers <- function(input, output, session, deps) {
   do_build <- function(ids) {
     if (length(ids) == 0) { notify("Select the group(s) to build.", "warning"); return() }
     build_targets(ids)
-    ref_state(nf_progress_empty())
     res <- tryCatch(with_con(function(con) {
       cfg <- ref_config(con)
       # count what will actually run: a group whose database is already on disk
@@ -785,6 +781,8 @@ reference_handlers <- function(input, output, session, deps) {
         length(ids)))
       return()
     }
+    held <- run_lock_holder(deps$project())
+    if (!is.null(held)) { notify(run_lock_message(held, deps$project()), "warning"); return() }
     hl <- app_headless()
     sched <- if (hl) detect_scheduler() else NULL
     # one timestamp per opening of the modal; see ref_submit_script()
@@ -864,6 +862,8 @@ reference_handlers <- function(input, output, session, deps) {
     notify(paste0("Saved job script to ", res, ". Run Build again once the job finishes to wire the databases."))
   })
   shiny::observeEvent(input$ref_submit_job, {
+    held <- run_lock_holder(deps$project())
+    if (!is.null(held)) { notify(run_lock_message(held, deps$project()), "warning"); return() }
     sched <- detect_scheduler()
     if (is.null(sched)) { notify("No scheduler (sbatch/qsub/bsub) found on PATH.", "warning"); return() }
     # two BUILD runs copy into the same seed FASTA, so a second job for a group
@@ -890,7 +890,7 @@ reference_handlers <- function(input, output, session, deps) {
       type = "info", btn_labels = NA, closeOnClickOutside = FALSE)
     later::later(function() {
       shiny::withReactiveDomain(session, {
-        out <- tryCatch(system2(sched$cmd, shQuote(res), stdout = TRUE, stderr = TRUE),
+        out <- tryCatch(submit_job(sched$cmd, res),
           error = function(e) conditionMessage(e))
         submitted(unique(c(shiny::isolate(submitted()), targets)))
         # record the build so the poller wires it when the job's FASTAs appear
@@ -907,97 +907,36 @@ reference_handlers <- function(input, output, session, deps) {
     }, delay = 0.1)
   })
 
-  idle_buttons <- function() {
-    shinyjs::hide("ref_nf_stop"); shinyjs::show("ref_nf_start")
-    shinyjs::addClass(id = "ref_gears", class = "paused")
-  }
-
-  shiny::observeEvent(input$ref_nf_start, {
-    ids <- build_targets()
-    if (length(ids) == 0) { notify("Select the group(s) to build.", "warning"); return() }
-    ref_state(nf_progress_empty())
-    shinyjs::hide("ref_nf_start"); shinyjs::show("ref_nf_stop"); shinyjs::show("ref_nf_progress")
-    shinyjs::removeClass(id = "ref_gears", class = "paused")
-    # the process object is kept so its output can be streamed; the pid handed
-    # back is what the reference rows store
-    launcher <- function(cmd, args, log) {
-      nf_env <- c("current", COLUMNS = "500", NXF_ANSI_SUMMARY = "true")
-      pin <- nf_pin_version()
-      if (!is.na(pin)) nf_env <- c(nf_env, NXF_VER = pin)
-      p <- nf_spawn(cmd, c(args, "-ansi-log"), deps$project(), nf_env)
-      ref_proc(p); ref_log(log)
-      p$get_pid()
-    }
-    res <- tryCatch(with_con(function(con) start_reference_build(con, deps$project(), ids,
-      api_key = input$ref_api_key %||% "", refseq = isTRUE(input$ref_refseq),
-      resume = isTRUE(input$ref_nf_resume %||% TRUE), launcher = launcher)),
-      error = function(e) e)
-    if (inherits(res, "error")) {
-      # the launcher may already have spawned Nextflow; nothing stamped the rows,
-      # so leaving it running would produce results the poll never wires
-      kill_ref_nf(); idle_buttons(); notify(conditionMessage(res), "error"); return()
-    }
-    bump()
-    if (is.null(res)) {
-      idle_buttons()
-      notify("Every selected group already had a database; nothing to run.")
-    }
-  })
-
-  shiny::observe({
-    shiny::req(ref_proc())
-    shiny::invalidateLater(250)
-    p <- ref_proc()
-    grab <- function() {
-      out <- tryCatch(p$read_output_lines(), error = function(e) character(0))
-      err <- tryCatch(p$read_error_lines(), error = function(e) character(0))
-      if (length(c(out, err))) {
-        ref_state(nf_progress_parse(ref_state(), c(out, err)))
-        # the rows record a log path, so the piped stream is teed into it
-        append_run_log(ref_log(), c(out, err))
+  nf_run_window(input, output, session, pfx = "ref_", gears = "ref_gears",
+    project = deps$project, kind = "reference build", log_name = "ribopilot_ref",
+    launch = function(nflog) {
+      ids <- build_targets()
+      if (length(ids) == 0) stop("Select the group(s) to build.", call. = FALSE)
+      p <- NULL
+      launcher <- function(cmd, args, log) {
+        p <<- nf_spawn(cmd, c("-log", nflog, args, "-ansi-log"),
+          file.path(deps$project(), ".reference"), nf_env())
+        ref_log(log)
+        p$get_pid()
       }
-    }
-    if (p$is_alive()) {
-      grab()
-    } else {
-      grab()
-      ref_proc(NULL)
-      idle_buttons()
-      poll_now()
+      res <- tryCatch(with_con(function(con) start_reference_build(con, deps$project(), ids,
+        api_key = input$ref_api_key %||% "", refseq = isTRUE(input$ref_refseq),
+        resume = isTRUE(input$ref_nf_resume %||% TRUE), launcher = launcher)),
+        error = function(e) e)
+      if (inherits(res, "error")) {
+        if (!is.null(p)) p$kill()
+        stop(conditionMessage(res), call. = FALSE)
+      }
       bump()
-      notify("Reference build run finished.")
-    }
-  })
-
-  output$ref_nf_prog_all <- shiny::renderText(nf_progress_text(ref_state()))
-
-  kill_ref_nf <- function() {
-    p <- ref_proc()
-    if (!is.null(p) && p$is_alive()) p$kill()
-    ref_proc(NULL)
-  }
-  # don't leave an orphaned Nextflow process if the browser closes mid-run
-  session$onSessionEnded(function() {
-    p <- shiny::isolate(ref_proc())
-    if (!is.null(p) && p$is_alive()) try(p$kill(), silent = TRUE)
-  })
-  shiny::observeEvent(input$ref_nf_stop, {
-    kill_ref_nf(); idle_buttons(); poll_now(); bump()
-  })
-  shiny::observeEvent(input$ref_nf_close, {
-    p <- ref_proc()
-    if (!is.null(p) && p$is_alive()) {
-      mp_confirm("ref_nf_close_confirm", title = "Stop the build?",
-        text = "Closing this window stops the database build. Leave it open to keep running.",
-        action_label = "Stop and close", danger = TRUE)
-      return()
-    }
-    headless_open(FALSE); shiny::removeModal(); poll_now(); bump()
-  })
-  shiny::observeEvent(input$ref_nf_close_confirm, {
-    req(isTRUE(input$ref_nf_close_confirm))
-    kill_ref_nf(); headless_open(FALSE); shiny::removeModal(); poll_now(); bump()
-  })
+      if (is.null(res)) notify("Every selected group already had a database; nothing to run.")
+      p
+    },
+    on_lines = function(lines) append_run_log(shiny::isolate(ref_log()), lines),
+    on_done = function(how) {
+      if (how != "done") append_run_log(shiny::isolate(ref_log()), REF_STOPPED)
+      poll_now(); bump()
+    },
+    on_close = function() { headless_open(FALSE); poll_now(); bump() })
 
   # ---- log tail ----
   shiny::observeEvent(input$ref_open_log, {

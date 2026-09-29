@@ -1,0 +1,90 @@
+# Sequence viewer (inst/app/www/seqviewer.js), ported from MitoPilot.
+
+#' Sequence viewer payload
+#'
+#' Pure: no Shiny, no database. Features are keyed by element name, which is
+#' unique within a unit.
+#' @param seq Unit sequence. @param feats Annotations (element, start, stop,
+#'   strand, partial_start, partial_stop). @param depths,clips Per-position
+#'   read depth and soft-clip counts, or NULL.
+#' @noRd
+seqview_payload <- function(seq, feats, depths = NULL, clips = NULL, selected = NULL) {
+  seq <- toupper(as.character(seq)[1] %|NA|% "")
+  n <- nchar(seq)
+  ok <- which(!is.na(feats$start) & !is.na(feats$stop))
+  out <- list(len = n, seq = seq,
+    cutoff = CHIMERA_CLIP_FRAC,
+    features = lapply(ok, function(i) list(
+      row = feats$element[i], gene = feats$element[i],
+      pos1 = as.integer(feats$start[i]), pos2 = as.integer(feats$stop[i]),
+      dir = if (identical(feats$strand[i], "-")) "-" else "+",
+      partial5 = isTRUE(feats$partial_start[i] == 1), partial3 = isTRUE(feats$partial_stop[i] == 1),
+      color = unname(RRNA_ELEMENT_COLORS[feats$element[i]] %|NA|% "#888888"))))
+  if (length(selected) == 1L) out$selected <- selected
+  if (length(depths) && n) {
+    d <- as.numeric(depths)[seq_len(n)]
+    out$depth <- as.integer(d)
+    if (length(clips)) {
+      # low-depth fractions are noise; the chimera check ignores them too
+      f <- round(as.numeric(clips)[seq_len(n)] / d, 3)
+      f[is.na(d) | d < 10] <- NA
+      if (any(!is.na(f))) out$clip <- f
+    }
+  }
+  out
+}
+
+#' Sequence viewer section
+#' @param prefix Id prefix: the canvas is `<prefix>-canvas`.
+#' @param summary Section heading. @param open Start expanded?
+#' @param pick Does clicking a gene select it?
+#' @noRd
+seqview_ui <- function(prefix, summary, open = TRUE, pick = TRUE) {
+  id <- function(x) paste0(prefix, "-", x)
+  btn <- function(action, label, icon = NULL, title = NULL) {
+    tags$button(type = "button", class = "btn btn-default btn-sm", `data-rpseq` = action,
+      title = title, `aria-label` = title %||% label, icon, label)
+  }
+  goto <- tags$input(id = id("goto"), type = "number", min = 1, step = 1, class = "form-control input-sm",
+    style = "width:130px;", placeholder = "Go to position", `aria-label` = "Go to position")
+  box <- function(x, label) tags$label(class = "rp-seqview-check",
+    tags$input(type = "checkbox", id = id(x), checked = NA), label)
+  rp_details(summary, open = open,
+    div(class = "rp-seqview-controls",
+      goto,
+      btn("fit", "Fit gene", title = "Zoom to the selected gene"),
+      btn("whole", "Whole sequence"),
+      btn("zoom_in", NULL, icon("magnifying-glass-plus"), "Zoom in"),
+      btn("zoom_out", NULL, icon("magnifying-glass-minus"), "Zoom out"),
+      btn("copy", "Copy sequence", title = "Copy the bases in view as FASTA"),
+      box("show_cov", "Coverage"), box("show_clip", "Clipped reads"), box("show_nt", "Nucleotides")),
+    tags$p(class = "mp-help-text", style = "margin:2px 0 4px;",
+      paste0("Drag or scroll sideways to pan, scroll to zoom", if (pick) "; click a gene to select it",
+        ". Letters appear when zoomed in. Copy sequence copies the bases in view. "),
+      sprintf("Clipped reads is the share of reads soft-clipped at each base (shown where depth is at least 10); bars turn orange at %d%%, the chimera check's cutoff.",
+        round(100 * CHIMERA_CLIP_FRAC))),
+    div(class = "rp-seqview",
+      tags$canvas(id = id("canvas"), class = "rp-seqview-canvas"),
+      tags$div(id = id("tip"), class = "rp-seqview-tip", hidden = NA)))
+}
+
+#' Send one unit to a viewer
+#' @param canvas Canvas id. @param input Input id for gene clicks, or NULL.
+#' @noRd
+seqview_send <- function(session, canvas, input, id, path, scaffold, selected = NULL) {
+  p <- list(id, path, scaffold)
+  s <- app_query("SELECT sequence FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?", params = p)
+  if (!nrow(s) || is.na(s$sequence[1])) return(invisible())
+  f <- app_query("SELECT * FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start", params = p)
+  if (nrow(f)) {
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    e <- partial_ends(f, nchar(s$sequence[1]), unit_trimmed(con, id, path, scaffold))
+    f$partial_start <- as.integer(e$p5); f$partial_stop <- as.integer(e$p3)
+  }
+  cov <- app_query("SELECT * FROM coverage WHERE ID = ? AND path = ? AND scaffold = ?", params = p)
+  dep <- if (nrow(cov)) parse_depths(cov$depths[1]) else NULL
+  clp <- if (nrow(cov) && !is.null(cov$clips)) parse_depths(cov$clips[1]) else NULL
+  pl <- seqview_payload(s$sequence[1], f, dep, clp, selected)
+  pl$id <- canvas; pl$input <- input; pl$unit <- sprintf("%s_p%s_s%s", id, path, scaffold)
+  session$sendCustomMessage("rpseq", pl)
+}

@@ -34,7 +34,7 @@ process blast_ref_fetch {
     # loop below makes one call per chunk of 200 accessions. NCBI allows 10
     # requests/s with a key and 3 without, so pace the loop to stay under the
     # lower bound either way.
-    if [ -n "\$NCBI_API_KEY" ]; then PACE=0.2; else PACE=0.7; fi
+    if [ -n "\${NCBI_API_KEY:-}" ]; then PACE=0.2; else PACE=0.7; fi
 
     printf '%s\\n' \$ACCS > wanted.txt
     WANTED=\$(grep -c . wanted.txt)

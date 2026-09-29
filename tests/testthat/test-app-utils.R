@@ -42,6 +42,21 @@ test_that("a work dir containing an 's' is parsed whole", {
   expect_false(any(grepl("^/tmp/[^/]*$", d$workdir)))
 })
 
+test_that("a submitted run's tasks are found in nextflow_logs/", {
+  skip_if_not_installed("withr")
+  dir <- withr::local_tempdir()
+  dir.create(file.path(dir, "nextflow_logs"))
+  wd <- file.path(dir, "work", "ab", "cdef12")
+  writeLines(paste0("Sep-24 10:00:00.000 [Task monitor] DEBUG n.processor.TaskPollingMonitor - ",
+    "Task completed > TaskHandler[jobId: 4242; id: 7; name: assemble (S1); status: COMPLETED; ",
+    "exit: 140; error: -; workDir: ", wd, " started: 1727172000000; exited: 2026-09-24T10:00:00Z; ]"),
+    file.path(dir, "nextflow_logs", "ribopilot_2026-09-24_10-00-00.nextflow.log"))
+  d <- RiboPilot:::find_workdirs(dir, "S1")
+  expect_equal(d$process, "assemble")
+  expect_equal(d$status, "failed")
+  expect_equal(d$workdir, wd)
+})
+
 test_that("open_path ignores an absent, empty or NA path", {
   skip_if_not_installed("withr")
   skip_on_os("windows")
@@ -117,6 +132,18 @@ test_that("a desktop session still opens the OS file manager", {
   expect_equal(readLines(marker), "/tmp/ribopilot-desktop")
 })
 
+test_that("a browser on another computer never reaches for a desktop file manager", {
+  skip_if_not_installed("withr")
+  skip_on_os("windows")
+  marker <- mk_opener_probe(rlang::current_env())
+  withr::local_options(list(RiboPilot.headless = FALSE, RiboPilot.local_browser = FALSE))
+  testthat::local_mocked_bindings(rstudio_show_dir = function(path) FALSE, .package = "RiboPilot")
+
+  expect_false(RiboPilot:::open_path("/tmp/ribopilot-remote-browser"))
+  Sys.sleep(0.2)
+  expect_false(file.exists(marker))
+})
+
 test_that("unit_evidence surfaces the screen reason", {
   skip_if_not_installed("withr")
   dir <- withr::local_tempdir()
@@ -125,7 +152,7 @@ test_that("unit_evidence surfaces the screen reason", {
   DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, length INT, ignore INT,
     triage TEXT, triage_reason TEXT, triage_source TEXT, source_contig TEXT,
     blast_species TEXT, blast_accession TEXT, blast_pident REAL, blast_qcovs REAL, blast_source TEXT)")
-  DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT, start INT)")
+  DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT, start INT, status TEXT, flags TEXT)")
   DBI::dbExecute(con, "CREATE TABLE coverage(ID TEXT, path INT, scaffold INT, mean_depth REAL,
     median_depth REAL, depths TEXT)")
   DBI::dbExecute(con, "CREATE TABLE blast_screen(ID TEXT, path INT, scaffold INT, accession TEXT, title TEXT,
@@ -135,22 +162,38 @@ test_that("unit_evidence surfaces the screen reason", {
   DBI::dbExecute(con, "CREATE TABLE annotate(ID TEXT, path INT, scaffold INT, itsx_warnings TEXT)")
   DBI::dbExecute(con, RiboPilot:::SCREEN_DDL)
   DBI::dbExecute(con, RiboPilot:::CHIMERA_DDL)
+  DBI::dbExecute(con, RiboPilot:::BLAST_SEARCHED_DDL)
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S1','Danio rerio',NULL)")
   DBI::dbExecute(con, "INSERT INTO assemblies (ID,path,scaffold,length) VALUES('S1',1,1,500)")
   DBI::dbExecute(con,
     "INSERT INTO screen (ID,path,scaffold,screen_verdict,screen_reason,screen_version)
      VALUES('S1',1,1,'no_reference',
-     'the local reference panel returned no usable hit for this scaffold; a remote BLAST search may identify it',1)")
+     'the bundled rDNA database returned no usable hit for this scaffold; a search at NCBI (BLAST Options, Search) may identify it',1)")
   DBI::dbDisconnect(con)
   withr::local_dir(dir)
 
   d <- RiboPilot:::unit_evidence("S1")
   expect_true("screen_reason" %in% names(d))
-  expect_match(d$screen_reason[1], "remote BLAST search")
+  expect_match(d$screen_reason[1], "search at NCBI")
 })
 
 test_that("the Files pane helper declines outside RStudio rather than erroring", {
   # this test process is not an RStudio session, which is the same position a
   # tunnelled plain-R session on a login node is in
   expect_false(RiboPilot:::rstudio_show_dir(tempdir()))
+})
+
+test_that("unit_evidence lists each flagged feature with its warnings", {
+  con <- chimera_test_con()
+  db <- DBI::dbGetInfo(con)$dbname
+  DBI::dbExecute(con, "INSERT INTO assemblies (ID, path, scaffold, sequence, length) VALUES ('S1',1,1,'ACGT',4)")
+  DBI::dbExecute(con, "INSERT INTO annotations (ID, path, scaffold, element, start, stop, status, flags) VALUES
+    ('S1',1,1,'18S',1,2,'flag','length,truncated'), ('S1',1,1,'ITS1',3,3,'ok',NULL), ('S1',1,1,'28S',4,4,'flag','overlap')")
+  DBI::dbDisconnect(con)
+  withr::local_options(list(ribopilot.db = db))
+  withr::local_dir(dirname(db))
+  d <- RiboPilot:::unit_evidence("S1")
+  expect_equal(d$elements, "18S,ITS1,28S")
+  expect_equal(d$element_flags, "18S: length, truncated; 28S: overlap")
+  expect_match(as.character(RiboPilot:::rt_element_strip()), "element_flags", fixed = TRUE)
 })

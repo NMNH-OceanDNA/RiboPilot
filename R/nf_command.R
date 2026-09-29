@@ -51,7 +51,7 @@ nf_command <- function(path, resume = TRUE,
     "--projectDir", path,
     if (nzchar(raw_dir)) c("--rawDir", raw_dir),
     "--minDepth", min_depth,
-    "--ribopilot_src", src,
+    nf_pkg_args(src),
     "--taxdump_dir", taxdump,
     if (nzchar(ref_dir)) c("--ref_dir", ref_dir),
     if (nzchar(blastdb)) c("--blastdb", blastdb),
@@ -67,13 +67,13 @@ nf_command <- function(path, resume = TRUE,
 #' Does this project have any sample the pipeline must fetch reads for?
 #'
 #' `preprocess` holds a row only for a sample that named a read pair
-#' ([check_mapping_reads()] drops the rest), so an empty table means every
+#' (`check_mapping_reads()` drops the rest), so an empty table means every
 #' sample supplied its own assembly and no read folder is needed.
 #' @noRd
 project_has_reads <- function(path) {
   db <- file.path(path, ".sqlite")
   if (!file.exists(db)) return(TRUE)
-  con <- tryCatch(DBI::dbConnect(RSQLite::SQLite(), db), error = function(e) NULL)
+  con <- tryCatch(open_project_db(db), error = function(e) NULL)
   if (is.null(con)) return(TRUE)
   on.exit(DBI::dbDisconnect(con))
   n <- tryCatch(DBI::dbGetQuery(con,
@@ -141,16 +141,19 @@ nf_record_blastdb_launch <- function(path) {
 
 #' Where the pipeline's R processes should load RiboPilot from
 #'
-#' `app_sys()` returns `<root>/inst` in a source checkout, which has no
-#' `DESCRIPTION`, so passing it made `rp_env.R` skip its source branch and fall
-#' back to the container's installed copy every time -- exactly the stale-install
-#' shadowing that branch exists to prevent. Pass the package root instead when
-#' one is there.
+#' The package root in a source checkout; "" for an installed package, whose
+#' tasks load the installed copy (in a container, the image's).
 #' @noRd
 ribopilot_src_default <- function() {
-  s <- app_sys()
-  root <- dirname(s)
-  if (file.exists(file.path(root, "DESCRIPTION")) && dir.exists(file.path(root, "R"))) root else s
+  root <- dirname(app_sys())
+  if (file.exists(file.path(root, "DESCRIPTION")) && dir.exists(file.path(root, "R"))) root else ""
+}
+
+#' Arguments that tell the pipeline's R steps which RiboPilot started the run
+#' @noRd
+nf_pkg_args <- function(src = ribopilot_src_default()) {
+  c(if (nzchar(src)) c("--ribopilot_src", src),
+    "--ribopilot_version", as.character(utils::packageVersion("RiboPilot")))
 }
 
 #' Count the work one run would do (for the Update modal header)
@@ -159,12 +162,14 @@ ribopilot_src_default <- function() {
 #' what `query_samples` and `query_annotate_units` select. One button runs both,
 #' so it is one number: a sample queued for assembly is counted once even though
 #' its units will be annotated too, because assembly re-seeds them.
+#' Assembly counts only taxonomy-locked samples, as `query_samples` does.
 #' @noRd
 nf_pending_count <- function(path) {
-  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(path, ".sqlite"))
+  con <- open_project_db(file.path(path, ".sqlite"))
   on.exit(DBI::dbDisconnect(con))
   n_asm <- DBI::dbGetQuery(con,
-    "SELECT COUNT(*) n FROM assemble WHERE assemble_switch IN (1,4) AND assemble_lock = 0")$n
+    "SELECT COUNT(*) n FROM assemble a JOIN samples s ON s.ID = a.ID
+      WHERE a.assemble_switch IN (1,4) AND a.assemble_lock = 0 AND s.taxonomy_lock = 1")$n
   n_ann <- DBI::dbGetQuery(con,
     "SELECT COUNT(*) n FROM annotate an
        JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold

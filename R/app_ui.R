@@ -19,13 +19,16 @@ filter_pickers <- function(mode) {
 #' @noRd
 app_ui <- function(request) {
   btn <- mp_toolbar_button
+  # curator marks; app_server.R relabels them to what the next click does
+  mark <- function(col) btn(paste0(col, "_btn"), MP_FLAG_WORDS[[col]][["set"]],
+    title = paste(MP_FLAG_WORDS[[col]][["tip"]], "Acts on the selected units; locked units are skipped."),
+    needs_selection = TRUE)
   step <- function(n, lab) shiny::HTML(sprintf("<span class='mp-step-n'>%d</span> %s", n, lab))
   h1 <- function(mode, lab) shiny::conditionalPanel(sprintf("input.mode == '%s'", mode),
     shiny::tags$h1(class = "mp-module-h1 sr-only", lab))
 
   structure(lang = "en", shiny::tagList(
     add_external_resources(),
-    shiny::uiOutput("filter_css"),
     shiny::fluidPage(
       shiny::tags$a(href = "#mp-content", class = "sr-only sr-only-focusable", "Skip to table"),
       shiny::div(
@@ -79,7 +82,7 @@ app_ui <- function(request) {
                 needs_selection = TRUE),
               btn("asmb_lock_btn", "Lock", title = MP_LOCK_DEF("assemble"), needs_selection = TRUE),
               btn("triage_btn", "Triage", icon = mp_icon("traffic-light"),
-                title = "Re-run automatic scaffold triage on the selected samples",
+                title = "Re-run automatic scaffold triage on the selected samples. Locked samples are skipped.",
                 needs_selection = TRUE),
               btn("asmb_run_btn", "Update", icon = mp_icon("circle-play"), emphasis = "primary",
                 title = "Review and launch the RiboPilot pipeline")),
@@ -88,12 +91,11 @@ app_ui <- function(request) {
               btn("annot_state_btn", "State", title = "Set the pipeline state of the selected units",
                 needs_selection = TRUE),
               btn("annot_lock_btn", "Lock", title = MP_LOCK_DEF("annotate"), needs_selection = TRUE),
-              btn("reviewed_btn", "Reviewed", title = "Mark or clear reviewed on the selected units",
-                needs_selection = TRUE),
-              btn("problematic_btn", "Problematic",
-                title = "Mark or clear problematic on the selected units", needs_selection = TRUE),
-              btn("partial_btn", "Partial", title = "Mark or clear partial on the selected units",
-                needs_selection = TRUE)),
+              mark("reviewed"), mark("problematic"), mark("partial"),
+              btn("annot_trim_btn", "Trim", icon = mp_icon("scissors"),
+                title = MP_TRIM_TIP()[["trim"]], needs_selection = TRUE),
+              btn("annot_restore_btn", "Restore", icon = mp_icon("rotate-left"),
+                title = MP_TRIM_TIP()[["restore"]], needs_selection = TRUE)),
             shiny::conditionalPanel("input.mode == 'Export'", id = "export_ctrls", class = "mp-toolbar",
               btn("assign_group_btn", "Assign Group",
                 title = "Assign the selected units to an export group", needs_selection = TRUE),
@@ -124,7 +126,7 @@ app_ui <- function(request) {
             shiny::div(class = "mp-filter-row",
               filter_pickers("Annotate"),
               shiny::div(class = "mp-filter-cols",
-                mp_filter_picker("ann_col_groups", "Columns:", c("BLAST", "Checks"), width = "170px")))),
+                mp_filter_picker("ann_col_groups", "Columns:", c("BLAST", "Check details"), width = "170px")))),
           shiny::uiOutput("table_status"),
           shiny::div(class = "mp-table-resize", reactable::reactableOutput("tbl", height = "100%")),
           # CSV downloads sit under the table, as in MitoPilot.

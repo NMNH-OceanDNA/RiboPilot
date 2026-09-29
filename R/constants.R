@@ -15,6 +15,10 @@ RRNA_SPACERS <- c("ITS1", "ITS2")
 #' @noRd
 RRNA_ELEMENT_ORDER <- c("ETS", "18S", "ITS1", "5.8S", "ITS2", "28S", "IGS")
 
+#' Features a unit needs before a batch Trim will cut it.
+#' @noRd
+BATCH_TRIM_FEATURES <- setdiff(RRNA_ELEMENT_ORDER, c("ETS", "IGS"))
+
 #' Default GetOrganelle nrDNA reference databases (broad Actinopterygii).
 #'
 #' Single source of truth for the packaged defaults; these are only resolvable
@@ -33,8 +37,8 @@ DEFAULT_LABELS_DB <- paste0("https://raw.githubusercontent.com/dmacguigan/RiboPi
 #' Everything except the conda profile, which uses the active environment's
 #' tools and sets no `container` directive.
 #' @noRd
-CONTAINER_EXECUTORS <- c("docker", "local", "awsbatch", "slurm", "pbs", "sge",
-                         "lsf", "NMNH_Hydra", "NOAA_SEDNA")
+CONTAINER_EXECUTORS <- c("docker", "local", "slurm", "pbs", "sge", "lsf",
+                         "NMNH_Hydra", "NOAA_SEDNA")
 
 #' Titles naming a nuclear rDNA locus.
 #'
@@ -58,7 +62,7 @@ NUCLEAR_RRNA_TITLE_RE <- paste0(
 #' Titles naming a ribosomal subunit that is not nuclear.
 #'
 #' 16S and 23S are prokaryotic; 12S is the metazoan mitochondrial SSU, whose
-#' records often carry no organelle word for [ORGANELLAR_TITLE_RE] to catch.
+#' records often carry no organelle word for `ORGANELLAR_TITLE_RE` to catch.
 #' @noRd
 NON_NUCLEAR_RRNA_RE <- "\\b(12S|16S|23S)\\b"
 
@@ -127,28 +131,32 @@ SCAFFOLD_COL_HELP <- list(
   source_contig = paste("What this contig was called in the assembly you supplied, so a",
     "scaffold here can be traced back to your own file."),
   path_score = paste("Rates the whole candidate path this scaffold came from, from its length,",
-    "depth, anchor genes and GenBank hit. The same value repeats across every",
+    "depth, anchor genes and BLAST hit. The same value repeats across every",
     "scaffold of one path."),
   depth = paste("Median read depth per position (a mean is inflated by the conserved",
     "18S/28S cores). The bar compares it with this sample's deepest scaffold:",
     "meaningful within a path, not across paths."),
-  depth_track = paste("Read depth along the scaffold, start to end. A deep dip in the middle",
-    "can mark a place where the assembler joined two pieces that do not belong together."),
-  elements = "The rRNA and ITS features annotation found, in the order they sit on the scaffold.",
+  depth_track = paste("Read depth along the scaffold, start to end. Reads that map equally well",
+    "to two places are left out, so a repeat inside the scaffold shows as a dip. A lasting step",
+    "in depth, not a short dip, can mark a place where the assembler joined two pieces that do",
+    "not belong together."),
+  elements = paste("The rRNA and ITS features annotation found, in the order they sit on the scaffold.",
+    "Orange features have curation warnings; hover to list them."),
   itsx_warnings = paste("What stock ITSx (the ITS detection tool; default settings, no organism group, the way NCBI's",
     "Submission Portal runs it) flags on this scaffold: chimera, gap inside the ITS,",
     "missing or partial 5.8S, or a boundary far from RiboPilot's own. Filled in by",
     "the annotation step and updated again by export. Empty means clean; 'not run'",
     "means ITSx produced no output."),
-  screen_verdict = paste("Contamination check: whether the best GenBank match looks like the",
+  screen_verdict = paste("BLAST screen: whether the best matches look like the",
     "sample's own organism (on target), something else (off target), or the",
     "evidence is too thin to say."),
-  screen_reason = paste("Why the screen check reached that verdict, including when the panel",
-    "found no usable hit."),
+  screen_reason = paste("Why the BLAST screen reached that verdict, including when the bundled",
+    "rDNA database found no usable hit."),
   variant_class = paste("Whether this scaffold looks like an alternative arrangement of another",
     "scaffold in the sample, or a second copy of the rDNA. Information only:",
     "neither one is a fault."),
-  screen_species = "Organism named by the best GenBank match, searched against all of GenBank.",
+  screen_species = paste("Organism named by the best match of the BLAST screen: the bundled rDNA",
+    "database first, then NCBI core_nt for a scaffold it cannot match. The evidence panel below says which."),
   shares = paste("The most specific level of classification the best GenBank match shares with",
     "this sample. \"no reference\" is normal for a group with little in GenBank."),
   odd_one_out = paste("Marks a scaffold whose best GenBank match disagrees with the rest of the",
@@ -157,34 +165,33 @@ SCAFFOLD_COL_HELP <- list(
   screen_pident = paste("How closely the matched stretch resembles the best GenBank record,",
     "as a percentage of identical bases."),
   triage_reason = "Why triage decided the way it did, or what left it undecided.",
-  warnings = paste("Number of sample-level curation warnings (feature order, overlaps, strand,",
-    "contamination). Hover for the list. Per-feature warnings such as length or",
-    "truncation are listed in the details view."),
+  warnings = paste("Number of curation warnings on the unit as a whole, such as a missing gene,",
+    "features out of order, or contamination. Hover for the list. Warnings on one",
+    "feature, such as length or truncated, are in the unit's Curation warnings panel."),
   chimera = paste("Chimera check: whether different parts of this scaffold match different",
-    "lineages or show read-level breakpoints. clean, suspect, or likely. Hover for the",
-    "lineage segments and junction positions. Warns only; never blocks export.")
+    "lineages or show read-level breakpoints. severe: parts match different phyla or",
+    "kingdoms; the export flags the record as chimeric and asks about it. minor: weaker",
+    "evidence, listed in the export report only. clean: nothing found. Hover for the evidence.")
 )
-
-#' Toggle the annotation lock on one unit (used by the bulk lock button and by
-#' the "lock anyway" answer to the two-paths warning).
-#' @noRd
-LOCK_UNIT_SQL <- "UPDATE annotate SET annotate_lock = 1 - COALESCE(annotate_lock, 0) WHERE ID = ?"
 
 #' Column help for the chimera segment and window tables (annotate modal)
 #' @noRd
 CHIMERA_COL_HELP <- list(
   start = "First base of this stretch of the scaffold (1-based).",
   stop = "Last base of this stretch of the scaffold.",
-  taxon = "Best-hit lineage at class rank, shared by every window in the segment. 'nohit' means no window in the stretch matched the local rDNA panel or decoys.",
-  species = "Species of the strongest single hit inside the segment.",
+  taxon = "Best-hit lineage at class rank, shared by every window in the segment. 'nohit' means no window in the stretch matched the bundled rDNA database. 'unresolved' means the top hits tie across classes (a conserved stretch), so the windows say nothing about origin.",
+  species = "The strongest single hit inside the segment: a species, or the clade tied hits share.",
   pident = "Mean percent identity of the windows' best hits.",
   n_windows = "Number of 500 bp windows (step 250) collapsed into this segment.",
-  win_species = "Species of the best hit for this window.",
+  win_species = "The window's best hit: a species, or, when several hits score about the same, the clade they share and the number of tied hits. The lineage is cut back to that clade.",
   lineage = "Best-hit lineage, last three ranks shown; hover for the full ranked lineage.",
   win_pident = "Percent identity of the window's best hit.",
   bitscore = "BLAST bit score of the best hit.",
   rank_distance = "Ranks between the hit and this sample's own lineage: 0 = same species, 7 = nothing shared.",
   depth_median = "Median read depth across the window.",
+  position = "Estimated join position (bp), on the same scale as the plot.",
+  checks = "Checks that put a junction near this position: genes (the 18S, 5.8S, and 28S BLAST hits), windows (500 bp BLAST windows), and reads (read depth and clipped reads).",
+  why = "What each check saw here.",
   clip_frac = "Largest fraction of reads soft-clipped at one position in the window; high values mark a read-level breakpoint."
 )
 
@@ -206,7 +213,7 @@ MP_STATE_META <- list(
   `2` = list(label = "Success",      icon = "fa fa-circle-check",
              tip = "Finished without errors."),
   `3` = list(label = "Failed",       icon = "fa fa-triangle-exclamation",
-             tip = "Stopped with an error - see Notes.")
+             tip = "Failed. Open the sample's details to see why and what to try next.")
 )
 
 #' Codes each module can display.
@@ -276,8 +283,9 @@ MP_COL_NAMES <- c(
   rank             = "Rank",
   match_type       = "Confidence",
   reviewed         = "Reviewed",
-  problematic      = "Problematic",
+  problematic      = "Excluded",
   partial          = "Partial",
+  checks           = "Checks",
   n_flags          = "Warnings",
   itsx_warnings    = "ITSx Warnings",
   screen_verdict   = "Screen",
@@ -306,7 +314,8 @@ MP_COL_NAMES <- c(
   annotate_opts    = "Annotate Options",
   curate_opts      = "Curate Options",
   notes            = "Notes",
-  annotate_notes   = "Notes",
+  annotate_notes   = "User Notes",
+  user_notes       = "User Notes",
   time_stamp       = "Last Updated",
   ref_group        = "Reference Group",
   user_group       = "User Group",
@@ -318,7 +327,8 @@ MP_COL_NAMES <- c(
   n_records        = "# GenBank Records",
   database         = "Database",
   fail_reason      = "Note",
-  action           = "Action"
+  action           = "Action",
+  tax_alternatives = "Other Matches"
 )
 
 #' Header tooltips for the columns whose name does not explain itself.
@@ -331,10 +341,16 @@ MP_COL_TIPS <- c(
   taxonomy_lock    = "Locked rows are finished with this step",
   assemble_lock    = "Locked rows are finished with this step",
   annotate_lock    = "Locked rows are finished with this step",
+  reviewed         = "Checked by a curator; Lock and Export do not ask again about its contamination flags",
+  problematic      = "Excluded units are left out of every export",
+  partial          = "A partial unit is described as 'partial sequence'; gene ends are partial at untrimmed scaffold ends, in truncated genes, and where a trim cut a gene, unless set with 5'/3' in the unit window",
   path             = "Assembly path number for this unit",
   scaffold         = "Scaffold number within the path",
   sci_name         = "Taxon assigned from the NCBI taxdump",
   match_type       = "How the taxon name was matched",
+  checks           = paste("Red: Lock and Export ask about it (off target, contaminant, severe chimera,",
+    "ITSx chimeric). Amber: worth a look (minor chimera, uncertain screen, ITSx, curation warnings, feature flags).",
+    "ok: on target and nothing flagged. On Assemble, covers the sample's kept scaffolds"),
   n_flags          = SCAFFOLD_COL_HELP$warnings,
   itsx_warnings    = SCAFFOLD_COL_HELP$itsx_warnings,
   screen_verdict   = SCAFFOLD_COL_HELP$screen_verdict,
@@ -349,7 +365,8 @@ MP_COL_TIPS <- c(
   best_score       = "Highest scaffold score in this sample",
   export_group     = "Named group this unit is exported with",
   time_stamp       = "When this row was last changed",
-  n_records        = "GenBank records available for this clade"
+  n_records        = "GenBank records available for this clade",
+  tax_alternatives = "Every NCBI taxon the name matched, with its kingdom; click the ID to pick one"
 )
 
 # Lock vocabulary shared by the toolbar tooltip, the Lock column header and
@@ -363,10 +380,42 @@ MP_LOCK_DEF <- function(mod = c("taxonomy", "assemble", "annotate")) {
   mod <- match.arg(mod)
   sprintf(
     paste(
-      "Locked %s are finished with this step: their options cannot be changed,",
+      "Locked %s are finished with this step: their options for this step cannot be changed,",
       "the next update will not re-run them, and they move on to %s.",
       "You can unlock at any time."
     ),
     MP_UNITS[[mod]], MP_NEXT[[mod]]
   )
 }
+
+#' Why an annotation-locked unit cannot be edited, and how to change that
+#' @noRd
+MP_UNIT_LOCKED <- paste("This unit is locked, so it is read only here.",
+  "To change it, select it in the Annotation Review table and press Unlock.")
+
+#' Batch Trim / Restore tooltips; `what` is what the table's rows are.
+#' @noRd
+MP_TRIM_TIP <- function() {
+  c(trim = paste0("Trim the selected units to their gene ends, or gene ends plus a flank. ",
+      "Only units with all five features (", paste(BATCH_TRIM_FEATURES, collapse = ", "),
+      ") are trimmed; locked units and units queued in a running run are skipped."),
+    restore = paste0("Undo the trim on the selected units. Untrimmed and locked units are skipped."))
+}
+
+#' Curator marks: what each toolbar button and window toggle says it will do,
+#' what the toast says it did, and what the mark means for export.
+#' @noRd
+MP_FLAG_WORDS <- list(
+  reviewed = c(set = "Mark Reviewed", clear = "Clear Reviewed",
+    did_set = "marked reviewed", did_clear = "cleared of reviewed",
+    tip = paste("Record that you checked this unit. Lock and Export do not ask again about",
+      "contamination flags on reviewed units.")),
+  problematic = c(set = "Exclude & Lock", clear = "Include in export",
+    did_set = "excluded from export and locked", did_clear = "included in export again",
+    tip = paste("Exclude & Lock leaves the unit out of every export and locks it as done.",
+      "The unit stays in the project; unlock it and include it again to export it.")),
+  partial = c(set = "Mark Partial", clear = "Clear Partial",
+    did_set = "marked partial", did_clear = "cleared of partial",
+    tip = paste("Export describes a partial unit as 'partial sequence'. Gene ends are",
+      "marked partial (< and >) at untrimmed scaffold ends, in truncated genes, and where",
+      "a trim cut a gene; the 5' and 3' buttons in the unit window override that.")))

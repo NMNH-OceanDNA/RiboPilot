@@ -1,10 +1,10 @@
 # Clade groups in the project database: how they are stored, built, and wired
 # into the assembly presets the pipeline actually reads.
 #
-# A build is a detached process rather than an in-app wait: downloading tens of
-# thousands of GenBank records takes minutes, and the app has to stay usable.
-# The database row is the only state that survives a closed app, so the row
-# carries the pid and log path and the finishing logic is a poll, not a callback.
+# A build started in the app runs while its window and browser tab stay open;
+# closing either stops it. A build submitted as a cluster job runs on its own.
+# Either way the row carries the pid (none for a job) and the log path, and the
+# finishing logic is a poll, not a callback.
 
 #' Expected seed/label paths for a clade in a reference folder
 #'
@@ -27,7 +27,7 @@ reference_db_paths <- function(dir, ref_id) {
 #' pointing somewhere new starts over.
 #'
 #' @param con Open project DB connection.
-#' @param groups data.frame from [suggest_reference_groups()]$groups.
+#' @param groups data.frame from `suggest_reference_groups()`$groups.
 #' @param members data.frame(ID, ref_id).
 #' @return (invisibly) the number of groups written.
 #' @noRd
@@ -51,7 +51,7 @@ write_reference_groups <- function(con, groups, members) {
            fail_reason, time_stamp)
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         params = list(groups$ref_id[i], as.integer(groups$clade_taxid[i]), groups$clade_name[i],
-          groups$clade_rank[i], clade_query(groups$clade_name[i]),
+          groups$clade_rank[i], clade_query(groups$clade_name[i], groups$clade_taxid[i]),
           as.integer(groups$n_samples[i]), as.integer(groups$n_records[i]),
           if (is.null(keep)) 1L else as.integer(keep$reference_switch),
           if (is.null(keep)) NA_character_ else keep$source,
@@ -70,7 +70,7 @@ write_reference_groups <- function(con, groups, members) {
   invisible(nrow(groups))
 }
 
-#' User-group labels, as the named vector [suggest_reference_groups()] wants
+#' User-group labels, as the named vector `suggest_reference_groups()` wants
 #' @noRd
 sample_user_groups <- function(con) {
   d <- tryCatch(DBI::dbGetQuery(con,
@@ -89,7 +89,7 @@ sample_user_groups <- function(con) {
 #' slug of the same name, so the two can never disagree.
 #'
 #' @param con Open project DB connection.
-#' @param groups,members From [suggest_reference_groups()].
+#' @param groups,members From `suggest_reference_groups()`.
 #' @return data.frame(ID, from_group, to_group, hand_set, user_group).
 #' @noRd
 reference_group_diff <- function(con, groups, members) {
@@ -238,7 +238,7 @@ set_reference_clade <- function(con, ref_id = NULL, clade_taxid, clade_name, cla
            labels_db = NULL, preset_name = NULL, fail_reason = NULL, time_stamp = ?
          WHERE ref_id = ?",
         params = list(new_key, as.integer(clade_taxid), clade_name, clade_rank,
-          clade_query(clade_name), as.integer(n_records), now, key))
+          clade_query(clade_name, clade_taxid), as.integer(n_records), now, key))
       DBI::dbExecute(con, "UPDATE samples SET ref_id = ? WHERE ref_id = ?",
         params = list(new_key, key))
       key <- new_key
@@ -249,7 +249,7 @@ set_reference_clade <- function(con, ref_id = NULL, clade_taxid, clade_name, cla
          n_records, reference_switch, time_stamp)
        VALUES (?,?,?,?,?,0,?,1,?)",
       params = list(key, as.integer(clade_taxid), clade_name, clade_rank,
-        clade_query(clade_name), as.integer(n_records), now))
+        clade_query(clade_name, clade_taxid), as.integer(n_records), now))
   }
   if (length(member_ids) > 0) {
     bind_sample_ref(con, rep(key, length(member_ids)), member_ids)
@@ -293,7 +293,7 @@ reference_preset_name <- function(con, ref_id) {
 
 #' Give a group's samples an assemble_opts preset pointing at its database
 #'
-#' The preset is named after the group (see [reference_preset_name()]) and
+#' The preset is named after the group (see `reference_preset_name()`) and
 #' copies every other setting from the preset the group's samples are on, so
 #' switching database changes the database and nothing else. Locked samples keep
 #' their preset: their stored results were produced with the old one.
@@ -366,7 +366,8 @@ use_existing_reference <- function(con, ref_id, seeds, labels) {
 #' @return the pid.
 #' @noRd
 processx_launcher <- function(cmd, args, log) {
-  p <- processx::process$new(cmd, args, stdout = log, stderr = "2>&1", cleanup = FALSE)
+  p <- processx::process$new(cmd, args, stdout = log, stderr = "2>&1", cleanup = FALSE,
+    wd = dirname(log))
   p$get_pid()
 }
 
@@ -445,8 +446,10 @@ missing_assembly_dbs <- function(con) {
   d <- tryCatch(DBI::dbGetQuery(con,
     "SELECT ao.seeds_db, ao.labels_db FROM assemble a
        JOIN assemble_opts ao ON a.assemble_opts = ao.assemble_opts
+       JOIN samples s ON s.ID = a.ID
       WHERE a.assemble_switch IN (1, 4) AND COALESCE(a.assemble_lock, 0) = 0
-        AND COALESCE(ao.assembler, 'getorganelle') = 'getorganelle'"),
+        AND COALESCE(ao.assembler, 'getorganelle') = 'getorganelle'
+        AND s.taxonomy_lock = 1"),
     error = function(e) NULL)
   if (is.null(d)) return(character(0))
   # a blank path is a sample with no database, which assembles by the fallback
@@ -488,13 +491,13 @@ append_run_log <- function(log, lines) {
 #' Start one background build run covering a set of clade groups
 #'
 #' One Nextflow run handles every group, so all launched rows share the pid, the
-#' log, and the launch time; [poll_reference_builds()] still judges each row on
+#' log, and the launch time; `poll_reference_builds()` still judges each row on
 #' its own FASTAs.
 #'
 #' @param con Open project DB connection.
 #' @param project Project directory (the log lives in `<project>/.reference`).
 #' @param ref_ids Group keys.
-#' @param api_key,refseq,resume Passed to [nf_reference_command()].
+#' @param api_key,refseq,resume Passed to `nf_reference_command()`.
 #' @param overwrite Rebuild groups whose database already exists.
 #' @param launcher function(cmd, args, log) -> pid.
 #' @return (invisibly) the log path, or NULL when every group was reused.
@@ -559,6 +562,31 @@ log_tail <- function(log, n = 3) {
   paste(utils::tail(x, n), collapse = " | ")
 }
 
+#' Line a stopped build's log ends with
+#' @noRd
+REF_STOPPED <- "Stopped by the user."
+
+#' Why a build failed, from its log
+#'
+#' The user's stop, else the first "Caused by" explanation, else the first
+#' ERROR line, else the last lines that are not warnings.
+#' @noRd
+log_cause <- function(log) {
+  if (is.null(log) || is.na(log) || !file.exists(log)) return("")
+  x <- trimws(cli::ansi_strip(tryCatch(readLines(log, warn = FALSE), error = function(e) character(0))))
+  x <- x[nzchar(x) & !grepl(nf_proc_rx, x, perl = TRUE) & !grepl("^executor\\s*>", x)]
+  if (REF_STOPPED %in% x) return(REF_STOPPED)
+  cb <- which(startsWith(x, "Caused by:"))
+  if (length(cb)) {
+    y <- trimws(sub("^Caused by:", "", x[cb[1]]))
+    if (!nzchar(y) && cb[1] < length(x)) y <- x[cb[1] + 1]
+    if (nzchar(y)) return(y)
+  }
+  e <- grep("^ERROR\\b", x, value = TRUE)
+  if (length(e)) return(sub("^ERROR\\s*~?\\s*", "", e[1]))
+  paste(utils::tail(x[!grepl("^WARN\\b", x)], 3), collapse = " | ")
+}
+
 #' Mark groups as building after their job went to a batch scheduler
 #'
 #' Deliberately no pid: the job belongs to the scheduler, not to this session.
@@ -618,7 +646,7 @@ poll_reference_builds <- function(con, alive_fn = process_alive) {
         "UPDATE reference SET reference_switch = 3, pid = NULL, fail_reason = ?, time_stamp = ?
          WHERE ref_id = ?",
         params = list(paste0("Build produced no fresh seed/label FASTAs. ",
-          log_tail(running$log_file[i])), as.integer(Sys.time()), ref_id))
+          log_cause(running$log_file[i])), as.integer(Sys.time()), ref_id))
     }
     n <- n + 1L
   }

@@ -24,18 +24,18 @@ chimera_unit(
 \item{path, scaffold}{Assembly unit within the sample.}
 
 \item{dbarg}{blastn -db argument for the windowed local BLAST channel, or
-NULL/"" to fall back to `label_db` in identity-only mode.}
+NULL/"" to fall back to \code{label_db} in identity-only mode.}
 
 \item{taxdump_dir}{Local NCBI taxdump directory (or NULL for the bundled one).}
 
-\item{label_db}{Path to a labels FASTA/BLAST db used when `dbarg` is absent.}
+\item{label_db}{Path to a labels FASTA/BLAST db used when \code{dbarg} is absent.}
 
 \item{threads}{blastn thread count.}
 
 \item{workdir}{Scratch directory for intermediate files.}
 }
 \value{
-(invisibly) the written `chimera` row, as a list.
+(invisibly) the written \code{chimera} row, as a list.
 }
 \description{
 Run every channel for one unit and write chimera + chimera_windows

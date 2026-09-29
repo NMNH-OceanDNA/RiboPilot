@@ -21,26 +21,36 @@ need_selection <- function(n, session = getDefaultReactiveDomain()) {
 #' None of the selected units may be locked. `locked_ids` are the IDs that are.
 #' @noRd
 need_unlocked <- function(locked_ids, noun = "sample",
+                          how = "Select them and press Unlock first",
                           session = getDefaultReactiveDomain()) {
   if (length(locked_ids) == 0) return(TRUE)
   plural <- sub("^\\S+ ", "", mp_n(2, noun))
   mp_alert(
     title = paste("Locked", plural, "cannot be edited"),
-    text = paste0("Select these ", plural, " and press Lock to unlock them first: ",
-                  mp_id_list(locked_ids), "."),
+    text = paste0("Locked: ", mp_id_list(locked_ids), ". ", how, "."),
     type = "warning", session = session
   )
   FALSE
 }
 
-#' A row clicked outside a non-empty selection is not edited.
+#' Only one assembly path per sample may be annotation-locked (MitoPilot rule).
+#' `u` is data.frame(ID, path, scaffold) of the units about to be locked.
 #' @noRd
-row_in_selection <- function(row, sel, id, noun = "sample",
-                             session = getDefaultReactiveDomain()) {
-  if (length(sel) == 0 || row %in% sel) return(TRUE)
-  mp_toast(
-    paste0("Clear the current selection, or include ", id, " in it, to edit this ",
-           noun, "'s options."),
+need_one_path <- function(u, session = getDefaultReactiveDomain()) {
+  ids <- unique(u$ID)
+  cur <- app_query(sprintf(
+    "SELECT ID, path, scaffold, COALESCE(annotate_lock,0) AS lock, problematic FROM annotate WHERE ID IN (%s)",
+    paste(rep("?", length(ids)), collapse = ",")), params = as.list(ids))
+  # excluded units are never exported, so they do not count
+  on <- !(cur$problematic %in% "yes") & (cur$lock == 1 |
+    unit_key(cur$ID, cur$path, cur$scaffold) %in% unit_key(u$ID, u$path, u$scaffold))
+  bad <- names(Filter(function(p) length(unique(p)) > 1, split(cur$path[on], cur$ID[on])))
+  if (length(bad) == 0) return(TRUE)
+  mp_alert(
+    title = "Only one assembly path can be locked per sample",
+    text = paste0(mp_n(length(bad), "sample"), " would have more than one assembly path locked: ",
+      mp_id_list(bad), ". Paths are alternative reconstructions of the same rDNA repeat, ",
+      "and a sample exports one. Lock the units of one path and leave the other paths unlocked."),
     type = "warning", session = session
   )
   FALSE

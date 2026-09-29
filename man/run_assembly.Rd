@@ -13,13 +13,13 @@ run_assembly(
 )
 }
 \arguments{
-\item{path}{Project directory (contains `.sqlite` and `.config`).}
+\item{path}{Project directory (contains \code{.sqlite} and \code{.config}).}
 
-\item{nextflow}{Path to the `nextflow` binary.}
+\item{nextflow}{Path to the \code{nextflow} binary.}
 
-\item{work}{Nextflow work directory (default `<path>/work`).}
+\item{work}{Nextflow work directory (default \verb{<path>/work}).}
 
-\item{conda_env}{Optional conda env providing the pipeline tools; its `bin/`
+\item{conda_env}{Optional conda env providing the pipeline tools; its \verb{bin/}
 is prepended to PATH for the run.}
 
 \item{ribopilot_src}{Path to the RiboPilot package source for the R-script
@@ -30,10 +30,10 @@ loaded package location).}
 (invisibly) the Nextflow exit status.
 }
 \description{
-Launches the self-contained Nextflow pipeline: it reads samples from the
-project database, runs fastp + GetOrganelle, then scores and annotates each
-assembly and computes the assembly-review aids (reference BLAST + coverage),
-writing everything back to the database. Annotation and curation are handled
-by re-running this workflow after you review and lock
-the assemblies in the app.
+Launches the self-contained Nextflow pipeline, the same run as the app's
+Update button. For every taxonomy-locked sample that is Ready to run, one run
+cleans the reads, assembles, scores, BLASTs, maps coverage, annotates,
+curates, screens, checks for chimeras, and triages every scaffold, writing
+everything back to the database. Run it again (or press Update) only after
+changing a selection, an option set, or a State.
 }
