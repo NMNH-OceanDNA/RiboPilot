@@ -523,15 +523,20 @@ rt_element_strip <- function() {
     "function(cellInfo) {
       var want = ['18S','ITS1','5.8S','ITS2','28S']
       var have = (cellInfo.value ? String(cellInfo.value) : '').split(',')
+      var flags = cellInfo.row.element_flags ? String(cellInfo.row.element_flags) : ''
+      var flagged = flags ? flags.split('; ').map(function(x) { return x.split(':')[0] }) : []
       var out = ''
       for (var i = 0; i < want.length; i++) {
-        var on = have.indexOf(want[i]) >= 0
+        var on = have.indexOf(want[i]) >= 0, warn = on && flagged.indexOf(want[i]) >= 0
+        var bg = warn ? '#e69f00' : on ? '#2d6a4f' : 'transparent'
         out += '<span style=\"display:inline-block; margin-right:2px; padding:0 4px; font-size:0.72em;' +
-          ' border-radius:2px; border:1px solid ' + (on ? '#2d6a4f' : '#ccc') + '; color:' +
-          (on ? '#fff' : '#bbb') + '; background:' + (on ? '#2d6a4f' : 'transparent') + ';\">' +
+          ' border-radius:2px; border:1px solid ' + (on ? bg : '#ccc') + '; color:' +
+          (warn ? '#4a3000' : on ? '#fff' : '#bbb') + '; background:' + bg + ';\">' +
           want[i] + '</span>'
       }
-      return '<span title=\"rRNA/ITS features annotated on this scaffold\">' + out + '</span>'
+      var tip = flags ? 'Feature warnings (details in Annotation Review): ' + flags
+        : 'rRNA/ITS features annotated on this scaffold'
+      return '<span title=\"' + tip.replace(/\"/g, '&quot;') + '\">' + out + '</span>'
     }")
 }
 

@@ -17,7 +17,7 @@ mk_export_project <- function(env = parent.frame()) {
     annotate_lock INT, annotate_opts TEXT, curate_opts TEXT, reviewed TEXT, problematic TEXT,
     partial TEXT, n_features INT, missing TEXT, n_flags INT, annotate_notes TEXT, itsx_warnings TEXT, export_group TEXT, time_stamp INT)")
   DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT,
-    type TEXT, start INT, stop INT)")
+    type TEXT, start INT, stop INT, status TEXT, flags TEXT)")
   DBI::dbExecute(con, "CREATE TABLE coverage(ID TEXT, path INT, scaffold INT, mean_depth REAL,
     min_depth INT, max_depth INT, depths TEXT)")
   DBI::dbExecute(con, "CREATE TABLE blast_screen(ID TEXT, path INT, scaffold INT, accession TEXT, title TEXT,
@@ -35,7 +35,7 @@ mk_export_project <- function(env = parent.frame()) {
   # annotation-locked, so the unit is exportable
   DBI::dbExecute(con, "INSERT INTO annotate VALUES('S1',1,1,2,1,'default','default','yes','no','no',3,'',0,NULL,NULL,NULL,1)")
   for (f in list(c("18S", 10, 200), c("ITS1", 201, 260), c("5.8S", 261, 420))) {
-    DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,1,?,?,?,?)",
+    DBI::dbExecute(con, "INSERT INTO annotations (ID, path, scaffold, element, type, start, stop) VALUES('S1',1,1,?,?,?,?)",
       params = list(f[1], RiboPilot:::rrna_element_type(f[1]),
         as.integer(f[2]), as.integer(f[3])))
   }

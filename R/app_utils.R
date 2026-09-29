@@ -219,7 +219,10 @@ unit_evidence <- function(id) {
           AND an.scaffold = a.scaffold LIMIT 1) AS itsx_warnings,
        (SELECT GROUP_CONCAT(n.element) FROM
           (SELECT element FROM annotations WHERE ID = a.ID AND path = a.path
-             AND scaffold = a.scaffold ORDER BY start) n) AS elements
+             AND scaffold = a.scaffold ORDER BY start) n) AS elements,
+       (SELECT GROUP_CONCAT(n.element || ': ' || REPLACE(n.flags, ',', ', '), '; ') FROM
+          (SELECT element, flags FROM annotations WHERE ID = a.ID AND path = a.path
+             AND scaffold = a.scaffold AND status = 'flag' ORDER BY start) n) AS element_flags
      FROM assemblies a
      LEFT JOIN coverage c    ON c.ID = a.ID AND c.path = a.path AND c.scaffold = a.scaffold
      LEFT JOIN blast_screen b ON b.ID = a.ID AND b.path = a.path AND b.scaffold = a.scaffold

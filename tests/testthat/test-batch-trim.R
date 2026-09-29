@@ -11,8 +11,7 @@ mk_batch_project <- function(env = parent.frame()) {
   on.exit(DBI::dbDisconnect(con))
   for (sql in c("ALTER TABLE assemblies ADD COLUMN edited INT",
     "ALTER TABLE annotations ADD COLUMN length INT", "ALTER TABLE annotations ADD COLUMN edited INT",
-    "ALTER TABLE annotations ADD COLUMN strand TEXT", "ALTER TABLE annotations ADD COLUMN type TEXT",
-    "ALTER TABLE annotations ADD COLUMN flags TEXT", "ALTER TABLE coverage ADD COLUMN clips TEXT")) {
+    "ALTER TABLE annotations ADD COLUMN type TEXT", "ALTER TABLE coverage ADD COLUMN clips TEXT")) {
     DBI::dbExecute(con, sql)
   }
   DBI::dbExecute(con, "UPDATE assemblies SET sequence = ?, length = 600", params = list(withr::with_seed(1, paste(sample(c("A", "C", "G", "T"), 600, TRUE), collapse = ""))))

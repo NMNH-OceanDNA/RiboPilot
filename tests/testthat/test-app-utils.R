@@ -152,7 +152,7 @@ test_that("unit_evidence surfaces the screen reason", {
   DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, length INT, ignore INT,
     triage TEXT, triage_reason TEXT, triage_source TEXT, source_contig TEXT,
     blast_species TEXT, blast_accession TEXT, blast_pident REAL, blast_qcovs REAL, blast_source TEXT)")
-  DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT, start INT)")
+  DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT, start INT, status TEXT, flags TEXT)")
   DBI::dbExecute(con, "CREATE TABLE coverage(ID TEXT, path INT, scaffold INT, mean_depth REAL,
     median_depth REAL, depths TEXT)")
   DBI::dbExecute(con, "CREATE TABLE blast_screen(ID TEXT, path INT, scaffold INT, accession TEXT, title TEXT,
@@ -181,4 +181,19 @@ test_that("the Files pane helper declines outside RStudio rather than erroring",
   # this test process is not an RStudio session, which is the same position a
   # tunnelled plain-R session on a login node is in
   expect_false(RiboPilot:::rstudio_show_dir(tempdir()))
+})
+
+test_that("unit_evidence lists each flagged feature with its warnings", {
+  con <- chimera_test_con()
+  db <- DBI::dbGetInfo(con)$dbname
+  DBI::dbExecute(con, "INSERT INTO assemblies (ID, path, scaffold, sequence, length) VALUES ('S1',1,1,'ACGT',4)")
+  DBI::dbExecute(con, "INSERT INTO annotations (ID, path, scaffold, element, start, stop, status, flags) VALUES
+    ('S1',1,1,'18S',1,2,'flag','length,truncated'), ('S1',1,1,'ITS1',3,3,'ok',NULL), ('S1',1,1,'28S',4,4,'flag','overlap')")
+  DBI::dbDisconnect(con)
+  withr::local_options(list(ribopilot.db = db))
+  withr::local_dir(dirname(db))
+  d <- RiboPilot:::unit_evidence("S1")
+  expect_equal(d$elements, "18S,ITS1,28S")
+  expect_equal(d$element_flags, "18S: length, truncated; 28S: overlap")
+  expect_match(as.character(RiboPilot:::rt_element_strip()), "element_flags", fixed = TRUE)
 })
