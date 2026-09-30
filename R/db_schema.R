@@ -215,3 +215,42 @@ RRNA_CANDIDATES_DDL <- "CREATE TABLE IF NOT EXISTS rrna_candidates (
   time_stamp INTEGER,
   PRIMARY KEY (ID, contig)
 );"
+
+META_RECORDS_DDL <- "CREATE TABLE IF NOT EXISTS meta_records (
+  ID TEXT NOT NULL, source TEXT NOT NULL, level TEXT NOT NULL, depth INTEGER NOT NULL,
+  ref TEXT, field TEXT NOT NULL, value TEXT, PRIMARY KEY (ID, source, depth, field));"
+
+META_STATUS_DDL <- "CREATE TABLE IF NOT EXISTS meta_status (
+  ID TEXT NOT NULL, source TEXT NOT NULL, ref TEXT, status TEXT NOT NULL, message TEXT,
+  fetched_at INTEGER, PRIMARY KEY (ID, source));"
+
+META_EXPORT_FIELDS_DDL <- "CREATE TABLE IF NOT EXISTS meta_export_fields (
+  key TEXT NOT NULL, PRIMARY KEY (key));"
+
+META_CSV_MAP_DDL <- "CREATE TABLE IF NOT EXISTS meta_csv_map (
+  concept TEXT NOT NULL, column TEXT, PRIMARY KEY (concept));"
+
+META_OPTIONS_DDL <- "CREATE TABLE IF NOT EXISTS meta_options (
+  key TEXT NOT NULL, value TEXT, PRIMARY KEY (key));"
+
+META_LINKS_DDL <- "CREATE TABLE IF NOT EXISTS meta_links (
+  ID TEXT NOT NULL, source TEXT NOT NULL, ref TEXT, via TEXT, note TEXT,
+  PRIMARY KEY (ID, source));"
+
+META_VIEW_FIELDS_DDL <- "CREATE TABLE IF NOT EXISTS meta_view_fields (
+  key TEXT NOT NULL, shown INTEGER NOT NULL, PRIMARY KEY (key));"
+
+META_SAMPLE_COLS <- c("GEOME_BCID", "GBIF_ID", "BioSample")
+
+#' Create the sample metadata tables and add missing samples columns
+#' @noRd
+meta_apply_schema <- function(con) {
+  for (ddl in c(META_RECORDS_DDL, META_STATUS_DDL, META_EXPORT_FIELDS_DDL, META_CSV_MAP_DDL,
+                META_OPTIONS_DDL, META_LINKS_DDL, META_VIEW_FIELDS_DDL)) {
+    DBI::dbExecute(con, ddl)
+  }
+  for (col in setdiff(META_SAMPLE_COLS, DBI::dbListFields(con, "samples"))) {
+    DBI::dbExecute(con, paste0("ALTER TABLE samples ADD COLUMN ", col, " TEXT"))
+  }
+  invisible()
+}

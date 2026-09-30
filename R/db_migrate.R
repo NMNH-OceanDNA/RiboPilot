@@ -6,7 +6,9 @@
 #' Upgrade steps, oldest first: each is list(note = "...", fn = function(con) ...)
 #' @noRd
 db_migrations <- function() {
-  list()
+  list(
+    list(note = "sample metadata (GEOME/GBIF/NCBI) tables and columns", fn = meta_apply_schema)
+  )
 }
 
 #' Schema version new_db() writes and backwards_compatibility() upgrades to

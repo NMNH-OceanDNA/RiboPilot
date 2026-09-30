@@ -5,7 +5,11 @@ fixture_fill_schema <- function(con) {
   for (ddl in list(RiboPilot:::BLAST_HITS_DDL, RiboPilot:::BLAST_SEARCHED_DDL, RiboPilot:::TRIAGE_OPTS_DDL,
                    RiboPilot:::SCREEN_DDL, RiboPilot:::ASSEMBLY_BACKUP_DDL,
                    RiboPilot:::REFERENCE_DDL, RiboPilot:::REFERENCE_CONFIG_DDL,
-                   RiboPilot:::CHIMERA_DDL, RiboPilot:::CHIMERA_WINDOWS_DDL)) {
+                   RiboPilot:::CHIMERA_DDL, RiboPilot:::CHIMERA_WINDOWS_DDL,
+                   RiboPilot:::META_RECORDS_DDL, RiboPilot:::META_STATUS_DDL,
+                   RiboPilot:::META_EXPORT_FIELDS_DDL, RiboPilot:::META_CSV_MAP_DDL,
+                   RiboPilot:::META_OPTIONS_DDL, RiboPilot:::META_LINKS_DDL,
+                   RiboPilot:::META_VIEW_FIELDS_DDL)) {
     DBI::dbExecute(con, ddl)
   }
   RiboPilot:::write_triage_opts(con, RiboPilot:::triage_actions_default())
@@ -50,6 +54,7 @@ fixture_fill_schema <- function(con) {
   add_col("coverage", "median_depth", "REAL")
   add_col("samples", "ref_id", "TEXT")
   add_col("samples", "tax_alternatives", "TEXT")
+  for (col in RiboPilot:::META_SAMPLE_COLS) add_col("samples", col, "TEXT")
   invisible()
 }
 

@@ -64,7 +64,7 @@ test_that("the reserved list covers every sample column new_db adds", {
   RiboPilot::new_db(db_path = db, mapping_fn = map, check_reads = FALSE, seeds_db = fa, labels_db = fa)
   con <- DBI::dbConnect(RSQLite::SQLite(), db)
   on.exit(DBI::dbDisconnect(con))
-  added <- setdiff(DBI::dbListFields(con, "samples"), c("ID", "Taxon", "R1", "R2", "Assembly"))
+  added <- setdiff(DBI::dbListFields(con, "samples"), c("ID", "Taxon", "R1", "R2", "Assembly", RiboPilot:::META_SAMPLE_COLS))
   expect_setequal(added, RiboPilot:::SAMPLE_BUILTIN_COLS)
 })
 

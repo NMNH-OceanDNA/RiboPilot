@@ -609,6 +609,7 @@ new_db <- function(
 
   # export_opts (named FASTA-header configurations) ----
   ensure_export_opts(con)
+  meta_apply_schema(con)
 
   record_schema_event(con, "created", current_schema_version())
 

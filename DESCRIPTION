@@ -27,6 +27,7 @@ Imports:
     grid,
     glue,
     htmltools,
+    httr2,
     htmlwidgets,
     jsonlite,
     later,
@@ -41,13 +42,15 @@ Imports:
     stats,
     tools,
     grDevices,
-    utils
+    utils,
+    xml2
 Suggests:
     devtools,
     knitr,
     rmarkdown,
     rstudioapi,
     testthat (>= 3.0.0),
+    curl,
     withr
 VignetteBuilder: knitr
 Encoding: UTF-8
