@@ -62,7 +62,6 @@ test_that("specimen_status: failed beats ok beats none", {
 })
 
 test_that("a conflict outranks ok once the comparison rules are present", {
-  skip_if_not(.stage2_has("specimen_conflicts"))
   con <- status_db()
   s <- specimen_status(con)
   s <- s[order(s$ID), ]
@@ -173,7 +172,6 @@ test_that("specimen_compare_view marks conflicts and notes and names the CSV col
 })
 
 test_that("specimen_csv_map_ui offers every concept but taxon, with auto and none", {
-  skip_if_not(.stage2_has("SPECIMEN_CONCEPTS"))
   current <- list(coordinates = c("Latitude", "Longitude"), collection_date = character(),
                   country = "Where", locality = character(), voucher = character(),
                   collector = character(), sex = character(), dev_stage = character(),

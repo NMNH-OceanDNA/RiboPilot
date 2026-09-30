@@ -1414,6 +1414,23 @@ app_server <- function(input, output, session) {
         text = paste0(bad[[1]], ": ", bad[[2]]), type = "error")
       return()
     }
+    sp <- tryCatch(specimen_conflict_rows(u, c(input$fasta_header,
+        if (isTRUE(input$export_markers)) input$fasta_header_marker)),
+      error = function(e) {
+        message("Specimen conflict check failed: ", conditionMessage(e))
+        NULL
+      })
+    if (!is.null(sp) && nrow(sp) > 0) {
+      export_pending(u)
+      removeModal()
+      mp_confirm("specimen_confirm", title = "Sample metadata disagrees",
+        text = specimen_warning_html(sp), action_label = "Export anyway",
+        danger = TRUE, html = TRUE)
+      return()
+    }
+    screen_then_proceed(u, grp)
+  })
+  screen_then_proceed <- function(u, grp) {
     flagged <- screen_flagged(u)
     export_pending(u)
     if (nrow(flagged)) {
@@ -1421,6 +1438,19 @@ app_server <- function(input, output, session) {
       return()
     }
     proceed_export(u, grp)
+  }
+  # Conflicts on the specimen items the header templates use; "not checked"
+  # items never count and templates without specimen tokens never warn.
+  specimen_conflict_rows <- function(u, tmpl) {
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    ids <- unique(u$ID)
+    concepts <- specimen_template_concepts(tmpl, specimen_csv_columns(con))
+    if (!length(concepts)) return(NULL)
+    specimen_export_warnings(specimen_conflicts(con, ids), concepts, ids)
+  }
+  observeEvent(input$specimen_confirm, ignoreInit = TRUE, {
+    req(input$specimen_confirm)
+    screen_then_proceed(export_pending(), export_group_choice())
   })
   # Units the contamination checks flagged that no curator has signed off on.
   screen_flagged <- function(u) {

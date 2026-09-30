@@ -778,3 +778,54 @@ test_that("the Export window offers token chips, Set Export Metadata is in the t
     expect_null(export_snap())
   })
 })
+
+test_that("a conflicting {geome_lat_lon} asks before exporting, and Export anyway proceeds", {
+  skip_if_not_installed("withr")
+  dir <- mk_export_project()
+  withr::local_dir(dir)
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE annotate SET export_group = 'g1'")
+  DBI::dbExecute(con, "UPDATE samples SET GEOME_BCID = 'ark:/1/A'")
+  DBI::dbExecute(con, "INSERT INTO meta_export_fields VALUES ('geome:combo:lat_lon')")
+  add <- function(source, field, value) DBI::dbAppendTable(con, "meta_records", data.frame(
+    ID = "S1", source = source, level = if (source == "GBIF") "Occurrence" else "Event", depth = 0L, ref = "r", field = field, value = value))
+  add("GEOME", c("decimalLatitude", "decimalLongitude"), c("10.5", "20.5"))
+  add("GBIF", c("decimalLatitude", "decimalLongitude"), c("-33.1", "151.2"))
+  DBI::dbDisconnect(con)
+  asked <- character(0)
+  local_mocked_bindings(mp_confirm = function(id, title, ...) asked <<- c(asked, title))
+  fasta <- file.path(dir, "out", "export", "g1", "g1.fasta")
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Export")
+    session$setInputs(export_group_sel = "g1",
+      fasta_header = "{seqid} [lat_lon={geome_lat_lon}]",
+      fasta_header_marker = RiboPilot:::DEFAULT_FASTA_HEADER_MARKER,
+      export_markers = FALSE, export_report = FALSE)
+    settle(session)
+    session$setInputs(export_go = 1)
+    settle(session)
+    expect_equal(asked, "Sample metadata disagrees")
+    expect_false(file.exists(fasta))
+
+    session$setInputs(specimen_confirm = TRUE)
+    settle(session)
+    settle(session)
+    expect_true(file.exists(fasta))
+  })
+
+  unlink(file.path(dir, "out"), recursive = TRUE)
+  asked <- character(0)
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Export")
+    session$setInputs(export_group_sel = "g1",
+      fasta_header = RiboPilot:::DEFAULT_FASTA_HEADER,
+      fasta_header_marker = RiboPilot:::DEFAULT_FASTA_HEADER_MARKER,
+      export_markers = FALSE, export_report = FALSE)
+    settle(session)
+    session$setInputs(export_go = 1)
+    settle(session)
+    expect_length(asked, 0)
+    expect_true(file.exists(fasta))
+  })
+})

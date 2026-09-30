@@ -132,6 +132,7 @@ reference:
   - screen_one
   - screen_sample
   - select_rrna_contigs
+  - set_metadata_columns
   - set_unit_triage
   - stop_if_nothing_stored
   - tk_ranked_lineage
