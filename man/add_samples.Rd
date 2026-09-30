@@ -12,7 +12,14 @@ add_samples(
   data_path = NULL,
   assembly_path = NULL,
   check_reads = TRUE,
-  check_assemblies = TRUE
+  check_assemblies = TRUE,
+  mapping_geome = "GEOME_BCID",
+  fetch_geome = TRUE,
+  mapping_gbif = "GBIF_ID",
+  fetch_gbif = TRUE,
+  mapping_biosample = "BioSample",
+  fetch_biosample = TRUE,
+  link_sources = FALSE
 )
 }
 \arguments{
@@ -47,6 +54,31 @@ mapping file exist under \code{data_path} (default TRUE).}
 
 \item{check_assemblies}{(logical) Check that the assembly files named in
 the mapping file exist under \code{assembly_path} (default TRUE).}
+
+\item{mapping_geome}{Name of the mapping-file column holding GEOME BCIDs
+(optional). Stored as \code{GEOME_BCID}. See \code{vignette("Specimen-Metadata")}.}
+
+\item{fetch_geome}{Fetch GEOME metadata for samples with a BCID during setup
+(default TRUE). Set FALSE when offline and run \code{\link[=fetch_geome]{fetch_geome()}} later.}
+
+\item{mapping_gbif}{Name of the mapping-file column holding GBIF occurrence
+IDs (optional). Stored as \code{GBIF_ID}. See \code{vignette("Specimen-Metadata")}.}
+
+\item{fetch_gbif}{Fetch GBIF metadata for samples with a GBIF ID during setup
+(default TRUE). Set FALSE when offline and run \code{\link[=fetch_gbif]{fetch_gbif()}} later.}
+
+\item{mapping_biosample}{Name of the mapping-file column holding NCBI
+BioSample or SRA accessions (optional). Must not be the sample ID column.
+Stored as \code{BioSample}. See \code{vignette("Specimen-Metadata")}.}
+
+\item{fetch_biosample}{Fetch NCBI metadata for samples with a BioSample
+value during setup (default TRUE). Set FALSE when offline and run
+\code{\link[=fetch_biosample]{fetch_biosample()}} later.}
+
+\item{link_sources}{Follow links between GEOME, GBIF, and NCBI records for
+these samples (default FALSE). Linking also runs when the project setting
+is on; this argument does not change the setting. See
+\code{vignette("Specimen-Metadata")}.}
 }
 \description{
 Appends new samples to a project's database, seeding every per-sample

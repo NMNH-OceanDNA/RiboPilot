@@ -21,7 +21,14 @@ new_db(
   max_paths = 10,
   max_scaffolds = 10,
   min_assembly_length = 500,
-  ref_dir = NULL
+  ref_dir = NULL,
+  mapping_geome = "GEOME_BCID",
+  fetch_geome = TRUE,
+  mapping_gbif = "GBIF_ID",
+  fetch_gbif = TRUE,
+  mapping_biosample = "BioSample",
+  fetch_biosample = TRUE,
+  link_sources = FALSE
 )
 }
 \arguments{
@@ -71,6 +78,30 @@ the Reference step replaces it.}
 
 \item{ref_dir}{Folder for built reference databases (default: the
 \code{RIBOPILOT_REF_DIR} environment variable, else \code{\link[=ribopilot_ref_dir]{ribopilot_ref_dir()}}).}
+
+\item{mapping_geome}{Name of the mapping-file column holding GEOME BCIDs
+(optional). Stored as \code{GEOME_BCID}. See \code{vignette("Specimen-Metadata")}.}
+
+\item{fetch_geome}{Fetch GEOME metadata for samples with a BCID during setup
+(default TRUE). Set FALSE when offline and run \code{\link[=fetch_geome]{fetch_geome()}} later.}
+
+\item{mapping_gbif}{Name of the mapping-file column holding GBIF occurrence
+IDs (optional). Stored as \code{GBIF_ID}. See \code{vignette("Specimen-Metadata")}.}
+
+\item{fetch_gbif}{Fetch GBIF metadata for samples with a GBIF ID during setup
+(default TRUE). Set FALSE when offline and run \code{\link[=fetch_gbif]{fetch_gbif()}} later.}
+
+\item{mapping_biosample}{Name of the mapping-file column holding NCBI
+BioSample or SRA accessions (optional). Must not be the sample ID column.
+Stored as \code{BioSample}. See \code{vignette("Specimen-Metadata")}.}
+
+\item{fetch_biosample}{Fetch NCBI metadata for samples with a BioSample
+value during setup (default TRUE). Set FALSE when offline and run
+\code{\link[=fetch_biosample]{fetch_biosample()}} later.}
+
+\item{link_sources}{Follow links between GEOME, GBIF, and NCBI records to
+fill in IDs a sample does not have yet (default FALSE). Saved as the project
+setting. See \code{vignette("Specimen-Metadata")}.}
 }
 \description{
 Creates the SQLite tracking database. Mirrors MitoPilot's \code{new_db()} spine

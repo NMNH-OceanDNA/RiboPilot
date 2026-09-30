@@ -42,6 +42,30 @@
 #'   be staged later.
 #' @param check_assemblies (logical) Check that the assembly files named in the
 #'   mapping file exist under `assembly_path` (default TRUE).
+#' @param mapping_geome Name of the mapping-file column holding GEOME BCIDs
+#'   (optional). Stored as `GEOME_BCID`. See `vignette("Specimen-Metadata")`.
+#'   Passed to [new_db()].
+#' @param fetch_geome Fetch GEOME metadata for samples with a BCID during setup
+#'   (default TRUE). Set FALSE when offline and run [fetch_geome()] later.
+#'   Passed to [new_db()].
+#' @param mapping_gbif Name of the mapping-file column holding GBIF occurrence
+#'   IDs (optional). Stored as `GBIF_ID`. See `vignette("Specimen-Metadata")`.
+#'   Passed to [new_db()].
+#' @param fetch_gbif Fetch GBIF metadata for samples with a GBIF ID during setup
+#'   (default TRUE). Set FALSE when offline and run [fetch_gbif()] later.
+#'   Passed to [new_db()].
+#' @param mapping_biosample Name of the mapping-file column holding NCBI
+#'   BioSample or SRA accessions (optional). Must not be the sample ID column.
+#'   Stored as `BioSample`. See `vignette("Specimen-Metadata")`.
+#'   Passed to [new_db()].
+#' @param fetch_biosample Fetch NCBI metadata for samples with a BioSample
+#'   value during setup (default TRUE). Set FALSE when offline and run
+#'   [fetch_biosample()] later.
+#'   Passed to [new_db()].
+#' @param link_sources Follow links between GEOME, GBIF, and NCBI records to
+#'   fill in IDs a sample does not have yet (default FALSE). Saved as the project
+#'   setting. See `vignette("Specimen-Metadata")`.
+#'   Passed to [new_db()].
 #' @param Rproj (logical) Initialize/open an RStudio project (default TRUE; no
 #'   effect outside RStudio).
 #' @param force (logical) Recreate an existing project database (default
@@ -67,6 +91,13 @@ new_project <- function(
     ncbi_api_key = NULL,
     check_reads = TRUE,
     check_assemblies = TRUE,
+    mapping_geome = "GEOME_BCID",
+    fetch_geome = TRUE,
+    mapping_gbif = "GBIF_ID",
+    fetch_gbif = TRUE,
+    mapping_biosample = "BioSample",
+    fetch_biosample = TRUE,
+    link_sources = FALSE,
     Rproj = TRUE,
     force = FALSE,
     ...) {
@@ -83,7 +114,8 @@ new_project <- function(
 
   # Mapping file ----
   mapping <- read_mapping(mapping_fn, mapping_id, list(...)[["mapping_taxon"]] %||% "Taxon") |>
-    check_mapping(mapping_id, data_path, assembly_path, check_reads, check_assemblies)
+    check_mapping(mapping_id, data_path, assembly_path, check_reads, check_assemblies,
+      mapping_geome, mapping_gbif, mapping_biosample)
   if (any(!is.na(mapping$R1)) && length(data_path) != 1) {
     stop("Samples list read files (R1, R2), but no data_path was given. ",
       "Pass data_path = the folder that holds them.", call. = FALSE)
@@ -96,6 +128,20 @@ new_project <- function(
   }
   if (!is.null(executor) && executor %in% CONTAINER_EXECUTORS) {
     check_container_image(container)
+  }
+  preflight <- list(
+    list(mapping_geome, fetch_geome, geome_normalize_bcid, "https://api.geome-db.org/docs/geomeAPI.json", "GEOME"),
+    list(mapping_gbif, fetch_gbif, gbif_normalize_id, "https://api.gbif.org/v1/enumeration/country", "GBIF"),
+    list(mapping_biosample, fetch_biosample, ncbi_normalize_id, NULL, "NCBI"))
+  for (pf in preflight) {
+    if (pf[[1]] %in% names(mapping) && isTRUE(pf[[2]]) && any(!is.na(pf[[3]](mapping[[pf[[1]]]])))) {
+      if (is.null(pf[[4]])) {
+        ok <- tryCatch({ .ncbi_get("einfo", list()); TRUE }, error = function(e) FALSE)
+        if (!ok) warning("NCBI: not reachable right now: ", NCBI_EUTILS, call. = FALSE)
+      } else if (identical(url_status(pf[[4]]), "unknown")) {
+        warning(pf[[5]], ": not reachable right now: ", pf[[4]], call. = FALSE)
+      }
+    }
   }
   if (identical(executor, "conda")) {
     warning("executor = \"conda\" is not supported: it needs every pipeline tool ",
@@ -195,6 +241,13 @@ new_project <- function(
     seeds_db = custom_seeds_db,
     labels_db = custom_labels_db,
     ref_dir = ref_dir,
+    mapping_geome = mapping_geome,
+    fetch_geome = fetch_geome,
+    mapping_gbif = mapping_gbif,
+    fetch_gbif = fetch_gbif,
+    mapping_biosample = mapping_biosample,
+    fetch_biosample = fetch_biosample,
+    link_sources = link_sources,
     ...
   ))
   config_out <- file.path(path, ".config")

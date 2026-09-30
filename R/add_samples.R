@@ -29,6 +29,24 @@
 #'   mapping file exist under `data_path` (default TRUE).
 #' @param check_assemblies (logical) Check that the assembly files named in
 #'   the mapping file exist under `assembly_path` (default TRUE).
+#' @param mapping_geome Name of the mapping-file column holding GEOME BCIDs
+#'   (optional). Stored as `GEOME_BCID`. See `vignette("Specimen-Metadata")`.
+#' @param fetch_geome Fetch GEOME metadata for samples with a BCID during setup
+#'   (default TRUE). Set FALSE when offline and run [fetch_geome()] later.
+#' @param mapping_gbif Name of the mapping-file column holding GBIF occurrence
+#'   IDs (optional). Stored as `GBIF_ID`. See `vignette("Specimen-Metadata")`.
+#' @param fetch_gbif Fetch GBIF metadata for samples with a GBIF ID during setup
+#'   (default TRUE). Set FALSE when offline and run [fetch_gbif()] later.
+#' @param mapping_biosample Name of the mapping-file column holding NCBI
+#'   BioSample or SRA accessions (optional). Must not be the sample ID column.
+#'   Stored as `BioSample`. See `vignette("Specimen-Metadata")`.
+#' @param fetch_biosample Fetch NCBI metadata for samples with a BioSample
+#'   value during setup (default TRUE). Set FALSE when offline and run
+#'   [fetch_biosample()] later.
+#' @param link_sources Follow links between GEOME, GBIF, and NCBI records for
+#'   these samples (default FALSE). Linking also runs when the project setting
+#'   is on; this argument does not change the setting. See
+#'   `vignette("Specimen-Metadata")`.
 #'
 #' @export
 add_samples <- function(
@@ -39,7 +57,14 @@ add_samples <- function(
     data_path = NULL,
     assembly_path = NULL,
     check_reads = TRUE,
-    check_assemblies = TRUE) {
+    check_assemblies = TRUE,
+    mapping_geome = "GEOME_BCID",
+    fetch_geome = TRUE,
+    mapping_gbif = "GBIF_ID",
+    fetch_gbif = TRUE,
+    mapping_biosample = "BioSample",
+    fetch_biosample = TRUE,
+    link_sources = FALSE) {
   project <- normalizePath(project, mustWork = FALSE)
   db_path <- file.path(project, ".sqlite")
   if (!file.exists(db_path)) {
@@ -60,7 +85,8 @@ add_samples <- function(
   stop_unsafe_paths(c(data_path = data_path %||% NA, assembly_path = assembly_path %||% NA))
 
   mapping <- read_mapping(mapping_fn, mapping_id, mapping_taxon) |>
-    check_mapping(mapping_id, data_path, assembly_path, check_reads, check_assemblies)
+    check_mapping(mapping_id, data_path, assembly_path, check_reads, check_assemblies,
+      mapping_geome, mapping_gbif, mapping_biosample)
   same_dir <- function(given, proj, key, what) {
     if (!is.null(proj) && identical(given, proj)) return(invisible())
     stop(if (is.null(proj)) {
@@ -106,6 +132,9 @@ add_samples <- function(
       taxonomy_lock = 0L,
       time_stamp = NA_integer_
     )
+  mapping <- .meta_take_cols(mapping,
+    c(GEOME = mapping_geome, GBIF = mapping_gbif, NCBI = mapping_biosample),
+    keep = c(mapping_id, mapping_taxon))
 
   new_cols <- setdiff(colnames(mapping), DBI::dbListFields(con, "samples"))
   for (col in new_cols) {
@@ -159,6 +188,10 @@ add_samples <- function(
       ),
       in_place = TRUE, copy = TRUE, by = c("ID", "path", "scaffold"), conflict = "ignore"
     )
+
+  .meta_fetch_new(con, mapping,
+    list(GEOME = fetch_geome, GBIF = fetch_gbif, NCBI = fetch_biosample),
+    link = isTRUE(link_sources) || .meta_link_enabled(con))
 
   message("Added ", nrow(mapping), " sample(s) to ", project, ": ",
     paste(mapping$ID, collapse = ", "))

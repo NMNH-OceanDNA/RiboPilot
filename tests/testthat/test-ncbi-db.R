@@ -68,3 +68,53 @@ test_that(".meta_take_cols lets two sources share one column", {
   expect_equal(out2$BioSample, "123")
   expect_false("Acc" %in% names(out2))
 })
+
+ncbi_mapping <- function(dir) {
+  m <- data.frame(ID = c("SRR21844202", "s2"), Taxon = "Fundulus majalis",
+                  R1 = c("a_1.fq", "b_1.fq"), R2 = c("a_2.fq", "b_2.fq"),
+                  BioSample = c("SRR21844202", NA))
+  f <- file.path(dir, "mapping.csv")
+  utils::write.csv(m, f, row.names = FALSE)
+  f
+}
+
+ncbi_new_db <- function(d, f, ...) {
+  new_db(db_path = file.path(d, ".sqlite"), mapping_fn = f, seeds_db = f, labels_db = f,
+    check_reads = FALSE, ...)
+}
+
+test_that("check_mapping validates BioSample values and refuses the ID column", {
+  m <- data.frame(ID = "s1", Taxon = "x", R1 = "a", R2 = "b", Acc = "junk")
+  chk <- function(...) RiboPilot:::check_mapping(m, check_reads = FALSE, check_assemblies = FALSE, ...)
+  expect_warning(chk(mapping_biosample = "Acc"), "BioSample")
+  expect_error(chk(mapping_biosample = "Nope"), "Nope")
+  expect_error(chk(mapping_biosample = "ID"), "can't also be the NCBI ID column")
+  m$Acc <- "SAMN00000001"
+  expect_no_warning(chk(mapping_biosample = "Acc"))
+})
+
+test_that("new_db stores BioSample from its column and fetches it", {
+  local_mocked_bindings(.ncbi_get = ncbi_fixture_get)
+  d <- withr::local_tempdir()
+  ncbi_new_db(d, ncbi_mapping(d))
+  s <- q(d, "SELECT ID, BioSample FROM samples ORDER BY ID")
+  expect_equal(s$ID, c("SRR21844202", "s2"))
+  expect_equal(s$BioSample, c("SRR21844202", NA))
+  expect_equal(q(d, "SELECT ID, status FROM meta_status WHERE source = 'NCBI'")$status, "ok")
+})
+
+test_that("new_db fetch_biosample = FALSE stores IDs without calling NCBI", {
+  local_mocked_bindings(.ncbi_get = function(...) stop("should not be called"))
+  d <- withr::local_tempdir()
+  ncbi_new_db(d, ncbi_mapping(d), fetch_biosample = FALSE)
+  expect_equal(q(d, "SELECT COUNT(*) n FROM meta_status")$n, 0L)
+})
+
+test_that("new_project warns when NCBI is unreachable and the check uses a real request", {
+  seen <- NULL
+  local_mocked_bindings(.ncbi_get = function(endpoint, query) stop("could not reach NCBI (timeout)", call. = FALSE))
+  m <- meta_reads(c("s1", "s2"))
+  m$BioSample <- c("SAMN00000001", NA)
+  w <- testthat::capture_warnings(meta_project(m, quiet = FALSE))
+  expect_true(any(grepl("NCBI: not reachable right now", w, fixed = TRUE)))
+})

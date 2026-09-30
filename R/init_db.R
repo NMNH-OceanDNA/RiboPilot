@@ -35,6 +35,23 @@
 #' @param min_assembly_length Minimum contig length (bp) to retain (default 500).
 #' @param ref_dir Folder for built reference databases (default: the
 #'   `RIBOPILOT_REF_DIR` environment variable, else [ribopilot_ref_dir()]).
+#' @param mapping_geome Name of the mapping-file column holding GEOME BCIDs
+#'   (optional). Stored as `GEOME_BCID`. See `vignette("Specimen-Metadata")`.
+#' @param fetch_geome Fetch GEOME metadata for samples with a BCID during setup
+#'   (default TRUE). Set FALSE when offline and run [fetch_geome()] later.
+#' @param mapping_gbif Name of the mapping-file column holding GBIF occurrence
+#'   IDs (optional). Stored as `GBIF_ID`. See `vignette("Specimen-Metadata")`.
+#' @param fetch_gbif Fetch GBIF metadata for samples with a GBIF ID during setup
+#'   (default TRUE). Set FALSE when offline and run [fetch_gbif()] later.
+#' @param mapping_biosample Name of the mapping-file column holding NCBI
+#'   BioSample or SRA accessions (optional). Must not be the sample ID column.
+#'   Stored as `BioSample`. See `vignette("Specimen-Metadata")`.
+#' @param fetch_biosample Fetch NCBI metadata for samples with a BioSample
+#'   value during setup (default TRUE). Set FALSE when offline and run
+#'   [fetch_biosample()] later.
+#' @param link_sources Follow links between GEOME, GBIF, and NCBI records to
+#'   fill in IDs a sample does not have yet (default FALSE). Saved as the project
+#'   setting. See `vignette("Specimen-Metadata")`.
 #'
 #' @export
 new_db <- function(
@@ -58,11 +75,19 @@ new_db <- function(
     max_paths = 10,
     max_scaffolds = 10,
     min_assembly_length = 500,
-    ref_dir = NULL) {
+    ref_dir = NULL,
+    mapping_geome = "GEOME_BCID",
+    fetch_geome = TRUE,
+    mapping_gbif = "GBIF_ID",
+    fetch_gbif = TRUE,
+    mapping_biosample = "BioSample",
+    fetch_biosample = TRUE,
+    link_sources = FALSE) {
   # Read and check the mapping file ----
   # Fail here, not per-task inside a work/ directory as an opaque tool error.
   mapping <- read_mapping(mapping_fn %||% "./mapping.csv", mapping_id, mapping_taxon) |>
-    check_mapping(mapping_id, data_path, assembly_path, check_reads, check_assemblies)
+    check_mapping(mapping_id, data_path, assembly_path, check_reads, check_assemblies,
+      mapping_geome, mapping_gbif, mapping_biosample)
 
   # Default GetOrganelle nr databases (broad Actinopterygii) when unset ----
   seeds_db <- seeds_db %||% DEFAULT_SEEDS_DB
@@ -102,6 +127,9 @@ new_db <- function(
       taxonomy_lock = 0L,
       time_stamp = NA_integer_
     )
+  mapping <- .meta_take_cols(mapping,
+    c(GEOME = mapping_geome, GBIF = mapping_gbif, NCBI = mapping_biosample),
+    keep = c(mapping_id, mapping_taxon))
   glue::glue_sql(
     "CREATE TABLE samples ({cols*}, PRIMARY KEY (ID))",
     cols = colnames(mapping),
@@ -109,6 +137,10 @@ new_db <- function(
   ) |> DBI::dbExecute(con, statement = _)
   dplyr::tbl(con, "samples") |>
     dplyr::rows_upsert(mapping, in_place = TRUE, copy = TRUE, by = "ID")
+  if (isTRUE(link_sources)) .meta_set_link_enabled(con, TRUE)
+  .meta_fetch_new(con, mapping,
+    list(GEOME = fetch_geome, GBIF = fetch_gbif, NCBI = fetch_biosample),
+    link = isTRUE(link_sources))
 
   # preprocess ----
   DBI::dbExecute(
@@ -628,7 +660,8 @@ SAMPLE_BUILTIN_COLS <- c("taxid", "sci_name", "rank", "match_type", "tax_alterna
 #'
 #' Every column is read as text, so IDs like 001 stay as typed. Values are
 #' trimmed, blank cells become NA, and fully blank rows are dropped. Column
-#' names are matched to ID, Taxon, R1, R2, and Assembly ignoring case.
+#' names are matched to ID, Taxon, R1, R2, Assembly, GEOME_BCID, GBIF_ID, and
+#' BioSample ignoring case.
 #'
 #' @param mapping_fn Path to the mapping CSV.
 #' @param mapping_id,mapping_taxon ID and taxon column names.
@@ -660,7 +693,7 @@ read_mapping <- function(mapping_fn, mapping_id = "ID", mapping_taxon = "Taxon")
     x
   })
 
-  for (w in setdiff(c(mapping_id, mapping_taxon, "R1", "R2", "Assembly"), names(mapping))) {
+  for (w in setdiff(c(mapping_id, mapping_taxon, "R1", "R2", "Assembly", META_SAMPLE_COLS), names(mapping))) {
     i <- which(tolower(names(mapping)) == tolower(w))
     if (length(i) == 1) {
       message("Using mapping column '", names(mapping)[i], "' as '", w, "'.")
@@ -732,8 +765,33 @@ read_mapping <- function(mapping_fn, mapping_id = "ID", mapping_taxon = "Taxon")
 #' @return the mapping, with a normalized `Assembly` column.
 #' @noRd
 check_mapping <- function(mapping, mapping_id = "ID", data_path = NULL, assembly_path = NULL,
-                          check_reads = TRUE, check_assemblies = TRUE) {
+                          check_reads = TRUE, check_assemblies = TRUE,
+                          mapping_geome = "GEOME_BCID", mapping_gbif = "GBIF_ID",
+                          mapping_biosample = "BioSample") {
   ids <- mapping[[mapping_id]]
+  src_cols <- c(GEOME = mapping_geome, GBIF = mapping_gbif, NCBI = mapping_biosample)
+  for (src in names(src_cols)[src_cols == mapping_id]) {
+    stop("The sample ID column '", mapping_id, "' can't also be the ", src,
+      " ID column; copy the IDs into their own column.", call. = FALSE)
+  }
+  for (src in names(src_cols)) {
+    col <- src_cols[[src]]
+    if (!col %in% names(mapping)) {
+      if (col != META_SOURCES[[src]]$col) {
+        stop("The ", META_SOURCES[[src]]$label, " column '", col, "' was not found in the mapping file.",
+          call. = FALSE)
+      }
+      next
+    }
+    raw <- trimws(.meta_chr(mapping[[col]]))
+    raw[is.na(raw)] <- ""
+    bad <- nzchar(raw) & is.na(META_SOURCES[[src]]$normalize(raw))
+    if (any(bad)) {
+      warning("mapping ", META_SOURCES[[src]]$label, " ", META_SOURCES[[src]]$id_label,
+        ": not a valid ID for ", .lst(ids[bad]), "; these samples will show a failed ",
+        META_SOURCES[[src]]$label, " fetch", call. = FALSE)
+    }
+  }
   stop_unsafe_paths(c(
     stats::setNames(mapping$R1, paste(ids, "R1")),
     stats::setNames(mapping$R2, paste(ids, "R2")),
