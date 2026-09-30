@@ -68,10 +68,10 @@ The app walks each project through five steps, in order:
     repeat for each sample, picks the best assembly path, finds the five
     features (18S, ITS1, 5.8S, ITS2, 28S), and checks each result for
     problems such as a missing gene, an unusual length, a possible
-    contaminant, or a chimera. You keep or drop scaffolds and lock the
+    contaminant, or a chimera. You keep or drop contigs and lock the
     samples you are happy with.
 4.  **Annotation Review.** You check the features and quality flags of
-    each kept scaffold, adjust boundaries if needed, and lock it.
+    each kept contig, adjust boundaries if needed, and lock it.
 5.  **Export.** RiboPilot writes a tidy, GenBank-ready submission
     package, and asks about any flagged record first.
 
@@ -85,7 +85,7 @@ Behind the scenes RiboPilot uses established bioinformatics tools
 stitches them together for you. You do not need to learn or run any of
 them yourself.
 
-# Which organisms it works with
+# Taxonomic Scope
 
 Each group of samples, fishes included, needs a reference database of
 known rDNA sequences. You build it once per group in the app, from
@@ -112,8 +112,8 @@ remotes::install_github("dmacguigan/RiboPilot")
 
 # Getting started
 
-The best way to learn RiboPilot is to run the built-in practice project.
-The first command downloads the practice samples and sets everything up;
+The best way to learn RiboPilot is to run the built-in test project.
+The first command downloads the test samples and sets everything up;
 the second opens the app:
 
 ``` r

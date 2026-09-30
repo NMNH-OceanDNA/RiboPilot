@@ -10,8 +10,8 @@ vignette: >
 The app's Export step writes one folder per export group, with everything you
 need to submit your records to GenBank: the sequences, their FASTA headers,
 feature tables, and a summary of the checks. This page explains what each part
-is for, and what to check before you upload. [Get started](RiboPilot.html)
-shows the Export step itself.
+is for, and what to check before you upload. The
+[Export walkthrough](Test-Project-Export.html) shows the Export step itself.
 
 # Which files to upload
 
@@ -99,7 +99,7 @@ fish, RiboPilot adds `[isolate=<ID>_p<path>_s<scaffold>]` to each header. This
 is on purpose: GenBank needs something to tell apart records that share an
 organism and a voucher, and these labels let one sample send several records in
 one submission. The values name records, not separate individuals. If GenBank
-staff ask, tell them the records are different rDNA scaffolds from one specimen.
+staff ask, tell them the records are different rDNA contigs from one specimen.
 
 For that reason, a template with its own `[isolate=...]` is refused for an
 export group that holds such a sample. It is allowed otherwise.
@@ -109,7 +109,7 @@ export group that holds such a sample. It is allowed otherwise.
 A gene end is written as partial (`<` for the 5' end or `>` for the 3' end in
 the feature table, and "partial sequence" in the definition line) when:
 
-- it runs into the end of a scaffold that has not been trimmed (the gene ran
+- it runs into the end of a contig that has not been trimmed (the gene ran
   off the assembled contig);
 - the quality check found the gene truncated, meaning less than 90 percent of
   it was recovered. The end that meets no neighbouring spacer or gene is marked;
@@ -170,7 +170,7 @@ evidence is in the separate `chimera_warning` column; it is not a submission
 risk, but it is worth a look in the app.
 
 **What your marks do.** A unit is exported when its sample is locked in the
-Assemble step, the unit is locked in the Annotation Review step, its scaffold is
+Assemble step, the unit is locked in the Annotation Review step, its contig is
 kept, and it is not excluded from export. The Export window lists each
 unit of the group that is left out, and why.
 

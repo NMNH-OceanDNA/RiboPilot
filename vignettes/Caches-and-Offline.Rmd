@@ -20,10 +20,10 @@ project's files you should back up, and what needs the internet.
 | Singularity's download cache | `~/.singularity/cache` | `SINGULARITY_CACHEDIR` (Apptainer: `APPTAINER_CACHEDIR`) | grew 4.9 GB in one pull |
 | Singularity's temporary files | `/tmp` | `SINGULARITY_TMPDIR` | |
 | Nextflow's own files | `~/.nextflow` | `NXF_HOME` | grows when runs use a pinned Nextflow version |
-| Reference databases | a folder in your home; `RiboPilot::ribopilot_ref_dir()` prints it | `RIBOPILOT_REF_DIR`, the `ref_dir` argument of `new_project()`, or **Settings** in the Reference step | 4 MB and 16 MB for the two practice databases |
+| Reference databases | a folder in your home; `RiboPilot::ribopilot_ref_dir()` prints it | `RIBOPILOT_REF_DIR`, the `ref_dir` argument of `new_project()`, or **Settings** in the Reference step | 4 MB and 16 MB for the two test databases |
 | Cluster profiles | `~/.config/R/RiboPilot` on Linux | `profile_dir`, or `R_USER_CONFIG_DIR` | tiny |
 | Taxonomy copy | `<project>/.taxonomy` | (one per project) | about 0.5 GB |
-| Nextflow working files | `<project>/work` | (one per project) | 0.9 GB for the practice project |
+| Nextflow working files | `<project>/work` | (one per project) | 0.9 GB for the test project |
 
 Home folders on clusters are often small. Put `NXF_SINGULARITY_CACHEDIR`,
 `SINGULARITY_CACHEDIR`, `SINGULARITY_TMPDIR`, and `RIBOPILOT_REF_DIR` on project
@@ -52,7 +52,7 @@ or scratch space, for example in your lab's `.Renviron` and shell profile.
   Docker Hub), and a pinned Nextflow version when yours is newer than RiboPilot
   supports (from GitHub).
 - **The compute nodes** reach NCBI: to download reference sequences during a
-  run, to BLAST a scaffold at NCBI when the bundled rDNA database in the container
+  run, to BLAST a contig at NCBI when the bundled rDNA database in the container
   finds nothing, and for the Reference step's record counts and database builds.
 - **The R session that runs the app** downloads NCBI's taxonomy
   (ftp.ncbi.nlm.nih.gov) the first time you press **Assign Taxonomy**.
@@ -69,7 +69,7 @@ or scratch space, for example in your lab's `.Renviron` and shell profile.
 4. Build the reference databases beforehand, where there is internet.
 5. Optionally, `export NXF_OFFLINE=true`.
 
-An offline run still assembles and annotates every sample. Scaffolds the bundled
+An offline run still assembles and annotates every sample. Contigs the bundled
 rDNA database cannot match get the `contaminant_unchecked` warning and the triage flag
 "BLAST screen has not run". The `low_identity` check is skipped with no warning
 for genes whose reference sequences are not already in your reference folder.

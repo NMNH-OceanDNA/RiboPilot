@@ -18,7 +18,7 @@ finished with failures" (the run finished, but some samples or steps failed),
 ![A run report naming the failed sample and its likely cause, with the copy button](figures/troubleshooting/failure-report.png)
 
 RiboPilot also saves the report in the project's `nextflow_logs` folder, next to
-the run's Nextflow log. Here is the report from the practice project:
+the run's Nextflow log. Here is the report from the test project:
 
 ```
 RiboPilot run report
@@ -30,7 +30,7 @@ Log:       ~/ribopilot_test/nextflow_logs/ribopilot_2026-09-24_14-30-59.nextflow
 Tasks:     163 succeeded, 6 cached, 0 failed and skipped, 0 retried, 0 aborted
 
 Failed samples (sample | note | likely cause):
-SRR22396893 | 2 scaffold(s) under min_assembly_length (500 bp) | Every assembled piece was shorter than Min assembly length.
+SRR22396893 | 2 contig(s) under min_assembly_length (500 bp) | Every assembled piece was shorter than Min assembly length.
 ```
 
 What each part means:
@@ -60,13 +60,13 @@ The step names you may see, and what each step does:
 | `find_rrna`, `stage_assembly` | Search an assembly you supplied for rDNA contigs. |
 | `assemble` | Assembles the rDNA with GetOrganelle. |
 | `fallback_assemble` | Assembles with SPAdes (baited or de-novo). |
-| `score` | Scores the scaffolds and picks a path. |
-| `blast_genbank` | Runs the BLAST screen: searches each scaffold in the bundled rDNA database, and at NCBI when that finds nothing. |
+| `score` | Scores the contigs and picks a path. |
+| `blast_genbank` | Runs the BLAST screen: searches each contig in the bundled rDNA database, and at NCBI when that finds nothing. |
 | `blast_ref_fetch`, `blast_ref_align` | Download reference sequences and align to them. |
 | `coverage` | Maps the reads back for depth. |
 | `annotate_tools`, `reconcile` | Find the five features. |
 | `curate`, `screen`, `chimera` | Run the quality checks, the Screen verdict, and the chimera check. |
-| `triage` | Proposes which scaffolds to keep. |
+| `triage` | Proposes which contigs to keep. |
 
 # Error codes
 
@@ -97,8 +97,8 @@ often a step was tried.
 Some failures are not an error code: too few reads, only short pieces
 assembled, or no rRNA genes found. The Notes column says why, and the sample's
 details window shows a red box with the reason and what to try next. To rescue
-a sample whose assembly failed, see the rescue section of
-[Get started](RiboPilot.html).
+a sample whose assembly failed, see the rescue section of the
+[Assemble walkthrough](Test-Project-Assemble.html#rescue-a-sample-that-failed).
 
 # Where to look
 
@@ -146,11 +146,11 @@ gives a message that a run is already going (see below).
 | "Read files named in the mapping file were not found in ..." | A name in R1 or R2 does not match a file in `data_path`. | Check the spelling, and that names are relative to `data_path`. |
 | "These paths have characters the pipeline cannot pass to Docker, Singularity, or Nextflow: ..." | A path has a space, a quote mark, or another special character. | Rename it to use only letters, digits, and `.`, `_`, `-`, and `/`. |
 | "Group name ... cannot be used: it becomes a folder name ..." | An export group name has a space or another special character. | Use the name the message suggests. |
-| `contaminant_unchecked`, or the triage flag "BLAST screen has not run" | The BLAST screen has no usable hit for the scaffold: nothing matched in the bundled rDNA database, and the search at NCBI matched nothing, failed, or was switched off; or the bundled database returned a hit whose lineage could not be resolved, so the scaffold was never sent on to NCBI. It also appears when the sample has no taxon. | If NCBI could not be reached, set the sample to Ready to run and press **Update** once it can: the scaffold is searched again. For a bundled-database hit with no usable lineage, choose "NCBI only (core_nt)" under **Search** in the sample's BLAST Options, then set it Ready to run and press **Update**. If the sample has no taxon, set one in the Taxonomy step. |
+| `contaminant_unchecked`, or the triage flag "BLAST screen has not run" | The BLAST screen has no usable hit for the contig: nothing matched in the bundled rDNA database, and the search at NCBI matched nothing, failed, or was switched off; or the bundled database returned a hit whose lineage could not be resolved, so the contig was never sent on to NCBI. It also appears when the sample has no taxon. | If NCBI could not be reached, set the sample to Ready to run and press **Update** once it can: the contig is searched again. For a bundled-database hit with no usable lineage, choose "NCBI only (core_nt)" under **Search** in the sample's BLAST Options, then set it Ready to run and press **Update**. If the sample has no taxon, set one in the Taxonomy step. |
 | "Nextflow ... is below the minimum supported version (24.10.0)." | Your Nextflow is too old. | Install Nextflow 24.10 through 25.10; see [Installation](Installation.html). |
 | "Nextflow ... is newer than RiboPilot has verified ... Runs will be pinned to Nextflow 25.10.6 via NXF_VER." | RiboPilot runs a supported version instead, downloading it once. | Nothing, or install a supported version. |
 | "Container image ... is not published on Docker Hub, so container executors will fail at image pull." | The project names an image Docker cannot download. | Check the `container` you passed to `new_project()`, and your network. |
-| "Container version does not match RiboPilot" (when the app opens) | The project's `.config` names the RiboPilot image for another version, so runs use that image's code and tools. | Edit the `container` line in the project's `.config` to the image the message names (see [Upgrading](Installation.html#upgrading-ribopilot)). The app works either way. |
+| "Container version does not match RiboPilot" (when the app opens) | The project's `.config` names the RiboPilot image for another version, so runs use that image's code and tools. | Run `RiboPilot::backwards_compatibility()` on the project (see [Upgrading](Installation.html#upgrading-ribopilot)). The app works either way. |
 | A BLAST error with "GNUTLS" or "secure session" | Conda setups only: BLAST is too old to reach NCBI. | See [Installing tools without a container](Without-Containers.html). |
 
 # Asking for help

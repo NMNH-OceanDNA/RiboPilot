@@ -1,0 +1,85 @@
+/* Walkthrough navigation: pill bar on top, Next button at the bottom. */
+.step-nav {
+  margin: 0 0 2.5em;
+  padding-bottom: 1.2em;
+  border-bottom: 1px solid #dde3e6;
+}
+.step-nav.no-rule {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+/* pandoc wraps the row contents in a <p>, so that is the flex container. */
+.step-nav p {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.step-nav .step-label {
+  font-weight: 600;
+  color: #6b7b85;
+  margin-right: 4px;
+}
+.step-nav a,
+.step-nav .current {
+  display: inline-block;
+  padding: 6px 16px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  text-decoration: none !important;
+  border: 1px solid #c8dde5;
+}
+.step-nav a {
+  background-color: #e4f0f4;
+  color: #1f6f8b !important;
+}
+.step-nav a:hover,
+.step-nav a:focus {
+  background-color: #d3e7ee;
+  color: #17566b !important;
+}
+.step-nav .current {
+  background-color: #1f6f8b;
+  color: #ffffff;
+  border-color: #1f6f8b;
+}
+.next-step {
+  text-align: right;
+  margin: 2.5em 0 1em;
+}
+.next-step a {
+  display: inline-block;
+  background-color: #1f6f8b;
+  color: #ffffff !important;
+  font-weight: 600;
+  font-size: 1.05rem;
+  padding: 10px 22px;
+  border-radius: 6px;
+  text-decoration: none !important;
+}
+.next-step a:hover,
+.next-step a:focus {
+  background-color: #17566b;
+}
+
+/* NMNH Hydra tips. Smithsonian palette: blue #009CDE, yellow #FFCD00, black #101820 */
+.alert-hydra {
+  background-color: #E7F6FC;
+  border: 0;
+  border-left: 5px solid #101820;
+  color: #101820;
+}
+.alert-hydra .hydra-tag {
+  display: inline-block;
+  background-color: #FFCD00;
+  color: #101820;
+  font-size: 0.75em;
+  font-weight: bold;
+  letter-spacing: 0.04em;
+  padding: 1px 7px;
+  border-radius: 10px;
+  margin-right: 6px;
+  vertical-align: 2px;
+}
