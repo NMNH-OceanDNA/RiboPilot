@@ -111,6 +111,7 @@ test_that("check_mapping warns on a non-numeric GBIF ID and errors on a missing 
   expect_error(chk(mapping_gbif = "Nope"), "Nope")
   m$GBIF_ID <- 6186461308
   expect_no_warning(chk())
+  expect_error(chk(mapping_gbif = "Occ"), "GBIF_ID")
 })
 
 test_that("add_samples stores and fetches GBIF IDs for new samples", {

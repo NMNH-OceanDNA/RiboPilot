@@ -91,6 +91,8 @@ test_that("check_mapping validates BioSample values and refuses the ID column", 
   expect_error(chk(mapping_biosample = "ID"), "can't also be the NCBI ID column")
   m$Acc <- "SAMN00000001"
   expect_no_warning(chk(mapping_biosample = "Acc"))
+  m$BioSample <- "SAMN00000002"
+  expect_error(chk(mapping_biosample = "Acc"), "BioSample")
 })
 
 test_that("new_db stores BioSample from its column and fetches it", {

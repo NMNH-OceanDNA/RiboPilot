@@ -230,7 +230,7 @@ new_project <- function(
   done <- FALSE
   on.exit(if (!done) unlink(db), add = TRUE)
   # column renames were already reported by the check above
-  suppressMessages(new_db(
+  withCallingHandlers(suppressMessages(new_db(
     db_path = db,
     mapping_fn = mapping_out,
     mapping_id = mapping_id,
@@ -249,7 +249,7 @@ new_project <- function(
     fetch_biosample = fetch_biosample,
     link_sources = link_sources,
     ...
-  ))
+  )), ribopilot_meta_id_warning = function(w) invokeRestart("muffleWarning"))
   config_out <- file.path(path, ".config")
   writeLines(out_lines, config_out)
   # the config carries the NCBI API key, so keep it owner-only

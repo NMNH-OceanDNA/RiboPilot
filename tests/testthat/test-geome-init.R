@@ -20,6 +20,9 @@ test_that("check_mapping warns on a non-ARK BCID and errors on a missing custom 
     mapping_geome = "Nope"), "Nope")
   expect_error(RiboPilot:::check_mapping(m, check_reads = FALSE, check_assemblies = FALSE,
     mapping_geome = "ID"), "can't also be the GEOME")
+  m$GEOME_BCID <- "ark:/1/A"
+  expect_error(RiboPilot:::check_mapping(m, check_reads = FALSE, check_assemblies = FALSE,
+    mapping_geome = "Bcid"), "GEOME_BCID")
 })
 
 test_that("new_db stores a renamed BCID column and fetches it", {
@@ -84,4 +87,20 @@ test_that("the reachability check warns, never stops, and is skipped when fetch 
   local_mocked_bindings(.geome_get = function(...) stop("offline"))
   w <- testthat::capture_warnings(suppressMessages(run()))
   expect_true(any(grepl("GEOME: not reachable right now", w)))
+})
+
+test_that("new_project reports an invalid identifier once", {
+  local_mocked_bindings(url_status = function(u) "ok")
+  m <- meta_reads(c("s1", "s2"))
+  m$GBIF_ID <- c("abc", "")
+  w <- testthat::capture_warnings(meta_project(m, quiet = FALSE, fetch_gbif = FALSE))
+  expect_equal(sum(grepl("not a valid ID", w)), 1L)
+})
+
+test_that("new_db fetches metadata only after every table exists", {
+  tabs <- NULL
+  local_mocked_bindings(.meta_fetch_new = function(con, ...) tabs <<- DBI::dbListTables(con))
+  d <- withr::local_tempdir()
+  geome_new_db(d, geome_mapping(d))
+  expect_true(all(c("preprocess", "assemble", "annotate") %in% tabs))
 })

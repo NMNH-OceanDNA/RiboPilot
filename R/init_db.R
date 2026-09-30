@@ -137,10 +137,6 @@ new_db <- function(
   ) |> DBI::dbExecute(con, statement = _)
   dplyr::tbl(con, "samples") |>
     dplyr::rows_upsert(mapping, in_place = TRUE, copy = TRUE, by = "ID")
-  if (isTRUE(link_sources)) .meta_set_link_enabled(con, TRUE)
-  .meta_fetch_new(con, mapping,
-    list(GEOME = fetch_geome, GBIF = fetch_gbif, NCBI = fetch_biosample),
-    link = isTRUE(link_sources))
 
   # preprocess ----
   DBI::dbExecute(
@@ -643,6 +639,10 @@ new_db <- function(
   ensure_export_opts(con)
   meta_apply_schema(con)
 
+  if (isTRUE(link_sources)) .meta_set_link_enabled(con, TRUE)
+  .meta_fetch_new(con, mapping,
+    list(GEOME = fetch_geome, GBIF = fetch_gbif, NCBI = fetch_biosample),
+    link = isTRUE(link_sources))
   record_schema_event(con, "created", current_schema_version())
 
   invisible(return())
@@ -776,8 +776,14 @@ check_mapping <- function(mapping, mapping_id = "ID", data_path = NULL, assembly
   }
   for (src in names(src_cols)) {
     col <- src_cols[[src]]
+    std <- META_SOURCES[[src]]$col
+    if (col != std && std %in% names(mapping)) {
+      stop("reserved names that RiboPilot fills in itself: ", std,
+        ". Rename the '", std, "' column, or use it as ", tolower(src),
+        " column instead of '", col, "'.", call. = FALSE)
+    }
     if (!col %in% names(mapping)) {
-      if (col != META_SOURCES[[src]]$col) {
+      if (col != std) {
         stop("The ", META_SOURCES[[src]]$label, " column '", col, "' was not found in the mapping file.",
           call. = FALSE)
       }
@@ -787,9 +793,10 @@ check_mapping <- function(mapping, mapping_id = "ID", data_path = NULL, assembly
     raw[is.na(raw)] <- ""
     bad <- nzchar(raw) & is.na(META_SOURCES[[src]]$normalize(raw))
     if (any(bad)) {
-      warning("mapping ", META_SOURCES[[src]]$label, " ", META_SOURCES[[src]]$id_label,
-        ": not a valid ID for ", .lst(ids[bad]), "; these samples will show a failed ",
-        META_SOURCES[[src]]$label, " fetch", call. = FALSE)
+      warning(structure(class = c("ribopilot_meta_id_warning", "warning", "condition"),
+        list(message = paste0("mapping ", META_SOURCES[[src]]$label, " ", META_SOURCES[[src]]$id_label,
+          ": not a valid ID for ", .lst(ids[bad]), "; these samples will show a failed ",
+          META_SOURCES[[src]]$label, " fetch"), call = NULL)))
     }
   }
   stop_unsafe_paths(c(
