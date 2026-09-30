@@ -129,3 +129,17 @@ test_that("geome_specimen_voucher skips a catalog number that is a link or ARK",
   recs$value[1] <- "12345"
   expect_equal(GEOME_COMBOS$specimen_voucher$fn(recs), "Smithsonian:12345")
 })
+
+test_that(".meta_join keeps an existing column over a ticked key of the same name", {
+  con <- geome_mem_db("s1")
+  on.exit(DBI::dbDisconnect(con))
+  add_geome_recs(con, "s1", "country", "Peru")
+  .meta_save_fields(con, "geome:raw:Event:country")
+  dat <- data.frame(ID = "s1", geome_Event_country = "mine")
+  out <- .meta_join(dat, con)
+  expect_identical(out, dat)
+  .meta_save_fields(con, c("geome:raw:Event:country", "geome:combo:lat_lon"))
+  out <- .meta_join(dat, con)
+  expect_equal(out$geome_Event_country, "mine")
+  expect_equal(names(out), c("ID", "geome_Event_country", "geome_lat_lon"))
+})

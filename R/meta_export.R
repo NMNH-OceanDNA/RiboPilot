@@ -46,6 +46,9 @@ meta_export_cols <- function(con, ids = NULL, keys = NULL) {
 .meta_join <- function(dat, con) {
   g <- meta_export_cols(con, ids = unique(dat$ID))
   if (is.null(g)) return(dat)
+  # deviation from MitoPilot: existing columns in dat win over ticked keys
+  g <- g[, c("ID", setdiff(names(g), c("ID", names(dat)))), drop = FALSE]
+  if (ncol(g) == 1) return(dat)
   out <- dplyr::left_join(dat, g, by = "ID")
   cols <- setdiff(names(g), "ID")
   out[cols] <- lapply(out[cols], function(x) ifelse(is.na(x), "", x))
