@@ -119,6 +119,8 @@ app_ui <- function(request) {
           id = "mp-content", style = "padding: 1em;",
           h1("Taxonomy", "Taxonomy"), h1("Reference", "Reference"), h1("Assemble", "Assemble"),
           h1("Annotate", "Annotation Review"), h1("Export", "Export"),
+          shiny::conditionalPanel("input.mode != 'Reference'",
+            shiny::div(class = "mp-filter-row", meta_view_button(shiny::NS(NULL)))),
           shiny::conditionalPanel("input.mode == 'Assemble'",
             shiny::div(class = "mp-filter-row",
               filter_pickers("Assemble"),

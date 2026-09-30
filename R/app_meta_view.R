@@ -1,0 +1,99 @@
+#' Metadata button for a table's filter row
+#' @noRd
+meta_view_button <- function(ns) {
+  actionButton(ns("meta_view_open"), "Metadata", icon = icon("table-columns"),
+               class = "btn-default mp-meta-btn",
+               title = "Choose which metadata columns the tables show")
+}
+
+#' Field chooser table for the Metadata modal
+#' @noRd
+meta_view_picker_table <- function(fields) {
+  reactable::reactable(
+    fields[, c("source", "level", "field", "n_samples", "example")],
+    selection = "multiple", onClick = "select", compact = TRUE,
+    defaultSelected = which(fields$shown), pagination = FALSE, height = 420,
+    striped = TRUE, resizable = TRUE, class = "mp-meta-view-tbl",
+    columns = list(
+      source = reactable::colDef(
+        name = "Source", width = 110, filterable = TRUE,
+        cell = function(v) htmltools::tagList(meta_view_logo(v), v)
+      ),
+      level = reactable::colDef(name = "Level", minWidth = 110),
+      field = reactable::colDef(name = "Field", minWidth = 160, filterable = TRUE),
+      n_samples = reactable::colDef(name = "Samples", width = 80, align = "center"),
+      example = reactable::colDef(name = "Example", minWidth = 180, html = TRUE, cell = rt_longtext())
+    )
+  )
+}
+
+#' Metadata modal
+#' @noRd
+meta_view_modal <- function(ns, fields, wrap) {
+  tbl <- ns("meta_view_tbl")
+  src_btn <- function(label, value) {
+    js <- if (is.na(value)) sprintf("Reactable.setFilter('%s', 'source', undefined)", tbl)
+          else sprintf("Reactable.setFilter('%s', 'source', '%s')", tbl, value)
+    tags$button(type = "button", class = "btn btn-default btn-sm", onclick = js, label)
+  }
+  modalDialog(
+    title = "Metadata columns", size = "l", easyClose = TRUE,
+    p("Pick the metadata columns to show in the Taxonomy, Assemble, Annotation Review, and Export tables.",
+      "This only changes what you see; exported files are set by Set Export Metadata",
+      "and the export header template."),
+    if (!nrow(fields)) {
+      p(class = "mp-empty-state", "No metadata yet. Add columns to your mapping file and load",
+        "them into the project with update_sample_metadata(), or fetch GEOME, GBIF, or NCBI",
+        "records from the Metadata column.")
+    } else {
+      tagList(
+        div(
+          class = "mp-meta-view-bar",
+          src_btn("All", NA), src_btn("Map file", "Map file"),
+          src_btn("GEOME", "GEOME"), src_btn("GBIF", "GBIF"), src_btn("NCBI", "NCBI"),
+          tags$input(type = "search", class = "form-control input-sm mp-meta-view-search",
+                     placeholder = "Filter field names", `aria-label` = "Filter field names",
+                     oninput = sprintf("Reactable.setFilter('%s', 'field', this.value || undefined)", tbl)),
+          tags$button(type = "button", class = "btn btn-default btn-sm",
+                      onclick = sprintf("Reactable.getInstance('%s').toggleAllRowsSelected(false)", tbl),
+                      "Clear all"),
+          checkboxInput(ns("meta_view_wrap"), "Wrap long text (up to 3 lines)", value = wrap)
+        ),
+        reactable::reactableOutput(tbl)
+      )
+    },
+    footer = mp_footer(primary = if (nrow(fields)) actionButton(ns("meta_view_save"), "Save"))
+  )
+}
+
+#' Wire the Metadata button into the app
+#'
+#' Saving bumps `ver`, which the table data and column defs depend on.
+#' @noRd
+meta_view_setup <- function(input, output, session, con, ver) {
+  fields_rv <- reactiveVal(NULL)
+
+  observeEvent(input$meta_view_open, {
+    cn <- con(); on.exit(DBI::dbDisconnect(cn))
+    f <- meta_view_fields(cn)
+    fields_rv(f)
+    showModal(meta_view_modal(session$ns, f, meta_view_wrap(cn)))
+  })
+  output$meta_view_tbl <- reactable::renderReactable(meta_view_picker_table(req(fields_rv())))
+
+  observeEvent(input$meta_view_save, {
+    f <- req(fields_rv())
+    sel <- reactable::getReactableState("meta_view_tbl", "selected") %||% integer(0)
+    cn <- con(); on.exit(DBI::dbDisconnect(cn))
+    meta_view_save(cn, f, f$key[sel], input$meta_view_wrap)
+    removeModal()
+    ver(ver() + 1L)
+  })
+
+  observe({
+    ver()
+    cn <- con(); on.exit(DBI::dbDisconnect(cn))
+    n <- sum(meta_view_fields(cn)$shown)
+    updateActionButton(session, "meta_view_open", label = sprintf("Metadata (%d)", n))
+  })
+}

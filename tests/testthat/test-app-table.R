@@ -193,3 +193,29 @@ test_that("the Metadata column sits after Taxon in every step that lists samples
     }
   })
 })
+
+test_that("a shown metadata field is a column in every non-Reference view", {
+  skip_if_not_installed("withr")
+  dir <- mk_table_project()
+  withr::local_dir(dir)
+  con <- RiboPilot:::app_con()
+  RiboPilot:::.meta_ensure_tables(con)
+  DBI::dbAppendTable(con, "meta_records", data.frame(
+    ID = "S1", source = "GBIF", level = "Occurrence", depth = 0L, ref = "r",
+    field = "sex", value = "Female"))
+  f <- RiboPilot:::meta_view_fields(con)
+  RiboPilot:::meta_view_save(con, f, "gbif:raw:Occurrence:sex", FALSE)
+  col <- f$col[f$key == "gbif:raw:Occurrence:sex"]
+  DBI::dbDisconnect(con)
+  shiny::testServer(RiboPilot:::app_server, {
+    for (m in c("Taxonomy", "Assemble", "Annotate")) {
+      session$setInputs(mode = m)
+      d <- all_rows()
+      expect_true(col %in% names(d), info = m)
+      expect_equal(d[[col]][d$ID == "S1"][1], "Female", info = m)
+      if (m != "Annotate") expect_equal(d[[col]][d$ID == "S2"][1], "", info = m)
+    }
+    session$setInputs(mode = "Reference")
+    expect_false(col %in% names(all_rows()))
+  })
+})

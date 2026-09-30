@@ -134,13 +134,17 @@ app_server <- function(input, output, session) {
   ref_view <- reactive(input$ref_view %||% "Samples")
 
   # ---- samples table data (per mode; includes state + lock) ----
+  meta_view_ver <- reactiveVal(0L)
+  meta_view_setup(input, output, session, con = app_con, ver = meta_view_ver)
   all_rows <- reactive({
+    meta_view_ver()
     d <- all_rows_base()
     if ((input$mode %||% "Assemble") %in% c("Taxonomy", "Assemble", "Annotate", "Export") &&
         "Taxon" %in% names(d)) {
       con <- app_con(); on.exit(DBI::dbDisconnect(con))
       d <- .specimen_status_join(d, con) |>
         dplyr::relocate(specimen, specimen_message, specimen_icons, .after = Taxon)
+      d <- meta_view_join(d, con)
     }
     d
   })
@@ -267,6 +271,7 @@ app_server <- function(input, output, session) {
   output$tbl <- reactable::renderReactable({
     mode <- input$mode %||% "Assemble"
     multi_unit_rv()
+    meta_view_ver()
     if (mode == "Reference" && ref_view() == "Groups") refresh()
     d <- isolate(samples_data())
     tbl_keys <<- row_keys(d)
@@ -434,6 +439,11 @@ app_server <- function(input, output, session) {
         `Check details` = c("n_flags", "itsx_warnings", "screen_verdict", "chimera_label")),
       NULL)
     keep_cols <- cols[intersect(names(cols), names(d))]
+    if (mode != "Reference") {
+      mcon <- app_con()
+      keep_cols <- c(keep_cols, meta_view_table_defs(mcon, d))
+      DBI::dbDisconnect(mcon)
+    }
     keep_cols[[".selection"]] <- reactable::colDef(sticky = "left")
     if (!is.null(col_groups)) {
       sel_g <- input[[if (mode == "Assemble") "col_groups" else "ann_col_groups"]] %||% names(col_groups)
