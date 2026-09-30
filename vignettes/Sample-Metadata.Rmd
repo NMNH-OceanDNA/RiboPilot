@@ -506,9 +506,7 @@ The Export window shows a chip for every column you can use, in groups:
 **Basics**, **Your mapping columns**, **GEOME**, **GBIF**, **NCBI**, and
 **RiboPilot columns**. Click a chip to insert it at the cursor of the header
 box you last clicked. A GenBank-ready combination inserts the whole source
-modifier, for example `[lat_lon={geome_lat_lon}]` (GenBank accepts these names
-with underscores; see [GenBank submission](GenBank-Submission.html#required-source-modifiers)).
-Hover over a column to see its
+modifier, for example `[lat_lon={geome_lat_lon}]`. Hover over a column to see its
 value for the first row of any export group, and type in the filter box to
 find one. **Choose fields** next to GEOME, GBIF, or NCBI opens the Set Export Metadata
 window; closing it returns you to the Export window as it was.

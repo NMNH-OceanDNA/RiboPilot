@@ -68,8 +68,7 @@ NCBI asks each rRNA or ITS record for the organism, one identifier for the
 specimen (isolate, strain, clone, or specimen voucher), the collection date, and
 where it was collected. Add them to your template as source modifiers:
 `[specimen_voucher=...]`, `[collection_date=...]`, and `[geo_loc_name=...]`.
-GenBank accepts the names with underscores or hyphens; RiboPilot and MitoPilot
-use underscores. NCBI's list is
+NCBI's full list is
 [Modifiers for FASTA Definition Lines](https://www.ncbi.nlm.nih.gov/genbank/mods_fastadefline/).
 
 For example, with `Voucher`, `Date`, and `Country` columns in your mapping file:
