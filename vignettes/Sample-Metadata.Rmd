@@ -318,7 +318,7 @@ Assemble, Annotation Review, and Export tables.
 The window lists every field that has a value for at least one sample: the
 extra columns from your mapping file, then GEOME, GBIF, and NCBI fields, with
 the number of samples that have each one and an example value. Use the search
-box, or the **Map file**, **GEOME**, **GBIF**, and **NCBI** buttons, to narrow
+box, or the **Mapping file**, **GEOME**, **GBIF**, and **NCBI** buttons, to narrow
 the list, and click rows to tick them. Mapping-file fields start ticked; GEOME,
 GBIF, and NCBI fields start unticked. **Clear all** unticks everything.
 
@@ -377,7 +377,7 @@ RiboPilot finds your mapping-file columns by name (ignoring case):
 | taxon | `Taxon` (always) |
 
 If a column has another name, or a matching name holds something else, open
-**Mapfile columns...** at the bottom of the Compare tab, pick the column for each
+**Mapping file columns...** at the bottom of the Compare tab, pick the column for each
 item (or **(none)** to skip it), and click **Save columns**. Leaving a box
 empty goes back to automatic detection. The same works from R:
 

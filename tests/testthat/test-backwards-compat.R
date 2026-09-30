@@ -44,14 +44,15 @@ test_that("an up-to-date project writes nothing", {
 
 test_that("a pending step upgrades, logs history, and backs up first", {
   dir <- bc_project()
+  v <- RiboPilot:::current_schema_version()
   steps <- RiboPilot:::db_migrations()
   local_mocked_bindings(db_migrations = function() c(steps, list(fake_step())))
   suppressMessages(backwards_compatibility(dir))
   h <- bc_history(dir)
   expect_equal(h$event, c("created", "upgraded"))
-  expect_equal(h$schema_version, c(2L, 3L))
+  expect_equal(h$schema_version, c(v, v + 1L))
   expect_equal(h$note[2], "add samples.extra")
-  expect_equal(RiboPilot:::project_schema_version(file.path(dir, ".sqlite")), 3L)
+  expect_equal(RiboPilot:::project_schema_version(file.path(dir, ".sqlite")), v + 1L)
   bak <- list.files(dir, pattern = "^\\.sqlite\\.bak\\.", all.files = TRUE, full.names = TRUE)
   expect_length(bak, 1)
   expect_false("extra" %in% bc_schema(bak)$samples)
@@ -60,6 +61,7 @@ test_that("a pending step upgrades, logs history, and backs up first", {
 
 test_that("a failing step rolls back and keeps earlier steps", {
   dir <- bc_project()
+  v <- RiboPilot:::current_schema_version()
   bad <- list(note = "boom", fn = function(con) {
     DBI::dbExecute(con, "ALTER TABLE samples ADD COLUMN half TEXT")
     stop("step failed")
@@ -68,7 +70,7 @@ test_that("a failing step rolls back and keeps earlier steps", {
   local_mocked_bindings(db_migrations = function() c(steps, list(fake_step(), bad)))
   expect_error(suppressMessages(backwards_compatibility(dir)), "original database")
   h <- bc_history(dir)
-  expect_equal(h$schema_version, c(2L, 3L))
+  expect_equal(h$schema_version, c(v, v + 1L))
   s <- bc_schema(file.path(dir, ".sqlite"))$samples
   expect_true("extra" %in% s)
   expect_false("half" %in% s)
@@ -76,6 +78,7 @@ test_that("a failing step rolls back and keeps earlier steps", {
 
 test_that("dry run reports pending steps and writes nothing", {
   dir <- bc_project()
+  v <- RiboPilot:::current_schema_version()
   steps <- RiboPilot:::db_migrations()
   local_mocked_bindings(db_migrations = function() c(steps, list(fake_step())))
   expect_message(backwards_compatibility(dir, dry_run = TRUE), "add samples.extra")
@@ -124,6 +127,14 @@ test_that("a v1 database run through every step matches a fresh new_db()", {
   expect_equal(bc_schema(old), bc_schema(file.path(dir, ".sqlite")))
 })
 
+test_that("run_app stops on a project that needs an update", {
+  dir <- bc_project()
+  v <- RiboPilot:::current_schema_version()
+  steps <- RiboPilot:::db_migrations()
+  local_mocked_bindings(db_migrations = function() c(steps, list(fake_step())))
+  expect_error(run_app(dir, launch.browser = FALSE), "backwards_compatibility")
+})
+
 test_that("a v1 database with a lower-case biosample column upgrades cleanly", {
   old <- file.path(withr::local_tempdir(), ".sqlite")
   con <- DBI::dbConnect(RSQLite::SQLite(), old)
@@ -151,9 +162,3 @@ test_that("meta_apply_schema twice is a no-op", {
   expect_equal(DBI::dbListFields(con, "samples"), before)
 })
 
-test_that("run_app stops on a project that needs an update", {
-  dir <- bc_project()
-  steps <- RiboPilot:::db_migrations()
-  local_mocked_bindings(db_migrations = function() c(steps, list(fake_step())))
-  expect_error(run_app(dir, launch.browser = FALSE), "backwards_compatibility")
-})

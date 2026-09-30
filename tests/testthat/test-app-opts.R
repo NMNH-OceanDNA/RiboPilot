@@ -251,7 +251,7 @@ test_that("picking an existing parameter set loads that set's values", {
   dir <- mk_app_project()
   withr::local_dir(dir)
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
-  DBI::dbExecute(con, "INSERT INTO annotate_opts VALUES ('alt',16,32,'barrnap','fun','all','')")
+  DBI::dbExecute(con, "INSERT INTO annotate_opts VALUES ('alt',16,32,'barrnap','fun','all','','','')")
   DBI::dbDisconnect(con)
 
   seen <- character(0)
@@ -307,5 +307,25 @@ test_that("saving annotation options re-queues the units, not the assembly", {
       "SELECT assemble_switch FROM assemble WHERE ID = 'S1'")$assemble_switch, 2L)
     expect_equal(unique(RiboPilot:::app_query(
       "SELECT annotate_switch FROM annotate WHERE ID = 'S1'")$annotate_switch), 1L)
+  })
+})
+
+test_that("annotation options store per-tool rRNA caller flags", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    session$flushReact()
+    session$setInputs(set_annotate_opts = 1)
+    session$setInputs(no_name = "fresh", no_edit = FALSE, no_cpus = 2, no_mem = 4,
+      no_tool = "barrnap", no_kingdom = "fun", no_itsxtaxon = "all", no_itsxopts = "",
+      no_barrnap = "--evalue 1e-3", no_pybarrnap = "-e 1e-3")
+    session$setInputs(update_no = 1)
+    row <- RiboPilot:::app_query(
+      "SELECT barrnap_opts, pybarrnap_opts FROM annotate_opts WHERE annotate_opts = 'fresh'")
+    expect_equal(row$barrnap_opts, "--evalue 1e-3")
+    expect_equal(row$pybarrnap_opts, "-e 1e-3")
   })
 })

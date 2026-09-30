@@ -22,7 +22,7 @@ process find_rrna_scan {
     errorStrategy 'ignore'
 
     input:
-    tuple val(id), path(chunk), val(nthreads), val(mem), val(tool), val(kingdom)
+    tuple val(id), path(chunk), val(nthreads), val(mem), val(tool), val(kingdom), val(opts)
 
     output:
     tuple val(id), path('chunk.gff')
@@ -36,10 +36,10 @@ process find_rrna_scan {
     TOOL="\${TOOL:-pybarrnap}"; KINGDOM="\${KINGDOM:-euk}"
     if [ "\$TOOL" = "barrnap" ]; then
         case "\$KINGDOM" in euk|all) KINGDOM=fun ;; esac
-        barrnap --kingdom "\$KINGDOM" --threads ${task.cpus} --quiet ${chunk} > chunk.gff
+        barrnap --kingdom "\$KINGDOM" --threads ${task.cpus} --quiet ${opts} ${chunk} > chunk.gff
     else
         case "\$KINGDOM" in fun) KINGDOM=euk ;; esac
-        pybarrnap -k "\$KINGDOM" -t ${task.cpus} -q ${chunk} > chunk.gff
+        pybarrnap -k "\$KINGDOM" -t ${task.cpus} -q ${opts} ${chunk} > chunk.gff
     fi
     """
 }
@@ -77,7 +77,7 @@ process find_rrna_pick {
 // it never reaches score().
 workflow find_rrna {
     take:
-        find_in     // tuple(id, assembly, cpus, mem, tool, kingdom)
+        find_in     // tuple(id, assembly, cpus, mem, tool, kingdom, opts)
 
     main:
         find_in
@@ -89,7 +89,7 @@ workflow find_rrna {
             .set { gffs_by_id }
 
         find_in
-            .map { id, assembly, cpus, mem, tool, kingdom -> tuple(id, assembly) }
+            .map { id, assembly, cpus, mem, tool, kingdom, opts -> tuple(id, assembly) }
             .join(gffs_by_id, remainder: true)
             .map { id, assembly, gffs -> tuple(id, assembly, gffs ?: []) }
             .set { pick_in }

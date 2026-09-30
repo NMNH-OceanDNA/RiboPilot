@@ -17,7 +17,7 @@ process query_samples {
     # Header is written explicitly (sqlite3 -header emits nothing for 0 rows, and
     # splitCsv(header:true) then fails); an empty result becomes a header-only
     # file so the workflow simply does nothing instead of crashing.
-    printf 'ID\tR1\tR2\tpre_cpus\tpre_mem\tasm_cpus\tasm_mem\tfastp\tgetOrganelle\tseeds_db\tlabels_db\tassembler\tAssembly\tfind_rrna\trrna_tool\trrna_kingdom\tbowtie2\tspades\n' > samplesheet.tsv
+    printf 'ID\tR1\tR2\tpre_cpus\tpre_mem\tasm_cpus\tasm_mem\tfastp\tgetOrganelle\tseeds_db\tlabels_db\tassembler\tAssembly\tfind_rrna\trrna_tool\trrna_kingdom\trrna_opts\tbowtie2\tspades\n' > samplesheet.tsv
     sqlite3 -cmd '.timeout 10000' -separator '\t' '${params.db}' "
       SELECT p.ID, p.R1, p.R2,
              COALESCE(po.cpus,4) AS pre_cpus, COALESCE(po.memory,8) AS pre_mem,
@@ -32,6 +32,8 @@ process query_samples {
                 WHERE annotate_opts = 'default') AS rrna_tool,
              (SELECT COALESCE(rrna_kingdom, 'euk') FROM annotate_opts
                 WHERE annotate_opts = 'default') AS rrna_kingdom,
+             (SELECT COALESCE(CASE WHEN rrna_tool = 'barrnap' THEN barrnap_opts ELSE pybarrnap_opts END, '')
+                FROM annotate_opts WHERE annotate_opts = 'default') AS rrna_opts,
              ao.bowtie2, ao.spades
       FROM assemble a
       JOIN preprocess p     ON a.ID = p.ID
@@ -156,6 +158,11 @@ process annotate_tools {
       FROM annotate an JOIN annotate_opts ao ON an.annotate_opts = ao.annotate_opts
       WHERE an.ID = '${id}' AND an.path = ${upath} AND an.scaffold = ${uscaf};")"
     TOOL="\${TOOL:-pybarrnap}"; KINGDOM="\${KINGDOM:-euk}"; ITSXT="\${ITSXT:-all}"
+    # own query: an empty itsx_opts would otherwise shift the columns under read
+    RRNAO="\$(sqlite3 -cmd '.timeout 10000' '${params.db}' "
+      SELECT COALESCE(CASE WHEN ao.rrna_tool = 'barrnap' THEN ao.barrnap_opts ELSE ao.pybarrnap_opts END, '')
+      FROM annotate an JOIN annotate_opts ao ON an.annotate_opts = ao.annotate_opts
+      WHERE an.ID = '${id}' AND an.path = ${upath} AND an.scaffold = ${uscaf};")"
 
     # Same kingdom translation as R's rrna_kingdom_for(): the Perl barrnap fork
     # calls its eukaryote Rfam models "fun" and has no euk/all; pybarrnap has no
@@ -163,10 +170,10 @@ process annotate_tools {
     # non-zero and the unit gets no anchors at all.
     if [ "\$TOOL" = "barrnap" ]; then
         case "\$KINGDOM" in euk|all) KINGDOM=fun ;; esac
-        barrnap --kingdom "\$KINGDOM" --quiet unit.fasta > unit.barrnap.gff
+        barrnap --kingdom "\$KINGDOM" --quiet \$RRNAO unit.fasta > unit.barrnap.gff
     else
         case "\$KINGDOM" in fun) KINGDOM=euk ;; esac
-        pybarrnap -k "\$KINGDOM" -t ${task.cpus} -q unit.fasta > unit.barrnap.gff
+        pybarrnap -k "\$KINGDOM" -t ${task.cpus} -q \$RRNAO unit.fasta > unit.barrnap.gff
     fi
 
     ITSx -i unit.fasta -o unit.itsx --save_regions none --graphical F \

@@ -7,6 +7,11 @@
 #' @noRd
 db_migrations <- function() {
   list(
+    list(note = "per-tool rRNA caller flags (annotate_opts.barrnap_opts, pybarrnap_opts)",
+      fn = function(con) {
+        DBI::dbExecute(con, "ALTER TABLE annotate_opts ADD COLUMN barrnap_opts TEXT")
+        DBI::dbExecute(con, "ALTER TABLE annotate_opts ADD COLUMN pybarrnap_opts TEXT")
+      }),
     list(note = "sample metadata (GEOME/GBIF/NCBI) tables and columns", fn = meta_apply_schema)
   )
 }
