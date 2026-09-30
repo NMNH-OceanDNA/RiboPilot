@@ -743,3 +743,38 @@ test_that("the 5' and 3' partial toggles keep with Save and undo with Reset", {
     expect_equal(p(), c(0L, 1L))
   })
 })
+
+test_that("the Export window offers token chips, Set Export Metadata is in the toolbar, and choosing fields returns to the window", {
+  skip_if_not_installed("withr")
+  dir <- mk_export_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE annotate SET export_group = 'g1'")
+  DBI::dbExecute(con, "UPDATE samples SET GEOME_BCID = 'ark:/1/A'")
+  DBI::dbExecute(con, "INSERT INTO meta_export_fields VALUES ('geome:combo:lat_lon')")
+  DBI::dbAppendTable(con, "meta_records", data.frame(
+    ID = "S1", source = "GEOME", level = "Event", depth = 0L, ref = "ark:/1/A",
+    field = c("decimalLatitude", "decimalLongitude"), value = c("17.5", "-149.8")))
+  DBI::dbDisconnect(con)
+  withr::local_dir(dir)
+  expect_match(as.character(RiboPilot:::app_ui()), "Set Export Metadata", fixed = TRUE)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Export")
+    html <- as.character(export_modal_current())
+    expect_false(grepl("Available columns", html, fixed = TRUE))
+    expect_match(html, "mp-token-list", fixed = TRUE)
+    expect_match(html, "data-target=\"fasta_header\"", fixed = TRUE)
+    expect_match(html, "data-insert=\"{Taxon}\"", fixed = TRUE)
+    expect_match(html, "data-insert=\"[lat_lon={geome_lat_lon}]\"", fixed = TRUE)
+    expect_match(html, "data-totals=\"{&quot;g1&quot;:1}\"", fixed = TRUE)
+    expect_match(html, "id=\"token_fields_geome\"", fixed = TRUE)
+
+    session$setInputs(fasta_header = "{seqid} edited", export_markers = FALSE, export_template = "default",
+      export_group_sel = "g1")
+    session$setInputs(token_fields_geome = 1)
+    expect_equal(export_snap()$fasta_header, "{seqid} edited")
+    back <- as.character(export_modal_current())
+    expect_match(back, "{seqid} edited", fixed = TRUE)
+    expect_null(export_snap())
+  })
+})

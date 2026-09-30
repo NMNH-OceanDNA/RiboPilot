@@ -101,6 +101,8 @@ app_ui <- function(request) {
                 title = "Assign the selected units to an export group", needs_selection = TRUE),
               btn("clear_group_btn", "Clear Group",
                 title = "Remove the selected units from their export group", needs_selection = TRUE),
+              btn("specimen_fields", "Set Export Metadata",
+                title = "Choose which GEOME, GBIF, and NCBI fields are available at export"),
               btn("export_btn", "Export Data", icon = mp_icon("download"), emphasis = "primary",
                 title = "Open the export window"),
               shiny::span(shiny::textOutput("export_sel_n", inline = TRUE),
