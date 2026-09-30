@@ -1,3 +1,9 @@
+#' TRUE when every named stage 2 object exists in the package
+#' @noRd
+.stage2_has <- function(nm) {
+  all(vapply(nm, exists, logical(1), envir = asNamespace("RiboPilot"), inherits = FALSE))
+}
+
 #' Specimen metadata state per sample: worst of fetch status and conflicts
 #'
 #' @param con database connection
@@ -6,12 +12,11 @@
 #'   `specimen_icons` (e.g. "GEOME:ok GBIF:failed conflict"; per-source ok | failed | pending)
 #' @noRd
 specimen_status <- function(con) {
-  .meta_ensure_tables(con)
   cols <- vapply(META_SOURCES, function(s) s$col, character(1))
   s <- DBI::dbGetQuery(con, paste0("SELECT ID, ", paste(cols, collapse = ", "), " FROM samples"))
   st <- DBI::dbGetQuery(con, "SELECT ID, source, status, message FROM meta_status")
   ln <- DBI::dbGetQuery(con, "SELECT ID, source, via FROM meta_links WHERE ref IS NOT NULL")
-  cf <- if (exists("specimen_conflicts", mode = "function")) {  # stage 2
+  cf <- if (.stage2_has("specimen_conflicts")) {  # stage 2
     specimen_conflicts(con)
   } else {
     data.frame(ID = character(), concept = character(), status = character())
@@ -316,7 +321,8 @@ specimen_viewer_server <- function(id, open, on_change = function() NULL, con = 
                    "Sample Metadata article).")
     )
 
-    has_compare <- exists("specimen_conflicts", mode = "function")
+    has_compare <- .stage2_has(c("specimen_conflicts", "specimen_csv_columns",
+                                 "SPECIMEN_CONCEPTS", ".spec_set_csv_map"))
 
     samples <- function() {
       con <- open_con(); on.exit(DBI::dbDisconnect(con))

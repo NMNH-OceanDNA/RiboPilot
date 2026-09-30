@@ -62,7 +62,7 @@ test_that("specimen_status: failed beats ok beats none", {
 })
 
 test_that("a conflict outranks ok once the comparison rules are present", {
-  skip_if_not(exists("specimen_conflicts", mode = "function"))
+  skip_if_not(.stage2_has("specimen_conflicts"))
   con <- status_db()
   s <- specimen_status(con)
   s <- s[order(s$ID), ]
@@ -173,7 +173,7 @@ test_that("specimen_compare_view marks conflicts and notes and names the CSV col
 })
 
 test_that("specimen_csv_map_ui offers every concept but taxon, with auto and none", {
-  skip_if_not(exists("SPECIMEN_CONCEPTS"))
+  skip_if_not(.stage2_has("SPECIMEN_CONCEPTS"))
   current <- list(coordinates = c("Latitude", "Longitude"), collection_date = character(),
                   country = "Where", locality = character(), voucher = character(),
                   collector = character(), sex = character(), dev_stage = character(),
@@ -315,4 +315,74 @@ test_that("opening a sample from the Metadata column runs the viewer without err
       session$flushReact()
     })
   })
+})
+
+fake_fetch <- function(status, calls) {
+  function(con, source, ids, refs, cache = new.env(), link = FALSE) {
+    calls$n <- calls$n + length(ids)
+    calls$ids <- c(calls$ids, ids)
+    data.frame(ID = ids, status = status, message = if (status == "failed") "boom" else NA_character_)
+  }
+}
+
+test_that("Fetch stores the typed ID, calls the fetcher, and fires on_change once", {
+  path <- viewer_proj()
+  calls <- new.env(); calls$n <- 0L
+  local_mocked_bindings(.meta_fetch_into = fake_fetch("ok", calls), .package = "RiboPilot")
+  open <- shiny::reactiveVal(NULL)
+  changed <- 0L
+  shiny::testServer(specimen_viewer_server,
+    args = list(open = open, con = open_path(path), on_change = function() changed <<- changed + 1L), {
+    open("s2")
+    session$flushReact()
+    session$setInputs(ncbi_ref = "SAMN29555051")
+    session$setInputs(ncbi_fetch = 1)
+  })
+  expect_equal(q_path(path, "SELECT BioSample FROM samples WHERE ID = 's2'")$BioSample, "SAMN29555051")
+  expect_equal(calls$n, 1L)
+  expect_equal(changed, 1L)
+})
+
+test_that("a failed fetch does not throw", {
+  path <- viewer_proj()
+  calls <- new.env(); calls$n <- 0L
+  local_mocked_bindings(.meta_fetch_into = fake_fetch("failed", calls), .package = "RiboPilot")
+  open <- shiny::reactiveVal(NULL)
+  changed <- 0L
+  shiny::testServer(specimen_viewer_server,
+    args = list(open = open, con = open_path(path), on_change = function() changed <<- changed + 1L), {
+    open("s2")
+    session$flushReact()
+    session$setInputs(ncbi_ref = "SAMN29555051")
+    expect_no_error(session$setInputs(ncbi_fetch = 1))
+  })
+  expect_equal(calls$n, 1L)
+  expect_equal(changed, 1L)
+})
+
+test_that("Refresh all with no IDs only notifies, and with IDs fetches each job", {
+  path <- viewer_proj()
+  con <- open_path(path)()
+  DBI::dbExecute(con, "UPDATE samples SET BioSample = NULL, GBIF_ID = NULL")
+  DBI::dbDisconnect(con)
+  calls <- new.env(); calls$n <- 0L
+  local_mocked_bindings(.meta_fetch_into = fake_fetch("ok", calls), .package = "RiboPilot")
+  open <- shiny::reactiveVal(NULL)
+  changed <- 0L
+  shiny::testServer(specimen_viewer_server,
+    args = list(open = open, con = open_path(path), on_change = function() changed <<- changed + 1L), {
+    expect_no_error(session$setInputs(refresh_all = 1))
+  })
+  expect_equal(calls$n, 0L)
+  expect_equal(changed, 0L)
+
+  con <- open_path(path)()
+  DBI::dbExecute(con, "UPDATE samples SET BioSample = 'SAMN1', GBIF_ID = '77' WHERE ID = 's1'")
+  DBI::dbDisconnect(con)
+  shiny::testServer(specimen_viewer_server,
+    args = list(open = open, con = open_path(path), on_change = function() changed <<- changed + 1L), {
+    session$setInputs(refresh_all = 1)
+  })
+  expect_equal(calls$n, 2L)
+  expect_equal(changed, 1L)
 })
