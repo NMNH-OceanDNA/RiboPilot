@@ -203,7 +203,7 @@ chimera_channel_windows <- function(segments, identity_only = FALSE) {
   if (!nrow(segments)) return(chimera_unavailable())
   s <- segments[segments$n_windows >= 2 & !segments$taxon %in% c("nohit", "unresolved"), , drop = FALSE]
   if (nrow(s) < 2) return(list(score = 0, junctions = integer(0),
-    reason = sprintf("one lineage along the scaffold: %s", s$taxon[1] %|NA|% segments$taxon[1]),
+    reason = sprintf("one lineage along the contig: %s", s$taxon[1] %|NA|% segments$taxon[1]),
     availability = "available"))
   best <- NULL
   for (i in seq_len(nrow(s) - 1)) {

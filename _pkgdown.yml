@@ -38,10 +38,14 @@ articles:
   contents:
   - 'Installation'
 
-- title: "Walkthrough"
-  navbar: ~
+- title: "Test project walkthrough"
+  navbar: Test project
   contents:
-  - 'RiboPilot'
+  - 'Test-Project-Taxonomy'
+  - 'Test-Project-Reference'
+  - 'Test-Project-Assemble'
+  - 'Test-Project-Annotate'
+  - 'Test-Project-Export'
 
 - title: "Usage"
   navbar: Usage

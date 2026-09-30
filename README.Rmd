@@ -47,13 +47,13 @@ The app walks each project through five steps, in order:
 
 1. **Taxonomy.** RiboPilot matches the `Taxon` you give each sample to the NCBI taxonomy, using a local copy, and you check and lock each match. Samples must be reviewed and locked here before they move on to assembly, so the taxonomy that guides scoring and curation is one you have signed off on. The first time, RiboPilot downloads about 80 MB and builds an index of about 0.5 GB in the project, which takes a few minutes.
 2. **Reference.** RiboPilot groups related samples and builds a reference database of known rDNA sequences for each group, from GenBank.
-3. **Assemble.** One run cleans the reads, assembles the ribosomal repeat for each sample, picks the best assembly path, finds the five features (18S, ITS1, 5.8S, ITS2, 28S), and checks each result for problems such as a missing gene, an unusual length, a possible contaminant, or a chimera. You keep or drop scaffolds and lock the samples you are happy with.
-4. **Annotation Review.** You check the features and quality flags of each kept scaffold, adjust boundaries if needed, and lock it.
+3. **Assemble.** One run cleans the reads, assembles the ribosomal repeat for each sample, picks the best assembly path, finds the five features (18S, ITS1, 5.8S, ITS2, 28S), and checks each result for problems such as a missing gene, an unusual length, a possible contaminant, or a chimera. You keep or drop contigs and lock the samples you are happy with.
+4. **Annotation Review.** You check the features and quality flags of each kept contig, adjust boundaries if needed, and lock it.
 5. **Export.** RiboPilot writes a tidy, GenBank-ready submission package, and asks about any flagged record first.
 
 Behind the scenes RiboPilot uses established bioinformatics tools ([fastp](https://github.com/OpenGene/fastp), [GetOrganelle](https://github.com/Kinggerm/GetOrganelle), [barrnap](https://github.com/tseemann/barrnap) / [pybarrnap](https://github.com/moshi4/pybarrnap), [ITSx](https://microbiology.se/software/itsx/), [BLAST](https://blast.ncbi.nlm.nih.gov/Blast.cgi), and others) and stitches them together for you. You do not need to learn or run any of them yourself.
 
-# Which organisms it works with
+# Taxonomic Scope
 
 Each group of samples, fishes included, needs a reference database of known rDNA sequences. You build it once per group in the app, from GenBank; see the [reference database guide](https://dmacguigan.github.io/RiboPilot/articles/Reference-Databases.html).
 
@@ -70,7 +70,7 @@ remotes::install_github("dmacguigan/RiboPilot")
 
 # Getting started
 
-The best way to learn RiboPilot is to run the built-in practice project. The first command downloads the practice samples and sets everything up; the second opens the app:
+The best way to learn RiboPilot is to run the built-in test project. The first command downloads the test samples and sets everything up; the second opens the app:
 
 ```r
 RiboPilot::new_test_project(path = "~/ribopilot_test")

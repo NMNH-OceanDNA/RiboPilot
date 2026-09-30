@@ -1,0 +1,78 @@
+---
+title: "Test project: Annotation Review"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Test project: Annotation Review}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+<div class="step-nav">
+<span class="step-label">Test project:</span>
+<a href="Test-Project-Taxonomy.html">1. Taxonomy</a>
+<a href="Test-Project-Reference.html">2. Reference</a>
+<a href="Test-Project-Assemble.html">3. Assemble</a>
+<span class="current">4. Annotate</span>
+<a href="Test-Project-Export.html">5. Export</a>
+</div>
+
+Each kept contig of a locked sample is one row, or unit:
+
+![The Annotation Review table, one row per unit](figures/get-started/annotation-table.png)
+
+The **Checks** column sums up each unit's checks as in the Assemble step. It sits
+right after the ID, or after **Path #** and **Contig #** when a sample has more
+than one unit, as in the test project. The Warnings, ITSx Warnings, Screen, and
+Chimera columns further right hold the details; the **Columns** menu shows or
+hides them under **Check details**.
+
+Click a unit's ID to open it. The window shows the feature model (18S, ITS1,
+5.8S, ITS2, 28S), **Sequence and read coverage**, **Edit active feature
+boundaries**, the **Reference alignment**, **Curation warnings**, the
+**Chimera check**, and **Notes**. Your notes also show in the table's **User
+Notes** column once you close the window.
+
+**Sequence and read coverage** draws the unit as a zoomable map: read depth,
+the share of reads clipped at each base, the genes as arrows (dashed ends are
+partial), and the bases once you zoom in. Scroll to zoom, drag to pan, or type a
+position. Clicking a gene makes it the active feature, the one that **Edit
+active feature boundaries** and the **Reference alignment** act on.
+
+![A unit: its five features, read coverage, and gene map](figures/get-started/annotation-details.png)
+
+Three marks record what you decided about a unit. Use the toolbar buttons for
+the ticked units, or the buttons at the top of a unit's window:
+
+| Button | What it records | What it does to the export |
+|---|---|---|
+| **Mark Reviewed** | You checked this unit. | Lock and the Export window no longer ask about its contamination or chimera flags. |
+| **Exclude & Lock** | This unit should not be submitted, and you are done with it. | The unit is left out of every export, and the Export window says so. It is also locked, so a rejected unit does not look like unfinished work. To undo, unlock it and press **Include in export**. |
+| **Mark Partial** | The unit does not hold a complete repeat. The Partial column reads "no" otherwise, so filter it with "no" to list only complete units. | `{completeness}` reads "partial sequence". Gene ends are marked partial on their own (untrimmed contig ends, truncated genes, trims into a gene); the 5' and 3' buttons in the unit window override that per feature. |
+
+**Lock** locks the unit and keeps the window open; **Lock & Close** locks it and
+closes the window. Neither marks it Reviewed. If the unit has a red Checks
+finding and is not marked Reviewed, both ask first, as **Lock** in the toolbar
+does.
+
+A locked unit is read only. To change its boundaries, trim it, restore it, or
+change its marks, unlock it first. Only units that are locked here, and whose
+sample is locked in the Assemble step, can be exported. Only one assembly path
+can be locked per sample: paths are alternative reconstructions of the same
+rDNA repeat, and a sample exports one.
+
+To trim many units at once, tick them and press **Trim** in the toolbar. Choose
+**Match gene ends** to keep only the span from 18S to 28S, or **Gene
+ends + flank** to keep a few extra bases on each side. Only units
+with all five features (18S, ITS1, 5.8S, ITS2, and 28S) are trimmed; the window
+lists the others and why, such as a missing feature or a lock, before you
+confirm. While a run is going, units still queued in it are skipped. **Restore** next to it undoes the trim on the ticked units, as
+**Restore assembly** does in a unit's window.
+
+Changes here apply at once: a trim or a boundary edit re-checks the unit right
+away. Press **Update** in the Assemble step again only after you change an
+option set, or set a State to Ready to run.
+
+[Quality checks and flags](Curation-Flags.html) explains what each warning
+means.
+
+<p class="next-step"><a href="Test-Project-Export.html">Next: Export &rarr;</a></p>

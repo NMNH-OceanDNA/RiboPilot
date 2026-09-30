@@ -206,7 +206,7 @@ rt_itsx_badge <- function() {
     }")
 }
 
-#' Render a kept-scaffold count: red when nothing survives triage, else plain
+#' Render a kept-contig count: red when nothing survives triage, else plain
 #'
 #' Zero kept units means the sample has no assembly to annotate or export, which
 #' is otherwise indistinguishable from a normal low count.
@@ -336,7 +336,7 @@ rt_shares_badge <- function() {
     "function(cellInfo) {
       var v = cellInfo.value
       if (v === null || v === undefined || v === '' || v === 'NA')
-        return '<span style=\"color:#999;\" title=\"no reference resolved for this scaffold\">no reference</span>'
+        return '<span style=\"color:#999;\" title=\"no reference resolved for this contig\">no reference</span>'
       var close = {species:1, genus:1, family:1}
       var mid   = {order:1, class:1}
       var tone
@@ -378,7 +378,7 @@ rt_blast_source_badge <- function() {
     }")
 }
 
-#' Flag a scaffold whose top hit disagrees with its own siblings
+#' Flag a contig whose top hit disagrees with its own siblings
 #' @noRd
 rt_odd_badge <- function() {
   htmlwidgets::JS(
@@ -386,12 +386,12 @@ rt_odd_badge <- function() {
       if (cellInfo.value !== true && cellInfo.value !== 'TRUE') return ''
       var sib = cellInfo.row['sib_taxon'] ? cellInfo.row['sib_taxon'] : 'the others'
       var rk  = cellInfo.row['sib_rank'] ? cellInfo.row['sib_rank'] : ''
-      return '<span title=\"this scaffold&#39;s top hit differs from the rest of the sample (' +
+      return '<span title=\"this contig&#39;s top hit differs from the rest of the sample (' +
         sib + ' at ' + rk + ')\" class=\"mp-pill mp-pill-warning\">odd</span>'
     }")
 }
 
-#' Render the contamination-screen verdict: is the scaffold on this sample's
+#' Render the contamination-screen verdict: is the contig on this sample's
 #' own lineage.
 #'
 #' `no_reference` renders NEUTRAL GREY like `rt_shares_badge()`'s "no
@@ -446,7 +446,7 @@ rt_checks_badge <- function() {
     }")
 }
 
-#' Render the intragenomic variant class: is this scaffold one of several rDNA
+#' Render the intragenomic variant class: is this contig one of several rDNA
 #' copies, or the same molecule assembled twice.
 #'
 #' NEITHER class is a defect, so neither may borrow `rt_screen_badge()`'s
@@ -483,10 +483,10 @@ rt_variant_badge <- function() {
     }")
 }
 
-#' Inline depth bar relative to the deepest scaffold of the same sample
+#' Inline depth bar relative to the deepest contig of the same sample
 #'
 #' The value is the MEDIAN per-position depth (see R/coverage.R for why a mean
-#' misleads on an rDNA scaffold); the tooltip also shows the mean for context.
+#' misleads on an rDNA contig); the tooltip also shows the mean for context.
 #'
 #' The bar has no background track. A grey remainder said only "this is a
 #' fraction of something", which the fill length and the number beside it
@@ -507,8 +507,8 @@ rt_depth_bar <- function(max_col = "depth_max") {
       var f = Math.max(0, Math.min(1, v / m))
       var w = Math.round(f * 46)
       var col = f < 0.05 ? '#c0392b' : (f < 0.33 ? '#b8860b' : '#2d6a4f')
-      tip += ', ' + Math.round(f*100) + '%% of this sample&#39;s deepest scaffold'
-      if (v === 0) tip += ' -- over half this scaffold has no coverage'
+      tip += ', ' + Math.round(f*100) + '%% of this sample&#39;s deepest contig'
+      if (v === 0) tip += ' -- over half this contig has no coverage'
       return '<span title=\"' + tip + '\">' +
         '<span style=\"display:inline-block; width:48px; height:8px; vertical-align:middle;\">' +
         '<span style=\"display:inline-block; width:' + w + 'px; height:8px; background:' + col + ';\"></span></span>' +
@@ -535,7 +535,7 @@ rt_element_strip <- function() {
           want[i] + '</span>'
       }
       var tip = flags ? 'Feature warnings (details in Annotation Review): ' + flags
-        : 'rRNA/ITS features annotated on this scaffold'
+        : 'rRNA/ITS features annotated on this contig'
       return '<span title=\"' + tip.replace(/\"/g, '&quot;') + '\">' + out + '</span>'
     }")
 }
@@ -634,7 +634,7 @@ rt_icon_bttn_text <- function(inputId, icon, text = "", label = NULL,
 #' Shown because a curator deciding keep/drop should see coverage shape, and
 #' deliberately not used by any rule: high depth is often k-mer collapse across
 #' the conserved core or IGS subrepeats, and low depth is often a repeat inside
-#' the scaffold, where reads map to two places and are left out.
+#' the contig, where reads map to two places and are left out.
 #' @noRd
 rt_depth_sparkline <- function() {
   htmlwidgets::JS(
@@ -659,8 +659,8 @@ rt_depth_sparkline <- function() {
 
 #' Row click -> "examine this unit", for tables whose tick boxes mean something else
 #'
-#' The scaffold table's tick boxes feed Copy FASTA and bulk K/D, so the row click is free to
-#' mean "show this scaffold in the panels below". Clicks on the tick box and on
+#' The contig table's tick boxes feed Copy FASTA and bulk K/D, so the row click is free to
+#' mean "show this contig in the panels below". Clicks on the tick box and on
 #' the in-cell action buttons are ignored: the buttons already stop propagation,
 #' and `.selection` would otherwise both tick the row and move the panels.
 #' @param InputId Shiny input to set to the clicked row's uid.
@@ -675,7 +675,7 @@ rt_examine_row <- function(InputId) {
     }", InputId) |> htmlwidgets::JS()
 }
 
-#' Row style for the scaffold table: grey when dropped, marked when examined
+#' Row style for the contig table: grey when dropped, marked when examined
 #'
 #' The examined unit is read from the table's `meta`, which
 #' [reactable::updateReactable()] can change without a re-render, so clicking a

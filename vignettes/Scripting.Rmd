@@ -28,7 +28,8 @@ already going for the project.
 
 There is no separate rescue function. To rescue a failed sample, give it an
 option set that uses the baited assembler in the app, as in the rescue section
-of [Get started](RiboPilot.html), then run the pipeline again.
+of the [Assemble walkthrough](Test-Project-Assemble.html#rescue-a-sample-that-failed),
+then run the pipeline again.
 
 # Build a reference database
 
@@ -94,7 +95,7 @@ RiboPilot::export_bundle("~/my_project", group = "fish_batch1", export_opts = "m
 
 Both follow the same rule as the Export step: a unit is exported when its sample
 is locked in the Assemble step, the unit is locked in the Annotation Review
-step, its scaffold is kept, and it is not excluded from export. Unlike the
+step, its contig is kept, and it is not excluded from export. Unlike the
 app, neither function asks about flagged records; they are exported, with their
 flags in the summary CSV.
 

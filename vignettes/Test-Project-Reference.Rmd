@@ -1,0 +1,59 @@
+---
+title: "Test project: Reference"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Test project: Reference}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+<div class="step-nav">
+<span class="step-label">Test project:</span>
+<a href="Test-Project-Taxonomy.html">1. Taxonomy</a>
+<span class="current">2. Reference</span>
+<a href="Test-Project-Assemble.html">3. Assemble</a>
+<a href="Test-Project-Annotate.html">4. Annotate</a>
+<a href="Test-Project-Export.html">5. Export</a>
+</div>
+
+To assemble a sample, RiboPilot compares its reads with known rDNA sequences
+from related organisms, a "reference database". This step builds one database
+per group of related samples, from GenBank, and reuses it across projects.
+
+Press **Propose groups**. RiboPilot groups samples that can share a database,
+using how many GenBank records each candidate group holds. For the test
+samples it proposes three groups. The red line warns that one of them,
+Actinopteri (all ray-finned fishes), holds more records than the usual maximum:
+
+![Proposed reference groups for the test samples](figures/get-started/reference-propose.png)
+
+Press **Apply**. Then switch to the **Groups** view, tick all three groups, and
+click **Set up database** at the end of any ticked row. The window offers
+**Download sequences from GenBank**, **Use a database I already have**, and
+**Leave these samples on their current database**. With a single group ticked,
+as in the picture, it also offers **Change which clade this group uses**:
+
+![The choices for setting up a group's reference database](figures/get-started/reference-setup.png)
+
+Choose **Download sequences from GenBank**. The run window opens; press **Run
+from App**. The choice applies to every ticked group, so one run builds all
+three databases. Wait until every group's Status reads **Ready**:
+
+![Reference groups with their databases ready](figures/get-started/reference-ready.png)
+
+::: {.alert .alert-hydra}
+[HYDRA]{.hydra-tag} **Submit as job.** The run window shows a job script
+instead of **Run from App**. Press **Submit as job**. The build runs on the
+cluster, and the app connects each database to the project on its own once the
+job finishes.
+:::
+
+In our test, the Syngnathiformes database (about 10,500 GenBank records) took
+under 3 minutes and Pleuronectiformes (about 2,300 records) under 1 minute.
+Actinopteri holds about 43,000 records, so its download takes much longer.
+
+For your own samples, do this step before you assemble: RiboPilot does not ship a
+reference database, so every group, fishes included, needs one.
+[Reference databases](Reference-Databases.html) explains the other choices.
+
+<p class="next-step"><a href="Test-Project-Assemble.html">Next: Assemble &rarr;</a></p>

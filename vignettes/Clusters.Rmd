@@ -128,3 +128,6 @@ The app sets up Hydra's scheduler and Java for you when it starts. You only need
 `RiboPilot::hydra_setup()` when you run the pipeline from the R console. The job
 script runs `nextflow` from your PATH, so install Nextflow somewhere `~/.bashrc`
 puts on the PATH (for example `~/bin`).
+
+The [Get started](RiboPilot.html) walkthrough marks each place where Hydra
+differs, in boxes tagged HYDRA.

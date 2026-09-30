@@ -82,7 +82,7 @@ app_ui <- function(request) {
                 needs_selection = TRUE),
               btn("asmb_lock_btn", "Lock", title = MP_LOCK_DEF("assemble"), needs_selection = TRUE),
               btn("triage_btn", "Triage", icon = mp_icon("traffic-light"),
-                title = "Re-run automatic scaffold triage on the selected samples. Locked samples are skipped.",
+                title = "Re-run automatic contig triage on the selected samples. Locked samples are skipped.",
                 needs_selection = TRUE),
               btn("asmb_run_btn", "Update", icon = mp_icon("circle-play"), emphasis = "primary",
                 title = "Review and launch the RiboPilot pipeline")),

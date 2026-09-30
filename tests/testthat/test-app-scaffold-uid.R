@@ -124,7 +124,7 @@ test_that("bulk triage previews before it writes, and applying honours the previ
     expect_match(prev, "Apply would change 4 of 4", fixed = TRUE)
     expect_match(prev, "4 newly dropped", fixed = TRUE)
     expect_match(prev, "Resulting state across 1 sample(s): 4 dropped", fixed = TRUE)
-    expect_match(prev, "NO scaffolds kept")  # the outcome that silently loses a sample
+    expect_match(prev, "NO contigs kept")  # the outcome that silently loses a sample
 
     session$setInputs(triage_apply = 1)
     session$flushReact()
@@ -330,7 +330,7 @@ test_that("clicking a row examines that scaffold in the panels below", {
     session$setInputs(scaf_examine = "S1|2|2")
     session$flushReact()
     expect_equal(sel_hit_unit(), list(path = 2L, scaffold = 2L))
-    expect_match(output$unit_screen$html, "Scaffold p2.s2", fixed = TRUE)
+    expect_match(output$unit_screen$html, "Contig p2.s2", fixed = TRUE)
     expect_equal(output$hl_scaf_cov, "p2.s2")
 
     # keyed on the row's own uid, so display order cannot misdirect it
@@ -441,8 +441,8 @@ test_that("the Annotation Review title always names the unit", {
     m <- RiboPilot:::annotate_modal(...)
     paste(as.character(m), collapse = " ")
   }
-  expect_match(ttl("S1", 2L, 3L), "path 2 / scaffold 3")
-  expect_match(ttl("S1", 1L, 1L), "path 1 / scaffold 1")
+  expect_match(ttl("S1", 2L, 3L), "path 2 / contig 3")
+  expect_match(ttl("S1", 1L, 1L), "path 1 / contig 1")
 })
 
 test_that("a second assembly path is refused from the toolbar and from Lock & Close", {

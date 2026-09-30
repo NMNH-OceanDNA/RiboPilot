@@ -21,7 +21,7 @@ In R, `citation("RiboPilot")` prints the citation for the version you have.
   Options** window names it, for example "ribopilot_rrna 2026.08.18": about
   600,000 animal (Metazoa) nuclear rDNA records downloaded from GenBank on 18
   August 2026, with identical sequences of one taxon kept once, plus NCBI's 16S,
-  eukaryote small subunit, and eukaryote large subunit rRNA databases. Scaffolds
+  eukaryote small subunit, and eukaryote large subunit rRNA databases. Contigs
   that database could not match were searched in NCBI core_nt; the **Hit
   Source** column says which. See
   [Quality checks and flags](Curation-Flags.html).

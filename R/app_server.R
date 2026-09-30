@@ -1429,7 +1429,7 @@ app_server <- function(input, output, session) {
     d <- scaffold_rows()
     if (nrow(d) == 0) {
       return(reactable::reactable(
-        data.frame(` ` = "No assembled scaffolds for this sample yet.", check.names = FALSE),
+        data.frame(` ` = "No assembled contigs for this sample yet.", check.names = FALSE),
         compact = TRUE))
     }
     # reactable renders in data-frame column order, so the row identifier has to
@@ -1542,15 +1542,15 @@ app_server <- function(input, output, session) {
   observeEvent(input$copy_fasta, {
     u <- ticked_units()
     if (nrow(u) == 0) {
-      rp_alert("Tick one or more scaffolds first.", type = "warning"); return()
+      rp_alert("Tick one or more contigs first.", type = "warning"); return()
     }
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
     txt <- unit_fasta_text(con, sel_id(), u)
     if (length(txt) == 0) {
-      rp_alert("Those scaffolds have no stored sequence.", type = "warning"); return()
+      rp_alert("Those contigs have no stored sequence.", type = "warning"); return()
     }
     copy_to_clipboard(paste(txt, collapse = "\n"))
-    rp_toast(sprintf("Copied %d scaffold(s) as FASTA.", nrow(u)), type = "message")
+    rp_toast(sprintf("Copied %d contig(s) as FASTA.", nrow(u)), type = "message")
   })
 
   # ---- per-unit BLAST evidence: the unfiltered screen vs the rDNA panel ----
@@ -1588,7 +1588,7 @@ app_server <- function(input, output, session) {
     r <- d[d$path == h$path & d$scaffold == h$scaffold, , drop = FALSE]
     if (nrow(r) == 0) return(NULL)
     r <- r[1, ]
-    lbl <- sprintf("Scaffold p%s.s%s", r$path, r$scaffold)
+    lbl <- sprintf("Contig p%s.s%s", r$path, r$scaffold)
     if (is.na(r$screen_accession)) {
       # Two different states used to share one message: BLAST switched off, and
       # BLAST switched on but the remote search never came back. The second told
@@ -1625,7 +1625,7 @@ app_server <- function(input, output, session) {
             if (is.na(r$shares)) "no resolved rank" else r$shares,
             r$sci_name %|NA|% "this sample"))),
       if (isTRUE(r$odd_one_out)) div(class = "mp-fg-warning", style = "margin-top:5px;",
-        sprintf("This scaffold's top hit differs from the rest of this sample (%s at %s).",
+        sprintf("This contig's top hit differs from the rest of this sample (%s at %s).",
           r$sib_taxon %|NA|% "the majority", r$sib_rank %|NA|% "")))
   })
   output$unit_candidates <- reactable::renderReactable({
@@ -1644,9 +1644,9 @@ app_server <- function(input, output, session) {
       screened <- nrow(sr) > 0 && !is.na(sr$screen_accession[1])
       return(reactable::reactable(data.frame(
         ` ` = if (screened) {
-          "No nuclear rDNA reference matched this scaffold. See the unrestricted screen above."
+          "No nuclear rDNA reference matched this contig. See the unrestricted screen above."
         } else {
-          "No BLAST result for this scaffold, so there is nothing to rank here yet."
+          "No BLAST result for this contig, so there is nothing to rank here yet."
         },
         check.names = FALSE), compact = TRUE))
     }
@@ -1691,9 +1691,9 @@ app_server <- function(input, output, session) {
     refresh(refresh() + 1)
     word <- if (is.na(verdict)) "undecided" else verdict
     rp_toast(if (nrow(units) == 1) {
-      sprintf("Scaffold %s marked %s.", unit_label(units[1, ]), word)
+      sprintf("Contig %s marked %s.", unit_label(units[1, ]), word)
     } else {
-      sprintf("%d scaffolds marked %s.", nrow(units), word)
+      sprintf("%d contigs marked %s.", nrow(units), word)
     }, type = "message")
   }
   # Split the units a drop would touch into the ones it must refuse, the ones it
@@ -1751,7 +1751,7 @@ app_server <- function(input, output, session) {
       cls <- classify_drop(id, units)
       if (length(cls$locked)) {
         rp_alert(sprintf(
-          "Scaffold%s %s %s annotation-locked. Unlock %s in Annotation Review first.",
+          "Contig%s %s %s annotation-locked. Unlock %s in Annotation Review first.",
           if (length(cls$locked) == 1) "" else "s", paste(cls$locked, collapse = ", "),
           if (length(cls$locked) == 1) "is" else "are",
           if (length(cls$locked) == 1) "that unit" else "those units"),
@@ -1761,15 +1761,15 @@ app_server <- function(input, output, session) {
       if (length(cls$ask)) {
         pending_triage(list(id = id, units = cls$units))
         showModal(modalDialog(
-          title = if (length(cls$ask) == 1) "Drop a reviewed scaffold?" else "Drop reviewed scaffolds?",
+          title = if (length(cls$ask) == 1) "Drop a reviewed contig?" else "Drop reviewed contigs?",
           size = "s",
-          tags$p(sprintf(paste("Scaffold%s %s already been reviewed. Dropping",
+          tags$p(sprintf(paste("Contig%s %s already been reviewed. Dropping",
             "%s from annotation and export. Annotation and curation are kept, so this can be undone."),
             if (length(cls$ask) == 1) paste0(" ", cls$ask) else
               paste0("s ", paste(cls$ask, collapse = ", ")),
             if (length(cls$ask) == 1) "has" else "have",
             if (nrow(cls$units) == 1) "excludes it" else
-              sprintf("excludes %d scaffolds", nrow(cls$units)))),
+              sprintf("excludes %d contigs", nrow(cls$units)))),
           footer = mp_footer(dismiss = NULL,
             extra = actionButton("scaf_triage_back", "Cancel"),
             danger = actionButton("scaf_triage_ok", "Drop it"))))
@@ -1856,11 +1856,11 @@ app_server <- function(input, output, session) {
             p$n_user_skipped + p$n_locked_skipped == p$n_units)
           # nothing is compared against these rules here, so saying the stored
           # verdicts match them would be a claim about units never examined
-          "Every scaffold in this selection is hand-decided or annotation-locked, so Apply would skip them all."
+          "Every contig in this selection is hand-decided or annotation-locked, so Apply would skip them all."
         else if (p$n_changed == 0)
-          "Apply would change nothing: every scaffold already has the verdict these rules propose."
+          "Apply would change nothing: every contig already has the verdict these rules propose."
         else
-          sprintf(paste("Apply would change %d of %d scaffold(s):",
+          sprintf(paste("Apply would change %d of %d contig(s):",
             "%d newly dropped, %d newly kept, %d newly flagged."),
             p$n_changed, p$n_units, p$n_new_drop, p$n_new_keep, p$n_new_flag)),
       tags$p(sprintf("Resulting state across %d sample(s): %d dropped, %d kept, %d undecided.",
@@ -1873,14 +1873,14 @@ app_server <- function(input, output, session) {
       else if (p$n_new_drop == 0) tags$p(style = "color:#555;",
         "A rule is set to Drop, but nothing in this selection will be dropped."),
       if (p$n_user_skipped > 0) tags$p(style = "color:#555;",
-        sprintf("%d scaffold(s) you decided by hand will be left alone.", p$n_user_skipped)),
+        sprintf("%d contig(s) you decided by hand will be left alone.", p$n_user_skipped)),
       if (p$n_locked_skipped > 0) tags$p(style = "color:#555;",
-        sprintf("%d annotation-locked scaffold(s) will be left alone.", p$n_locked_skipped)),
+        sprintf("%d annotation-locked contig(s) will be left alone.", p$n_locked_skipped)),
       # under all-off nothing is caused by Apply, so this reports the standing
       # state rather than an outcome
       if (length(p$emptied) > 0) div(class = "mp-fg-danger", style = "font-weight:600; margin-top:6px;",
-        sprintf(if (all_off) "%d sample(s) currently have NO scaffolds kept: %s"
-          else "%d sample(s) would end up with NO scaffolds kept: %s",
+        sprintf(if (all_off) "%d sample(s) currently have NO contigs kept: %s"
+          else "%d sample(s) would end up with NO contigs kept: %s",
           length(p$emptied), paste(utils::head(p$emptied, 12), collapse = ", ")))
       else div(class = "mp-fg-success", style = "margin-top:6px;",
         if (all_off) "No sample currently has nothing kept."
@@ -1899,7 +1899,7 @@ app_server <- function(input, output, session) {
     }
     removeModal()
     refresh(refresh() + 1)
-    rp_alert(sprintf("Triage updated %d scaffold(s) across %d sample(s).", n, length(ids)),
+    rp_alert(sprintf("Triage updated %d contig(s) across %d sample(s).", n, length(ids)),
       type = "message")
   })
 
@@ -2379,8 +2379,8 @@ app_server <- function(input, output, session) {
     sp <- trim_span(); p <- trim_preset(); req(p)
     x <- suppressWarnings(as.integer(input$trim_flank))
     if (is.na(x) || x < 1) return("Enter a flank of at least 1 bp.")
-    clipped <- c(if (p[1] > sp[["a"]] - x) sprintf("upstream clipped to %d bp (scaffold start)", sp[["a"]] - p[1]),
-      if (p[2] < sp[["b"]] + x) sprintf("downstream clipped to %d bp (scaffold end)", p[2] - sp[["b"]]))
+    clipped <- c(if (p[1] > sp[["a"]] - x) sprintf("upstream clipped to %d bp (contig start)", sp[["a"]] - p[1]),
+      if (p[2] < sp[["b"]] + x) sprintf("downstream clipped to %d bp (contig end)", p[2] - sp[["b"]]))
     if (length(clipped)) paste0("Flank ", paste(clipped, collapse = "; "), ".") else ""
   })
   trim_window <- reactive({

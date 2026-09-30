@@ -65,7 +65,7 @@ the Reference step replaces it.}
 
 \item{max_paths}{Max assembly paths for a sample to continue (default 10).}
 
-\item{max_scaffolds}{Max scaffolds within a path to continue (default 10).}
+\item{max_scaffolds}{Max contigs within a path to continue (default 10).}
 
 \item{min_assembly_length}{Minimum contig length (bp) to retain (default 500).}
 

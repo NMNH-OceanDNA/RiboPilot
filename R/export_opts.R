@@ -81,7 +81,7 @@ set_export_opts <- function(con, fasta_header, fasta_header_marker, name = "defa
 #' sequence." Consecutive elements sharing a completeness are phrased as one run,
 #' which is what makes the sentence read as GenBank's does.
 #'
-#' @param elements Element names in the order they sit on the scaffold.
+#' @param elements Element names in the order they sit on the contig.
 #' @param partial Logical of the same length: is that element partial?
 #' @noRd
 rrna_definition_text <- function(elements, partial) {
@@ -233,7 +233,7 @@ validate_fasta_header <- function(template, data = NULL, require_seqid = TRUE) {
       any(!is.na(data$seqid) & data$seqid != data$ID)) {
     return(err(paste("Take [isolate=...] out of the template for this group. RiboPilot sets",
       "[isolate=<ID>_p<path>_s<scaffold>] on each record of a sample that exports more than",
-      "one scaffold, so all of them can go into one GenBank submission.")))
+      "one contig, so all of them can go into one GenBank submission.")))
   }
   if (require_seqid && !grepl("{seqid}", template, fixed = TRUE)) {
     multi <- !is.null(data) && any(duplicated(data$ID))

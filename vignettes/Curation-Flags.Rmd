@@ -7,8 +7,8 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
-After it annotates a unit (one kept scaffold, see
-[Get started](RiboPilot.html#samples-scaffolds-and-records)), RiboPilot runs a
+After it annotates a unit (one kept contig, see
+[Get started](RiboPilot.html#samples-contigs-and-records)), RiboPilot runs a
 set of automatic quality checks and
 raises a **curation warning** for anything that looks unusual. Warnings guide
 your attention in the Annotation Review step. They do not change your data, and a
@@ -17,7 +17,7 @@ warning does not always mean something is wrong: it means "please check this".
 You see them in three places:
 
 - the **Checks** column of the Assemble and Annotation Review tables (right after
-  the ID, or after **Path #** and **Scaffold #** when those show), which sums up
+  the ID, or after **Path #** and **Contig #** when those show), which sums up
   every check in a few words;
 - the **Warnings** column of Annotation Review, which counts the warnings on the
   unit as a whole (marked "unit" in the table below); hover over it for the list;
@@ -29,7 +29,7 @@ You see them in three places:
 
 | Warning | On | What it means | What to do |
 |---|---|---|---|
-| `missing_18S`, `missing_5.8S`, `missing_28S` | unit | One of the three rRNA genes was not found. | Expected when the scaffold holds only part of the repeat. Otherwise look at **Sequence and read coverage** for a break. |
+| `missing_18S`, `missing_5.8S`, `missing_28S` | unit | One of the three rRNA genes was not found. | Expected when the contig holds only part of the repeat. Otherwise look at **Sequence and read coverage** for a break. |
 | `missing_ITS1`, `missing_ITS2` | unit | A spacer was not found between its two genes. | Usually follows a missing gene. If both genes are there, check the boundaries in **Edit active feature boundaries**. |
 | `out_of_order` | unit | The features are not in the order 18S, ITS1, 5.8S, ITS2, 28S. | Likely a misassembly; the export marks it `misassembly`. Check the feature map and read coverage before you submit it. |
 | `overlap` | unit and feature | A feature overlaps the one before it. | Move the boundary in **Edit active feature boundaries**. The export marks it `misassembly`. |
@@ -40,17 +40,17 @@ You see them in three places:
 | `low_identity` | feature | The gene is less similar to its best reference than the floor for its group (tables below), and the reference covers at least half of the gene. | An assembly error, or a little-studied group. Look at the **Reference alignment**. |
 | `contaminant` | unit | The BLAST screen's best hit is from a different phylum than your sample. | Check the unit before you lock it: it may be another organism's rDNA. Lock and the Export window ask about it until you mark it Reviewed. |
 | `contaminant_unchecked` | unit | The contamination check could not run: the BLAST screen has no usable hit for the unit, or your sample's lineage is unknown. | If NCBI could not be reached, run the sample again once it can (see [Troubleshooting](Troubleshooting.html)). If the sample has no taxon, set one in the Taxonomy step. |
-| `not_nuclear_rdna` | unit | The BLAST screen's best hit is not a nuclear rDNA record, for example a mitochondrial or bacterial rRNA. | The scaffold may not be nuclear rDNA. Check its features and hits before you keep it. |
+| `not_nuclear_rdna` | unit | The BLAST screen's best hit is not a nuclear rDNA record, for example a mitochondrial or bacterial rRNA. | The contig may not be nuclear rDNA. Check its features and hits before you keep it. |
 | `no_clade_ruleset` | unit | Your sample's group has no ruleset of its own, so the generic animal ranges were used. | Nothing. See [How the checks are tuned per group](#how-the-checks-are-tuned-per-group). |
 
 Two more columns hold checks of their own. **ITSx Warnings** says what stock ITSx, the
 tool NCBI runs on rRNA and ITS submissions, finds in the unit, for example
 `itsx_chimeric`, `itsx_no_5.8S`, or `itsx_boundary_shift(...)`. **Chimera** holds the
-chimera check's level; see [Chimeras](#chimeras-scaffolds-made-of-two-pieces).
+chimera check's level; see [Chimeras](#chimeras-contigs-made-of-two-pieces).
 
 The contamination checks need a BLAST screen result. When a unit has none, for
 example because NCBI could not be reached, RiboPilot does not skip the check: it
-raises `contaminant_unchecked`, and triage flags the scaffold "BLAST screen has not
+raises `contaminant_unchecked`, and triage flags the contig "BLAST screen has not
 run".
 
 `low_identity` needs the reference sequences it compares each gene against, which
@@ -62,7 +62,7 @@ not be downloaded, the identity check is skipped with no warning, so a gene with
 
 The Checks column puts every check on one line, worst first, in a color that
 matches the worst finding. On the Assemble table it covers the sample's kept
-scaffolds; on the Annotation Review table, one unit. "warnings" means a unit warning from
+contigs; on the Annotation Review table, one unit. "warnings" means a unit warning from
 the table above, the ones the Warnings column counts; "feature flags" means a
 warning on one of its features.
 
@@ -75,18 +75,18 @@ warning on one of its features.
 
 # What the BLAST screen searches
 
-After a scaffold is assembled, RiboPilot BLASTs it to find out what it matches.
+After a contig is assembled, RiboPilot BLASTs it to find out what it matches.
 This BLAST screen feeds the Screen column, the contamination warnings above, the
 triage rules below, and the chimera check.
 
-By default each scaffold is searched in the **bundled rDNA database** inside the
+By default each contig is searched in the **bundled rDNA database** inside the
 container: about 600,000 animal nuclear rDNA records from GenBank, plus NCBI's
 16S, eukaryote small subunit, and eukaryote large subunit rRNA sets, so that a
-bacterial, fungal, or plant scaffold still finds its match. Only a scaffold that
+bacterial, fungal, or plant contig still finds its match. Only a contig that
 matches nothing there is sent on to NCBI's full nucleotide database (core_nt),
 over the internet. Neither search is filtered to nuclear rDNA titles, and a
-scaffold the bundled database cannot match goes on to core_nt, so a
-mitochondrial or bacterial scaffold is still caught (unless you choose
+contig the bundled database cannot match goes on to core_nt, so a
+mitochondrial or bacterial contig is still caught (unless you choose
 "Bundled database only").
 
 To change this, open a sample's **BLAST Options** in the Assemble step and pick a
@@ -94,29 +94,29 @@ To change this, open a sample's **BLAST Options** in the Assemble step and pick 
 (core_nt)" skips the bundled database. The BLAST Options window also names the
 version of the bundled database.
 
-The line under the scaffold name in the **BLAST evidence** panel (click a
+The line under the contig name in the **BLAST evidence** panel (click a
 sample's ID in the Assemble step, "Best match in ...") says which database
-gave the scaffold's best match. In Annotation
+gave the contig's best match. In Annotation
 Review, the **Hit Source** column (in the **BLAST** column group) says which
 database named the unit's best rDNA reference: "bundled", "NCBI", or "seed file"
 (the assembly's own seed database, which is only a hint).
 
 For a methods section, see [Citing RiboPilot](Citing.html).
 
-# How scaffolds are kept or dropped (auto-triage)
+# How contigs are kept or dropped (auto-triage)
 
 Warnings point at something worth a look; they never remove data. Separately,
-once a scaffold has been annotated and screened, RiboPilot proposes keep, drop,
-or undecided for the scaffold itself, in the Assemble step. You can override
+once a contig has been annotated and screened, RiboPilot proposes keep, drop,
+or undecided for the contig itself, in the Assemble step. You can override
 every call by hand with **K** and **D**, and your own decisions are never
 silently overwritten (more on that below).
 
 The proposal rests on two evidence channels that are independent of one
-another: **annotation**, from barrnap and ITSx run on the scaffold, and the
-**BLAST screen** described above. RiboPilot never drops a scaffold on one
+another: **annotation**, from barrnap and ITSx run on the contig, and the
+**BLAST screen** described above. RiboPilot never drops a contig on one
 channel's silence: a rule can only drop once both the annotation tools and the
-BLAST screen have reported on the scaffold. By default, the only rule that drops
-is the one where both channels independently say the scaffold is not nuclear
+BLAST screen have reported on the contig. By default, the only rule that drops
+is the one where both channels independently say the contig is not nuclear
 rDNA. Three other rules can be switched to Drop as well: two fire when
 annotation and the BLAST screen *disagree* with each other, and one fires when
 the BLAST screen's own consensus disagrees with the sample's identity. Turning
@@ -124,33 +124,33 @@ any of them on is a deliberate choice about which evidence you trust more for
 your material, not more of the same corroboration; see the table below for
 which is which.
 
-RiboPilot checks a scaffold against eight named rules, in this order. The
-first rule that matches decides the outcome; if none match, the scaffold is
-kept. Four of the eight rules can ever drop a scaffold. The other four only
+RiboPilot checks a contig against eight named rules, in this order. The
+first rule that matches decides the outcome; if none match, the contig is
+kept. Four of the eight rules can ever drop a contig. The other four only
 flag, because their evidence is a missing channel, taxonomic distance alone, or
-a possible chimera, none of which is a safe basis for removing a scaffold by
-itself. A flagged scaffold stays undecided, and the **Why** column of the
-sample's scaffold table gives the reason.
+a possible chimera, none of which is a safe basis for removing a contig by
+itself. A flagged contig stays undecided, and the **Why** column of the
+sample's contig table gives the reason.
 
 | # | Rule | What it means | Can it drop? |
 |---|---|---|---|
-| 1 | Annotation has not run | Neither annotation tool has reported on this scaffold yet. | No, flag only |
-| 2 | BLAST screen has not run | No usable BLAST hit is recorded, so the scaffold cannot be judged. | No, flag only |
+| 1 | Annotation has not run | Neither annotation tool has reported on this contig yet. | No, flag only |
+| 2 | BLAST screen has not run | No usable BLAST hit is recorded, so the contig cannot be judged. | No, flag only |
 | 3 | No annotations, non-rDNA hit | Annotation found no rRNA or ITS feature, and the best GenBank match is not a nuclear rDNA record. | Yes, dropped by default |
 | 4 | No annotations but rDNA hit | Annotation found no rRNA or ITS feature, though the best GenBank match is a nuclear rDNA record. | Optional; flagged by default |
-| 5 | Has annotations but non-rDNA hit | The scaffold has a feature model, but its best GenBank match is not a nuclear rDNA record. | Optional; flagged by default |
-| 6 | GenBank taxonomy disagrees with the sample | The scaffold's BLAST hits agree on a taxon that is not on this sample's lineage. | Optional; flagged by default |
-| 7 | Disagrees with sibling scaffolds | This scaffold's top hit disagrees with the majority of this sample's other scaffolds. | No, flag only |
-| 8 | Chimeric assembly (severe) | Parts of this scaffold match organisms from different phyla or kingdoms. | No, flag only |
+| 5 | Has annotations but non-rDNA hit | The contig has a feature model, but its best GenBank match is not a nuclear rDNA record. | Optional; flagged by default |
+| 6 | GenBank taxonomy disagrees with the sample | The contig's BLAST hits agree on a taxon that is not on this sample's lineage. | Optional; flagged by default |
+| 7 | Disagrees with sibling contigs | This contig's top hit disagrees with the majority of this sample's other contigs. | No, flag only |
+| 8 | Chimeric assembly (severe) | Parts of this contig match organisms from different phyla or kingdoms. | No, flag only |
 
 Rule 2 also covers a case that looks different but is judged the same way: a
-scaffold whose only GenBank matches are whole-genome or chromosome-level
+contig whose only GenBank matches are whole-genome or chromosome-level
 assemblies. Such a record does not say what the aligned region actually is, so
-RiboPilot reports the scaffold as unjudged rather than guessing that it is not
+RiboPilot reports the contig as unjudged rather than guessing that it is not
 nuclear rDNA.
 
 Rule 6 is a separate check from the rest of the table: it asks whether the
-scaffold's BLAST hits agree on a taxon, and whether that taxon sits on your
+contig's BLAST hits agree on a taxon, and whether that taxon sits on your
 sample's own lineage. This is the check that catches a fungal, bacterial or
 plant contaminant riding along with a metazoan sample. It compares only
 against your sample's own lineage, at phylum rank, so it cannot separate two
@@ -159,27 +159,27 @@ are Chordata, while a copepod on that same sample is caught. A `no_reference`
 result is a normal state
 for an offline project or a sparse clade, not a problem in itself: it means
 the screen had nothing usable to compare against, not that something is
-wrong. The verdict is also shown as a Screen column in a sample's scaffold table
+wrong. The verdict is also shown as a Screen column in a sample's contig table
 (click its ID in the Assemble step) and in the Annotation Review table, and an
 off-target verdict turns the Checks cell red.
 
 To change what a rule does, tick samples in the Assemble step and press
 **Triage**. The Triage window sets each rule to Off, Flag, or Drop (Drop only
-where the rule allows it), shows how many scaffolds each rule would decide, and
+where the rule allows it), shows how many contigs each rule would decide, and
 applies to the ticked samples when you press **Apply**. Switching every rule off
 at once makes Apply a no-op: it changes nothing, rather than marking every
-remaining scaffold "keep" on the strength of no active checks. The rule
+remaining contig "keep" on the strength of no active checks. The rule
 settings live with the project, not with any one run, so the app and the
 pipeline never disagree about what a rule is set to do.
 
 Rule 7 deserves a special note: a low-identity hit at a large taxonomic
 distance is the normal state for an under-studied group, not proof of
 contamination, which is exactly the case RiboPilot exists to serve. For that
-reason, disagreement with sibling scaffolds can only ever flag, never drop.
+reason, disagreement with sibling contigs can only ever flag, never drop.
 
-# Chimeras: scaffolds made of two pieces
+# Chimeras: contigs made of two pieces
 
-A chimera is one scaffold joined from two pieces that do not belong together:
+A chimera is one contig joined from two pieces that do not belong together:
 rDNA from two organisms (for example a fish and a contaminating mold), or two
 different copies of the repeat from one genome.
 
@@ -187,7 +187,7 @@ RiboPilot looks for a chimera in four ways:
 
 - **Gene by gene.** The 18S, 5.8S, and 28S genes each get their own best
   GenBank matches, and these should agree on one lineage.
-- **Along the scaffold.** Overlapping 500 bp windows, one every 250 bp, are
+- **Along the contig.** Overlapping 500 bp windows, one every 250 bp, are
   matched against the bundled rDNA database, and neighboring windows that match the
   same class are joined into segments. Two neighboring segments of similar
   length from different classes suggest a join.
@@ -201,11 +201,11 @@ Annotation Review table and in the **Checks** column:
 
 | Level | What it means | Triage | Export |
 |---|---|---|---|
-| severe | Two parts match different phyla or kingdoms, each at 90 percent identity or more. | Rule 8 flags the scaffold. | The `submission_risk` column says `chimeric(...)`, and Lock and the Export window ask first until the unit is marked Reviewed. |
+| severe | Two parts match different phyla or kingdoms, each at 90 percent identity or more. | Rule 8 flags the contig. | The `submission_risk` column says `chimeric(...)`, and Lock and the Export window ask first until the unit is marked Reviewed. |
 | minor | Weaker evidence: a switch between classes, genes that agree only at a high rank, a ribotyper warning, or read evidence alone. | No rule fires. | Listed in the `chimera_warning` column of the summary CSV. It is not a submission risk, and neither Lock nor the Export window asks. |
 | clean | Nothing found. | No rule fires. | Nothing. |
 
-In the practice project, CHIM01 is severe: its first part matches ray-finned
+In the test project, CHIM01 is severe: its first part matches ray-finned
 fishes and its 28S matches a *Penicillium* mold, and the plot marks the join
 near 2,625 bp:
 
@@ -214,9 +214,9 @@ near 2,625 bp:
 RiboPilot already sets aside the usual false alarms. Windows in conserved
 stretches of 18S or 28S, where many groups match equally well, are shown as
 "unresolved" and do not count. Depth changes inside sequence that repeats
-elsewhere on the scaffold, or right at a gene boundary, are ignored, and so are
-reads that stop near the ends of the scaffold. A weak signal can still give a
-minor call. The first scaffold of SRR33849683, for example, is minor because its
+elsewhere on the contig, or right at a gene boundary, are ignored, and so are
+reads that stop near the ends of the contig. A weak signal can still give a
+minor call. The first contig of SRR33849683, for example, is minor because its
 genes agree only at phylum level, though every window that can be placed
 matches a ray-finned fish:
 
@@ -227,19 +227,19 @@ badge in the **Chimera** column to read the evidence behind the call. A real
 chimera shows a clean switch from one lineage to another at one point, often
 with a depth change there too. A switch that sits inside a conserved stretch of
 18S or 28S, to a group that is not far from yours, is usually a false alarm. If
-in doubt, copy the scaffold with **Copy FASTA** and BLAST each side at NCBI.
+in doubt, copy the contig with **Copy FASTA** and BLAST each side at NCBI.
 
-# Several scaffolds from one organism: the Variant column
+# Several contigs from one organism: the Variant column
 
 None of the rules above fires on this, and that is deliberate. When a sample
-yields more than one scaffold that the BLAST screen calls on target, both
+yields more than one contig that the BLAST screen calls on target, both
 agree with your sample's lineage at phylum level. That rules out many
 contaminants but not all: a human on a fish sample is also a chordate. BLAST
 each variant's ITS before you lock one. RiboPilot
 compares them and tells you which of two situations you are looking at, in a
-Variant column in the Assemble step's scaffold table.
+Variant column in the Assemble step's contig table.
 
-An **isomer** means the scaffolds are the same molecule assembled two ways:
+An **isomer** means the contigs are the same molecule assembled two ways:
 their conserved anchors are the same sequence, and they differ only outside
 them. Often that is spacer copy number, because the rDNA repeat's intergenic
 spacer contains subrepeats and an assembly graph can traverse a different
@@ -253,32 +253,32 @@ receives, so compare their ITS before you choose.
 A **paralog** means the sample genuinely carries several different rDNA copies.
 This is real, documented biology in Octocorallia, Scyphozoa and other groups,
 not a defect and not a sign that anything went wrong. Here the choice does
-matter, because which scaffold you lock is what GenBank receives. The column is
+matter, because which contig you lock is what GenBank receives. The column is
 rendered as information rather than as a warning, and export records the fact
-without blocking anything: a paralogous scaffold still exports.
+without blocking anything: a paralogous contig still exports.
 
 Three details worth knowing. The comparison uses only the conserved anchors
 (18S, 5.8S and 28S), because the spacers vary in both situations and so cannot
 tell them apart. RiboPilot does not annotate the intergenic spacer as a feature,
 so any statement about spacer copy number is inferred from the unannotated
-remainder rather than measured directly. And two scaffolds are only compared on
+remainder rather than measured directly. And two contigs are only compared on
 the anchors they **both** carry, and only when enough of each one aligns: a
-scaffold whose 28S is a short fragment is reported as not comparable rather than
+contig whose 28S is a short fragment is reported as not comparable rather than
 declared identical to a complete one. The measured anchor identity is always
 shown, so you can see the number the label came from rather than only the label.
 
 # Your own decisions stick
 
-If you keep or drop a scaffold by hand, that decision is recorded as yours,
+If you keep or drop a contig by hand, that decision is recorded as yours,
 and a later automatic re-run will not overwrite it, even if the rules above
-would now propose something different. Re-triaging only touches scaffolds it
-decided itself, unless you tick **Also re-decide scaffolds I set by hand** in the Triage window.
-They also survive assembling the sample again, as long as the scaffold comes
-back with the same sequence; a scaffold whose sequence changed starts undecided.
+would now propose something different. Re-triaging only touches contigs it
+decided itself, unless you tick **Also re-decide contigs I set by hand** in the Triage window.
+They also survive assembling the sample again, as long as the contig comes
+back with the same sequence; a contig whose sequence changed starts undecided.
 
 # Depth is shown, not decided
 
-The scaffold table shows each scaffold's median per-position read depth and a
+The contig table shows each contig's median per-position read depth and a
 small sparkline of depth along its length, but depth never decides a keep or
 drop call. Reads are mapped to one path at a time, and reads that
 could sit in more than one place in that path are set aside. So depth dips

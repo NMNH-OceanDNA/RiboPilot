@@ -14,11 +14,11 @@ load_assemblies(con, dir, ID)
 \item{ID}{Sample ID.}
 }
 \value{
-(invisibly) the number of scaffolds loaded.
+(invisibly) the number of contigs loaded.
 }
 \description{
 Parses \verb{<dir>/<ID>_assembly_*.fasta} (headers
-\verb{>ID.path.scaffold topology}), orients each scaffold to the sense strand,
-rotates circular units to start in the IGS, writes per-scaffold rows into
+\verb{>ID.path.scaffold topology}), orients each contig to the sense strand,
+rotates circular units to start in the IGS, writes per-contig rows into
 \code{assemblies}, and updates the per-sample \code{assemble} summary.
 }

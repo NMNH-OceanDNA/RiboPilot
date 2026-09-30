@@ -254,19 +254,19 @@ unit_evidence <- function(id) {
   cbind(d, unit_concordance(d))
 }
 
-#' Sibling concordance: is this scaffold the odd one out among its own siblings?
+#' Sibling concordance: is this contig the odd one out among its own siblings?
 #'
 #' The check that fires exactly where the shipped `lineages_conflict()`
 #' structurally cannot: a copepod, epibiont or gut-content contaminant on a
 #' metazoan sample shares "Metazoa" with the host, so a shared-token test reports
-#' it clean. Comparing a sample's scaffolds to EACH OTHER needs no absolute
+#' it clean. Comparing a sample's contigs to EACH OTHER needs no absolute
 #' threshold at all.
 #'
 #' Concordance is taken at the DEEPEST RANK AT WHICH A STRICT MAJORITY EXISTS,
 #' not at a fixed rank. That keeps the copepod-on-fish catch (a majority resolves
 #' at phylum: many Chordata vs one Arthropoda) while going silent on the sparse
 #' clades the tool exists for, where a genus-level test would flag every unit
-#' because each scaffold's best hit is a different genus.
+#' because each contig's best hit is a different genus.
 #'
 #' @param d Unit rows carrying `screen_taxids` (rank-aligned hit taxid paths).
 #' @return data.frame(sib_rank, sib_taxon, odd_one_out) with `nrow(d)` rows.
@@ -347,7 +347,7 @@ sample_has_user_assembly <- function(id) {
 
 #' Contigs the rDNA search found but did not carry forward
 #'
-#' The kept contigs become assembly units and are shown in the scaffold table;
+#' The kept contigs become assembly units and are shown in the contig table;
 #' these are the ones that never got there, which is the only place a user can
 #' see that they existed at all.
 #'

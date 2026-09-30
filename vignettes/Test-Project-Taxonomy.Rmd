@@ -1,0 +1,51 @@
+---
+title: "Test project: Taxonomy"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Test project: Taxonomy}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+<div class="step-nav">
+<span class="step-label">Test project:</span>
+<span class="current">1. Taxonomy</span>
+<a href="Test-Project-Reference.html">2. Reference</a>
+<a href="Test-Project-Assemble.html">3. Assemble</a>
+<a href="Test-Project-Annotate.html">4. Annotate</a>
+<a href="Test-Project-Export.html">5. Export</a>
+</div>
+
+This walkthrough picks up where [Get started](RiboPilot.html) leaves off, so start there if you have not yet created the test project and opened the app.
+
+Press **Assign Taxonomy**. RiboPilot matches each Taxon in your mapping file to
+the NCBI taxonomy, using a local copy. The first time, it downloads about 80 MB
+and builds an index of about 0.5 GB inside the project, which takes a few
+minutes. A message then counts the samples by how they matched, for example
+"Checked 12 samples: 12 exact. Review and lock."
+
+The Confidence column says how each name matched:
+
+| Confidence | What it means | What to do |
+|---|---|---|
+| exact | The name matched one NCBI taxon. | Nothing. |
+| fuzzy_species | No exact match, so a species of the same genus with a very similar name was picked. | Check the spelling. |
+| fuzzy_genus | Only the genus matched. | Check the name, and pick the species if NCBI has it. |
+| ambiguous | The name matches more than one organism; for example, the genus *Morus* is both a mulberry and a gannet. No taxon is set. | Pick the right one. The Other Matches column lists each candidate with its kingdom. |
+| unresolved | No match. | Pick a taxon by hand. |
+| manual | You picked the taxon by hand. | Nothing. |
+
+To pick a taxon by hand, click the sample's ID (or tick its row and press **Edit
+Taxonomy**), search for the name, and press **Assign**.
+
+Then tick all rows and press **Lock**. Only samples whose taxonomy is locked go
+on to the Assemble step and are assembled when you press **Update**. A sample
+whose taxonomy is wrong would be checked against the wrong organism later. If
+you lock a sample that has no taxon, RiboPilot asks you first.
+
+All 12 test samples match exactly. Once they are locked, every row shows a
+closed lock:
+
+![Taxonomy step with all 12 test samples matched and locked](figures/get-started/taxonomy-locked.png)
+
+<p class="next-step"><a href="Test-Project-Reference.html">Next: Reference &rarr;</a></p>

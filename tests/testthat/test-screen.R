@@ -462,7 +462,7 @@ test_that("an unanswered remote search does not suggest another remote one", {
   expect_false(grepl("remote search", r$screen_reason[1]))
   # pins the wording itself, not just the absence of "remote search": a clause
   # later widened to fire on remote too would still trip this
-  expect_equal(r$screen_reason[1], "no BLAST hits are stored for this scaffold")
+  expect_equal(r$screen_reason[1], "no BLAST hits are stored for this contig")
 })
 
 test_that("a local search whose hits all fail to resolve suggests a remote one", {

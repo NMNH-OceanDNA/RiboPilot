@@ -280,8 +280,8 @@ failure_hint <- function(note) {
     h("GetOrganelle found more alternative paths than Max paths allows.",
       paste0(asm, "raise Max paths, or ", bait, done))
   } else if (grepl("exceeds max_scaffolds", note, fixed = TRUE)) {
-    h("The assembly came out in more pieces than Max scaffolds allows.",
-      paste0(asm, "raise Max scaffolds, or ", bait, done))
+    h("The assembly came out in more pieces than Max contigs allows.",
+      paste0(asm, "raise Max contigs, or ", bait, done))
   } else if (grepl("under min_assembly_length", note, fixed = TRUE)) {
     h("Every assembled piece was shorter than Min assembly length.",
       paste0(asm, bait, ", or lower Min assembly length", done))
@@ -300,7 +300,7 @@ failure_hint <- function(note) {
   } else if (grepl("return value: -9|out of memory|bad_alloc", note)) {
     h("The assembler ran out of memory.", paste0(asm, "raise Memory (GB)", done))
   } else {
-    h("The assembler returned no rDNA scaffolds.",
+    h("The assembler returned no rDNA contigs.",
       paste0(asm, bait, done, " Work Dirs shows the assembler's own log."))
   }
 }

@@ -20,6 +20,6 @@ write_coverage_units(con, id, depth_file, clips_file = NULL)
 (invisibly) the number of units written.
 }
 \description{
-The reference names are the scaffold fasta headers \code{path.scaffold}, so each
+The reference names are the contig fasta headers \code{path.scaffold}, so each
 distinct ref is written as one coverage unit.
 }
