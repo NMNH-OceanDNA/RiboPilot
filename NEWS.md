@@ -45,6 +45,10 @@
   results, lock, and marks of every contig whose sequence changed. Your own
   keep and drop calls follow their sequence.
 * Changing annotation options re-runs only annotation, and keeps trims.
+* Annotation options take extra command-line flags for the rRNA caller, one
+  field for pybarrnap and one for barrnap, since the two take different flags.
+  The flags go to both per-contig annotation and the rRNA scan of a supplied
+  assembly. Existing projects need `backwards_compatibility()` once.
 * Changing a BLAST setting searches again.
 * A rescue with the baited assembler is annotated in the same run.
 * An rRNA scan of a supplied assembly that does not finish fails the sample

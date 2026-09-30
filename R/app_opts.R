@@ -283,6 +283,12 @@ annotate_opts_modal <- function(cur, choices, n) {
         choices = kingdoms, selected = cur$rrna_kingdom %|NA|% "euk", width = "100%")))),
     opts_help("pybarrnap (default) is a euk-capable barrnap reimplementation. ",
       "Kingdom values differ by tool (pybarrnap: bac/arc/euk/all; barrnap: bac/arc/fun)."),
+    shinyjs::disabled(shiny::textInput("no_pybarrnap", "Extra pybarrnap options:",
+      value = cur$pybarrnap_opts %|NA|% "", width = "100%")),
+    shinyjs::disabled(shiny::textInput("no_barrnap", "Extra barrnap options:",
+      value = cur$barrnap_opts %|NA|% "", width = "100%")),
+    opts_help("Flags for the selected tool only; kingdom and threads are set by the pipeline. ",
+      "The two tools take different flags (see the ? icons)."),
     shiny::div(style = "display:flex; gap:2em;",
       shiny::div(style = "flex:1", shinyjs::disabled(shiny::textInput("no_itsxtaxon",
         shiny::tagList("ITSx profile set (-t)", tool_help_icon("ITSx")),
@@ -350,6 +356,15 @@ opts_handlers <- function(input, output, session, deps) {
     toggle_assembler_fields(input$ao_assembler)
   })
 
+  # show only the selected rRNA caller's flag field
+  toggle_rrna_fields <- function(tool) {
+    shinyjs::toggle(id = "no_pybarrnap", condition = !identical(tool, "barrnap"))
+    shinyjs::toggle(id = "no_barrnap", condition = identical(tool, "barrnap"))
+  }
+  shiny::observeEvent(input$no_tool, ignoreInit = TRUE, {
+    toggle_rrna_fields(input$no_tool)
+  })
+
   # sample IDs among `ids` that are locked for this step
   locked_ids <- function(ids, lock_col, tbl) {
     if (length(ids) == 0) return(character(0))
@@ -402,6 +417,9 @@ opts_handlers <- function(input, output, session, deps) {
     if (pfx == "ao") {
       toggle_assembler_fields((cur$assembler[1] %||% "getorganelle") %|NA|% "getorganelle")
     }
+    if (pfx == "no") {
+      toggle_rrna_fields((cur$rrna_tool[1] %||% "pybarrnap") %|NA|% "pybarrnap")
+    }
   }
 
   # register open + edit-toggle + update observers for each opts type
@@ -411,7 +429,8 @@ opts_handlers <- function(input, output, session, deps) {
            "ao_assembler", "ao_bt2", "ao_spades", "ao_seeds", "ao_labels",
            "ao_findrrna"),
     bo = c("bo_run", "bo_source", "bo_entrez", "bo_extra", "bo_mts"),
-    no = c("no_cpus", "no_mem", "no_tool", "no_kingdom", "no_itsxtaxon", "no_itsxopts"),
+    no = c("no_cpus", "no_mem", "no_tool", "no_kingdom", "no_itsxtaxon", "no_itsxopts",
+           "no_barrnap", "no_pybarrnap"),
     co = c("co_ruleset")
   )
   for (pfx in names(specs)) local({
@@ -546,7 +565,8 @@ opts_row <- function(pfx, nm, input, base) {
     no = data.frame(annotate_opts = nm, cpus = as.integer(input$no_cpus),
       memory = as.integer(input$no_mem), rrna_tool = input$no_tool,
       rrna_kingdom = input$no_kingdom, itsx_taxon = input$no_itsxtaxon %||% "all",
-      itsx_opts = input$no_itsxopts %||% "", stringsAsFactors = FALSE),
+      itsx_opts = input$no_itsxopts %||% "", barrnap_opts = input$no_barrnap %||% "",
+      pybarrnap_opts = input$no_pybarrnap %||% "", stringsAsFactors = FALSE),
     co = data.frame(curate_opts = nm, ruleset = input$co_ruleset, stringsAsFactors = FALSE)
   )
 }

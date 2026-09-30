@@ -90,7 +90,7 @@ test_that("query_samples selects the assembler and declares it in the header", {
   # rows, so it and the select list must agree on column count or splitCsv
   # misreads every field.
   n_hdr <- length(strsplit(sub(".*printf '", "", sub("\\\\n' > .*", "", hdr)), "\\\\t")[[1]])
-  expect_equal(n_hdr, 18L)
+  expect_equal(n_hdr, 19L)
 })
 
 test_that("main.nf branches on the assembler and merges both arms into score", {
@@ -1369,10 +1369,11 @@ test_that("query_samples skips samples whose taxonomy is not locked", {
   DBI::dbExecute(con, "CREATE TABLE assemble_opts(assemble_opts TEXT, cpus INT, memory INT,
     getOrganelle TEXT, max_paths INT, seeds_db TEXT, labels_db TEXT, assembler TEXT, find_rrna INT,
     bowtie2 TEXT, spades TEXT)")
-  DBI::dbExecute(con, "CREATE TABLE annotate_opts(annotate_opts TEXT, rrna_tool TEXT, rrna_kingdom TEXT)")
+  DBI::dbExecute(con, "CREATE TABLE annotate_opts(annotate_opts TEXT, rrna_tool TEXT, rrna_kingdom TEXT,
+    barrnap_opts TEXT, pybarrnap_opts TEXT)")
   DBI::dbExecute(con, "INSERT INTO pre_opts VALUES('default',4,8,'')")
   DBI::dbExecute(con, "INSERT INTO assemble_opts VALUES('default',4,16,'--flag',10,NULL,NULL,'getorganelle',1,NULL,NULL)")
-  DBI::dbExecute(con, "INSERT INTO annotate_opts VALUES('default','pybarrnap','euk')")
+  DBI::dbExecute(con, "INSERT INTO annotate_opts VALUES('default','pybarrnap','euk','','')")
   for (id in c("LOCKED", "UNLOCKED")) {
     DBI::dbExecute(con, "INSERT INTO samples VALUES(?,NULL,?)",
       params = list(id, if (id == "LOCKED") 1L else 0L))
@@ -1574,4 +1575,17 @@ test_that("the pick step runs even when every scan part failed, and scan parts r
     collapse = " ")
   expect_match(cfg, "withName: 'assemble|fallback_assemble|preprocess|annotate_tools|find_rrna_scan'",
     fixed = TRUE)
+})
+
+test_that("user rRNA caller flags reach both the per-unit and the scan commands", {
+  nf <- readLines(system.file("nextflow", "modules", "pipeline_r.nf", package = "RiboPilot"))
+  expect_true(any(grepl("barrnap_opts ELSE ao.pybarrnap_opts", nf, fixed = TRUE)))
+  expect_true(any(grepl("--quiet \\$RRNAO unit.fasta", nf, fixed = TRUE)))
+  expect_true(any(grepl("-q \\$RRNAO unit.fasta", nf, fixed = TRUE)))
+  expect_true(any(grepl("AS rrna_opts", nf, fixed = TRUE)))
+  scan <- readLines(system.file("nextflow", "modules", "find_rrna.nf", package = "RiboPilot"))
+  expect_true(any(grepl("--quiet ${opts} ${chunk}", scan, fixed = TRUE)))
+  expect_true(any(grepl("-q ${opts} ${chunk}", scan, fixed = TRUE)))
+  main <- readLines(system.file("nextflow", "main.nf", package = "RiboPilot"))
+  expect_true(any(grepl("r.rrna_kingdom, r.rrna_opts)", main, fixed = TRUE)))
 })

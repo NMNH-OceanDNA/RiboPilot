@@ -531,17 +531,19 @@ new_db <- function(
       rrna_kingdom TEXT,
       itsx_taxon TEXT,
       itsx_opts TEXT,
+      barrnap_opts TEXT,
+      pybarrnap_opts TEXT,
       PRIMARY KEY (annotate_opts)
     );"
   )
   # rrna_tool: 'pybarrnap' (default; euk-capable Python reimplementation) or
   # 'barrnap'. rrna_kingdom values differ by tool (pybarrnap: bac/arc/euk/all;
-  # barrnap: bac/arc/fun).
+  # barrnap: bac/arc/fun). *_opts: extra CLI flags for that tool only.
   dplyr::tbl(con, "annotate_opts") |>
     dplyr::rows_upsert(
       data.frame(annotate_opts = "default", cpus = 4L, memory = 8L,
         rrna_tool = "pybarrnap", rrna_kingdom = "euk",
-        itsx_taxon = "all", itsx_opts = ""),
+        itsx_taxon = "all", itsx_opts = "", barrnap_opts = "", pybarrnap_opts = ""),
       in_place = TRUE, copy = TRUE, by = "annotate_opts"
     )
 

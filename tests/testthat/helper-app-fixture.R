@@ -19,8 +19,9 @@ fixture_fill_schema <- function(con) {
     run_blast INTEGER, entrez_query TEXT, max_target_seqs INTEGER, extra_opts TEXT)")
   DBI::dbExecute(con, "INSERT OR IGNORE INTO blast_opts VALUES ('default',1,NULL,50,'')")
   DBI::dbExecute(con, "CREATE TABLE IF NOT EXISTS annotate_opts (annotate_opts TEXT PRIMARY KEY,
-    cpus INTEGER, memory INTEGER, rrna_tool TEXT, rrna_kingdom TEXT, itsx_taxon TEXT, itsx_opts TEXT)")
-  DBI::dbExecute(con, "INSERT INTO annotate_opts VALUES ('default',4,8,'pybarrnap','euk','all','')")
+    cpus INTEGER, memory INTEGER, rrna_tool TEXT, rrna_kingdom TEXT, itsx_taxon TEXT, itsx_opts TEXT,
+    barrnap_opts TEXT, pybarrnap_opts TEXT)")
+  DBI::dbExecute(con, "INSERT INTO annotate_opts VALUES ('default',4,8,'pybarrnap','euk','all','','','')")
   if (!("assemble_opts" %in% DBI::dbListTables(con))) {
     DBI::dbExecute(con, "CREATE TABLE assemble_opts (assemble_opts TEXT PRIMARY KEY, cpus INTEGER,
       memory INTEGER, getOrganelle TEXT, seeds_db TEXT, labels_db TEXT, target TEXT, max_paths INTEGER,
