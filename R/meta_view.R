@@ -106,6 +106,7 @@ meta_view_join <- function(dat, con, fields = meta_view_fields(con)) {
     for (i in seq_len(nrow(g))) vals[[g$col[i]]] <- mv[[.meta_key_col(g$key[i])]]
   }
   vals[f$col] <- lapply(vals[f$col], function(x) ifelse(is.na(x), "", x))
+  dat$ID <- as.character(dat$ID)
   out <- dplyr::left_join(dat[setdiff(names(dat), f$col)], vals, by = "ID")
   anchor <- intersect(names(out), META_VIEW_ANCHORS)
   if (length(anchor)) {

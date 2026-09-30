@@ -49,6 +49,7 @@ specimen_status <- function(con) {
 #' @param con database connection
 #' @noRd
 .specimen_status_join <- function(df, con) {
+  df$ID <- as.character(df$ID)
   out <- dplyr::left_join(df, specimen_status(con), by = "ID")
   out$specimen[is.na(out$specimen)] <- "none"
   out

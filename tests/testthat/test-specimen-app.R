@@ -384,3 +384,15 @@ test_that("Refresh all with no IDs only notifies, and with IDs fetches each job"
   expect_equal(calls$n, 2L)
   expect_equal(changed, 1L)
 })
+
+test_that("metadata joins accept a zero-row table whose ID column is logical", {
+  dir <- mk_app_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  on.exit(DBI::dbDisconnect(con))
+  d0 <- data.frame(ID = logical(0), Taxon = character(0))
+  expect_no_error(out <- .specimen_status_join(d0, con))
+  expect_equal(nrow(out), 0)
+  expect_no_error(meta_view_join(d0, con))
+  DBI::dbExecute(con, "INSERT OR IGNORE INTO meta_export_fields VALUES ('geome:combo:lat_lon')")
+  expect_no_error(.meta_join(d0, con))
+})
