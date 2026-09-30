@@ -108,6 +108,9 @@ reference:
   - curate_rrna_core
   - derive_blast_products
   - fallback_assemble_one
+  - fetch_biosample
+  - fetch_gbif
+  - fetch_geome
   - itsx_check_one
   - load_assemblies
   - mark_unit_searched
@@ -120,6 +123,7 @@ reference:
   - rank_distance
   - rank_distance_label
   - reconcile_one
+  - remove_metadata
   - rederive_blast_products
   - resolve_taxonomy
   - score_assembly

@@ -122,3 +122,9 @@ check_reference_db <- function(x, what) {
   }
   invisible(x)
 }
+
+.lst <- function(x, max = 10L) {
+  x <- as.character(x)
+  if (length(x) <= max) return(paste(x, collapse = ", "))
+  paste0(paste(x[seq_len(max)], collapse = ", "), ", ... and ", length(x) - max, " more")
+}
