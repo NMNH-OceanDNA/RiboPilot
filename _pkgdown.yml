@@ -78,6 +78,9 @@ reference:
   - run_app
   - add_samples
   - update_sample_metadata
+  - gbif_normalize_id
+  - geome_normalize_bcid
+  - ncbi_normalize_id
   - backwards_compatibility
 - title: "Reference databases"
   contents:
