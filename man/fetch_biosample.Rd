@@ -26,6 +26,6 @@ Invisibly, a data frame of \code{ID}, \code{status}, and \code{message}.
 Looks up each sample's NCBI BioSample, directly or through an SRA accession
 (SRR/ERR/DRR run, SRX experiment, or SRS sample), plus the BioProject(s) it
 belongs to, and stores everything in the project database for viewing in
-the app and use at export. Set the environment variable \code{ENTREZ_KEY} to an
-NCBI API key for faster lookups.
+the app and use at export. The NCBI API key comes from the project's \code{.config}
+file (\code{ncbi_api_key}), the \code{NCBI_API_KEY} environment variable, or \code{ENTREZ_KEY}.
 }

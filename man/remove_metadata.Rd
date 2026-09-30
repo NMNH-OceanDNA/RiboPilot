@@ -17,7 +17,7 @@ remove_metadata(path = ".", sources = names(META_SOURCES), ids = NULL)
 Invisibly, NULL.
 }
 \description{
-Deletes the records MitoPilot fetched from GEOME, GBIF, or NCBI, and any IDs
+Deletes the records RiboPilot fetched from GEOME, GBIF, or NCBI, and any IDs
 it found by following links between them. Your mapping-file columns, the IDs
 you supplied (in the mapping file, in the app, or with \verb{fetch_*()}), and your
 export and table field choices are kept, so the data can be fetched again at

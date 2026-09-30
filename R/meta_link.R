@@ -203,7 +203,7 @@
 
 #' Remove fetched GEOME, GBIF, and NCBI metadata
 #'
-#' Deletes the records MitoPilot fetched from GEOME, GBIF, or NCBI, and any IDs
+#' Deletes the records RiboPilot fetched from GEOME, GBIF, or NCBI, and any IDs
 #' it found by following links between them. Your mapping-file columns, the IDs
 #' you supplied (in the mapping file, in the app, or with `fetch_*()`), and your
 #' export and table field choices are kept, so the data can be fetched again at

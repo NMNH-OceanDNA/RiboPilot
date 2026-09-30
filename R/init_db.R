@@ -778,9 +778,8 @@ check_mapping <- function(mapping, mapping_id = "ID", data_path = NULL, assembly
     col <- src_cols[[src]]
     std <- META_SOURCES[[src]]$col
     if (col != std && std %in% names(mapping)) {
-      stop("reserved names that RiboPilot fills in itself: ", std,
-        ". Rename the '", std, "' column, or use it as ", tolower(src),
-        " column instead of '", col, "'.", call. = FALSE)
+      stop("The mapping file has both a ", col, " column and a ", std,
+        " column for the same source. Keep one of them.", call. = FALSE)
     }
     if (!col %in% names(mapping)) {
       if (col != std) {

@@ -3,8 +3,8 @@
 #' Looks up each sample's NCBI BioSample, directly or through an SRA accession
 #' (SRR/ERR/DRR run, SRX experiment, or SRS sample), plus the BioProject(s) it
 #' belongs to, and stores everything in the project database for viewing in
-#' the app and use at export. Set the environment variable `ENTREZ_KEY` to an
-#' NCBI API key for faster lookups.
+#' the app and use at export. The NCBI API key comes from the project's `.config`
+#' file (`ncbi_api_key`), the `NCBI_API_KEY` environment variable, or `ENTREZ_KEY`.
 #'
 #' @param path Path to the project directory (default = current working directory)
 #' @param ids Sample IDs to fetch. Default: every sample with a BioSample value.
