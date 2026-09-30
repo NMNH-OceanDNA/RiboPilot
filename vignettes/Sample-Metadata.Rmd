@@ -252,7 +252,23 @@ For other museums RiboPilot searches GBIF for the voucher, which GenBank writes
 as `institution:collection:catalog` (for example `UW:157636`,
 `USNM:FISH:419933`). GBIF stores catalog numbers in several forms, so it tries
 three queries in turn, then filters the hits strictly and links only when
-exactly one specimen is left:
+exactly one specimen is left.
+
+1. `occurrenceID` equal to the catalog number (hits must also have the same
+   institution code).
+2. `catalogNumber` equal to the institution and catalog number together, such as
+   `UW 157636`.
+3. `catalogNumber` equal to the catalog number, with `institutionCode` equal to
+   the institution.
+
+The first query that returns hits is used. Its hits are filtered like this:
+
+- The species must match the sample's Taxon (the genus, when the Taxon is one
+  word).
+- When the voucher has a collection code, such as `FISH` in `USNM:FISH:419933`,
+  the GBIF `collectionCode` must match it.
+- If any hit is a preserved specimen, only preserved specimens are kept.
+- A link is made only if exactly one hit is left.
 
 The species check matters: one catalog number can belong to many specimens (a
 museum lot such as `SIO 09-320` holds 27 species, and `USNM 419933` exists in
@@ -565,8 +581,7 @@ Messages you may see in the viewer, on a warning icon, or in a fetch warning:
 
 # Screenshots to add
 
-This page has no screenshots yet. MitoPilot's page shows these, and RiboPilot's
-should too:
+This page has no screenshots yet. Planned:
 
 1. The Metadata column in a table, with fetched, failed, conflict, and empty
    samples.
