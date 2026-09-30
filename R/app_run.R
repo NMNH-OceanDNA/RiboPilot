@@ -192,6 +192,12 @@ run_app <- function(project = getwd(), host = NULL, port = NULL, launch.browser 
       ". Make one with new_project(), or point `project` at an existing project folder.",
       call. = FALSE)
   }
+  v <- project_schema_version(file.path(project, ".sqlite"))
+  stop_unsupported_schema(v)
+  if (v < current_schema_version()) {
+    stop("This project needs an update. Run backwards_compatibility(\"", project, "\") first.",
+      call. = FALSE)
+  }
   check_nextflow_version("RiboPilot app")
   ensure_hydra_setup()
   if (is.null(launch.browser)) launch.browser <- interactive()

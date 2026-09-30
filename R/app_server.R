@@ -32,8 +32,8 @@ app_server <- function(input, output, session) {
         tags$pre(cgap$expected),
         tags$p("The app works either way, but pipeline runs will use the RiboPilot code ",
           "and tools in the older image."),
-        tags$p(tags$b("To switch, edit the container line in the project's .config."),
-          " That is a one-line change and leaves the rest of your settings alone.")),
+        tags$p(tags$b("To switch, run backwards_compatibility() on this project."),
+          " It changes only the container line and leaves the rest of your settings alone.")),
       html = TRUE, type = "info")
   }
 
