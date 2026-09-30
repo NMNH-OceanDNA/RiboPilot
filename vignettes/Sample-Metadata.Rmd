@@ -506,9 +506,9 @@ The Export window shows a chip for every column you can use, in groups:
 **Basics**, **Your mapping columns**, **GEOME**, **GBIF**, **NCBI**, and
 **RiboPilot columns**. Click a chip to insert it at the cursor of the header
 box you last clicked. A GenBank-ready combination inserts the whole source
-modifier, for example `[lat_lon={geome_lat_lon}]`. NCBI spells most FASTA
-modifiers with hyphens (see [GenBank submission](GenBank-Submission.html#required-source-modifiers)),
-so change the underscores in an inserted modifier name to hyphens. Hover over a column to see its
+modifier, for example `[lat_lon={geome_lat_lon}]` (GenBank accepts these names
+with underscores; see [GenBank submission](GenBank-Submission.html#required-source-modifiers)).
+Hover over a column to see its
 value for the first row of any export group, and type in the filter box to
 find one. **Choose fields** next to GEOME, GBIF, or NCBI opens the Set Export Metadata
 window; closing it returns you to the Export window as it was.
@@ -516,13 +516,13 @@ window; closing it returns you to the Export window as it was.
 A template using GEOME and GBIF fields:
 
 ```
-{seqid} [organism={organism}] [moltype=genomic DNA] [lat-lon={gbif_lat_lon}] [collection-date={gbif_collection_date}] [geo-loc-name={geome_geo_loc_name}] [specimen-voucher={gbif_specimen_voucher}] {organism} {rrna_definition}
+{seqid} [organism={organism}] [moltype=genomic DNA] [lat_lon={gbif_lat_lon}] [collection_date={gbif_collection_date}] [geo_loc_name={geome_geo_loc_name}] [specimen_voucher={gbif_specimen_voucher}] {organism} {rrna_definition}
 ```
 
 ::: {.alert .alert-warning}
 **Empty values stay in the header.** If a sample has no value for
 a field, the header still gets the modifier with nothing after it, such as
-`[lat-lon=]`, which GenBank rejects. Only add a modifier to a template
+`[lat_lon=]`, which GenBank rejects. Only add a modifier to a template
 when every sample in the export group has a value for it. RiboPilot never
 changes your templates on its own.
 :::
