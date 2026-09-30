@@ -496,7 +496,7 @@ export_left_out <- function(con, group) {
        CASE WHEN COALESCE(an.problematic,'') = 'yes' THEN 'excluded from export'
             WHEN COALESCE(a.assemble_lock,0) != 1 THEN 'assembly not locked'
             WHEN COALESCE(an.annotate_lock,0) != 1 THEN 'annotation not locked'
-            ELSE 'scaffold dropped' END AS why
+            ELSE 'contig dropped' END AS why
      FROM annotate an
      LEFT JOIN assemble a ON a.ID = an.ID
      LEFT JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
@@ -646,7 +646,7 @@ export_report_html <- function(con, units, out_html, label, smry = export_summar
 #' @param path Project directory.
 #' @param ids Sample IDs to export (default: every exportable unit). If `group`
 #'   is given, restricted to that group. Sample-grain: every exportable unit of
-#'   a listed sample is included. Use `units` to pick individual scaffolds.
+#'   a listed sample is included. Use `units` to pick individual contigs.
 #' @param units Optional data.frame(ID, path, scaffold) restricting the export to
 #'   those exact assembly units. Applied on top of `ids` / `group`.
 #' @param group Export-group name to filter by and label the bundle.
@@ -671,7 +671,7 @@ export_report_html <- function(con, units, out_html, label, smry = export_summar
 #' @return (invisibly) the group output directory, with the summary data.frame
 #'   attached as attribute `summary`.
 #' @details A unit is exported when its sample's assembly and the unit's
-#'   annotation are both locked, its scaffold is kept, and it is not excluded
+#'   annotation are both locked, its contig is kept, and it is not excluded
 #'   from export.
 #' @export
 export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,

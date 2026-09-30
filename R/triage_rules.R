@@ -17,23 +17,23 @@ TRIAGE_RULE_DEFS <- list(
   list(
     key = "not_annotated",
     label = "Annotation has not run",
-    meaning = "Neither annotation tool has reported on this scaffold yet.",
+    meaning = "Neither annotation tool has reported on this contig yet.",
     actions = c("off", "flag"),
     default = "flag",
     test = function(d, i, ctx) {
       if (isTRUE(ctx$annotated[i])) return(NA_character_)
-      "annotation has not run for this scaffold"
+      "annotation has not run for this contig"
     }
   ),
   list(
     key = "no_screen",
     label = "BLAST screen has not run",
-    meaning = "No usable BLAST hit is recorded, so the scaffold cannot be judged.",
+    meaning = "No usable BLAST hit is recorded, so the contig cannot be judged.",
     actions = c("off", "flag"),
     default = "flag",
     test = function(d, i, ctx) {
       if (isTRUE(ctx$screened[i])) return(NA_character_)
-      "no BLAST hit says whether this scaffold is nuclear rDNA"
+      "no BLAST hit says whether this contig is nuclear rDNA"
     }
   ),
   list(
@@ -65,7 +65,7 @@ TRIAGE_RULE_DEFS <- list(
   list(
     key = "feat_non_rdna_hit",
     label = "Has annotations but non-rDNA hit",
-    meaning = "The scaffold has a feature model, but its best GenBank match is not a nuclear rDNA record.",
+    meaning = "The contig has a feature model, but its best GenBank match is not a nuclear rDNA record.",
     actions = TRIAGE_ACTIONS,
     default = "flag",
     test = function(d, i, ctx) {
@@ -77,24 +77,24 @@ TRIAGE_RULE_DEFS <- list(
   list(
     key = "screen_off_target",
     label = "GenBank taxonomy disagrees with the sample",
-    meaning = "The scaffold's BLAST hits agree on a taxon that is not on this sample's lineage.",
+    meaning = "The contig's BLAST hits agree on a taxon that is not on this sample's lineage.",
     actions = TRIAGE_ACTIONS,
     default = "flag",
     test = function(d, i, ctx) {
       if (!identical(ctx$screen[i], "off_target")) return(NA_character_)
-      sprintf("the scaffold's BLAST hits agree on %s, which does not sit on this sample's lineage",
+      sprintf("the contig's BLAST hits agree on %s, which does not sit on this sample's lineage",
         ctx$screen_taxon[i] %|NA|% "another taxon")
     }
   ),
   list(
     key = "odd_one_out",
-    label = "Disagrees with sibling scaffolds",
-    meaning = "This scaffold's top hit disagrees with the majority of this sample's other scaffolds.",
+    label = "Disagrees with sibling contigs",
+    meaning = "This contig's top hit disagrees with the majority of this sample's other contigs.",
     actions = c("off", "flag"),
     default = "flag",
     test = function(d, i, ctx) {
       if (!isTRUE(ctx$screened[i]) || !isTRUE(ctx$sib$odd_one_out[i])) return(NA_character_)
-      sprintf("top BLAST hit (%s) differs from this sample's other scaffolds (%s at %s)",
+      sprintf("top BLAST hit (%s) differs from this sample's other contigs (%s at %s)",
         ctx$sp[i], ctx$sib$sib_taxon[i] %|NA|% "the majority",
         ctx$sib$sib_rank[i] %|NA|% "an agreed rank")
     }
@@ -102,12 +102,12 @@ TRIAGE_RULE_DEFS <- list(
   list(
     key = "chimeric",
     label = "Chimeric assembly (severe)",
-    meaning = "Parts of this scaffold match organisms from different phyla or kingdoms.",
+    meaning = "Parts of this contig match organisms from different phyla or kingdoms.",
     actions = c("off", "flag"),
     default = "flag",
     test = function(d, i, ctx) {
       if (!identical(ctx$chimera[i], "severe")) return(NA_character_)
-      ctx$chimera_reason[i] %|NA|% "parts of this scaffold match different phyla or kingdoms"
+      ctx$chimera_reason[i] %|NA|% "parts of this contig match different phyla or kingdoms"
     }
   )
 )
@@ -242,7 +242,7 @@ triage_rules <- function(d, opts = triage_actions_default(), m = triage_rule_mat
 #' a rule set to off still reports what turning it back on would reach.
 #'
 #' `mask` restricts the COUNTING only. The rules stay evaluated over the whole
-#' frame because sibling concordance is a property of the full set of scaffolds,
+#' frame because sibling concordance is a property of the full set of contigs,
 #' so counting a subset by re-running the rules on it would report a different
 #' verdict than the one the caller is about to write.
 #' @noRd

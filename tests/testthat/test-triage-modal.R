@@ -41,5 +41,5 @@ test_that("the legend explains both counts without jargon", {
 test_that("the modal no longer offers a depth control", {
   html <- as.character(RiboPilot:::triage_modal(1, RiboPilot:::triage_actions_default()))
   expect_false(grepl("triage_depth_frac", html, fixed = TRUE))
-  expect_false(grepl("deepest scaffold", html, fixed = TRUE))
+  expect_false(grepl("deepest contig", html, fixed = TRUE))
 })

@@ -31,7 +31,7 @@
 #'   the Reference step replaces it.
 #' @param getOrganelle Default GetOrganelle command-line options.
 #' @param max_paths Max assembly paths for a sample to continue (default 10).
-#' @param max_scaffolds Max scaffolds within a path to continue (default 10).
+#' @param max_scaffolds Max contigs within a path to continue (default 10).
 #' @param min_assembly_length Minimum contig length (bp) to retain (default 500).
 #' @param ref_dir Folder for built reference databases (default: the
 #'   `RIBOPILOT_REF_DIR` environment variable, else [ribopilot_ref_dir()]).

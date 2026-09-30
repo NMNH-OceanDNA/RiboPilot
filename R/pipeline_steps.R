@@ -296,14 +296,14 @@ carry_user_triage <- function(df, old) {
 #' Load one sample's assembly fastas into the database
 #'
 #' Parses `<dir>/<ID>_assembly_*.fasta` (headers
-#' `>ID.path.scaffold topology`), orients each scaffold to the sense strand,
-#' rotates circular units to start in the IGS, writes per-scaffold rows into
+#' `>ID.path.scaffold topology`), orients each contig to the sense strand,
+#' rotates circular units to start in the IGS, writes per-contig rows into
 #' `assemblies`, and updates the per-sample `assemble` summary.
 #'
 #' @param con Open DBI connection.
 #' @param dir Folder holding the sample's assembly fastas (the score task's own folder).
 #' @param ID Sample ID.
-#' @return (invisibly) the number of scaffolds loaded.
+#' @return (invisibly) the number of contigs loaded.
 #' @export
 load_assemblies <- function(con, dir, ID) {
   fas <- Sys.glob(file.path(dir, paste0(ID, "_assembly_*.fasta")))
@@ -390,7 +390,7 @@ load_assemblies <- function(con, dir, ID) {
   # and counted out of the gate here so junk fragments cannot trip max_scaffolds.
   minlen <- if (nrow(ml) > 0) ml$min_assembly_length[1] else NA_integer_
   short <- if (!is.na(minlen) && minlen > 0) df$length < minlen else rep(FALSE, nrow(df))
-  short_note <- if (any(short)) sprintf("%d scaffold(s) under min_assembly_length (%d bp)",
+  short_note <- if (any(short)) sprintf("%d contig(s) under min_assembly_length (%d bp)",
     sum(short), as.integer(minlen)) else NULL
 
   kept <- df[!short, , drop = FALSE]
@@ -403,7 +403,7 @@ load_assemblies <- function(con, dir, ID) {
     if (over(n_paths_raw, lim$max_paths[1]))
       sprintf("%d or more paths exceed max_paths (%d)", n_paths_raw, lim$max_paths[1]),
     if (over(max_per_path_raw, lim$max_scaffolds[1]))
-      sprintf("%d scaffolds in a path exceeds max_scaffolds (%d)",
+      sprintf("%d contigs in a path exceeds max_scaffolds (%d)",
         max_per_path_raw, lim$max_scaffolds[1]))
 
   old <- DBI::dbGetQuery(con,

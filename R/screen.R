@@ -193,7 +193,7 @@ screen_channel_taxonomy <- function(hits, sample_taxids,
     return(out)
   }
   if (is.null(hits) || nrow(hits) == 0) {
-    out$reason <- "no BLAST hits are stored for this scaffold"
+    out$reason <- "no BLAST hits are stored for this contig"
     return(out)
   }
   hits <- screen_one_vote_per_subject(hits)
@@ -350,7 +350,7 @@ screen_one <- function(con, id, path = 1L, scaffold = 1L, force = FALSE) {
     if (length(searched_source) > 0 && identical(searched_source[1], "local")) {
       r$reason <- if (identical(r$reason_code, "no_hits")) {
         paste("the bundled rDNA database returned no usable hit for this",
-          "scaffold; a search at NCBI (BLAST Options, Search) may identify it")
+          "contig; a search at NCBI (BLAST Options, Search) may identify it")
       } else {
         paste("the bundled rDNA database returned no hit that resolved to a",
           "usable lineage; a search at NCBI (BLAST Options, Search) may identify it")

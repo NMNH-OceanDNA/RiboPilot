@@ -17,7 +17,7 @@
 #' Split a combined `samtools depth -a` (one path mapped at a time) into
 #' per-unit coverage rows
 #'
-#' The reference names are the scaffold fasta headers `path.scaffold`, so each
+#' The reference names are the contig fasta headers `path.scaffold`, so each
 #' distinct ref is written as one coverage unit.
 #' @param con Open project DB connection.
 #' @param id Sample ID.

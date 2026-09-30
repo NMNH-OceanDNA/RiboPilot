@@ -42,7 +42,7 @@ config_param <- function(config_lines, key) {
 #' Launches the self-contained Nextflow pipeline, the same run as the app's
 #' Update button. For every taxonomy-locked sample that is Ready to run, one run
 #' cleans the reads, assembles, scores, BLASTs, maps coverage, annotates,
-#' curates, screens, checks for chimeras, and triages every scaffold, writing
+#' curates, screens, checks for chimeras, and triages every contig, writing
 #' everything back to the database. Run it again (or press Update) only after
 #' changing a selection, an option set, or a State.
 #'
@@ -81,7 +81,7 @@ run_assembly <- function(path = ".", nextflow = "nextflow", work = file.path(pat
     warning("Nextflow exited with status ", status)
   } else {
     message("WF1 complete (assemble -> score -> BLAST + coverage -> annotate + curate) ",
-      "written to the database. Every scaffold is annotated as it is assembled; ",
+      "written to the database. Every contig is annotated as it is assembled; ",
       "review and lock assemblies in the app, then curate per unit in Annotation Review.")
   }
   invisible(status)

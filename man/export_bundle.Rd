@@ -28,7 +28,7 @@ export_bundle(
 
 \item{ids}{Sample IDs to export (default: every exportable unit). If \code{group}
 is given, restricted to that group. Sample-grain: every exportable unit of
-a listed sample is included. Use \code{units} to pick individual scaffolds.}
+a listed sample is included. Use \code{units} to pick individual contigs.}
 
 \item{units}{Optional data.frame(ID, path, scaffold) restricting the export to
 those exact assembly units. Applied on top of \code{ids} / \code{group}.}
@@ -72,6 +72,6 @@ Build a GenBank submission bundle for a set of samples (one export group)
 }
 \details{
 A unit is exported when its sample's assembly and the unit's
-annotation are both locked, its scaffold is kept, and it is not excluded
+annotation are both locked, its contig is kept, and it is not excluded
 from export.
 }

@@ -14,13 +14,13 @@ status_badge <- function(label, state, invert = FALSE, neutral_no = FALSE) {
   span(class = paste0("mp-pill mp-pill-", tone), paste0(label, ": ", toupper(val)))
 }
 
-#' The stored per-scaffold BLAST hit, labelled with the search that produced it
+#' The stored per-contig BLAST hit, labelled with the search that produced it
 #'
 #' Three searches can write `assemblies.blast_*`: the remote core_nt one, the
 #' local one against a configured rDNA reference panel, and the local one
 #' against the GetOrganelle seed file. The seed file is the same set of
 #' sequences that baited the assembly, so its hit answers "which seed does this
-#' scaffold resemble", not "what is this"; the other two are real reference
+#' contig resemble", not "what is this"; the other two are real reference
 #' searches. Shown where no BLAST screen exists, and never without saying
 #' which search it came from.
 #' @param r One row of `unit_evidence()`.
@@ -51,7 +51,7 @@ seed_hit_block <- function(r) {
         r$blast_pident %|NA|% "?"))),
     if (from_seeds) tags$p(class = "mp-help-text mp-fg-warning", style = "margin-top:3px;",
       paste("These seeds are what GetOrganelle used to bait the assembly, so a high",
-        "identity here says the scaffold looks like its own bait. A missing or",
+        "identity here says the contig looks like its own bait. A missing or",
         "distant relative in the seed file can put this name on the wrong genus.")))
 }
 
@@ -92,24 +92,24 @@ failure_banner <- function(id) {
       "Pipeline note: ", r$note[1]))
 }
 
-#' Why a scaffold has no BLAST screen
+#' Why a contig has no BLAST screen
 #' @noRd
 no_screen_note <- function(failed, blast_on, running) {
   if (failed) {
-    "No BLAST screen for this scaffold. BLAST did not run because the assembly failed."
+    "No BLAST screen for this contig. BLAST did not run because the assembly failed."
   } else if (!blast_on) {
     paste("BLAST is switched off for this sample (Assemble step, BLAST Options).",
-      "Switch Run BLAST on there, then press Update to screen this scaffold.")
+      "Switch Run BLAST on there, then press Update to screen this contig.")
   } else if (running) {
-    paste("No BLAST screen for this scaffold yet. A run is going for this project,",
+    paste("No BLAST screen for this contig yet. A run is going for this project,",
       "and its BLAST search may still be working on it.")
   } else {
-    paste("No BLAST screen for this scaffold: the search found no match, or it could",
+    paste("No BLAST screen for this contig: the search found no match, or it could",
       "not finish (for example, NCBI could not be reached).")
   }
 }
 
-#' Which database answered a scaffold's BLAST search, and when
+#' Which database answered a contig's BLAST search, and when
 #' @param r One row of `unit_evidence()`.
 #' @noRd
 searched_in <- function(r) {
@@ -150,7 +150,7 @@ chimera_panel <- function() {
   tagList(
     tags$p(style = "margin:2px 0 4px; font-weight:600;", uiOutput("chimera_result", inline = TRUE)),
     tags$p(class = "mp-help-text", style = "margin:2px 0 4px;",
-      "Looks for pieces of different origin joined in one scaffold, using the genes' BLAST hits, ",
+      "Looks for pieces of different origin joined in one contig, using the genes' BLAST hits, ",
       "500 bp BLAST windows, ribotyper, and read depth and clipping. Severe (different phyla or ",
       "kingdoms) is flagged at export; minor is only reported. Unresolved windows match several ",
       "classes equally and do not count."),
@@ -169,7 +169,7 @@ chimera_panel <- function() {
         reactable::reactableOutput("chimera_windows"), open = FALSE))))
 }
 
-#' Assemble details modal: scaffolds, their evidence, and keep/drop
+#' Assemble details modal: contigs, their evidence, and keep/drop
 #' @noRd
 assemble_modal <- function(id) {
   modalDialog(
@@ -178,14 +178,14 @@ assemble_modal <- function(id) {
     footer = div(class = "mp-sticky-foot", rp_sample_nav(), mp_footer(dismiss = "Close")),
     modal_taxon_header(id),
     failure_banner(id),
-    h5("Scaffolds", style = "margin:2px 0 4px;"),
+    h5("Contigs", style = "margin:2px 0 4px;"),
     tags$p(class = "mp-help-text", style = "margin-bottom:4px;",
-      "Click a scaffold row to see its BLAST evidence, read coverage, and chimera check below."),
+      "Click a contig row to see its BLAST evidence, read coverage, and chimera check below."),
     reactable::reactableOutput("assemble_scaffolds"),
     div(style = "margin-top:6px;",
       actionButton("copy_fasta", "Copy FASTA", icon = icon("clipboard"), class = "btn-sm"),
       tags$span(class = "text-muted", style = "margin-left:8px; font-size:0.82em;",
-        "Copies the ticked scaffolds as FASTA, headed by sample, taxon and unit.")),
+        "Copies the ticked contigs as FASTA, headed by sample, taxon and unit.")),
     tags$hr(style = "margin:10px 0;"),
 
     # The evidence that settles the keep/drop call, at the point it is made.
@@ -282,7 +282,7 @@ risk_reasons <- function(risk) {
     paste(c(if (!is.na(tx)) sprintf("BLAST hits agree on %s", tx),
       if (grepl("(^|;)contaminant(;|$)", r)) "the best BLAST hit is from another phylum",
       if (grepl("(^|;)chimeric\\(ITSx\\)", r)) "ITSx, the tool NCBI runs on submissions, calls it chimeric"
-      else if (grepl("(^|;)chimeric", r)) "parts of the scaffold match organisms from different phyla or kingdoms",
+      else if (grepl("(^|;)chimeric", r)) "parts of the contig match organisms from different phyla or kingdoms",
       if (grepl("(^|;)gap_in_rDNA", r)) "an assembly gap inside the rDNA",
       if (grepl("(^|;)misassembly", r)) "features overlap or are out of order",
       if (!is.na(nm)) sprintf("your Taxon differs from %s", nm),
@@ -354,13 +354,13 @@ triage_modal <- function(n_samples, actions = triage_actions_default()) {
         uiOutput(paste0("triage_n_", def$key), inline = TRUE)))
   })
   modalDialog(
-    title = paste("Triage scaffolds for", mp_n(n_samples, "sample")),
+    title = paste("Triage contigs for", mp_n(n_samples, "sample")),
     size = "l", easyClose = TRUE,
     tags$p(class = "mp-help-text",
-      paste("Proposes keep / drop / undecided per scaffold from the evidence already",
-        "in the database. Depth is shown in the scaffold table but never decides:",
+      paste("Proposes keep / drop / undecided per contig from the evidence already",
+        "in the database. Depth is shown in the contig table but never decides:",
         "high depth is often k-mer collapse across the conserved core or IGS",
-        "subrepeats, and low depth is often a repeat inside the scaffold, where reads",
+        "subrepeats, and low depth is often a repeat inside the contig, where reads",
         "map to two places and are left out.")),
     tags$table(style = "width:100%; font-size:0.9em;",
       tags$thead(tags$tr(
@@ -370,12 +370,12 @@ triage_modal <- function(n_samples, actions = triage_actions_default()) {
       tags$tbody(rows)),
     tags$p(class = "mp-help-text", style = "margin-top:6px;",
       paste("Rules are applied top to bottom and the first one that matches decides",
-        "whether to drop or flag the scaffold. \"Decided\" counts scaffolds this rule",
-        "will drop or flag. \"Matching\" counts every scaffold that meets the rule,",
+        "whether to drop or flag the contig. \"Decided\" counts contigs this rule",
+        "will drop or flag. \"Matching\" counts every contig that meets the rule,",
         "even if a higher-priority rule acts on it first.")),
     div(style = "margin:0.4em 0;",
       shinyWidgets::prettyCheckbox("triage_overwrite_user",
-        "Also re-decide scaffolds I set by hand", value = FALSE, status = "danger")),
+        "Also re-decide contigs I set by hand", value = FALSE, status = "danger")),
     tags$hr(style = "margin:8px 0;"),
     uiOutput("triage_preview"),
     footer = mp_footer(danger = actionButton("triage_apply", "Apply"))
@@ -401,7 +401,7 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
   # Always name the unit, even when the sample has only one: every edit in here
   # (features, trim, marks, lock) applies to one (ID, path, scaffold), and the
   # title is the only thing on screen that says which.
-  unit_lbl <- sprintf(" [path %s / scaffold %s]", path, scaffold)
+  unit_lbl <- sprintf(" [path %s / contig %s]", path, scaffold)
   # Seed the notes box from the DB. Re-opening the same unit assigns an
   # identical() value to sel_unit, which does not invalidate the reactiveVal, so
   # the server-side reset observer never fires; a value-less textAreaInput then
@@ -629,7 +629,7 @@ reference_run_modal <- function(n, ref_dir, headless = FALSE, sched = NULL, scri
   )
 }
 
-#' Trim-assembly modal: cut the scaffold to the annotated feature span
+#' Trim-assembly modal: cut the contig to the annotated feature span
 #' or a custom range (shifts annotations + coverage).
 #' @noRd
 trim_modal <- function(n, a_from, a_to) {
@@ -653,7 +653,7 @@ trim_modal <- function(n, a_from, a_to) {
       shinyjs::disabled(numericInput("trim_to", "To (bp)", value = a_to, min = 1, max = n))),
     div(style = "color:#c0392b; font-weight:bold; margin:6px 0 14px;", textOutput("trim_flank_hint")),
     textOutput("trim_chimera_hint"),
-    opts_help("Trimming cuts the flanks off the scaffold and shifts every ",
+    opts_help("Trimming cuts the flanks off the contig and shifts every ",
       "feature coordinate + the coverage track to match. Features that fall entirely ",
       "outside the kept range are removed. Use \"Restore assembly\" to undo."),
     footer = mp_footer(
@@ -753,7 +753,7 @@ export_modal <- function(groups, templates = "default", template = "default",
         "your Taxon, so a label like \"Upeneus sp. A\" is kept. ", tags$code("{Taxon}"),
         " and ", tags$code("{sci_name}"), " give either name on its own.", nested = TRUE),
       opts_help(tags$b("isolate"), ": each record of a sample that exports more than one ",
-        "scaffold gets ", tags$code("[isolate=ID_p<path>_s<scaffold>]"), " added, so all of ",
+        "contig gets ", tags$code("[isolate=ID_p<path>_s<scaffold>]"), " added, so all of ",
         "them can go into one GenBank submission. Your own ", tags$code("[isolate=...]"),
         " works only in a group where every sample exports one record.", nested = TRUE),
       tags$p(tags$b("Your columns: "), if (length(yours)) paste(yours, collapse = ", ") else "none"),
