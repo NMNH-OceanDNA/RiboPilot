@@ -81,7 +81,7 @@ workflow {
     // the sample has the search switched off (an ITS-only fragment carries no
     // barrnap anchor and would otherwise be dropped).
     find_rrna(sample_rows.user.map { r ->
-        tuple(r.ID, file(params.asmbDir + '/' + r.Assembly), r.asm_cpus, r.asm_mem, r.rrna_tool, r.rrna_kingdom) })
+        tuple(r.ID, file(params.asmbDir + '/' + r.Assembly), r.asm_cpus, r.asm_mem, r.rrna_tool, r.rrna_kingdom, r.rrna_opts) })
     stage_assembly(sample_rows.asis.map { r -> tuple(r.ID, file(params.asmbDir + '/' + r.Assembly)) })
 
     // Seeds / labels stay strings here. sqlite3 renders a SQL NULL as '', and
