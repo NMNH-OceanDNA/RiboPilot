@@ -112,6 +112,28 @@
 * On the NMNH Hydra cluster, the rRNA search of a supplied assembly, and the
   other per-sample memory steps, ask Hydra for memory the way it expects.
 
+## Sample metadata
+
+* Link samples to GEOME, GBIF, and NCBI BioSample records through mapping-file
+  columns `GEOME_BCID`, `GBIF_ID`, and `BioSample`, or other names via
+  `mapping_geome`, `mapping_gbif`, and `mapping_biosample`.
+* `new_project()`, `new_test_project()`, `add_samples()`, and
+  `update_sample_metadata()` fetch the records, unless `fetch_geome`,
+  `fetch_gbif`, or `fetch_biosample` is FALSE. `link_sources = TRUE` also
+  follows links between databases.
+* New `fetch_geome()`, `fetch_gbif()`, `fetch_biosample()`, `remove_metadata()`,
+  and `set_metadata_columns()`, plus `geome_normalize_bcid()`,
+  `gbif_normalize_id()`, and `ncbi_normalize_id()`.
+* The NCBI API key is read from the project `.config`, then `NCBI_API_KEY`, then
+  `ENTREZ_KEY`.
+* A Metadata column in the Taxonomy, Assemble, Annotation Review, and Export
+  tables opens a viewer with per-source tabs and a Compare tab. A Metadata
+  button picks which fields show as table columns.
+* Set Export Metadata picks fields for header templates and
+  `<group>_summary.csv`. Export asks before writing when sources disagree on
+  something a template uses. A mapping-file column with the same name as a
+  ticked field wins.
+
 ## Documentation
 
 * A new Get started guide that follows the app: a short page on setup, then a

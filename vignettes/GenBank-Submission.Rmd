@@ -77,6 +77,11 @@ For example, with `Voucher`, `Date`, and `Country` columns in your mapping file:
 {seqid} [organism={organism}] [specimen-voucher={Voucher}] [collection-date={Date}] [geo-loc-name={Country}] [moltype=genomic DNA] {organism} {rrna_definition}
 ```
 
+Instead of typing these into your mapping file, you can fetch them from GEOME,
+GBIF, or NCBI BioSample. The Export step's **Set Export Metadata** offers
+ready-made values such as `{geome_lat_lon}` and `{gbif_collection_date}`, which
+you place in the template yourself. See [Sample metadata](Sample-Metadata.html#using-metadata-fields-at-export).
+
 If a record would get an empty modifier, such as `[collection-date=]` for a
 sample with no date, the template check warns and names the records. NCBI does
 not accept an empty modifier: fill in the column, or take the modifier out.

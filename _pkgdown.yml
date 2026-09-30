@@ -51,6 +51,7 @@ articles:
   navbar: Usage
   contents:
   - 'Your-Own-Project'
+  - 'Sample-Metadata'
   - 'Reference-Databases'
   - 'Curation-Flags'
   - 'GenBank-Submission'
@@ -78,10 +79,17 @@ reference:
   - run_app
   - add_samples
   - update_sample_metadata
-  - gbif_normalize_id
-  - geome_normalize_bcid
-  - ncbi_normalize_id
   - backwards_compatibility
+- title: "Sample metadata"
+  contents:
+  - fetch_geome
+  - fetch_gbif
+  - fetch_biosample
+  - remove_metadata
+  - set_metadata_columns
+  - geome_normalize_bcid
+  - gbif_normalize_id
+  - ncbi_normalize_id
 - title: "Reference databases"
   contents:
   - build_reference_db
@@ -108,9 +116,6 @@ reference:
   - curate_rrna_core
   - derive_blast_products
   - fallback_assemble_one
-  - fetch_biosample
-  - fetch_gbif
-  - fetch_geome
   - itsx_check_one
   - load_assemblies
   - mark_unit_searched
@@ -123,7 +128,6 @@ reference:
   - rank_distance
   - rank_distance_label
   - reconcile_one
-  - remove_metadata
   - rederive_blast_products
   - resolve_taxonomy
   - score_assembly
@@ -132,7 +136,6 @@ reference:
   - screen_one
   - screen_sample
   - select_rrna_contigs
-  - set_metadata_columns
   - set_unit_triage
   - stop_if_nothing_stored
   - tk_ranked_lineage
