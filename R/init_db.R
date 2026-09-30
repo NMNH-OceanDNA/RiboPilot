@@ -36,22 +36,22 @@
 #' @param ref_dir Folder for built reference databases (default: the
 #'   `RIBOPILOT_REF_DIR` environment variable, else [ribopilot_ref_dir()]).
 #' @param mapping_geome Name of the mapping-file column holding GEOME BCIDs
-#'   (optional). Stored as `GEOME_BCID`. See `vignette("Specimen-Metadata")`.
+#'   (optional). Stored as `GEOME_BCID`. See `vignette("Sample-Metadata")`.
 #' @param fetch_geome Fetch GEOME metadata for samples with a BCID during setup
 #'   (default TRUE). Set FALSE when offline and run [fetch_geome()] later.
 #' @param mapping_gbif Name of the mapping-file column holding GBIF occurrence
-#'   IDs (optional). Stored as `GBIF_ID`. See `vignette("Specimen-Metadata")`.
+#'   IDs (optional). Stored as `GBIF_ID`. See `vignette("Sample-Metadata")`.
 #' @param fetch_gbif Fetch GBIF metadata for samples with a GBIF ID during setup
 #'   (default TRUE). Set FALSE when offline and run [fetch_gbif()] later.
 #' @param mapping_biosample Name of the mapping-file column holding NCBI
 #'   BioSample or SRA accessions (optional). Must not be the sample ID column.
-#'   Stored as `BioSample`. See `vignette("Specimen-Metadata")`.
+#'   Stored as `BioSample`. See `vignette("Sample-Metadata")`.
 #' @param fetch_biosample Fetch NCBI metadata for samples with a BioSample
 #'   value during setup (default TRUE). Set FALSE when offline and run
 #'   [fetch_biosample()] later.
 #' @param link_sources Follow links between GEOME, GBIF, and NCBI records to
 #'   fill in IDs a sample does not have yet (default FALSE). Saved as the project
-#'   setting. See `vignette("Specimen-Metadata")`.
+#'   setting. See `vignette("Sample-Metadata")`.
 #'
 #' @export
 new_db <- function(

@@ -168,7 +168,7 @@ test_that("specimen_compare_view marks conflicts and notes and names the CSV col
   expect_match(html, "<tr class=\"text-muted\">", fixed = TRUE)
   expect_match(html, "(geo_loc_name)", fixed = TRUE)
   expect_match(html, "<th>NCBI</th>", fixed = TRUE)
-  expect_match(html, "Mapfile (column)", fixed = TRUE)
+  expect_match(html, "Mapping file (column)", fixed = TRUE)
 })
 
 test_that("specimen_csv_map_ui offers every concept but taxon, with auto and none", {
@@ -178,7 +178,7 @@ test_that("specimen_csv_map_ui offers every concept but taxon, with auto and non
                   taxon = "Taxon")
   html <- as.character(specimen_csv_map_ui(NS("v"), current, c(country = "Where", sex = ""),
                                            c("Latitude", "Longitude", "Where")))
-  expect_match(html, "Mapfile columns...", fixed = TRUE)
+  expect_match(html, "Mapping file columns...", fixed = TRUE)
   expect_match(html, "v-map_coordinates", fixed = TRUE)
   expect_false(grepl("v-map_taxon", html, fixed = TRUE))
   expect_match(html, "auto: Latitude + Longitude", fixed = TRUE)

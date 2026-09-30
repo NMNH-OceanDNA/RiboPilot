@@ -441,8 +441,8 @@ app_server <- function(input, output, session) {
     keep_cols <- cols[intersect(names(cols), names(d))]
     if (mode != "Reference") {
       mcon <- app_con()
+      on.exit(DBI::dbDisconnect(mcon), add = TRUE)
       keep_cols <- c(keep_cols, meta_view_table_defs(mcon, d))
-      DBI::dbDisconnect(mcon)
     }
     keep_cols[[".selection"]] <- reactable::colDef(sticky = "left")
     if (!is.null(col_groups)) {
@@ -1203,10 +1203,13 @@ app_server <- function(input, output, session) {
   })
   # Choose fields inside Export data: keep what is on screen so closing the
   # fields window reopens Export data as it was.
-  snap_export <- function() {
+  take_export_snap <- function() {
     export_snap(lapply(stats::setNames(nm = c("export_group_sel", "export_template",
       "fasta_header", "fasta_header_marker", "export_markers", "export_report",
       "export_itsx_check")), function(id) input[[id]]))
+  }
+  snap_export <- function() {
+    take_export_snap()
     show_specimen_fields()
   }
   observeEvent(input$token_fields_geome, snap_export())
@@ -1432,6 +1435,7 @@ app_server <- function(input, output, session) {
       })
     if (!is.null(sp) && nrow(sp) > 0) {
       export_pending(u)
+      take_export_snap()
       removeModal()
       mp_confirm("specimen_confirm", title = "Sample metadata disagrees",
         text = specimen_warning_html(sp), action_label = "Export anyway",
@@ -1459,8 +1463,10 @@ app_server <- function(input, output, session) {
     specimen_export_warnings(specimen_conflicts(con, ids), concepts, ids)
   }
   observeEvent(input$specimen_confirm, ignoreInit = TRUE, {
-    req(input$specimen_confirm)
-    screen_then_proceed(export_pending(), export_group_choice())
+    if (isTRUE(input$specimen_confirm)) {
+      export_snap(NULL)
+      screen_then_proceed(export_pending(), export_group_choice())
+    } else back_to_export()
   })
   # Units the contamination checks flagged that no curator has signed off on.
   screen_flagged <- function(u) {

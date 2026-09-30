@@ -49,7 +49,7 @@ meta_view_modal <- function(ns, fields, wrap) {
       tagList(
         div(
           class = "mp-meta-view-bar",
-          src_btn("All", NA), src_btn("Map file", "Map file"),
+          src_btn("All", NA), src_btn("Mapping file", "Map file"),
           src_btn("GEOME", "GEOME"), src_btn("GBIF", "GBIF"), src_btn("NCBI", "NCBI"),
           tags$input(type = "search", class = "form-control input-sm mp-meta-view-search",
                      placeholder = "Filter field names", `aria-label` = "Filter field names",

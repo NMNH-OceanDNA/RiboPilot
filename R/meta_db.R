@@ -114,7 +114,11 @@ META_SOURCES <- list(
 .meta_fetch_project <- function(path, source, ids = NULL, refs = NULL, link = NULL) {
   src <- META_SOURCES[[source]]
   con <- open_project_db(file.path(path, ".sqlite"))
-  on.exit(DBI::dbDisconnect(con))
+  .ncbi_env$project <- normalizePath(path)
+  on.exit({
+    DBI::dbDisconnect(con)
+    .ncbi_env$project <- NULL
+  })
   .meta_ensure_tables(con)
   q <- paste0("SELECT ID, ", src$col, " AS ref FROM samples")
   samples <- DBI::dbGetQuery(con, q)

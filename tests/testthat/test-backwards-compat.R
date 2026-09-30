@@ -124,6 +124,33 @@ test_that("a v1 database run through every step matches a fresh new_db()", {
   expect_equal(bc_schema(old), bc_schema(file.path(dir, ".sqlite")))
 })
 
+test_that("a v1 database with a lower-case biosample column upgrades cleanly", {
+  old <- file.path(withr::local_tempdir(), ".sqlite")
+  con <- DBI::dbConnect(RSQLite::SQLite(), old)
+  sql <- paste(readLines(test_path("fixtures", "schema_v1.sql")), collapse = "\n")
+  for (s in strsplit(sql, "\n;(\n|$)")[[1]]) DBI::dbExecute(con, s)
+  DBI::dbExecute(con, "ALTER TABLE samples ADD COLUMN biosample TEXT")
+  DBI::dbExecute(con, "INSERT INTO schema_history VALUES ('created', 1, '0.1.0', 0, NULL)")
+  DBI::dbDisconnect(con)
+  suppressMessages(backwards_compatibility(dirname(old)))
+  con <- DBI::dbConnect(RSQLite::SQLite(), old)
+  on.exit(DBI::dbDisconnect(con))
+  f <- DBI::dbListFields(con, "samples")
+  expect_true("BioSample" %in% f)
+  expect_false("biosample" %in% f)
+  expect_equal(sum(tolower(f) == "biosample"), 1)
+})
+
+test_that("meta_apply_schema twice is a no-op", {
+  dir <- bc_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  on.exit(DBI::dbDisconnect(con))
+  before <- DBI::dbListFields(con, "samples")
+  expect_no_error(meta_apply_schema(con))
+  expect_no_error(meta_apply_schema(con))
+  expect_equal(DBI::dbListFields(con, "samples"), before)
+})
+
 test_that("run_app stops on a project that needs an update", {
   dir <- bc_project()
   steps <- RiboPilot:::db_migrations()

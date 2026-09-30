@@ -58,8 +58,9 @@ submission style. Words in braces are filled in for each record:
 | `{sci_name}`, `{taxid}` | The name and NCBI taxon ID set in the Taxonomy step. |
 | `{element}`, `{product}` | Per-marker template only: the marker (18S, ITS1, and so on) and its product name. |
 
-Any column of your mapping file works too, as `{ColumnName}`. The **Available
-columns** list in the Export Data window shows every name you can use.
+Any column of your mapping file works too, as `{ColumnName}`. The
+**Your mapping columns** chips in the Export Data window show every name you
+can use.
 
 # Required source modifiers
 

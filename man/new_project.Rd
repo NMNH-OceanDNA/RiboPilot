@@ -90,7 +90,7 @@ be staged later.}
 mapping file exist under \code{assembly_path} (default TRUE).}
 
 \item{mapping_geome}{Name of the mapping-file column holding GEOME BCIDs
-(optional). Stored as \code{GEOME_BCID}. See \code{vignette("Specimen-Metadata")}.
+(optional). Stored as \code{GEOME_BCID}. See \code{vignette("Sample-Metadata")}.
 Passed to \code{\link[=new_db]{new_db()}}.}
 
 \item{fetch_geome}{Fetch GEOME metadata for samples with a BCID during setup
@@ -98,7 +98,7 @@ Passed to \code{\link[=new_db]{new_db()}}.}
 Passed to \code{\link[=new_db]{new_db()}}.}
 
 \item{mapping_gbif}{Name of the mapping-file column holding GBIF occurrence
-IDs (optional). Stored as \code{GBIF_ID}. See \code{vignette("Specimen-Metadata")}.
+IDs (optional). Stored as \code{GBIF_ID}. See \code{vignette("Sample-Metadata")}.
 Passed to \code{\link[=new_db]{new_db()}}.}
 
 \item{fetch_gbif}{Fetch GBIF metadata for samples with a GBIF ID during setup
@@ -107,7 +107,7 @@ Passed to \code{\link[=new_db]{new_db()}}.}
 
 \item{mapping_biosample}{Name of the mapping-file column holding NCBI
 BioSample or SRA accessions (optional). Must not be the sample ID column.
-Stored as \code{BioSample}. See \code{vignette("Specimen-Metadata")}.
+Stored as \code{BioSample}. See \code{vignette("Sample-Metadata")}.
 Passed to \code{\link[=new_db]{new_db()}}.}
 
 \item{fetch_biosample}{Fetch NCBI metadata for samples with a BioSample
@@ -117,7 +117,7 @@ Passed to \code{\link[=new_db]{new_db()}}.}
 
 \item{link_sources}{Follow links between GEOME, GBIF, and NCBI records to
 fill in IDs a sample does not have yet (default FALSE). Saved as the project
-setting. See \code{vignette("Specimen-Metadata")}.
+setting. See \code{vignette("Sample-Metadata")}.
 Passed to \code{\link[=new_db]{new_db()}}.}
 
 \item{Rproj}{(logical) Initialize/open an RStudio project (default TRUE; no

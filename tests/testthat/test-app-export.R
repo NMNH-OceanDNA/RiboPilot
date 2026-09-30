@@ -829,3 +829,38 @@ test_that("a conflicting {geome_lat_lon} asks before exporting, and Export anywa
     expect_true(file.exists(fasta))
   })
 })
+
+test_that("Cancel on the metadata disagreement window brings the Export window back with the edited header", {
+  skip_if_not_installed("withr")
+  dir <- mk_export_project()
+  withr::local_dir(dir)
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE annotate SET export_group = 'g1'")
+  DBI::dbExecute(con, "UPDATE samples SET GEOME_BCID = 'ark:/1/A'")
+  DBI::dbExecute(con, "INSERT INTO meta_export_fields VALUES ('geome:combo:lat_lon')")
+  add <- function(source, field, value) DBI::dbAppendTable(con, "meta_records", data.frame(
+    ID = "S1", source = source, level = if (source == "GBIF") "Occurrence" else "Event", depth = 0L, ref = "r", field = field, value = value))
+  add("GEOME", c("decimalLatitude", "decimalLongitude"), c("10.5", "20.5"))
+  add("GBIF", c("decimalLatitude", "decimalLongitude"), c("-33.1", "151.2"))
+  DBI::dbDisconnect(con)
+  local_mocked_bindings(mp_confirm = function(...) invisible())
+  shown <- character(0)
+  local_mocked_bindings(showModal = function(ui, ...) shown <<- c(shown, as.character(ui)))
+  hdr <- "{seqid} [lat_lon={geome_lat_lon}]"
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Export")
+    session$setInputs(export_group_sel = "g1", export_template = "default", fasta_header = hdr,
+      fasta_header_marker = RiboPilot:::DEFAULT_FASTA_HEADER_MARKER,
+      export_markers = FALSE, export_report = FALSE)
+    settle(session)
+    session$setInputs(export_go = 1)
+    settle(session)
+    shown <<- character(0)
+    session$setInputs(specimen_confirm = FALSE)
+    settle(session)
+    expect_length(shown, 1)
+    expect_match(shown, "[lat_lon={geome_lat_lon}]", fixed = TRUE)
+    expect_false(file.exists(file.path(dir, "out", "export", "g1", "g1.fasta")))
+  })
+})

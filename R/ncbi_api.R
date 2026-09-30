@@ -20,7 +20,7 @@ ncbi_normalize_id <- function(x) {
 .ncbi_is_sra <- function(x) !is.na(x) & grepl("^[SED]R[RXS][0-9]+$", x)
 
 ncbi_meta_key <- function() {
-  k <- tryCatch(project_ncbi_key(app_project()), error = function(e) "")
+  k <- tryCatch(project_ncbi_key(.ncbi_env$project %||% app_project()), error = function(e) "")
   if (!nzchar(k)) k <- Sys.getenv("ENTREZ_KEY", "")
   k
 }

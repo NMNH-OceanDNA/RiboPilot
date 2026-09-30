@@ -100,3 +100,14 @@ test_that(".ncbi_get sends tool and api_key and spaces requests", {
   expect_match(seen[[1]]$url, "api_key=abc", fixed = TRUE)
   expect_gte(as.numeric(difftime(seen[[2]]$t, seen[[1]]$t, units = "secs")), 0.1)
 })
+
+test_that("ncbi_meta_key prefers the project being fetched over the working directory", {
+  withr::local_envvar(ENTREZ_KEY = "env", NCBI_API_KEY = "")
+  proj <- withr::local_tempdir()
+  writeLines(c("params {", "  ncbi_api_key = 'pk'", "}"), file.path(proj, ".config"))
+  withr::local_dir(withr::local_tempdir())
+  expect_equal(ncbi_meta_key(), "env")
+  .ncbi_env$project <- proj
+  withr::defer(.ncbi_env$project <- NULL)
+  expect_equal(ncbi_meta_key(), "pk")
+})

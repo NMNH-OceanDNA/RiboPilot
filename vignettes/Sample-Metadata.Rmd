@@ -311,11 +311,9 @@ plus icon.
 
 ## Showing metadata in the tables
 
-The **Metadata** button above the table, next to the **Columns** picker, opens
-the **Metadata columns** window, which chooses which metadata fields appear as
+The **Metadata** button above the table opens the **Metadata columns** window, which chooses which metadata fields appear as
 table columns. The choice is saved in the project and shared by the Taxonomy,
-Assemble, Annotation Review, and Export tables. You can temporarily hide
-all metadata fields using the `Columns` picker.
+Assemble, Annotation Review, and Export tables.
 
 The window lists every field that has a value for at least one sample: the
 extra columns from your mapping file, then GEOME, GBIF, and NCBI fields, with
@@ -513,7 +511,7 @@ modifiers with hyphens (see [GenBank submission](GenBank-Submission.html#require
 so change the underscores in an inserted modifier name to hyphens. Hover over a column to see its
 value for the first row of any export group, and type in the filter box to
 find one. **Choose fields** next to GEOME, GBIF, or NCBI opens the Set Export Metadata
-window (this closes the Export window, so save your template first).
+window; closing it returns you to the Export window as it was.
 
 A template using GEOME and GBIF fields:
 
@@ -568,7 +566,7 @@ Messages you may see in the viewer, on a warning icon, or in a fetch warning:
 | `GEOME returned HTTP ...` | Any other error from GEOME. Try again later. |
 | `GBIF occurrence not found (IDs can change when a dataset is republished)` | GBIF has no occurrence with that gbifID. It may have been replaced when its dataset was republished; look the specimen up again on gbif.org. |
 | `could not reach GBIF (...)` | No connection to `api.gbif.org`. Try again later with `fetch_gbif()` or **Refresh all**. |
-| `'x' is not a GBIF occurrence ID (expected digits)` | The value is not a gbifID or a gbif.org occurrence link. |
+| `'x' is not a GBIF occurrence ID (expected digits or an NMNH EZID)` | The value is not a gbifID or a gbif.org occurrence link. |
 | `GBIF returned HTTP ...` | Any other error from GBIF, for example when it is busy. Try again later. |
 | `BioSample ... not found` | NCBI has no BioSample with that accession or number. |
 | `SRA accession ... not found` | NCBI has no SRA record with that accession. |

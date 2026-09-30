@@ -282,7 +282,7 @@ specimen_conflicts <- function(con, ids = NULL) {
 #'   (`NA` when none).
 #' @export
 set_metadata_columns <- function(path = ".", ...) {
-  con <- DBI::dbConnect(RSQLite::SQLite(), dbname = file.path(path, ".sqlite"))
+  con <- open_project_db(file.path(path, ".sqlite"))
   on.exit(DBI::dbDisconnect(con))
   .spec_set_csv_map(con, list(...))
   cols <- specimen_csv_columns(con)

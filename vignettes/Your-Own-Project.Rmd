@@ -43,8 +43,8 @@ The rules:
   Nextflow, for example one with a space or a quote mark.
 - **Extra columns** are kept, and you can use them in your GenBank headers, for
   example as `{Voucher}`. A column name with a space or a dash is read with a
-  dot in its place, so `Voucher ID` becomes `{Voucher.ID}`. The **Available
-  columns** list in the Export window shows every name.
+  dot in its place, so `Voucher ID` becomes `{Voucher.ID}`. The
+  **Your mapping columns** chips in the Export window show every name.
 - **Metadata ID columns.** Columns named `GEOME_BCID`, `GBIF_ID`, and
   `BioSample` hold a sample's GEOME, GBIF, and NCBI identifiers. RiboPilot
   fetches those records when it sets up the project. Blank cells are fine. To

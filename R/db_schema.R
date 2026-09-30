@@ -249,8 +249,15 @@ meta_apply_schema <- function(con) {
                 META_OPTIONS_DDL, META_LINKS_DDL, META_VIEW_FIELDS_DDL)) {
     DBI::dbExecute(con, ddl)
   }
-  for (col in setdiff(META_SAMPLE_COLS, DBI::dbListFields(con, "samples"))) {
-    DBI::dbExecute(con, paste0("ALTER TABLE samples ADD COLUMN ", col, " TEXT"))
+  have <- DBI::dbListFields(con, "samples")
+  for (col in META_SAMPLE_COLS) {
+    if (col %in% have) next
+    hit <- have[tolower(have) == tolower(col)]
+    if (length(hit)) {
+      DBI::dbExecute(con, paste0("ALTER TABLE samples RENAME COLUMN \"", hit[1], "\" TO ", col))
+    } else {
+      DBI::dbExecute(con, paste0("ALTER TABLE samples ADD COLUMN ", col, " TEXT"))
+    }
   }
   invisible()
 }

@@ -186,7 +186,7 @@ specimen_compare_view <- function(cf) {
   dash <- function(x) if (!length(x) || is.na(x)) "-" else x
   tags$table(
     class = "table table-sm mp-spec-compare",
-    tags$thead(tags$tr(tags$th("Item"), tags$th("Mapfile (column)"),
+    tags$thead(tags$tr(tags$th("Item"), tags$th("Mapping file (column)"),
                        lapply(names(META_SOURCES), tags$th), tags$th("Status"))),
     tags$tbody(lapply(seq_len(nrow(cf)), function(i) {
       r <- cf[i, ]
@@ -204,7 +204,7 @@ specimen_compare_view <- function(cf) {
   )
 }
 
-#' "Mapfile columns..." control: pick the mapping-file column per concept
+#' "Mapping file columns..." control: pick the mapping-file column per concept
 #'
 #' @param ns module namespace function
 #' @param current `specimen_csv_columns()` result
@@ -215,7 +215,7 @@ specimen_csv_map_ui <- function(ns, current, overrides, choices) {
   concepts <- setdiff(SPECIMEN_CONCEPTS, "taxon")
   tags$details(
     class = "mp-spec-map",
-    tags$summary("Mapfile columns..."),
+    tags$summary("Mapping file columns..."),
     opts_help(
       "Pick the mapping-file column RiboPilot compares for each item. Leave a ",
       "box empty to detect the column automatically, or pick (none) to skip ",
@@ -512,7 +512,7 @@ specimen_viewer_server <- function(id, open, on_change = function() NULL, con = 
       tryCatch({
         .spec_set_csv_map(con, map)
         bump()
-        showNotification("Mapfile columns saved", type = "message")
+        showNotification("Mapping file columns saved", type = "message")
       }, error = function(e) showNotification(conditionMessage(e), type = "error"))
     })
 

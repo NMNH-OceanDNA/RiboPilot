@@ -1,5 +1,5 @@
 EXPORT_TOKEN_BASICS <- c("seqid", "ID", "Taxon", "organism", "sci_name", "topology", "completeness",
-                         "path", "scaffold")
+                         "path", "scaffold", "taxid")
 EXPORT_TOKEN_ASSEMBLY <- c("length", "n_features", "missing", "partial", "reviewed", "elements",
                            "rrna_definition", "element", "product")
 
