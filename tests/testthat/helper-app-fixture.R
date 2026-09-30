@@ -96,3 +96,10 @@ mk_app_project <- function(env = parent.frame()) {
   DBI::dbDisconnect(con)
   dir
 }
+
+# An otherwise empty project database that passes run_app()'s version check.
+stamped_sqlite <- function(dir) {
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  on.exit(DBI::dbDisconnect(con))
+  RiboPilot:::record_schema_event(con, "created", RiboPilot:::current_schema_version())
+}

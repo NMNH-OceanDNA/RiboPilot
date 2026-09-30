@@ -74,6 +74,7 @@ reference:
   - run_app
   - add_samples
   - update_sample_metadata
+  - backwards_compatibility
 - title: "Reference databases"
   contents:
   - build_reference_db

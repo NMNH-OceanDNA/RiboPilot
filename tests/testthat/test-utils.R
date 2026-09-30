@@ -103,7 +103,7 @@ test_that("sqlite journal mode is overridable", {
 test_that("run_app hands the project to the app and RiboPilot is the same function", {
   withr::local_options(list(RiboPilot.headless = NULL))
   dir <- withr::local_tempdir()
-  file.create(file.path(dir, ".sqlite"))
+  stamped_sqlite(dir)
   local_mocked_bindings(check_nextflow_version = function(...) invisible("supported"),
     ensure_hydra_setup = function(...) invisible(), .package = "RiboPilot")
   app <- RiboPilot:::run_app(dir, launch.browser = FALSE, headless = FALSE)

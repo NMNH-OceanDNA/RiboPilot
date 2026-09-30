@@ -38,7 +38,7 @@ test_that("the headless run modal offers the job script instead of a local run",
 
 test_that("a tunneled launch prints the local address and keeps Run from App", {
   skip_if_not_installed("withr")
-  dir <- withr::local_tempdir(); file.create(file.path(dir, ".sqlite"))
+  dir <- withr::local_tempdir(); stamped_sqlite(dir)
   withr::local_envvar(c(RSTUDIO_PROGRAM_MODE = ""))
   withr::local_options(list(RiboPilot.headless = NULL, RiboPilot.local_browser = NULL))
   testthat::local_mocked_bindings(check_nextflow_version = function(...) invisible("supported"),
