@@ -1,16 +1,14 @@
 # RiboPilot (development version)
 
-RiboPilot is in development. Its version number stays at 0.0.0.9018 for now, so
-read this page, not the number, to see what changed.
-
 ## Before you upgrade
 
-* Recreate your projects. The project database changed, and RiboPilot does not
-  yet convert an existing project. See
+* Make your existing projects again with `new_project()`. Projects made before
+  this version do not record their database version and cannot be updated.
+* From this version on, a project records its database version. After a later
+  upgrade, run `backwards_compatibility()` on each project instead of making it
+  again. See
   ["Upgrading RiboPilot"](https://dmacguigan.github.io/RiboPilot/articles/Installation.html#upgrading-ribopilot)
   in the Installation guide.
-* Use a container image built from this code. The published 0.0.0.9018 image
-  holds older code, and a run with it can fail in its R steps.
 
 ## GenBank records
 
@@ -44,7 +42,7 @@ read this page, not the number, to see what changed.
 ## Re-running samples
 
 * Assembling a sample again clears the old genes, screen, chimera call, BLAST
-  results, lock, and marks of every scaffold whose sequence changed. Your own
+  results, lock, and marks of every contig whose sequence changed. Your own
   keep and drop calls follow their sequence.
 * Changing annotation options re-runs only annotation, and keeps trims.
 * Changing a BLAST setting searches again.
@@ -72,6 +70,10 @@ read this page, not the number, to see what changed.
   by default. Conda is unsupported and warns.
 * The mapping file, IDs, and paths are checked before anything is written.
 * New `add_samples()` and `update_sample_metadata()`.
+* New `backwards_compatibility()` updates a project's database and points the
+  project at the container image for the installed RiboPilot, after saving a
+  copy of both. The next run downloads that image by itself. The app does not
+  open a project that needs this update, and says how to run it.
 * A locked unit is read only. Problematic is now Exclude from export. Lock &
   Close only locks; Mark Reviewed is separate. Only one assembly path per sample
   can be locked.
@@ -112,11 +114,19 @@ read this page, not the number, to see what changed.
 
 ## Documentation
 
-* A new Get started guide that follows the app, and new pages on installation,
-  your own project, GenBank submission, scripting, clusters, caches and offline
-  use, troubleshooting, and citing RiboPilot.
+* A new Get started guide that follows the app: a short page on setup, then a
+  test project walkthrough with one page per step (Taxonomy, Reference,
+  Assemble, Annotation Review, Export). Boxes tagged HYDRA mark where the NMNH
+  Hydra cluster differs.
+* New pages on installation, your own project, GenBank submission, scripting,
+  clusters, caches and offline use, troubleshooting, and citing RiboPilot.
 * This changelog, `citation("RiboPilot")`, and the tool versions in the
   container image, for methods sections.
+* The docs and the app say "contig" where they said "scaffold": every assembled
+  sequence is gapless. Names you type or read in files are unchanged: the
+  `scaffold` column and `{scaffold}` header token, `max_scaffolds`, and record
+  names such as `SRR33849683_p1_s2`.
+* The bundled example is called the test project, as in MitoPilot.
 * The docs and the app use the same names: "step", "BLAST screen", and "bundled
   rDNA database". RiboPilot does not ship a reference database; build one for
   every group in the Reference step.
