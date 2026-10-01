@@ -427,7 +427,8 @@ specimen_viewer_server <- function(id, open, on_change = function() NULL, con = 
         val <- .meta_set_ref(con, source, rv$id, ref)
         if (!is.na(val)) {
           withProgress(message = paste("Fetching from", source), {
-            res <- suppressWarnings(.meta_fetch_into(con, source, rv$id, val, link = .meta_link_enabled(con)))
+            res <- suppressWarnings(.meta_fetch_into(con, source, rv$id, val, link = .meta_link_enabled(con),
+              verbose = FALSE))
           })
           if (res$status == "failed") showNotification(res$message, type = "warning")
         }
@@ -491,7 +492,7 @@ specimen_viewer_server <- function(id, open, on_change = function() NULL, con = 
         withProgress(message = "Fetching specimen records", value = 0, {
           for (i in seq_len(nrow(jobs))) {
             suppressWarnings(.meta_fetch_into(con, jobs$source[i], jobs$ID[i], jobs$ref[i],
-                                              caches[[jobs$source[i]]]))
+                                              caches[[jobs$source[i]]], verbose = FALSE))
             incProgress(1 / nrow(jobs), detail = paste(jobs$ID[i], jobs$source[i]))
           }
           if (.meta_link_enabled(con)) {

@@ -297,7 +297,7 @@ test_that("opening a sample from the Metadata column runs the viewer without err
 })
 
 fake_fetch <- function(status, calls) {
-  function(con, source, ids, refs, cache = new.env(), link = FALSE) {
+  function(con, source, ids, refs, cache = new.env(), link = FALSE, verbose = TRUE) {
     calls$n <- calls$n + length(ids)
     calls$ids <- c(calls$ids, ids)
     data.frame(ID = ids, status = status, message = if (status == "failed") "boom" else NA_character_)
