@@ -11,7 +11,8 @@ db_migrations <- function() {
       fn = function(con) {
         DBI::dbExecute(con, "ALTER TABLE annotate_opts ADD COLUMN barrnap_opts TEXT")
         DBI::dbExecute(con, "ALTER TABLE annotate_opts ADD COLUMN pybarrnap_opts TEXT")
-      })
+      }),
+    list(note = "sample metadata (GEOME/GBIF/NCBI) tables and columns", fn = meta_apply_schema)
   )
 }
 

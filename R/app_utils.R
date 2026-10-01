@@ -17,6 +17,7 @@ add_external_resources <- function() {
     shiny::tags$link(rel = "stylesheet", href = www_url("custom.css")),
     shiny::tags$script(src = www_url("custom.js")),
     shiny::tags$script(src = www_url("seqviewer.js")),
+    shiny::tags$script(src = www_url("metaview.js")),
     shinyjs::useShinyjs()
   )
 }

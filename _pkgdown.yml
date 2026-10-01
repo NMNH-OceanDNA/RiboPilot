@@ -51,6 +51,7 @@ articles:
   navbar: Usage
   contents:
   - 'Your-Own-Project'
+  - 'Sample-Metadata'
   - 'Reference-Databases'
   - 'Curation-Flags'
   - 'GenBank-Submission'
@@ -79,6 +80,16 @@ reference:
   - add_samples
   - update_sample_metadata
   - backwards_compatibility
+- title: "Sample metadata"
+  contents:
+  - fetch_geome
+  - fetch_gbif
+  - fetch_biosample
+  - remove_metadata
+  - set_metadata_columns
+  - geome_normalize_bcid
+  - gbif_normalize_id
+  - ncbi_normalize_id
 - title: "Reference databases"
   contents:
   - build_reference_db

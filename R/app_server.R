@@ -114,7 +114,7 @@ app_server <- function(input, output, session) {
       tolower(input$mode %||% "table"), suffix, ".csv"),
     content = function(file) {
       d <- data()
-      d <- d[rows(), setdiff(names(d), c("details", "output", "action", "checks_tone")), drop = FALSE]
+      d <- d[rows(), setdiff(names(d), c("details", "output", "action", "checks_tone", "specimen_message", "specimen_icons")), drop = FALSE]
       utils::write.csv(d, file, row.names = FALSE)
     }
   )
@@ -134,7 +134,21 @@ app_server <- function(input, output, session) {
   ref_view <- reactive(input$ref_view %||% "Samples")
 
   # ---- samples table data (per mode; includes state + lock) ----
+  meta_view_ver <- reactiveVal(0L)
+  meta_view_open <- meta_view_setup(input, output, session, con = app_con, ver = meta_view_ver)
   all_rows <- reactive({
+    meta_view_ver()
+    d <- all_rows_base()
+    if ((input$mode %||% "Assemble") %in% c("Taxonomy", "Assemble", "Annotate", "Export") &&
+        "Taxon" %in% names(d)) {
+      con <- app_con(); on.exit(DBI::dbDisconnect(con))
+      d <- .specimen_status_join(d, con) |>
+        dplyr::relocate(specimen, specimen_message, specimen_icons, .after = Taxon)
+      d <- meta_view_join(d, con)
+    }
+    d
+  })
+  all_rows_base <- reactive({
     refresh()
     mode <- input$mode %||% "Assemble"
     # Column order mirrors MitoPilot: lock, state, ID, Taxon lead the tables.
@@ -257,6 +271,7 @@ app_server <- function(input, output, session) {
   output$tbl <- reactable::renderReactable({
     mode <- input$mode %||% "Assemble"
     multi_unit_rv()
+    meta_view_ver()
     if (mode == "Reference" && ref_view() == "Groups") refresh()
     d <- isolate(samples_data())
     tbl_keys <<- row_keys(d)
@@ -284,6 +299,9 @@ app_server <- function(input, output, session) {
       scaffold = cd("scaffold", width = 90, align = "center", show = multi_unit),
       Taxon = cd("Taxon", minWidth = 140, sticky = "left", html = TRUE, cell = rt_longtext()),
       sci_name = cd("sci_name", minWidth = 200, html = TRUE, cell = rt_taxid_link()),
+      specimen = specimen_col_def("specimen_open", sticky = "left"),
+      specimen_message = reactable::colDef(show = FALSE),
+      specimen_icons = reactable::colDef(show = FALSE),
       taxid = reactable::colDef(show = FALSE),
       rank = cd("rank", minWidth = 90, html = TRUE, cell = rt_longtext()),
       match_type = cd("match_type", minWidth = 110, html = TRUE, align = "center",
@@ -421,6 +439,11 @@ app_server <- function(input, output, session) {
         `Check details` = c("n_flags", "itsx_warnings", "screen_verdict", "chimera_label")),
       NULL)
     keep_cols <- cols[intersect(names(cols), names(d))]
+    if (mode != "Reference") {
+      mcon <- app_con()
+      on.exit(DBI::dbDisconnect(mcon), add = TRUE)
+      keep_cols <- c(keep_cols, meta_view_table_defs(mcon, d))
+    }
     keep_cols[[".selection"]] <- reactable::colDef(sticky = "left")
     if (!is.null(col_groups)) {
       sel_g <- input[[if (mode == "Assemble") "col_groups" else "ann_col_groups"]] %||% names(col_groups)
@@ -1144,6 +1167,30 @@ app_server <- function(input, output, session) {
   # the run windows, so the grace period starts once their runs have stopped.
   register_app_lifecycle(session)
 
+  # ---- Sample metadata: viewer and export fields ----
+  specimen_viewer_server("specimen", open = reactive(input$specimen_open),
+    on_change = function() refresh(isolate(refresh()) + 1), con = app_con)
+
+  export_snap <- reactiveVal(NULL)
+  # Choose fields inside Export data: keep what is on screen so closing the
+  # fields window reopens Export data as it was.
+  take_export_snap <- function() {
+    export_snap(lapply(stats::setNames(nm = c("export_group_sel", "export_template",
+      "fasta_header", "fasta_header_marker", "export_markers", "export_report",
+      "export_itsx_check")), function(id) input[[id]]))
+  }
+  snap_export <- function(source) {
+    take_export_snap()
+    meta_view_open(source, closed_input = "meta_view_closed")
+  }
+  observeEvent(input$token_fields_geome, snap_export("GEOME"))
+  observeEvent(input$token_fields_gbif, snap_export("GBIF"))
+  observeEvent(input$token_fields_ncbi, snap_export("NCBI"))
+  observeEvent(input$meta_view_closed, {
+    req(export_snap())
+    back_to_export()
+  })
+
   # ---- Export ----
   output$export_sel_n <- renderText({
     refresh()
@@ -1171,6 +1218,7 @@ app_server <- function(input, output, session) {
   # Token data the header templates are checked and resolved against.
   export_hdr_data <- reactive({
     refresh()
+    meta_view_ver()
     u <- export_units_df(export_group_choice())
     if (nrow(u) == 0) return(NULL)
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
@@ -1181,15 +1229,15 @@ app_server <- function(input, output, session) {
   # Marker templates also resolve {element} / {product}, which belong to a
   # feature rather than to the record; a representative pair is enough to check
   # the template.
-  export_hdr_data_marker <- reactive({
-    d <- export_hdr_data()
+  with_marker_fields <- function(d) {
     if (is.null(d)) return(NULL)
     el <- app_query("SELECT element FROM annotations LIMIT 1")$element
     el <- if (length(el)) el[1] else "18S"
     d$element <- el
     d$product <- rrna_element_product(el)
     d
-  })
+  }
+  export_hdr_data_marker <- reactive(with_marker_fields(export_hdr_data()))
 
   # ---- header templates ----
   export_template <- reactiveVal("default")
@@ -1211,10 +1259,26 @@ app_server <- function(input, output, session) {
     tmpls <- list_export_templates(con)
     nm <- if (export_template() %in% tmpls) export_template() else "default"
     export_template(nm)
+    snap <- export_snap()
+    export_snap(NULL)
+    if (!is.null(snap)) {
+      tmpls <- union(tmpls, snap$export_template)
+      nm <- snap$export_template %||% nm
+    }
     o <- get_export_opts(con, nm)
-    cols <- names(export_hdr_data_marker()) %||% character(0)
     sample_cols <- tryCatch(DBI::dbListFields(con, "samples"), error = function(e) character(0))
-    export_modal(groups, tmpls, nm, o$fasta_header, o$fasta_header_marker, cols, sample_cols)
+    ticked <- tryCatch(DBI::dbGetQuery(con, "SELECT key FROM meta_export_fields")$key,
+      error = function(e) character(0))
+    u <- export_units_df()
+    u <- u[!is.na(u$export_group) & nzchar(u$export_group), , drop = FALSE]
+    u$seqid <- app_export_seqids(con, u)
+    tok <- tryCatch(with_marker_fields(export_header_data(con, u)), error = function(e) NULL)
+    if (is.null(tok)) tok <- data.frame()
+    export_modal(groups, tmpls, nm, snap$fasta_header %||% o$fasta_header,
+      snap$fasta_header_marker %||% o$fasta_header_marker,
+      token_groups = export_token_groups(tok, sample_cols, ticked),
+      totals = jsonlite::toJSON(as.list(table(tok$export_group)), auto_unbox = TRUE),
+      snap = snap)
   }
   observeEvent(input$export_btn, {
     m <- export_modal_current()
@@ -1319,6 +1383,24 @@ app_server <- function(input, output, session) {
         text = paste0(bad[[1]], ": ", bad[[2]]), type = "error")
       return()
     }
+    sp <- tryCatch(specimen_conflict_rows(u, c(input$fasta_header,
+        if (isTRUE(input$export_markers)) input$fasta_header_marker)),
+      error = function(e) {
+        message("Specimen conflict check failed: ", conditionMessage(e))
+        NULL
+      })
+    if (!is.null(sp) && nrow(sp) > 0) {
+      export_pending(u)
+      take_export_snap()
+      removeModal()
+      mp_confirm("specimen_confirm", title = "Sample metadata disagrees",
+        text = specimen_warning_html(sp), action_label = "Export anyway",
+        danger = TRUE, html = TRUE)
+      return()
+    }
+    screen_then_proceed(u, grp)
+  })
+  screen_then_proceed <- function(u, grp) {
     flagged <- screen_flagged(u)
     export_pending(u)
     if (nrow(flagged)) {
@@ -1326,6 +1408,21 @@ app_server <- function(input, output, session) {
       return()
     }
     proceed_export(u, grp)
+  }
+  # Conflicts on the specimen items the header templates use; "not checked"
+  # items never count and templates without specimen tokens never warn.
+  specimen_conflict_rows <- function(u, tmpl) {
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    ids <- unique(u$ID)
+    concepts <- specimen_template_concepts(tmpl, specimen_csv_columns(con))
+    if (!length(concepts)) return(NULL)
+    specimen_export_warnings(specimen_conflicts(con, ids), concepts, ids)
+  }
+  observeEvent(input$specimen_confirm, ignoreInit = TRUE, {
+    if (isTRUE(input$specimen_confirm)) {
+      export_snap(NULL)
+      screen_then_proceed(export_pending(), export_group_choice())
+    } else back_to_export()
   })
   # Units the contamination checks flagged that no curator has signed off on.
   screen_flagged <- function(u) {

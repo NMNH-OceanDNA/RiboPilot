@@ -832,6 +832,7 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
         call. = FALSE)
     }
   }
+  smry <- .meta_join(smry, con)
   utils::write.csv(smry, file.path(gdir, paste0(label, "_summary.csv")), row.names = FALSE)
   writeLines(submission_readme(label, itsx_check = isTRUE(itsx_check)), file.path(gdir, "README.txt"))
   # HTML report

@@ -22,6 +22,13 @@ new_project(
   ncbi_api_key = NULL,
   check_reads = TRUE,
   check_assemblies = TRUE,
+  mapping_geome = "GEOME_BCID",
+  fetch_geome = TRUE,
+  mapping_gbif = "GBIF_ID",
+  fetch_gbif = TRUE,
+  mapping_biosample = "BioSample",
+  fetch_biosample = TRUE,
+  link_sources = FALSE,
   Rproj = TRUE,
   force = FALSE,
   ...
@@ -81,6 +88,37 @@ be staged later.}
 
 \item{check_assemblies}{(logical) Check that the assembly files named in the
 mapping file exist under \code{assembly_path} (default TRUE).}
+
+\item{mapping_geome}{Name of the mapping-file column holding GEOME BCIDs
+(optional). Stored as \code{GEOME_BCID}. See \code{vignette("Sample-Metadata")}.
+Passed to \code{\link[=new_db]{new_db()}}.}
+
+\item{fetch_geome}{Fetch GEOME metadata for samples with a BCID during setup
+(default TRUE). Set FALSE when offline and run \code{\link[=fetch_geome]{fetch_geome()}} later.
+Passed to \code{\link[=new_db]{new_db()}}.}
+
+\item{mapping_gbif}{Name of the mapping-file column holding GBIF occurrence
+IDs (optional). Stored as \code{GBIF_ID}. See \code{vignette("Sample-Metadata")}.
+Passed to \code{\link[=new_db]{new_db()}}.}
+
+\item{fetch_gbif}{Fetch GBIF metadata for samples with a GBIF ID during setup
+(default TRUE). Set FALSE when offline and run \code{\link[=fetch_gbif]{fetch_gbif()}} later.
+Passed to \code{\link[=new_db]{new_db()}}.}
+
+\item{mapping_biosample}{Name of the mapping-file column holding NCBI
+BioSample or SRA accessions (optional). Must not be the sample ID column.
+Stored as \code{BioSample}. See \code{vignette("Sample-Metadata")}.
+Passed to \code{\link[=new_db]{new_db()}}.}
+
+\item{fetch_biosample}{Fetch NCBI metadata for samples with a BioSample
+value during setup (default TRUE). Set FALSE when offline and run
+\code{\link[=fetch_biosample]{fetch_biosample()}} later.
+Passed to \code{\link[=new_db]{new_db()}}.}
+
+\item{link_sources}{Follow links between GEOME, GBIF, and NCBI records to
+fill in IDs a sample does not have yet (default FALSE). Saved as the project
+setting. See \code{vignette("Sample-Metadata")}.
+Passed to \code{\link[=new_db]{new_db()}}.}
 
 \item{Rproj}{(logical) Initialize/open an RStudio project (default TRUE; no
 effect outside RStudio).}

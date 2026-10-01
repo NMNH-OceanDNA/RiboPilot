@@ -168,3 +168,54 @@ test_that("a row's state icon sets the state of that row alone", {
     expect_equal(RiboPilot:::app_query("SELECT ID FROM assemble WHERE assemble_switch = 0")$ID, "S4")
   })
 })
+
+test_that("the Metadata column sits after Taxon in every step that lists samples, and its helpers stay hidden", {
+  skip_if_not_installed("withr")
+  dir <- mk_table_project()
+  withr::local_dir(dir)
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE assemble SET assemble_lock = 1")
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_lock = 1, export_group = 'g1'")
+  DBI::dbDisconnect(con)
+  shiny::testServer(RiboPilot:::app_server, {
+    for (m in c("Taxonomy", "Assemble", "Annotate", "Export")) {
+      session$setInputs(mode = m)
+      session$flushReact()
+      j <- jsonlite::fromJSON(as.character(output$tbl), simplifyVector = FALSE)
+      cols <- j$x$tag$attribs$columns
+      id <- vapply(cols, function(c) c$id %||% "", "")
+      expect_equal(id[match("Taxon", id) + 1], "specimen", info = m)
+      sp <- cols[[match("specimen", id)]]
+      expect_equal(sp$name, "Metadata", info = m)
+      expect_false(isFALSE(sp$show), info = m)
+      expect_false(any(vapply(cols[id %in% c("specimen_message", "specimen_icons")],
+        function(c) !isFALSE(c$show), TRUE)), info = m)
+    }
+  })
+})
+
+test_that("a shown metadata field is a column in every non-Reference view", {
+  skip_if_not_installed("withr")
+  dir <- mk_table_project()
+  withr::local_dir(dir)
+  con <- RiboPilot:::app_con()
+  RiboPilot:::.meta_ensure_tables(con)
+  DBI::dbAppendTable(con, "meta_records", data.frame(
+    ID = "S1", source = "GBIF", level = "Occurrence", depth = 0L, ref = "r",
+    field = "sex", value = "Female"))
+  f <- RiboPilot:::meta_view_fields(con)
+  RiboPilot:::meta_view_save(con, f, "gbif:raw:Occurrence:sex", FALSE)
+  col <- f$col[f$key == "gbif:raw:Occurrence:sex"]
+  DBI::dbDisconnect(con)
+  shiny::testServer(RiboPilot:::app_server, {
+    for (m in c("Taxonomy", "Assemble", "Annotate")) {
+      session$setInputs(mode = m)
+      d <- all_rows()
+      expect_true(col %in% names(d), info = m)
+      expect_equal(d[[col]][d$ID == "S1"][1], "Female", info = m)
+      if (m != "Annotate") expect_equal(d[[col]][d$ID == "S2"][1], "", info = m)
+    }
+    session$setInputs(mode = "Reference")
+    expect_false(col %in% names(all_rows()))
+  })
+})

@@ -58,26 +58,31 @@ submission style. Words in braces are filled in for each record:
 | `{sci_name}`, `{taxid}` | The name and NCBI taxon ID set in the Taxonomy step. |
 | `{element}`, `{product}` | Per-marker template only: the marker (18S, ITS1, and so on) and its product name. |
 
-Any column of your mapping file works too, as `{ColumnName}`. The **Available
-columns** list in the Export Data window shows every name you can use.
+Any column of your mapping file works too, as `{ColumnName}`. The
+**Your mapping columns** chips in the Export Data window show every name you
+can use.
 
 # Required source modifiers
 
 NCBI asks each rRNA or ITS record for the organism, one identifier for the
 specimen (isolate, strain, clone, or specimen voucher), the collection date, and
-where it was collected. Add them to your template as source modifiers, spelled
-exactly as NCBI spells them. NCBI's page
-[Modifiers for FASTA Definition Lines](https://www.ncbi.nlm.nih.gov/genbank/mods_fastadefline/)
-(checked on 24 September 2026) spells them `[specimen-voucher=...]`,
-`[collection-date=...]`, and `[geo-loc-name=...]`, with hyphens.
+where it was collected. Add them to your template as source modifiers:
+`[specimen_voucher=...]`, `[collection_date=...]`, and `[geo_loc_name=...]`.
+NCBI's full list is
+[Modifiers for FASTA Definition Lines](https://www.ncbi.nlm.nih.gov/genbank/mods_fastadefline/).
 
 For example, with `Voucher`, `Date`, and `Country` columns in your mapping file:
 
 ```
-{seqid} [organism={organism}] [specimen-voucher={Voucher}] [collection-date={Date}] [geo-loc-name={Country}] [moltype=genomic DNA] {organism} {rrna_definition}
+{seqid} [organism={organism}] [specimen_voucher={Voucher}] [collection_date={Date}] [geo_loc_name={Country}] [moltype=genomic DNA] {organism} {rrna_definition}
 ```
 
-If a record would get an empty modifier, such as `[collection-date=]` for a
+Instead of typing these into your mapping file, you can fetch them from GEOME,
+GBIF, or NCBI BioSample. The **Export** column of the **Metadata** button offers
+ready-made values such as `{geome_lat_lon}` and `{gbif_collection_date}`, which
+you place in the template yourself. See [Sample metadata](Sample-Metadata.html#using-metadata-fields-at-export).
+
+If a record would get an empty modifier, such as `[collection_date=]` for a
 sample with no date, the template check warns and names the records. NCBI does
 not accept an empty modifier: fill in the column, or take the modifier out.
 

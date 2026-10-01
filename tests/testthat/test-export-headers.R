@@ -201,3 +201,37 @@ test_that("a header template is filled by lookup and never runs code", {
   expect_equal(RiboPilot:::render_fasta_headers("{seqid} [organism={Taxon}] site={collection_site}", d),
     "S2 [organism=Genus speciesB] site=Reef B")
 })
+
+test_that("a ticked metadata column is a header token; an unticked one errors", {
+  dir <- mk_hdr_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  on.exit(DBI::dbDisconnect(con))
+  RiboPilot:::.meta_ensure_tables(con)
+  DBI::dbAppendTable(con, "meta_records", data.frame(ID = c("S1", "S1", "S2", "S2"),
+    source = "GEOME", level = "Event", depth = 2L,
+    field = c("decimalLatitude", "decimalLongitude", "decimalLatitude", "decimalLongitude"),
+    value = c("10.5", "20.5", "-1", "-2")))
+  u <- data.frame(ID = c("S1", "S2"), path = 1L, scaffold = 1L, seqid = c("S1_p1_s1", "S2"))
+  d0 <- RiboPilot:::export_header_data(con, u)
+  expect_error(RiboPilot:::render_fasta_headers("{seqid} {geome_lat_lon}", d0), "is not in the database")
+  RiboPilot:::.meta_save_fields(con, "geome:combo:lat_lon")
+  d <- RiboPilot:::export_header_data(con, u)
+  expect_equal(d$geome_lat_lon, c("10.5 N 20.5 E", "1 S 2 W"))
+  out <- RiboPilot:::render_fasta_headers("{seqid} {geome_lat_lon}", d)
+  expect_match(out[1], "10.5 N 20.5 E", fixed = TRUE)
+})
+
+test_that("ticked metadata columns are appended to the summary CSV", {
+  dir <- mk_hdr_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  RiboPilot:::.meta_ensure_tables(con)
+  DBI::dbAppendTable(con, "meta_records", data.frame(ID = "S1", source = "GEOME", level = "Event",
+    depth = 2L, field = "country", value = "Peru"))
+  RiboPilot:::.meta_save_fields(con, "geome:raw:Event:country")
+  DBI::dbDisconnect(con)
+  g <- hdr_bundle(dir, label = "sm")
+  s <- utils::read.csv(file.path(g, "sm_summary.csv"), na.strings = NULL)
+  expect_equal(names(s)[ncol(s)], "geome_Event_country")
+  expect_equal(s$geome_Event_country[s$ID == "S1"], c("Peru", "Peru"))
+  expect_equal(s$geome_Event_country[s$ID == "S2"], "")
+})

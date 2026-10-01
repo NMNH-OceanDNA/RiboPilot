@@ -7,7 +7,8 @@
 * From this version on, a project records its database version. After a later
   upgrade, run `backwards_compatibility()` on each project instead of making it
   again. See
-  ["Upgrading RiboPilot"](https://dmacguigan.github.io/RiboPilot/articles/Installation.html#upgrading-ribopilot)
+  ["Upgrading RiboPilot"](https://dmacguigan.github.io/RiboPilot/articles/Instal
+  lation.html#upgrading-ribopilot)
   in the Installation guide.
 
 ## GenBank records
@@ -115,6 +116,33 @@
   evidence panel names it.
 * On the NMNH Hydra cluster, the rRNA search of a supplied assembly, and the
   other per-sample memory steps, ask Hydra for memory the way it expects.
+
+## Sample metadata
+
+* Link samples to GEOME, GBIF, and NCBI BioSample records through mapping-file
+  columns `GEOME_BCID`, `GBIF_ID`, and `BioSample`, or other names via
+  `mapping_geome`, `mapping_gbif`, and `mapping_biosample`.
+* `new_project()`, `new_test_project()`, `add_samples()`, and
+  `update_sample_metadata()` fetch the records, unless `fetch_geome`,
+  `fetch_gbif`, or `fetch_biosample` is FALSE. `link_sources = TRUE` also
+  follows links between databases.
+* New `fetch_geome()`, `fetch_gbif()`, `fetch_biosample()`, `remove_metadata()`,
+  and `set_metadata_columns()`, plus `geome_normalize_bcid()`,
+  `gbif_normalize_id()`, and `ncbi_normalize_id()`.
+* The NCBI API key is read from the project `.config`, then `NCBI_API_KEY`, then
+  `ENTREZ_KEY`.
+* A Metadata column in the Taxonomy, Assemble, Annotation Review, and Export
+  tables opens a viewer with per-source tabs and a Compare tab.
+* One Metadata fields window, opened by the Metadata button, picks both which
+  metadata fields show as table columns (Show) and which can be used at export
+  (Export). Tick both together sets both with one click, header boxes tick every
+  row in view, GenBank-ready and Ticked only narrow the list, sample counts show
+  gaps (for example `12/20`), and a click copies a field's template text. Choose
+  fields in Export Data opens the same window filtered to that source. Export
+  fields go into header templates and `<group>_summary.csv`. Export asks before
+  writing when sources disagree on
+  something a template uses. A mapping-file column with the same name as a
+  ticked field wins.
 
 ## Documentation
 

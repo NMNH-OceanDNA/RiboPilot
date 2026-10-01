@@ -64,7 +64,7 @@ test_that("the reserved list covers every sample column new_db adds", {
   RiboPilot::new_db(db_path = db, mapping_fn = map, check_reads = FALSE, seeds_db = fa, labels_db = fa)
   con <- DBI::dbConnect(RSQLite::SQLite(), db)
   on.exit(DBI::dbDisconnect(con))
-  added <- setdiff(DBI::dbListFields(con, "samples"), c("ID", "Taxon", "R1", "R2", "Assembly"))
+  added <- setdiff(DBI::dbListFields(con, "samples"), c("ID", "Taxon", "R1", "R2", "Assembly", RiboPilot:::META_SAMPLE_COLS))
   expect_setequal(added, RiboPilot:::SAMPLE_BUILTIN_COLS)
 })
 
@@ -362,4 +362,21 @@ test_that("update_sample_metadata refuses an ID not in the project", {
     R2 = "S1_R2.fq.gz"), meta_map, row.names = FALSE)
   expect_error(update_sample_metadata(project = proj, mapping_fn = meta_map, data_path = p$data_dir),
     "Not in the project.*S9")
+})
+
+test_that("GEOME_BCID, GBIF_ID, and BioSample columns are accepted, matched ignoring case, and stored normalized", {
+  skip_on_os("windows")
+  local_mocked_bindings(.geome_get = geome_fixture_get, .ncbi_get = function(...) stop("x"),
+    url_status = function(u) "ok")
+  p <- mk_setup(data.frame(ID = c("S1", "S2"), Taxon = "Danio rerio", R1 = c("a_1.fq", "b_1.fq"),
+    R2 = c("a_2.fq", "b_2.fq"), geome_bcid = c("https://n2t.net/ark:/21547/CYB2REEDY", NA),
+    Biosample = c(NA, "samn00000001")), reads = c("a_1.fq", "b_1.fq", "a_2.fq", "b_2.fq"))
+  m <- RiboPilot:::read_mapping(p$mapping_fn)
+  expect_true(all(c("GEOME_BCID", "BioSample") %in% names(m)))
+  expect_false(any(c("geome_bcid", "Biosample") %in% names(m)))
+  proj <- file.path(p$dir, "proj")
+  np(p, proj, data_path = p$data_dir, fetch_biosample = FALSE)
+  s <- meta_q(proj, "SELECT ID, GEOME_BCID, BioSample FROM samples ORDER BY ID")
+  expect_equal(s$GEOME_BCID, c("ark:/21547/CYB2REEDY", NA))
+  expect_equal(s$BioSample, c(NA, "SAMN00000001"))
 })

@@ -171,6 +171,7 @@ export_header_data <- function(con, units) {
   })
   cols <- Reduce(intersect, lapply(rows, names))
   out <- do.call(rbind, lapply(rows, function(r) r[, cols, drop = FALSE]))
+  out <- .meta_join(out, con)
   # glue renders an NA field as the four characters "NA", so a sample with no
   # Taxon would ship "[organism=NA]", which reads like a real organism name.
   # Blank them instead; export_summary_df flags the unit as missing_organism.
