@@ -135,7 +135,7 @@ app_server <- function(input, output, session) {
 
   # ---- samples table data (per mode; includes state + lock) ----
   meta_view_ver <- reactiveVal(0L)
-  meta_view_setup(input, output, session, con = app_con, ver = meta_view_ver)
+  meta_view_open <- meta_view_setup(input, output, session, con = app_con, ver = meta_view_ver)
   all_rows <- reactive({
     meta_view_ver()
     d <- all_rows_base()
@@ -1171,36 +1171,7 @@ app_server <- function(input, output, session) {
   specimen_viewer_server("specimen", open = reactive(input$specimen_open),
     on_change = function() refresh(isolate(refresh()) + 1), con = app_con)
 
-  meta_fields_ver <- reactiveVal(0L)
   export_snap <- reactiveVal(NULL)
-  raw_fields_table <- function(raw) {
-    reactable::reactable(
-      raw[, c("level", "field", "n_samples", "example", "col")],
-      selection = "multiple", onClick = "select", compact = TRUE, searchable = TRUE,
-      defaultSelected = which(raw$selected), defaultPageSize = 10,
-      columns = list(
-        level = reactable::colDef(name = "Level"), field = reactable::colDef(name = "Field"),
-        n_samples = reactable::colDef(name = "Samples", width = 80),
-        example = reactable::colDef(name = "Example", cell = rt_longtext(), html = TRUE),
-        col = reactable::colDef(name = "Template token", cell = function(v) paste0("{", v, "}"))
-      )
-    )
-  }
-  show_specimen_fields <- function() {
-    con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    sm <- lapply(stats::setNames(nm = names(META_SOURCES)), function(s) meta_field_summary(con, s))
-    closed <- if (!is.null(export_snap())) "specimen_fields_closed"
-    showModal(specimen_fields_modal(shiny::NS(NULL), sm, closed_input = closed))
-    for (s in names(sm)) local({
-      src <- s
-      output[[paste0(tolower(src), "_raw")]] <- reactable::renderReactable(
-        raw_fields_table(sm[[src]][sm[[src]]$kind == "raw", ]))
-    })
-  }
-  observeEvent(input$specimen_fields, {
-    export_snap(NULL)
-    show_specimen_fields()
-  })
   # Choose fields inside Export data: keep what is on screen so closing the
   # fields window reopens Export data as it was.
   take_export_snap <- function() {
@@ -1208,31 +1179,16 @@ app_server <- function(input, output, session) {
       "fasta_header", "fasta_header_marker", "export_markers", "export_report",
       "export_itsx_check")), function(id) input[[id]]))
   }
-  snap_export <- function() {
+  snap_export <- function(source) {
     take_export_snap()
-    show_specimen_fields()
+    meta_view_open(source, closed_input = "meta_view_closed")
   }
-  observeEvent(input$token_fields_geome, snap_export())
-  observeEvent(input$token_fields_gbif, snap_export())
-  observeEvent(input$token_fields_ncbi, snap_export())
-  observeEvent(input$specimen_fields_closed, {
+  observeEvent(input$token_fields_geome, snap_export("GEOME"))
+  observeEvent(input$token_fields_gbif, snap_export("GBIF"))
+  observeEvent(input$token_fields_ncbi, snap_export("NCBI"))
+  observeEvent(input$meta_view_closed, {
     req(export_snap())
     back_to_export()
-  })
-  observeEvent(input$specimen_fields_save, {
-    con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    ok <- app_write({
-      picked <- unlist(lapply(names(META_SOURCES), function(src) {
-        s <- meta_field_summary(con, src)
-        raw <- s[s$kind == "raw", ]
-        raw$key[reactable::getReactableState(paste0(tolower(src), "_raw"), "selected") %||% integer(0)]
-      }))
-      combos <- unlist(lapply(names(META_SOURCES), function(s) input[[paste0(tolower(s), "_combos")]]))
-      .meta_save_fields(con, c(combos, picked))
-    })
-    if (!ok) return()
-    removeModal()
-    meta_fields_ver(meta_fields_ver() + 1L)
   })
 
   # ---- Export ----
@@ -1262,7 +1218,7 @@ app_server <- function(input, output, session) {
   # Token data the header templates are checked and resolved against.
   export_hdr_data <- reactive({
     refresh()
-    meta_fields_ver()
+    meta_view_ver()
     u <- export_units_df(export_group_choice())
     if (nrow(u) == 0) return(NULL)
     con <- app_con(); on.exit(DBI::dbDisconnect(con))

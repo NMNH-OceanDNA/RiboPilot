@@ -311,19 +311,26 @@ plus icon.
 
 ## Showing metadata in the tables
 
-The **Metadata** button above the table opens the **Metadata columns** window, which chooses which metadata fields appear as
-table columns. The choice is saved in the project and shared by the Taxonomy,
-Assemble, Annotation Review, and Export tables.
+The **Metadata** button, in its own row above the table, opens the
+**Metadata fields** window. It lists every field that has a value for at least
+one sample: the extra columns from your mapping file, then GEOME, GBIF, and NCBI
+fields, with an example value and how many samples have each one (for example
+`12/20`, in orange when some samples lack it). Each row has two ticks:
 
-The window lists every field that has a value for at least one sample: the
-extra columns from your mapping file, then GEOME, GBIF, and NCBI fields, with
-the number of samples that have each one and an example value. Use the search
-box, or the **Mapping file**, **GEOME**, **GBIF**, and **NCBI** buttons, to narrow
-the list, and click rows to tick them. Mapping-file fields start ticked; GEOME,
-GBIF, and NCBI fields start unticked. **Clear all** unticks everything.
+- **Show** adds the field as a column in the Taxonomy, Assemble, Annotation
+  Review, and Export tables.
+- **Export** makes the field usable in export header templates and writes it to
+  the sample summary CSV. Mapping-file columns are always available at export.
 
-This only changes what you see. What goes into exported files is set with
-**Set Export Metadata** (see [Using metadata fields at export](#using-metadata-fields-at-export)).
+Mapping-file fields start with Show ticked; GEOME, GBIF, and NCBI fields start
+unticked. With **Tick both together** on (the default), one click sets both
+ticks on a row. The box in the **Show** or **Export** header ticks or unticks
+every row in view, so narrow the list first with the search box and the filter
+buttons: **Map file**, **GEOME**, **GBIF**, and **NCBI** (click more than one to
+combine sources), **GenBank-ready**, and **Ticked only**. Click a filter again to
+turn it off, or **All** to clear them all. Click a value in the **Export
+Template** column to copy it for a header template. The choice is saved in the
+project when you click **Save**.
 
 ## The sample metadata viewer
 
@@ -408,22 +415,22 @@ linking filled in. These are always kept:
 - the IDs you supplied, in the mapping file, in the app, or with `fetch_*()`
   (including the ID column used as `BioSample`), so **Refresh all** or
   `fetch_*()` brings the data back,
-- the fields ticked in **Set Export Metadata** and the **Metadata** button;
+- the fields ticked in the **Metadata** button;
   they stay empty until you fetch again.
 
 # Using metadata fields at export
 
 Fetched data does not reach your exported files until you choose which fields
-to use. In the Export step, click **Set Export Metadata** in the toolbar.
+to use: tick them in the **Export** column of the **Metadata** button (see
+[Showing metadata in the tables](#showing-metadata-in-the-tables)), or click
+**Choose fields** next to a source in the Export window, which opens the same
+window filtered to that source and returns to the Export window when you close it.
 
-The window has a **GEOME**, a **GBIF**, and an **NCBI** section. Each starts with
-**GenBank-ready combinations**: values built from one or more fields in the
-format GenBank expects for a FASTA source modifier, each with an example and the
-number of samples that have one. Below that, a table lists every raw field found
-in the project's records; use its search box to find a field, and click rows to
-tick them. Nothing is ticked by default. Click **Save** and each ticked field
-can be used in export header templates and is written to the sample summary
-CSV. To see a field in the tables, use the **Metadata** button instead.
+Each source offers **GenBank-ready** fields (Level column): values built from one
+or more fields in the format GenBank expects for a FASTA source modifier. The
+other rows are the raw fields found in the project's records. Nothing is ticked
+for export by default. Each ticked field can be used in export header templates
+and is written to the sample summary CSV.
 
 ## GEOME combinations
 
@@ -508,7 +515,7 @@ The Export window shows a chip for every column you can use, in groups:
 box you last clicked. A GenBank-ready combination inserts the whole source
 modifier, for example `[lat_lon={geome_lat_lon}]`. Hover over a column to see its
 value for the first row of any export group, and type in the filter box to
-find one. **Choose fields** next to GEOME, GBIF, or NCBI opens the Set Export Metadata
+find one. **Choose fields** next to GEOME, GBIF, or NCBI opens the Metadata fields
 window; closing it returns you to the Export window as it was.
 
 A template using GEOME and GBIF fields:
@@ -583,7 +590,7 @@ This page has no screenshots yet. Planned:
    samples.
 2. The sample metadata viewer, GBIF tab, with occurrence issues as badges.
 3. The Compare tab, with a country conflict and a collector that was not checked.
-4. The Set Export Metadata window.
+4. The Metadata fields window, with Show and Export ticks and the filter buttons.
 5. The Export window with grouped token chips.
 6. The export warning that lists a country conflict.
 7. The link overview diagram: how records link across databases.

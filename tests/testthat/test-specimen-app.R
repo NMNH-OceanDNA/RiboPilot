@@ -15,25 +15,6 @@ test_that(".meta_save_fields replaces the selection", {
   expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM meta_export_fields")$n, 0L)
 })
 
-test_that("specimen_fields_modal has a section per source", {
-  con <- mem_samples(data.frame(ID = "s1", Taxon = "x"))
-  DBI::dbAppendTable(con, "meta_records", data.frame(
-    ID = "s1", source = c("GEOME", "GBIF"), level = c("Event", "Occurrence"), depth = 0L,
-    ref = "r", field = c("country", "countryCode"), value = c("Peru", "PE")))
-  .meta_save_fields(con, c("geome:combo:lat_lon", "gbif:combo:sex"))
-  sm <- lapply(stats::setNames(nm = names(META_SOURCES)), function(s) meta_field_summary(con, s))
-  html <- as.character(specimen_fields_modal(NS("exp"), sm))
-  expect_match(html, "Metadata fields for export", fixed = TRUE)
-  for (s in c("GEOME", "GBIF", "NCBI")) expect_match(html, paste0("<h4>", s, "</h4>"), fixed = TRUE)
-  for (k in c("geome", "gbif", "ncbi")) {
-    expect_match(html, paste0("exp-", k, "_combos"), fixed = TRUE)
-    expect_match(html, paste0("exp-", k, "_raw"), fixed = TRUE)
-  }
-  expect_match(html, "{gbif_specimen_voucher}", fixed = TRUE)
-  expect_match(html, "value=\"gbif:combo:sex\" checked", fixed = TRUE)
-  expect_lt(regexpr("exp-geome_combos", html), regexpr("exp-gbif_combos", html))
-})
-
 status_db <- function(envir = parent.frame()) {
   con <- mem_samples(data.frame(
     ID = c("a", "b", "c", "d"), Taxon = "x",
@@ -283,7 +264,7 @@ test_that("the app adds a Metadata column after Taxon in Taxonomy, Assemble, Ann
   })
 })
 
-test_that("Set Export Metadata saves ticked fields and the Export window offers them as chips", {
+test_that("the Metadata fields window saves ticked export fields for the Export window", {
   skip_if_not_installed("withr")
   withr::local_dir(mk_app_project())
   con <- RiboPilot:::app_con()
@@ -293,13 +274,13 @@ test_that("Set Export Metadata saves ticked fields and the Export window offers 
   DBI::dbDisconnect(con)
   shiny::testServer(RiboPilot:::app_server, {
     session$setInputs(mode = "Export")
-    session$setInputs(specimen_fields = 1)
+    session$setInputs(meta_view_open = 1)
     expect_null(export_snap())
-    session$setInputs(geome_combos = "geome:combo:lat_lon")
-    session$setInputs(specimen_fields_save = 1)
+    session$setInputs(meta_view_state = list(show = list("geome:raw:Event:country"),
+      export = list("geome:raw:Event:country"), link = TRUE))
     ticked <- RiboPilot:::app_query("SELECT key FROM meta_export_fields")$key
-    expect_true("geome:combo:lat_lon" %in% ticked)
-    expect_equal(meta_fields_ver(), 1L)
+    expect_true("geome:raw:Event:country" %in% ticked)
+    expect_equal(meta_view_ver(), 1L)
   })
 })
 

@@ -744,7 +744,7 @@ test_that("the 5' and 3' partial toggles keep with Save and undo with Reset", {
   })
 })
 
-test_that("the Export window offers token chips, Set Export Metadata is in the toolbar, and choosing fields returns to the window", {
+test_that("the Export window offers token chips, and choosing fields returns to the window", {
   skip_if_not_installed("withr")
   dir <- mk_export_project()
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
@@ -756,7 +756,6 @@ test_that("the Export window offers token chips, Set Export Metadata is in the t
     field = c("decimalLatitude", "decimalLongitude"), value = c("17.5", "-149.8")))
   DBI::dbDisconnect(con)
   withr::local_dir(dir)
-  expect_match(as.character(RiboPilot:::app_ui()), "Set Export Metadata", fixed = TRUE)
 
   shiny::testServer(RiboPilot:::app_server, {
     session$setInputs(mode = "Export")
@@ -775,6 +774,10 @@ test_that("the Export window offers token chips, Set Export Metadata is in the t
     expect_equal(export_snap()$fasta_header, "{seqid} edited")
     back <- as.character(export_modal_current())
     expect_match(back, "{seqid} edited", fixed = TRUE)
+    expect_null(export_snap())
+    session$setInputs(token_fields_gbif = 1)
+    expect_false(is.null(export_snap()))
+    session$setInputs(meta_view_closed = 1)
     expect_null(export_snap())
   })
 })

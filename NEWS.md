@@ -131,10 +131,14 @@
 * The NCBI API key is read from the project `.config`, then `NCBI_API_KEY`, then
   `ENTREZ_KEY`.
 * A Metadata column in the Taxonomy, Assemble, Annotation Review, and Export
-  tables opens a viewer with per-source tabs and a Compare tab. A Metadata
-  button picks which fields show as table columns.
-* Set Export Metadata picks fields for header templates and
-  `<group>_summary.csv`. Export asks before writing when sources disagree on
+  tables opens a viewer with per-source tabs and a Compare tab.
+* One Metadata fields window, opened by the Metadata button, picks both which
+  metadata fields show as table columns (Show) and which can be used at export
+  (Export). Tick both together sets both with one click, header boxes tick every
+  row in view, GenBank-ready and Ticked only narrow the list, sample counts show
+  gaps (for example `12/20`), and a click copies a field's template text. Choose
+  fields in Export Data opens the same window filtered to that source. Export
+  fields go into header templates and `<group>_summary.csv`. Export asks before writing when sources disagree on
   something a template uses. A mapping-file column with the same name as a
   ticked field wins.
 
