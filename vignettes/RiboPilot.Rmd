@@ -122,7 +122,7 @@ question until you close the app.
 
 ::: {.alert .alert-warning}
 **Keep this browser tab open while a run is going.** Closing the tab, reloading
-the page, closing the run window, or pressing **Stop / Interrupt** stops the
+the page, closing the run window, or pressing **Stop** stops the
 run. RiboPilot stops it cleanly and keeps the work that finished. To carry on,
 press **Update** again with **Resume previous run?** ticked. Only one run can go
 at a time for a project, so you cannot start a new run until a stopped one has

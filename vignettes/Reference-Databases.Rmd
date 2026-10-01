@@ -50,7 +50,7 @@ choices:
   you set an NCBI API key or restrict to RefSeq records first. Press **Run from
   App** and the download happens through RiboPilot's Nextflow workflow, with
   live progress in the window. Keep the browser tab open until the build
-  finishes. Closing the tab or pressing **Stop / Interrupt** stops the build
+  finishes. Closing the tab or pressing **Stop** stops the build
   cleanly; press **Run from App** again with **Resume previous run?** ticked to
   carry on. If the app runs headless (see [Running on a cluster](Clusters.html)),
   the window offers a cluster job script to submit instead. When a build finishes,
