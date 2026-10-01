@@ -30,10 +30,10 @@ test_that("the headless run modal offers the job script instead of a local run",
   expect_true(grepl("submit_job", html, fixed = TRUE))
   expect_true(grepl("submit_script_text", html, fixed = TRUE))
   expect_false(grepl("nf_start", html, fixed = TRUE))
-  expect_true(grepl("nextflow_logs/", html, fixed = TRUE))
+  expect_true(grepl(".runs/nextflow/", html, fixed = TRUE))
   ref_html <- as.character(RiboPilot:::reference_run_modal(1, "/refs", headless = TRUE,
     sched = list(cmd = "sbatch", name = "Slurm"), script = "x"))
-  expect_true(grepl("nextflow_logs/", ref_html, fixed = TRUE))
+  expect_true(grepl(".runs/nextflow/", ref_html, fixed = TRUE))
 })
 
 test_that("a tunneled launch prints the local address and keeps Run from App", {

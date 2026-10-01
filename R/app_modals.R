@@ -528,7 +528,7 @@ run_modal <- function(n, headless = FALSE, sched = NULL, script = "") {
         if (is.null(sched)) {
           "No scheduler (sbatch, qsub, or bsub) found on PATH. Save the script and submit it from a machine that has one, or reopen the app with headless = FALSE to run here."
         } else {
-          sprintf("%s found. Check the queue or partition, account, and walltime in the script, then Submit as job (or Save script). The job log goes to logs/ and the Nextflow log to nextflow_logs/ in the project folder. This window does not follow the job: use the reload button above the table to see new results.", sched$name)
+          sprintf("%s found. Check the queue or partition, account, and walltime in the script, then Submit as job (or Save script). The job log goes to .runs/logs/ and the Nextflow log to .runs/nextflow/ in the project folder. This window does not follow the job: use the reload button above the table to see new results, and Run Reports to see how the job went.", sched$name)
         }),
       tags$textarea(id = "submit_script_text", rows = 11,
         style = "width:100%; font-family:monospace; font-size:0.78em;", script))
@@ -584,7 +584,7 @@ reference_run_modal <- function(n, ref_dir, headless = FALSE, sched = NULL, scri
         if (is.null(sched)) {
           "No scheduler (sbatch, qsub, or bsub) found on PATH. Save the script and submit it from a machine that has one, or reopen the app with headless = FALSE to run here."
         } else {
-          sprintf("%s found. Check the queue or partition, account, and walltime in the script, then Submit as job (or Save script). The job log goes to logs/ and the Nextflow log to nextflow_logs/ in the project folder. This window does not follow the job: use the reload button above the table to see new results.", sched$name)
+          sprintf("%s found. Check the queue or partition, account, and walltime in the script, then Submit as job (or Save script). The job log goes to .runs/logs/ and the Nextflow log to .runs/nextflow/ in the project folder. This window does not follow the job: use the reload button above the table to see new results, and Run Reports to see how the job went.", sched$name)
         }),
       tags$textarea(id = "ref_submit_script_text", rows = 11,
         style = "width:100%; font-family:monospace; font-size:0.78em;", script))

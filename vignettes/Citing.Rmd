@@ -14,7 +14,7 @@ In R, `citation("RiboPilot")` prints the citation for the version you have.
 
 - The RiboPilot version (`packageVersion("RiboPilot")` in R) and the container
   image your project used (the `container` line of the project's `.config`
-  file). Each run's Nextflow log (`nextflow_logs/*.nextflow.log` in the project)
+  file). Each run's Nextflow log (`.runs/nextflow/*.nextflow.log` in the project)
   records the Nextflow version and, in its launch command, the RiboPilot version
   (`--ribopilot_version`).
 - The bundled rDNA database the BLAST screen searched. A sample's **BLAST

@@ -37,8 +37,8 @@ managers, with **Submit as job** in place of **Run from App**. Check the script,
 then press **Submit as job**. The job runs on its own, so you can close the
 browser. The window does not follow the job, so no progress lines appear:
 watch it with `qstat` in a terminal (the Terminal tab in RStudio Server works),
-read the logs in the project's `logs/` and `nextflow_logs/` folders, and press
-the reload button above the table to see new results. Do not start another run
+press the reload button above the table to see new results, and open **Run
+Reports** once the job has finished. Do not start another run
 for the project until the job has finished. See
 [Submit a run as a job](Clusters.html#submit-a-run-as-a-job).
 :::

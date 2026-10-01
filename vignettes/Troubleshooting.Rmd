@@ -17,17 +17,26 @@ finished with failures" (the run finished, but some samples or steps failed),
 
 ![A run report naming the failed sample and its likely cause, with the copy button](figures/troubleshooting/failure-report.png)
 
-RiboPilot also saves the report in the project's `nextflow_logs` folder, next to
-the run's Nextflow log. Here is the report from the test project:
+RiboPilot also saves every report in the project's `.runs/reports` folder. Press
+**Run Reports** in the toolbar to see past runs, reference builds, and jobs
+submitted to a cluster, newest first, and click a run to read its report. When
+a run you did not watch (a cluster job, for example) has finished since you
+last looked, the app says so when it opens and when you press the reload
+button. Here is a report from the test project:
 
 ```
 RiboPilot run report
 Project:   ~/ribopilot_test
+Workflow:  pipeline, run lonely_engelbart
+Started:   2026-09-24 14:31:02
+Finished:  2026-09-24 15:12:40 (41m 38s)
+Result:    Finished with failures, exit status 0
+Launched:  from the app
 RiboPilot: 0.0.0.9018
 Nextflow:  25.10.6
-Run:       pipeline, lonely_engelbart, exit status 0 (done)
-Log:       ~/ribopilot_test/nextflow_logs/ribopilot_2026-09-24_14-30-59.nextflow.log
+Log:       ~/ribopilot_test/.runs/nextflow/pipeline_2026-09-24_14-30-59.nextflow.log
 Tasks:     163 succeeded, 6 cached, 0 failed and skipped, 0 retried, 0 aborted
+Samples:   4
 
 Failed samples (sample | note | likely cause):
 SRR22396893 | 2 contig(s) under min_assembly_length (500 bp) | Every assembled piece was shorter than Min assembly length.
@@ -35,8 +44,9 @@ SRR22396893 | 2 contig(s) under min_assembly_length (500 bp) | Every assembled p
 
 What each part means:
 
-- **Run** and **Log**: the run's name, how Nextflow exited, and where its full
-  log is.
+- **Workflow** through **Log**: which workflow ran (the pipeline, or a
+  reference build), when, how it ended and with what exit status, whether it
+  was started from the app or as a job, and where its full log is.
 - **Tasks**: how many pipeline steps ran, were reused from an earlier run,
   failed, were retried, or were stopped.
 - **Failed tasks**, when a step stopped with an error: one line per failed
@@ -107,7 +117,8 @@ a sample whose assembly failed, see the rescue section of the
 - **Work Dirs**, in the Assemble step: the pipeline's working folder for each
   step of the ticked sample, with the step's `.command.log` and
   `.command.err`.
-- The Nextflow log of each run, in the project's `nextflow_logs` folder.
+- **Run Reports**, in the toolbar: every run's report.
+- The Nextflow log of each run, in the project's `.runs/nextflow` folder.
 
 # Run a sample again
 

@@ -35,6 +35,7 @@ app_server <- function(input, output, session) {
         tags$p(tags$b("To switch, run backwards_compatibility() on this project."),
           " It changes only the container line and leaves the rest of your settings alone.")),
       html = TRUE, type = "info")
+    session$userData$startup_alert <- TRUE
   }
 
   # ---- Work Dirs browser (Nextflow task dirs per sample) ----
@@ -54,6 +55,7 @@ app_server <- function(input, output, session) {
       footer = mp_footer(dismiss = "Close")))
   }
   observeEvent(input$workdirs_btn, show_workdirs())
+  run_reports_handlers(input, output, session, app_project, refresh = reactive(input$refresh))
   wd_rows <- reactive({
     req(input$wd_sample)
     find_workdirs(app_project(), input$wd_sample)
@@ -1045,7 +1047,7 @@ app_server <- function(input, output, session) {
     sched <- if (hl) detect_scheduler() else NULL
     # one timestamp per opening of the modal, so the script the user is looking
     # at is saved under the same name as the log paths written inside it
-    if (hl) submit_base(job_basename("ribopilot"))
+    if (hl) submit_base(job_basename("pipeline"))
     script <- if (hl) build_submit_script(app_project(), resume = TRUE, sched = sched,
       base = submit_base()) else ""
     showModal(run_modal(n, headless = hl, sched = sched, script = script))
@@ -1054,7 +1056,7 @@ app_server <- function(input, output, session) {
   # Headless run modal: save / submit the cluster job script (instead of running
   # Nextflow on the login node).
   write_submit_script <- function() {
-    base <- submit_base() %||% job_basename("ribopilot")
+    base <- submit_base() %||% job_basename("pipeline")
     typed <- input$submit_script_text %||% ""
     script <- if (nzchar(trimws(typed))) typed else
       build_submit_script(app_project(), resume = isTRUE(input$nf_resume %||% TRUE),
@@ -1153,7 +1155,7 @@ app_server <- function(input, output, session) {
   }
 
   nf_run_window(input, output, session, pfx = "", gears = "rp_gears", project = app_project,
-    kind = "pipeline", log_name = "ribopilot",
+    kind = "pipeline", workflow = "pipeline",
     launch = function(nflog) {
       p <- nf_spawn("nextflow", c("-log", nflog,
         nf_command(app_project(), resume = isTRUE(input$nf_resume %||% TRUE)), "-ansi-log"),
