@@ -30,14 +30,13 @@ submit_job <- function(cmd, f) {
   else system2(cmd, shQuote(f), stdout = TRUE, stderr = TRUE)
 }
 
-#' Project subdirectories holding cluster job files
+#' Project subdirectories holding run files
 #'
-#' Every submission drops three files (a script, the scheduler's job log, and
-#' Nextflow's own log). In the project root they bury the handful of files a user
-#' actually opens, so each kind gets its own directory. Visible, not dotted: the
-#' logs are what you read when a run fails.
+#' Every run drops up to three files (a job script, the scheduler's job log, and
+#' Nextflow's own log); its report goes to `.runs/reports/`. Older projects
+#' keep their old `jobs/`, `logs/`, and `nextflow_logs/` folders.
 #' @noRd
-JOB_DIRS <- list(script = "jobs", log = "logs", nextflow = "nextflow_logs")
+JOB_DIRS <- list(script = ".runs/jobs", log = ".runs/logs", nextflow = ".runs/nextflow")
 
 #' Path inside one of the job directories, creating the directory on demand
 #'
@@ -143,7 +142,7 @@ nf_log_opt <- function(project, base) {
 #' @param base Timestamped name for this submission's script and logs.
 #' @noRd
 build_submit_script <- function(project, resume = TRUE, sched = detect_scheduler(),
-                                base = job_basename("ribopilot")) {
+                                base = job_basename("pipeline")) {
   # one arg (the container bind options) contains spaces, so quote per argument
   args <- c(nf_log_opt(project, base), nf_command(project, resume = resume),
     "-ansi-log", "false")
@@ -160,7 +159,7 @@ build_submit_script <- function(project, resume = TRUE, sched = detect_scheduler
 build_reference_submit_script <- function(project, manifest, ref_dir, api_key = "",
                                           refseq = FALSE, resume = TRUE,
                                           sched = detect_scheduler(),
-                                          base = job_basename("ribopilot_ref")) {
+                                          base = job_basename("reference")) {
   args <- nf_reference_command(project, "BUILD", manifest, ref_dir, ref_dir,
     api_key = api_key, refseq = refseq, resume = resume)
   args <- c(nf_log_opt(project, base), args, "-ansi-log", "false")
@@ -233,8 +232,8 @@ RiboPilot <- run_app
 #' and every task it started have exited.
 #' @param gears Id of the spinner in the window title.
 #' @param project function() -> project folder.
-#' @param kind Run kind named in the lock and the report.
-#' @param log_name Base name of the run's Nextflow log in nextflow_logs/.
+#' @param kind Run kind named in the lock.
+#' @param workflow Workflow named in the run's files ("pipeline", "reference").
 #' @param launch function(nflog) -> a running processx process, or NULL when
 #'   there is nothing to run. May stop() with a message for the user.
 #' @param on_lines function(lines) called with new output, or NULL.
@@ -242,7 +241,7 @@ RiboPilot <- run_app
 #'   "stopped", or "killed".
 #' @param on_close function() called after the window closes.
 #' @noRd
-nf_run_window <- function(input, output, session, pfx, gears, project, kind, log_name,
+nf_run_window <- function(input, output, session, pfx, gears, project, kind, workflow,
                           launch, on_lines = NULL, on_done = function(how) NULL,
                           on_close = function() NULL) {
   id <- function(x) paste0(pfx, x)
@@ -271,7 +270,7 @@ nf_run_window <- function(input, output, session, pfx, gears, project, kind, log
     nflog <- NULL
     p <- tryCatch({
       marker <- run_lock_take(project(), kind)
-      nflog <- nf_log_opt(project(), job_basename(log_name))[2]
+      nflog <- nf_log_opt(project(), job_basename(workflow))[2]
       launch(nflog)
     }, error = function(e) e)
     if (!is.null(marker)) Sys.unsetenv(marker)
@@ -282,7 +281,8 @@ nf_run_window <- function(input, output, session, pfx, gears, project, kind, log
       }
       return()
     }
-    run$marker <- marker; run$log <- nflog; run$started <- as.integer(Sys.time())
+    run$marker <- marker; run$log <- nflog
+    session$userData$run_live_log <- nflog
     run$stop_at <- NULL; run$exit_at <- NULL; run$killed <- FALSE; run$termed <- FALSE
     state(nf_progress_empty())
     shinyjs::show(id("nf_progress"))
@@ -293,10 +293,11 @@ nf_run_window <- function(input, output, session, pfx, gears, project, kind, log
   waited <- function(t) !is.null(t) && difftime(Sys.time(), t, units = "secs") > NF_STOP_WAIT
   report <- function(p, how) {
     status <- tryCatch(p$get_exit_status() %||% NA_integer_, error = function(e) NA_integer_)
-    rep <- tryCatch(nf_run_report(shiny::isolate(project()), run$log, status, kind, run$started, how),
+    rep <- tryCatch(nf_run_report(shiny::isolate(project()), run$log, status, how),
       error = function(e) list(type = "error", title = "Run failed", text = "",
         lead = sprintf("The run ended with exit status %s; see %s", status %|NA|% "unknown", run$log)))
-    if (nzchar(rep$text)) try(writeLines(rep$text, sub("\\.nextflow\\.log$", "_report.txt", run$log)), silent = TRUE)
+    if (!is.null(rep$meta)) try(write_run_report(shiny::isolate(project()), rep), silent = TRUE)
+    session$userData$run_live_log <- NULL
     rep
   }
 
@@ -323,6 +324,7 @@ nf_run_window <- function(input, output, session, pfx, gears, project, kind, log
     rep <- report(p, how)
     on_done(how)
     rp_alert(run_report_ui(rep), type = rep$type, title = rep$title)
+    if (is.function(session$userData$run_reports_seen)) session$userData$run_reports_seen(rep$meta$base)
   })
 
   stop_run <- function() {
@@ -367,7 +369,7 @@ nf_run_window <- function(input, output, session, pfx, gears, project, kind, log
 #' Alert body for a run report: the lead line, the report, and a copy button
 #' @noRd
 run_report_ui <- function(rep) {
-  if (!nzchar(rep$text)) return(rep$lead)
+  if (rep$type == "message" || !nzchar(rep$text)) return(rep$lead)
   shiny::tagList(
     shiny::tags$p(rep$lead),
     shiny::tags$pre(id = "rp_run_report",

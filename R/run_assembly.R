@@ -73,7 +73,8 @@ run_assembly <- function(path = ".", nextflow = "nextflow", work = file.path(pat
   on.exit(run_lock_release(path, marker), add = TRUE)
 
   message("Running Nextflow assembly (WF1) - self-contained DB I/O...")
-  args <- nf_command(path, resume = TRUE, work = work, ribopilot_src = ribopilot_src)
+  args <- c(nf_log_opt(path, job_basename("pipeline")),
+    nf_command(path, resume = TRUE, work = work, ribopilot_src = ribopilot_src))
   nf_record_blastdb_launch(path)
   nf_cmd <- paste0(nxf_ver_prefix(nextflow), paste(c(shQuote(nextflow), shQuote(args)), collapse = " "))
   status <- system2("bash", c("-c", shQuote(paste0("cd ", shQuote(path), " && ", nf_cmd))), wait = TRUE)

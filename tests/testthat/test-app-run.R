@@ -76,7 +76,7 @@ test_that("a missing Nextflow is reported, not a crash, and leaves no lock", {
   expect_false(file.exists(RiboPilot:::run_lock_path(d)))
 })
 
-test_that("a finished run gets a report, logs to nextflow_logs, and frees the project", {
+test_that("a finished run gets a report, logs to .runs/nextflow, and frees the project", {
   skip_if_not_installed("withr")
   d <- mk_run_project()
   withr::local_dir(d)
@@ -90,7 +90,7 @@ test_that("a finished run gets a report, logs to nextflow_logs, and frees the pr
     session$elapse(300)
   })
   expect_equal(seen$alert$title, "Run finished")
-  expect_equal(dirname(seen$args[which(seen$args == "-log") + 1]), file.path(d, "nextflow_logs"))
+  expect_equal(dirname(seen$args[which(seen$args == "-log") + 1]), file.path(d, ".runs", "nextflow"))
   expect_false(file.exists(RiboPilot:::run_lock_path(d)))
 })
 
@@ -124,7 +124,7 @@ test_that("closing the browser stops the run gracefully", {
   expect_true(isTRUE(seen$interrupted))
   expect_null(seen$killed)
   expect_false(file.exists(RiboPilot:::run_lock_path(d)))
-  expect_length(list.files(file.path(d, "nextflow_logs"), "_report\\.txt$"), 1)
+  expect_length(list.files(file.path(d, ".runs", "reports"), "_report\\.txt$"), 1)
 })
 
 test_that("the project stays locked while a task container of the run still runs", {

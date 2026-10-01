@@ -59,7 +59,13 @@
 
 * The end of a run says "Run finished with no failures", or names each failed
   sample and step with the exit code and the likely cause. **Copy report**
-  copies the report, which is also saved in `nextflow_logs/`.
+  copies the report.
+* **Run Reports** in the toolbar lists every run, reference build, and cluster
+  job, with its result, and shows each one's report. The app says when a run it
+  did not watch, such as a cluster job, has finished.
+* Run files go in the project's `.runs/` folder: job scripts, scheduler logs,
+  Nextflow logs, and reports. Runs from `run_assembly()` get their own log
+  there too.
 * A failed sample's window says why it failed and what to try next.
 * Closing the browser tab, or pressing Stop / Interrupt, stops a run cleanly.
   Only one run goes at a time per project.

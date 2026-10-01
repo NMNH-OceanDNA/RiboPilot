@@ -106,6 +106,8 @@ app_ui <- function(request) {
               shiny::span(shiny::textOutput("export_sel_n", inline = TRUE),
                 style = "color:#888; font-size:0.85em;")),
             shiny::div(style = "margin-left:auto; display:flex; gap:0.9em; align-items:center;",
+              btn("rr_open", "Run Reports", icon = mp_icon("file-lines"),
+                title = "Read the reports of past pipeline runs and reference builds"),
               # per-SAMPLE Nextflow task dirs: only meaningful on Assemble
               shiny::conditionalPanel("input.mode == 'Assemble'",
                 btn("workdirs_btn", "Work Dirs", icon = mp_icon("folder-tree"),

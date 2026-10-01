@@ -744,7 +744,7 @@ reference_handlers <- function(input, output, session, deps) {
     # the settings observer below regenerates this script several times while the
     # modal is open; the base must NOT move with it, or the file finally saved is
     # named for a different moment than the log paths written inside it
-    base <- shiny::isolate(ref_base()) %||% job_basename("ribopilot_ref")
+    base <- shiny::isolate(ref_base()) %||% job_basename("reference")
     s <- with_con(function(con) {
       cfg <- ref_config(con)
       ids <- reference_missing_dbs(cfg$ref_dir, build_targets())
@@ -786,7 +786,7 @@ reference_handlers <- function(input, output, session, deps) {
     hl <- app_headless()
     sched <- if (hl) detect_scheduler() else NULL
     # one timestamp per opening of the modal; see ref_submit_script()
-    if (hl) ref_base(job_basename("ribopilot_ref"))
+    if (hl) ref_base(job_basename("reference"))
     script <- if (hl) tryCatch(ref_submit_script(), error = function(e) "") else ""
     headless_open(hl)
     shiny::showModal(reference_run_modal(length(res$todo), res$ref_dir,
@@ -851,7 +851,7 @@ reference_handlers <- function(input, output, session, deps) {
     script <- if (edited) typed else fresh
     if (!nzchar(trimws(script))) stop("Nothing to build: every selected group already has a database.", call. = FALSE)
     f <- job_path(deps$project(), "script",
-      paste0(shiny::isolate(ref_base()) %||% job_basename("ribopilot_ref"), ".sh"))
+      paste0(shiny::isolate(ref_base()) %||% job_basename("reference"), ".sh"))
     writeLines(script, f)
     try(Sys.chmod(f, "0755"), silent = TRUE)
     f
@@ -908,7 +908,7 @@ reference_handlers <- function(input, output, session, deps) {
   })
 
   nf_run_window(input, output, session, pfx = "ref_", gears = "ref_gears",
-    project = deps$project, kind = "reference build", log_name = "ribopilot_ref",
+    project = deps$project, kind = "reference build", workflow = "reference",
     launch = function(nflog) {
       ids <- build_targets()
       if (length(ids) == 0) stop("Select the group(s) to build.", call. = FALSE)

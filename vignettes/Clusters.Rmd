@@ -106,11 +106,13 @@ submitted job, so do not start another run for the same project until the job
 has finished. If you press **Submit as job** again in the same window, the app
 warns you first.
 
-Each submission leaves three kinds of files in the project folder:
+Each submission leaves three kinds of files in the project's `.runs` folder:
 
-- `jobs/`: the job scripts;
-- `logs/`: the scheduler's log for each job;
-- `nextflow_logs/`: one Nextflow log per run.
+- `.runs/jobs/`: the job scripts;
+- `.runs/logs/`: the scheduler's log for each job;
+- `.runs/nextflow/`: one Nextflow log per run.
+
+Once a job has finished, **Run Reports** in the toolbar shows how it went.
 
 In the Assemble step, **Work Dirs** finds the pipeline's working folders for a
 sample, from both app runs and cluster jobs.
