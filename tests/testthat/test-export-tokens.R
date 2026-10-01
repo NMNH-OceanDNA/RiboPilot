@@ -78,3 +78,12 @@ test_that("token chips carry missing-value counts per export group", {
   expect_match(html, "data-totals=\"{&quot;g1&quot;:2,&quot;g2&quot;:1}\"", fixed = TRUE)
   expect_match(html, "Columns by type", fixed = TRUE)
 })
+
+test_that("NCBI biosample and bioproject combos insert BioSample/BioProject modifiers", {
+  expect_equal(meta_export_token(c("ncbi:combo:biosample", "ncbi:combo:bioproject",
+                                   "ncbi:combo:biosample_sra", "ncbi:combo:bioproject_sra",
+                                   "ncbi:combo:lat_lon")),
+               c("[BioSample={ncbi_biosample}]", "[BioProject={ncbi_bioproject}]",
+                 "[BioSample={ncbi_biosample_sra}]", "[BioProject={ncbi_bioproject_sra}]",
+                 "[lat_lon={ncbi_lat_lon}]"))
+})

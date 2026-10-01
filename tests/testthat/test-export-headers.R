@@ -184,6 +184,18 @@ test_that("an empty source modifier on any record is a warning, not only on the 
   expect_equal(validate_fasta_header("{seqid} [note={t}]", d)$level, "warn")
 })
 
+test_that("a source modifier used twice is a warning, not an error", {
+  expect_equal(duplicate_modifiers(c("[BioSample=a] [biosample=b]", "[lat_lon=1] [lat-lon=2]",
+                                     "[BioSample=a] [BioProject=b]")),
+               list("biosample", "lat_lon", character(0)))
+  d <- data.frame(ID = "S1", seqid = "S1", a = "SAMN1", b = "SAMN2")
+  v <- validate_fasta_header("{seqid} [BioSample={a}] [biosample={b}]", d)
+  expect_equal(v$level, "warn")
+  expect_true(v$ok)
+  expect_match(v$message, "Duplicate [biosample=] on 1 of 1 record(s) (S1)", fixed = TRUE)
+  expect_equal(validate_fasta_header("{seqid} [BioSample={a}] [BioProject={b}]", d)$level, "ok")
+})
+
 test_that("a header template is filled by lookup and never runs code", {
   dir <- mk_hdr_project()
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
