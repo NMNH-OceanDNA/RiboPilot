@@ -89,6 +89,7 @@ RUN mamba install -y \
         'r-glue=1.8.1' \
         'r-htmltools=0.5.9' \
         'r-htmlwidgets=1.6.4' \
+        'r-httr2=1.2.3' \
         'r-jsonlite=2.0.0' \
         'r-later=1.4.8' \
         'r-msar=0.6.0' \
@@ -99,7 +100,8 @@ RUN mamba install -y \
         'r-rsqlite=3.53.3' \
         'r-shiny=1.14.0' \
         'r-shinyjs=2.1.1' \
-        'r-shinywidgets=0.9.1' && \
+        'r-shinywidgets=0.9.1' \
+        'r-xml2=1.5.0' && \
     mamba clean -a -y
 
 # The panel and its decoys are versioned quarterly while the image versions on
