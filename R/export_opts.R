@@ -243,14 +243,23 @@ validate_fasta_header <- function(template, data = NULL, require_seqid = TRUE) {
     return(if (multi) err(msg) else warn(msg))
   }
   if (!is.null(data) && nrow(data) > 0) {
-    em <- empty_modifiers(vapply(seq_len(nrow(data)), function(i) {
+    hdr <- vapply(seq_len(nrow(data)), function(i) {
       fill_header(template, data[i, , drop = FALSE])
-    }, character(1)))
+    }, character(1))
+    em <- empty_modifiers(hdr)
     hit <- lengths(em) > 0
     if (any(hit)) {
       return(warn(sprintf(paste("Empty %s on %d of %d record(s) (%s). NCBI does not accept an",
         "empty modifier: fill in the column or take the modifier out."),
         paste0("[", unique(unlist(em)), "=]", collapse = ", "), sum(hit), length(hit),
+        paste(utils::head((data$seqid %||% data$ID)[hit], 3), collapse = ", "))))
+    }
+    dm <- duplicate_modifiers(hdr)
+    hit <- lengths(dm) > 0
+    if (any(hit)) {
+      return(warn(sprintf(paste("Duplicate %s on %d of %d record(s) (%s). NCBI accepts each",
+        "modifier once: keep one and take the other out."),
+        paste0("[", unique(unlist(dm)), "=]", collapse = ", "), sum(hit), length(hit),
         paste(utils::head((data$seqid %||% data$ID)[hit], 3), collapse = ", "))))
     }
   }
@@ -262,6 +271,16 @@ validate_fasta_header <- function(template, data = NULL, require_seqid = TRUE) {
 empty_modifiers <- function(headers) {
   m <- regmatches(headers, gregexpr("\\[([^]=[]+)=\\s*(NA)?\\s*\\]", headers))
   lapply(m, function(x) unique(sub("^\\[([^=]+)=.*$", "\\1", x)))
+}
+
+#' Names of the source modifiers used more than once in each header
+#' @noRd
+duplicate_modifiers <- function(headers) {
+  m <- regmatches(headers, gregexpr("\\[[^]=[]+=", headers))
+  lapply(m, function(x) {
+    nm <- gsub("[- ]", "_", tolower(trimws(substr(x, 2L, nchar(x) - 1L))))
+    unique(nm[duplicated(nm)])
+  })
 }
 
 #' Fill a template's {column} tokens from one row of token data

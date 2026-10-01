@@ -46,6 +46,16 @@ test_that("bioproject combo takes the first project", {
   expect_identical(.meta_combos("NCBI"), NCBI_COMBOS)
 })
 
+test_that("SRA biosample and bioproject combos read the SRA record", {
+  r <- rbind(bs_recs(accession = "SAMN1"),
+             data.frame(level = "SRA", depth = 0L, ref = "SRR1", field = c("biosample", "bioproject"),
+                        value = c("SAMN9", "PRJNA9")))
+  expect_equal(NCBI_COMBOS$biosample_sra$fn(r), "SAMN9")
+  expect_equal(NCBI_COMBOS$bioproject_sra$fn(r), "PRJNA9")
+  expect_true(is.na(NCBI_COMBOS$biosample_sra$fn(bs_recs(accession = "SAMN1"))))
+  expect_true(is.na(NCBI_COMBOS$bioproject_sra$fn(bs_recs(accession = "SAMN1"))))
+})
+
 test_that("NCBI concept values split geo_loc_name", {
   r <- bs_recs(geo_loc_name = "Canada: Scotian Shelf, Nova Scotia", organism = "Zoarces americanus")
   expect_equal(.ncbi_concept_value("country", r), "Canada")
