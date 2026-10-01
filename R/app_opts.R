@@ -277,7 +277,9 @@ annotate_opts_modal <- function(cur, choices, n) {
         value = cur$memory %|NA|% 8, min = 1, width = "100%")))),
     shiny::div(style = "display:flex; gap:2em;",
       shiny::div(style = "flex:1", shinyjs::disabled(shiny::selectInput("no_tool",
-        shiny::tagList("rRNA anchor tool", tool_help_icon("pybarrnap"), tool_help_icon("barrnap")),
+        shiny::tagList("rRNA anchor tool",
+          shiny::span(id = "no_help_pybarrnap", tool_help_icon("pybarrnap")),
+          shiny::span(id = "no_help_barrnap", tool_help_icon("barrnap"))),
         choices = c("pybarrnap", "barrnap"), selected = tool, width = "100%"))),
       shiny::div(style = "flex:1", shinyjs::disabled(shiny::selectInput("no_kingdom", "Kingdom:",
         choices = kingdoms, selected = cur$rrna_kingdom %|NA|% "euk", width = "100%")))),
@@ -288,7 +290,7 @@ annotate_opts_modal <- function(cur, choices, n) {
     shinyjs::disabled(shiny::textInput("no_barrnap", "Extra barrnap options:",
       value = cur$barrnap_opts %|NA|% "", width = "100%")),
     opts_help("Flags for the selected tool only; kingdom and threads are set by the pipeline. ",
-      "The two tools take different flags (see the ? icons)."),
+      "The two tools take different flags (see the ? icon next to the tool name)."),
     shiny::div(style = "display:flex; gap:2em;",
       shiny::div(style = "flex:1", shinyjs::disabled(shiny::textInput("no_itsxtaxon",
         shiny::tagList("ITSx profile set (-t)", tool_help_icon("ITSx")),
@@ -358,8 +360,8 @@ opts_handlers <- function(input, output, session, deps) {
 
   # show only the selected rRNA caller's flag field
   toggle_rrna_fields <- function(tool) {
-    shinyjs::toggle(id = "no_pybarrnap", condition = !identical(tool, "barrnap"))
-    shinyjs::toggle(id = "no_barrnap", condition = identical(tool, "barrnap"))
+    for (id in c("no_pybarrnap", "no_help_pybarrnap")) shinyjs::toggle(id = id, condition = !identical(tool, "barrnap"))
+    for (id in c("no_barrnap", "no_help_barrnap")) shinyjs::toggle(id = id, condition = identical(tool, "barrnap"))
   }
   shiny::observeEvent(input$no_tool, ignoreInit = TRUE, {
     toggle_rrna_fields(input$no_tool)
