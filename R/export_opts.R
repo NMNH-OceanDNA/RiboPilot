@@ -254,16 +254,35 @@ validate_fasta_header <- function(template, data = NULL, require_seqid = TRUE) {
         paste0("[", unique(unlist(em)), "=]", collapse = ", "), sum(hit), length(hit),
         paste(utils::head((data$seqid %||% data$ID)[hit], 3), collapse = ", "))))
     }
-    dm <- duplicate_modifiers(hdr)
-    hit <- lengths(dm) > 0
-    if (any(hit)) {
-      return(warn(sprintf(paste("Duplicate %s on %d of %d record(s) (%s). NCBI accepts each",
-        "modifier once: keep one and take the other out."),
-        paste0("[", unique(unlist(dm)), "=]", collapse = ", "), sum(hit), length(hit),
-        paste(utils::head((data$seqid %||% data$ID)[hit], 3), collapse = ", "))))
+    dm <- unique(unlist(duplicate_modifiers(hdr)))
+    if (length(dm)) {
+      return(warn(sprintf(paste("Duplicate %s. NCBI accepts each modifier once: keep one",
+        "and take the other out."), paste0("[", dm, "=]", collapse = ", "))))
     }
+    mf <- missing_fields(template, data)
+    if (!is.null(mf)) return(warn(mf))
   }
   ok()
+}
+
+#' Message naming header columns that some samples leave empty, or NULL
+#' @noRd
+missing_fields <- function(template, data) {
+  tok <- regmatches(template, gregexpr("\\{[^{}]*\\}", template))[[1]]
+  nm <- intersect(unique(substr(tok, 2L, nchar(tok) - 1L)), names(data))
+  ids <- unique(data$ID)
+  out <- vapply(nm, function(n) {
+    v <- trimws(as.character(data[[n]]))
+    miss <- unique(data$ID[is.na(v) | !nzchar(v) | v == "NA"])
+    if (!length(miss)) return(NA_character_)
+    sprintf("{%s} for %d of %d sample(s) (%s)", n, length(miss), length(ids),
+      paste(utils::head(miss, 3), collapse = ", "))
+  }, character(1))
+  out <- out[!is.na(out)]
+  if (length(out)) {
+    paste0("Missing data in ", paste(out, collapse = "; "),
+      ". Fill in the column or take it out of the header.")
+  }
 }
 
 #' Names of the source modifiers left empty (or "NA") in each header

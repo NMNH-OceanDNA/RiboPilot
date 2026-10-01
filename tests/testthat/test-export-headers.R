@@ -192,8 +192,17 @@ test_that("a source modifier used twice is a warning, not an error", {
   v <- validate_fasta_header("{seqid} [BioSample={a}] [biosample={b}]", d)
   expect_equal(v$level, "warn")
   expect_true(v$ok)
-  expect_match(v$message, "Duplicate [biosample=] on 1 of 1 record(s) (S1)", fixed = TRUE)
+  expect_match(v$message, "Duplicate [biosample=]. NCBI", fixed = TRUE)
   expect_equal(validate_fasta_header("{seqid} [BioSample={a}] [BioProject={b}]", d)$level, "ok")
+})
+
+test_that("header columns some samples leave empty are flagged", {
+  d <- data.frame(ID = c("S1", "S2", "S2", "S3"), seqid = c("S1", "a", "b", "S3"),
+                  v = c("x", NA, NA, ""), k = "ok")
+  v <- validate_fasta_header("{seqid} {k} {v}", d)
+  expect_equal(v$level, "warn")
+  expect_match(v$message, "Missing data in {v} for 2 of 3 sample(s) (S2, S3)", fixed = TRUE)
+  expect_equal(validate_fasta_header("{seqid} {k}", d)$level, "ok")
 })
 
 test_that("a header template is filled by lookup and never runs code", {
