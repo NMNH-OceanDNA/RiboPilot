@@ -716,9 +716,11 @@ export_modal <- function(groups, templates = "default", template = "default",
                          fasta_header = "", fasta_header_marker = "",
                          token_groups = NULL, totals = "{}", snap = NULL) {
   flag <- function(id, dflt) snap[[id]] %||% dflt
-  hdr_box <- function(id, label, value) {
+  # status line between the label and the box it describes
+  hdr_box <- function(id, label, value, status) {
     htmltools::tagQuery(textAreaInput(id, label, value, width = "100%", height = "60px"))$
-      find("textarea")$addAttrs(`aria-describedby` = paste0(id, "_status"))$allTags()
+      find("textarea")$addAttrs(`aria-describedby` = status)$
+      before(uiOutput(status))$allTags()
   }
   modalDialog(
     title = mp_modal_title("Export data"), size = "l", class = "mp-modal-form",
@@ -738,34 +740,35 @@ export_modal <- function(groups, templates = "default", template = "default",
     opts_help("Export group bundles units into one output set. Header template is ",
       "a reusable, named set of the FASTA header patterns below: export uses the ",
       "text on screen, and Save template keeps it for next time."),
-    hdr_box("fasta_header", "Record FASTA header:", fasta_header),
-    uiOutput("export_hdr_status"),
-    opts_help("Click a column to insert it at the cursor of the header box you last clicked. ",
-      "Write a column name in braces to use its value, for example ", tags$code("{Taxon}"),
-      ". ", tags$code("{seqid}"), " is the record name RiboPilot gives this unit: the sample ",
-      "ID, or ", tags$code("ID_p<path>_s<contig>"), " when one sample exports more than one ",
-      "record. Columns from your mapping file work here even when the table does not show ",
-      "them. Orange columns are empty for some records in the chosen export group; hover ",
-      "one for the count.", nested = TRUE),
-    if (!is.null(token_groups)) {
-      export_token_ui(token_groups, target_id = "fasta_header", ns = shiny::NS(NULL), totals = totals)
-    },
-    opts_help(tags$code("{organism}"), " is the name set in the Taxonomy step when ",
-      "your Taxon matched it exactly or you picked a species there; otherwise it is ",
-      "your Taxon, so a label like \"Upeneus sp. A\" is kept. ", tags$code("{Taxon}"),
-      " and ", tags$code("{sci_name}"), " give either name on its own.", nested = TRUE),
-    opts_help(tags$b("isolate"), ": each record of a sample that exports more than one ",
-      "contig gets ", tags$code("[isolate=ID_p<path>_s<contig>]"), " added, so all of ",
-      "them can go into one GenBank submission. Your own ", tags$code("[isolate=...]"),
-      " works only in a group where every sample exports one record.", nested = TRUE),
+    hdr_box("fasta_header", "Record FASTA header:", fasta_header, "export_hdr_status"),
     mp_checkbox("export_markers", "Per-marker FASTA files", value = flag("export_markers", TRUE)),
     opts_help("Writes one FASTA per rRNA element (18S, ITS1, 5.8S, ITS2, 28S) into a ",
       "markers folder beside the group files."),
     conditionalPanel("input.export_markers == true",
-      hdr_box("fasta_header_marker", "Per-marker FASTA header:", fasta_header_marker),
-      uiOutput("export_hdr_marker_status"),
+      hdr_box("fasta_header_marker", "Per-marker FASTA header:", fasta_header_marker,
+        "export_hdr_marker_status"),
       opts_help("Same {column} syntax, plus {element} and {product} for the marker itself.",
         nested = TRUE)),
+    tags$details(
+      tags$summary("Available columns"),
+      opts_help("Click a column to insert it at the cursor of the header box you last clicked. ",
+        "Write a column name in braces to use its value, for example ", tags$code("{Taxon}"),
+        ". ", tags$code("{seqid}"), " is the record name RiboPilot gives this unit: the sample ",
+        "ID, or ", tags$code("ID_p<path>_s<contig>"), " when one sample exports more than one ",
+        "record. Columns from your mapping file work here even when the table does not show ",
+        "them. Orange columns are empty for some records in the chosen export group; hover ",
+        "one for the count.", nested = TRUE),
+      if (!is.null(token_groups)) {
+        export_token_ui(token_groups, target_id = "fasta_header", ns = shiny::NS(NULL), totals = totals)
+      },
+      opts_help(tags$code("{organism}"), " is the name set in the Taxonomy step when ",
+        "your Taxon matched it exactly or you picked a species there; otherwise it is ",
+        "your Taxon, so a label like \"Upeneus sp. A\" is kept. ", tags$code("{Taxon}"),
+        " and ", tags$code("{sci_name}"), " give either name on its own.", nested = TRUE),
+      opts_help(tags$b("isolate"), ": each record of a sample that exports more than one ",
+        "contig gets ", tags$code("[isolate=ID_p<path>_s<contig>]"), " added, so all of ",
+        "them can go into one GenBank submission. Your own ", tags$code("[isolate=...]"),
+        " works only in a group where every sample exports one record.", nested = TRUE)),
     mp_checkbox("export_report", "HTML report with alignments", value = flag("export_report", TRUE)),
     opts_help("One HTML page with per-element alignments across the group."),
     mp_checkbox("export_itsx_check", "Final ITSx check", value = flag("export_itsx_check", TRUE)),
