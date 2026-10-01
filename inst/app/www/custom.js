@@ -201,7 +201,7 @@ function mpTokenFlags(modal) {
 $(document).on('change', 'select[id$="export_group_sel"]', function() {
   mpTokenFlags($(this).closest('.modal'));
 });
-$(document).on('shown.bs.modal', function(e) { mpTokenFlags($(e.target)); });
+$(document).on('shown.bs.modal', function(e) { mpTokenFlags($(e.target).closest('.modal')); });
 $(document).on('input', '.mp-token-filter', function() {
   var q = this.value.toLowerCase();
   var list = $(this).closest('.mp-token-list');
