@@ -128,12 +128,12 @@ Select it, press **State**, choose **Ready to run**, then press **Update** with
 # Stopping and resuming a run
 
 Keep the browser tab open while a run is going. Closing the tab, reloading the
-page, closing the run window, or pressing **Stop / Interrupt** stops the run.
+page, closing the run window, or pressing **Stop** stops the run.
 RiboPilot stops it cleanly and keeps the work that finished. To carry on, press
 **Update** again with **Resume previous run?** ticked. Keep the computer awake
 too: a sleeping computer stops the run.
 
-When you press **Stop / Interrupt**, the app says "Stopping the run: Nextflow is
+When you press **Stop**, the app says "Stopping the run: Nextflow is
 stopping its tasks. This can take up to a minute." When it is done, a "Run
 stopped" report appears. If Nextflow does not stop within a minute, RiboPilot
 stops it by force, and the report says that some task containers may still be

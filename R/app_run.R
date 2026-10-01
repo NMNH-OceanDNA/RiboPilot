@@ -253,6 +253,7 @@ nf_run_window <- function(input, output, session, pfx, gears, project, kind, wor
   running <- function(on) {
     shinyjs::toggle(id("nf_start"), condition = !on)
     shinyjs::toggle(id("nf_stop"), condition = on)
+    shiny::updateActionButton(session, id("nf_close"), label = if (on) "Stop and Close" else "Close")
     if (on) shinyjs::removeClass(id = gears, class = "paused") else
       shinyjs::addClass(id = gears, class = "paused")
     shinyjs::runjs(if (on) "window.onbeforeunload = function() { return true; };" else
@@ -333,6 +334,7 @@ nf_run_window <- function(input, output, session, pfx, gears, project, kind, wor
     if (p$is_alive()) p$interrupt()
     run$stop_at <- Sys.time()
     shinyjs::hide(id("nf_stop"))
+    shiny::updateActionButton(session, id("nf_close"), label = "Close")
     rp_toast("Stopping the run: Nextflow is stopping its tasks. This can take up to a minute.",
       type = "warning", duration = 10)
   }

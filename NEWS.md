@@ -67,8 +67,8 @@
   Nextflow logs, and reports. Runs from `run_assembly()` get their own log
   there too.
 * A failed sample's window says why it failed and what to try next.
-* Closing the browser tab, or pressing Stop / Interrupt, stops a run cleanly.
-  Only one run goes at a time per project.
+* Closing the browser tab, or pressing Stop or Stop and Close in the run
+  window, stops a run cleanly. Only one run goes at a time per project.
 * Each task is capped at this computer's CPUs and memory.
 * The rescue for a failed sample is the baited SPAdes choice under Assembler in
   Assembly Options; `run_fallback()` is removed.

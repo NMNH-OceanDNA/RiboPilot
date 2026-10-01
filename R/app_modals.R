@@ -551,7 +551,7 @@ run_modal <- function(n, headless = FALSE, sched = NULL, script = "") {
     mp_footer(
       primary = actionButton("nf_start", "Run from App"), dismiss = NULL,
       extra = tagList(
-        shinyjs::hidden(actionButton("nf_stop", "Stop / Interrupt")),
+        shinyjs::hidden(actionButton("nf_stop", "Stop")),
         actionButton("nf_close", "Close")))
   }
   modalDialog(
@@ -607,7 +607,7 @@ reference_run_modal <- function(n, ref_dir, headless = FALSE, sched = NULL, scri
     mp_footer(
       primary = actionButton("ref_nf_start", "Run from App"), dismiss = NULL,
       extra = tagList(
-        shinyjs::hidden(actionButton("ref_nf_stop", "Stop / Interrupt")),
+        shinyjs::hidden(actionButton("ref_nf_stop", "Stop")),
         actionButton("ref_nf_close", "Close")))
   }
   modalDialog(

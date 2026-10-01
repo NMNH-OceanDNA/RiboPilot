@@ -111,6 +111,26 @@ test_that("Stop interrupts Nextflow instead of killing it", {
   expect_equal(seen$alert$title, "Run stopped")
 })
 
+test_that("Close reads Stop and Close only while a run is going", {
+  skip_if_not_installed("withr")
+  d <- mk_run_project()
+  withr::local_dir(d)
+  seen <- new.env(); mock_run(seen)
+  labels <- character(0)
+  testthat::local_mocked_bindings(
+    updateActionButton = function(session, inputId, label = NULL, ...) {
+      if (inputId == "nf_close") labels <<- c(labels, label)
+    }, .package = "shiny")
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    session$setInputs(asmb_run_btn = 1)
+    session$setInputs(nf_start = 1)
+    session$setInputs(nf_stop = 1)
+    session$elapse(300)
+  })
+  expect_equal(labels, c("Stop and Close", "Close", "Close"))
+})
+
 test_that("closing the browser stops the run gracefully", {
   skip_if_not_installed("withr")
   d <- mk_run_project()
