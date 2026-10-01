@@ -529,6 +529,13 @@ details summary:hover {
   margin-bottom: var(--mp-space-2);
 }
 
+/* Mode-specific pickers inside the shared filter row. */
+.mp-filter-part {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--mp-space-2);
+}
+
 /* Column picker sits apart from the row filters, same rule in every module. */
 .mp-filter-cols {
   margin-left: var(--mp-space-3);
