@@ -13,6 +13,7 @@ work/
 testdata_full/
 assembly_out/
 *.fastq.gz
+RiboPilot_test*
 
 dev/*.png
 
