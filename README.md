@@ -9,9 +9,12 @@
 experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
 <!-- badges: end -->
 
-RiboPilot recovers the **nuclear ribosomal repeat (nrDNA)** from genome
-skimming data, then helps you check and clean up the result and package
-it for submission to GenBank. It is a companion to
+RiboPilot recovers the **nuclear ribosomal DNA repeat (rDNA)** from
+genome skimming data, then helps you check and clean up the result and
+package it for submission to GenBank. If you already have an assembly,
+RiboPilot can [start from that instead of
+reads](https://dmacguigan.github.io/RiboPilot/articles/Your-Own-Project.html#already-have-an-assembly).
+It is a companion to
 [MitoPilot](https://github.com/Smithsonian/MitoPilot), which does the
 same thing for the mitochondrial genome. You can run both on the same
 samples and get both marker sets from one sequencing run.
@@ -30,11 +33,7 @@ many copies, even a shallow, inexpensive "genome skim" sequences this
 region very deeply, essentially for free. RiboPilot reconstructs that
 repeat:
 
-``` 
-  ETS       18S      ITS1   5.8S   ITS2         28S         IGS
-~~~~~~|============|~~~~~~|======|~~~~~~|================|~~~~~~
-          (SSU)                               (LSU)
-```
+<img src="man/figures/rdna_repeat.svg" alt="One copy of the rDNA repeat: ETS, 18S, ITS1, 5.8S, ITS2, 28S, IGS" width="100%" class="plain" />
 
 This is one copy of the repeat; copies follow one another head to tail,
 hundreds of times. SSU and LSU are the small and large subunit genes
@@ -87,9 +86,9 @@ them yourself.
 
 # Taxonomic Scope
 
-Each group of samples, fishes included, needs a reference database of
-known rDNA sequences. You build it once per group in the app, from
-GenBank; see the [reference database
+Each group of samples needs a reference database of known rDNA
+sequences. You build it once per group in the app, from GenBank; see the
+[reference database
 guide](https://dmacguigan.github.io/RiboPilot/articles/Reference-Databases.html).
 
 It also runs automatic quality checks tuned for a taxonomic group. Five
@@ -112,9 +111,9 @@ remotes::install_github("dmacguigan/RiboPilot")
 
 # Getting started
 
-The best way to learn RiboPilot is to run the built-in test project.
-The first command downloads the test samples and sets everything up;
-the second opens the app:
+The best way to learn RiboPilot is to run the built-in test project. The
+first command downloads the test samples and sets everything up; the
+second opens the app:
 
 ``` r
 RiboPilot::new_test_project(path = "~/ribopilot_test")

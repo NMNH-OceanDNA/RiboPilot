@@ -12,7 +12,7 @@ vignette: >
 <a href="Test-Project-Taxonomy.html">1. Taxonomy</a>
 <a href="Test-Project-Reference.html">2. Reference</a>
 <span class="current">3. Assemble</span>
-<a href="Test-Project-Annotate.html">4. Annotate</a>
+<a href="Test-Project-Annotate.html">4. Annotation Review</a>
 <a href="Test-Project-Export.html">5. Export</a>
 </div>
 
@@ -21,7 +21,7 @@ vignette: >
 Press **Update**. The run window says how many samples will run and shows the
 Nextflow command:
 
-![The run window, with the list of samples to run and the Nextflow command](figures/get-started/update-window.png)
+![The run window, with the number of samples to run and the Nextflow command](figures/get-started/update-window.png)
 
 **Resume previous run?** reuses work that finished in an earlier run, so a
 stopped or failed run picks up where it left off. Leave it ticked.
@@ -31,24 +31,15 @@ Press **Run from App**. Progress shows in the window, one line per step:
 ![Progress of a running pipeline](figures/get-started/run-progress.png)
 
 ::: {.alert .alert-hydra}
-[HYDRA]{.hydra-tag} **Submit as job.** On Hydra the run window shows the job
-script for the Nextflow head job, which goes to Hydra's queue for workflow
-managers, with **Submit as job** in place of **Run from App**. Check the script,
-then press **Submit as job**. The job runs on its own, so you can close the
-browser. The window does not follow the job, so no progress lines appear:
-watch it with `qstat` in a terminal (the Terminal tab in RStudio Server works),
-press the reload button above the table to see new results, and open **Run
-Reports** once the job has finished. Do not start another run
-for the project until the job has finished. See
-[Submit a run as a job](Clusters.html#submit-a-run-as-a-job).
+[HYDRA]{.hydra-tag} **Submit as job.** Press **Submit as job** in place of
+**Run from App**; see [Submit a run as a job](Clusters.html#submit-a-run-as-a-job).
 :::
 
 One run does everything for each sample: it cleans the reads, assembles the
 rDNA, picks and scores the contigs, compares them with GenBank, maps the reads
 back for depth, finds the five features, runs the quality checks, and proposes
 which contigs to keep. There is no separate annotation run. The test run
-took about 16 minutes on a Linux workstation with 16 CPU cores and 61 GB of
-memory.
+takes about 18 minutes.
 
 When the run ends, the app says how it went. A clean run says "Run finished
 with no failures." Otherwise it shows a report that names every sample that
@@ -72,19 +63,15 @@ The columns to look at first:
 - **State**: a green check means the sample finished; a red triangle means it
   failed. Hover over the icon to see what it means.
 - **Lock**: open until you lock the sample.
-- **Checks**: what the quality checks found on the sample's kept contigs,
-  in words and in color. Red means Lock and Export will ask about it until
-  the unit is marked Reviewed: off target (the BLAST screen matched an
-  organism outside your sample's lineage), contaminant, severe chimera, or ITSx
-  chimeric. Amber is worth a look: a minor chimera, an uncertain screen,
-  ITSx flags, or curation warnings on the unit or its features. Green "ok" means the screen matched your
-  organism and nothing was flagged; grey "no reference" means the screen had
-  nothing to compare with.
+- **Checks**: what the quality checks found on the sample's kept contigs.
+  Red means Lock and Export will ask about it first, amber is worth a look,
+  green is ok, and grey means there was nothing to compare with. See
+  [The Checks column](Curation-Flags.html#the-checks-column).
 - **# Paths**, **# Units**, and **# Kept**: how many assembly paths and
   contigs the sample gave, and how many contigs are kept. 0 kept means
   there is nothing to annotate.
-- **ITSx Warnings**: how many of the sample's contigs stock ITSx flags. ITSx
-  is the check NCBI runs on rRNA and ITS submissions.
+- **ITSx Warnings**: how many of the sample's contigs stock ITSx flags; see
+  [the final ITSx check](GenBank-Submission.html#check-before-you-submit).
 - **Notes**: what the pipeline noted about the sample, for example why it
   failed.
 - **User Notes**: your own notes on the sample, typed in the **Notes** box at
@@ -117,7 +104,7 @@ in the Annotation Review step.
 
 # Rescue a sample that failed
 
-One test sample is expected to fail: every piece that SRR22396893's reads
+One test sample is expected to fail: every contig that SRR22396893's reads
 assembled into is shorter than the 500 bp minimum. Its State shows a red
 triangle. Open it to read why, and what to try next:
 

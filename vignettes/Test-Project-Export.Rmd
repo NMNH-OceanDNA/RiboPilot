@@ -12,7 +12,7 @@ vignette: >
 <a href="Test-Project-Taxonomy.html">1. Taxonomy</a>
 <a href="Test-Project-Reference.html">2. Reference</a>
 <a href="Test-Project-Assemble.html">3. Assemble</a>
-<a href="Test-Project-Annotate.html">4. Annotate</a>
+<a href="Test-Project-Annotate.html">4. Annotation Review</a>
 <span class="current">5. Export</span>
 </div>
 
@@ -56,20 +56,8 @@ cannot open anything on your own computer, so the app shows the folder's path
 in a message.
 :::
 
-Each export group gets its own folder:
-
-```
-out/export/<group>/
-    <group>.fasta           every record, one file (this is what you upload)
-    <group>.tbl             feature tables (table2asn route only)
-    <group>_summary.csv     one row per record, with the submission_risk column
-    <group>_report.html     review report with feature maps and alignments
-    <group>_itsx_check.csv  what stock ITSx says about each record
-    README.txt              how to submit
-    samples/                one .fasta and .tbl per record
-    markers/                one folder per marker: 18S, ITS1, 58S, ITS2, 28S, ITS
-    itsx_check/             raw ITSx output behind the check
-```
+Each export group gets its own folder, `out/export/<group>/`; see
+[What is in the export folder](GenBank-Submission.html#what-is-in-the-export-folder).
 
 Exporting a group again replaces its folder, and the app asks you first. Before
 you upload, read [Preparing a GenBank submission](GenBank-Submission.html).

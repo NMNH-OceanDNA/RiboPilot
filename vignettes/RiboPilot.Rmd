@@ -8,12 +8,17 @@ vignette: >
 ---
 
 RiboPilot takes genome-skim reads to a GenBank-ready record of the nuclear
-ribosomal repeat (nrDNA). You type two or three short commands in R; everything
+ribosomal DNA repeat (rDNA). You type two or three short commands in R; everything
 else happens in a point-and-click app in your web browser.
 
 If you use [MitoPilot](https://github.com/Smithsonian/MitoPilot), this will feel
 familiar: the app has the same layout, it takes the same mapping file, and it
-can run on the same samples.
+can run on the same samples. One difference matters: RiboPilot uses the `Taxon`
+column throughout the pipeline, so give the species whenever you can; see
+[Your own project](Your-Own-Project.html#the-mapping-file).
+
+If you already have an assembly for a sample, RiboPilot can
+[start from that instead of reads](Your-Own-Project.html#already-have-an-assembly).
 
 This guide walks through the test project, a set of 12 samples that ships
 with RiboPilot: 10 fish genome skims and 2 synthetic samples made to test the
@@ -33,7 +38,7 @@ general.
 
 # What your computer needs
 
-The test project (12 samples) took about 16 minutes on a Linux workstation
+The test project (12 samples) took about 18 minutes on a Linux workstation
 with 16 CPU cores and 61 GB of memory. RiboPilot caps every task at your
 computer's CPUs and memory, so a small computer runs more slowly rather than
 failing. For disk space, see [Installation](Installation.html#before-you-start).
@@ -42,11 +47,11 @@ failing. For disk space, see [Installation](Installation.html#before-you-start).
 
 A sample is one row of your mapping file. Assembling a sample can give more than
 one path (another way to join the same reads), and each path can hold one or
-more contigs. Each contig you keep becomes one unit in the Annotation Review
-step, and one record in your GenBank export. A sample with one record is named
+more contigs. Each contig you keep becomes one record in your GenBank export.
+The app calls a kept contig a unit in the Annotation Review and Export steps. A sample with one record is named
 by its ID. A sample with more than one record gets names like
-`SRR33849683_p1_s2` (path 1, contig 2).
-The `s` comes from MitoPilot, which calls this slot a scaffold. Export files use `scaffold` as the column name for the same reason.
+`SRR33849683_p1_s2` (path 1, contig 2). Export files call the contig number
+`scaffold`.
 
 # Create the test project
 
@@ -84,7 +89,7 @@ fish reference database is not reachable. That is expected: RiboPilot does not s
 a reference database, and the [Reference step](Test-Project-Reference.html) builds the ones the test
 project needs.
 
-The 10 fish are real genome skims from GenBank's Sequence Read Archive. CHIM00
+The 10 fish are real genome skims from NCBI's Sequence Read Archive. CHIM00
 and CHIM01 are synthetic: CHIM00 is a clean copy of one fish's rDNA, and CHIM01
 joins that fish's 18S to the 28S of a *Penicillium* mold. Both are labeled
 *Upeneus parvus*, the fish their reads came from. CHIM01 is there so you can
@@ -104,12 +109,29 @@ tick the box in the header to tick every row still shown. The **Lock** and
 can hide rows from the table entirely; the header tick box ticks only the rows
 still shown, and the toolbar buttons act only on ticked rows those filters
 still show. Click a sample's ID, or its **details** button, to open its
-details.
+details. **Download selected rows** and **Download all rows** under each table
+save it as a CSV file.
+
+![The app as it first opens, on the Taxonomy step](figures/get-started/app-overview.png)
 
 Two buttons appear in every step:
 
-- **State** sets whether a row runs the next time you press **Update**. "Ready
-  to run" means it will; "On hold" means it will not.
+- **State** sets whether a row runs the next time you press **Update**. The
+  pipeline sets states itself; use the button to override one. There are five:
+
+<table class="state-table">
+<thead>
+<tr><th>State</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><i class="fa fa-hourglass state-icon"></i> On hold</td><td>Skipped by the next Update until you set it to Ready to run</td></tr>
+<tr><td><i class="fa fa-play state-icon"></i> Ready to run</td><td>Queued: the next Update will process it</td></tr>
+<tr><td><i class="fa fa-circle-half-stroke state-icon"></i> In progress</td><td>Being processed by the running pipeline</td></tr>
+<tr><td><i class="fa fa-circle-check state-icon"></i> Success</td><td>Finished without errors</td></tr>
+<tr><td><i class="fa fa-triangle-exclamation state-icon"></i> Failed</td><td>Open the sample's details to see why and what to try next</td></tr>
+</tbody>
+</table>
+
 - **Lock** means "I am done with this step for these rows". Locked rows cannot
   have their options for that step changed, the next update does not re-run
   them, and they move on to the next step. You can unlock at any time.
@@ -131,13 +153,10 @@ too: a sleeping computer stops the run.
 :::
 
 ::: {.alert .alert-hydra}
-[HYDRA]{.hydra-tag} **Nothing to set up, and runs go to the queue.** Open the
-app from RStudio Server with the same command. When it starts, the app puts
-Hydra's job scheduler and Java on the `PATH` for you; you only need
-`RiboPilot::hydra_setup()` to run the pipeline from the R console. On Hydra the
-run window offers **Submit as job** instead of **Run from App**. A submitted job
-keeps going after you close the browser, so the warning above does not apply to
-it.
+[HYDRA]{.hydra-tag} **Runs go to the queue.** Open the app from RStudio Server
+with the same command. The run window offers **Submit as job** instead of
+**Run from App**, and a submitted job keeps going after you close the browser.
+See [On the NMNH Hydra cluster](Clusters.html#on-the-nmnh-hydra-cluster).
 :::
 
 # Test project walkthrough
@@ -149,7 +168,7 @@ test project. Do them in order:
 <a href="Test-Project-Taxonomy.html">1. Taxonomy</a>
 <a href="Test-Project-Reference.html">2. Reference</a>
 <a href="Test-Project-Assemble.html">3. Assemble</a>
-<a href="Test-Project-Annotate.html">4. Annotate</a>
+<a href="Test-Project-Annotate.html">4. Annotation Review</a>
 <a href="Test-Project-Export.html">5. Export</a>
 </div>
 

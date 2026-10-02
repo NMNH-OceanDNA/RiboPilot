@@ -45,11 +45,20 @@ Profiles are saved in your own settings folder (on Linux,
 with `profile_dir`, and pass the same `profile_dir` to `new_project()`:
 
 ```r
-RiboPilot::generate_config("mylab_slurm", scheduler = "slurm", queue = "general",
-  walltime = "48h", profile_dir = "/shared/mylab/ribopilot_profiles")
-RiboPilot::new_project(path = "/shared/mylab/my_project",
-  mapping_fn = "/shared/mylab/my_samples.csv", data_path = "/shared/mylab/reads",
-  executor = "mylab_slurm", profile_dir = "/shared/mylab/ribopilot_profiles")
+RiboPilot::generate_config(
+  "mylab_slurm",
+  scheduler   = "slurm",
+  queue       = "general",
+  walltime    = "48h",
+  profile_dir = "/shared/mylab/ribopilot_profiles"
+)
+RiboPilot::new_project(
+  path        = "/shared/mylab/my_project",
+  mapping_fn  = "/shared/mylab/my_samples.csv",
+  data_path   = "/shared/mylab/reads",
+  executor    = "mylab_slurm",
+  profile_dir = "/shared/mylab/ribopilot_profiles"
+)
 ```
 
 # Put everything on shared storage
@@ -66,7 +75,8 @@ Without RStudio Server, start the app on the login node and reach it from your
 own computer through an SSH tunnel. On the login node, in R:
 
 ```r
-RiboPilot::RiboPilot("/shared/mylab/my_project", port = 8123, launch.browser = FALSE)
+RiboPilot::RiboPilot("/shared/mylab/my_project", port = 8123,
+                     launch.browser = FALSE)
 ```
 
 The app prints the address to open and the tunnel command. On your own
@@ -78,10 +88,9 @@ ssh -N -L 8123:localhost:8123 you@login.cluster.edu
 
 Then open http://localhost:8123 in your browser.
 
-The app is headless when a batch scheduler (sbatch, qsub, or bsub) is on the
-PATH, or when it runs on RStudio Server. In headless mode the run window offers
-a job script to submit instead of **Run from App**, and the app prints a note
-saying so when it starts. Pass `headless = FALSE` to run Nextflow on the machine
+When a batch scheduler (sbatch, qsub, or bsub) is on the PATH, or the app runs
+on RStudio Server, the run window offers a job script to submit instead of
+**Run from App**, and the app prints a note saying so when it starts. Pass `headless = FALSE` to run Nextflow on the machine
 that serves the app, or `headless = TRUE` to get job scripts anywhere.
 
 ::: {.alert .alert-warning}
@@ -100,7 +109,8 @@ memory, and edit the script in the window if you need to. Then press **Submit
 as job**, or **Save script** to submit it yourself.
 
 The job runs on its own, so you can close the browser; long runs belong here
-rather than in **Run from App**. The window does not follow the job: press the
+rather than in **Run from App**. The window does not follow the job: watch it with your
+scheduler's tools (`qstat` on Hydra), and press the
 reload button above the table to see new results. The app does not track a
 submitted job, so do not start another run for the same project until the job
 has finished. If you press **Submit as job** again in the same window, the app

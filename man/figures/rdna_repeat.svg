@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 120" font-family="Helvetica, Arial, sans-serif" role="img" aria-label="One copy of the rDNA repeat">
+  <rect width="760" height="120" fill="#ffffff"/>
+  <line x1="10" y1="62" x2="750" y2="62" stroke="#9fb4bd" stroke-width="4" stroke-dasharray="2 5" stroke-linecap="round"/>
+  <line x1="70" y1="62" x2="690" y2="62" stroke="#9fb4bd" stroke-width="4"/>
+  <g font-size="15" font-weight="bold" text-anchor="middle">
+    <rect x="110" y="44" width="170" height="36" rx="5" fill="#1f6f8b"/>
+    <text x="195" y="67" fill="#ffffff">18S</text>
+    <rect x="345" y="44" width="50" height="36" rx="5" fill="#1f6f8b"/>
+    <text x="370" y="67" fill="#ffffff" font-size="13">5.8S</text>
+    <rect x="460" y="44" width="230" height="36" rx="5" fill="#1f6f8b"/>
+    <text x="575" y="67" fill="#ffffff">28S</text>
+  </g>
+  <g font-size="14" text-anchor="middle" fill="#33444d">
+    <text x="60" y="34">ETS</text>
+    <text x="312" y="34">ITS1</text>
+    <text x="427" y="34">ITS2</text>
+    <text x="722" y="34">IGS</text>
+  </g>
+  <g font-size="12" text-anchor="middle" fill="#6b7b85">
+    <text x="195" y="100">small subunit (SSU)</text>
+    <text x="575" y="100">large subunit (LSU)</text>
+  </g>
+  <g stroke="#e0a100" stroke-width="2" fill="none">
+    <path d="M285 88 v8 h170 v-8"/>
+  </g>
+  <text x="370" y="113" font-size="12" text-anchor="middle" fill="#6b7b85">ITS region</text>
+</svg>

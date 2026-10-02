@@ -15,8 +15,8 @@ project's files you should back up, and what needs the internet.
 | What | Default place | How to move it | Typical size |
 |---|---|---|---|
 | Container image (Docker) | Docker's own storage | Docker's settings | 2.6 GB to download, 7.7 GB on disk, one per RiboPilot version |
-| Container image (Singularity, profile from `generate_config()`) | `NXF_SINGULARITY_CACHEDIR` if set, else a `containers` folder in the reference folder | `container_cache` in `generate_config()` | about 2.4 GB per copy |
-| Container image (Singularity, built-in Hydra and SEDNA profiles) | `NXF_SINGULARITY_CACHEDIR` if set, else `<project>/work/singularity` | `NXF_SINGULARITY_CACHEDIR` | about 2.4 GB per copy |
+| Container image (Singularity, profile from `generate_config()`) | `NXF_SINGULARITY_CACHEDIR` if set, else a `containers` folder in the reference folder | `container_cache` in `generate_config()` | about 2.5 GB per copy |
+| Container image (Singularity, built-in Hydra and SEDNA profiles) | `NXF_SINGULARITY_CACHEDIR` if set, else `<project>/work/singularity` | `NXF_SINGULARITY_CACHEDIR` | about 2.5 GB per copy |
 | Singularity's download cache | `~/.singularity/cache` | `SINGULARITY_CACHEDIR` (Apptainer: `APPTAINER_CACHEDIR`) | grew 4.9 GB in one pull |
 | Singularity's temporary files | `/tmp` | `SINGULARITY_TMPDIR` | |
 | Nextflow's own files | `~/.nextflow` | `NXF_HOME` | grows when runs use a pinned Nextflow version |

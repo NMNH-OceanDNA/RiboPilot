@@ -15,30 +15,32 @@ finished with failures" (the run finished, but some samples or steps failed),
 "Run failed" (the run itself stopped with an error), or "Run stopped". Press
 **Copy report** to copy the report, for example to send it to us:
 
-![A run report naming the failed sample and its likely cause, with the copy button](figures/troubleshooting/failure-report.png)
+![A run report naming the failed sample and its likely cause, with the copy button](figures/get-started/run-finished.png)
 
 RiboPilot also saves every report in the project's `.runs/reports` folder. Press
 **Run Reports** in the toolbar to see past runs, reference builds, and jobs
 submitted to a cluster, newest first, and click a run to read its report. When
 a run you did not watch (a cluster job, for example) has finished since you
 last looked, the app says so when it opens and when you press the reload
-button. Here is a report from the test project:
+button. Here is a report from the test project, run on the full read sets
+(`full_size = TRUE`), where a second sample also fails:
 
 ```
 RiboPilot run report
 Project:   ~/ribopilot_test
-Workflow:  pipeline, run lonely_engelbart
-Started:   2026-09-24 14:31:02
-Finished:  2026-09-24 15:12:40 (41m 38s)
+Workflow:  pipeline, run peaceful_pare
+Started:   2026-10-01 12:04:15
+Finished:  2026-10-01 12:31:59 (27m 44s)
 Result:    Finished with failures, exit status 0
 Launched:  from the app
-RiboPilot: 0.0.0.9018
+RiboPilot: 0.0.0.9019
 Nextflow:  25.10.6
-Log:       ~/ribopilot_test/.runs/nextflow/pipeline_2026-09-24_14-30-59.nextflow.log
-Tasks:     163 succeeded, 6 cached, 0 failed and skipped, 0 retried, 0 aborted
-Samples:   4
+Log:       ~/ribopilot_test/.runs/nextflow/pipeline_2026-10-01_12-04-14.nextflow.log
+Tasks:     178 succeeded, 0 cached, 0 failed and skipped, 0 retried, 0 aborted
+Samples:   12
 
 Failed samples (sample | note | likely cause):
+SRR14433899 | 11 or more paths exceed max_paths (10) | GetOrganelle found more alternative paths than Max paths allows.
 SRR22396893 | 2 contig(s) under min_assembly_length (500 bp) | Every assembled piece was shorter than Min assembly length.
 ```
 
@@ -67,7 +69,7 @@ The step names you may see, and what each step does:
 | `query_samples` | Reads the list of samples to run from the project. |
 | `preprocess` | Cleans and trims the reads. |
 | `below_min_depth` | Marks samples with too few reads to assemble. |
-| `find_rrna`, `stage_assembly` | Search an assembly you supplied for rDNA contigs. |
+| `find_rrna_scan`, `find_rrna_pick`, `stage_assembly` | Search an assembly you supplied for rDNA contigs. |
 | `assemble` | Assembles the rDNA with GetOrganelle. |
 | `fallback_assemble` | Assembles with SPAdes (baited or de-novo). |
 | `score` | Scores the contigs and picks a path. |
@@ -104,7 +106,7 @@ often a step was tried.
 
 # When a sample fails for another reason
 
-Some failures are not an error code: too few reads, only short pieces
+Some failures are not an error code: too few reads, only short contigs
 assembled, or no rRNA genes found. The Notes column says why, and the sample's
 details window shows a red box with the reason and what to try next. To rescue
 a sample whose assembly failed, see the rescue section of the
@@ -147,13 +149,14 @@ gives a message that a run is already going (see below).
 
 | Message | What it means | What to do |
 |---|---|---|
+| "database disk image is malformed" | The project database (`.sqlite`) is damaged. | Close the app and recover the database with the commands below this table, then open the app again. |
 | "No samples to show. A sample is listed once its taxonomy is locked in the Taxonomy step. ..." | The Assemble table lists only samples whose taxonomy is locked, and the Lock and State filters and the search box can hide the rest. | Lock the samples in the Taxonomy step, or reset the filters and clear the search box. |
 | "Nothing to update": "No samples or annotation units are Ready to run. ..." | Nothing is queued. Locked or finished samples are skipped. | Set the State of the rows you want to Ready to run, then press **Update**. |
 | "N reference group(s) are not built or skipped (...)." | Some reference groups have no database yet. The run goes ahead, and those samples use the database their options already name. | Build the databases in the Reference step first. |
 | "Cannot run: N reference database file(s) named by the samples queued for assembly are missing or empty (...)." | A database the samples point at is gone. | Rebuild it in the Reference step, or point those samples at a database that exists. |
 | "A pipeline run is already going for this project, or is still stopping its tasks (started ...)." | Another window, or a stopped run that is still cleaning up, holds the project. | Wait for it to finish, or stop it in the window that started it. |
 | "The mapping file is missing column(s): ..." | The mapping file needs ID, Taxon, R1, and R2 (or Assembly). | See [Your own project](Your-Own-Project.html). |
-| "IDs may use only letters, digits, dash (-), underscore (_), and colon (:) ..." or "IDs must be 18 characters or fewer." | An ID breaks the ID rules. | Rename it in the mapping file. |
+| "IDs may use only letters, digits, dash (-), underscore (_), and colon (:) ..." or "IDs must be 40 characters or fewer." | An ID breaks the ID rules. | Rename it in the mapping file. |
 | "Read files named in the mapping file were not found in ..." | A name in R1 or R2 does not match a file in `data_path`. | Check the spelling, and that names are relative to `data_path`. |
 | "These paths have characters the pipeline cannot pass to Docker, Singularity, or Nextflow: ..." | A path has a space, a quote mark, or another special character. | Rename it to use only letters, digits, and `.`, `_`, `-`, and `/`. |
 | "Group name ... cannot be used: it becomes a folder name ..." | An export group name has a space or another special character. | Use the name the message suggests. |
@@ -162,7 +165,13 @@ gives a message that a run is already going (see below).
 | "Nextflow ... is newer than RiboPilot has verified ... Runs will be pinned to Nextflow 25.10.6 via NXF_VER." | RiboPilot runs a supported version instead, downloading it once. | Nothing, or install a supported version. |
 | "Container image ... is not published on Docker Hub, so container executors will fail at image pull." | The project names an image Docker cannot download. | Check the `container` you passed to `new_project()`, and your network. |
 | "Container version does not match RiboPilot" (when the app opens) | The project's `.config` names the RiboPilot image for another version, so runs use that image's code and tools. | Run `RiboPilot::backwards_compatibility()` on the project (see [Upgrading](Installation.html#upgrading-ribopilot)). The app works either way. |
-| A BLAST error with "GNUTLS" or "secure session" | Conda setups only: BLAST is too old to reach NCBI. | See [Installing tools without a container](Without-Containers.html). |
+
+To recover a damaged project database, run these in the project folder:
+
+```bash
+mv .sqlite .sqlite_corrupted
+sqlite3 .sqlite_corrupted ".recover" | sqlite3 .sqlite
+```
 
 # Asking for help
 
