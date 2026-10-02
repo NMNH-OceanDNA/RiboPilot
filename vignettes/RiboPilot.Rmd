@@ -19,8 +19,7 @@ although higher level taxonomic groups should work too. See [Your own project](Y
 
 This guide walks through the test project, a set of 12 samples that ships
 with RiboPilot: 10 fish genome skims and 2 synthetic samples made to test the
-checks. Do it once before you start on your own data. If you have not installed
-RiboPilot yet, start with [Installation](Installation.html).
+checks. We recommend trying the test project before you start on your own data. 
 
 ::: {.alert .alert-hydra}
 [HYDRA]{.hydra-tag} **Are you a Smithsonian user?** Boxes like this one flag
@@ -33,19 +32,23 @@ the same as for MitoPilot: see
 general.
 :::
 
-# What your computer needs
+# Setup
 
-The test project (12 samples) took about 18 minutes on a Linux workstation
+Before we begin, follow the [installation instructions](Installation.html#before-you-start) 
+to get RiboPilot set up on your computer or cluster.
+
+The test project (12 samples) took about 20 minutes on a Linux workstation
 with 16 CPU cores and 61 GB of memory. RiboPilot caps every task at your
 computer's CPUs and memory, so a small computer runs more slowly rather than
-failing. For disk space, see [Installation](Installation.html#before-you-start).
+failing.
 
 # Samples, contigs, and records
 
-A sample is one row of your mapping file. Assembling a sample can give more than
-one path (another way to join the same reads), and each path can hold one or
+A sample is one row of your mapping file and usually corresponds to one specimen.
+Assembling a sample can give more than
+one path (alternate ways to join the same reads), and each path can hold one or
 more contigs. Each contig you keep becomes one record in your GenBank export.
-The app calls a kept contig a unit in the Annotation Review and Export steps. A sample with one record is named
+A sample with one record is named
 by its ID. A sample with more than one record gets names like
 `SRR33849683_p1_s2` (path 1, contig 2). Export files call the contig number
 `scaffold`.

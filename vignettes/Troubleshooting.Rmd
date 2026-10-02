@@ -151,7 +151,7 @@ gives a message that a run is already going (see below).
 |---|---|---|
 | "database disk image is malformed" | The project database (`.sqlite`) is damaged. | Close the app and recover the database with the commands below this table, then open the app again. |
 | "No samples to show. A sample is listed once its taxonomy is locked in the Taxonomy step. ..." | The Assemble table lists only samples whose taxonomy is locked, and the Lock and State filters and the search box can hide the rest. | Lock the samples in the Taxonomy step, or reset the filters and clear the search box. |
-| "Nothing to update": "No samples or annotation units are Ready to run. ..." | Nothing is queued. Locked or finished samples are skipped. | Set the State of the rows you want to Ready to run, then press **Update**. |
+| "Nothing to update": "No samples or contigs are Ready to run. ..." | Nothing is queued. Locked or finished samples are skipped. | Set the State of the rows you want to Ready to run, then press **Update**. |
 | "N reference group(s) are not built or skipped (...)." | Some reference groups have no database yet. The run goes ahead, and those samples use the database their options already name. | Build the databases in the Reference step first. |
 | "Cannot run: N reference database file(s) named by the samples queued for assembly are missing or empty (...)." | A database the samples point at is gone. | Rebuild it in the Reference step, or point those samples at a database that exists. |
 | "A pipeline run is already going for this project, or is still stopping its tasks (started ...)." | Another window, or a stopped run that is still cleaning up, holds the project. | Wait for it to finish, or stop it in the window that started it. |

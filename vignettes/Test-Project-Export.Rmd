@@ -16,11 +16,11 @@ vignette: >
 <span class="current">5. Export</span>
 </div>
 
-Tick the units and press **Assign Group**, then type a group name. The name
+Tick the contigs and press **Assign Group**, then type a group name. The name
 becomes a folder name, so use only letters, digits, dot, dash, and underscore,
 and start with a letter, digit, or underscore.
 
-![Assigning units to an export group](figures/get-started/export-assign-group.png)
+![Assigning contigs to an export group](figures/get-started/export-assign-group.png)
 
 A GenBank submission records one assembly method, so if the group mixes
 assemblers, RiboPilot offers to split it by assembler. In the test project
@@ -32,7 +32,7 @@ extra files to write:
 
 ![The Export window, with the header template and the files to write](figures/get-started/export-window.png)
 
-Before it writes anything, the Export window lists every unit that the
+Before it writes anything, the Export window lists every contig that the
 BLAST screen or the chimera check flagged, and that you have not marked
 Reviewed. It offers **Leave them out**, **Export anyway**, or **Cancel**, and
 **Leave them out** is the default. In the test project, CHIM01 is listed:

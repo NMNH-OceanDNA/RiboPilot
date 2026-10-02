@@ -39,7 +39,7 @@ One run does everything for each sample: it cleans the reads, assembles the
 rDNA, picks and scores the contigs, compares them with GenBank, maps the reads
 back for depth, finds the five features, runs the quality checks, and proposes
 which contigs to keep. There is no separate annotation run. The test run
-takes about 18 minutes.
+takes about 20 minutes.
 
 When the run ends, the app says how it went. A clean run says "Run finished
 with no failures." Otherwise it shows a report that names every sample that
@@ -67,7 +67,7 @@ The columns to look at first:
   Red means Lock and Export will ask about it first, amber is worth a look,
   green is ok, and grey means there was nothing to compare with. See
   [The Checks column](Curation-Flags.html#the-checks-column).
-- **# Paths**, **# Units**, and **# Kept**: how many assembly paths and
+- **# Paths**, **# Contigs**, and **# Kept**: how many assembly paths and
   contigs the sample gave, and how many contigs are kept. 0 kept means
   there is nothing to annotate.
 - **ITSx Warnings**: how many of the sample's contigs stock ITSx flags; see

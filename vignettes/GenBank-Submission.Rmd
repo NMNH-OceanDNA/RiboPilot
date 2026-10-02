@@ -118,9 +118,9 @@ the feature table, and "partial sequence" in the definition line) when:
   nothing.
 
 Your own choice always wins: the **5'** and **3'** buttons under **Partial** in
-the unit window (check **Edit**, pick the feature, then **Save**) show whether
+the contig window (check **Edit**, pick the feature, then **Save**) show whether
 each end is partial now, and a click sets it to the other state for good.
-**Mark Partial** on the unit only changes `{completeness}` to "partial
+**Mark Partial** on the contig only changes `{completeness}` to "partial
 sequence"; it does not mark any gene end.
 
 # Flanking sequence
@@ -140,9 +140,9 @@ gap inside the 18S-to-28S region; the `gap_in_rDNA` flag below marks these.
 # Check before you submit
 
 **Flagged records.** Before it writes anything, the Export window lists every
-unit that the BLAST screen or the chimera check flagged, and that you
+contig that the BLAST screen or the chimera check flagged, and that you
 have not marked Reviewed. **Leave them out** is the default; **Export anyway**
-exports them with their flags in the summary. Lock asks about the same units
+exports them with their flags in the summary. Lock asks about the same contigs
 first, in the Assemble and Annotation Review steps. When the export is done, its
 summary names every record that has a submission-risk flag, and why.
 
@@ -171,15 +171,15 @@ be another organism's rDNA, exported under your sample's name. Weaker chimera
 evidence is in the separate `chimera_warning` column; it is not a submission
 risk, but it is worth a look in the app.
 
-**What your marks do.** A unit is exported when its sample is locked in the
-Assemble step, the unit is locked in the Annotation Review step, its contig is
-kept, and it is not excluded from export. The Export window lists each
-unit of the group that is left out, and why.
+**What your marks do.** A contig is exported when its sample is locked in the
+Assemble step, the contig is kept and locked in the Annotation Review step, and
+it is not excluded from export. The Export window lists each
+contig of the group that is left out, and why.
 
 | Mark | What it does to the export |
 |---|---|
-| **Mark Reviewed** | Lock and the Export window no longer ask about the unit's contamination or chimera flags. The summary's `reviewed` column says yes. |
-| **Exclude & Lock** | The unit is left out of every export and locked as done. To undo, unlock it and press **Include in export**. |
+| **Mark Reviewed** | Lock and the Export window no longer ask about the contig's contamination or chimera flags. The summary's `reviewed` column says yes. |
+| **Exclude & Lock** | The contig is left out of every export and locked as done. To undo, unlock it and press **Include in export**. |
 | **Mark Partial** | `{completeness}` reads "partial sequence". Gene ends are set per feature (see above). |
 
 # What is in the export folder

@@ -7,7 +7,7 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
-After it annotates a unit (one kept contig, see
+After it annotates a kept contig (see
 [Get started](RiboPilot.html#samples-contigs-and-records)), RiboPilot runs a
 set of automatic quality checks and
 raises a **curation warning** for anything that looks unusual. Warnings guide
@@ -20,8 +20,8 @@ You see them in three places:
   the ID, or after **Path #** and **Contig #** when those show), which sums up
   every check in a few words;
 - the **Warnings** column of Annotation Review, which counts the warnings on the
-  unit as a whole (marked "unit" in the table below); hover over it for the list;
-- the **Curation warnings** panel of a unit's window, which lists the unit's
+  contig as a whole (marked "contig" in the table below); hover over it for the list;
+- the **Curation warnings** panel of a contig's window, which lists the contig's
   warnings and, below them, each feature that has a warning. Click **select** on a
   feature's row to make it the active feature.
 
@@ -29,27 +29,27 @@ You see them in three places:
 
 | Warning | On | What it means | What to do |
 |---|---|---|---|
-| `missing_18S`, `missing_5.8S`, `missing_28S` | unit | One of the three rRNA genes was not found. | Expected when the contig holds only part of the repeat. Otherwise look at **Sequence and read coverage** for a break. |
-| `missing_ITS1`, `missing_ITS2` | unit | A spacer was not found between its two genes. | Usually follows a missing gene. If both genes are there, check the boundaries in **Edit active feature boundaries**. |
-| `out_of_order` | unit | The features are not in the order 18S, ITS1, 5.8S, ITS2, 28S. | Likely a misassembly; the export marks it `misassembly`. Check the feature map and read coverage before you submit it. |
-| `overlap` | unit and feature | A feature overlaps the one before it. | Move the boundary in **Edit active feature boundaries**. The export marks it `misassembly`. |
-| `gap` | unit and feature | Bases between two neighboring features that belong to neither. Gaps of 5 bases or fewer are closed when the unit is annotated, so a new unit only gets `gap` for a larger one; after you edit a boundary, any gap is flagged. | Check the boundaries, and extend the gene or spacer if the gap is part of it. |
-| `wrong_strand` | unit and feature | A feature lies on the opposite strand from the rest. | Likely a misassembly or a wrong call. Check the feature model. |
+| `missing_18S`, `missing_5.8S`, `missing_28S` | contig | One of the three rRNA genes was not found. | Expected when the contig holds only part of the repeat. Otherwise look at **Sequence and read coverage** for a break. |
+| `missing_ITS1`, `missing_ITS2` | contig | A spacer was not found between its two genes. | Usually follows a missing gene. If both genes are there, check the boundaries in **Edit active feature boundaries**. |
+| `out_of_order` | contig | The features are not in the order 18S, ITS1, 5.8S, ITS2, 28S. | Likely a misassembly; the export marks it `misassembly`. Check the feature map and read coverage before you submit it. |
+| `overlap` | contig and feature | A feature overlaps the one before it. | Move the boundary in **Edit active feature boundaries**. The export marks it `misassembly`. |
+| `gap` | contig and feature | Bases between two neighboring features that belong to neither. Gaps of 5 bases or fewer are closed when the contig is annotated, so a new contig only gets `gap` for a larger one; after you edit a boundary, any gap is flagged. | Check the boundaries, and extend the gene or spacer if the gap is part of it. |
+| `wrong_strand` | contig and feature | A feature lies on the opposite strand from the rest. | Likely a misassembly or a wrong call. Check the feature model. |
 | `length` | feature | The feature is shorter or longer than the range for its group (tables below). | Common for the spacers, and often fine. Check that the boundaries look right. |
 | `truncated` | feature | Less than 90 percent of the gene's rRNA model was recovered. | Nothing: the export writes the gene as partial. |
 | `low_identity` | feature | The gene is less similar to its best reference than the floor for its group (tables below), and the reference covers at least half of the gene. | An assembly error, or a little-studied group. Look at the **Reference alignment**. |
-| `contaminant` | unit | The BLAST screen's best hit is from a different phylum than your sample. | Check the unit before you lock it: it may be another organism's rDNA. Lock and the Export window ask about it until you mark it Reviewed. |
-| `contaminant_unchecked` | unit | The contamination check could not run: the BLAST screen has no usable hit for the unit, or your sample's lineage is unknown. | If NCBI could not be reached, run the sample again once it can (see [Troubleshooting](Troubleshooting.html)). If the sample has no taxon, set one in the Taxonomy step. |
-| `not_nuclear_rdna` | unit | The BLAST screen's best hit is not a nuclear rDNA record, for example a mitochondrial or bacterial rRNA. | The contig may not be nuclear rDNA. Check its features and hits before you keep it. |
-| `no_clade_ruleset` | unit | Your sample's group has no ruleset of its own, so the generic animal ranges were used. | Nothing. See [How the checks are tuned per group](#how-the-checks-are-tuned-per-group). |
+| `contaminant` | contig | The BLAST screen's best hit is from a different phylum than your sample. | Check the contig before you lock it: it may be another organism's rDNA. Lock and the Export window ask about it until you mark it Reviewed. |
+| `contaminant_unchecked` | contig | The contamination check could not run: the BLAST screen has no usable hit for the contig, or your sample's lineage is unknown. | If NCBI could not be reached, run the sample again once it can (see [Troubleshooting](Troubleshooting.html)). If the sample has no taxon, set one in the Taxonomy step. |
+| `not_nuclear_rdna` | contig | The BLAST screen's best hit is not a nuclear rDNA record, for example a mitochondrial or bacterial rRNA. | The contig may not be nuclear rDNA. Check its features and hits before you keep it. |
+| `no_clade_ruleset` | contig | Your sample's group has no ruleset of its own, so the generic animal ranges were used. | Nothing. See [How the checks are tuned per group](#how-the-checks-are-tuned-per-group). |
 
 Two more columns hold checks of their own. **ITSx Warnings** says what stock ITSx
 (see [the final ITSx check](GenBank-Submission.html#check-before-you-submit))
-finds in the unit, for example
+finds in the contig, for example
 `itsx_chimeric`, `itsx_no_5.8S`, or `itsx_boundary_shift(...)`. **Chimera** holds the
 chimera check's level; see [Chimeras](#chimeras-contigs-made-of-two-pieces).
 
-The contamination checks need a BLAST screen result. When a unit has none, for
+The contamination checks need a BLAST screen result. When a contig has none, for
 example because NCBI could not be reached, RiboPilot does not skip the check: it
 raises `contaminant_unchecked`, and triage flags the contig "BLAST screen has not
 run".
@@ -63,13 +63,13 @@ not be downloaded, the identity check is skipped with no warning, so a gene with
 
 The Checks column puts every check on one line, worst first, in a color that
 matches the worst finding. On the Assemble table it covers the sample's kept
-contigs; on the Annotation Review table, one unit. "warnings" means a unit warning from
+contigs; on the Annotation Review table, one contig. "warnings" means a contig warning from
 the table above, the ones the Warnings column counts; "feature flags" means a
 warning on one of its features.
 
 | Checks says | Color | What happens |
 |---|---|---|
-| off target, contaminant, severe chimera, ITSx chimeric | red | Lock and the Export window ask first, until the unit is marked Reviewed. |
+| off target, contaminant, severe chimera, ITSx chimeric | red | Lock and the Export window ask first, until the contig is marked Reviewed. |
 | minor chimera, uncertain screen, ITSx, warnings, feature flags | amber | Worth a look; nothing asks. |
 | ok | green | The best BLAST matches are in your sample's phylum, and nothing is flagged. This does not confirm the species. |
 | no reference | grey | Nothing is flagged, but the BLAST screen had no usable match to judge by. |
@@ -99,7 +99,7 @@ The line under the contig name in the **BLAST evidence** panel (click a
 sample's ID in the Assemble step, "Best match in ...") says which database
 gave the contig's best match. In Annotation
 Review, the **Hit Source** column (in the **BLAST** column group) says which
-database named the unit's best rDNA reference: "bundled", "NCBI", or "seed file"
+database named the contig's best rDNA reference: "bundled", "NCBI", or "seed file"
 (the assembly's own seed database, which is only a hint).
 
 For a methods section, see [Citing RiboPilot](Citing.html).
@@ -157,12 +157,12 @@ RiboPilot looks for a chimera in four ways:
 - **Reads.** Many reads that stop at the same point, or a lasting step in read
   depth, can mark a join.
 
-Each unit gets one of three levels, shown in the **Chimera** column of the
+Each contig gets one of three levels, shown in the **Chimera** column of the
 Annotation Review table and in the **Checks** column:
 
 | Level | What it means | Triage | Export |
 |---|---|---|---|
-| severe | Two parts match different phyla or kingdoms, each at 90 percent identity or more. | The chimera rule flags the contig. | The `submission_risk` column says `chimeric(...)`, and Lock and the Export window ask first until the unit is marked Reviewed. |
+| severe | Two parts match different phyla or kingdoms, each at 90 percent identity or more. | The chimera rule flags the contig. | The `submission_risk` column says `chimeric(...)`, and Lock and the Export window ask first until the contig is marked Reviewed. |
 | minor | Weaker evidence: a switch between classes, genes that agree only at a high rank, a ribotyper warning, or read evidence alone. | No rule fires. | Listed in the `chimera_warning` column of the summary CSV. It is not a submission risk, and neither Lock nor the Export window asks. |
 | clean | Nothing found. | No rule fires. | Nothing. |
 
@@ -183,7 +183,7 @@ matches a ray-finned fish:
 
 ![Chimera check for a weaker signal that needs a look](figures/curation/chimera-mild.png)
 
-To judge a flag, open the **Chimera check** panel, and hover over the unit's
+To judge a flag, open the **Chimera check** panel, and hover over the contig's
 badge in the **Chimera** column to read the evidence behind the call. A real
 chimera shows a clean switch from one lineage to another at one point, often
 with a depth change there too. A switch that sits inside a conserved stretch of
@@ -237,7 +237,7 @@ RiboPilot ships five rulesets, and picks one from each sample's lineage:
 | `asteroidea` | sea stars |
 | `scyphozoa` | true jellyfish |
 | `octocorallia` | octocorals |
-| `metazoa_generic` | any other group; the unit gets the `no_clade_ruleset` note |
+| `metazoa_generic` | any other group; the contig gets the `no_clade_ruleset` note |
 
 To use another one, pick it as **Clade ruleset** in the sample's **Curate
 Options** (Assemble step). Leaving `metazoa_generic` there lets RiboPilot choose
