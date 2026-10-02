@@ -125,8 +125,9 @@ sequence"; it does not mark any gene end.
 
 # Flanking sequence
 
-Records keep the sequence around the genes: part of the external spacer (ETS)
-before the 18S and part of the intergenic spacer (IGS) after the 28S. RiboPilot
+Records keep the sequence around the genes. This is intergenic spacer (IGS) on
+both sides: its 5' external transcribed spacer (ETS) before the 18S, and its 3'
+ETS after the 28S. RiboPilot
 does not annotate these flanks, and GenBank tends to reject sequence outside
 the 18S-to-28S region. Trim records to the gene ends before you export
 (**Trim**, **Match gene ends**).

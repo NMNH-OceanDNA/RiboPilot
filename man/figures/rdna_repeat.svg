@@ -1,27 +1,42 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 120" font-family="Helvetica, Arial, sans-serif" role="img" aria-label="One copy of the rDNA repeat">
-  <rect width="760" height="120" fill="#ffffff"/>
-  <line x1="10" y1="62" x2="750" y2="62" stroke="#9fb4bd" stroke-width="4" stroke-dasharray="2 5" stroke-linecap="round"/>
-  <line x1="70" y1="62" x2="690" y2="62" stroke="#9fb4bd" stroke-width="4"/>
-  <g font-size="15" font-weight="bold" text-anchor="middle">
-    <rect x="110" y="44" width="170" height="36" rx="5" fill="#1f6f8b"/>
-    <text x="195" y="67" fill="#ffffff">18S</text>
-    <rect x="345" y="44" width="50" height="36" rx="5" fill="#1f6f8b"/>
-    <text x="370" y="67" fill="#ffffff" font-size="13">5.8S</text>
-    <rect x="460" y="44" width="230" height="36" rx="5" fill="#1f6f8b"/>
-    <text x="575" y="67" fill="#ffffff">28S</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 146" font-family="Helvetica, Arial, sans-serif" role="img" aria-label="One copy of the rDNA repeat">
+  <rect width="760" height="146" fill="#ffffff"/>
+  <!-- IGS brackets -->
+  <g stroke="#6b7b85" stroke-width="1.5" fill="none">
+    <path d="M10 30 v-8 h110 v8"/>
+    <path d="M650 30 v-8 h100 v8"/>
   </g>
-  <g font-size="14" text-anchor="middle" fill="#33444d">
-    <text x="60" y="34">ETS</text>
-    <text x="312" y="34">ITS1</text>
-    <text x="427" y="34">ITS2</text>
-    <text x="722" y="34">IGS</text>
+  <g font-size="13" font-weight="bold" text-anchor="middle" fill="#33444d">
+    <text x="65" y="15">IGS</text>
+    <text x="700" y="15">IGS</text>
+  </g>
+  <!-- backbone -->
+  <line x1="10" y1="72" x2="60" y2="72" stroke="#9fb4bd" stroke-width="4" stroke-dasharray="2 5" stroke-linecap="round"/>
+  <line x1="700" y1="72" x2="750" y2="72" stroke="#9fb4bd" stroke-width="4" stroke-dasharray="2 5" stroke-linecap="round"/>
+  <line x1="60" y1="72" x2="700" y2="72" stroke="#9fb4bd" stroke-width="4"/>
+  <!-- external transcribed spacers -->
+  <rect x="60" y="60" width="60" height="24" rx="4" fill="#bcdbe4"/>
+  <rect x="650" y="60" width="50" height="24" rx="4" fill="#bcdbe4"/>
+  <!-- genes -->
+  <g font-size="15" font-weight="bold" text-anchor="middle">
+    <rect x="120" y="54" width="160" height="36" rx="5" fill="#1f6f8b"/>
+    <text x="200" y="77" fill="#ffffff">18S</text>
+    <rect x="340" y="54" width="50" height="36" rx="5" fill="#1f6f8b"/>
+    <text x="365" y="77" fill="#ffffff" font-size="13">5.8S</text>
+    <rect x="450" y="54" width="200" height="36" rx="5" fill="#1f6f8b"/>
+    <text x="550" y="77" fill="#ffffff">28S</text>
+  </g>
+  <g font-size="13" text-anchor="middle" fill="#33444d">
+    <text x="33" y="48">NTS</text>
+    <text x="90" y="48">5' ETS</text>
+    <text x="310" y="48">ITS1</text>
+    <text x="420" y="48">ITS2</text>
+    <text x="675" y="48">3' ETS</text>
+    <text x="727" y="48">NTS</text>
   </g>
   <g font-size="12" text-anchor="middle" fill="#6b7b85">
-    <text x="195" y="100">small subunit (SSU)</text>
-    <text x="575" y="100">large subunit (LSU)</text>
+    <text x="200" y="108">small subunit (SSU)</text>
+    <text x="550" y="108">large subunit (LSU)</text>
+    <text x="380" y="139">transcribed unit</text>
   </g>
-  <g stroke="#e0a100" stroke-width="2" fill="none">
-    <path d="M285 88 v8 h170 v-8"/>
-  </g>
-  <text x="370" y="113" font-size="12" text-anchor="middle" fill="#6b7b85">ITS region</text>
+  <path d="M60 116 v8 h640 v-8" stroke="#6b7b85" stroke-width="1.5" fill="none"/>
 </svg>
