@@ -269,7 +269,7 @@ test_that("scaffolds under min_assembly_length are parked, not dropped", {
   expect_match(ig$triage_reason[1], "min_assembly_length")
   st <- gate_state(con)
   expect_equal(st$assemble_switch, 4L)
-  expect_match(st$assemble_notes, "min_assembly_length")
+  expect_match(st$assemble_notes, "3 of 5 contigs shorter than Min assembly length")
   # the dropped units keep a held annotate row rather than a queued one, so they
   # are not pending work and the sample can settle
   sw <- DBI::dbGetQuery(con, "SELECT scaffold, annotate_switch FROM annotate ORDER BY scaffold")
@@ -279,6 +279,26 @@ test_that("scaffolds under min_assembly_length are parked, not dropped", {
   expect_equal(st$scaffolds, 2L)
   expect_equal(DBI::dbGetQuery(con, "SELECT length FROM assemble WHERE ID='S1'")$length,
     "420;416")
+})
+
+test_that("a rescued sample keeps a note that an earlier run failed", {
+  dir <- withr::local_tempdir()
+  con <- mk_asm_db(dir); on.exit(DBI::dbDisconnect(con))
+  write_many_scaffolds(dir, 5)
+  DBI::dbExecute(con, "UPDATE assemble_opts SET min_assembly_length = 1000")
+  RiboPilot:::load_assemblies(con, dir, "S1")
+  st <- gate_state(con)
+  expect_equal(st$assemble_switch, 3L)
+  expect_equal(st$assemble_notes, "5 contig(s) under min_assembly_length (1000 bp)")
+
+  DBI::dbExecute(con, "UPDATE assemble_opts SET min_assembly_length = 415")
+  for (i in 1:2) RiboPilot:::load_assemblies(con, dir, "S1")   # carried once, not stacked
+  st <- gate_state(con)
+  expect_equal(st$assemble_switch, 4L)
+  expect_match(st$assemble_notes, "3 of 5 contigs shorter than Min assembly length \\(415 bp\\) were dropped")
+  expect_match(st$assemble_notes,
+    "; earlier run failed: 5 contig\\(s\\) under min_assembly_length \\(1000 bp\\)$")
+  expect_length(gregexpr("earlier run failed", st$assemble_notes)[[1]], 1)
 })
 
 test_that("short scaffolds do not count towards max_scaffolds", {
