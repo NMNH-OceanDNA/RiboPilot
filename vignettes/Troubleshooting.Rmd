@@ -41,7 +41,7 @@ Samples:   12
 
 Failed samples (sample | note | likely cause):
 SRR14433899 | 11 or more paths exceed max_paths (10) | GetOrganelle found more alternative paths than Max paths allows.
-SRR22396893 | 2 contig(s) under min_assembly_length (500 bp) | Every assembled piece was shorter than Min assembly length.
+SRR22396893 | 2 contig(s) under min_assembly_length (500 bp) | Every assembled contig was shorter than Min assembly length.
 ```
 
 What each part means:

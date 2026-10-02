@@ -293,6 +293,21 @@ carry_user_triage <- function(df, old) {
   df
 }
 
+#' What to carry into a re-assembled sample's notes about a run that failed before
+#'
+#' A sample that failed and is then rescued keeps a record of the failure:
+#' "earlier run failed: <that run's note>". An older record is carried as it is.
+#' @param old The sample's assemble_notes before this run rewrites them.
+#' @noRd
+earlier_failure_note <- function(old) {
+  if (is.na(old) || !nzchar(old)) return(NULL)
+  m <- regmatches(old, regexpr("earlier run failed: .*$", old))
+  if (length(m)) return(m)
+  failed <- paste0("^(failed assembly|below min_depth|[0-9]+ contig\\(s\\) under min_assembly_length|",
+    "[0-9]+ or more paths exceed max_paths|[0-9]+ contigs in a path exceeds max_scaffolds)")
+  if (grepl(failed, old)) paste0("earlier run failed: ", old) else NULL
+}
+
 #' Load one sample's assembly fastas into the database
 #'
 #' Parses `<dir>/<ID>_assembly_*.fasta` (headers
@@ -306,6 +321,8 @@ carry_user_triage <- function(df, old) {
 #' @return (invisibly) the number of contigs loaded.
 #' @export
 load_assemblies <- function(con, dir, ID) {
+  earlier <- earlier_failure_note(DBI::dbGetQuery(con,
+    "SELECT assemble_notes FROM assemble WHERE ID = ?", params = list(ID))$assemble_notes[1])
   fas <- Sys.glob(file.path(dir, paste0(ID, "_assembly_*.fasta")))
   fas <- fas[!grepl("_assembly_0\\.fasta$", fas)] # skip the "no assembly" sentinel
   ts <- as.integer(Sys.time())
@@ -479,7 +496,9 @@ load_assemblies <- function(con, dir, ID) {
   notes <- paste(c(
     if (n_paths > 1) "Unable to resolve single assembly from reads"
     else if (max_per_path > 1) "Output contains disconnected contigs" else NULL,
-    short_note),
+    if (any(short)) sprintf("%d of %d contigs shorter than Min assembly length (%d bp) were dropped",
+      sum(short), nrow(df), as.integer(minlen)),
+    earlier),
     collapse = "; ")
   DBI::dbExecute(con,
     "UPDATE assemble SET paths=?, scaffolds=?, length=?, topology=?,

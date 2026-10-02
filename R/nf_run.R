@@ -192,10 +192,10 @@ failure_hint <- function(note) {
     h("GetOrganelle found more alternative paths than Max paths allows.",
       paste0(asm, "raise Max paths, or ", bait, done))
   } else if (grepl("exceeds max_scaffolds", note, fixed = TRUE)) {
-    h("The assembly came out in more pieces than Max contigs allows.",
+    h("The assembly came out in more contigs than Max contigs allows.",
       paste0(asm, "raise Max contigs, or ", bait, done))
   } else if (grepl("under min_assembly_length", note, fixed = TRUE)) {
-    h("Every assembled piece was shorter than Min assembly length.",
+    h("Every assembled contig was shorter than Min assembly length.",
       paste0(asm, bait, ", or lower Min assembly length", done))
   } else if (grepl("rRNA search incomplete", note, fixed = TRUE)) {
     h("Part of the search for rRNA genes in your assembly did not finish.",
