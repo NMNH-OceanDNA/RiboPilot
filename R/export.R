@@ -472,6 +472,17 @@ unit_key <- function(id, path, scaffold) {
 EXPORTABLE_WHERE <- "COALESCE(an.annotate_lock,0) = 1 AND COALESCE(a.assemble_lock,0) = 1
   AND COALESCE(asm.ignore,0) = 0 AND COALESCE(an.problematic,'') != 'yes'"
 
+#' Table columns shared by the Annotation Review and Export steps: how many
+#' paths and contigs the sample keeps (a dropped contig never counts; the
+#' queries already require a locked assembly), and when the unit was last exported.
+#' @noRd
+UNIT_MULTI_SQL <- "(SELECT COUNT(DISTINCT x.path) FROM assemblies x
+     WHERE x.ID = an.ID AND COALESCE(x.ignore,0) = 0) AS path_n,
+   (SELECT COUNT(*) FROM assemblies x
+     WHERE x.ID = an.ID AND x.path = an.path AND COALESCE(x.ignore,0) = 0) AS scaffold_n"
+UNIT_EXPORTED_SQL <- "CASE WHEN an.export_time_stamp IS NULL THEN ''
+   ELSE 'exported ' || date(an.export_time_stamp, 'unixepoch', 'localtime') END AS exported"
+
 #' The units an export writes, with their export group
 #' @noRd
 exportable_units <- function(con) {
@@ -858,6 +869,8 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
     }
   }
 
+  DBI::dbExecute(con, "UPDATE annotate SET export_time_stamp = ? WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(rep(as.integer(Sys.time()), nrow(units)), units$ID, units$path, units$scaffold))
   message("Exported ", nrow(units), " unit(s) to ", gdir,
     "\n  GenBank Portal takes FASTA only: upload ", label,
     ".fasta; NCBI auto-annotates the rRNA-ITS region (see README.txt).")

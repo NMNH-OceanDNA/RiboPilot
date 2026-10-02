@@ -48,6 +48,7 @@ fixture_fill_schema <- function(con) {
   add_col("assemble", "triage_opts", "TEXT DEFAULT 'default'")
   add_col("annotate", "chimeric", "INTEGER")
   add_col("annotate", "curate_flags", "TEXT")
+  add_col("annotate", "export_time_stamp", "INTEGER")
   add_col("annotations", "model_coverage", "REAL")
   add_col("annotations", "status", "TEXT")
   add_col("annotations", "partial_start", "INTEGER")

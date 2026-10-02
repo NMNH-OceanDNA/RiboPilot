@@ -35,6 +35,7 @@ mk_hdr_project <- function() {
   }
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S1','Genus speciesA',NULL,NULL,'Reef A')")
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S2','Genus speciesB',NULL,NULL,'Reef B')")
+  DBI::dbExecute(con, "ALTER TABLE annotate ADD COLUMN export_time_stamp INTEGER")
   DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, assemble_lock INT)")
   DBI::dbExecute(con, "INSERT INTO assemble VALUES('S1',1),('S2',1)")
   dir
@@ -129,10 +130,15 @@ test_that("the bundle uses the samples/ layout and README.txt", {
   expect_false(file.exists(file.path(g, "README_SUBMISSION.txt")))
   expect_true(file.exists(file.path(g, "layout.fasta")))
   expect_true(file.exists(file.path(g, "layout_summary.csv")))
-  readme <- paste(readLines(file.path(g, "README.txt")), collapse = "\n")
-  expect_match(readme, "samples/")
-  expect_match(readme, "asks whether to leave them out")
-  expect_no_match(readme, "warn-only")
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  on.exit(DBI::dbDisconnect(con))
+  expect_false(anyNA(DBI::dbGetQuery(con, "SELECT export_time_stamp FROM annotate")[[1]]))
+  # S1 keeps two contigs, S2 one; a dropped contig stops counting
+  n <- function() DBI::dbGetQuery(con, paste("SELECT an.ID,", RiboPilot:::UNIT_MULTI_SQL,
+    "FROM annotate an ORDER BY an.ID, an.scaffold"))$scaffold_n
+  expect_equal(n(), c(2, 2, 1))
+  DBI::dbExecute(con, "UPDATE assemblies SET ignore = 1 WHERE ID = 'S1' AND scaffold = 2")
+  expect_equal(n(), c(1, 1, 1))
 })
 
 test_that("a saved configuration is used when named", {

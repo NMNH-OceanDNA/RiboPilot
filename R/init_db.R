@@ -535,6 +535,7 @@ new_db <- function(
       partial TEXT DEFAULT 'no',
       export_group TEXT,
       time_stamp INTEGER,
+      export_time_stamp INTEGER,
       PRIMARY KEY (ID, path, scaffold)
     );"
   )
