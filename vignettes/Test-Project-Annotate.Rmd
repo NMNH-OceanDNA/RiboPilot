@@ -12,9 +12,19 @@ vignette: >
 <a href="Test-Project-Taxonomy.html">1. Taxonomy</a>
 <a href="Test-Project-Reference.html">2. Reference</a>
 <a href="Test-Project-Assemble.html">3. Assemble</a>
-<span class="current">4. Annotate</span>
+<span class="current">4. Annotation Review</span>
 <a href="Test-Project-Export.html">5. Export</a>
 </div>
+
+For the test project, do this:
+
+1. Click a unit's ID to open it, and look over its features and checks.
+2. Close the window, then tick every row with the box in the table header.
+3. Press **Lock**. The app asks about CHIM01, which is flagged; choose **Lock
+   anyway**.
+
+Units must be locked here before they can be exported. The rest of this page
+explains what you are looking at.
 
 Each kept contig of a locked sample is one row, or unit:
 
@@ -40,14 +50,11 @@ active feature boundaries** and the **Reference alignment** act on.
 
 ![A unit: its five features, read coverage, and gene map](figures/get-started/annotation-details.png)
 
-Three marks record what you decided about a unit. Use the toolbar buttons for
-the ticked units, or the buttons at the top of a unit's window:
-
-| Button | What it records | What it does to the export |
-|---|---|---|
-| **Mark Reviewed** | You checked this unit. | Lock and the Export window no longer ask about its contamination or chimera flags. |
-| **Exclude & Lock** | This unit should not be submitted, and you are done with it. | The unit is left out of every export, and the Export window says so. It is also locked, so a rejected unit does not look like unfinished work. To undo, unlock it and press **Include in export**. |
-| **Mark Partial** | The unit does not hold a complete repeat. The Partial column reads "no" otherwise, so filter it with "no" to list only complete units. | `{completeness}` reads "partial sequence". Gene ends are marked partial on their own (untrimmed contig ends, truncated genes, trims into a gene); the 5' and 3' buttons in the unit window override that per feature. |
+Three marks record what you decided about a unit: **Mark Reviewed**, **Exclude
+& Lock**, and **Mark Partial**. Use the toolbar buttons for the ticked units, or
+the buttons at the top of a unit's window.
+[Preparing a GenBank submission](GenBank-Submission.html#check-before-you-submit)
+says what each mark does to the export.
 
 **Lock** locks the unit and keeps the window open; **Lock & Close** locks it and
 closes the window. Neither marks it Reviewed. If the unit has a red Checks
@@ -58,9 +65,12 @@ A locked unit is read only. To change its boundaries, trim it, restore it, or
 change its marks, unlock it first. Only units that are locked here, and whose
 sample is locked in the Assemble step, can be exported. Only one assembly path
 can be locked per sample: paths are alternative reconstructions of the same
-rDNA repeat, and a sample exports one.
+rDNA repeat, and a sample exports one. If a sample shows units from more than
+one path, lock the units of its **Selected Path** (see the Assemble table)
+unless the checks point to another.
 
-To trim many units at once, tick them and press **Trim** in the toolbar. Choose
+GenBank tends to reject sequence outside the genes, so trim before a real
+submission. To trim many units at once, tick them and press **Trim** in the toolbar. Choose
 **Match gene ends** to keep only the span from 18S to 28S, or **Gene
 ends + flank** to keep a few extra bases on each side. Only units
 with all five features (18S, ITS1, 5.8S, ITS2, and 28S) are trimmed; the window

@@ -7,8 +7,7 @@
 * From this version on, a project records its database version. After a later
   upgrade, run `backwards_compatibility()` on each project instead of making it
   again. See
-  ["Upgrading RiboPilot"](https://dmacguigan.github.io/RiboPilot/articles/Instal
-  lation.html#upgrading-ribopilot)
+  ["Upgrading RiboPilot"](https://dmacguigan.github.io/RiboPilot/articles/Installation.html#upgrading-ribopilot)
   in the Installation guide.
 
 ## GenBank records

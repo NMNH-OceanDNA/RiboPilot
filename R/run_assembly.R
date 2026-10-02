@@ -37,7 +37,7 @@ config_param <- function(config_lines, key) {
   trimws(gsub("['\"]", "", val))
 }
 
-#' Run the assembly workflow (WF1) for a project
+#' Run the assembly workflow for a project
 #'
 #' Launches the self-contained Nextflow pipeline, the same run as the app's
 #' Update button. For every taxonomy-locked sample that is Ready to run, one run

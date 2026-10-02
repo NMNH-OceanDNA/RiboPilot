@@ -54,10 +54,6 @@ and downloading the test reads need a GitHub personal access token. Put
 `usethis::edit_r_environ()` opens it), then restart R.
 :::
 
-RiboPilot does not ship a reference database. New projects may warn that the
-default fish reference database is not reachable; that is expected. Build a
-reference database for each group of samples in the app's Reference step.
-
 # Check that it works
 
 Run the test project: see [Get started](RiboPilot.html). It exercises every
@@ -123,6 +119,7 @@ Projects made before RiboPilot 0.1.0 cannot be updated. Make a new project with
 `new_project()`, in a new folder, from the same mapping file and reads.
 Reference databases in your reference folder are kept and reused.
 
-Each image takes about 7.7 GB. Once no project uses an old one, remove it with
+Each image takes about 7.7 GB in Docker, or about 2.5 GB as a Singularity
+file. Once no project uses an old one, remove it with
 `docker image rm <image>`; with Singularity, delete its file from your image
 cache (see [Disk space, caches, and offline use](Caches-and-Offline.html)).

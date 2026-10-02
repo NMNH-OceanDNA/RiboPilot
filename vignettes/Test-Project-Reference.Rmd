@@ -12,7 +12,7 @@ vignette: >
 <a href="Test-Project-Taxonomy.html">1. Taxonomy</a>
 <span class="current">2. Reference</span>
 <a href="Test-Project-Assemble.html">3. Assemble</a>
-<a href="Test-Project-Annotate.html">4. Annotate</a>
+<a href="Test-Project-Annotate.html">4. Annotation Review</a>
 <a href="Test-Project-Export.html">5. Export</a>
 </div>
 
@@ -42,18 +42,16 @@ three databases. Wait until every group's Status reads **Ready**:
 ![Reference groups with their databases ready](figures/get-started/reference-ready.png)
 
 ::: {.alert .alert-hydra}
-[HYDRA]{.hydra-tag} **Submit as job.** The run window shows a job script
-instead of **Run from App**. Press **Submit as job**. The build runs on the
-cluster, and the app connects each database to the project on its own once the
-job finishes.
+[HYDRA]{.hydra-tag} **Submit as job.** Press **Submit as job** in place of
+**Run from App**; see [Submit a run as a job](Clusters.html#submit-a-run-as-a-job).
+The app connects each database to the project once the job finishes.
 :::
 
 In our test, the Syngnathiformes database (about 10,500 GenBank records) took
 under 3 minutes and Pleuronectiformes (about 2,300 records) under 1 minute.
 Actinopteri holds about 43,000 records, so its download takes much longer.
 
-For your own samples, do this step before you assemble: RiboPilot does not ship a
-reference database, so every group, fishes included, needs one.
+For your own samples, do this step before you assemble.
 [Reference databases](Reference-Databases.html) explains the other choices.
 
 <p class="next-step"><a href="Test-Project-Assemble.html">Next: Assemble &rarr;</a></p>

@@ -2,7 +2,7 @@
 % Please edit documentation in R/run_assembly.R
 \name{run_assembly}
 \alias{run_assembly}
-\title{Run the assembly workflow (WF1) for a project}
+\title{Run the assembly workflow for a project}
 \usage{
 run_assembly(
   path = ".",

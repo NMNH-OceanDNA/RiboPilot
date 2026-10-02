@@ -26,7 +26,12 @@ The rules:
 
 - **Columns.** It needs the columns `ID`, `Taxon`, `R1`, and `R2`. Upper and
   lower case do not matter in column names.
-- **IDs.** Each ID must be unique, ignoring case, and at most 18 characters
+- **Taxon.** Give the species name whenever you can (for example
+  `Upeneus parvus`), spelled as NCBI has it; a genus or higher group works when
+  the species is unknown. RiboPilot uses it to pick the reference database and
+  the quality checks, to judge contamination, and as the organism name in your
+  GenBank records.
+- **IDs.** Each ID must be unique, ignoring case, and at most 40 characters
   long. Use only letters, digits, dash (`-`), underscore (`_`), and colon
   (`:`): no spaces, dots, or slashes. IDs are kept exactly as you typed them,
   leading zeros included.
@@ -76,7 +81,9 @@ An NCBI API key is optional; see [Installation](Installation.html) for where to
 put it.
 
 Then open the app and follow the five steps, as in
-[Get started](RiboPilot.html):
+[Get started](RiboPilot.html). Run a handful of samples through every step
+before you run hundreds: settings that are wrong for your group are much
+cheaper to find on a small run.
 
 ```r
 RiboPilot::RiboPilot("~/my_project")

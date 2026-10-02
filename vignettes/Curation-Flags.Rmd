@@ -43,8 +43,9 @@ You see them in three places:
 | `not_nuclear_rdna` | unit | The BLAST screen's best hit is not a nuclear rDNA record, for example a mitochondrial or bacterial rRNA. | The contig may not be nuclear rDNA. Check its features and hits before you keep it. |
 | `no_clade_ruleset` | unit | Your sample's group has no ruleset of its own, so the generic animal ranges were used. | Nothing. See [How the checks are tuned per group](#how-the-checks-are-tuned-per-group). |
 
-Two more columns hold checks of their own. **ITSx Warnings** says what stock ITSx, the
-tool NCBI runs on rRNA and ITS submissions, finds in the unit, for example
+Two more columns hold checks of their own. **ITSx Warnings** says what stock ITSx
+(see [the final ITSx check](GenBank-Submission.html#check-before-you-submit))
+finds in the unit, for example
 `itsx_chimeric`, `itsx_no_5.8S`, or `itsx_boundary_shift(...)`. **Chimera** holds the
 chimera check's level; see [Chimeras](#chimeras-contigs-made-of-two-pieces).
 
@@ -70,7 +71,7 @@ warning on one of its features.
 |---|---|---|
 | off target, contaminant, severe chimera, ITSx chimeric | red | Lock and the Export window ask first, until the unit is marked Reviewed. |
 | minor chimera, uncertain screen, ITSx, warnings, feature flags | amber | Worth a look; nothing asks. |
-| ok | green | The BLAST screen matched your sample's lineage, and nothing is flagged. |
+| ok | green | The best BLAST matches are in your sample's phylum, and nothing is flagged. This does not confirm the species. |
 | no reference | grey | Nothing is flagged, but the BLAST screen had no usable match to judge by. |
 
 # What the BLAST screen searches
@@ -105,77 +106,37 @@ For a methods section, see [Citing RiboPilot](Citing.html).
 
 # How contigs are kept or dropped (auto-triage)
 
-Warnings point at something worth a look; they never remove data. Separately,
-once a contig has been annotated and screened, RiboPilot proposes keep, drop,
-or undecided for the contig itself, in the Assemble step. You can override
-every call by hand with **K** and **D**, and your own decisions are never
-silently overwritten (more on that below).
-
-The proposal rests on two evidence channels that are independent of one
-another: **annotation**, from barrnap and ITSx run on the contig, and the
-**BLAST screen** described above. RiboPilot never drops a contig on one
-channel's silence: a rule can only drop once both the annotation tools and the
-BLAST screen have reported on the contig. By default, the only rule that drops
-is the one where both channels independently say the contig is not nuclear
-rDNA. Three other rules can be switched to Drop as well: two fire when
-annotation and the BLAST screen *disagree* with each other, and one fires when
-the BLAST screen's own consensus disagrees with the sample's identity. Turning
-any of them on is a deliberate choice about which evidence you trust more for
-your material, not more of the same corroboration; see the table below for
-which is which.
-
-RiboPilot checks a contig against eight named rules, in this order. The
-first rule that matches decides the outcome; if none match, the contig is
-kept. Four of the eight rules can ever drop a contig. The other four only
-flag, because their evidence is a missing channel, taxonomic distance alone, or
-a possible chimera, none of which is a safe basis for removing a contig by
-itself. A flagged contig stays undecided, and the **Why** column of the
-sample's contig table gives the reason.
+Warnings never remove data. Separately, once a contig has been annotated and
+screened, RiboPilot proposes keep, drop, or undecided for it in the Assemble
+step, by checking the eight rules below in order. The first rule that matches
+decides; if none match, the contig is kept. By default only one rule drops a
+contig: the one where annotation and the BLAST screen both say it is not
+nuclear rDNA. Every other rule flags: the contig stays undecided, and the **Why** column of
+the sample's contig table gives the reason. You can override any call by hand
+with **K** and **D**, and RiboPilot never overwrites your own decisions.
 
 | # | Rule | What it means | Can it drop? |
 |---|---|---|---|
 | 1 | Annotation has not run | Neither annotation tool has reported on this contig yet. | No, flag only |
-| 2 | BLAST screen has not run | No usable BLAST hit is recorded, so the contig cannot be judged. | No, flag only |
+| 2 | BLAST screen has not run | No usable BLAST hit is recorded, or the only matches are whole-genome assemblies, so the contig cannot be judged. | No, flag only |
 | 3 | No annotations, non-rDNA hit | Annotation found no rRNA or ITS feature, and the best GenBank match is not a nuclear rDNA record. | Yes, dropped by default |
 | 4 | No annotations but rDNA hit | Annotation found no rRNA or ITS feature, though the best GenBank match is a nuclear rDNA record. | Optional; flagged by default |
 | 5 | Has annotations but non-rDNA hit | The contig has a feature model, but its best GenBank match is not a nuclear rDNA record. | Optional; flagged by default |
 | 6 | GenBank taxonomy disagrees with the sample | The contig's BLAST hits agree on a taxon that is not on this sample's lineage. | Optional; flagged by default |
-| 7 | Disagrees with sibling contigs | This contig's top hit disagrees with the majority of this sample's other contigs. | No, flag only |
+| 7 | Disagrees with sibling contigs | This contig's top hit disagrees with the majority of this sample's other contigs. A hint, not proof. | No, flag only |
 | 8 | Chimeric assembly (severe) | Parts of this contig match organisms from different phyla or kingdoms. | No, flag only |
 
-Rule 2 also covers a case that looks different but is judged the same way: a
-contig whose only GenBank matches are whole-genome or chromosome-level
-assemblies. Such a record does not say what the aligned region actually is, so
-RiboPilot reports the contig as unjudged rather than guessing that it is not
-nuclear rDNA.
-
-Rule 6 is a separate check from the rest of the table: it asks whether the
-contig's BLAST hits agree on a taxon, and whether that taxon sits on your
-sample's own lineage. This is the check that catches a fungal, bacterial or
-plant contaminant riding along with a metazoan sample. It compares only
-against your sample's own lineage, at phylum rank, so it cannot separate two
-metazoans in the same phylum: a human on a fish sample passes, because both
-are Chordata, while a copepod on that same sample is caught. A `no_reference`
-result is a normal state
-for an offline project or a sparse clade, not a problem in itself: it means
-the screen had nothing usable to compare against, not that something is
-wrong. The verdict is also shown as a Screen column in a sample's contig table
-(click its ID in the Assemble step) and in the Annotation Review table, and an
+The taxonomy rule compares the contig's BLAST hits with your sample's lineage
+at phylum rank. It catches a fungal, bacterial, or plant contaminant, but
+cannot separate two animals in the same phylum: a human on a fish sample
+passes, because both are chordates. The verdict also shows in the Screen column
+of a sample's contig table and of the Annotation Review table, and an
 off-target verdict turns the Checks cell red.
 
 To change what a rule does, tick samples in the Assemble step and press
 **Triage**. The Triage window sets each rule to Off, Flag, or Drop (Drop only
 where the rule allows it), shows how many contigs each rule would decide, and
-applies to the ticked samples when you press **Apply**. Switching every rule off
-at once makes Apply a no-op: it changes nothing, rather than marking every
-remaining contig "keep" on the strength of no active checks. The rule
-settings live with the project, not with any one run, so the app and the
-pipeline never disagree about what a rule is set to do.
-
-Rule 7 deserves a special note: a low-identity hit at a large taxonomic
-distance is the normal state for an under-studied group, not proof of
-contamination, which is exactly the case RiboPilot exists to serve. For that
-reason, disagreement with sibling contigs can only ever flag, never drop.
+applies to the ticked samples when you press **Apply**.
 
 # Chimeras: contigs made of two pieces
 
@@ -201,7 +162,7 @@ Annotation Review table and in the **Checks** column:
 
 | Level | What it means | Triage | Export |
 |---|---|---|---|
-| severe | Two parts match different phyla or kingdoms, each at 90 percent identity or more. | Rule 8 flags the contig. | The `submission_risk` column says `chimeric(...)`, and Lock and the Export window ask first until the unit is marked Reviewed. |
+| severe | Two parts match different phyla or kingdoms, each at 90 percent identity or more. | The chimera rule flags the contig. | The `submission_risk` column says `chimeric(...)`, and Lock and the Export window ask first until the unit is marked Reviewed. |
 | minor | Weaker evidence: a switch between classes, genes that agree only at a high rank, a ribotyper warning, or read evidence alone. | No rule fires. | Listed in the `chimera_warning` column of the summary CSV. It is not a submission risk, and neither Lock nor the Export window asks. |
 | clean | Nothing found. | No rule fires. | Nothing. |
 
@@ -209,7 +170,7 @@ In the test project, CHIM01 is severe: its first part matches ray-finned
 fishes and its 28S matches a *Penicillium* mold, and the plot marks the join
 near 2,625 bp:
 
-![Chimera check for a real chimera](figures/curation/chimera-severe.png)
+![Chimera check for a real chimera](figures/get-started/assemble-chimera-chim01.png)
 
 RiboPilot already sets aside the usual false alarms. Windows in conserved
 stretches of 18S or 28S, where many groups match equally well, are shown as
@@ -231,41 +192,24 @@ in doubt, copy the contig with **Copy FASTA** and BLAST each side at NCBI.
 
 # Several contigs from one organism: the Variant column
 
-None of the rules above fires on this, and that is deliberate. When a sample
-yields more than one contig that the BLAST screen calls on target, both
-agree with your sample's lineage at phylum level. That rules out many
-contaminants but not all: a human on a fish sample is also a chordate. BLAST
-each variant's ITS before you lock one. RiboPilot
-compares them and tells you which of two situations you are looking at, in a
-Variant column in the Assemble step's contig table.
+When a sample gives more than one contig that the BLAST screen calls on target,
+no triage rule fires: all of them agree with your sample's lineage at phylum
+level. RiboPilot compares them on the 18S, 5.8S, and 28S genes they share, and
+labels them in the **Variant** column of the Assemble step's contig table. Too
+little shared gene sequence gives "not comparable". A contaminant from the same
+phylum also passes the screen, so BLAST each variant's ITS before you lock one.
 
-An **isomer** means the contigs are the same molecule assembled two ways:
-their conserved anchors are the same sequence, and they differ only outside
-them. Often that is spacer copy number, because the rDNA repeat's intergenic
-spacer contains subrepeats and an assembly graph can traverse a different
-number of them on different passes. It is not always: when two isomers have the
-same total length the difference cannot be copy number, so RiboPilot reports the
-measured length difference and lets you see which case you have. The
-comparison looks only at the 18S, 5.8S, and 28S genes. Two isomers can still
-differ in ITS1 or ITS2, and if they do, the one you lock is the ITS that GenBank
-receives, so compare their ITS before you choose.
+An **isomer** is RiboPilot's label for contigs that are the same rDNA copy
+assembled two ways: the genes are identical and the contigs differ only outside
+them, often in the number of spacer
+subrepeats. Isomers can still differ in ITS1 or ITS2, and the one you lock is
+what GenBank receives, so compare their ITS before you choose.
 
-A **paralog** means the sample genuinely carries several different rDNA copies.
-This is real, documented biology in Octocorallia, Scyphozoa and other groups,
-not a defect and not a sign that anything went wrong. Here the choice does
-matter, because which contig you lock is what GenBank receives. The column is
-rendered as information rather than as a warning, and export records the fact
-without blocking anything: a paralogous contig still exports.
-
-Three details worth knowing. The comparison uses only the conserved anchors
-(18S, 5.8S and 28S), because the spacers vary in both situations and so cannot
-tell them apart. RiboPilot does not annotate the intergenic spacer as a feature,
-so any statement about spacer copy number is inferred from the unannotated
-remainder rather than measured directly. And two contigs are only compared on
-the anchors they **both** carry, and only when enough of each one aligns: a
-contig whose 28S is a short fragment is reported as not comparable rather than
-declared identical to a complete one. The measured anchor identity is always
-shown, so you can see the number the label came from rather than only the label.
+A **paralog** means the genes of the contigs differ. That can be real
+variation within one genome (known in octocorals and jellyfish), but also a
+second organism from the same phylum or a pseudogene. Which contig you lock is
+what GenBank receives, so choose with care; export records the label and blocks
+nothing.
 
 # Your own decisions stick
 
@@ -278,13 +222,9 @@ back with the same sequence; a contig whose sequence changed starts undecided.
 
 # Depth is shown, not decided
 
-The contig table shows each contig's median per-position read depth and a
-small sparkline of depth along its length, but depth never decides a keep or
-drop call. Reads are mapped to one path at a time, and reads that
-could sit in more than one place in that path are set aside. So depth dips
-where the sequence repeats inside the path, for example over repeats in the
-spacer between units, and those dips are expected. The number is worth a look;
-it is not sound enough to decide anything on its own.
+The contig table shows each contig's median read depth and a small sparkline
+of depth along its length, but depth never decides a keep or drop call. Dips
+are expected where the sequence repeats inside the contig.
 
 # How the checks are tuned per group
 
@@ -323,16 +263,12 @@ Identity floors, in percent. Below these a gene gets `low_identity`:
 | 28S | 80 | 85 | 78 |
 
 The floors are lower for sea stars, jellyfish, and octocorals because GenBank
-holds few close relatives for them. In every ruleset, a gene is `truncated` when
+holds few close relatives for them. All of these are working values, not
+published standards: a `length` or `low_identity` warning is a prompt to look,
+not a verdict. In every ruleset, a gene is `truncated` when
 less than 90 percent of its rRNA model was recovered, and identity is judged only
 when the reference covers at least half of the gene.
 
-# Adding tuning for a new group
-
-If you work on a group that would benefit from its own length ranges, that can be
-added. This is a small change to RiboPilot's settings rather than new analysis
-code. If you are comfortable with R you can add it yourself (see `rrna_params()`
-in the source), but you are also very welcome to
-[open an issue](https://github.com/dmacguigan/RiboPilot/issues) describing your
-group, and we can help set it up. In the meantime, the generic animal setting
-works for any group; it is just more lenient.
+Want ranges for your own group? [Open an issue](https://github.com/dmacguigan/RiboPilot/issues)
+describing it. Until then, the generic animal ruleset works for any group; it
+is just more lenient.

@@ -296,7 +296,7 @@ unit_checks <- function(con, by = c("unit", "sample")) {
   out
 }
 
-#' README text mapping the bundle to NCBI's two submission routes
+#' README text explaining how to submit the bundle to NCBI
 #' @noRd
 submission_readme <- function(label, itsx_check = TRUE) {
   paste(c(
@@ -315,15 +315,10 @@ submission_readme <- function(label, itsx_check = TRUE) {
     "            spacer 1, 5.8S ribosomal RNA, internal transcribed spacer 2,",
     "            and large subunit ribosomal RNA\"",
     "",
-    "Per-element annotation is NOT submitted through the Portal, and the .tbl",
-    "feature tables in this bundle are NOT used there.",
+    "Per-element annotation is NOT submitted through the Portal. The .tbl",
+    "feature tables in this bundle are for your records and are not uploaded.",
     "",
-    paste0("  -> Portal route: upload ", label, ".fasta only; NCBI annotates for you."),
-    "",
-    "The .tbl files are only for NCBI's command-line tool table2asn",
-    "(https://www.ncbi.nlm.nih.gov/genbank/table2asn/). Run it with -V v, read",
-    "the .val file it writes, and send the .sqn file the way NCBI's GenBank",
-    "submission page says.",
+    paste0("  -> Upload ", label, ".fasta only; NCBI annotates for you."),
     "",
     "WHAT IS IN THIS FOLDER",
     "----------------------",

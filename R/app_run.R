@@ -168,7 +168,7 @@ build_reference_submit_script <- function(project, manifest, ref_dir, api_key = 
   job_script(project, cmd, sched, base)
 }
 
-#' Run the RiboPilot Shiny application
+#' Open the RiboPilot app
 #'
 #' Launches the R-Shiny app for reviewing and curating a RiboPilot project.
 #' Run from (or point `project` at) a project directory containing `.sqlite`.
