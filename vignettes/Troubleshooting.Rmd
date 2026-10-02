@@ -110,7 +110,9 @@ Some failures are not an error code: too few reads, only short contigs
 assembled, or no rRNA genes found. The Notes column says why, and the sample's
 details window shows a red box with the reason and what to try next. To rescue
 a sample whose assembly failed, see the rescue section of the
-[Assemble walkthrough](Test-Project-Assemble.html#rescue-a-sample-that-failed).
+[Assemble walkthrough](Test-Project-Assemble.html#rescue-a-sample-that-failed). To pick
+between the assemblers, see
+[choosing an assembly method](Assembly-Methods.html).
 
 # Where to look
 

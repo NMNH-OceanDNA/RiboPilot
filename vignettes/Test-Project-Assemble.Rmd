@@ -131,7 +131,8 @@ for the compute nodes on offer.
 :::
 
 Use this only for samples that failed. A sample that already has a good contig
-does not need it.
+does not need it. [Choosing an assembly method](Assembly-Methods.html)
+compares the three assemblers.
 
 # Lock the samples you are happy with
 

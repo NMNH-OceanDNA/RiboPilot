@@ -58,6 +58,8 @@ navbar:
         href: articles/Sample-Metadata.html
       - text: "Reference databases"
         href: articles/Reference-Databases.html
+      - text: "Choosing an assembly method"
+        href: articles/Assembly-Methods.html
       - text: "Quality checks and flags"
         href: articles/Curation-Flags.html
       - text: "Preparing a GenBank submission"
@@ -143,6 +145,7 @@ articles:
   - 'Your-Own-Project'
   - 'Sample-Metadata'
   - 'Reference-Databases'
+  - 'Assembly-Methods'
   - 'Curation-Flags'
   - 'GenBank-Submission'
   - 'Citing'
