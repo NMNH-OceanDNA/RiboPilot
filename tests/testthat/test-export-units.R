@@ -84,7 +84,7 @@ test_that("units marked Exclude from export, or missing either lock, stay out of
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
   DBI::dbExecute(con, "UPDATE annotate SET annotate_lock = 0 WHERE ID = 'S1' AND scaffold = 1")
   DBI::dbDisconnect(con)
-  expect_error(bundle(dir, label = "none"), "No units to export")
+  expect_error(bundle(dir, label = "none"), "No contigs to export")
 })
 
 # Add a screen table carrying a paralog pair for S1, as screen_sample() would.

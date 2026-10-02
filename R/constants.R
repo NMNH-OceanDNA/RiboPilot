@@ -165,9 +165,9 @@ SCAFFOLD_COL_HELP <- list(
   screen_pident = paste("How closely the matched stretch resembles the best GenBank record,",
     "as a percentage of identical bases."),
   triage_reason = "Why triage decided the way it did, or what left it undecided.",
-  warnings = paste("Number of curation warnings on the unit as a whole, such as a missing gene,",
+  warnings = paste("Number of curation warnings on the contig as a whole, such as a missing gene,",
     "features out of order, or contamination. Hover for the list. Warnings on one",
-    "feature, such as length or truncated, are in the unit's Curation warnings panel."),
+    "feature, such as length or truncated, are in the contig's Curation warnings panel."),
   chimera = paste("Chimera check: whether different parts of this contig match different",
     "lineages or show read-level breakpoints. severe: parts match different phyla or",
     "kingdoms; the export flags the record as chimeric and asks about it. minor: weaker",
@@ -303,7 +303,7 @@ MP_COL_NAMES <- c(
   missing          = "Missing",
   length           = "Length (bp)",
   paths            = "# Paths",
-  units            = "# Units",
+  units            = "# Contigs",
   kept             = "# Kept",
   sel_path         = "Selected Path",
   best_score       = "Best Score",
@@ -343,9 +343,9 @@ MP_COL_TIPS <- c(
   assemble_lock    = "Locked rows are finished with this step",
   annotate_lock    = "Locked rows are finished with this step",
   reviewed         = "Checked by a curator; Lock and Export do not ask again about its contamination flags",
-  problematic      = "Excluded units are left out of every export",
-  partial          = "A partial unit is described as 'partial sequence'; gene ends are partial at untrimmed contig ends, in truncated genes, and where a trim cut a gene, unless set with 5'/3' in the unit window",
-  path             = "Assembly path number for this unit. * = the sample keeps more than one path; type * in the filter to list them",
+  problematic      = "Excluded contigs are left out of every export",
+  partial          = "A partial contig is described as 'partial sequence'; gene ends are partial at untrimmed contig ends, in truncated genes, and where a trim cut a gene, unless set with 5'/3' in the contig window",
+  path             = "Assembly path number for this contig. * = the sample keeps more than one path; type * in the filter to list them",
   scaffold         = "Contig number within the path. * = the sample keeps more than one contig in this path; type * in the filter to list them",
   sci_name         = "Taxon assigned from the NCBI taxdump",
   match_type       = "How the taxon name was matched",
@@ -364,8 +364,8 @@ MP_COL_TIPS <- c(
   kept             = "Contigs kept after triage; 0 means nothing to annotate",
   sel_path         = "Assembly path chosen for annotation",
   best_score       = "Highest contig score in this sample",
-  export_group     = "Named group this unit is exported with",
-  exported         = "When this unit was last exported",
+  export_group     = "Named group this contig is exported with",
+  exported         = "When this contig was last exported",
   time_stamp       = "When this row was last changed",
   n_records        = "GenBank records available for this clade",
   tax_alternatives = "Every NCBI taxon the name matched, with its kingdom; click the ID to pick one"
@@ -374,9 +374,9 @@ MP_COL_TIPS <- c(
 # Lock vocabulary shared by the toolbar tooltip, the Lock column header and
 # the details-window banner.
 MP_UNIT <- c(taxonomy = "sample", reference = "group", assemble = "sample",
-             annotate = "unit", export = "unit")
+             annotate = "contig", export = "contig")
 MP_UNITS <- c(taxonomy = "samples", reference = "groups", assemble = "samples",
-              annotate = "units", export = "units")
+              annotate = "contigs", export = "contigs")
 MP_NEXT <- c(taxonomy = "Assemble", assemble = "Annotation Review", annotate = "Export")
 MP_LOCK_DEF <- function(mod = c("taxonomy", "assemble", "annotate")) {
   mod <- match.arg(mod)
@@ -392,16 +392,16 @@ MP_LOCK_DEF <- function(mod = c("taxonomy", "assemble", "annotate")) {
 
 #' Why an annotation-locked unit cannot be edited, and how to change that
 #' @noRd
-MP_UNIT_LOCKED <- paste("This unit is locked, so it is read only here.",
+MP_UNIT_LOCKED <- paste("This contig is locked, so it is read only here.",
   "To change it, select it in the Annotation Review table and press Unlock.")
 
 #' Batch Trim / Restore tooltips; `what` is what the table's rows are.
 #' @noRd
 MP_TRIM_TIP <- function() {
-  c(trim = paste0("Trim the selected units to their gene ends, or gene ends plus a flank. ",
-      "Only units with all five features (", paste(BATCH_TRIM_FEATURES, collapse = ", "),
-      ") are trimmed; locked units and units queued in a running run are skipped."),
-    restore = paste0("Undo the trim on the selected units. Untrimmed and locked units are skipped."))
+  c(trim = paste0("Trim the selected contigs to their gene ends, or gene ends plus a flank. ",
+      "Only contigs with all five features (", paste(BATCH_TRIM_FEATURES, collapse = ", "),
+      ") are trimmed; locked contigs and contigs queued in a running run are skipped."),
+    restore = paste0("Undo the trim on the selected contigs. Untrimmed and locked contigs are skipped."))
 }
 
 #' Curator marks: what each toolbar button and window toggle says it will do,
@@ -410,14 +410,14 @@ MP_TRIM_TIP <- function() {
 MP_FLAG_WORDS <- list(
   reviewed = c(set = "Mark Reviewed", clear = "Clear Reviewed",
     did_set = "marked reviewed", did_clear = "cleared of reviewed",
-    tip = paste("Record that you checked this unit. Lock and Export do not ask again about",
-      "contamination flags on reviewed units.")),
+    tip = paste("Record that you checked this contig. Lock and Export do not ask again about",
+      "contamination flags on reviewed contigs.")),
   problematic = c(set = "Exclude & Lock", clear = "Include in export",
     did_set = "excluded from export and locked", did_clear = "included in export again",
-    tip = paste("Exclude & Lock leaves the unit out of every export and locks it as done.",
-      "The unit stays in the project; unlock it and include it again to export it.")),
+    tip = paste("Exclude & Lock leaves the contig out of every export and locks it as done.",
+      "The contig stays in the project; unlock it and include it again to export it.")),
   partial = c(set = "Mark Partial", clear = "Clear Partial",
     did_set = "marked partial", did_clear = "cleared of partial",
-    tip = paste("Export describes a partial unit as 'partial sequence'. Gene ends are",
+    tip = paste("Export describes a partial contig as 'partial sequence'. Gene ends are",
       "marked partial (< and >) at untrimmed contig ends, in truncated genes, and where",
-      "a trim cut a gene; the 5' and 3' buttons in the unit window override that.")))
+      "a trim cut a gene; the 5' and 3' buttons in the contig window override that.")))

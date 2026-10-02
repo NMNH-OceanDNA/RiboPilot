@@ -182,11 +182,11 @@ app_server <- function(input, output, session) {
            (SELECT COUNT(*) FROM assemblies x WHERE x.ID = s.ID
               AND COALESCE(x.ignore,0) = 0) AS kept,
            -- per-sample roll-up of the stock-ITSx check: NULL until any unit
-           -- has been checked, else 'n of m units' flagged
+           -- has been checked, else 'n of m contigs' flagged
            (SELECT CASE WHEN COUNT(x.itsx_warnings) = 0 THEN NULL ELSE
               SUM(CASE WHEN COALESCE(x.itsx_warnings,'') <> ''
                        AND x.itsx_warnings NOT LIKE 'not_run(%' THEN 1 ELSE 0 END)
-              || ' of ' || COUNT(x.itsx_warnings) || ' units' END
+              || ' of ' || COUNT(x.itsx_warnings) || ' contigs' END
             FROM annotate x WHERE x.ID = s.ID) AS itsx_warnings,
            (SELECT p.path FROM path_scores p WHERE p.ID = s.ID AND p.auto_select = 1) AS sel_path,
            (SELECT round(MAX(p.score),3) FROM path_scores p WHERE p.ID = s.ID) AS best_score,
@@ -350,7 +350,7 @@ app_server <- function(input, output, session) {
       missing = cd("missing", minWidth = 120, html = TRUE, cell = rt_longtext()),
       length = cd("length", width = 100),
       paths = cd("paths", width = 80),
-      units = cd("units", width = 70),
+      units = cd("units", width = 95),
       kept = cd("kept", width = 70, html = TRUE, cell = rt_kept_count()),
       sel_path = cd("sel_path", width = 110),
       best_score = cd("best_score", width = 100),
@@ -429,10 +429,10 @@ app_server <- function(input, output, session) {
       },
       Assemble = paste("No samples to show. A sample is listed once its taxonomy is locked",
         "in the Taxonomy step. The Lock and State filters and the search box also hide rows."),
-      Annotate = paste("No units to show. A unit is listed once its sample's assembly is locked",
+      Annotate = paste("No contigs to show. A contig is listed once its sample's assembly is locked",
         "in the Assemble step. The Lock and State filters and the search box also hide rows."),
-      Export   = paste("No units ready to export. A unit is listed once its assembly (Assemble)",
-        "and its annotation (Annotation Review) are both locked; units excluded from export",
+      Export   = paste("No contigs ready to export. A contig is listed once its assembly (Assemble)",
+        "and its annotation (Annotation Review) are both locked; contigs excluded from export",
         "are not listed."),
       "No rows.")
 
@@ -736,7 +736,7 @@ app_server <- function(input, output, session) {
     if (!app_write(DBI::dbWithTransaction(con, for (i in seq_len(nrow(u)))
       DBI::dbExecute(con, usql, params = list(u$ID[i], u$path[i], u$scaffold[i]))))) return()
     refresh(refresh() + 1)
-    mp_toast(paste(mp_n(nrow(u), "unit"), paste0(verb, ".")))
+    mp_toast(paste(mp_n(nrow(u), "contig"), paste0(verb, ".")))
   }
   # One direction per click (mp_flag_next): a selection that is all locked
   # unlocks, anything else locks. Unlocking drops rows from the next step's
@@ -753,7 +753,7 @@ app_server <- function(input, output, session) {
     lock_next(then)
     one <- nrow(f) == 1
     mp_confirm("lock_confirm", title = "Possible contamination or chimera",
-      text = paste0(mp_n(nrow(f), "unit"), if (one) " is" else " are",
+      text = paste0(mp_n(nrow(f), "contig"), if (one) " is" else " are",
         " flagged and not marked Reviewed: ",
         mp_id_list(sprintf("%s p%s.s%s (%s)", f$ID, f$path, f$scaffold,
           risk_reasons(f$submission_risk))),
@@ -868,7 +868,7 @@ app_server <- function(input, output, session) {
     set_unit_flag(sprintf("UPDATE annotate SET %s = '%s' WHERE ID = ?", col, to),
       verb = w[[if (to == "yes") "did_set" else "did_clear"]], u = u[!lk, , drop = FALSE])
     if (any(lk)) mp_toast(sprintf("Left %s unchanged: unlock before changing marks.",
-      mp_n(sum(lk), "locked unit")), type = "warning")
+      mp_n(sum(lk), "locked contig")), type = "warning")
   }
   # Lock and mark buttons say what the next click does (MitoPilot relabels its
   # mark buttons the same way).
@@ -898,7 +898,7 @@ app_server <- function(input, output, session) {
     set_unit_flag("UPDATE annotate SET problematic = 'yes', annotate_lock = 1 WHERE ID = ?",
       verb = MP_FLAG_WORDS$problematic[["did_set"]], u = u[!lk, , drop = FALSE])
     if (any(lk)) mp_toast(sprintf("Left %s unchanged: unlock before changing marks.",
-      mp_n(sum(lk), "locked unit")), type = "warning")
+      mp_n(sum(lk), "locked contig")), type = "warning")
   })
   observeEvent(input$partial_btn, toolbar_flag("partial"))
 
@@ -935,14 +935,14 @@ app_server <- function(input, output, session) {
     if (batch_flank_bad()) return(mp_toast(flank_msg, type = "warning"))
     p <- batch_trim_plan_now()
     ok <- p[is.na(p$reason), , drop = FALSE]
-    if (!nrow(ok)) return(mp_toast("Nothing to change: every unit is skipped.", type = "warning"))
+    if (!nrow(ok)) return(mp_toast("Nothing to change: every contig is skipped.", type = "warning"))
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
     err <- batch_trim_apply(con, ok, b$restore)
     removeModal(); batch_trim(NULL); edit_tick(edit_tick() + 1); refresh(refresh() + 1)
     skipped <- nrow(p) - nrow(ok)
-    mp_toast(paste0(mp_n(sum(is.na(err)), "unit"), if (b$restore) " restored" else " trimmed",
+    mp_toast(paste0(mp_n(sum(is.na(err)), "contig"), if (b$restore) " restored" else " trimmed",
       if (skipped) paste0(", ", skipped, " skipped"), "."))
-    if (any(!is.na(err))) rp_alert(paste0(mp_n(sum(!is.na(err)), "unit"), " failed: ",
+    if (any(!is.na(err))) rp_alert(paste0(mp_n(sum(!is.na(err)), "contig"), " failed: ",
       paste(sprintf("%s p%s s%s (%s)", ok$ID, ok$path, ok$scaffold, err)[!is.na(err)], collapse = "; ")),
       type = "error")
   })
@@ -957,9 +957,9 @@ app_server <- function(input, output, session) {
     if (!app_write(assign_export_group(app_project(), u, groups))) return()
     removeModal(); refresh(refresh() + 1)
     mp_toast(if (length(unique(groups)) == 1) {
-      paste0(mp_n(nrow(u), "unit"), " assigned to group '", groups[1], "'.")
+      paste0(mp_n(nrow(u), "contig"), " assigned to group '", groups[1], "'.")
     } else {
-      paste0(mp_n(nrow(u), "unit"), " split into groups ",
+      paste0(mp_n(nrow(u), "contig"), " split into groups ",
         paste0("'", unique(groups), "'", collapse = ", "), ".")
     })
   }
@@ -1010,7 +1010,7 @@ app_server <- function(input, output, session) {
     if (!need_selection(NROW(u))) return()
     if (!app_write(clear_export_group(app_project(), u))) return()
     refresh(refresh() + 1)
-    mp_toast(paste0("Group cleared for ", mp_n(nrow(u), "unit"), "."))
+    mp_toast(paste0("Group cleared for ", mp_n(nrow(u), "contig"), "."))
   })
 
   # ---- Update modal: run the workflow with live Nextflow progress ----
@@ -1028,7 +1028,7 @@ app_server <- function(input, output, session) {
     if (!is.null(held)) { rp_alert(run_lock_message(held, app_project()), type = "warning"); return() }
     n <- nf_pending_count(app_project())
     if (n == 0) {
-      rp_alert(paste("No samples or annotation units are Ready to run. Samples need a locked",
+      rp_alert(paste("No samples or contigs are Ready to run. Samples need a locked",
         "taxonomy, and locked or finished samples are skipped. Set the State of the rows you",
         "want to Ready to run, then press Update."), type = "warning", title = "Nothing to update")
       return()
@@ -1209,7 +1209,7 @@ app_server <- function(input, output, session) {
   # ---- Export ----
   output$export_sel_n <- renderText({
     refresh()
-    paste0(mp_n(nrow(export_units_df()), "unit"), " locked & ready")
+    paste0(mp_n(nrow(export_units_df()), "contig"), " locked & ready")
   })
   # Exportable units (exportable_units()), narrowed to one export group when given.
   export_units_df <- function(group = NULL) {
@@ -1368,9 +1368,9 @@ app_server <- function(input, output, session) {
     if (isTRUE(input$export_report)) files <- c(files, paste0(grp, "_report.html"))
     div(style = paste("font-size:var(--mp-fs-meta); padding:8px 12px; margin:12px 0;",
         "background:var(--mp-surface-alt); border-left:3px solid var(--mp-primary);"),
-      div(sprintf("%s in group \"%s\".", mp_n(n, "unit"), grp)),
+      div(sprintf("%s in group \"%s\".", mp_n(n, "contig"), grp)),
       if (nrow(out)) div(class = "mp-fg-warning", icon("triangle-exclamation"), " ",
-        sprintf("%s left out: %s.", mp_n(nrow(out), "unit"), mp_id_list(
+        sprintf("%s left out: %s.", mp_n(nrow(out), "contig"), mp_id_list(
           sprintf("%s p%s.s%s (%s)", out$ID, out$path, out$scaffold, out$why), max = 10))),
       div("Written to ", tags$code(class = "mp-path", path), " as: ", paste(files, collapse = ", ")),
       if (dir.exists(path)) div(class = "mp-fg-warning", icon("triangle-exclamation"), " ",
@@ -1388,7 +1388,7 @@ app_server <- function(input, output, session) {
     grp <- export_group_choice()
     u <- if (is.null(grp)) NULL else export_units_df(grp)
     if (is.null(u) || nrow(u) == 0) {
-      rp_alert("No unit in this group can be exported. The export window lists each unit left out and why.",
+      rp_alert("No contig in this group can be exported. The export window lists each contig left out and why.",
         type = "warning")
       return()
     }
@@ -1479,7 +1479,7 @@ app_server <- function(input, output, session) {
     u <- u[!unit_key(u$ID, u$path, u$scaffold) %in% unit_key(f$ID, f$path, f$scaffold), , drop = FALSE]
     if (nrow(u) == 0) {
       back_to_export()
-      rp_alert("Every unit in this group was left out, so nothing was exported.", type = "warning")
+      rp_alert("Every contig in this group was left out, so nothing was exported.", type = "warning")
       return()
     }
     proceed_export(u, export_group_choice())
@@ -1574,8 +1574,8 @@ app_server <- function(input, output, session) {
               "that row.")))),
         # Every visible column explains itself on hover ("?" in the header), so a
         # reviewer never has to remember which number is comparable with what.
-        unit = reactable::colDef(name = "Unit", width = 72, show = TRUE, sticky = "left",
-          html = TRUE, header = rt_help_header("Unit", SCAFFOLD_COL_HELP$unit)),
+        unit = reactable::colDef(name = "Contig", width = 72, show = TRUE, sticky = "left",
+          html = TRUE, header = rt_help_header("Contig", SCAFFOLD_COL_HELP$unit)),
         length = reactable::colDef(name = "Length", width = 80, show = TRUE,
           html = TRUE, header = rt_help_header("Length", SCAFFOLD_COL_HELP$length)),
         # only meaningful for a supplied assembly: for an assembled sample this
@@ -1875,7 +1875,7 @@ app_server <- function(input, output, session) {
           "Contig%s %s %s annotation-locked. Unlock %s in Annotation Review first.",
           if (length(cls$locked) == 1) "" else "s", paste(cls$locked, collapse = ", "),
           if (length(cls$locked) == 1) "is" else "are",
-          if (length(cls$locked) == 1) "that unit" else "those units"),
+          if (length(cls$locked) == 1) "that contig" else "those contigs"),
           type = "warning")
       }
       if (nrow(cls$units) == 0) return()
@@ -2244,7 +2244,7 @@ app_server <- function(input, output, session) {
   output$nudge_seq <- renderUI({
     cx <- nudge_ctx()
     if (is.null(cx) || !nzchar(cx$seq)) {
-      return(em("Select a feature (no unit sequence available)."))
+      return(em("Select a feature (no contig sequence available)."))
     }
     n <- nchar(cx$seq); flank <- 15
     lo <- max(1, cx$start - flank); hi <- min(n, cx$stop + flank)
@@ -2357,10 +2357,10 @@ app_server <- function(input, output, session) {
     u <- sel_unit(); req(u)
     a <- app_query("SELECT n_flags, curate_flags FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())
     if (nrow(a) == 0 || is.na(a$n_flags[1]) || a$n_flags[1] == 0) {
-      return(span(class = "mp-fg-success", HTML("&#10003; No warnings on the unit as a whole.")))
+      return(span(class = "mp-fg-success", HTML("&#10003; No warnings on the contig as a whole.")))
     }
     tagList(
-      span(sprintf("%d unit warning(s): ", a$n_flags[1]), class = "mp-fg-warning", style = "font-weight:bold;"),
+      span(sprintf("%d contig warning(s): ", a$n_flags[1]), class = "mp-fg-warning", style = "font-weight:bold;"),
       span(a$curate_flags[1] %||% "", class = "mp-fg-warning"))
   })
   output$flag_tbl <- reactable::renderReactable({
@@ -2461,7 +2461,7 @@ app_server <- function(input, output, session) {
     if (edits_block() || lock_blocked()) return()
     s <- app_query("SELECT length FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())
     if (nrow(s) == 0 || is.na(s$length[1])) {
-      rp_alert("No unit sequence to trim.", type = "warning"); return()
+      rp_alert("No contig sequence to trim.", type = "warning"); return()
     }
     span <- app_query("SELECT MIN(start) AS a, MAX(stop) AS b FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())
     a_from <- if (nrow(span) && !is.na(span$a[1])) span$a[1] else 1L
@@ -2537,7 +2537,7 @@ app_server <- function(input, output, session) {
     n <- DBI::dbGetQuery(con, "SELECT length FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
       params = uargs())$length[1]
     if (is.na(from) || is.na(to) || from < 1 || from > to || (!is.na(n) && to > n)) {
-      rp_alert(sprintf("Invalid trim range. From must be at least 1 and no more than To, and To no more than the unit's current length (%s bp).",
+      rp_alert(sprintf("Invalid trim range. From must be at least 1 and no more than To, and To no more than the contig's current length (%s bp).",
         n %|NA|% "?"), type = "error"); return()
     }
     ok <- tryCatch({
@@ -2548,7 +2548,7 @@ app_server <- function(input, output, session) {
     if (isTRUE(ok)) {
       edit_tick(edit_tick() + 1); refresh(refresh() + 1)
       show_annotate_unit()  # back to the details modal, now showing trimmed coords
-      rp_alert("Unit trimmed; feature coordinates + coverage shifted.", type = "message")
+      rp_alert("Contig trimmed; feature coordinates + coverage shifted.", type = "message")
     }
   })
 
@@ -2561,7 +2561,7 @@ app_server <- function(input, output, session) {
     if (edits_block() || lock_blocked()) return()
     len <- app_query("SELECT length FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())$length[1]
     mp_confirm("restore_confirm", title = "Restore the full assembly?",
-      text = sprintf("The unit is %s bp now. Restoring undoes the trim and re-runs curation.", len %||% "?"),
+      text = sprintf("The contig is %s bp now. Restoring undoes the trim and re-runs curation.", len %||% "?"),
       action_label = "Restore", danger = TRUE)
   })
   observeEvent(input$restore_confirm, {
@@ -2577,7 +2577,7 @@ app_server <- function(input, output, session) {
     if (!is.null(ok)) {
       edit_tick(edit_tick() + 1); refresh(refresh() + 1)
       show_annotate_unit()
-      rp_alert(paste0("Unit restored to original length (", ok, " bp)."), type = "message")
+      rp_alert(paste0("Contig restored to original length (", ok, " bp)."), type = "message")
     }
   })
 
@@ -2676,7 +2676,7 @@ app_server <- function(input, output, session) {
     if (!app_write(DBI::dbExecute(con, sprintf("UPDATE annotate SET %s = ? WHERE ID = ? AND path = ? AND scaffold = ?", col),
       params = c(list(to), uargs())))) return()
     refresh(refresh() + 1)
-    rp_toast(paste0("1 unit ", MP_FLAG_WORDS[[col]][[if (to == "yes") "did_set" else "did_clear"]], "."),
+    rp_toast(paste0("1 contig ", MP_FLAG_WORDS[[col]][[if (to == "yes") "did_set" else "did_clear"]], "."),
       type = "message")
   }
   observeEvent(input$mark_reviewed, modal_flag_toggle("reviewed"))
@@ -2689,7 +2689,7 @@ app_server <- function(input, output, session) {
       "UPDATE annotate SET problematic = 'yes', annotate_lock = 1 WHERE ID = ? AND path = ? AND scaffold = ?",
       params = uargs()))) return()
     refresh(refresh() + 1)
-    rp_toast(paste0("1 unit ", MP_FLAG_WORDS$problematic[["did_set"]], "."), type = "message")
+    rp_toast(paste0("1 contig ", MP_FLAG_WORDS$problematic[["did_set"]], "."), type = "message")
     showModal(annotate_modal(u$ID, u$path, u$scaffold))
   })
   observeEvent(input$mark_partial, modal_flag_toggle("partial"))
@@ -2728,7 +2728,7 @@ app_server <- function(input, output, session) {
       "UPDATE annotate SET annotate_lock = 1 WHERE ID = ? AND path = ? AND scaffold = ?",
       params = uargs()))) return()
     refresh(refresh() + 1)
-    rp_toast("1 unit locked - ready to export.", type = "message")
+    rp_toast("1 contig locked - ready to export.", type = "message")
     if (close) removeModal() else showModal(annotate_modal(u$ID, u$path, u$scaffold))
   }
   observeEvent(input$lock_and_close, lock_unit(TRUE))

@@ -555,7 +555,7 @@ trim_assembly <- function(con, id, path = 1L, scaffold = 1L, from, to) {
   s <- DBI::dbGetQuery(con, "SELECT sequence FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
     params = list(id, path, scaffold))
   if (nrow(s) == 0 || is.na(s$sequence[1]) || !nzchar(s$sequence[1])) {
-    stop("No sequence for unit ", id, ".", path, ".", scaffold, call. = FALSE)
+    stop("No sequence for contig ", id, ".", path, ".", scaffold, call. = FALSE)
   }
   n <- nchar(s$sequence[1])
   from <- max(1L, as.integer(from)); to <- min(n, as.integer(to))
@@ -713,7 +713,7 @@ restore_assembly <- function(con, id, path = 1L, scaffold = 1L) {
     "SELECT sequence, length, annotations, coverage, chimera FROM assembly_backup WHERE ID = ? AND path = ? AND scaffold = ?",
     params = list(id, path, scaffold))
   if (nrow(bak) == 0 || is.na(bak$sequence[1])) {
-    stop("No original assembly on record for this unit (nothing to restore).", call. = FALSE)
+    stop("No original assembly on record for this contig (nothing to restore).", call. = FALSE)
   }
   cur <- DBI::dbGetQuery(con, "SELECT sequence FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
     params = list(id, path, scaffold))$sequence[1]

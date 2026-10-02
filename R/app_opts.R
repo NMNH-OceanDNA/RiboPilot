@@ -444,7 +444,7 @@ opts_handlers <- function(input, output, session, deps) {
       what <- if (identical(sp$lock, "annotate_lock")) "annotation" else "assembly"
       if (length(locked) == length(ids)) {
         need_unlocked(locked, "sample", how = if (what == "annotation") {
-          paste("Their annotation is locked. Unlock their units in Annotation Review first;",
+          paste("Their annotation is locked. Unlock their contigs in Annotation Review first;",
             "a sample is listed there only while its assembly is locked")
         } else "Their assembly is locked. Select them on this tab and press Unlock first")
         return()

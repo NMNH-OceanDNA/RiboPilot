@@ -21,7 +21,7 @@ app_ui <- function(request) {
   btn <- mp_toolbar_button
   # curator marks; app_server.R relabels them to what the next click does
   mark <- function(col) btn(paste0(col, "_btn"), MP_FLAG_WORDS[[col]][["set"]],
-    title = paste(MP_FLAG_WORDS[[col]][["tip"]], "Acts on the selected units; locked units are skipped."),
+    title = paste(MP_FLAG_WORDS[[col]][["tip"]], "Acts on the selected contigs; locked contigs are skipped."),
     needs_selection = TRUE)
   step <- function(n, lab) shiny::HTML(sprintf("<span class='mp-step-n'>%d</span> %s", n, lab))
   h1 <- function(mode, lab) shiny::conditionalPanel(sprintf("input.mode == '%s'", mode),
@@ -88,7 +88,7 @@ app_ui <- function(request) {
                 title = "Review and launch the RiboPilot pipeline")),
             # No Update button here: one workflow, launched from Assemble.
             shiny::conditionalPanel("input.mode == 'Annotate'", id = "annot_ctrls", class = "mp-toolbar",
-              btn("annot_state_btn", "State", title = "Set the pipeline state of the selected units",
+              btn("annot_state_btn", "State", title = "Set the pipeline state of the selected contigs",
                 needs_selection = TRUE),
               btn("annot_lock_btn", "Lock", title = MP_LOCK_DEF("annotate"), needs_selection = TRUE),
               mark("reviewed"), mark("problematic"), mark("partial"),
@@ -98,9 +98,9 @@ app_ui <- function(request) {
                 title = MP_TRIM_TIP()[["restore"]], needs_selection = TRUE)),
             shiny::conditionalPanel("input.mode == 'Export'", id = "export_ctrls", class = "mp-toolbar",
               btn("assign_group_btn", "Assign Group",
-                title = "Assign the selected units to an export group", needs_selection = TRUE),
+                title = "Assign the selected contigs to an export group", needs_selection = TRUE),
               btn("clear_group_btn", "Clear Group",
-                title = "Remove the selected units from their export group", needs_selection = TRUE),
+                title = "Remove the selected contigs from their export group", needs_selection = TRUE),
               btn("export_btn", "Export Data", icon = mp_icon("download"), emphasis = "primary",
                 title = "Open the export window"),
               shiny::span(shiny::textOutput("export_sel_n", inline = TRUE),

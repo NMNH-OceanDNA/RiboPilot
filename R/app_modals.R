@@ -185,7 +185,7 @@ assemble_modal <- function(id) {
     div(style = "margin-top:6px;",
       actionButton("copy_fasta", "Copy FASTA", icon = icon("clipboard"), class = "btn-sm"),
       tags$span(class = "text-muted", style = "margin-left:8px; font-size:0.82em;",
-        "Copies the ticked contigs as FASTA, headed by sample, taxon and unit.")),
+        "Copies the ticked contigs as FASTA, headed by sample, taxon and contig.")),
     tags$hr(style = "margin:10px 0;"),
 
     # The evidence that settles the keep/drop call, at the point it is made.
@@ -306,10 +306,10 @@ export_screen_modal <- function(flagged) {
     size = "m", easyClose = FALSE,
     div(style = "font-size:1.02em; line-height:1.5;",
       tags$p(sprintf("%s in this group may contain another organism's rDNA, exported under the sample's name:",
-        mp_n(nrow(flagged), "unit"))),
+        mp_n(nrow(flagged), "contig"))),
       tags$ul(items),
       tags$p(style = "color:#666;",
-        "Leave them out unless you have checked them. Marking a unit Reviewed in",
+        "Leave them out unless you have checked them. Marking a contig Reviewed in",
         "Annotation Review means it will not be asked about again.")),
     footer = mp_footer(dismiss = NULL,
       extra = actionButton("export_screen_back", "Cancel"),
@@ -497,7 +497,7 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
     rp_details("Notes", open = FALSE,
       off(textAreaInput("annotate_notes", label = NULL, width = "100%",
         value = (notes %||% NA_character_) %|NA|% "",
-        placeholder = "Notes for this annotation unit")),
+        placeholder = "Notes for this contig")),
       tags$p(class = "mp-help-text", "Saved as you type. Deleting the text does not clear the stored note; use Clear notes."),
       off(actionButton("annotate_notes_clear", "Clear notes", class = "btn-sm")))
   )
@@ -555,7 +555,7 @@ run_modal <- function(n, headless = FALSE, sched = NULL, script = "") {
         actionButton("nf_close", "Close")))
   }
   modalDialog(
-    title = run_modal_title(sprintf("%s - %d sample(s) or unit(s) to update", wf, n), "rp_gears"),
+    title = run_modal_title(sprintf("%s - %d sample(s) or contig(s) to update", wf, n), "rp_gears"),
     size = "l",
     shinyWidgets::prettyCheckbox("nf_resume", "Resume previous run?", value = TRUE,
       status = "primary", inline = TRUE),
@@ -670,7 +670,7 @@ trim_modal <- function(n, a_from, a_to) {
 #' @noRd
 batch_trim_modal <- function(restore = FALSE) {
   modalDialog(
-    title = if (restore) "Restore trimmed units" else "Trim units", easyClose = TRUE,
+    title = if (restore) "Restore trimmed contigs" else "Trim contigs", easyClose = TRUE,
     if (!restore) tagList(
       shinyWidgets::prettyRadioButtons("batch_trim_mode", "Trim to:",
         choices = c("Match gene ends" = "annotated", "Gene ends + flank" = "flank"),
@@ -689,7 +689,7 @@ batch_trim_modal <- function(restore = FALSE) {
 batch_trim_summary <- function(p, restore = FALSE) {
   ok <- sum(is.na(p$reason)); bad <- p[!is.na(p$reason), , drop = FALSE]
   tagList(
-    tags$p(paste0(mp_n(ok, "unit"), if (ok == 1) " is" else " are",
+    tags$p(paste0(mp_n(ok, "contig"), if (ok == 1) " is" else " are",
       if (restore) " restored to full length and re-curated." else " trimmed and re-curated.")),
     if (nrow(bad)) tagList(
       tags$p(style = "margin:8px 0 4px;", paste0("Skipped (", nrow(bad), "):")),
@@ -737,7 +737,7 @@ export_modal <- function(groups, templates = "default", template = "default",
       div(class = "mp-opts-checkbox",
         actionButton("save_template", "Save template",
           title = "Store the header text below under this template name"))),
-    opts_help("Export group bundles units into one output set. Header template is ",
+    opts_help("Export group bundles contigs into one output set. Header template is ",
       "a reusable, named set of the FASTA header patterns below: export uses the ",
       "text on screen, and Save template keeps it for next time."),
     uiOutput("export_summary"),
@@ -754,7 +754,7 @@ export_modal <- function(groups, templates = "default", template = "default",
       tags$summary("Available columns"),
       opts_help("Click a column to insert it at the cursor of the header box you last clicked. ",
         "Write a column name in braces to use its value, for example ", tags$code("{Taxon}"),
-        ". ", tags$code("{seqid}"), " is the record name RiboPilot gives this unit: the sample ",
+        ". ", tags$code("{seqid}"), " is the record name RiboPilot gives this contig: the sample ",
         "ID, or ", tags$code("ID_p<path>_s<contig>"), " when one sample exports more than one ",
         "record. Columns from your mapping file work here even when the table does not show ",
         "them. Orange columns are empty for some records in the chosen export group; hover ",
