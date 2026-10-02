@@ -15,7 +15,9 @@ only the heavy work runs on compute nodes.
 # Choose a profile
 
 A profile tells RiboPilot how to submit jobs on your cluster. Two are built in
-and ready to use: `executor = "NMNH_Hydra"` and `executor = "NOAA_SEDNA"`.
+and ready to use: `executor = "NMNH_Hydra"` and `executor = "NOAA_SEDNA"`. Each
+has its own setup page: [Smithsonian Hydra setup](NMNH-Hydra.html) and
+[NOAA SEDNA setup](NOAA-SEDNA.html).
 
 For any other Slurm, SGE, PBS, or LSF cluster, make a profile once with
 `RiboPilot::generate_config()`, then pass its name to `new_project()`:
@@ -31,7 +33,8 @@ RiboPilot::generate_config(
 )
 RiboPilot::new_project(path = "/shared/mylab/my_project",
   mapping_fn = "/shared/mylab/my_samples.csv",
-  data_path = "/shared/mylab/reads", executor = "mylab_slurm")
+  data_path = "/shared/mylab/reads", 
+  executor = "mylab_slurm")
 ```
 
 `container_cache` is the folder where Singularity keeps the RiboPilot image,
@@ -133,13 +136,3 @@ The app itself runs the container for two things: the final ITSx check at
 export, and the note about the bundled rDNA database in the BLAST Options window. So
 Singularity (or Docker) must work on the node where the app runs, and it should
 use the same image cache as your jobs, or it downloads the whole image again.
-
-# On the NMNH Hydra cluster
-
-The app sets up Hydra's scheduler and Java for you when it starts. You only need
-`RiboPilot::hydra_setup()` when you run the pipeline from the R console. The job
-script runs `nextflow` from your PATH, so install Nextflow somewhere `~/.bashrc`
-puts on the PATH (for example `~/bin`).
-
-The [Get started](RiboPilot.html) walkthrough marks each place where Hydra
-differs, in boxes tagged HYDRA.

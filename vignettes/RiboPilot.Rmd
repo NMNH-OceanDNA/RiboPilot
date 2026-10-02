@@ -21,15 +21,17 @@ This guide walks through the test project, a set of 12 samples that ships
 with RiboPilot: 10 fish genome skims and 2 synthetic samples made to test the
 checks. We recommend trying the test project before you start on your own data. 
 
+::: {.alert .alert-note}
+This guide assumes that you are working on a local computer rather than a cluster.
+If working on a cluster, please read over [this page](Clusters.html) 
+first.
+:::
+
 ::: {.alert .alert-hydra}
 [HYDRA]{.hydra-tag} **Are you a Smithsonian user?** Boxes like this one flag
 the places where the Smithsonian Hydra cluster differs from a workstation.
-Before you start, get an R session on Hydra and install Nextflow. The steps are
-the same as for MitoPilot: see
-[Get an R session on Hydra](https://smithsonian.github.io/MitoPilot/articles/NMNH-Hydra.html#get-an-r-session-on-hydra) and
-[Install Nextflow](https://smithsonian.github.io/MitoPilot/articles/NMNH-Hydra.html#install-nextflow) in the MitoPilot guide.
-[Running on a cluster](Clusters.html) explains how RiboPilot uses a cluster in
-general.
+Before you start, get an R session on Hydra and install Nextflow: see
+[Smithsonian Hydra setup](NMNH-Hydra.html).
 :::
 
 # Setup
@@ -62,8 +64,7 @@ RiboPilot::new_test_project(path = "~/ribopilot_test")
 ```
 
 This downloads small read files that hold only each sample's rDNA reads (a few
-MB per sample) and sets up the project. The analysis runs in Docker by default,
-so there is nothing else to choose. The first run later downloads the RiboPilot
+MB per sample) and sets up the project. The first run later downloads the RiboPilot
 container image once (about 2.6 GB).
 
 ::: {.alert .alert-hydra}
@@ -91,10 +92,8 @@ project needs.
 
 The 10 fish are real genome skims from NCBI's Sequence Read Archive. CHIM00
 and CHIM01 are synthetic: CHIM00 is a clean copy of one fish's rDNA, and CHIM01
-joins that fish's 18S to the 28S of a *Penicillium* mold. Both are labeled
-*Upeneus parvus*, the fish their reads came from. CHIM01 is there so you can
-see the checks catch a mixed-up record. Do not submit CHIM00 or CHIM01 to
-GenBank.
+joins that fish's 18S to the 28S of a *Penicillium* mold. CHIM01 is there so you can
+see the checks catch a mixed-up record.
 
 # Open the app
 
@@ -156,7 +155,7 @@ too: a sleeping computer stops the run.
 [HYDRA]{.hydra-tag} **Runs go to the queue.** Open the app from RStudio Server
 with the same command. The run window offers **Submit as job** instead of
 **Run from App**, and a submitted job keeps going after you close the browser.
-See [On the NMNH Hydra cluster](Clusters.html#on-the-nmnh-hydra-cluster).
+See [Smithsonian Hydra setup](NMNH-Hydra.html#open-the-app-and-run).
 :::
 
 # Test project walkthrough

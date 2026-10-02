@@ -1,0 +1,110 @@
+---
+title: "NOAA SEDNA setup"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{NOAA SEDNA setup}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+This page covers what is specific to the NOAA NMFS SEDNA cluster. Once you are
+set up here, RiboPilot works as in the [Get started](RiboPilot.html)
+walkthrough, with `executor = "NOAA_SEDNA"`.
+[Running on a cluster](Clusters.html) explains how RiboPilot uses a cluster in
+general.
+
+You need a SEDNA account; see the
+[account instructions](https://docs.google.com/document/d/1nn0T0OWEsQCBoCdaH6DSY69lQSbK3XnPlseyyQuU2Lc/edit?usp=sharing),
+or contact Krista Nichols (<krista.nichols@noaa.gov>).
+
+# First-time setup
+
+RiboPilot needs Nextflow, Singularity, and R. On SEDNA, put all three in one
+Mamba environment; installing RiboPilot with the cluster's R module runs into
+problems.
+
+Log in to the NOAA NMFS VPN, then to SEDNA. If you have never used Mamba on
+SEDNA, run this once:
+
+```bash
+/opt/bioinformatics/mambaforge/bin/mamba init
+```
+
+Create the environment. This may take a while.
+
+```bash
+mamba create --name RiboPilot_deps 'bioconda::nextflow>=24.10,<25.11' \
+  conda-forge::singularity conda-forge::zlib 'conda-forge::r-base>=4.4' -y
+```
+
+Then install RiboPilot into it:
+
+```bash
+mamba activate RiboPilot_deps
+R
+```
+
+In that R session, follow step 5 of
+[Install the tools](Installation.html#install-the-tools), then leave R with
+`quit()`.
+
+To upgrade later, activate `RiboPilot_deps` first, then follow
+[Upgrading RiboPilot](Installation.html#upgrading-ribopilot).
+
+# Open the app
+
+The app needs little computing power, since the heavy work goes to the queue.
+Start a small interactive session, note the name of the node it gives you, and
+start R:
+
+```bash
+srun -c 2 --mem=16GB -p standard --pty /bin/bash
+hostname
+mamba activate RiboPilot_deps
+R
+```
+
+In R, create a project (once), then open the app without a browser:
+
+```r
+RiboPilot::new_test_project(
+  path = "/path/to/RiboPilot/test_project",
+  executor = "NOAA_SEDNA"
+)
+RiboPilot::RiboPilot("/path/to/RiboPilot/test_project",
+  host = "0.0.0.0", port = 8123, launch.browser = FALSE)
+```
+
+Use the same `executor = "NOAA_SEDNA"` with `RiboPilot::new_project()` for your
+own data. Keep projects on shared project or scratch space, not in your home
+folder. [Disk space, caches, and offline use](Caches-and-Offline.html) shows how
+to move Singularity's caches and the reference folder there too.
+
+On your own computer, open a tunnel to that node, using the name `hostname`
+printed:
+
+```bash
+ssh -N -L 8123:<node>:8123 <user>@sedna.nwfsc2.noaa.gov
+```
+
+Enter your password; if it works, nothing more is printed. Then open
+http://localhost:8123 in Chrome or Firefox. Leave both terminals open while you
+use the app.
+
+::: {.alert .alert-warning}
+**The app has no login.** Other SEDNA users can reach its port. Pick an unusual
+port number, and close the app when you are done.
+:::
+
+# Run the pipeline
+
+Press **Update**. The run window shows a Slurm job script for the `standard`
+partition. Press **Submit as job**, or **Save script** to submit it yourself
+with `sbatch`. The job keeps going after you close the browser and the
+interactive session. Watch it with `squeue`, then press the reload button above
+the table to see new results.
+[Submit a run as a job](Clusters.html#submit-a-run-as-a-job) has the details.
+
+The job needs Nextflow and Singularity. A job submitted from the app inherits
+the `RiboPilot_deps` environment. If you submit a saved script from a new
+terminal, run `mamba activate RiboPilot_deps` there first.
