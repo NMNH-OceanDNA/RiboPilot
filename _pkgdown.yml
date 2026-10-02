@@ -68,6 +68,10 @@ navbar:
       - text: Computing environments
       - text: "Running on a cluster"
         href: articles/Clusters.html
+      - text: "Smithsonian Hydra setup"
+        href: articles/NMNH-Hydra.html
+      - text: "NOAA SEDNA setup"
+        href: articles/NOAA-SEDNA.html
       - text: "Disk space, caches, and offline use"
         href: articles/Caches-and-Offline.html
       - text: -------
@@ -146,6 +150,8 @@ articles:
 - title: "Computing environments"
   contents:
   - 'Clusters'
+  - 'NMNH-Hydra'
+  - 'NOAA-SEDNA'
   - 'Caches-and-Offline'
 
 - title: "Help"

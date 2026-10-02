@@ -1,0 +1,106 @@
+---
+title: "Smithsonian Hydra setup"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Smithsonian Hydra setup}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+This page covers what is specific to the Smithsonian Hydra cluster. Once you
+are set up here, RiboPilot works as in the [Get started](RiboPilot.html)
+walkthrough, with `executor = "NMNH_Hydra"`.
+[Running on a cluster](Clusters.html) explains how RiboPilot uses a cluster in
+general.
+
+You need a Hydra account; see the
+[Hydra policies page](https://confluence.si.edu/display/HPC/Hydra+Policies).
+
+# Get an R session on Hydra
+
+The simplest route is the dedicated RStudio Server at
+[https://galaxy.si.edu/R4](https://galaxy.si.edu/R4). Log in from a browser
+with your Hydra credentials; it can see `/pool`, `/scratch`, and `/store`. It is
+a shared resource, so use it for interactive work and submit runs as jobs.
+Details are on the
+[Hydra RStudio page](https://confluence.si.edu/display/HPC/Dedicated+RStudio+Server).
+
+To run your own RStudio Server session instead, start one on a login node:
+
+```bash
+conda deactivate                       # avoid package conflicts
+module load tools/R/RStudio/server
+start-rstudio-server
+```
+
+The command prints an `ssh -N -L ...` line to run in a terminal on your own
+computer. Leave both terminals open and open `http://localhost:8787` in a
+browser. If port 8787 is taken, pick another with
+`start-rstudio-server -port 8890`.
+
+Use Chrome or Firefox, not Safari.
+
+# Install Nextflow
+
+Hydra has no Nextflow module, so install your own copy once. Run these in a
+**terminal** on Hydra: an SSH session to a login node, or the Terminal pane of
+your RStudio Server session.
+
+```bash
+cd ~
+module load tools/java/21.0.2
+curl -s https://get.nextflow.io | bash
+chmod +x nextflow
+mkdir -p ~/bin
+mv nextflow ~/bin/nextflow
+echo 'export PATH="${HOME}/bin:${PATH}"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+Job scripts written by the app load Java and read `~/.bashrc` for you. If you
+use Nextflow from a shell yourself, run `module load tools/java/21.0.2` first.
+
+# Install RiboPilot
+
+In the R console of your RStudio Server session, follow step 5 of
+[Install the tools](Installation.html#install-the-tools). Singularity is
+already on Hydra, so there is nothing else to install.
+
+# Create a project
+
+```r
+RiboPilot::new_test_project(
+  path = "/pool/public/genomics/<USER>/RiboPilot/test_project",
+  executor = "NMNH_Hydra"
+)
+```
+
+Use the same `executor = "NMNH_Hydra"` with `RiboPilot::new_project()` for your
+own data. Work under `/pool` or `/scratch`. Home folders are too small, and
+projects cannot run from `/store`.
+
+By default Singularity's download cache and the reference folder also sit in
+your home folder.
+[Disk space, caches, and offline use](Caches-and-Offline.html) shows how to
+move them.
+
+# Open the app and run
+
+```r
+RiboPilot::RiboPilot("/pool/public/genomics/<USER>/RiboPilot/test_project")
+```
+
+An RStudio Server session on Hydra starts without the job scheduler, Java, or
+your `~/bin` on its PATH. The app puts them back when it starts. You only need
+to call `RiboPilot::hydra_setup()` yourself, once per session, if you run the
+pipeline from the R console instead of the app.
+
+Press **Update**. The run window shows a job script that goes to Hydra's queue
+for workflow managers. Press **Submit as job**, or **Save script** to submit it
+yourself with `qsub`. The job keeps going after you close the browser. Watch it
+with `qstat` in a terminal, then press the reload button above the table to see
+new results. [Submit a run as a job](Clusters.html#submit-a-run-as-a-job) has
+the details.
+
+The [Get started](RiboPilot.html) walkthrough marks each place where Hydra
+differs, in boxes tagged HYDRA.
