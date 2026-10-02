@@ -754,9 +754,11 @@ read_mapping <- function(mapping_fn, mapping_id = "ID", mapping_taxon = "Taxon")
       "no spaces, dots, or slashes. Change: ",
       paste(truncate_ids(sQuote(bad, FALSE)), collapse = ", "), call. = FALSE)
   }
-  long <- ids[nchar(ids) > 18]
+  # NCBI rejects SeqIDs over 50 characters; export appends up to
+  # "_p<path>_s<scaffold>" to an ID, so 40 leaves room.
+  long <- ids[nchar(ids) > 40]
   if (length(long)) {
-    stop("IDs must be 18 characters or fewer. Shorten: ",
+    stop("IDs must be 40 characters or fewer. Shorten: ",
       paste(truncate_ids(long), collapse = ", "), call. = FALSE)
   }
   mapping

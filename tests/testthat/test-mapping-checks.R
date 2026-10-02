@@ -87,8 +87,8 @@ test_that("unsafe, repeated, or missing IDs are refused and shown", {
   }
   expect_error(RiboPilot:::read_mapping(write_map("ID,Taxon,R1,R2\nS1,G,a,b\n,G,c,d\nNA,G,e,f\n")),
     "line\\(s\\) 3, 4")
-  expect_error(RiboPilot:::read_mapping(write_map("ID,Taxon,R1,R2\nABCDEFGHIJKLMNOPQRS,G,a,b\n")),
-    "18 characters")
+  expect_error(RiboPilot:::read_mapping(write_map(paste0("ID,Taxon,R1,R2\n", strrep("A", 41), ",G,a,b\n"))),
+    "40 characters")
 })
 
 test_that("unsafe characters in paths are named, one line per path", {
