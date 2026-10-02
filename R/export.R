@@ -353,7 +353,7 @@ submission_readme <- function(label, itsx_check = TRUE) {
     "may be another organism's rDNA, exported under this sample's name.",
     paste0("The chimera_warning column in ", label, "_summary.csv holds weaker chimera"),
     "evidence (a class-level switch, a ribotyper code, or read evidence only).",
-    "It is not a submission risk; look at the unit's chimera check in the app.",
+    "It is not a submission risk; look at the contig's chimera check in the app.",
     "",
     if (itsx_check) c(
     "FINAL ITSx CHECK",
@@ -637,7 +637,7 @@ export_report_html <- function(con, units, out_html, label, smry = export_summar
     "th{background:#f4f6f8;text-align:left;}.sample{margin:1.2em 0;border-top:1px solid #eee;padding-top:0.5em;}",
     "small{color:#888;font-weight:normal;}svg{max-width:100%;height:auto;}</style></head><body>",
     "<h1>RiboPilot export report</h1><p><strong>Group:</strong> ", label,
-    " &middot; <strong>Units:</strong> ", nrow(units),
+    " &middot; <strong>Contigs:</strong> ", nrow(units),
     " &middot; ", format(Sys.time(), "%Y-%m-%d %H:%M"), "</p>",
     "<h2>Summary</h2><table><thead><tr>",
     paste0("<th>", intersect(hdr, names(smry)), "</th>", collapse = ""), "</tr></thead><tbody>",
@@ -701,7 +701,7 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
     sel <- sel[key(sel) %in% key(units), , drop = FALSE]
   }
   if (nrow(sel) == 0) {
-    stop("No units to export: a unit needs its assembly and its annotation locked, ",
+    stop("No contigs to export: a contig needs its assembly and its annotation locked, ",
       "and must not be excluded from export.", call. = FALSE)
   }
   # SeqID: the sample's ID when it exports a single unit, else ID_p<path>_s<scaffold>.
@@ -818,7 +818,7 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
   risky <- which(nzchar(smry$submission_risk))
   if (length(risky) > 0) {
     warning("Submission-risk flags on ", length(risky), " of ", nrow(smry),
-      " unit(s) (still exported; see submission_risk column): ",
+      " contig(s) (still exported; see submission_risk column): ",
       paste(sprintf("%s[%s]", smry$seqid[risky], smry$submission_risk[risky]), collapse = ", "),
       call. = FALSE)
   }
@@ -833,7 +833,7 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
     flagged <- which(nzchar(smry$itsx_check) & !not_run)
     if (length(flagged) > 0) {
       warning("ITSx check flags on ", length(flagged), " of ", nrow(smry),
-        " unit(s) (still exported; see itsx_check column): ",
+        " contig(s) (still exported; see itsx_check column): ",
         paste(sprintf("%s[%s]", smry$seqid[flagged], smry$itsx_check[flagged]), collapse = ", "),
         call. = FALSE)
     }
@@ -871,7 +871,7 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
 
   DBI::dbExecute(con, "UPDATE annotate SET export_time_stamp = ? WHERE ID = ? AND path = ? AND scaffold = ?",
     params = list(rep(as.integer(Sys.time()), nrow(units)), units$ID, units$path, units$scaffold))
-  message("Exported ", nrow(units), " unit(s) to ", gdir,
+  message("Exported ", nrow(units), " contig(s) to ", gdir,
     "\n  GenBank Portal takes FASTA only: upload ", label,
     ".fasta; NCBI auto-annotates the rRNA-ITS region (see README.txt).")
   if (isTRUE(zip)) {

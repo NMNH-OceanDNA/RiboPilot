@@ -581,7 +581,7 @@ test_that("a locked unit is read only in the annotation window", {
 
   # the window says so, and offers Close instead of Lock & Close
   html <- paste(as.character(RiboPilot:::annotate_modal("S1", 1L, 1L)), collapse = " ")
-  expect_match(html, "This unit is locked", fixed = TRUE)
+  expect_match(html, "This contig is locked", fixed = TRUE)
   expect_false(grepl("lock_and_close", html, fixed = TRUE))
 
   shiny::testServer(RiboPilot:::app_server, {

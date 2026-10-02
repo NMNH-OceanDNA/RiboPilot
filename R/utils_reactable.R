@@ -225,7 +225,7 @@ rt_flag_badge <- function() {
 }
 
 #' Render the stock-ITSx check: tick when clean, grey when not run, amber pill
-#' with the flag list otherwise (or the 'n of m units' roll-up on a sample row)
+#' with the flag list otherwise (or the 'n of m contigs' roll-up on a sample row)
 #' @noRd
 rt_itsx_badge <- function() {
   htmlwidgets::JS(

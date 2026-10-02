@@ -261,7 +261,7 @@ screen_anchor_string <- function(seq, ann) {
 screen_variant_clause <- function(cls, group, identity, len_delta, is_rep = FALSE) {
   if (is.na(cls)) return(NA_character_)
   if (identical(cls, "singleton")) {
-    return("singleton, the sample's only comparable on-target unit")
+    return("singleton, the sample's only comparable on-target contig")
   }
   lead <- sprintf("%s, group %s", cls, group)
   if (isTRUE(is_rep)) return(paste0(lead, ", this is the group representative"))

@@ -70,8 +70,8 @@ test_that("grouping, export, and the run count open the project with the busy ti
   RiboPilot:::nf_pending_count(dir)
   RiboPilot:::project_has_reads(dir)
   RiboPilot:::reference_mount_dirs(dir)
-  expect_error(RiboPilot::export_bundle(dir), "No units to export")
-  expect_error(RiboPilot::export_project(dir), "No units to export")
+  expect_error(RiboPilot::export_bundle(dir), "No contigs to export")
+  expect_error(RiboPilot::export_project(dir), "No contigs to export")
   expect_equal(opened, 9L)
 })
 

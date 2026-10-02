@@ -50,7 +50,7 @@ need_one_path <- function(u, session = getDefaultReactiveDomain()) {
     title = "Only one assembly path can be locked per sample",
     text = paste0(mp_n(length(bad), "sample"), " would have more than one assembly path locked: ",
       mp_id_list(bad), ". Paths are alternative reconstructions of the same rDNA repeat, ",
-      "and a sample exports one. Lock the units of one path and leave the other paths unlocked."),
+      "and a sample exports one. Lock the contigs of one path and leave the other paths unlocked."),
     type = "warning", session = session
   )
   FALSE

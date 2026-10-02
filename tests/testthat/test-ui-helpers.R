@@ -97,7 +97,7 @@ test_that("mp_alert refuses to render without a type", {
 
 test_that("lock vocabulary and flag toggle", {
   expect_match(MP_LOCK_DEF("assemble"), "^Locked samples .* move on to Annotation Review")
-  expect_match(MP_LOCK_DEF("annotate"), "^Locked units .* move on to Export")
+  expect_match(MP_LOCK_DEF("annotate"), "^Locked contigs .* move on to Export")
   expect_error(MP_LOCK_DEF("export"))
   expect_equal(mp_flag_next(c("no", "yes")), "yes")   # a mixed selection sets
   expect_equal(mp_flag_next(c("yes", "yes")), "no")    # clears only when all are set

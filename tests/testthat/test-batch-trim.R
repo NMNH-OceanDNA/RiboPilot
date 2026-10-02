@@ -120,13 +120,13 @@ test_that("the Trim and Restore buttons act on eligible ticked units only", {
     session$flushReact()
     session$setInputs(tbl__reactable__selected = seq_len(nrow(samples_data())), annot_trim_btn = 1)
     html <- output$batch_trim_summary$html
-    expect_match(html, "2 units are trimmed", fixed = TRUE)
+    expect_match(html, "2 contigs are trimmed", fixed = TRUE)
     expect_match(html, "S1 p1 s2: missing ITS2, 28S", fixed = TRUE)
     expect_match(html, "S1 p2 s1: annotation locked", fixed = TRUE)
     expect_match(html, "max-height:200px", fixed = TRUE)
     session$setInputs(batch_trim_mode = "flank", batch_trim_flank = 20, batch_trim_go = 1)
     expect_equal(lens(), c(540L, 600L, 600L, 540L))
-    expect_equal(utils::tail(toasts, 1), "2 units trimmed, 2 skipped.")
+    expect_equal(utils::tail(toasts, 1), "2 contigs trimmed, 2 skipped.")
 
     session$setInputs(annot_restore_btn = 1)
     expect_match(output$batch_trim_summary$html, "S1 p1 s2: not trimmed", fixed = TRUE)
@@ -139,10 +139,10 @@ test_that("the Trim and Restore buttons act on eligible ticked units only", {
     session$setInputs(tbl__reactable__selected = row, annot_trim_btn = 1)
     session$setInputs(batch_trim_mode = "annotated", batch_trim_go = 3)
     expect_equal(lens(), c(600L, 600L, 600L, 500L))
-    expect_equal(utils::tail(toasts, 1), "1 unit trimmed.")
+    expect_equal(utils::tail(toasts, 1), "1 contig trimmed.")
     session$setInputs(annot_restore_btn = 1, batch_trim_go = 4)
     expect_equal(lens(), rep(600L, 4))
-    expect_equal(utils::tail(toasts, 1), "1 unit restored.")
+    expect_equal(utils::tail(toasts, 1), "1 contig restored.")
   })
 })
 
