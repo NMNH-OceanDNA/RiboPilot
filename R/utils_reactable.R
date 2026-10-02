@@ -156,6 +156,41 @@ rt_pill <- function(map, labels = NULL, empty = "not set", hide = NULL) {
   ) |> htmlwidgets::JS()
 }
 
+#' Render any non-blank text as a pill of one tone
+#' @noRd
+rt_text_pill <- function(tone) {
+  htmlwidgets::JS(sprintf("function(cellInfo) {
+    var v = cellInfo.value;
+    return v ? `<span class='mp-pill mp-pill-%s'>${v}</span>` : '';
+  }", tone))
+}
+
+#' Path # / Contig # cell: the number, starred when the sample keeps several
+#'
+#' The value stays a number, so the column sorts by it; the star is drawn from
+#' the hidden count column `n_col`.
+#' @noRd
+rt_multi_star <- function(n_col, what) {
+  htmlwidgets::JS(sprintf("function(cellInfo) {
+    var n = cellInfo.row['%s'];
+    if (!(n > 1)) return cellInfo.value;
+    return cellInfo.value + `<span class='mp-multi-star' title='This sample has ${n} %s'>*</span>`;
+  }", n_col, what))
+}
+
+#' Filter for a starred column: `*` keeps the starred rows, digits match the number
+#' @noRd
+rt_multi_star_filter <- function(n_col) {
+  htmlwidgets::JS(sprintf("function(rows, columnId, filterValue) {
+    var star = filterValue.indexOf('*') >= 0;
+    var num = filterValue.replace(/[*]/g, '').trim();
+    return rows.filter(function(row) {
+      return (!star || row.values['%s'] > 1) &&
+        (num === '' || String(row.values[columnId]).indexOf(num) === 0);
+    });
+  }", n_col))
+}
+
 #' Render a yes/no text column as a status pill
 #'
 #' "no" is grey in every column, never green; a blank value reads "not set".

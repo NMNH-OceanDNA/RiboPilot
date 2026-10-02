@@ -7,18 +7,15 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
-RiboPilot takes genome-skim reads to a GenBank-ready record of the nuclear
-ribosomal DNA repeat (rDNA). You type two or three short commands in R; everything
-else happens in a point-and-click app in your web browser.
+RiboPilot takes genome-skim reads and assembles a GenBank-ready record of the nuclear
+ribosomal DNA repeat (rDNA). Starting a project requires only a few R commands, everything
+else happens in a R Shiny app.
 
 If you use [MitoPilot](https://github.com/Smithsonian/MitoPilot), this will feel
-familiar: the app has the same layout, it takes the same mapping file, and it
-can run on the same samples. One difference matters: RiboPilot uses the `Taxon`
-column throughout the pipeline, so give the species whenever you can; see
-[Your own project](Your-Own-Project.html#the-mapping-file).
-
-If you already have an assembly for a sample, RiboPilot can
-[start from that instead of reads](Your-Own-Project.html#already-have-an-assembly).
+familiar. RiboPilot has a similar layout, it takes the same mapping file, and it
+can run on the same samples. However, RiboPilot uses the `Taxon`
+column in the map file throughout the pipeline. Try to provide the species ID whenever possible,
+although higher level taxonomic groups should work too. See [Your own project](Your-Own-Project.html#the-mapping-file).
 
 This guide walks through the test project, a set of 12 samples that ships
 with RiboPilot: 10 fish genome skims and 2 synthetic samples made to test the

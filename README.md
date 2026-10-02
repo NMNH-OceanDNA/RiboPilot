@@ -19,8 +19,8 @@ RiboPilot is a companion to
 same process for the mitochondrial genome. You can run both tools on the
 same samples and get both marker sets from one sequencing run.
 
-Most of your work happens in a **point-and-click app** that runs in your
-web browser. The step-by-step [Get started
+Most of your work happens in a **point-and-click Shiny app** that runs
+in your web browser. The step-by-step [Get started
 guide](https://dmacguigan.github.io/RiboPilot/articles/RiboPilot.html)
 walks through a complete project from start to finish.
 

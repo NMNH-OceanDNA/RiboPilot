@@ -204,12 +204,12 @@ app_server <- function(input, output, session) {
     } else if (mode == "Export") {
       # the units an export writes (EXPORTABLE_WHERE), one row per (ID, path, scaffold)
       app_query(paste(
-        "SELECT s.ID, an.path, an.scaffold, s.Taxon, s.sci_name, s.taxid, asm.length,
+        "SELECT s.ID, an.path, an.scaffold,", UNIT_MULTI_SQL, ", s.Taxon, s.sci_name, s.taxid, asm.length,
            an.n_features, an.missing,
            an.n_flags, an.curate_flags, an.annotate_notes, an.itsx_warnings, sc.screen_verdict,
            ch.label AS chimera_label, ch.reason AS chimera_reason,
            an.reviewed, an.partial,
-           an.export_group, an.time_stamp
+           an.export_group,", UNIT_EXPORTED_SQL, ", an.time_stamp
          FROM annotate an JOIN samples s ON s.ID = an.ID
            JOIN assemble a ON a.ID = an.ID
            JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
@@ -219,8 +219,9 @@ app_server <- function(input, output, session) {
     } else {
       # annotate shows one row per non-ignored assembly UNIT of an assembly-locked
       # sample (one (ID, path, scaffold) each, annotated independently)
-      app_query(
-        "SELECT an.annotate_lock, an.annotate_switch, s.ID, an.path, an.scaffold, s.Taxon, s.sci_name, s.taxid,
+      app_query(paste(
+        "SELECT an.annotate_lock, an.annotate_switch, s.ID, an.path, an.scaffold,", UNIT_MULTI_SQL, ",
+           s.Taxon, s.sci_name, s.taxid,
            asm.length, an.n_features, an.missing,
            -- blast_source says WHICH search named the species: the local seed
            -- BLAST, the local panel BLAST, or the remote core_nt one. Without
@@ -231,7 +232,8 @@ app_server <- function(input, output, session) {
            asm.blast_source,
            an.n_flags, an.curate_flags, an.itsx_warnings, sc.screen_verdict,
            ch.label AS chimera_label, ch.reason AS chimera_reason, an.reviewed,
-           an.problematic, an.partial, an.annotate_notes, an.time_stamp,
+           an.problematic, an.partial, an.annotate_notes,
+           an.export_group,", UNIT_EXPORTED_SQL, ", an.time_stamp,
            'details' AS details, 'output' AS output
          FROM annotate an
            JOIN samples s ON s.ID = an.ID
@@ -239,7 +241,7 @@ app_server <- function(input, output, session) {
            JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
            LEFT JOIN screen sc ON sc.ID = an.ID AND sc.path = an.path AND sc.scaffold = an.scaffold
            LEFT JOIN chimera ch ON ch.ID = an.ID AND ch.path = an.path AND ch.scaffold = an.scaffold
-         WHERE a.assemble_lock = 1 AND COALESCE(asm.ignore, 0) = 0") |> with_checks("unit")
+         WHERE a.assemble_lock = 1 AND COALESCE(asm.ignore, 0) = 0")) |> with_checks("unit")
     }
   })
 
@@ -297,8 +299,13 @@ app_server <- function(input, output, session) {
     cd <- function(f, ...) reactable::colDef(name = mp_col_name(f), header = mp_col_header(f), ...)
     cols <- list(
       ID = cd("ID", width = mp_fit_width(a$ID), sticky = "left", html = TRUE, cell = rt_link("open_detail")),
-      path = cd("path", width = 70, align = "center", show = multi_unit),
-      scaffold = cd("scaffold", width = 90, align = "center", show = multi_unit),
+      path = cd("path", width = 70, align = "center", show = multi_unit, html = TRUE,
+        cell = rt_multi_star("path_n", "kept paths"), filterMethod = rt_multi_star_filter("path_n")),
+      scaffold = cd("scaffold", width = 90, align = "center", show = multi_unit, html = TRUE,
+        cell = rt_multi_star("scaffold_n", "kept contigs"),
+        filterMethod = rt_multi_star_filter("scaffold_n")),
+      path_n = reactable::colDef(show = FALSE),
+      scaffold_n = reactable::colDef(show = FALSE),
       Taxon = cd("Taxon", minWidth = 140, sticky = "left", html = TRUE, cell = rt_longtext()),
       sci_name = cd("sci_name", minWidth = 200, html = TRUE, cell = rt_taxid_link()),
       specimen = specimen_col_def("specimen_open", sticky = "left"),
@@ -348,6 +355,7 @@ app_server <- function(input, output, session) {
       sel_path = cd("sel_path", width = 110),
       best_score = cd("best_score", width = 100),
       export_group = cd("export_group", minWidth = 110, html = TRUE, cell = rt_longtext()),
+      exported = cd("exported", width = 170, html = TRUE, cell = rt_text_pill("success")),
       pre_opts = cd("pre_opts", minWidth = 120, html = TRUE, filterable = FALSE,
         cell = rt_link("set_pre_opts", lock_col = "assemble_lock")),
       assemble_opts = cd("assemble_opts", minWidth = 120, html = TRUE, filterable = FALSE,
@@ -717,7 +725,7 @@ app_server <- function(input, output, session) {
     con <- app_con()
     on.exit(DBI::dbDisconnect(con))
     if (!app_write(DBI::dbWithTransaction(con,
-      for (id in ids) DBI::dbExecute(con, sql, params = list(id))))) return()
+      for (id in ids) for (q in sql) DBI::dbExecute(con, q, params = list(id))))) return()
     refresh(refresh() + 1)
     mp_toast(paste(mp_n(length(ids), "sample"), paste0(verb, ".")))
   }
@@ -770,9 +778,14 @@ app_server <- function(input, output, session) {
     to <- if (identical(mp_flag_next(cur, on = 1L, off = 0L), 0L)) 0L else 1L
     n <- nrow(u)
     if (to == 0L) {
-      unlock <- function() set_flag(lock_sql(mm, 0L), verb = "unlocked", u = u)
+      # An unlocked sample leaves Annotation Review, where its units could no
+      # longer be unlocked, so their annotation locks are released with it.
+      asm <- identical(mm$pfx, "assemble")
+      unlock <- function() set_flag(c(lock_sql(mm, 0L),
+        if (asm) "UPDATE annotate SET annotate_lock = 0 WHERE ID = ?"), verb = "unlocked", u = u)
       skip <- mp_confirm("lock_confirm", title = paste0("Unlock ", mp_n(n, MP_UNIT[[mm$pfx]]), "?"),
-        text = sprintf("Unlocked rows leave the %s table until locked again.", next_step[[mm$pfx]]),
+        text = paste0(sprintf("Unlocked rows leave the %s table until locked again.", next_step[[mm$pfx]]),
+          if (asm) " Their contigs are unlocked in Annotation Review too."),
         action_label = "Unlock", danger = TRUE, skippable = TRUE)
       if (skip) unlock() else lock_next(unlock)
       return()
@@ -1353,7 +1366,7 @@ app_server <- function(input, output, session) {
       paste0(grp, "_summary.csv"), "README.txt")
     if (isTRUE(input$export_markers)) files <- c(files, "markers/")
     if (isTRUE(input$export_report)) files <- c(files, paste0(grp, "_report.html"))
-    div(style = paste("font-size:var(--mp-fs-meta); padding:8px 12px; margin-top:12px;",
+    div(style = paste("font-size:var(--mp-fs-meta); padding:8px 12px; margin:12px 0;",
         "background:var(--mp-surface-alt); border-left:3px solid var(--mp-primary);"),
       div(sprintf("%s in group \"%s\".", mp_n(n, "unit"), grp)),
       if (nrow(out)) div(class = "mp-fg-warning", icon("triangle-exclamation"), " ",
@@ -1362,6 +1375,11 @@ app_server <- function(input, output, session) {
       div("Written to ", tags$code(class = "mp-path", path), " as: ", paste(files, collapse = ", ")),
       if (dir.exists(path)) div(class = "mp-fg-warning", icon("triangle-exclamation"), " ",
         "This folder already exists. Export deletes it and writes it again."))
+  })
+  # nothing to write: no group chosen, or none of its units can be exported
+  observe({
+    grp <- export_group_choice(); refresh()
+    shinyjs::toggleState("export_go", condition = !is.null(grp) && nrow(export_units_df(grp)) > 0)
   })
   # Write the bundle into the project's out/export folder (no zip download,
   # mirroring MitoPilot), then show where it landed with an "Open folder" button.
@@ -1826,6 +1844,10 @@ app_server <- function(input, output, session) {
     want <- parts[4]
     req(want %in% TRIAGE_VERDICTS)
     u <- unit_by_uid(paste(parts[1:3], collapse = "|")); req(!is.null(u))
+    if (isTRUE(app_query("SELECT assemble_lock FROM assemble WHERE ID = ?",
+      params = list(id))$assemble_lock == 1)) {
+      return(need_unlocked(id, how = "Unlock it in the Assemble table first"))
+    }
 
     # A click INSIDE a multi-row selection is a bulk verdict over that selection.
     # A click OUTSIDE it stays a single-row action on the row clicked: the ticked

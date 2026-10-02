@@ -440,6 +440,23 @@ test_that("Lock asks before locking a flagged unit that is not marked Reviewed",
   })
 })
 
+test_that("unlocking a sample in Assemble unlocks its units in Annotation Review", {
+  skip_if_not_installed("withr")
+  dir <- mk_export_project()
+  withr::local_dir(dir)
+  testthat::local_mocked_bindings(confirmSweetAlert = function(...) NULL, .package = "shinyWidgets")
+  q <- function(sql) RiboPilot:::app_query(sql)[[1]]
+  expect_true(all(q("SELECT annotate_lock FROM annotate WHERE ID = 'S1'") == 1))
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    session$flushReact()
+    session$setInputs(tbl__reactable__selected = 1L, asmb_lock_btn = 1)
+    session$setInputs(lock_confirm = TRUE)
+    expect_equal(q("SELECT assemble_lock FROM assemble WHERE ID = 'S1'"), 0L)
+    expect_true(all(q("SELECT annotate_lock FROM annotate WHERE ID = 'S1'") == 0))
+  })
+})
+
 test_that("a row's lock icon asks about a flagged unit every time", {
   skip_if_not_installed("withr")
   dir <- mk_export_project()

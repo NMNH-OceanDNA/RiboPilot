@@ -12,7 +12,11 @@ db_migrations <- function() {
         DBI::dbExecute(con, "ALTER TABLE annotate_opts ADD COLUMN barrnap_opts TEXT")
         DBI::dbExecute(con, "ALTER TABLE annotate_opts ADD COLUMN pybarrnap_opts TEXT")
       }),
-    list(note = "sample metadata (GEOME/GBIF/NCBI) tables and columns", fn = meta_apply_schema)
+    list(note = "sample metadata (GEOME/GBIF/NCBI) tables and columns", fn = meta_apply_schema),
+    list(note = "when a unit was last exported (annotate.export_time_stamp)",
+      fn = function(con) {
+        DBI::dbExecute(con, "ALTER TABLE annotate ADD COLUMN export_time_stamp INTEGER")
+      })
   )
 }
 
