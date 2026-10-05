@@ -1238,7 +1238,7 @@ app_server <- function(input, output, session) {
     if (nrow(u) == 0) return(NULL)
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
     u$seqid <- app_export_seqids(con, u)
-    tryCatch(export_header_data(con, u), error = function(e) NULL)
+    with_nmnh(tryCatch(export_header_data(con, u), error = function(e) NULL))
   })
 
   # Marker templates also resolve {element} / {product}, which belong to a
@@ -1293,7 +1293,8 @@ app_server <- function(input, output, session) {
       snap$fasta_header_marker %||% o$fasta_header_marker,
       token_groups = export_token_groups(tok, sample_cols, ticked),
       totals = jsonlite::toJSON(as.list(table(tok$export_group)), auto_unbox = TRUE),
-      snap = snap)
+      snap = snap, nmnh_cols = nmnh_columns(con),
+      nmnh_choices = c("(none)" = "", setdiff(sample_cols, c("ID", "Taxon", "R1", "R2"))))
   }
   observeEvent(input$export_btn, {
     m <- export_modal_current()
@@ -1322,6 +1323,283 @@ app_server <- function(input, output, session) {
   hdr_mrk_chk <- reactive(validate_fasta_header(hdr_mrk(), export_hdr_data_marker(), require_seqid = TRUE))
   output$export_hdr_status <- renderUI(header_status_ui(hdr_rec_chk()))
   output$export_hdr_marker_status <- renderUI(header_status_ui(hdr_mrk_chk()))
+
+  # ---- NMNH user ----
+  # The switch mirrors the record template: on iff it carries both NMNH tokens.
+  nmnh_res <- reactiveVal(NULL)
+  with_nmnh <- function(d) {
+    if (is.null(d)) return(NULL)
+    r <- nmnh_res()
+    for (k in c("nmnh_specimen_voucher", "nmnh_voucherURI")) {
+      v <- if (is.null(r)) rep(NA_character_, nrow(d)) else r[[k]][match(d$ID, r$ID)]
+      d[[k]] <- ifelse(is.na(v), "", v)
+    }
+    d
+  }
+  nmnh_on <- reactive(nmnh_template_on(hdr_rec()))
+  nmnh_key <- reactiveVal(NULL)
+  nmnh_entered <- reactiveVal(character(0))
+  nmnh_label <- function(r) {
+    ent <- nmnh_entered()
+    for (f in c("voucher", "uri")) {
+      k <- paste0(f, "_source")
+      r[[k]] <- ifelse(paste(r$ID, f) %in% ent & r[[k]] %in% "mapfile", "entered", r[[k]])
+    }
+    r
+  }
+  nmnh_refresh <- function(force = FALSE) {
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    ids <- unique(export_units_df(export_group_choice())$ID)
+    key <- paste(c(ids, unlist(nmnh_columns(con))), collapse = "|")
+    if (!force && identical(key, nmnh_key())) return(invisible())
+    nmnh_res(NULL)
+    res <- withProgress(message = "Checking NMNH vouchers", nmnh_resolve(con, ids))
+    nmnh_res(nmnh_label(res))
+    nmnh_key(key)
+  }
+  nmnh_refresh_ids <- function(ids) {
+    r <- nmnh_res()
+    ids <- intersect(ids, r$ID)
+    if (!length(ids)) return(invisible())
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    r[match(ids, r$ID), ] <- nmnh_label(nmnh_resolve(con, ids))
+    nmnh_res(r)
+    refresh(isolate(refresh()) + 1)
+  }
+  observeEvent(list(nmnh_on(), input$export_group_sel), {
+    if (isTRUE(nmnh_on())) nmnh_refresh()
+  })
+  observeEvent(hdr_rec(), {
+    on <- nmnh_template_on(hdr_rec())
+    if (!identical(on, isTRUE(input$nmnh_user))) {
+      shinyWidgets::updatePrettyCheckbox(session, "nmnh_user", value = on)
+    }
+  })
+  nmnh_apply <- function() {
+    updateTextAreaInput(session, "fasta_header", value = nmnh_template_add(input$fasta_header))
+    if (isTRUE(input$export_markers) && !nmnh_template_on(input$fasta_header_marker)) {
+      updateTextAreaInput(session, "fasta_header_marker",
+        value = nmnh_template_add(input$fasta_header_marker))
+    }
+  }
+  observeEvent(input$nmnh_user, ignoreInit = TRUE, {
+    on <- isTRUE(input$nmnh_user)
+    if (on == nmnh_template_on(input$fasta_header)) return()
+    if (!on) {
+      main <- nmnh_template_remove(input$fasta_header)
+      if (identical(main, input$fasta_header)) {
+        shinyWidgets::updatePrettyCheckbox(session, "nmnh_user", value = TRUE)
+        mp_toast("The NMNH modifiers in the header were edited, so they were left in. Take them out by hand.",
+          "warning")
+        return()
+      }
+      updateTextAreaInput(session, "fasta_header", value = main)
+      updateTextAreaInput(session, "fasta_header_marker",
+        value = nmnh_template_remove(input$fasta_header_marker %||% ""))
+      return()
+    }
+    found <- unique(unlist(lapply(
+      c(input$fasta_header, if (isTRUE(input$export_markers)) input$fasta_header_marker),
+      nmnh_existing_mods)))
+    if (!length(found)) return(nmnh_apply())
+    mp_confirm("nmnh_replace", title = "Replace voucher modifiers?",
+      text = paste0("The header already has ", paste(found, collapse = ", "),
+        ". Replace with NMNH values?"),
+      action_label = "Replace")
+  })
+  observeEvent(input$nmnh_replace, {
+    if (isTRUE(input$nmnh_replace)) nmnh_apply()
+    else shinyWidgets::updatePrettyCheckbox(session, "nmnh_user", value = FALSE)
+  })
+  observeEvent(list(input$nmnh_voucher_col, input$nmnh_uri_col), ignoreInit = TRUE, {
+    req(!is.null(input$nmnh_voucher_col), !is.null(input$nmnh_uri_col))
+    v <- input$nmnh_voucher_col
+    u <- input$nmnh_uri_col
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    cur <- nmnh_columns(con)
+    if (identical(v, cur$voucher %|NA|% "") && identical(u, cur$uri %|NA|% "")) return()
+    nmnh_set_columns(con, v, u)
+    if (isTRUE(nmnh_on())) nmnh_refresh()
+  })
+  observeEvent(input$nmnh_recheck, {
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    u <- nmnh_res()$nmnh_voucherURI
+    if (DBI::dbExistsTable(con, "nmnh_ark_cache")) {
+      for (x in u[!is.na(u)]) {
+        DBI::dbExecute(con, "DELETE FROM nmnh_ark_cache WHERE ark = ? OR parent_ark = ?",
+          params = list(x, x))
+      }
+    }
+    nmnh_refresh(force = TRUE)
+  })
+
+  output$nmnh_status <- renderUI({
+    req(nmnh_on())
+    r <- nmnh_res()
+    if (is.null(r)) return(span(class = "text-muted", "Checking NMNH values..."))
+    bad <- sum(!r$ok)
+    skipped <- if (any(!is.na(r$nmnh_voucherURI) & !r$checked)) {
+      " GBIF could not be reached, so the specimen check was skipped."
+    }
+    link <- if (bad > 0 || any(r$fixed)) actionLink("nmnh_report", "View report")
+    if (bad == 0) {
+      return(span(class = "mp-fg-success", style = "font-size: var(--mp-fs-meta);",
+        icon("circle-check"), sprintf(" All %s ready. ", mp_n(nrow(r), "sample")), link, skipped))
+    }
+    span(class = "mp-fg-warning", style = "font-size: var(--mp-fs-meta);",
+      icon("triangle-exclamation"),
+      sprintf(" %d of %s have NMNH problems. ", bad, mp_n(nrow(r), "sample")), link, skipped)
+  })
+
+  nmnh_note <- function(src, note) {
+    x <- c(if (!is.na(src)) paste("source:", src), if (nzchar(note)) note)
+    paste(x, collapse = "; ")
+  }
+  nmnh_show_report <- function() {
+    take_export_snap()
+    r <- nmnh_res()
+    fixed <- r[r$ok & r$fixed, , drop = FALSE]
+    showModal(modalDialog(
+      title = mp_modal_title("NMNH voucher report", close = FALSE), size = "l",
+      p(class = "mp-fg-warning", icon("triangle-exclamation"),
+        " NMNH records should not be submitted to GenBank without both a ",
+        tags$code("specimen_voucher"), " and a ", tags$code("voucherURI"), "."),
+      opts_help("Type a value into a cell to fix it. It is checked when you leave the ",
+        "cell and saved to the column chosen in Export data (or a new ",
+        tags$code("specimen_voucher"), " / ", tags$code("voucherURI"), " column)."),
+      reactable::reactableOutput("nmnh_table"),
+      if (nrow(fixed)) {
+        tags$details(
+          tags$summary(sprintf("Auto-fixed (%d)", nrow(fixed))),
+          reactable::reactable(
+            data.frame(ID = fixed$ID,
+              specimen_voucher = fixed$nmnh_specimen_voucher,
+              voucher_note = mapply(nmnh_note, fixed$voucher_source, fixed$voucher_note),
+              voucherURI = fixed$nmnh_voucherURI,
+              uri_note = mapply(nmnh_note, fixed$uri_source, fixed$uri_note)),
+            compact = TRUE, pagination = FALSE, wrap = TRUE))
+      },
+      div(style = "display:flex; flex-flow:row wrap; gap:8px; align-items:flex-start; margin-top:12px;",
+        uiOutput("nmnh_copy"),
+        downloadButton("nmnh_csv", "Download CSV for bulk edit", class = "btn-sm btn-default"),
+        fileInput("nmnh_upload", NULL, accept = ".csv", buttonLabel = "Upload edited CSV",
+          placeholder = "CSV file")),
+      footer = mp_footer(primary = actionButton("nmnh_back", "Back to export"), dismiss = NULL)
+    ))
+  }
+  observeEvent(input$nmnh_report, nmnh_show_report())
+  observeEvent(input$nmnh_back, back_to_export())
+
+  nmnh_problems <- reactive({
+    r <- req(nmnh_res())
+    r[!r$ok, , drop = FALSE]
+  })
+  output$nmnh_table <- reactable::renderReactable({
+    r <- nmnh_problems()
+    # html = TRUE: reactable drops inline handlers on R tags
+    cell <- function(field, src, note) function(value, index) {
+      as.character(tagList(
+        tags$input(type = "text", class = "form-control input-sm", value = value %|NA|% "",
+          `aria-label` = paste(field, r$ID[index]),
+          onchange = sprintf(
+            "Shiny.setInputValue('nmnh_edit', {id: %s, field: '%s', value: this.value}, {priority: 'event'})",
+            jsonlite::toJSON(r$ID[index], auto_unbox = TRUE), field)),
+        div(class = if (nzchar(note[index])) "mp-fg-warning",
+          style = "font-size: var(--mp-fs-meta); white-space: normal;",
+          nmnh_note(src[index], note[index]))))
+    }
+    reactable::reactable(
+      data.frame(ID = r$ID, specimen_voucher = r$nmnh_specimen_voucher, voucherURI = r$nmnh_voucherURI),
+      compact = TRUE, pagination = FALSE, height = 360,
+      language = reactable::reactableLang(noData = "No NMNH problems left."),
+      columns = list(
+        ID = reactable::colDef(minWidth = 110),
+        specimen_voucher = reactable::colDef(minWidth = 230, html = TRUE,
+          cell = cell("voucher", r$voucher_source, r$voucher_note)),
+        voucherURI = reactable::colDef(minWidth = 330, html = TRUE,
+          cell = cell("uri", r$uri_source, r$uri_note))))
+  })
+  output$nmnh_copy <- renderUI({
+    r <- nmnh_problems()
+    d <- data.frame(ID = r$ID, specimen_voucher = r$nmnh_specimen_voucher,
+      voucher_note = r$voucher_note, voucherURI = r$nmnh_voucherURI, uri_note = r$uri_note)
+    d[is.na(d)] <- ""
+    tsv <- paste(c(paste(names(d), collapse = "\t"), do.call(paste, c(d, sep = "\t"))),
+      collapse = "\n")
+    tags$button(type = "button", class = "btn btn-default btn-sm",
+      onclick = paste0(
+        "navigator.clipboard.writeText(", jsonlite::toJSON(tsv, auto_unbox = TRUE), ");",
+        "var t=this.querySelector('span');",
+        "if(t){var o=t.innerText;t.innerText='Copied!';",
+        "setTimeout(function(){t.innerText=o;},1200);}"),
+      icon("copy"), tags$span(style = "margin-left: 0.3em;", "Copy table"))
+  })
+  output$nmnh_csv <- downloadHandler(
+    filename = function() paste0("nmnh_vouchers_", Sys.Date(), ".csv"),
+    content = function(file) {
+      r <- nmnh_problems()
+      con <- app_con(); on.exit(DBI::dbDisconnect(con))
+      cols <- nmnh_columns(con)
+      s <- DBI::dbReadTable(con, "samples")
+      s <- s[match(r$ID, s$ID), , drop = FALSE]
+      raw <- function(cc, alt) if (is.na(cc)) alt else ifelse(is.na(s[[cc]]) | s[[cc]] == "", alt, s[[cc]])
+      out <- data.frame(ID = r$ID, Taxon = s$Taxon,
+        v = raw(cols$voucher, r$nmnh_specimen_voucher),
+        u = raw(cols$uri, r$nmnh_voucherURI))
+      names(out)[3:4] <- c(cols$voucher %|NA|% "specimen_voucher", cols$uri %|NA|% "voucherURI")
+      utils::write.csv(out, file, row.names = FALSE, na = "")
+    })
+  # A new column for a "(none)" choice, selected from then on
+  nmnh_target_col <- function(con, field) {
+    cols <- nmnh_columns(con)
+    if (!is.na(cols[[field]])) return(cols[[field]])
+    col <- if (field == "voucher") "specimen_voucher" else "voucherURI"
+    if (!col %in% DBI::dbListFields(con, "samples")) {
+      DBI::dbExecute(con, paste0("ALTER TABLE samples ADD COLUMN ", col, " TEXT"))
+    }
+    cols[[field]] <- col
+    nmnh_set_columns(con, cols$voucher %|NA|% "", cols$uri %|NA|% "")
+    col
+  }
+  observeEvent(input$nmnh_edit, {
+    e <- input$nmnh_edit
+    n <- if (e$field == "voucher") nmnh_normalize_voucher(e$value) else nmnh_normalize_uri(e$value)
+    if (is.na(n$value)) {
+      mp_toast(paste0(e$id, ": ", n$note), "error")
+      return()
+    }
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    col <- nmnh_target_col(con, e$field)
+    DBI::dbExecute(con, paste0("UPDATE samples SET \"", col, "\" = ? WHERE ID = ?"),
+      params = list(n$value, e$id))
+    nmnh_entered(union(nmnh_entered(), paste(e$id, e$field)))
+    nmnh_refresh_ids(e$id)
+  })
+  observeEvent(input$nmnh_upload, {
+    f <- input$nmnh_upload$datapath
+    up <- utils::read.csv(f, check.names = FALSE, colClasses = "character")
+    # read_mapping() wants reads or an assembly column; update_sample_metadata() drops them
+    if (!any(c("R1", "Assembly") %in% names(up))) {
+      f <- tempfile(fileext = ".csv")
+      utils::write.csv(cbind(up, R1 = "", R2 = ""), f, row.names = FALSE)
+    }
+    ok <- tryCatch({
+      suppressMessages(update_sample_metadata(app_project(), mapping_fn = f,
+        check_reads = FALSE, check_assemblies = FALSE))
+      TRUE
+    }, error = function(e) {
+      mp_alert(title = "Upload failed", text = conditionMessage(e), type = "error")
+      FALSE
+    })
+    if (!ok) return()
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    cols <- nmnh_columns(con)
+    if (is.na(cols$voucher) && "specimen_voucher" %in% names(up)) cols$voucher <- "specimen_voucher"
+    if (is.na(cols$uri) && "voucherURI" %in% names(up)) cols$uri <- "voucherURI"
+    nmnh_set_columns(con, cols$voucher %|NA|% "", cols$uri %|NA|% "")
+    nmnh_refresh_ids(as.character(up$ID))
+    mp_toast(sprintf("Updated %s from the CSV.", mp_n(nrow(up), "sample")))
+  })
 
   # The marker box is hidden unless markers are exported, so it must not gate
   # anything the user cannot see.
@@ -1403,6 +1681,29 @@ app_server <- function(input, output, session) {
         text = paste0(bad[[1]], ": ", bad[[2]]), type = "error")
       return()
     }
+    r <- if (nmnh_template_on(input$fasta_header)) nmnh_res()
+    if (!is.null(r) && any(!r$ok)) {
+      export_pending(u)
+      take_export_snap()
+      removeModal()
+      mp_confirm("nmnh_confirm", title = "NMNH values missing or wrong",
+        text = sprintf(paste(
+          "%d of %s in this group have NMNH problems. NMNH records should not be",
+          "submitted to GenBank without both a specimen_voucher and a voucherURI.",
+          "Exporting anyway leaves the empty modifiers out of the headers."),
+          sum(!r$ok), mp_n(nrow(r), "sample")),
+        action_label = "Export anyway", cancel_label = "View report", danger = TRUE)
+      return()
+    }
+    specimen_then_export(u, grp)
+  })
+  observeEvent(input$nmnh_confirm, ignoreInit = TRUE, {
+    if (isTRUE(input$nmnh_confirm)) {
+      export_snap(NULL)
+      specimen_then_export(export_pending(), export_group_choice())
+    } else nmnh_show_report()
+  })
+  specimen_then_export <- function(u, grp) {
     sp <- tryCatch(specimen_conflict_rows(u, c(input$fasta_header,
         if (isTRUE(input$export_markers)) input$fasta_header_marker)),
       error = function(e) {
@@ -1419,7 +1720,7 @@ app_server <- function(input, output, session) {
       return()
     }
     screen_then_proceed(u, grp)
-  })
+  }
   screen_then_proceed <- function(u, grp) {
     flagged <- screen_flagged(u)
     export_pending(u)

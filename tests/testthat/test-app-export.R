@@ -884,3 +884,57 @@ test_that("Cancel on the metadata disagreement window brings the Export window b
     expect_false(file.exists(file.path(dir, "out", "export", "g1", "g1.fasta")))
   })
 })
+
+test_that("NMNH user: status, cell edit, and Export anyway", {
+  skip_if_not_installed("withr")
+  dir <- mk_export_project()
+  withr::local_dir(dir)
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE annotate SET export_group = 'g1'")
+  # real projects key samples on ID; the CSV upload upserts on it
+  ddl <- DBI::dbGetQuery(con, "SELECT sql FROM sqlite_master WHERE name = 'samples'")$sql
+  DBI::dbExecute(con, "ALTER TABLE samples RENAME TO samples_old")
+  DBI::dbExecute(con, sub("ID TEXT", "ID TEXT PRIMARY KEY", ddl, fixed = TRUE))
+  DBI::dbExecute(con, "INSERT INTO samples SELECT * FROM samples_old")
+  DBI::dbDisconnect(con)
+  local_mocked_bindings(.gbif_get = function(path) stop("offline"))
+  tpl <- RiboPilot:::nmnh_template_add(RiboPilot:::DEFAULT_FASTA_HEADER)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Export")
+    session$setInputs(export_group_sel = "g1", fasta_header = tpl,
+      fasta_header_marker = RiboPilot:::DEFAULT_FASTA_HEADER_MARKER,
+      export_markers = FALSE, export_report = FALSE, export_itsx_check = FALSE)
+    settle(session)
+    expect_false(nmnh_res()$ok)
+    expect_match(output$nmnh_status$html, "1 of 1 sample have NMNH problems")
+    expect_true(hdr_rec_chk()$ok)
+    expect_match(output$nmnh_copy$html, "Copy table")
+    expect_match(as.character(output$nmnh_table), "nmnh_edit")
+    csv <- utils::read.csv(output$nmnh_csv)
+    expect_equal(names(csv), c("ID", "Taxon", "specimen_voucher", "voucherURI"))
+
+    # Export with problems asks first
+    session$setInputs(export_go = 1)
+    settle(session)
+    expect_false(file.exists(file.path(dir, "out", "export", "g1", "g1.fasta")))
+
+    session$setInputs(nmnh_edit = list(id = "S1", field = "voucher", value = "USNM:FISH:7"))
+    settle(session)
+    expect_equal(nmnh_res()$nmnh_specimen_voucher, "USNM:FISH:7")
+    expect_equal(app_query("SELECT specimen_voucher FROM samples")$specimen_voucher, "USNM:FISH:7")
+
+    f <- file.path(dir, "up.csv")
+    utils::write.csv(data.frame(ID = "S1", Taxon = "Danio rerio", specimen_voucher = "USNM:FISH:8",
+      voucherURI = ""), f, row.names = FALSE)
+    session$setInputs(nmnh_upload = list(datapath = f))
+    settle(session)
+    expect_equal(nmnh_res()$nmnh_specimen_voucher, "USNM:FISH:8")
+
+    session$setInputs(nmnh_confirm = TRUE)
+    settle(session)
+    h <- readLines(file.path(dir, "out", "export", "g1", "g1.fasta"))[1]
+    expect_match(h, "[specimen_voucher=USNM:FISH:8] Danio", fixed = TRUE)
+    expect_false(grepl("voucherURI", h))
+  })
+})
