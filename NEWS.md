@@ -148,6 +148,17 @@
   writing when sources disagree on
   something a template uses. A mapping-file column with the same name as a
   ticked field wins.
+* Linking to GBIF by voucher follows Darwin Core. When a GEOME or NCBI record
+  has no Smithsonian EZID, RiboPilot searches GBIF for the specimen voucher in
+  every field that can hold one (`specimen_voucher`, `genbankSpecimenVoucher`,
+  `materialSampleID`, `voucherCatalogNumber`, `otherCatalogNumbers`,
+  `bio_material`, or a bare catalog number with the institution code). It reads
+  triplets, doublets, `urn:catalog:` prefixes, and `USNM 419933`-style spacing,
+  keeps the only match even when its collection code differs, and skips GBIF
+  occurrences copied from GenBank or BOLD.
+* `geome_specimen_voucher` uses `genbankSpecimenVoucher` when GEOME has it, and
+  `gbif_specimen_voucher` drops a catalog number's leading repeat of the
+  institution code.
 
 ## Documentation
 
