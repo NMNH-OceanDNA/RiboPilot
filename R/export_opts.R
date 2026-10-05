@@ -243,9 +243,15 @@ validate_fasta_header <- function(template, data = NULL, require_seqid = TRUE) {
     return(if (multi) err(msg) else warn(msg))
   }
   if (!is.null(data) && nrow(data) > 0) {
-    hdr <- vapply(seq_len(nrow(data)), function(i) {
+    hdr <- nmnh_strip_empty(vapply(seq_len(nrow(data)), function(i) {
       fill_header(template, data[i, , drop = FALSE])
-    }, character(1))
+    }, character(1)))
+    nm <- unique(unlist(duplicate_modifiers(hdr)))
+    nm <- nm[gsub("_", "", nm) %in% c("specimenvoucher", "voucheruri")]
+    if (length(nm)) {
+      return(err(sprintf("Duplicate %s. NMNH records need each exactly once: take the other out.",
+        paste0("[", nm, "=]", collapse = ", "))))
+    }
     em <- empty_modifiers(hdr)
     hit <- lengths(em) > 0
     if (any(hit)) {
@@ -270,6 +276,7 @@ validate_fasta_header <- function(template, data = NULL, require_seqid = TRUE) {
 missing_fields <- function(template, data) {
   tok <- regmatches(template, gregexpr("\\{[^{}]*\\}", template))[[1]]
   nm <- intersect(unique(substr(tok, 2L, nchar(tok) - 1L)), names(data))
+  nm <- nm[!startsWith(nm, "nmnh_")]
   ids <- unique(data$ID)
   out <- vapply(nm, function(n) {
     v <- trimws(as.character(data[[n]]))
@@ -331,9 +338,9 @@ fill_header <- function(template, row) {
 #' @return character vector of headers, one per row, without the leading ">".
 #' @noRd
 render_fasta_headers <- function(template, data) {
-  h <- vapply(seq_len(nrow(data)), function(i) {
+  h <- nmnh_strip_empty(vapply(seq_len(nrow(data)), function(i) {
     fill_header(template, data[i, , drop = FALSE])
-  }, character(1))
+  }, character(1)))
   multi <- !is.na(data$seqid) & data$seqid != data$ID
   h[multi] <- paste0(h[multi], " [isolate=", data$seqid[multi], "]")
   h
