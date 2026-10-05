@@ -233,7 +233,11 @@ linking follows.
 
 Only Smithsonian specimens carry an EZID that points straight at a GBIF record.
 For other museums RiboPilot searches GBIF for the voucher, and links only when
-exactly one specimen of the right species matches. Otherwise nothing is linked
+exactly one specimen of the right species matches. It reads the Darwin Core
+forms `institution:collection:catalog` (`USNM:FISH:419933`),
+`institution:catalog` (`UW:157636`), the same with a `urn:catalog:` prefix, and
+`institution catalog` (`USNM 419933`). GBIF occurrences copied from GenBank or
+the Barcode of Life are skipped. Otherwise nothing is linked
 and the viewer says "N possible GBIF matches for ...; not linked"; paste the
 right gbifID yourself. Vouchers without an institution code, or specimens the
 museum has not published to GBIF, cannot be matched.
@@ -428,6 +432,36 @@ when every sample in the export group has a value for it. RiboPilot never
 changes your templates on its own.
 :::
 
+## NMNH submissions
+
+NMNH requires every GenBank record to carry the specimen's Darwin Core voucher
+and its EZID, for example
+`[specimen_voucher=USNM:FISH:487075] [voucherURI=http://n2t.net/ark:/65665/30f303846-9d23-4069-881e-e43ff718ef9f]`.
+Tick **NMNH user** in the Export data window to add both modifiers to the record
+header template (and to the per-marker header when marker files are exported).
+Untick it to take them out. Saving the template saves the setting. If the
+template already has a `specimen_voucher` or `voucherURI` modifier, RiboPilot
+asks before replacing it.
+
+Values are filled per sample, first valid one wins: the mapping-file columns
+picked in **Voucher column** and **Voucher URI column**, then the linked GBIF
+record, then NCBI, then GEOME. A voucher with no URI is looked up in GBIF, and a
+URI with no voucher takes the voucher of its GBIF record. RiboPilot then:
+
+- accepts `USNM:<collection>:<catalog>` with the NCBI collection codes `FISH`,
+  `Birds`, `MAMM`, `Herp`, `IZ`, `ENT`, `Botany`, or `US:<catalog>`, and fixes
+  case and repeated `USNM` prefixes; `USNM:LAB` tissue numbers are rejected;
+- writes every EZID as `http://n2t.net/ark:/65665/3...`, and asks GBIF that it
+  is a specimen: a tissue EZID is replaced with its parent specimen, and the
+  voucher must match the GBIF record. Answers are cached in the project;
+  **Re-check** asks again.
+
+The line under the columns shows how many samples are ready. **View report**
+lists the problems; type a fix into a cell, or download the CSV, edit it, and
+upload it (this runs `update_sample_metadata()`). Exporting with problems asks
+first, and an empty `[specimen_voucher=]` or `[voucherURI=]` is left out of the
+header.
+
 ## The conflict warning at export
 
 When you click **Export**, RiboPilot checks which items your header templates
@@ -479,9 +513,9 @@ later with `fetch_*()` or **Refresh all**).
 | From | To | Where the link is read |
 |---|---|---|
 | NCBI BioSample | GEOME | the `bcid` attribute (samples submitted to the SRA through GEOME) |
-| NCBI BioSample | GBIF | a Smithsonian EZID in `voucherURI` or `catalogNumber`; otherwise a search for the `specimen_voucher` (see [Matching a voucher to a GBIF record](#matching-a-voucher-to-a-gbif-record)) |
+| NCBI BioSample | GBIF | a Smithsonian EZID in `voucherURI` or `catalogNumber`; otherwise a search for the voucher in `specimen_voucher`, `genbankSpecimenVoucher`, `materialSampleID`, `voucherCatalogNumber`, or `bio_material` (see [Matching a voucher to a GBIF record](#matching-a-voucher-to-a-gbif-record)) |
 | GEOME | NCBI | the tissue's sequencing record, which names its BioSample (one extra GEOME request) |
-| GEOME | GBIF | a Smithsonian EZID in `voucherURI` or `catalogNumber`; otherwise a search for `genbankSpecimenVoucher` or `materialSampleID` |
+| GEOME | GBIF | a Smithsonian EZID in `voucherURI` or `catalogNumber`; otherwise a search for the voucher in `genbankSpecimenVoucher`, `materialSampleID`, `voucherCatalogNumber`, `otherCatalogNumbers`, or `catalogNumber`, or a bare `voucherCatalogNumber` joined to the `institutionID` |
 | GBIF | NCBI | a BioSample (or else an SRA run) listed in `associatedSequences` |
 | GBIF | GEOME | a GEOME ARK in `occurrenceID` or `materialSampleID` (datasets GEOME publishes to GBIF) |
 
@@ -515,7 +549,7 @@ wins over a sample value, which wins over an event value).
 | `geome_lat_lon` | `decimalLatitude`, `decimalLongitude` | `17.48260 S 149.89990 W` |
 | `geome_collection_date` | `yearCollected`, `monthCollected`, `dayCollected` | `2006-03-18`, `2009-11`, or `2009` |
 | `geome_geo_loc_name` | `country`, then `stateProvince` and `locality` | `French Polynesia: Moorea` |
-| `geome_specimen_voucher` | `catalogNumber` (required; skipped if it is a web address or ARK), `institutionCode` (optional prefix) | `UF:12345` |
+| `geome_specimen_voucher` | `genbankSpecimenVoucher` when present; else `catalogNumber` (required; skipped if it is a web address or ARK) with `institutionCode` as an optional prefix | `USNM:FISH:407263`, `UF:12345` |
 | `geome_collected_by` | `collectorList` | as in GEOME |
 | `geome_tissue_type` | `tissueType` | as in GEOME |
 | `geome_sex` | `sex` | as in GEOME |
@@ -530,7 +564,7 @@ Built from the occurrence only (never from the dataset or organization).
 | `gbif_lat_lon` | `decimalLatitude`, `decimalLongitude` | `28.53783 N 81.33322 W` |
 | `gbif_collection_date` | `year`, `month`, `day`; else `eventDate` when it is a single date | `2026-02-23`, `2026-02`, or `2026` |
 | `gbif_geo_loc_name` | `country`, then `stateProvince` and `locality` | `United States of America: Florida, Lake Underhill` |
-| `gbif_specimen_voucher` | `institutionCode`, `collectionCode`, `catalogNumber` (required) | `UF:Fish:250399` |
+| `gbif_specimen_voucher` | `institutionCode`, `collectionCode`, `catalogNumber` (required; a leading repeat of the institution code, as in `USNM 419933`, is dropped) | `UF:Fish:250399`, `USNM:FISH:419933` |
 | `gbif_collected_by` | `recordedBy` | as in GBIF |
 | `gbif_identified_by` | `identifiedBy` | as in GBIF |
 | `gbif_sex` | `sex` | lowercased |

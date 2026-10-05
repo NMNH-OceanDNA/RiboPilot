@@ -27,6 +27,12 @@
   group names must work as folder names.
 * `export_project()` exports every exportable unit as one "export" bundle when
   there are no export groups, by the same rule as the app.
+* NMNH user switch in Export data. Adds the `[specimen_voucher=]` and
+  `[voucherURI=]` modifiers NMNH requires on GenBank submissions, fills them per
+  sample from your mapping file, GBIF, NCBI, or GEOME, checks the voucher codes
+  and EZIDs (a tissue EZID is replaced with its parent specimen), and reports
+  samples that are missing or wrong. Fix them in the report or with a CSV round
+  trip. See `vignette("Sample-Metadata")`.
 
 ## Quality checks
 
