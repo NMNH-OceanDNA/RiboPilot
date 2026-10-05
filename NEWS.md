@@ -130,6 +130,10 @@
 
 ## Sample metadata
 
+* `new_test_project()` now fetches each sample's NCBI metadata from its SRA
+  run (CHIM00 and CHIM01 use the Upeneus parvus run they were built from)
+  and follows links to GBIF and GEOME, with linking saved as the project
+  setting. Pass `fetch_metadata = FALSE` when offline.
 * Link samples to GEOME, GBIF, and NCBI BioSample records through mapping-file
   columns `GEOME_BCID`, `GBIF_ID`, and `BioSample`, or other names via
   `mapping_geome`, `mapping_gbif`, and `mapping_biosample`.
