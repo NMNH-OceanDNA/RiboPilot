@@ -18,7 +18,7 @@ test_that("main.nf runs every WF1 step on the bundled samples", {
   tools <- local_fake_pipeline_tools()
   p <- file.path(withr::local_tempdir(), "proj")
   suppressMessages(suppressWarnings(RiboPilot::new_test_project(p, n = 0, executor = "conda",
-    custom_seeds_db = tools$scaffold, custom_labels_db = tools$scaffold, Rproj = FALSE)))
+    custom_seeds_db = tools$scaffold, custom_labels_db = tools$scaffold, Rproj = FALSE, fetch_metadata = FALSE)))
   db <- file.path(p, ".sqlite")
   con <- RiboPilot:::open_project_db(db)
   DBI::dbExecute(con, "UPDATE samples SET taxonomy_lock = 1")
@@ -93,7 +93,7 @@ test_that("main.nf gates a sample below min_depth without assembling it", {
   # above that so below_min_depth fires for both bundled samples.
   suppressMessages(suppressWarnings(RiboPilot::new_test_project(p, n = 0, executor = "conda",
     custom_seeds_db = tools$scaffold, custom_labels_db = tools$scaffold, Rproj = FALSE,
-    min_depth = 2500)))
+    min_depth = 2500, fetch_metadata = FALSE)))
   db <- file.path(p, ".sqlite")
   con <- RiboPilot:::open_project_db(db)
   DBI::dbExecute(con, "UPDATE samples SET taxonomy_lock = 1")
@@ -127,7 +127,7 @@ test_that("main.nf routes assembler = 'bait' through the fallback arm, not GetOr
   tools <- local_fake_pipeline_tools()
   p <- file.path(withr::local_tempdir(), "proj")
   suppressMessages(suppressWarnings(RiboPilot::new_test_project(p, n = 0, executor = "conda",
-    custom_seeds_db = tools$scaffold, custom_labels_db = tools$scaffold, Rproj = FALSE)))
+    custom_seeds_db = tools$scaffold, custom_labels_db = tools$scaffold, Rproj = FALSE, fetch_metadata = FALSE)))
   db <- file.path(p, ".sqlite")
   con <- RiboPilot:::open_project_db(db)
   DBI::dbExecute(con, "UPDATE samples SET taxonomy_lock = 1")

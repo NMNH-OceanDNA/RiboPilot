@@ -14,6 +14,7 @@ new_test_project(
   sra_bin = NULL,
   Rproj = TRUE,
   force = FALSE,
+  fetch_metadata = TRUE,
   ...
 )
 }
@@ -41,6 +42,10 @@ default searches \code{PATH}.}
 RStudio).}
 
 \item{force}{Recreate an existing project database / config (default FALSE).}
+
+\item{fetch_metadata}{Fetch each SRA sample's NCBI metadata and follow links
+to GBIF and GEOME (default TRUE). Linking is saved as the project setting.
+Set FALSE when offline.}
 
 \item{...}{Passed to \code{\link[=new_project]{new_project()}} (e.g. \code{custom_seeds_db}).}
 }
