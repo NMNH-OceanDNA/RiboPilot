@@ -45,3 +45,4 @@ out/
 !inst/test_data/*.fastq.gz
 update-version.log
 tests/testthat/testthat-problems.rds
+tests/testthat/_problems/
