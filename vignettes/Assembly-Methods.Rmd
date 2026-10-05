@@ -24,7 +24,7 @@ See [Already have an assembly?](Your-Own-Project.html#already-have-an-assembly).
 
 | | GetOrganelle (default) | SPAdes, baited | SPAdes, de-novo |
 |---|---|---|---|
-| **How it works** | Recruits ribosomal reads with the seed database, then extends and assembles them over several rounds | Maps reads to the seed database, then assembles only the pairs that match | Assembles every read, then keeps the contigs that match the label database |
+| **How it works** | Recruits ribosomal reads with the seed database, then extends and assembles them over several rounds | Maps reads to the seed database, then assembles only the pairs that match | Assembles all reads, then keeps the contigs that match the label database |
 | **Uses the reference database for** | Recruiting reads and picking ribosomal contigs | Recruiting reads and picking ribosomal contigs | Picking ribosomal contigs only |
 | **Speed and memory** | Moderate | Fastest, lowest memory | Slowest, highest memory |
 | **Best for** | Most samples | Samples where GetOrganelle fails or returns only short contigs | Samples where both of the others fail, or a cross-check on a doubtful result |
@@ -98,14 +98,14 @@ reference database is used only afterwards, to keep the contigs that match the
 label database. Nothing is filtered up front, so this can recover a repeat
 whose reads the seed database fails to recruit.
 
-It is also by far the most expensive method, since it assembles the whole
-read set to keep a handful of contigs. Raise **Memory (GB)** in the Assembly
+It is also by far the most expensive method, since it assembles all of the sequencing
+reads. Raise **Memory (GB)** in the Assembly
 Options window if a sample fails for lack of memory. Only the **SPAdes
 options** box applies.
 
 # Mixing methods in one project
 
-Options are saved as named sets, and each sample points at one, so a project
+Since assembly options are saved as named sets, a project
 can use GetOrganelle for most samples and SPAdes for the difficult ones. Open
 a sample's **Assembly Options** cell, type a new **Parameter set name**, tick
 **Edit**, choose the assembler, and press **Save**. The
