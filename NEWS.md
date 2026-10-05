@@ -27,6 +27,12 @@
   group names must work as folder names.
 * `export_project()` exports every exportable unit as one "export" bundle when
   there are no export groups, by the same rule as the app.
+* NMNH user switch in Export data. Adds the `[specimen_voucher=]` and
+  `[voucherURI=]` modifiers NMNH requires on GenBank submissions, fills them per
+  sample from your mapping file, GBIF, NCBI, or GEOME, checks the voucher codes
+  and EZIDs (a tissue EZID is replaced with its parent specimen), and reports
+  samples that are missing or wrong. Fix them in the report or with a CSV round
+  trip. See `vignette("Sample-Metadata")`.
 
 ## Quality checks
 
@@ -148,6 +154,17 @@
   writing when sources disagree on
   something a template uses. A mapping-file column with the same name as a
   ticked field wins.
+* Linking to GBIF by voucher follows Darwin Core. When a GEOME or NCBI record
+  has no Smithsonian EZID, RiboPilot searches GBIF for the specimen voucher in
+  every field that can hold one (`specimen_voucher`, `genbankSpecimenVoucher`,
+  `materialSampleID`, `voucherCatalogNumber`, `otherCatalogNumbers`,
+  `bio_material`, or a bare catalog number with the institution code). It reads
+  triplets, doublets, `urn:catalog:` prefixes, and `USNM 419933`-style spacing,
+  keeps the only match even when its collection code differs, and skips GBIF
+  occurrences copied from GenBank or BOLD.
+* `geome_specimen_voucher` uses `genbankSpecimenVoucher` when GEOME has it, and
+  `gbif_specimen_voucher` drops a catalog number's leading repeat of the
+  institution code.
 
 ## Documentation
 

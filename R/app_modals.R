@@ -714,7 +714,8 @@ group_modal <- function() {
 #' @noRd
 export_modal <- function(groups, templates = "default", template = "default",
                          fasta_header = "", fasta_header_marker = "",
-                         token_groups = NULL, totals = "{}", snap = NULL) {
+                         token_groups = NULL, totals = "{}", snap = NULL,
+                         nmnh_cols = list(voucher = NA, uri = NA), nmnh_choices = c("(none)" = "")) {
   flag <- function(id, dflt) snap[[id]] %||% dflt
   # status line between the label and the box it describes
   hdr_box <- function(id, label, value, status) {
@@ -741,6 +742,22 @@ export_modal <- function(groups, templates = "default", template = "default",
       "a reusable, named set of the FASTA header patterns below: export uses the ",
       "text on screen, and Save template keeps it for next time."),
     uiOutput("export_summary"),
+    mp_checkbox("nmnh_user", "NMNH user", value = nmnh_template_on(fasta_header)),
+    opts_help("Adds the ", tags$code("[specimen_voucher=]"), " and ",
+      tags$code("[voucherURI=]"), " modifiers NMNH requires, filled per ",
+      "sample from your mapping file, GBIF, NCBI, or GEOME, and checked against GBIF."),
+    conditionalPanel("input.nmnh_user == true",
+      div(style = "display:flex; flex-flow:row nowrap; gap:1em; align-items:flex-end;",
+        div(style = "flex:1; min-width:0;",
+          selectInput("nmnh_voucher_col", "Voucher column:", nmnh_choices,
+            selected = nmnh_cols$voucher %|NA|% "", width = "100%")),
+        div(style = "flex:1; min-width:0;",
+          selectInput("nmnh_uri_col", "Voucher URI column:", nmnh_choices,
+            selected = nmnh_cols$uri %|NA|% "", width = "100%")),
+        div(class = "mp-opts-checkbox",
+          actionButton("nmnh_recheck", "Re-check",
+            title = "Ask GBIF again about this group's voucher URIs"))),
+      uiOutput("nmnh_status")),
     hdr_box("fasta_header", "Record FASTA header:", fasta_header, "export_hdr_status"),
     mp_checkbox("export_markers", "Per-marker FASTA files", value = flag("export_markers", TRUE)),
     opts_help("Writes one FASTA per rRNA element (18S, ITS1, 5.8S, ITS2, 28S) into a ",

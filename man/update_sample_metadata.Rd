@@ -82,5 +82,6 @@ pipeline state or lock column, except that a sample whose Taxon changes
 has its resolved taxonomy cleared, unlocked, and queued for the Taxonomy
 step again. Use \code{\link[=add_samples]{add_samples()}} to change what a sample reads or
 assembles from. Runs the same read_mapping()/check_mapping()
-checks as \code{\link[=new_project]{new_project()}}.
+checks as \code{\link[=new_project]{new_project()}}. Backs up the database to
+\verb{.old_sqlite_dbs/} first.
 }

@@ -725,6 +725,13 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
   tpl_record <- fasta_header %||% opts$fasta_header
   tpl_marker <- fasta_header_marker %||% opts$fasta_header_marker
   hdata <- export_header_data(con, units)
+  if (any(grepl("{nmnh_", c(tpl_record, tpl_marker), fixed = TRUE))) {
+    nm <- nmnh_resolve(con, unique(hdata$ID))
+    nm[is.na(nm)] <- ""
+    i <- match(hdata$ID, nm$ID)
+    hdata$nmnh_specimen_voucher <- nm$nmnh_specimen_voucher[i]
+    hdata$nmnh_voucherURI <- nm$nmnh_voucherURI[i]
+  }
   marker_data <- function(i, element) {
     r <- hdata[i, , drop = FALSE]
     r$element <- element
