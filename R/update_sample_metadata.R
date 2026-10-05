@@ -6,7 +6,8 @@
 #' has its resolved taxonomy cleared, unlocked, and queued for the Taxonomy
 #' step again. Use [add_samples()] to change what a sample reads or
 #' assembles from. Runs the same read_mapping()/check_mapping()
-#' checks as [new_project()].
+#' checks as [new_project()]. Backs up the database to
+#' `.old_sqlite_dbs/` first.
 #'
 #' @param project Path to the project directory (default = current working
 #'   directory).
@@ -85,6 +86,12 @@ update_sample_metadata <- function(
     stop("Not in the project (use add_samples() to add them): ",
       paste(truncate_ids(missing), collapse = ", "), call. = FALSE)
   }
+
+  backup_dir <- file.path(project, ".old_sqlite_dbs")
+  dir.create(backup_dir, showWarnings = FALSE)
+  backup <- file.path(backup_dir, paste0(".sqlite.", length(list.files(backup_dir, all.files = TRUE, no.. = TRUE)) + 1))
+  RSQLite::sqliteCopyDatabase(con, backup)
+  message("Backed up old SQLite database to: ", backup)
 
   mapping <- mapping |>
     dplyr::mutate(ID = .data[[mapping_id]], Taxon = .data[[mapping_taxon]]) |>

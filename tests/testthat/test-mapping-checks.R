@@ -308,6 +308,11 @@ test_that("update_sample_metadata updates metadata but not pipeline state", {
   # pipeline state and locks are untouched
   expect_equal(assemble$assemble_switch[assemble$ID == "S1"], 0)
   expect_equal(assemble$assemble_lock[assemble$ID == "S1"], 1)
+  bk <- file.path(proj, ".old_sqlite_dbs", ".sqlite.1")
+  expect_true(file.exists(bk))
+  old <- DBI::dbConnect(RSQLite::SQLite(), bk)
+  expect_equal(DBI::dbReadTable(old, "samples")$Taxon, "Danio rerio")
+  DBI::dbDisconnect(old)
 })
 
 test_that("update_sample_metadata writes to the stored ID when the case differs", {
