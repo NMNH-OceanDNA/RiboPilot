@@ -33,6 +33,9 @@
   and EZIDs (a tissue EZID is replaced with its parent specimen), and reports
   samples that are missing or wrong. Fix them in the report or with a CSV round
   trip. See `vignette("Sample-Metadata")`.
+* Click a sample ID in the NMNH voucher report to open its metadata, then
+  return to the report. The metadata window now has a copy button on every
+  value and Export CSV to save all of a sample's metadata.
 
 ## Quality checks
 
