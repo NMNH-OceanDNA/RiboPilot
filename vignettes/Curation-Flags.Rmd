@@ -7,55 +7,52 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
-After it annotates a kept contig (see
-[Get started](RiboPilot.html#samples-contigs-and-records)), RiboPilot runs a
+After RiboPilot annotates a contig (see
+[Get started](RiboPilot.html#samples-contigs-and-records)), it runs a
 set of automatic quality checks and
-raises a **curation warning** for anything that looks unusual. Warnings guide
-your attention in the Annotation Review step. They do not change your data, and a
-warning does not always mean something is wrong: it means "please check this".
+raises a **curation warning** for anything that looks unusual. Warnings do not change your 
+assemblies or annotations, they simply flag something that may need your
+attention.
 
-You see them in three places:
+You can find warnings in three places:
 
-- the **Checks** column of the Assemble and Annotation Review tables (right after
-  the ID, or after **Path #** and **Contig #** when those show), which sums up
-  every check in a few words;
+- the **Checks** column of the Assemble and Annotation Review tables, which sums up
+  every check in a few words
 - the **Warnings** column of Annotation Review, which counts the warnings on the
-  contig as a whole (marked "contig" in the table below); hover over it for the list;
+  contig as a whole
 - the **Curation warnings** panel of a contig's window, which lists the contig's
-  warnings and, below them, each feature that has a warning. Click **select** on a
-  feature's row to make it the active feature.
+  warnings and, below them, each feature that has a warning
 
 # What the warnings mean
 
-| Warning | On | What it means | What to do |
+| Warning | Source | What it means | What to do |
 |---|---|---|---|
-| `missing_18S`, `missing_5.8S`, `missing_28S` | contig | One of the three rRNA genes was not found. | Expected when the contig holds only part of the repeat. Otherwise look at **Sequence and read coverage** for a break. |
+| `missing_18S`, `missing_5.8S`, `missing_28S` | contig | One of the three rRNA genes was not found. | Expected when the contig contains only part of the nuclear rDNA complex. Otherwise look at **Sequence and read coverage** for a break. |
 | `missing_ITS1`, `missing_ITS2` | contig | A spacer was not found between its two genes. | Usually follows a missing gene. If both genes are there, check the boundaries in **Edit active feature boundaries**. |
-| `out_of_order` | contig | The features are not in the order 18S, ITS1, 5.8S, ITS2, 28S. | Likely a misassembly; the export marks it `misassembly`. Check the feature map and read coverage before you submit it. |
+| `out_of_order` | contig | The features are not in the order 18S, ITS1, 5.8S, ITS2, 28S. | Possible assembly error. Export marks it `misassembly`. Check the feature map and read coverage before you submit it. |
 | `overlap` | contig and feature | A feature overlaps the one before it. | Move the boundary in **Edit active feature boundaries**. The export marks it `misassembly`. |
-| `gap` | contig and feature | Bases between two neighboring features that belong to neither. Gaps of 5 bases or fewer are closed when the contig is annotated, so a new contig only gets `gap` for a larger one; after you edit a boundary, any gap is flagged. | Check the boundaries, and extend the gene or spacer if the gap is part of it. |
+| `gap` | contig and feature | An annotation gap between two features. Gaps of 5 bases or fewer are closed when the contig is annotated, so a new contig only gets `gap` for a larger one. | Check the boundaries, and extend the gene or spacer if the gap is part of it. |
 | `wrong_strand` | contig and feature | A feature lies on the opposite strand from the rest. | Likely a misassembly or a wrong call. Check the feature model. |
-| `length` | feature | The feature is shorter or longer than the range for its group (tables below). | Common for the spacers, and often fine. Check that the boundaries look right. |
+| `length` | feature | The feature is shorter or longer than expected (tables below). | Common for the spacers, and often fine. Check that the boundaries look right. |
 | `truncated` | feature | Less than 90 percent of the gene's rRNA model was recovered. | Nothing: the export writes the gene as partial. |
-| `low_identity` | feature | The gene is less similar to its best reference than the floor for its group (tables below), and the reference covers at least half of the gene. | An assembly error, or a little-studied group. Look at the **Reference alignment**. |
-| `contaminant` | contig | The BLAST screen's best hit is from a different phylum than your sample. | Check the contig before you lock it: it may be another organism's rDNA. Lock and the Export window ask about it until you mark it Reviewed. |
+| `low_identity` | feature | The gene falls below a minimum sequence similarity threshold (tables below), and the reference covers at least half of the gene. | An assembly error, or a group with few other rRNA references. Look at the **Reference alignment**. |
+| `contaminant` | contig | The contig BLAST best hit is from a different phylum than your sample. | Check the contig before you lock it: it may be another organism's rDNA. Lock and the Export window ask about it until you mark it Reviewed. |
 | `contaminant_unchecked` | contig | The contamination check could not run: the BLAST screen has no usable hit for the contig, or your sample's lineage is unknown. | If NCBI could not be reached, run the sample again once it can (see [Troubleshooting](Troubleshooting.html)). If the sample has no taxon, set one in the Taxonomy step. |
 | `not_nuclear_rdna` | contig | The BLAST screen's best hit is not a nuclear rDNA record, for example a mitochondrial or bacterial rRNA. | The contig may not be nuclear rDNA. Check its features and hits before you keep it. |
 | `no_clade_ruleset` | contig | Your sample's group has no ruleset of its own, so the generic animal ranges were used. | Nothing. See [How the checks are tuned per group](#how-the-checks-are-tuned-per-group). |
 
-Two more columns hold checks of their own. **ITSx Warnings** says what stock ITSx
-(see [the final ITSx check](GenBank-Submission.html#check-before-you-submit))
-finds in the contig, for example
-`itsx_chimeric`, `itsx_no_5.8S`, or `itsx_boundary_shift(...)`. **Chimera** holds the
-chimera check's level; see [Chimeras](#chimeras-contigs-made-of-two-pieces).
+Two more columns have results from additional checks. **ITSx Warnings** reports what standard ITSx
+check finds for the contig (see [the final ITSx check](GenBank-Submission.html#check-before-you-submit)).
+For example
+`itsx_chimeric`, `itsx_no_5.8S`, or `itsx_boundary_shift(...)`. The **Chimera** column reports the
+chimera check's level, see [Chimeras](#chimeras-contigs-made-of-two-pieces).
 
 The contamination checks need a BLAST screen result. When a contig has none, for
 example because NCBI could not be reached, RiboPilot does not skip the check: it
 raises `contaminant_unchecked`, and triage flags the contig "BLAST screen has not
 run".
 
-`low_identity` needs the reference sequences it compares each gene against, which
-the run downloads from NCBI (or reuses from your reference folder). When they could
+`low_identity` needs the references sequences downloaded from NCBI. When they could
 not be downloaded, the identity check is skipped with no warning, so a gene without
 `low_identity` has not always been checked.
 
@@ -76,21 +73,17 @@ warning on one of its features.
 
 # What the BLAST screen searches
 
-After a contig is assembled, RiboPilot BLASTs it to find out what it matches.
-This BLAST screen feeds the Screen column, the contamination warnings above, the
+Contig BLAST search results are used in the Screen column, the contamination warnings above, the
 triage rules below, and the chimera check.
 
-By default each contig is searched in the **bundled rDNA database** inside the
+By default each contig is searched against the **bundled rDNA database** inside the
 container: about 600,000 animal nuclear rDNA records from GenBank, plus NCBI's
 16S, eukaryote small subunit, and eukaryote large subunit rRNA sets, so that a
-bacterial, fungal, or plant contig still finds its match. Only a contig that
-matches nothing there is sent on to NCBI's full nucleotide database (core_nt),
-over the internet. Neither search is filtered to nuclear rDNA titles, and a
-contig the bundled database cannot match goes on to core_nt, so a
-mitochondrial or bacterial contig is still caught (unless you choose
-"Bundled database only").
+bacterial, fungal, or plant contig still finds its match. Contig that
+match nothing in that database are searched against the NCBI nucleotide database (core_nt),
+over the internet.
 
-To change this, open a sample's **BLAST Options** in the Assemble step and pick a
+To change how the BLAST search works, open a sample's **BLAST Options** in the Assemble module and pick a
 **Search** choice: "Bundled database only" never goes to NCBI, and "NCBI only
 (core_nt)" skips the bundled database. The BLAST Options window also names the
 version of the bundled database.
