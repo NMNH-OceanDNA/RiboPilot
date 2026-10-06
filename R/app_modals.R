@@ -719,7 +719,7 @@ export_modal <- function(groups, templates = "default", template = "default",
   flag <- function(id, dflt) snap[[id]] %||% dflt
   # status line between the label and the box it describes
   hdr_box <- function(id, label, value, status) {
-    htmltools::tagQuery(textAreaInput(id, tagList(label, insert_field_link(id)), value, width = "100%", height = "60px"))$
+    htmltools::tagQuery(textAreaInput(id, label, value, width = "100%", height = "60px"))$
       find("textarea")$addClass("mp-hl")$addAttrs(spellcheck = "false", autocomplete = "off", `aria-describedby` = status)$
       before(uiOutput(status))$
       after(tags$details(class = "mp-hdr-preview", open = NA,

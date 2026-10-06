@@ -1292,7 +1292,7 @@ app_server <- function(input, output, session) {
     u$seqid <- app_export_seqids(con, u)
     tok <- tryCatch(with_marker_fields(export_header_data(con, u)), error = function(e) NULL)
     if (is.null(tok)) tok <- data.frame()
-    export_modal(groups, tmpls, nm, snap$fasta_header %||% o$fasta_header,
+    export_modal(groups, tmpls, nm, snap$fasta_header %||% nmnh_template_pref(con, o$fasta_header),
       snap$fasta_header_marker %||% o$fasta_header_marker,
       token_groups = export_token_groups(tok, sample_cols, ticked),
       totals = jsonlite::toJSON(as.list(table(tok$export_group)), auto_unbox = TRUE),
@@ -1313,8 +1313,10 @@ app_server <- function(input, output, session) {
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
     if (nm %in% list_export_templates(con)) {
       o <- get_export_opts(con, nm)
-      updateTextAreaInput(session, "fasta_header", value = o$fasta_header)
-      updateTextAreaInput(session, "fasta_header_marker", value = o$fasta_header_marker)
+      updateTextAreaInput(session, "fasta_header", value = nmnh_template_pref(con, o$fasta_header))
+      updateTextAreaInput(session, "fasta_header_marker", value = if (isTRUE(input$export_markers)) {
+        nmnh_template_pref(con, o$fasta_header_marker)
+      } else o$fasta_header_marker)
     }
   })
 
@@ -1389,6 +1391,10 @@ app_server <- function(input, output, session) {
   })
   observeEvent(input$nmnh_user, ignoreInit = TRUE, {
     on <- isTRUE(input$nmnh_user)
+    local({
+      con <- app_con(); on.exit(DBI::dbDisconnect(con))
+      nmnh_set_user_pref(con, on)
+    })
     if (on == nmnh_template_on(input$fasta_header)) return()
     if (!on) {
       main <- nmnh_template_remove(input$fasta_header)
@@ -1554,7 +1560,7 @@ app_server <- function(input, output, session) {
     }
     pick <- function(field, index) {
       cur <- r[[paste0(field, "_field")]][index] %|NA|% ""
-      opts <- c(Automatic = "", choices)
+      opts <- c(None = "none", Automatic = "", choices)
       if (nzchar(cur) && !cur %in% opts) opts <- c(opts, stats::setNames(cur, .nmnh_key_label(cur)))
       tags$select(
         class = "form-control input-sm mp-nmnh-pick", `aria-label` = paste(field, "field", r$ID[index]),
