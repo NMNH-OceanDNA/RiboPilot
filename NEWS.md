@@ -36,6 +36,12 @@
 * Click a sample ID in the NMNH voucher report to open its metadata, then
   return to the report. The metadata window now has a copy button on every
   value and Export CSV to save all of a sample's metadata.
+* Tick Not NMNH in the voucher report for samples that are not NMNH
+  specimens: their voucher and URI are used as found, without NMNH checks. For
+  any sample, pick the mapping-file column or metadata field its
+  `specimen_voucher` or `voucherURI` comes from.
+* A `[modifier={field}]` with no value for a sample is left out of that
+  record's FASTA header instead of being written empty.
 
 ## Quality checks
 

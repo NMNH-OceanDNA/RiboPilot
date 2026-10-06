@@ -243,20 +243,20 @@ validate_fasta_header <- function(template, data = NULL, require_seqid = TRUE) {
     return(if (multi) err(msg) else warn(msg))
   }
   if (!is.null(data) && nrow(data) > 0) {
-    hdr <- nmnh_strip_empty(vapply(seq_len(nrow(data)), function(i) {
+    hdr <- vapply(seq_len(nrow(data)), function(i) {
       fill_header(template, data[i, , drop = FALSE])
-    }, character(1)))
+    }, character(1))
     nm <- unique(unlist(duplicate_modifiers(hdr)))
     nm <- nm[gsub("_", "", nm) %in% c("specimenvoucher", "voucheruri")]
     if (length(nm)) {
       return(err(sprintf("Duplicate %s. NMNH records need each exactly once: take the other out.",
         paste0("[", nm, "=]", collapse = ", "))))
     }
-    em <- empty_modifiers(hdr)
+    em <- lapply(empty_modifiers(hdr), function(x) x[!x %in% c("specimen_voucher", "voucherURI")])
     hit <- lengths(em) > 0
     if (any(hit)) {
-      return(warn(sprintf(paste("Empty %s on %d of %d record(s) (%s). NCBI does not accept an",
-        "empty modifier: fill in the column or take the modifier out."),
+      return(warn(sprintf(paste("Empty %s on %d of %d record(s) (%s). A modifier with no",
+        "value is left out of that record's header."),
         paste0("[", unique(unlist(em)), "=]", collapse = ", "), sum(hit), length(hit),
         paste(utils::head((data$seqid %||% data$ID)[hit], 3), collapse = ", "))))
     }
@@ -338,7 +338,7 @@ fill_header <- function(template, row) {
 #' @return character vector of headers, one per row, without the leading ">".
 #' @noRd
 render_fasta_headers <- function(template, data) {
-  h <- nmnh_strip_empty(vapply(seq_len(nrow(data)), function(i) {
+  h <- header_strip_empty(vapply(seq_len(nrow(data)), function(i) {
     fill_header(template, data[i, , drop = FALSE])
   }, character(1)))
   multi <- !is.na(data$seqid) & data$seqid != data$ID
