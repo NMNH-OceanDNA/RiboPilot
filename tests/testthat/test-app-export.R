@@ -938,3 +938,22 @@ test_that("NMNH user: status, cell edit, and Export anyway", {
     expect_false(grepl("voucherURI", h))
   })
 })
+
+test_that("turning on marker export after NMNH adds the NMNH fields to the marker header", {
+  skip_if_not_installed("withr")
+  dir <- mk_export_project()
+  withr::local_dir(dir)
+  local_mocked_bindings(.gbif_get = function(path) stop("offline"))
+  sent <- list()
+  local_mocked_bindings(updateTextAreaInput = function(session, inputId, value = NULL, ...) {
+    sent[[inputId]] <<- value
+  })
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Export")
+    session$setInputs(nmnh_user = TRUE, export_markers = FALSE,
+      fasta_header = RiboPilot:::nmnh_template_add(RiboPilot:::DEFAULT_FASTA_HEADER),
+      fasta_header_marker = RiboPilot:::DEFAULT_FASTA_HEADER_MARKER)
+    session$setInputs(export_markers = TRUE)
+    expect_true(RiboPilot:::nmnh_template_on(sent$fasta_header_marker))
+  })
+})

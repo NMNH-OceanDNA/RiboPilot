@@ -1385,6 +1385,14 @@ app_server <- function(input, output, session) {
         value = nmnh_template_add(input$fasta_header_marker))
     }
   }
+  # marker export switched on after NMNH: give the marker header the NMNH fields too
+  observeEvent(input$export_markers, ignoreInit = TRUE, {
+    if (isTRUE(input$export_markers) && isTRUE(input$nmnh_user) &&
+        !nmnh_template_on(input$fasta_header_marker %||% "")) {
+      updateTextAreaInput(session, "fasta_header_marker",
+        value = nmnh_template_add(input$fasta_header_marker %||% ""))
+    }
+  })
   observeEvent(input$nmnh_user, ignoreInit = TRUE, {
     on <- isTRUE(input$nmnh_user)
     if (on == nmnh_template_on(input$fasta_header)) return()
