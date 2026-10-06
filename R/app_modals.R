@@ -720,13 +720,35 @@ export_modal <- function(groups, templates = "default", template = "default",
   # status line between the label and the box it describes
   hdr_box <- function(id, label, value, status) {
     htmltools::tagQuery(textAreaInput(id, tagList(label, insert_field_link(id)), value, width = "100%", height = "60px"))$
-      find("textarea")$addClass("mp-hl")$addAttrs(`aria-describedby` = status)$
+      find("textarea")$addClass("mp-hl")$addAttrs(spellcheck = "false", autocomplete = "off", `aria-describedby` = status)$
       before(uiOutput(status))$
       after(tags$details(class = "mp-hdr-preview", open = NA,
         tags$summary("Preview"), uiOutput(paste0(id, "_preview"))))$allTags()
   }
+  cols_panel <- tags$details(
+      class = "mp-meta-panel", open = NA,
+      meta_panel_summary(token_groups, tagList("Click a column to insert it at the cursor of the header box you last clicked. ",
+        "Write a column name in braces to use its value, for example ", tags$code("{Taxon}"),
+        ". ", tags$code("{seqid}"), " is the record name RiboPilot gives this contig: the sample ",
+        "ID, or ", tags$code("ID_p<path>_s<contig>"), " when one sample exports more than one ",
+        "record. Columns from your mapping file work here even when the table does not show ",
+        "them. Orange columns are empty for some records in the chosen export group; hover ",
+        "one for the count.")),
+      if (!is.null(token_groups)) {
+        export_token_ui(token_groups, target_id = "fasta_header", ns = shiny::NS(NULL), totals = totals)
+      },
+      opts_help(tags$code("{organism}"), " is the name set in the Taxonomy step when ",
+        "your Taxon matched it exactly or you picked a species there; otherwise it is ",
+        "your Taxon, so a label like \"Upeneus sp. A\" is kept. ", tags$code("{Taxon}"),
+        " and ", tags$code("{sci_name}"), " give either name on its own.", nested = TRUE),
+      opts_help(tags$b("isolate"), ": each record of a sample that exports more than one ",
+        "contig gets ", tags$code("[isolate=ID_p<path>_s<contig>]"), " added, so all of ",
+        "them can go into one GenBank submission. Your own ", tags$code("[isolate=...]"),
+        " works only in a group where every sample exports one record.", nested = TRUE))
   modalDialog(
-    title = mp_modal_title("Export data"), size = "l", class = "mp-modal-form",
+    title = mp_modal_title("Export data"), size = "xl", class = "mp-modal-form",
+    # options and headers on the left, Available metadata pinned on the right
+    div(class = "mp-export-split", div(class = "mp-export-main",
     div(style = "display:flex; flex-flow:row nowrap; gap:1em;",
       div(style = "flex:1; min-width:0;",
         shinyWidgets::pickerInput("export_group_sel", "Export group:",
@@ -772,32 +794,12 @@ export_modal <- function(groups, templates = "default", template = "default",
         "export_hdr_marker_status"),
       opts_help("Same {column} syntax, plus {element} and {product} for the marker itself.",
         nested = TRUE)),
-    tags$details(
-      class = "mp-meta-panel",
-      meta_panel_summary(token_groups),
-      opts_help("Click a column to insert it at the cursor of the header box you last clicked. ",
-        "Write a column name in braces to use its value, for example ", tags$code("{Taxon}"),
-        ". ", tags$code("{seqid}"), " is the record name RiboPilot gives this contig: the sample ",
-        "ID, or ", tags$code("ID_p<path>_s<contig>"), " when one sample exports more than one ",
-        "record. Columns from your mapping file work here even when the table does not show ",
-        "them. Orange columns are empty for some records in the chosen export group; hover ",
-        "one for the count.", nested = TRUE),
-      if (!is.null(token_groups)) {
-        export_token_ui(token_groups, target_id = "fasta_header", ns = shiny::NS(NULL), totals = totals)
-      },
-      opts_help(tags$code("{organism}"), " is the name set in the Taxonomy step when ",
-        "your Taxon matched it exactly or you picked a species there; otherwise it is ",
-        "your Taxon, so a label like \"Upeneus sp. A\" is kept. ", tags$code("{Taxon}"),
-        " and ", tags$code("{sci_name}"), " give either name on its own.", nested = TRUE),
-      opts_help(tags$b("isolate"), ": each record of a sample that exports more than one ",
-        "contig gets ", tags$code("[isolate=ID_p<path>_s<contig>]"), " added, so all of ",
-        "them can go into one GenBank submission. Your own ", tags$code("[isolate=...]"),
-        " works only in a group where every sample exports one record.", nested = TRUE)),
     mp_checkbox("export_report", "HTML report with alignments", value = flag("export_report", TRUE)),
     opts_help("One HTML page with per-element alignments across the group."),
     mp_checkbox("export_itsx_check", "Final ITSx check", value = flag("export_itsx_check", TRUE)),
     opts_help("Runs stock ITSx over the exported records the way the NCBI Submission ",
-      "Portal does and lists what it would flag in the summary CSV. Can take a few minutes."),
+      "Portal does and lists what it would flag in the summary CSV. Can take a few minutes.")),
+      div(class = "mp-export-side", cols_panel)),
     footer = mp_footer(primary = actionButton("export_go", "Export", icon = icon("download")),
       dismiss = "Cancel")
   )
