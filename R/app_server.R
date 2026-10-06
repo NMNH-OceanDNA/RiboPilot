@@ -1487,7 +1487,9 @@ app_server <- function(input, output, session) {
         "that are not NMNH specimens: their values are used as found, without checks. ",
         "A missing value leaves its modifier out of the header."),
       div(class = "mp-nmnh-fields", "Fields to pick from: mapping-file columns and the metadata ",
-        "fields ticked for export. ", actionLink("nmnh_choose_fields", "Choose fields")),
+        "fields ticked for export. ", actionLink("nmnh_choose_fields", "Choose fields"),
+        tags$br(), "Not NMNH: ", actionLink("nmnh_flag_all", "Select all"), " | ",
+        actionLink("nmnh_flag_none", "Clear all")),
       div(class = "mp-nmnh-scroll", reactable::reactableOutput("nmnh_table")),
       if (nrow(fixed)) {
         tags$details(
@@ -1512,7 +1514,20 @@ app_server <- function(input, output, session) {
   }
   observeEvent(input$nmnh_report, nmnh_show_report())
   observeEvent(input$nmnh_choose_fields, meta_view_open(closed_input = "nmnh_fields_closed"))
-  observeEvent(input$nmnh_fields_closed, nmnh_show_report())
+  observeEvent(input$nmnh_fields_closed, {
+    nmnh_ver(nmnh_ver() + 1L)
+    nmnh_show_report()
+  })
+  nmnh_flag_many <- function(value) {
+    ids <- nmnh_report_ids()
+    req(length(ids))
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    for (id in ids) nmnh_set_not_nmnh(con, id, value)
+    nmnh_typed(list())
+    nmnh_refresh_ids(ids)
+  }
+  observeEvent(input$nmnh_flag_all, nmnh_flag_many(TRUE))
+  observeEvent(input$nmnh_flag_none, nmnh_flag_many(FALSE))
   observeEvent(input$nmnh_back, back_to_export())
 
   nmnh_problems <- reactive({
@@ -1523,10 +1538,12 @@ app_server <- function(input, output, session) {
   # fix so the entry and its check stay visible. Invalid entries are not saved.
   nmnh_report_ids <- reactiveVal(character(0))
   nmnh_typed <- reactiveVal(list())
+  nmnh_ver <- reactiveVal(0L)
   output$nmnh_table <- reactable::renderReactable({
     r <- req(nmnh_res())
     r <- r[r$ID %in% nmnh_report_ids(), , drop = FALSE]
     typed <- nmnh_typed()
+    nmnh_ver()
     choices <- local({
       con <- app_con(); on.exit(DBI::dbDisconnect(con))
       nmnh_field_choices(con)
@@ -1581,7 +1598,7 @@ app_server <- function(input, output, session) {
       compact = TRUE, pagination = FALSE,
       language = reactable::reactableLang(noData = "No NMNH problems."),
       columns = list(
-        ID = reactable::colDef(minWidth = 110, html = TRUE, cell = function(value) {
+        ID = reactable::colDef(width = 120, html = TRUE, cell = function(value) {
           as.character(tags$a(
             href = "#", title = "View this sample's metadata",
             onclick = sprintf(
@@ -1591,14 +1608,14 @@ app_server <- function(input, output, session) {
           ))
         }),
         not_nmnh = reactable::colDef(
-          name = "Not NMNH", width = 80, align = "center", html = TRUE,
+          name = "Not NMNH", width = 110, align = "center", html = TRUE,
           header = rt_header("Not NMNH", "Tick when the sample is not an NMNH specimen. Its values are used as found, without checks."),
           cell = function(value, index) as.character(tags$input(
             type = "checkbox", checked = if (isTRUE(value)) NA, `aria-label` = paste("Not NMNH", r$ID[index]),
             onchange = send("nmnh_flag", r$ID[index], "value: this.checked")))
         ),
-        specimen_voucher = reactable::colDef(minWidth = 230, html = TRUE, cell = cell("voucher")),
-        voucherURI = reactable::colDef(minWidth = 330, html = TRUE, cell = cell("uri"))
+        specimen_voucher = reactable::colDef(minWidth = 280, html = TRUE, cell = cell("voucher")),
+        voucherURI = reactable::colDef(minWidth = 280, html = TRUE, cell = cell("uri"))
       )
     )
   })
