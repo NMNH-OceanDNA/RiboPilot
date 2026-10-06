@@ -54,13 +54,13 @@
 #' @param fetch_gbif Fetch GBIF metadata for samples with a GBIF ID during setup
 #'   (default TRUE). Set FALSE when offline and run [fetch_gbif()] later.
 #'   Passed to [new_db()].
-#' @param mapping_biosample Name of the mapping-file column holding NCBI
+#' @param mapping_ncbi Name of the mapping-file column holding NCBI
 #'   BioSample or SRA accessions (optional). Must not be the sample ID column.
 #'   Stored as `BioSample`. See `vignette("Sample-Metadata")`.
 #'   Passed to [new_db()].
-#' @param fetch_biosample Fetch NCBI metadata for samples with a BioSample
+#' @param fetch_ncbi Fetch NCBI metadata for samples with a BioSample
 #'   value during setup (default TRUE). Set FALSE when offline and run
-#'   [fetch_biosample()] later.
+#'   [fetch_ncbi()] later.
 #'   Passed to [new_db()].
 #' @param link_sources Follow links between GEOME, GBIF, and NCBI records to
 #'   fill in IDs a sample does not have yet (default FALSE). Saved as the project
@@ -95,8 +95,8 @@ new_project <- function(
     fetch_geome = TRUE,
     mapping_gbif = "GBIF_ID",
     fetch_gbif = TRUE,
-    mapping_biosample = "BioSample",
-    fetch_biosample = TRUE,
+    mapping_ncbi = "BioSample",
+    fetch_ncbi = TRUE,
     link_sources = FALSE,
     Rproj = TRUE,
     force = FALSE,
@@ -115,7 +115,7 @@ new_project <- function(
   # Mapping file ----
   mapping <- read_mapping(mapping_fn, mapping_id, list(...)[["mapping_taxon"]] %||% "Taxon") |>
     check_mapping(mapping_id, data_path, assembly_path, check_reads, check_assemblies,
-      mapping_geome, mapping_gbif, mapping_biosample)
+      mapping_geome, mapping_gbif, mapping_ncbi)
   if (any(!is.na(mapping$R1)) && length(data_path) != 1) {
     stop("Samples list read files (R1, R2), but no data_path was given. ",
       "Pass data_path = the folder that holds them.", call. = FALSE)
@@ -132,7 +132,7 @@ new_project <- function(
   preflight <- list(
     list(mapping_geome, fetch_geome, geome_normalize_bcid, "https://api.geome-db.org/docs/geomeAPI.json", "GEOME"),
     list(mapping_gbif, fetch_gbif, gbif_normalize_id, "https://api.gbif.org/v1/enumeration/country", "GBIF"),
-    list(mapping_biosample, fetch_biosample, ncbi_normalize_id, NULL, "NCBI"))
+    list(mapping_ncbi, fetch_ncbi, ncbi_normalize_id, NULL, "NCBI"))
   for (pf in preflight) {
     if (pf[[1]] %in% names(mapping) && isTRUE(pf[[2]]) && any(!is.na(pf[[3]](mapping[[pf[[1]]]])))) {
       if (is.null(pf[[4]])) {
@@ -245,8 +245,8 @@ new_project <- function(
     fetch_geome = fetch_geome,
     mapping_gbif = mapping_gbif,
     fetch_gbif = fetch_gbif,
-    mapping_biosample = mapping_biosample,
-    fetch_biosample = fetch_biosample,
+    mapping_ncbi = mapping_ncbi,
+    fetch_ncbi = fetch_ncbi,
     link_sources = link_sources,
     ...
   )), ribopilot_meta_id_warning = function(w) invokeRestart("muffleWarning"))

@@ -380,7 +380,7 @@ test_that("GEOME_BCID, GBIF_ID, and BioSample columns are accepted, matched igno
   expect_true(all(c("GEOME_BCID", "BioSample") %in% names(m)))
   expect_false(any(c("geome_bcid", "Biosample") %in% names(m)))
   proj <- file.path(p$dir, "proj")
-  np(p, proj, data_path = p$data_dir, fetch_biosample = FALSE)
+  np(p, proj, data_path = p$data_dir, fetch_ncbi = FALSE)
   s <- meta_q(proj, "SELECT ID, GEOME_BCID, BioSample FROM samples ORDER BY ID")
   expect_equal(s$GEOME_BCID, c("ark:/21547/CYB2REEDY", NA))
   expect_equal(s$BioSample, c(NA, "SAMN00000001"))

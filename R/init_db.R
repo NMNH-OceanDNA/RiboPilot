@@ -43,12 +43,12 @@
 #'   IDs (optional). Stored as `GBIF_ID`. See `vignette("Sample-Metadata")`.
 #' @param fetch_gbif Fetch GBIF metadata for samples with a GBIF ID during setup
 #'   (default TRUE). Set FALSE when offline and run [fetch_gbif()] later.
-#' @param mapping_biosample Name of the mapping-file column holding NCBI
+#' @param mapping_ncbi Name of the mapping-file column holding NCBI
 #'   BioSample or SRA accessions (optional). Must not be the sample ID column.
 #'   Stored as `BioSample`. See `vignette("Sample-Metadata")`.
-#' @param fetch_biosample Fetch NCBI metadata for samples with a BioSample
+#' @param fetch_ncbi Fetch NCBI metadata for samples with a BioSample
 #'   value during setup (default TRUE). Set FALSE when offline and run
-#'   [fetch_biosample()] later.
+#'   [fetch_ncbi()] later.
 #' @param link_sources Follow links between GEOME, GBIF, and NCBI records to
 #'   fill in IDs a sample does not have yet (default FALSE). Saved as the project
 #'   setting. See `vignette("Sample-Metadata")`.
@@ -80,14 +80,14 @@ new_db <- function(
     fetch_geome = TRUE,
     mapping_gbif = "GBIF_ID",
     fetch_gbif = TRUE,
-    mapping_biosample = "BioSample",
-    fetch_biosample = TRUE,
+    mapping_ncbi = "BioSample",
+    fetch_ncbi = TRUE,
     link_sources = FALSE) {
   # Read and check the mapping file ----
   # Fail here, not per-task inside a work/ directory as an opaque tool error.
   mapping <- read_mapping(mapping_fn %||% "./mapping.csv", mapping_id, mapping_taxon) |>
     check_mapping(mapping_id, data_path, assembly_path, check_reads, check_assemblies,
-      mapping_geome, mapping_gbif, mapping_biosample)
+      mapping_geome, mapping_gbif, mapping_ncbi)
 
   # Default GetOrganelle nr databases (broad Actinopterygii) when unset ----
   seeds_db <- seeds_db %||% DEFAULT_SEEDS_DB
@@ -128,7 +128,7 @@ new_db <- function(
       time_stamp = NA_integer_
     )
   mapping <- .meta_take_cols(mapping,
-    c(GEOME = mapping_geome, GBIF = mapping_gbif, NCBI = mapping_biosample),
+    c(GEOME = mapping_geome, GBIF = mapping_gbif, NCBI = mapping_ncbi),
     keep = c(mapping_id, mapping_taxon))
   glue::glue_sql(
     "CREATE TABLE samples ({cols*}, PRIMARY KEY (ID))",
@@ -644,7 +644,7 @@ new_db <- function(
 
   if (isTRUE(link_sources)) .meta_set_link_enabled(con, TRUE)
   .meta_fetch_new(con, mapping,
-    list(GEOME = fetch_geome, GBIF = fetch_gbif, NCBI = fetch_biosample),
+    list(GEOME = fetch_geome, GBIF = fetch_gbif, NCBI = fetch_ncbi),
     link = isTRUE(link_sources))
   record_schema_event(con, "created", current_schema_version())
 
@@ -772,9 +772,9 @@ read_mapping <- function(mapping_fn, mapping_id = "ID", mapping_taxon = "Taxon")
 check_mapping <- function(mapping, mapping_id = "ID", data_path = NULL, assembly_path = NULL,
                           check_reads = TRUE, check_assemblies = TRUE,
                           mapping_geome = "GEOME_BCID", mapping_gbif = "GBIF_ID",
-                          mapping_biosample = "BioSample") {
+                          mapping_ncbi = "BioSample") {
   ids <- mapping[[mapping_id]]
-  src_cols <- c(GEOME = mapping_geome, GBIF = mapping_gbif, NCBI = mapping_biosample)
+  src_cols <- c(GEOME = mapping_geome, GBIF = mapping_gbif, NCBI = mapping_ncbi)
   for (src in names(src_cols)[src_cols == mapping_id]) {
     stop("The sample ID column '", mapping_id, "' can't also be the ", src,
       " ID column; copy the IDs into their own column.", call. = FALSE)

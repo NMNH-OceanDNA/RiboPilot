@@ -36,12 +36,12 @@
 #' @param fetch_gbif Fetch GBIF metadata for samples with a GBIF ID
 #'   when the identifiers change
 #'   (default TRUE). Set FALSE when offline and run [fetch_gbif()] later.
-#' @param mapping_biosample Name of the mapping-file column holding NCBI
+#' @param mapping_ncbi Name of the mapping-file column holding NCBI
 #'   BioSample or SRA accessions (optional). Must not be the sample ID column.
 #'   Stored as `BioSample`. See `vignette("Sample-Metadata")`.
-#' @param fetch_biosample Fetch NCBI metadata for samples with a BioSample
+#' @param fetch_ncbi Fetch NCBI metadata for samples with a BioSample
 #'   value when the identifiers change (default TRUE). Set FALSE when offline and run
-#'   [fetch_biosample()] later.
+#'   [fetch_ncbi()] later.
 #' @param link_sources Follow links between GEOME, GBIF, and NCBI records for
 #'   these samples (default FALSE). Linking also runs when the project setting
 #'   is on; this argument does not change the setting. See
@@ -61,8 +61,8 @@ update_sample_metadata <- function(
     fetch_geome = TRUE,
     mapping_gbif = "GBIF_ID",
     fetch_gbif = TRUE,
-    mapping_biosample = "BioSample",
-    fetch_biosample = TRUE,
+    mapping_ncbi = "BioSample",
+    fetch_ncbi = TRUE,
     link_sources = FALSE) {
   project <- normalizePath(project, mustWork = FALSE)
   db_path <- file.path(project, ".sqlite")
@@ -75,7 +75,7 @@ update_sample_metadata <- function(
 
   mapping <- read_mapping(mapping_fn, mapping_id, mapping_taxon) |>
     check_mapping(mapping_id, data_path, assembly_path, check_reads, check_assemblies,
-      mapping_geome, mapping_gbif, mapping_biosample)
+      mapping_geome, mapping_gbif, mapping_ncbi)
 
   con <- open_project_db(db_path)
   on.exit(DBI::dbDisconnect(con))
@@ -97,7 +97,7 @@ update_sample_metadata <- function(
     dplyr::mutate(ID = .data[[mapping_id]], Taxon = .data[[mapping_taxon]]) |>
     dplyr::select(-dplyr::any_of(c("R1", "R2", "Assembly")))
   mapping <- .meta_take_cols(mapping,
-    c(GEOME = mapping_geome, GBIF = mapping_gbif, NCBI = mapping_biosample),
+    c(GEOME = mapping_geome, GBIF = mapping_gbif, NCBI = mapping_ncbi),
     keep = c(mapping_id, mapping_taxon))
   mapping$ID <- existing[match(tolower(mapping$ID), tolower(existing))]
   old <- DBI::dbGetQuery(con, "SELECT * FROM samples")
@@ -121,7 +121,7 @@ update_sample_metadata <- function(
   }
 
   .meta_sync_changed(con, mapping, old,
-    list(GEOME = fetch_geome, GBIF = fetch_gbif, NCBI = fetch_biosample),
+    list(GEOME = fetch_geome, GBIF = fetch_gbif, NCBI = fetch_ncbi),
     link = isTRUE(link_sources) || .meta_link_enabled(con))
 
   message("Updated metadata for ", nrow(mapping), " sample(s) in ", project, ": ",

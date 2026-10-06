@@ -26,8 +26,8 @@ new_project(
   fetch_geome = TRUE,
   mapping_gbif = "GBIF_ID",
   fetch_gbif = TRUE,
-  mapping_biosample = "BioSample",
-  fetch_biosample = TRUE,
+  mapping_ncbi = "BioSample",
+  fetch_ncbi = TRUE,
   link_sources = FALSE,
   Rproj = TRUE,
   force = FALSE,
@@ -105,14 +105,14 @@ Passed to \code{\link[=new_db]{new_db()}}.}
 (default TRUE). Set FALSE when offline and run \code{\link[=fetch_gbif]{fetch_gbif()}} later.
 Passed to \code{\link[=new_db]{new_db()}}.}
 
-\item{mapping_biosample}{Name of the mapping-file column holding NCBI
+\item{mapping_ncbi}{Name of the mapping-file column holding NCBI
 BioSample or SRA accessions (optional). Must not be the sample ID column.
 Stored as \code{BioSample}. See \code{vignette("Sample-Metadata")}.
 Passed to \code{\link[=new_db]{new_db()}}.}
 
-\item{fetch_biosample}{Fetch NCBI metadata for samples with a BioSample
+\item{fetch_ncbi}{Fetch NCBI metadata for samples with a BioSample
 value during setup (default TRUE). Set FALSE when offline and run
-\code{\link[=fetch_biosample]{fetch_biosample()}} later.
+\code{\link[=fetch_ncbi]{fetch_ncbi()}} later.
 Passed to \code{\link[=new_db]{new_db()}}.}
 
 \item{link_sources}{Follow links between GEOME, GBIF, and NCBI records to

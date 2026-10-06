@@ -39,12 +39,12 @@
 #' @param fetch_gbif Fetch GBIF metadata for samples with a GBIF ID
 #'   when the samples are added
 #'   (default TRUE). Set FALSE when offline and run [fetch_gbif()] later.
-#' @param mapping_biosample Name of the mapping-file column holding NCBI
+#' @param mapping_ncbi Name of the mapping-file column holding NCBI
 #'   BioSample or SRA accessions (optional). Must not be the sample ID column.
 #'   Stored as `BioSample`. See `vignette("Sample-Metadata")`.
-#' @param fetch_biosample Fetch NCBI metadata for samples with a BioSample
+#' @param fetch_ncbi Fetch NCBI metadata for samples with a BioSample
 #'   value when the samples are added (default TRUE). Set FALSE when offline and run
-#'   [fetch_biosample()] later.
+#'   [fetch_ncbi()] later.
 #' @param link_sources Follow links between GEOME, GBIF, and NCBI records for
 #'   these samples (default FALSE). Linking also runs when the project setting
 #'   is on; this argument does not change the setting. See
@@ -64,8 +64,8 @@ add_samples <- function(
     fetch_geome = TRUE,
     mapping_gbif = "GBIF_ID",
     fetch_gbif = TRUE,
-    mapping_biosample = "BioSample",
-    fetch_biosample = TRUE,
+    mapping_ncbi = "BioSample",
+    fetch_ncbi = TRUE,
     link_sources = FALSE) {
   project <- normalizePath(project, mustWork = FALSE)
   db_path <- file.path(project, ".sqlite")
@@ -88,7 +88,7 @@ add_samples <- function(
 
   mapping <- read_mapping(mapping_fn, mapping_id, mapping_taxon) |>
     check_mapping(mapping_id, data_path, assembly_path, check_reads, check_assemblies,
-      mapping_geome, mapping_gbif, mapping_biosample)
+      mapping_geome, mapping_gbif, mapping_ncbi)
   same_dir <- function(given, proj, key, what) {
     if (!is.null(proj) && identical(given, proj)) return(invisible())
     stop(if (is.null(proj)) {
@@ -135,7 +135,7 @@ add_samples <- function(
       time_stamp = NA_integer_
     )
   mapping <- .meta_take_cols(mapping,
-    c(GEOME = mapping_geome, GBIF = mapping_gbif, NCBI = mapping_biosample),
+    c(GEOME = mapping_geome, GBIF = mapping_gbif, NCBI = mapping_ncbi),
     keep = c(mapping_id, mapping_taxon))
 
   new_cols <- setdiff(colnames(mapping), DBI::dbListFields(con, "samples"))
@@ -192,7 +192,7 @@ add_samples <- function(
     )
 
   .meta_fetch_new(con, mapping,
-    list(GEOME = fetch_geome, GBIF = fetch_gbif, NCBI = fetch_biosample),
+    list(GEOME = fetch_geome, GBIF = fetch_gbif, NCBI = fetch_ncbi),
     link = isTRUE(link_sources) || .meta_link_enabled(con))
 
   message("Added ", nrow(mapping), " sample(s) to ", project, ": ",

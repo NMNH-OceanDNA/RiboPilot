@@ -210,7 +210,7 @@ new_test_project <- function(path = ".", n = Inf, full_size = FALSE, executor = 
     executor = executor,
     Rproj = Rproj,
     force = force,
-    fetch_biosample = fetch_metadata,
+    fetch_ncbi = fetch_metadata,
     link_sources = TRUE,
     ...
   )

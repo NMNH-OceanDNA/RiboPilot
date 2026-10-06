@@ -54,7 +54,7 @@ The rules:
   `BioSample` hold a sample's GEOME, GBIF, and NCBI identifiers. RiboPilot
   fetches those records when it sets up the project. Blank cells are fine. To
   use other column names, pass `mapping_geome`, `mapping_gbif`, or
-  `mapping_biosample`. See [Sample metadata](Sample-Metadata.html).
+  `mapping_ncbi`. See [Sample metadata](Sample-Metadata.html).
 - **Reserved names.** RiboPilot adds some columns itself, so your file cannot
   use these names: taxid, sci_name, rank, match_type, tax_alternatives,
   lineage, lineage_taxids, ref_id, user_group, ref_source, taxonomy_switch,

@@ -136,12 +136,12 @@
   setting. Pass `fetch_metadata = FALSE` when offline.
 * Link samples to GEOME, GBIF, and NCBI BioSample records through mapping-file
   columns `GEOME_BCID`, `GBIF_ID`, and `BioSample`, or other names via
-  `mapping_geome`, `mapping_gbif`, and `mapping_biosample`.
+  `mapping_geome`, `mapping_gbif`, and `mapping_ncbi`.
 * `new_project()`, `new_test_project()`, `add_samples()`, and
   `update_sample_metadata()` fetch the records, unless `fetch_geome`,
-  `fetch_gbif`, or `fetch_biosample` is FALSE. `link_sources = TRUE` also
+  `fetch_gbif`, or `fetch_ncbi` is FALSE. `link_sources = TRUE` also
   follows links between databases.
-* New `fetch_geome()`, `fetch_gbif()`, `fetch_biosample()`, `remove_metadata()`,
+* New `fetch_geome()`, `fetch_gbif()`, `fetch_ncbi()`, `remove_metadata()`,
   and `set_metadata_columns()`, plus `geome_normalize_bcid()`,
   `gbif_normalize_id()`, and `ncbi_normalize_id()`.
 * The NCBI API key is read from the project `.config`, then `NCBI_API_KEY`, then

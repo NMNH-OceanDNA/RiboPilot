@@ -126,7 +126,7 @@ your mapping file (see
 [Your own project](Your-Own-Project.html#the-mapping-file)). Columns named
 `GEOME_BCID`, `GBIF_ID`, and `BioSample` (any upper or lower case) are found
 automatically. For other names, pass `mapping_geome`, `mapping_gbif`, and
-`mapping_biosample`:
+`mapping_ncbi`:
 
 ```
 ID,Taxon,R1,R2,Tissue_BCID,Occurrence
@@ -147,21 +147,21 @@ RiboPilot::new_project(
 
 - The columns are stored in the project as `GEOME_BCID`, `GBIF_ID`, and
   `BioSample`. If your columns already have those names, leave out
-  `mapping_geome`, `mapping_gbif`, and `mapping_biosample`. A custom name
+  `mapping_geome`, `mapping_gbif`, and `mapping_ncbi`. A custom name
   together with a column that already has the canonical name is an error.
 - Blank cells are fine: those samples simply have no link.
 - RiboPilot fetches the records during setup, which needs an internet
   connection. When setting up offline, pass `fetch_geome = FALSE`,
-  `fetch_gbif = FALSE`, and `fetch_biosample = FALSE`, then run
-  `fetch_geome()`, `fetch_gbif()`, and `fetch_biosample()` later.
+  `fetch_gbif = FALSE`, and `fetch_ncbi = FALSE`, then run
+  `fetch_geome()`, `fetch_gbif()`, and `fetch_ncbi()` later.
 
 `new_test_project()` takes the same arguments.
 
 # Adding or changing identifiers later
 
 `add_samples()` and `update_sample_metadata()` accept `mapping_geome`,
-`mapping_gbif`, `mapping_biosample`, `fetch_geome`, `fetch_gbif`, and
-`fetch_biosample` too. With
+`mapping_gbif`, `mapping_ncbi`, `fetch_geome`, `fetch_gbif`, and
+`fetch_ncbi` too. With
 `update_sample_metadata()`, samples whose identifier changed (or was added) are
 fetched again, and a blank cell removes that sample's link and its data for
 that source only.
@@ -177,12 +177,12 @@ RiboPilot::fetch_gbif("~/my_project", ids = c("Fish_01", "Fish_02"),
 ```
 
 The last form sets (or replaces) the gbifIDs of those samples before fetching;
-`fetch_geome()` does the same with `bcids`, and `fetch_biosample()` with
-`biosamples`. A blank value removes the link.
+`fetch_geome()` does the same with `bcids`, and `fetch_ncbi()` with
+`ncbi_ids`. A blank value removes the link.
 
 ```r
-RiboPilot::fetch_biosample("~/my_project", ids = "Fish_03",
-                           biosamples = "SAMN29555051")
+RiboPilot::fetch_ncbi("~/my_project", ids = "Fish_03",
+                           ncbi_ids = "SAMN29555051")
 ```
 
 NCBI allows three requests per second. For larger projects, give RiboPilot an
@@ -215,7 +215,7 @@ RiboPilot::new_project(
   link_sources = TRUE
 )
 # this fetch only
-RiboPilot::fetch_biosample("~/my_project", link_sources = TRUE)
+RiboPilot::fetch_ncbi("~/my_project", link_sources = TRUE)
 ```
 
 Or you can turn on database linking in the app.
