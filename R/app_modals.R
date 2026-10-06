@@ -746,7 +746,7 @@ export_modal <- function(groups, templates = "default", template = "default",
         "them can go into one GenBank submission. Your own ", tags$code("[isolate=...]"),
         " works only in a group where every sample exports one record.", nested = TRUE))
   modalDialog(
-    title = mp_modal_title("Export data"), size = "xl", class = "mp-modal-form",
+    title = mp_modal_title("Export data"), size = "xl", class = "mp-modal-form mp-export-body",
     # options and headers on the left, Available metadata pinned on the right
     div(class = "mp-export-split", div(class = "mp-export-main",
     div(style = "display:flex; flex-flow:row nowrap; gap:1em;",
