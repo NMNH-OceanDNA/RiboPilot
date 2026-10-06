@@ -81,9 +81,19 @@ run_reports_handlers <- function(input, output, session, project, refresh) {
   }
 
   output$rr_detail <- shiny::renderUI({
-    rpt <- selected_run()$report
+    run <- selected_run()
+    rpt <- run$report
     if (is.na(rpt) || !file.exists(rpt)) {
-      return(shiny::p(style = "margin-top: 1em;", "No report yet: the run has not recorded a finish."))
+      log <- run$log
+      if (is.na(log) || !file.exists(log)) {
+        return(shiny::p(style = "margin-top: 1em;", "No report yet: the run has not recorded a finish."))
+      }
+      shiny::invalidateLater(15000)
+      return(shiny::div(style = "margin-top: 1em;",
+        shiny::p("No report yet: the run has not recorded a finish. Progress from its Nextflow log, ",
+          "updated every 15 seconds. A run with no log update for a long time may have stopped."),
+        shiny::tags$pre(style = "max-height: 40vh; overflow: auto; white-space: pre; font-size: 11px;",
+          run_progress_text(log))))
     }
     txt <- tryCatch(paste(readLines(rpt, warn = FALSE), collapse = "\n"),
       error = function(e) "The report could not be read.")
