@@ -1460,7 +1460,7 @@ app_server <- function(input, output, session) {
     div(class = "mp-nmnh-status mp-fg-warning",
       icon("triangle-exclamation"),
       sprintf(" %d of %s %s attention. ", bad, mp_n(nrow(r), "sample"), if (bad == 1) "needs" else "need"),
-      actionButton("nmnh_report", "Review and fix", class = "btn-xs"), skipped)
+      actionButton("nmnh_report", "Review and fix", class = "btn-sm"), skipped)
   })
   output$nmnh_sources <- renderUI({
     req(nmnh_on())
@@ -1732,9 +1732,8 @@ app_server <- function(input, output, session) {
       paste0(grp, "_summary.csv"), "README.txt")
     if (isTRUE(input$export_markers)) files <- c(files, "markers/")
     if (isTRUE(input$export_report)) files <- c(files, paste0(grp, "_report.html"))
-    div(style = paste("font-size:var(--mp-fs-meta); padding:8px 12px; margin:12px 0;",
-        "background:var(--mp-surface-alt); border-left:3px solid var(--mp-primary);"),
-      div(sprintf("%s in group \"%s\".", mp_n(n, "contig"), grp)),
+    div(class = "mp-card mp-card-summary",
+      div(class = "mp-card-title", sprintf("%s in group \"%s\"", mp_n(n, "contig"), grp)),
       if (nrow(out)) div(class = "mp-fg-warning", icon("triangle-exclamation"), " ",
         sprintf("%s left out: %s.", mp_n(nrow(out), "contig"), mp_id_list(
           sprintf("%s p%s.s%s (%s)", out$ID, out$path, out$scaffold, out$why), max = 10))),
