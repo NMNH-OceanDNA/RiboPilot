@@ -1275,13 +1275,14 @@ app_server <- function(input, output, session) {
     }
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
     tmpls <- list_export_templates(con)
-    nm <- if (export_template() %in% tmpls) export_template() else "default"
+    nm <- if (export_last_template(con) %in% tmpls) export_last_template(con) else "default"
     export_template(nm)
     snap <- export_snap()
     export_snap(NULL)
     if (!is.null(snap)) {
       tmpls <- union(tmpls, snap$export_template)
       nm <- snap$export_template %||% nm
+      export_template(nm)
     }
     o <- get_export_opts(con, nm)
     sample_cols <- tryCatch(DBI::dbListFields(con, "samples"), error = function(e) character(0))
@@ -1309,14 +1310,17 @@ app_server <- function(input, output, session) {
   observeEvent(input$export_template, ignoreInit = TRUE, {
     nm <- trimws(input$export_template %||% "")
     req(nzchar(nm))
+    # the dropdown reports its value when the window opens; only a change reloads
+    if (identical(nm, export_template())) return()
     export_template(nm)
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    # The template decides NMNH user; the project setting follows it
     if (nm %in% list_export_templates(con)) {
       o <- get_export_opts(con, nm)
-      updateTextAreaInput(session, "fasta_header", value = nmnh_template_pref(con, o$fasta_header))
-      updateTextAreaInput(session, "fasta_header_marker", value = if (isTRUE(input$export_markers)) {
-        nmnh_template_pref(con, o$fasta_header_marker)
-      } else o$fasta_header_marker)
+      export_set_last_template(con, nm)
+      nmnh_set_user_pref(con, nmnh_template_on(o$fasta_header))
+      updateTextAreaInput(session, "fasta_header", value = o$fasta_header)
+      updateTextAreaInput(session, "fasta_header_marker", value = o$fasta_header_marker)
     }
   })
 
@@ -1717,6 +1721,7 @@ app_server <- function(input, output, session) {
     updateSelectizeInput(session, "export_template", choices = list_export_templates(con),
       selected = nm, options = list(create = TRUE, maxItems = 1))
     export_template(nm)
+    export_set_last_template(con, nm)
     mp_toast(sprintf("Saved header template \"%s\".", nm))
   })
 
