@@ -40,6 +40,8 @@
   specimens: their voucher and URI are used as found, without NMNH checks. For
   any sample, pick the mapping-file column or metadata field its
   `specimen_voucher` or `voucherURI` comes from.
+* The NMNH user switch is remembered per project. The voucher report's field
+  lists are sorted and offer None to leave a modifier out.
 * A `[modifier={field}]` with no value for a sample is left out of that
   record's FASTA header instead of being written empty.
 
