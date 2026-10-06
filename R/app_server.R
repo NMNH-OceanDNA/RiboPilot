@@ -1185,6 +1185,9 @@ app_server <- function(input, output, session) {
   # ---- Sample metadata: viewer and export fields ----
   specimen_viewer_server("specimen", open = reactive(input$specimen_open),
     on_change = function() refresh(isolate(refresh()) + 1), con = app_con)
+  specimen_viewer_server("nmnh_spec", open = reactive(input$nmnh_meta_open),
+    on_change = function() refresh(isolate(refresh()) + 1), con = app_con,
+    on_back = function() nmnh_show_report(), back_label = "Back to voucher report")
 
   export_snap <- reactiveVal(NULL)
   # Choose fields inside Export data: keep what is on screen so closing the
@@ -1548,7 +1551,15 @@ app_server <- function(input, output, session) {
       compact = TRUE, pagination = FALSE,
       language = reactable::reactableLang(noData = "No NMNH problems."),
       columns = list(
-        ID = reactable::colDef(minWidth = 110),
+        ID = reactable::colDef(minWidth = 110, html = TRUE, cell = function(value) {
+          as.character(tags$a(
+            href = "#", title = "View this sample's metadata",
+            onclick = sprintf(
+              "event.preventDefault(); Shiny.setInputValue('%s', %s, {priority: 'event'})",
+              "nmnh_meta_open", jsonlite::toJSON(value, auto_unbox = TRUE)),
+            value
+          ))
+        }),
         specimen_voucher = reactable::colDef(minWidth = 230, html = TRUE, cell = cell("voucher")),
         voucherURI = reactable::colDef(minWidth = 330, html = TRUE, cell = cell("uri"))
       )
