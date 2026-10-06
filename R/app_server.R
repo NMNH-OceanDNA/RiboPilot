@@ -1341,15 +1341,6 @@ app_server <- function(input, output, session) {
   }
   nmnh_on <- reactive(nmnh_template_on(hdr_rec()))
   nmnh_key <- reactiveVal(NULL)
-  nmnh_entered <- reactiveVal(character(0))
-  nmnh_label <- function(r) {
-    ent <- nmnh_entered()
-    for (f in c("voucher", "uri")) {
-      k <- paste0(f, "_source")
-      r[[k]] <- ifelse(paste(r$ID, f) %in% ent & r[[k]] %in% "mapfile", "entered", r[[k]])
-    }
-    r
-  }
   nmnh_refresh <- function(force = FALSE) {
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
     ids <- unique(export_units_df(export_group_choice())$ID)
@@ -1357,7 +1348,7 @@ app_server <- function(input, output, session) {
     if (!force && identical(key, nmnh_key())) return(invisible())
     nmnh_res(NULL)
     res <- withProgress(message = "Checking NMNH vouchers", nmnh_resolve(con, ids))
-    nmnh_res(nmnh_label(res))
+    nmnh_res(res)
     nmnh_key(key)
   }
   nmnh_refresh_ids <- function(ids) {
@@ -1365,7 +1356,7 @@ app_server <- function(input, output, session) {
     ids <- intersect(ids, r$ID)
     if (!length(ids)) return(invisible())
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    r[match(ids, r$ID), ] <- nmnh_label(nmnh_resolve(con, ids))
+    r[match(ids, r$ID), ] <- nmnh_resolve(con, ids)
     nmnh_res(r)
     refresh(isolate(refresh()) + 1)
   }
@@ -1466,15 +1457,13 @@ app_server <- function(input, output, session) {
     req(nmnh_on())
     r <- nmnh_res()
     if (is.null(r)) return(NULL)
-    con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    cols <- nmnh_columns(con)
     div(class = "mp-nmnh-sources",
-      div(tags$b("Catalog number: "), nmnh_source_text(r$voucher_source, cols$voucher)),
-      div(tags$b("Specimen link: "), nmnh_source_text(r$uri_source, cols$uri)))
+      div(tags$b("Catalog number: "), nmnh_source_text(r$voucher_source)),
+      div(tags$b("Specimen link: "), nmnh_source_text(r$uri_source)))
   })
 
   nmnh_note <- function(src, note) {
-    x <- c(if (!is.na(src)) paste("source:", src), if (nzchar(note)) note)
+    x <- c(if (!is.na(src)) paste("source:", nmnh_source_label(src)), if (nzchar(note)) note)
     paste(x, collapse = "; ")
   }
   nmnh_show_report <- function() {
@@ -1489,8 +1478,8 @@ app_server <- function(input, output, session) {
         " NMNH records should not be submitted to GenBank without both a ",
         tags$code("specimen_voucher"), " and a ", tags$code("voucherURI"), "."),
       opts_help("Type a value into a cell to fix it. It is checked when you leave the ",
-        "cell and saved to the column chosen in Export data (or a new ",
-        tags$code("specimen_voucher"), " / ", tags$code("voucherURI"), " column)."),
+        "cell and saved with this project's NMNH values; your mapping file is not ",
+        "changed. Clear a cell to go back to the automatic value."),
       div(class = "mp-nmnh-scroll", reactable::reactableOutput("nmnh_table")),
       if (nrow(fixed)) {
         tags$details(
@@ -1583,73 +1572,32 @@ app_server <- function(input, output, session) {
   output$nmnh_csv <- downloadHandler(
     filename = function() paste0("nmnh_vouchers_", Sys.Date(), ".csv"),
     content = function(file) {
-      r <- nmnh_problems()
       con <- app_con(); on.exit(DBI::dbDisconnect(con))
-      cols <- nmnh_columns(con)
-      s <- DBI::dbReadTable(con, "samples")
-      s <- s[match(r$ID, s$ID), , drop = FALSE]
-      raw <- function(cc, alt) if (is.na(cc)) alt else ifelse(is.na(s[[cc]]) | s[[cc]] == "", alt, s[[cc]])
-      out <- data.frame(ID = r$ID, Taxon = s$Taxon,
-        v = raw(cols$voucher, r$nmnh_specimen_voucher),
-        u = raw(cols$uri, r$nmnh_voucherURI))
-      names(out)[3:4] <- c(cols$voucher %|NA|% "specimen_voucher", cols$uri %|NA|% "voucherURI")
-      utils::write.csv(out, file, row.names = FALSE, na = "")
+      utils::write.csv(nmnh_download_df(con, nmnh_problems()), file, row.names = FALSE, na = "")
     })
-  # A new column for a "(none)" choice, selected from then on
-  nmnh_target_col <- function(con, field) {
-    cols <- nmnh_columns(con)
-    if (!is.na(cols[[field]])) return(cols[[field]])
-    col <- if (field == "voucher") "specimen_voucher" else "voucherURI"
-    if (!col %in% DBI::dbListFields(con, "samples")) {
-      DBI::dbExecute(con, paste0("ALTER TABLE samples ADD COLUMN ", col, " TEXT"))
-    }
-    cols[[field]] <- col
-    nmnh_set_columns(con, cols$voucher %|NA|% "", cols$uri %|NA|% "")
-    col
-  }
   observeEvent(input$nmnh_edit, {
     e <- input$nmnh_edit
-    n <- if (e$field == "voucher") nmnh_normalize_voucher(e$value) else nmnh_normalize_uri(e$value)
     t <- nmnh_typed()
     key <- paste(e$id, e$field)
-    if (is.na(n$value)) {
-      t[[key]] <- list(value = e$value, note = n$note)
-      nmnh_typed(t)
-      return()
-    }
-    t[[key]] <- NULL
-    nmnh_typed(t)
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    col <- nmnh_target_col(con, e$field)
-    DBI::dbExecute(con, paste0("UPDATE samples SET \"", col, "\" = ? WHERE ID = ?"),
-      params = list(n$value, e$id))
-    nmnh_entered(union(nmnh_entered(), paste(e$id, e$field)))
-    nmnh_refresh_ids(e$id)
+    note <- nmnh_edit_value(con, e$id, e$field, e$value)
+    t[[key]] <- if (!is.null(note)) list(value = e$value, note = note)
+    nmnh_typed(t)
+    if (is.null(note)) nmnh_refresh_ids(e$id)
   })
   observeEvent(input$nmnh_upload, {
-    f <- input$nmnh_upload$datapath
-    up <- utils::read.csv(f, check.names = FALSE, colClasses = "character")
-    # read_mapping() wants reads or an assembly column; update_sample_metadata() drops them
-    if (!any(c("R1", "Assembly") %in% names(up))) {
-      f <- tempfile(fileext = ".csv")
-      utils::write.csv(cbind(up, R1 = "", R2 = ""), f, row.names = FALSE)
-    }
-    ok <- tryCatch({
-      suppressMessages(update_sample_metadata(app_project(), mapping_fn = f,
-        check_reads = FALSE, check_assemblies = FALSE))
-      TRUE
-    }, error = function(e) {
-      mp_alert(title = "Upload failed", text = conditionMessage(e), type = "error")
-      FALSE
-    })
-    if (!ok) return()
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    cols <- nmnh_columns(con)
-    if (is.na(cols$voucher) && "specimen_voucher" %in% names(up)) cols$voucher <- "specimen_voucher"
-    if (is.na(cols$uri) && "voucherURI" %in% names(up)) cols$uri <- "voucherURI"
-    nmnh_set_columns(con, cols$voucher %|NA|% "", cols$uri %|NA|% "")
-    nmnh_refresh_ids(as.character(up$ID))
-    mp_toast(sprintf("Updated %s from the CSV.", mp_n(nrow(up), "sample")))
+    res <- tryCatch(nmnh_upload_csv(con, input$nmnh_upload$datapath), error = function(e) {
+      mp_alert(title = "Upload failed", text = conditionMessage(e), type = "error")
+      NULL
+    })
+    if (is.null(res)) return()
+    nmnh_refresh_ids(res$ids)
+    mp_toast(sprintf("Updated %s from the CSV.", mp_n(length(res$ids), "sample")))
+    if (length(res$bad)) {
+      mp_alert(title = "Some values were not used", type = "warning", html = TRUE,
+        text = tags$ul(style = "text-align: left;", lapply(res$bad, tags$li)))
+    }
   })
 
   # The marker box is hidden unless markers are exported, so it must not gate

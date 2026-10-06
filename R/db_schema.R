@@ -259,5 +259,6 @@ meta_apply_schema <- function(con) {
       DBI::dbExecute(con, paste0("ALTER TABLE samples ADD COLUMN ", col, " TEXT"))
     }
   }
+  .nmnh_ensure_table(con)
   invisible()
 }

@@ -923,7 +923,10 @@ test_that("NMNH user: status, cell edit, and Export anyway", {
     session$setInputs(nmnh_edit = list(id = "S1", field = "voucher", value = "USNM:FISH:7"))
     settle(session)
     expect_equal(nmnh_res()$nmnh_specimen_voucher, "USNM:FISH:7")
-    expect_equal(app_query("SELECT specimen_voucher FROM samples")$specimen_voucher, "USNM:FISH:7")
+    v <- app_query("SELECT specimen_voucher, specimen_voucher_source FROM nmnh_vouchers WHERE ID = 'S1'")
+    expect_equal(v$specimen_voucher, "USNM:FISH:7")
+    expect_equal(v$specimen_voucher_source, "entered")
+    expect_false("specimen_voucher" %in% names(app_query("SELECT * FROM samples")))
     # a fixed row stays in the report with its check; an invalid entry stays visible
     tbl <- as.character(output$nmnh_table)
     expect_match(tbl, "USNM:FISH:7", fixed = TRUE)
@@ -940,6 +943,7 @@ test_that("NMNH user: status, cell edit, and Export anyway", {
     session$setInputs(nmnh_upload = list(datapath = f))
     settle(session)
     expect_equal(nmnh_res()$nmnh_specimen_voucher, "USNM:FISH:8")
+    expect_equal(app_query("SELECT specimen_voucher_source FROM nmnh_vouchers WHERE ID = 'S1'")[[1]], "upload")
 
     session$setInputs(nmnh_confirm = TRUE)
     settle(session)
