@@ -184,11 +184,9 @@ test_that("an empty Taxon is flagged, and never rendered as the word NA", {
     markers = TRUE, report = FALSE, zip = FALSE, itsx_check = FALSE, label = "notax")))
   expect_true(any(grepl("missing_organism", w)))
   expect_true(any(grepl("Empty [organism=] on 3 of 3", w, fixed = TRUE)))
-  # glue renders an NA field as the characters "NA", which reads like a real
-  # organism name. The header template cannot drop a field, so the value is
-  # blanked and the unit is flagged instead.
+  # An empty modifier is left out of the header; the unit is still flagged.
   fsa <- readLines(file.path(g, "samples", "S2.fasta"))
-  expect_match(fsa[1], "[organism=]", fixed = TRUE)
+  expect_false(grepl("[organism=", fsa[1], fixed = TRUE))
   expect_false(any(grepl("organism=NA", readLines(file.path(g, "notax.fasta")), fixed = TRUE)))
   expect_false(any(grepl("organism=NA",
     readLines(Sys.glob(file.path(g, "markers", "18S", "S2_18S.fasta"))), fixed = TRUE)))

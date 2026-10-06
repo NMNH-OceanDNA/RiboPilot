@@ -1473,7 +1473,7 @@ app_server <- function(input, output, session) {
     take_export_snap()
     r <- nmnh_res()
     fixed <- r[r$ok & r$fixed, , drop = FALSE]
-    nmnh_report_ids(r$ID[!r$ok])
+    nmnh_report_ids(r$ID[!r$ok | r$not_nmnh])
     nmnh_typed(list())
     showModal(modalDialog(
       title = mp_modal_title("NMNH voucher report", close = FALSE), size = "l",
@@ -1482,7 +1482,12 @@ app_server <- function(input, output, session) {
         tags$code("specimen_voucher"), " and a ", tags$code("voucherURI"), "."),
       opts_help("Type a value into a cell to fix it. It is checked when you leave the ",
         "cell and saved with this project's NMNH values; your mapping file is not ",
-        "changed. Clear a cell to go back to the automatic value."),
+        "changed. Clear a cell to go back to the automatic value. Pick a field under a ",
+        "cell to take that value from another metadata field. Tick Not NMNH for samples ",
+        "that are not NMNH specimens: their values are used as found, without checks. ",
+        "A missing value leaves its modifier out of the header."),
+      div(class = "mp-nmnh-fields", "Fields to pick from: mapping-file columns and the metadata ",
+        "fields ticked for export. ", actionLink("nmnh_choose_fields", "Choose fields")),
       div(class = "mp-nmnh-scroll", reactable::reactableOutput("nmnh_table")),
       if (nrow(fixed)) {
         tags$details(
@@ -1506,6 +1511,8 @@ app_server <- function(input, output, session) {
     ))
   }
   observeEvent(input$nmnh_report, nmnh_show_report())
+  observeEvent(input$nmnh_choose_fields, meta_view_open(closed_input = "nmnh_fields_closed"))
+  observeEvent(input$nmnh_fields_closed, nmnh_show_report())
   observeEvent(input$nmnh_back, back_to_export())
 
   nmnh_problems <- reactive({
@@ -1520,11 +1527,35 @@ app_server <- function(input, output, session) {
     r <- req(nmnh_res())
     r <- r[r$ID %in% nmnh_report_ids(), , drop = FALSE]
     typed <- nmnh_typed()
+    choices <- local({
+      con <- app_con(); on.exit(DBI::dbDisconnect(con))
+      nmnh_field_choices(con)
+    })
+    send <- function(input_id, id, rest) {
+      sprintf("Shiny.setInputValue('%s', {id: %s, %s}, {priority: 'event'})",
+        input_id, jsonlite::toJSON(id, auto_unbox = TRUE), rest)
+    }
+    pick <- function(field, index) {
+      cur <- r[[paste0(field, "_field")]][index] %|NA|% ""
+      opts <- c(Automatic = "", choices)
+      if (nzchar(cur) && !cur %in% opts) opts <- c(opts, stats::setNames(cur, .nmnh_key_label(cur)))
+      tags$select(
+        class = "form-control input-sm mp-nmnh-pick", `aria-label` = paste(field, "field", r$ID[index]),
+        title = "Field the value comes from",
+        onchange = send("nmnh_field", r$ID[index], sprintf("field: '%s', key: this.value", field)),
+        lapply(seq_along(opts), function(i) {
+          tags$option(value = opts[[i]], selected = if (identical(opts[[i]], cur)) NA, names(opts)[i])
+        })
+      )
+    }
     # html = TRUE: reactable drops inline handlers on R tags
     cell <- function(field) function(value, index) {
       bad <- typed[[paste(r$ID[index], field)]]
       note <- nmnh_note(r[[paste0(field, "_source")]][index], r[[paste0(field, "_note")]][index])
-      st <- if (!is.null(bad)) {
+      st <- if (isTRUE(r$not_nmnh[index]) && is.null(bad)) {
+        if (is.na(value)) list("muted", "circle-minus", "Missing: modifier left out")
+        else list("muted", "circle-minus", if (nzchar(note)) paste0("Not checked (", note, ")") else "Not checked")
+      } else if (!is.null(bad)) {
         list("danger", "circle-xmark", bad$note)
       } else if (isTRUE(r[[paste0(field, "_ok")]][index])) {
         list("success", "circle-check", if (nzchar(note)) paste0("Valid (", note, ")") else "Valid")
@@ -1536,17 +1567,16 @@ app_server <- function(input, output, session) {
           type = "text", class = "form-control input-sm",
           value = if (!is.null(bad)) bad$value else value %|NA|% "",
           `aria-label` = paste(field, r$ID[index]),
-          onchange = sprintf(
-            "Shiny.setInputValue('%s', {id: %s, field: '%s', value: this.value}, {priority: 'event'})",
-            "nmnh_edit", jsonlite::toJSON(r$ID[index], auto_unbox = TRUE), field)
+          onchange = send("nmnh_edit", r$ID[index], sprintf("field: '%s', value: this.value", field))
         ),
-        div(class = paste0("mp-fg-", st[[1]]),
+        pick(field, index),
+        div(class = if (st[[1]] == "muted") "text-muted" else paste0("mp-fg-", st[[1]]),
             style = "font-size: var(--mp-fs-meta); white-space: normal;",
             icon(st[[2]]), " ", st[[3]])
       ))
     }
     reactable::reactable(
-      data.frame(ID = r$ID, specimen_voucher = r$nmnh_specimen_voucher,
+      data.frame(ID = r$ID, not_nmnh = r$not_nmnh, specimen_voucher = r$nmnh_specimen_voucher,
                  voucherURI = r$nmnh_voucherURI),
       compact = TRUE, pagination = FALSE,
       language = reactable::reactableLang(noData = "No NMNH problems."),
@@ -1560,6 +1590,13 @@ app_server <- function(input, output, session) {
             value
           ))
         }),
+        not_nmnh = reactable::colDef(
+          name = "Not NMNH", width = 80, align = "center", html = TRUE,
+          header = rt_header("Not NMNH", "Tick when the sample is not an NMNH specimen. Its values are used as found, without checks."),
+          cell = function(value, index) as.character(tags$input(
+            type = "checkbox", checked = if (isTRUE(value)) NA, `aria-label` = paste("Not NMNH", r$ID[index]),
+            onchange = send("nmnh_flag", r$ID[index], "value: this.checked")))
+        ),
         specimen_voucher = reactable::colDef(minWidth = 230, html = TRUE, cell = cell("voucher")),
         voucherURI = reactable::colDef(minWidth = 330, html = TRUE, cell = cell("uri"))
       )
@@ -1595,6 +1632,24 @@ app_server <- function(input, output, session) {
     t[[key]] <- if (!is.null(note)) list(value = e$value, note = note)
     nmnh_typed(t)
     if (is.null(note)) nmnh_refresh_ids(e$id)
+  })
+  observeEvent(input$nmnh_flag, {
+    e <- input$nmnh_flag
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    nmnh_set_not_nmnh(con, e$id, isTRUE(e$value))
+    t <- nmnh_typed()
+    t[paste(e$id, c("voucher", "uri"))] <- list(NULL)
+    nmnh_typed(t)
+    nmnh_refresh_ids(e$id)
+  })
+  observeEvent(input$nmnh_field, {
+    e <- input$nmnh_field
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    nmnh_set_field(con, e$id, e$field, e$key)
+    t <- nmnh_typed()
+    t[[paste(e$id, e$field)]] <- NULL
+    nmnh_typed(t)
+    nmnh_refresh_ids(e$id)
   })
   observeEvent(input$nmnh_upload, {
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
