@@ -777,7 +777,7 @@ test_that("the Export window offers token chips, and choosing fields returns to 
   shiny::testServer(RiboPilot:::app_server, {
     session$setInputs(mode = "Export")
     html <- as.character(export_modal_current())
-    expect_match(html, "<summary>Available columns</summary>", fixed = TRUE)
+    expect_match(html, "Available metadata", fixed = TRUE)
     expect_match(html, "mp-token-list", fixed = TRUE)
     expect_match(html, "data-target=\"fasta_header\"", fixed = TRUE)
     expect_match(html, "data-insert=\"{Taxon}\"", fixed = TRUE)

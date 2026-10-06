@@ -719,7 +719,7 @@ export_modal <- function(groups, templates = "default", template = "default",
   flag <- function(id, dflt) snap[[id]] %||% dflt
   # status line between the label and the box it describes
   hdr_box <- function(id, label, value, status) {
-    htmltools::tagQuery(textAreaInput(id, label, value, width = "100%", height = "60px"))$
+    htmltools::tagQuery(textAreaInput(id, tagList(label, insert_field_link(id)), value, width = "100%", height = "60px"))$
       find("textarea")$addAttrs(`aria-describedby` = status)$
       before(uiOutput(status))$allTags()
   }
@@ -742,7 +742,7 @@ export_modal <- function(groups, templates = "default", template = "default",
       "a reusable, named set of the FASTA header patterns below: export uses the ",
       "text on screen, and Save template keeps it for next time."),
     uiOutput("export_summary"),
-    mp_checkbox("nmnh_user", "NMNH user", value = nmnh_template_on(fasta_header)),
+    mp_checkbox("nmnh_user", tagList(tags$img(src = "www/si_sun.svg", alt = "", class = "nmnh-logo"), "NMNH user"), value = nmnh_template_on(fasta_header)),
     opts_help("Adds the ", tags$code("[specimen_voucher=]"), " and ",
       tags$code("[voucherURI=]"), " modifiers NMNH requires, filled per ",
       "sample from your mapping file, GBIF, NCBI, or GEOME, and checked against GBIF."),
@@ -768,7 +768,8 @@ export_modal <- function(groups, templates = "default", template = "default",
       opts_help("Same {column} syntax, plus {element} and {product} for the marker itself.",
         nested = TRUE)),
     tags$details(
-      tags$summary("Available columns"),
+      class = "mp-meta-panel",
+      meta_panel_summary(token_groups),
       opts_help("Click a column to insert it at the cursor of the header box you last clicked. ",
         "Write a column name in braces to use its value, for example ", tags$code("{Taxon}"),
         ". ", tags$code("{seqid}"), " is the record name RiboPilot gives this contig: the sample ",

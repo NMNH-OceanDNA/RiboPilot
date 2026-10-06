@@ -321,7 +321,7 @@ fill_header <- function(template, row) {
   nm <- substr(p[tok], 2L, nchar(p[tok]) - 1L)
   miss <- setdiff(nm, names(row))
   if (length(miss)) {
-    stop(sprintf("Column \"%s\" is not in the database. Use one of the available columns listed below.",
+    stop(sprintf("Column \"%s\" is not in the database. Use one of the available metadata columns listed below.",
       miss[1]), call. = FALSE)
   }
   p[tok] <- vapply(nm, function(n) as.character(row[[n]][1]), character(1))

@@ -104,7 +104,7 @@ mp_checkbox <- function(inputId, label, value = FALSE, ...) {
   x <- shinyWidgets::prettyCheckbox(
     inputId, label = label, value = value, status = "primary", icon = icon("check"), ...
   )
-  lab <- if (is.character(label)) label else paste(htmltools::doRenderTags(label), collapse = " ")
+  lab <- if (is.character(label)) label else trimws(gsub("<[^>]+>", "", paste(htmltools::doRenderTags(label), collapse = " ")))
   htmltools::tagQuery(x)$find("input")$addAttrs(`aria-label` = lab)$allTags()
 }
 

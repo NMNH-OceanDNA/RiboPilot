@@ -890,3 +890,19 @@ details.rp-subsection > div { margin-left: 18px; }
   margin-left: 1px;
   cursor: help;
 }
+
+.nmnh-logo {
+  height: 1.2em;
+  vertical-align: -0.25em;
+  margin-right: 0.3em;
+}
+
+/* Available metadata panel: tinted so it reads as a resource, not a header */
+details.mp-meta-panel {
+  border: 1px solid var(--mp-border); border-left: 3px solid var(--mp-primary);
+  border-radius: var(--mp-radius); background: var(--mp-primary-soft); padding: 0 12px 4px;
+}
+details.mp-meta-panel > summary { border-bottom: none; }
+.mp-meta-count, .mp-insert-field { font-weight: 400; font-size: var(--mp-fs-meta); }
+.mp-meta-count { color: var(--mp-text-muted); }
+.mp-insert-field { margin-left: 0.5em; }
