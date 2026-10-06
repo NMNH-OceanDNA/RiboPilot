@@ -1294,7 +1294,8 @@ app_server <- function(input, output, session) {
       token_groups = export_token_groups(tok, sample_cols, ticked),
       totals = jsonlite::toJSON(as.list(table(tok$export_group)), auto_unbox = TRUE),
       snap = snap, nmnh_cols = nmnh_columns(con),
-      nmnh_choices = c("(none)" = "", setdiff(sample_cols, c("ID", "Taxon", "R1", "R2"))))
+      nmnh_choices = c("(none: look up from GBIF, NCBI, or GEOME)" = "",
+        setdiff(sample_cols, c("ID", "Taxon", "R1", "R2"))))
   }
   observeEvent(input$export_btn, {
     m <- export_modal_current()
@@ -1323,6 +1324,8 @@ app_server <- function(input, output, session) {
   hdr_mrk_chk <- reactive(validate_fasta_header(hdr_mrk(), export_hdr_data_marker(), require_seqid = TRUE))
   output$export_hdr_status <- renderUI(header_status_ui(hdr_rec_chk()))
   output$export_hdr_marker_status <- renderUI(header_status_ui(hdr_mrk_chk()))
+  output$fasta_header_preview <- renderUI(hdr_preview_ui(hdr_rec(), export_hdr_data()))
+  output$fasta_header_marker_preview <- renderUI(hdr_preview_ui(hdr_mrk(), export_hdr_data_marker()))
 
   # ---- NMNH user ----
   # The switch mirrors the record template: on iff it carries both NMNH tokens.
@@ -1441,14 +1444,25 @@ app_server <- function(input, output, session) {
     skipped <- if (any(!is.na(r$nmnh_voucherURI) & !r$checked)) {
       " GBIF could not be reached, so the specimen check was skipped."
     }
-    link <- if (bad > 0 || any(r$fixed)) actionLink("nmnh_report", "View report")
     if (bad == 0) {
-      return(span(class = "mp-fg-success", style = "font-size: var(--mp-fs-meta);",
-        icon("circle-check"), sprintf(" All %s ready. ", mp_n(nrow(r), "sample")), link, skipped))
+      return(div(class = "mp-nmnh-status mp-fg-success",
+        icon("circle-check"), sprintf(" All %s ready. ", mp_n(nrow(r), "sample")),
+        if (any(r$fixed)) actionLink("nmnh_report", "See what was auto-fixed"), skipped))
     }
-    span(class = "mp-fg-warning", style = "font-size: var(--mp-fs-meta);",
+    div(class = "mp-nmnh-status mp-fg-warning",
       icon("triangle-exclamation"),
-      sprintf(" %d of %s have NMNH problems. ", bad, mp_n(nrow(r), "sample")), link, skipped)
+      sprintf(" %d of %s %s attention. ", bad, mp_n(nrow(r), "sample"), if (bad == 1) "needs" else "need"),
+      actionButton("nmnh_report", "Review and fix", class = "btn-xs"), skipped)
+  })
+  output$nmnh_sources <- renderUI({
+    req(nmnh_on())
+    r <- nmnh_res()
+    if (is.null(r)) return(NULL)
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    cols <- nmnh_columns(con)
+    div(class = "mp-nmnh-sources",
+      div(tags$b("Catalog number: "), nmnh_source_text(r$voucher_source, cols$voucher)),
+      div(tags$b("Specimen link: "), nmnh_source_text(r$uri_source, cols$uri)))
   })
 
   nmnh_note <- function(src, note) {
@@ -1481,6 +1495,8 @@ app_server <- function(input, output, session) {
       },
       div(style = "display:flex; flex-flow:row wrap; gap:8px; align-items:flex-start; margin-top:12px;",
         uiOutput("nmnh_copy"),
+        actionButton("nmnh_recheck", "Re-check with GBIF", class = "btn-sm",
+          title = "Ask GBIF again about this group's specimen links"),
         downloadButton("nmnh_csv", "Download CSV for bulk edit", class = "btn-sm btn-default"),
         fileInput("nmnh_upload", NULL, accept = ".csv", buttonLabel = "Upload edited CSV",
           placeholder = "CSV file")),

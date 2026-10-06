@@ -720,8 +720,10 @@ export_modal <- function(groups, templates = "default", template = "default",
   # status line between the label and the box it describes
   hdr_box <- function(id, label, value, status) {
     htmltools::tagQuery(textAreaInput(id, tagList(label, insert_field_link(id)), value, width = "100%", height = "60px"))$
-      find("textarea")$addAttrs(`aria-describedby` = status)$
-      before(uiOutput(status))$allTags()
+      find("textarea")$addClass("mp-hl")$addAttrs(`aria-describedby` = status)$
+      before(uiOutput(status))$
+      after(tags$details(class = "mp-hdr-preview", open = NA,
+        tags$summary("Preview"), uiOutput(paste0(id, "_preview"))))$allTags()
   }
   modalDialog(
     title = mp_modal_title("Export data"), size = "l", class = "mp-modal-form",
@@ -744,20 +746,23 @@ export_modal <- function(groups, templates = "default", template = "default",
     uiOutput("export_summary"),
     mp_checkbox("nmnh_user", tagList(tags$img(src = "www/si_sun.svg", alt = "", class = "nmnh-logo"), "NMNH user"), value = nmnh_template_on(fasta_header)),
     opts_help("Adds the ", tags$code("[specimen_voucher=]"), " and ",
-      tags$code("[voucherURI=]"), " modifiers NMNH requires, filled per ",
-      "sample from your mapping file, GBIF, NCBI, or GEOME, and checked against GBIF."),
+      tags$code("[voucherURI=]"), " modifiers required by the NMNH Minimum Genomics ",
+      "Metadata Requirements, so each GenBank record links back to its museum specimen. ",
+      "Values come from your mapping file, GBIF, NCBI, or GEOME, and are checked against GBIF."),
     conditionalPanel("input.nmnh_user == true",
-      div(style = "display:flex; flex-flow:row nowrap; gap:1em; align-items:flex-end;",
-        div(style = "flex:1; min-width:0;",
-          selectInput("nmnh_voucher_col", "Voucher column:", nmnh_choices,
-            selected = nmnh_cols$voucher %|NA|% "", width = "100%")),
-        div(style = "flex:1; min-width:0;",
-          selectInput("nmnh_uri_col", "Voucher URI column:", nmnh_choices,
-            selected = nmnh_cols$uri %|NA|% "", width = "100%")),
-        div(class = "mp-opts-checkbox",
-          actionButton("nmnh_recheck", "Re-check",
-            title = "Ask GBIF again about this group's voucher URIs"))),
-      uiOutput("nmnh_status")),
+      div(class = "mp-nmnh-card",
+        uiOutput("nmnh_sources"),
+        tags$details(class = "mp-nmnh-cols",
+          open = if (is.na(nmnh_cols$voucher) && is.na(nmnh_cols$uri)) NA,
+          tags$summary("Change which mapping file columns are used"),
+          div(style = "display:flex; flex-flow:row nowrap; gap:1em;",
+            div(style = "flex:1; min-width:0;",
+              selectInput("nmnh_voucher_col", "Catalog number column (e.g. USNM:FISH:12345)",
+                nmnh_choices, selected = nmnh_cols$voucher %|NA|% "", width = "100%")),
+            div(style = "flex:1; min-width:0;",
+              selectInput("nmnh_uri_col", "Specimen link column (ARK, e.g. http://n2t.net/ark:/65665/3...)",
+                nmnh_choices, selected = nmnh_cols$uri %|NA|% "", width = "100%")))),
+        uiOutput("nmnh_status"))),
     hdr_box("fasta_header", "Record FASTA header:", fasta_header, "export_hdr_status"),
     mp_checkbox("export_markers", "Per-marker FASTA files", value = flag("export_markers", TRUE)),
     opts_help("Writes one FASTA per rRNA element (18S, ITS1, 5.8S, ITS2, 28S) into a ",

@@ -907,7 +907,7 @@ test_that("NMNH user: status, cell edit, and Export anyway", {
       export_markers = FALSE, export_report = FALSE, export_itsx_check = FALSE)
     settle(session)
     expect_false(nmnh_res()$ok)
-    expect_match(output$nmnh_status$html, "1 of 1 sample have NMNH problems")
+    expect_match(output$nmnh_status$html, "1 of 1 sample needs attention")
     expect_true(hdr_rec_chk()$ok)
     expect_match(output$nmnh_copy$html, "Copy table")
     expect_match(as.character(output$nmnh_table), "nmnh_edit")
