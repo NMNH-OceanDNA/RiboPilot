@@ -910,6 +910,7 @@ test_that("NMNH user: status, cell edit, and Export anyway", {
     expect_match(output$nmnh_status$html, "1 of 1 sample needs attention")
     expect_true(hdr_rec_chk()$ok)
     expect_match(output$nmnh_copy$html, "Copy table")
+    session$setInputs(nmnh_report = 1)
     expect_match(as.character(output$nmnh_table), "nmnh_edit")
     csv <- utils::read.csv(output$nmnh_csv)
     expect_equal(names(csv), c("ID", "Taxon", "specimen_voucher", "voucherURI"))
@@ -923,6 +924,15 @@ test_that("NMNH user: status, cell edit, and Export anyway", {
     settle(session)
     expect_equal(nmnh_res()$nmnh_specimen_voucher, "USNM:FISH:7")
     expect_equal(app_query("SELECT specimen_voucher FROM samples")$specimen_voucher, "USNM:FISH:7")
+    # a fixed row stays in the report with its check; an invalid entry stays visible
+    tbl <- as.character(output$nmnh_table)
+    expect_match(tbl, "USNM:FISH:7", fixed = TRUE)
+    expect_match(tbl, "circle-check", fixed = TRUE)
+    session$setInputs(nmnh_edit = list(id = "S1", field = "uri", value = "not-an-ark"))
+    settle(session)
+    tbl <- as.character(output$nmnh_table)
+    expect_match(tbl, "not-an-ark", fixed = TRUE)
+    expect_match(tbl, "circle-xmark", fixed = TRUE)
 
     f <- file.path(dir, "up.csv")
     utils::write.csv(data.frame(ID = "S1", Taxon = "Danio rerio", specimen_voucher = "USNM:FISH:8",
