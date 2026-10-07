@@ -465,7 +465,14 @@ URI with no voucher takes the voucher of its GBIF record. RiboPilot then:
 
 The status line in the NMNH user box shows how many samples need attention,
 with **Review and fix**, or "All N samples ready" with **Review NMNH values**.
-Either opens the **NMNH voucher report**:
+Either opens the **NMNH voucher report**, which lists every sample in the
+export group in two tables: **Need attention or marked Not NMNH**, and **Pass
+the NMNH check**, which shows each passing sample's `specimen_voucher` and
+`voucherURI` with where each came from. An **Auto-fixed** column marks samples
+where RiboPilot corrected a value's format or replaced a tissue link with its
+specimen. The line under each cell gives the result and where the value came
+from; click its **?** for the full details, such as what was changed or skipped.
+Both tables are edited the same way:
 
 - Type a fix into a cell. It is checked when you leave the cell and saved with
   the project's NMNH values; your mapping file is not changed. Clear a cell to go
@@ -474,7 +481,7 @@ Either opens the **NMNH voucher report**:
   mapping-file column or metadata field, or **None** to leave the modifier out.
   **Choose fields** adds metadata fields to the list.
 - Tick **Not NMNH** for samples that are not NMNH specimens (**Select all** and
-  **Clear all** tick every row). Their values are used as found, without NMNH
+  **Clear all** tick every row of the first table). Their values are used as found, without NMNH
   checks, and they stay in the report so you can untick them.
 - Click a sample ID to open its metadata viewer; **Back to voucher report**
   returns to the report.
