@@ -145,3 +145,5 @@ for your methods section.
     guide](https://dmacguigan.github.io/RiboPilot/articles/Troubleshooting.html).
   - Questions or problems: please open an
     [issue](https://github.com/dmacguigan/RiboPilot/issues).
+
+This is a research product from the NMNH Ocean DNA initiative and does not represent an official Smithsonian Institution position or product.
