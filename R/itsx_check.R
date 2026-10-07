@@ -13,6 +13,9 @@
 # max distance (bp) between an ITSx and a RiboPilot ITS boundary before it is flagged
 ITSX_CHECK_SHIFT_BP <- 25L
 
+# an expected group scoring within this many points of the ITSx winner is a near tie
+ITSX_ORIGIN_NEAR_TIE <- 2
+
 # ITSx origin letter -> group name
 ITSX_ORIGINS <- c(
   A = "Alveolata", B = "Bryophyta", C = "Bacillariophyta", D = "Amoebozoa",
@@ -153,13 +156,13 @@ parse_itsx_notes <- function(pos_lines) {
 }
 
 #' Parse an ITSx `.extraction.results` table
-#' @return data.frame(seqid, origin, strand, domains, chimeric, domain_order)
+#' @return data.frame(seqid, origin, strand, domains, chimeric, domain_order, scores)
 #' @noRd
 parse_itsx_results <- function(res_lines) {
   res_lines <- res_lines[nzchar(trimws(res_lines))]
   out <- data.frame(seqid = character(0), origin = character(0), strand = integer(0),
     domains = integer(0), chimeric = logical(0), domain_order = character(0),
-    stringsAsFactors = FALSE)
+    scores = character(0), stringsAsFactors = FALSE)
   if (length(res_lines) == 0) return(out)
   fields <- strsplit(res_lines, "\t", fixed = TRUE)
   fields <- Filter(function(f) length(f) >= 13, fields)
@@ -171,6 +174,7 @@ parse_itsx_results <- function(res_lines) {
     domains = suppressWarnings(as.integer(vapply(fields, `[`, character(1), 5))),
     chimeric = vapply(fields, function(f) identical(trimws(f[13]), "Chimeric"), logical(1)),
     domain_order = vapply(fields, function(f) if (length(f) >= 14) trimws(f[14]) else "", character(1)),
+    scores = vapply(fields, function(f) if (length(f) >= 15) trimws(f[15]) else "", character(1)),
     stringsAsFactors = FALSE)
 }
 
@@ -197,6 +201,35 @@ itsx_expected_origins <- function(lineage) {
   hit <- names(ITSX_LINEAGE_ORIGINS)[names(ITSX_LINEAGE_ORIGINS) %in% parts]
   if (length(hit) == 0) return(NULL)
   unique(unlist(ITSX_LINEAGE_ORIGINS[hit], use.names = FALSE))
+}
+
+#' Average score per ITSx group from the "specific origin" column
+#' @param x e.g. "F: 1 5.4e-19 57.6, M: 1 5.4e-19 57.6".
+#' @return named numeric (names are origin letters); empty when none.
+#' @noRd
+itsx_group_scores <- function(x) {
+  m <- regmatches(x %|NA|% "", gregexpr("[A-Z]: [0-9]+ [^ ,]+ [-0-9.]+", x %|NA|% ""))[[1]]
+  if (length(m) == 0) return(numeric(0))
+  f <- strsplit(m, " ", fixed = TRUE)
+  stats::setNames(suppressWarnings(as.numeric(vapply(f, `[`, character(1), 4))),
+    sub(":", "", vapply(f, `[`, character(1), 1), fixed = TRUE))
+}
+
+#' Score comparison for an itsx_origin flag
+#'
+#' Puts the winner's score next to the best score among the groups the
+#' sample's lineage expects, and says "tie" or "near tie" when they are close.
+#' @return e.g. "score: Fungi 57.6 vs Metazoa 57.6, tie"; "" when no expected group scored.
+#' @noRd
+itsx_origin_scores <- function(scores, origin, expected) {
+  sc <- itsx_group_scores(scores)
+  top <- sc[origin]; exp_sc <- sc[intersect(expected, names(sc))]
+  if (is.na(top) || length(exp_sc) == 0 || all(is.na(exp_sc))) return("")
+  best <- names(exp_sc)[which.max(exp_sc)]
+  d <- top - exp_sc[best]
+  tie <- if (round(abs(d), 1) == 0) ", tie" else if (abs(d) <= ITSX_ORIGIN_NEAR_TIE) ", near tie" else ""
+  sprintf("score: %s %s vs %s %s%s", unname(ITSX_ORIGINS[origin]) %|NA|% origin, format(top),
+    unname(ITSX_ORIGINS[best]) %|NA|% best, format(exp_sc[best]), tie)
 }
 
 #' Portal-parity flags for one record from stock-ITSx output
@@ -275,7 +308,8 @@ itsx_check_flags <- function(seqid, seq, ann, its, notes, res, prob,
   if (nrow(my_res) > 0 && !is.null(expected)) {
     o <- my_res$origin[1]
     if (!is.na(o) && nzchar(o) && !(o %in% expected)) {
-      flags <- c(flags, sprintf("itsx_origin(%s)", unname(ITSX_ORIGINS[o]) %|NA|% o))
+      sc <- itsx_origin_scores(my_res$scores[1], o, expected)
+      flags <- c(flags, sprintf("itsx_origin(%s)", if (nzchar(sc)) sc else unname(ITSX_ORIGINS[o]) %|NA|% o))
     }
   }
   list(flags = flags, note = paste(flags, collapse = ";"))

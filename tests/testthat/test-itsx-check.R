@@ -95,9 +95,23 @@ test_that("an ITSx origin outside the sample's lineage is flagged, unknown linea
   notes <- RiboPilot:::parse_itsx_notes(pos_clean)
   res <- RiboPilot:::parse_itsx_results(sub("\tM\t", "\tF\t", res_clean, fixed = TRUE))
   fl <- RiboPilot:::itsx_check_flags("S1", NA, NULL, its, notes, res, no_prob, lineage = "Metazoa;Chordata")
-  expect_equal(fl$flags, "itsx_origin(Fungi)")
+  expect_equal(fl$flags, "itsx_origin(score: Fungi 33.15 vs Metazoa 49.9)")
   expect_equal(RiboPilot:::itsx_check_flags("S1", NA, NULL, its, notes, res, no_prob, lineage = "Bacteria")$flags,
     character(0))
+})
+
+test_that("an origin flag shows the scores and calls ties", {
+  sc <- RiboPilot:::itsx_origin_scores
+  expect_equal(sc("F: 1 5.4e-19 57.6, M: 1 5.4e-19 57.6", "F", "M"), "score: Fungi 57.6 vs Metazoa 57.6, tie")
+  expect_equal(sc("F: 1 5e-19 57.6, M: 1 5e-18 56.2", "F", "M"), "score: Fungi 57.6 vs Metazoa 56.2, near tie")
+  expect_equal(sc("F: 4 1e-20 60, M: 2 1e-08 30", "F", "M"), "score: Fungi 60 vs Metazoa 30")
+  expect_equal(sc("F: 1 5e-19 57.6", "F", "M"), "")
+  expect_equal(sc("", "F", "M"), "")
+  res_ssu <- "S7\t1855\tF\t0\t1\t5.4e-19\t57.6\t14.4\t1811\t1855\t1_SSU\t***\t\t1_SSU\tF: 1 5.4e-19 57.6, M: 1 5.4e-19 57.6"
+  pos_ssu <- "S7\t1855 bp.\tSSU: 1-1855\tITS1: Not found\t5.8S: Not found\tITS2: Not found\tLSU: Not found\tBroken or partial sequence, no 5.8S! "
+  fl <- RiboPilot:::itsx_check_flags("S7", NA, NULL, mk_its(pos_ssu), RiboPilot:::parse_itsx_notes(pos_ssu),
+    RiboPilot:::parse_itsx_results(res_ssu), no_prob, lineage = "Metazoa;Chordata")
+  expect_true("itsx_origin(score: Fungi 57.6 vs Metazoa 57.6, tie)" %in% fl$flags)
 })
 
 test_that("a record ITSx did not detect is reported as such and nothing else", {

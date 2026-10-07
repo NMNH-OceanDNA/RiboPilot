@@ -373,6 +373,8 @@ submission_readme <- function(label, itsx_check = TRUE) {
     "  itsx_no_ITS1 / itsx_no_ITS2        misassembly: a spacer could not be placed",
     "  itsx_boundary_shift(...)  ITSx places an ITS boundary >25 bp from RiboPilot's",
     "  itsx_origin(<group>)      ITSx assigns the record to a group other than the sample's lineage",
+    "                            with ITSx's score for it vs. the best score for the sample's own group;",
+    "                            \"tie\" or \"near tie\" (within 2 points) means the group call is unreliable",
     "  itsx_not_detected         ITSx found no ITS; the Portal cannot annotate it",
     "")), collapse = "\n")
 }
