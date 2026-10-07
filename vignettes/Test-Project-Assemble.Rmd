@@ -30,6 +30,12 @@ Press **Run from App**. Progress shows in the window, one line per step:
 
 ![Progress of a running pipeline](figures/get-started/run-progress.png)
 
+::: {.alert .alert-warning}
+**Keep this browser tab open and the computer awake while the run goes.**
+Closing the tab or pressing **Stop** stops the run; see
+[Stopping and resuming a run](Troubleshooting.html#stopping-and-resuming-a-run).
+:::
+
 ::: {.alert .alert-hydra}
 [HYDRA]{.hydra-tag} **Submit as job.** Press **Submit as job** in place of
 **Run from App**; see [Submit a run as a job](Clusters.html#submit-a-run-as-a-job).

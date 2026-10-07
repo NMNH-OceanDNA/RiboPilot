@@ -47,7 +47,7 @@ failing.
 # Samples, contigs, and records
 
 A sample is one row of your mapping file and usually corresponds to one specimen.
-Assembling a sample can give more than
+Assembling a sample can produce more than
 one path (alternate ways to join the same reads), and each path can hold one or
 more contigs. Each contig you keep becomes one record in your GenBank export.
 A sample with one record is named
@@ -101,14 +101,13 @@ see the checks catch a mixed-up record.
 RiboPilot::RiboPilot("~/ribopilot_test")
 ```
 
+[HYDRA]{.hydra-tag} Run the same command from RStudio Server; see
+[Smithsonian Hydra setup](NMNH-Hydra.html#open-the-app-and-run).
+
 The app opens in your browser on the Taxonomy step. The toolbar shows the five
-steps in order, and each step has its own table. Click a row to tick it, or
-tick the box in the header to tick every row still shown. The **Lock** and
-**State** filters, the search box, and the filter boxes under the column names
-can hide rows from the table entirely; the header tick box ticks only the rows
-still shown, and the toolbar buttons act only on ticked rows those filters
-still show. Click a sample's ID, or its **details** button, to open its
-details. **Download selected rows** and **Download all rows** under each table
+steps in order, and each step has its own table. Click a row to select it, or
+tick the box in the header to select every row still shown. Click a sample's ID or its **details** button
+see additional information. **Download selected rows** and **Download all rows** under each table
 save it as a CSV file.
 
 ![The app as it first opens, on the Taxonomy step](figures/get-started/app-overview.png)
@@ -116,7 +115,7 @@ save it as a CSV file.
 Two buttons appear in every step:
 
 - **State** sets whether a row runs the next time you press **Update**. The
-  pipeline sets states itself; use the button to override one. There are five:
+  pipeline sets states itself; use the button to override one. There are five states:
 
 <table class="state-table">
 <thead>
@@ -132,31 +131,12 @@ Two buttons appear in every step:
 </table>
 
 - **Lock** means "I am done with this step for these rows". Locked rows cannot
-  have their options for that step changed, the next update does not re-run
+  have their analysis options for that step changed, the next update does not re-run
   them, and they move on to the next step. You can unlock at any time.
 
 The lock and state icons at the left of each row are buttons too: clicking a
 row's lock icon locks or unlocks that row alone, and clicking its state icon
-sets the state of that row alone, with the same questions the toolbar buttons
-ask. Unlocking asks first; tick **Don't ask again this session** to skip that
-question until you close the app.
-
-::: {.alert .alert-warning}
-**Keep this browser tab open while a run is going.** Closing the tab, reloading
-the page, closing the run window, or pressing **Stop** stops the
-run. RiboPilot stops it cleanly and keeps the work that finished. To carry on,
-press **Update** again with **Resume previous run?** ticked. Only one run can go
-at a time for a project, so you cannot start a new run until a stopped one has
-finished cleaning up, which can take up to a minute. Keep the computer awake
-too: a sleeping computer stops the run.
-:::
-
-::: {.alert .alert-hydra}
-[HYDRA]{.hydra-tag} **Runs go to the queue.** Open the app from RStudio Server
-with the same command. The run window offers **Submit as job** instead of
-**Run from App**, and a submitted job keeps going after you close the browser.
-See [Smithsonian Hydra setup](NMNH-Hydra.html#open-the-app-and-run).
-:::
+sets the state of that row alone.
 
 # Test project walkthrough
 

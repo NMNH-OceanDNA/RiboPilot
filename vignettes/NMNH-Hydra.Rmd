@@ -8,43 +8,26 @@ vignette: >
 ---
 
 This page covers what is specific to the Smithsonian Hydra cluster. Once you
-are set up here, RiboPilot works as in the [Get started](RiboPilot.html)
-walkthrough, with `executor = "NMNH_Hydra"`.
-[Running on a cluster](Clusters.html) explains how RiboPilot uses a cluster in
-general.
+are set up here, continue with the [Get started](RiboPilot.html)
+walkthrough, but using `executor = "NMNH_Hydra"` for the `new_test_project()` function.
+[Running on a cluster](Clusters.html) has general instructions for using RiboPilot on a cluster.
 
-You need a Hydra account; see the
+If you need a Hydra account, see the
 [Hydra policies page](https://confluence.si.edu/display/HPC/Hydra+Policies).
 
 # Get an R session on Hydra
 
 The simplest route is the dedicated RStudio Server at
 [https://galaxy.si.edu/R4](https://galaxy.si.edu/R4). Log in from a browser
-with your Hydra credentials; it can see `/pool`, `/scratch`, and `/store`. It is
-a shared resource, so use it for interactive work and submit runs as jobs.
+with your Hydra credentials. This is
+a shared resource, so use it for interactive work and submit larger runs as jobs.
 Details are on the
 [Hydra RStudio page](https://confluence.si.edu/display/HPC/Dedicated+RStudio+Server).
 
-To run your own RStudio Server session instead, start one on a login node:
-
-```bash
-conda deactivate                       # avoid package conflicts
-module load tools/R/RStudio/server
-start-rstudio-server
-```
-
-The command prints an `ssh -N -L ...` line to run in a terminal on your own
-computer. Leave both terminals open and open `http://localhost:8787` in a
-browser. If port 8787 is taken, pick another with
-`start-rstudio-server -port 8890`.
-
-Use Chrome or Firefox, not Safari.
-
 # Install Nextflow
 
-Hydra has no Nextflow module, so install your own copy once. Run these in a
-**terminal** on Hydra: an SSH session to a login node, or the Terminal pane of
-your RStudio Server session.
+Hydra has no Nextflow module, so install your own copy once. Run these commands in a
+**terminal** connected to Hydra:
 
 ```bash
 cd ~
@@ -58,7 +41,7 @@ source ~/.bashrc
 ```
 
 Job scripts written by the app load Java and read `~/.bashrc` for you. If you
-use Nextflow from a shell yourself, run `module load tools/java/21.0.2` first.
+want to use Nextflow from a shell yourself, run `module load tools/java/21.0.2` first.
 
 # Install RiboPilot
 
@@ -90,12 +73,7 @@ move them.
 RiboPilot::RiboPilot("/pool/public/genomics/<USER>/RiboPilot/test_project")
 ```
 
-An RStudio Server session on Hydra starts without the job scheduler, Java, or
-your `~/bin` on its PATH. The app puts them back when it starts. You only need
-to call `RiboPilot::hydra_setup()` yourself, once per session, if you run the
-pipeline from the R console instead of the app.
-
-Press **Update**. The run window shows a job script that goes to Hydra's queue
+The **Update** run window shows a job script that is sent to Hydra's queue
 for workflow managers. Press **Submit as job**, or **Save script** to submit it
 yourself with `qsub`. The job keeps going after you close the browser. Watch it
 with `qstat` in a terminal, then press the reload button above the table to see
