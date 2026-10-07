@@ -59,16 +59,14 @@ not be downloaded, the identity check is skipped with no warning, so a gene with
 # The Checks column
 
 The Checks column puts every check on one line, worst first, in a color that
-matches the worst finding. On the Assemble table it covers the sample's kept
-contigs; on the Annotation Review table, one contig. "warnings" means a contig warning from
-the table above, the ones the Warnings column counts; "feature flags" means a
-warning on one of its features.
+matches the worst finding. On the Assemble table it summarizes all of the sample's kept
+contigs.
 
 | Checks says | Color | What happens |
 |---|---|---|
 | off target, contaminant, severe chimera, ITSx chimeric | red | Lock and the Export window ask first, until the contig is marked Reviewed. |
-| minor chimera, uncertain screen, ITSx, warnings, feature flags | amber | Worth a look; nothing asks. |
-| ok | green | The best BLAST matches are in your sample's phylum, and nothing is flagged. This does not confirm the species. |
+| minor chimera, uncertain screen, ITSx, warnings, feature flags | amber | Worth a look, but nothing asks when you Lock or Export. |
+| ok | green | The best BLAST matches are in your sample's phylum, and nothing is flagged. |
 | no reference | grey | Nothing is flagged, but the BLAST screen had no usable match to judge by. |
 
 # What the BLAST screen searches
