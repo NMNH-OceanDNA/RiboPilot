@@ -140,30 +140,18 @@ for the compute nodes on offer.
 :::
 
 When the run finishes, open SRR22396893's details. Baited SPAdes recovers
-four contigs over 500 bp, but none spans the whole 18S-to-28S region: p1.s1
-and p1.s2 are pieces of 28S, p1.s3 is part of 18S, and p1.s4 runs from the end
-of 18S into ITS1. The two shorter contigs are set to Drop. Read depth for this
-sample is low (a median of about 10), which likely keeps the pieces from joining.
-Each contig you keep becomes its own partial record at export.
+four contigs over 500 bp, but none spans the whole 18S-to-28S region.
+The two shorter contigs are set to Drop. Read depth for all of the contigs
+is low, which is likely why the we cannot assemble a larger contig.
 
 ![Baited SPAdes contigs for SRR22396893: four partial pieces of 18S, ITS1, and 28S](figures/get-started/assemble-details-baited.png)
 
-Use this only for samples that failed. A sample that already has a good contig
-does not need it. [Choosing an assembly method](Assembly-Methods.html)
-compares the assembler options built into RiboPilot.
+For more information about assemblers in RiboPilot, see [Choosing an assembly method](Assembly-Methods.html)
 
 # Lock the samples when you are done reviewing
 
 Select one or more samples and press **Lock**. Locked samples now appear in the Annotation Review
 step. For this test run, lock all 12 passing samples. When Lock asks about
 CHIM01, press **Lock anyway**, so you can see the Export step catch it too.
-
-::: {.alert .alert-info}
-**What you should see.** CHIM00 is clean. CHIM01 is flagged in red: the BLAST
-screen names *Penicillium*, and the chimera check calls it severe, with the join
-near 2,625 bp. SRR22396893 fails, then assembles into partial pieces with the baited assembler.
-SRR33849683 gives two contigs, so it becomes two records; its first contig
-gets a minor chimera call, a weaker signal worth a look.
-:::
 
 <p class="next-step"><a href="Test-Project-Annotate.html">Next: Annotation Review &rarr;</a></p>
