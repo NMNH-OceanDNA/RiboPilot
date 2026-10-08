@@ -16,13 +16,12 @@ vignette: >
 <a href="Test-Project-Export.html">5. Export</a>
 </div>
 
-To assemble a sample, RiboPilot compares its reads with known rDNA sequences
-from related organisms, a "reference database". This step builds one database
-per group of related samples, from GenBank, and reuses it across projects.
+To assemble a sample, RiboPilot compares its reads with a reference database of
+rDNA sequences from related organisms. This step builds one database
+per group of related samples from GenBank, which can be reused across projects.
 
-Press **Propose groups**. RiboPilot groups samples that can share a database,
-using how many GenBank records each candidate group holds. For the test
-samples it proposes three groups. The red line warns that one of them,
+To start, click **Propose groups**. RiboPilot automatically groups samples that can share a database.
+For the test project samples it proposes three groups. The red line warns that one of them,
 Actinopteri (all ray-finned fishes), holds more records than the usual maximum:
 
 ![Proposed reference groups for the test samples](figures/get-started/reference-propose.png)
@@ -31,7 +30,7 @@ Press **Apply**. Then switch to the **Groups** view, tick all three groups, and
 click **Set up database** at the end of any ticked row. The window offers
 **Download sequences from GenBank**, **Use a database I already have**, and
 **Leave these samples on their current database**. With a single group ticked,
-as in the picture, it also offers **Change which clade this group uses**:
+it also offers **Change which clade this group uses**:
 
 ![The choices for setting up a group's reference database](figures/get-started/reference-setup.png)
 
@@ -51,7 +50,7 @@ In our test, the Syngnathiformes database (about 10,500 GenBank records) took
 under 3 minutes and Pleuronectiformes (about 2,300 records) under 1 minute.
 Actinopteri holds about 43,000 records, so its download takes much longer.
 
-For your own samples, do this step before you assemble.
-[Reference databases](Reference-Databases.html) explains the other choices.
+When working with your own samples, see
+[Reference databases](Reference-Databases.html) for more details.
 
 <p class="next-step"><a href="Test-Project-Assemble.html">Next: Assemble &rarr;</a></p>

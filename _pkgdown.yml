@@ -54,8 +54,6 @@ navbar:
       - text: Usage
       - text: "Your own project"
         href: articles/Your-Own-Project.html
-      - text: "Sample metadata"
-        href: articles/Sample-Metadata.html
       - text: "Reference databases"
         href: articles/Reference-Databases.html
       - text: "Choosing an assembly method"
@@ -66,6 +64,16 @@ navbar:
         href: articles/GenBank-Submission.html
       - text: "Citing RiboPilot"
         href: articles/Citing.html
+      - text: -------
+      - text: Metadata
+      - text: "Sample metadata"
+        href: articles/Sample-Metadata.html
+      - text: "Linking records across databases"
+        href: articles/Metadata-Linking.html
+      - text: "NMNH voucher submissions"
+        href: articles/NMNH-Vouchers.html
+      - text: "Metadata field reference"
+        href: articles/Metadata-Reference.html
       - text: -------
       - text: Computing environments
       - text: "Running on a cluster"
@@ -143,12 +151,18 @@ articles:
 - title: "Usage"
   contents:
   - 'Your-Own-Project'
-  - 'Sample-Metadata'
   - 'Reference-Databases'
   - 'Assembly-Methods'
   - 'Curation-Flags'
   - 'GenBank-Submission'
   - 'Citing'
+
+- title: "Metadata"
+  contents:
+  - 'Sample-Metadata'
+  - 'Metadata-Linking'
+  - 'NMNH-Vouchers'
+  - 'Metadata-Reference'
 
 - title: "Computing environments"
   contents:
