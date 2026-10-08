@@ -19,7 +19,7 @@ vignette: >
 For the test project, do this:
 
 1. Click a contig's ID to open it, and look over its features and checks.
-2. Close the window, then tick every row with the box in the table header.
+2. Close the window, then tick every row.
 3. Press **Lock**. The app asks about CHIM01, which is flagged; choose **Lock
    anyway**.
 
@@ -30,59 +30,57 @@ Each kept contig of a locked sample is one row:
 
 ![The Annotation Review table, one row per contig](figures/get-started/annotation-table.png)
 
-The **Checks** column sums up each contig's checks as in the Assemble step. It sits
-right after the ID, or after **Path #** and **Contig #** when a sample has more
-than one contig, as in the test project. The Warnings, ITSx Warnings, Screen, and
-Chimera columns further right hold the details; the **Columns** menu shows or
-hides them under **Check details**.
-
-Click a contig's ID to open it. The window shows the feature model (18S, ITS1,
-5.8S, ITS2, 28S), **Sequence and read coverage**, **Edit active feature
-boundaries**, the **Reference alignment**, **Curation warnings**, the
-**Chimera check**, and **Notes**. Your notes also show in the table's **User
-Notes** column once you close the window.
-
-**Sequence and read coverage** draws the contig as a zoomable map: read depth,
-the share of reads clipped at each base, the genes as arrows (dashed ends are
-partial), and the bases once you zoom in. Scroll to zoom, drag to pan, or type a
-position. Clicking a gene makes it the active feature, the one that **Edit
-active feature boundaries** and the **Reference alignment** act on.
-
-![A contig: its five features, read coverage, and gene map](figures/get-started/annotation-details.png)
-
-Three marks record what you decided about a contig: **Mark Reviewed**, **Exclude
-& Lock**, and **Mark Partial**. Use the toolbar buttons for the ticked contigs, or
-the buttons at the top of a contig's window.
-[Preparing a GenBank submission](GenBank-Submission.html#check-before-you-submit)
-says what each mark does to the export.
-
-**Lock** locks the contig and keeps the window open; **Lock & Close** locks it and
-closes the window. Neither marks it Reviewed. If the contig has a red Checks
-finding and is not marked Reviewed, both ask first, as **Lock** in the toolbar
-does.
-
-A locked contig is read only. To change its boundaries, trim it, restore it, or
-change its marks, unlock it first. Only contigs that are locked here, and whose
-sample is locked in the Assemble step, can be exported. Only one assembly path
-can be locked per sample: paths are alternative reconstructions of the same
-rDNA repeat, and a sample exports one. If a sample shows contigs from more than
-one path, lock the contigs of its **Selected Path** (see the Assemble table)
-unless the checks point to another.
-
-GenBank tends to reject sequence outside the genes, so trim before a real
-submission. To trim many contigs at once, tick them and press **Trim** in the toolbar. Choose
-**Match gene ends** to keep only the span from 18S to 28S, or **Gene
-ends + flank** to keep a few extra bases on each side. Only contigs
-with all five features (18S, ITS1, 5.8S, ITS2, and 28S) are trimmed; the window
-lists the others and why, such as a missing feature or a lock, before you
-confirm. While a run is going, contigs still queued in it are skipped. **Restore** next to it undoes the trim on the ticked contigs, as
-**Restore assembly** does in a contig's window.
-
-Changes here apply at once: a trim or a boundary edit re-checks the contig right
-away. Press **Update** in the Assemble step again only after you change an
-option set, or set a State to Ready to run.
+The **Checks** column summarizes each contig's checks as in the Assemble step.
+The Warnings, ITSx Warnings, Screen, and Chimera columns show a breakdown of each
+contig check.
 
 [Quality checks and flags](Curation-Flags.html) explains what each warning
 means.
+
+Click a contig's ID to see more details. 
+
+![A contig: its five features, read coverage, and gene map](figures/get-started/annotation-details.png)
+
+The window shows a table of annotated features (18S, ITS1,
+5.8S, ITS2, 28S), **Sequence and read coverage**, **Edit active feature boundaries**, 
+the **Reference alignment**, **Curation warnings**, the
+**Chimera check**, and **Notes**. Your notes also show in the table's **User
+Notes** column once you close the window.
+
+**Sequence and read coverage** draws the contig as an interactive map: read depth,
+the percentage of clipped reads, the features as arrows (dashed ends are
+partial annotations), and the base pairs once you zoom in. Scroll to zoom, drag to pan, or type a
+position. Clicking a gene makes it the active feature that will show up in the **Edit
+active feature boundaries** and the **Reference alignment** panels below.
+
+At the top of this window, three buttons record what you decided about a contig: **Mark Reviewed**, **Exclude
+& Lock**, and **Mark Partial**.
+
+**Lock** locks the contig and keeps the window open; **Lock & Close** locks it and
+closes the window. Neither marks it Reviewed. If the contig failed some of the checks
+and is not marked Reviewed, RiboPilot will print warning messages when you attempt
+to lock the sample.
+
+A locked contig is read only. To make any edits, unlock it first. 
+Only contigs that are locked can be exported. Only one assembly path
+can be locked per sample: paths are alternative reconstructions of the same
+rDNA repeat, so a sample should only export one. However, multiple contigs
+can be locked and exported for the same sample.
+
+GenBank tends to reject submissions containing sequence outside the core 18s-5.8s-28s region.
+So for a real submission, it is best to trim your contigs before export. 
+
+To trim many contigs at once, tick them and press **Trim** in the toolbar. Choose
+**Match gene ends** to keep only the annotated span, or **Gene
+ends + flank** to keep a few extra bases on each side. Only contigs
+with all five features (18S, ITS1, 5.8S, ITS2, and 28S) can be trimmed using this bulk trim button. To trim
+partial contig, open the details window and click the "Trim Assembly" button. This button also allows you to trim the contig using a custom
+range.
+
+RiboPilot saves the original contig, so you can use the **Restore** button (or **Restore assembly** in a contig's window) 
+to undo a trim.
+
+After a trim or an edit to gene boundaries, the contig's quality flags are recalculated right away. 
+BLAST, chimera checks, ITSx, and coverage results keep the values from the last pipeline run.
 
 <p class="next-step"><a href="Test-Project-Export.html">Next: Export &rarr;</a></p>

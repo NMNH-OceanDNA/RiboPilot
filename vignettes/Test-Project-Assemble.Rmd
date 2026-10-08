@@ -18,12 +18,12 @@ vignette: >
 
 # Run the pipeline
 
-Press **Update**. The run window says how many samples will run and shows the
+To start the pipeline, press **Update**. The run window says how many samples will run and shows the
 Nextflow command:
 
 ![The run window, with the number of samples to run and the Nextflow command](figures/get-started/update-window.png)
 
-**Resume previous run?** reuses work that finished in an earlier run, so a
+**Resume previous run?** reuses work so that a
 stopped or failed run picks up where it left off. Leave it ticked.
 
 Press **Run from App**. Progress shows in the window, one line per step:
@@ -31,7 +31,7 @@ Press **Run from App**. Progress shows in the window, one line per step:
 ![Progress of a running pipeline](figures/get-started/run-progress.png)
 
 ::: {.alert .alert-warning}
-**Keep this browser tab open and the computer awake while the run goes.**
+**Keep this browser tab open and the computer awake while running the pipeline.**
 Closing the tab or pressing **Stop** stops the run; see
 [Stopping and resuming a run](Troubleshooting.html#stopping-and-resuming-a-run).
 :::
@@ -41,13 +41,13 @@ Closing the tab or pressing **Stop** stops the run; see
 **Run from App**; see [Submit a run as a job](Clusters.html#submit-a-run-as-a-job).
 :::
 
-One run does everything for each sample: it cleans the reads, assembles the
+One pipeline run does everything for each sample: it cleans the reads, assembles the
 rDNA, picks and scores the contigs, compares them with GenBank, maps the reads
-back for depth, finds the five features, runs the quality checks, and proposes
+back for depth, annotates the five features, runs the quality checks, and proposes
 which contigs to keep. There is no separate annotation run. The test run
 takes about 20 minutes.
 
-When the run ends, the app says how it went. A clean run says "Run finished
+When the run ends, the app reports how it went. A clean run says "Run finished
 with no failures." Otherwise it shows a report that names every sample that
 failed and why. In the test project one sample fails on purpose:
 
@@ -55,10 +55,13 @@ failed and why. In the test project one sample fails on purpose:
 
 If a step of the pipeline stops with an error, the report also names the
 sample, the step, the error code, and the likely cause. **Copy report** copies
-it so you can send it to us. The [Troubleshooting](Troubleshooting.html) page
-explains how to read it.
+it so you can easily share it with the developers for assistance. The [Troubleshooting](Troubleshooting.html) page
+explains how to interpret the report.
 
-# Read the table
+You can examine these reports later by clicking the **Run Reports** button in the top right
+corner of the app.
+
+# Examine the results
 
 The Assemble table has one row per sample:
 
@@ -69,49 +72,49 @@ The columns to look at first:
 - **State**: a green check means the sample finished; a red triangle means it
   failed. Hover over the icon to see what it means.
 - **Lock**: open until you lock the sample.
-- **Checks**: what the quality checks found on the sample's kept contigs.
+- **Checks**: summary of all quality checks for the sample's kept contigs.
   Red means Lock and Export will ask about it first, amber is worth a look,
   green is ok, and grey means there was nothing to compare with. See
   [The Checks column](Curation-Flags.html#the-checks-column).
 - **# Paths**, **# Contigs**, and **# Kept**: how many assembly paths and
-  contigs the sample gave, and how many contigs are kept. 0 kept means
-  there is nothing to annotate.
-- **ITSx Warnings**: how many of the sample's contigs stock ITSx flags; see
+  contigs the assembly produced, and how many contigs are kept. 0 kept contigs means
+  there is nothing to export.
+- **ITSx Warnings**: shows any issues reported by the ITSx check; see
   [the final ITSx check](GenBank-Submission.html#check-before-you-submit).
 - **Notes**: what the pipeline noted about the sample, for example why it
   failed.
 - **User Notes**: your own notes on the sample, typed in the **Notes** box at
   the bottom of its details window.
 
-The **Columns** menu above the table shows or hides the **Stats** and
-**Options** column groups.
-
 Click a sample's ID to open its details. The window lists the sample's
-contigs, each with **K** (keep) and **D** (drop) buttons and a Screen verdict
-from the BLAST screen. Below the list are three panels for the contig
-you click: **BLAST evidence**, **Sequence and read coverage**, and **Chimera check**. For
-CHIM01, the BLAST evidence shows that the best match is a *Penicillium* mold,
-which shares nothing with *Upeneus parvus*:
+contigs, each with **K** (keep) and **D** (drop) buttons, as well as other 
+information like coverage, features annotated, and the verdict
+from the BLAST screen. Below the list are three panels for the highlighted contig:
+**BLAST evidence**, **Sequence and read coverage**, and **Chimera check**. 
+
+CHIM01 is an artificial chimeric contig, crated by joining sequence data from
+*Penicillium* mold and the fish species *Upeneus parvus*.
+The BLAST evidence shows that the best overall match is a *Penicillium* mold:
 
 ![CHIM01's BLAST evidence, with its best match a Penicillium mold](figures/get-started/assemble-details-chim01.png)
 
-Its **Chimera check** marks where the fish sequence meets the mold, near
-2,625 bp:
+But the the **Chimera check** panel shows more detail. You can see where the
+fish sequence was spliced with the mold sequence, near 2,625 bp:
 
 ![Chimera check for CHIM01, with the join between the fish and the mold marked](figures/get-started/assemble-chimera-chim01.png)
 
-RiboPilot proposes keep or drop for each contig (this is called triage), and
+RiboPilot proposes keep or drop for each contig (a process called triage), and
 never overwrites a call you made by hand. The **Triage** button runs the
 proposal again on the ticked samples, skipping any whose assembly is locked.
-[Quality checks and flags](Curation-Flags.html) explains the rules.
+[Quality checks and flags](Curation-Flags.html) explains the triage rules.
 
-In this step you mostly keep or drop contigs. Moving gene boundaries happens
-in the Annotation Review step.
+In the Assemble step, you mostly choose which contigs to keep or drop contigs.
+Trimming contigs and adjusting gene boundaries happens in the Annotation Review step.
 
 # Rescue a sample that failed
 
-One test sample is expected to fail: every contig that SRR22396893's reads
-assembled into is shorter than the 500 bp minimum. Its State shows a red
+One test sample is expected to fail: every contig assembled for SRR22396893
+is shorter than the default 500 bp minimum. Its State shows a red
 triangle. Open it to read why, and what to try next:
 
 ![Details of a failed sample, with the reason and the next step](figures/get-started/failed-sample.png)
@@ -136,23 +139,19 @@ job automatically. See the
 for the compute nodes on offer.
 :::
 
-Use this only for samples that failed. A sample that already has a good contig
-does not need it. [Choosing an assembly method](Assembly-Methods.html)
-compares the three assemblers.
+When the run finishes, open SRR22396893's details. Baited SPAdes recovers
+four contigs over 500 bp, but none spans the whole 18S-to-28S region.
+The two shorter contigs are set to Drop. Read depth for all of the contigs
+is low, which is likely why the we cannot assemble a larger contig.
 
-# Lock the samples you are happy with
+![Baited SPAdes contigs for SRR22396893: four partial pieces of 18S, ITS1, and 28S](figures/get-started/assemble-details-baited.png)
 
-Tick them and press **Lock**. Locked samples appear in the Annotation Review
-step. If a kept contig of a ticked sample has a red Checks finding, Lock names
-it and asks first. For this test run, lock all 12: when Lock asks about
+For more information about assemblers in RiboPilot, see [Choosing an assembly method](Assembly-Methods.html)
+
+# Lock the samples when you are done reviewing
+
+Select one or more samples and press **Lock**. Locked samples now appear in the Annotation Review
+step. For this test run, lock all 12 passing samples. When Lock asks about
 CHIM01, press **Lock anyway**, so you can see the Export step catch it too.
-
-::: {.alert .alert-info}
-**What you should see.** CHIM00 is clean. CHIM01 is flagged in red: the BLAST
-screen names *Penicillium*, and the chimera check calls it severe, with the join
-near 2,625 bp. SRR22396893 fails, then assembles with the baited assembler.
-SRR33849683 gives two contigs, so it becomes two records; its first contig
-gets a minor chimera call, a weaker signal worth a look.
-:::
 
 <p class="next-step"><a href="Test-Project-Annotate.html">Next: Annotation Review &rarr;</a></p>
