@@ -56,12 +56,43 @@
   that matches more than one organism is never picked automatically.
 * Isomer and paralog classes are computed after annotation finishes.
 
+## Annotation Review edits and Update
+
+* Trims, gene boundary edits, and 5'/3' choices on Annotation Review change a
+  working copy of the contig. The original contig and its check results stay as
+  the pipeline made them, and the Assemble step shows only the original.
+* A trim or a boundary edit marks the contig's checks "not run". The new
+  **Update** button on Annotation Review reruns every offline check on those
+  contigs, one contig at a time: feature counts, gene completeness, ITSx, the
+  BLAST hits, the BLAST screen, the reference alignment, the quality flags, and
+  the chimera check. It never re-annotates and never contacts NCBI. Quality
+  flags are no longer recalculated in the app right after an edit.
+* State on Annotation Review offers only Ready to run and On hold, and queues
+  contigs for that Update. A contig whose original still waits for the
+  Assemble step's Update says so.
+* Lock on Annotation Review refuses the whole click when a selected contig's
+  checks are not finished, and lists those contigs with what to do next.
+  Exclude & Lock still works. Export leaves such contigs out and counts them.
+* Restore deletes the working copy, so the contig shows its original sequence,
+  features, and checks again. It undoes trims, boundary edits, and 5'/3'
+  choices; marks, notes, and export group stay. Restore on the toolbar works on
+  any contig with a working copy, not only trimmed ones.
+* Export no longer runs ITSx. The `itsx_check` column of `<group>_summary.csv`
+  and the Export done window report the ITSx check stored for each contig, and
+  `<group>_itsx_check.csv` and the `itsx_check/` folder are gone. An ITSx run
+  that crashed reads `not_run(ITSx did not finish)`, never clean, and the
+  Checks column shows it as "ITSx not checked".
+* Existing projects need `backwards_compatibility()` once. It turns earlier
+  trims and edits into working copies and puts the original contigs back.
+
 ## Re-running samples
 
 * Assembling a sample again clears the old genes, screen, chimera call, BLAST
   results, lock, and marks of every contig whose sequence changed. Your own
   keep and drop calls follow their sequence.
-* Changing annotation options re-runs only annotation, and keeps trims.
+* Changing annotation options re-runs only annotation. A contig you trimmed or
+  edited on Annotation Review keeps its edits, and its checks are queued for
+  Update on Annotation Review; Restore takes the new annotation.
 * Annotation options take extra command-line flags for the rRNA caller, one
   field for pybarrnap and one for barrnap, since the two take different flags.
   The flags go to both per-contig annotation and the rRNA scan of a supplied
@@ -113,8 +144,10 @@
 * The Partial column reads "no" for every unit not marked Partial, so a filter
   on "no" lists only complete units.
 * The Checks column can be dragged wider.
-* The chimera check plot, segments, and windows redraw after a trim, a Restore,
-  or a feature boundary edit, instead of only when another unit is picked.
+* The chimera check panel follows the contig's edits: after a trim or a feature
+  boundary edit it says "Not run yet. Press Update." until the recheck has run,
+  and after a Restore it shows the original check again. A contig waiting for the
+  Assemble step's Update shows "Waiting for the Assemble step's Update." there.
 * Trim and Restore buttons on the Assemble and Annotation Review toolbars trim
   many units at once, to their gene ends or gene ends plus a flank, and undo it.
   Only units with all five features are trimmed; the window lists the rest and

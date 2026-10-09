@@ -125,14 +125,14 @@ find_n_runs <- function(seq, min_len = MIN_ASSEMBLY_GAP) {
 #' the FASTA/feature id.
 #' @noRd
 feature_table_text_con <- function(con, id, path = 1L, scaffold = 1L, seqid = id) {
-  d <- DBI::dbGetQuery(con,
-    "SELECT * FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
+  d <- DBI::dbGetQuery(con, paste("SELECT element, type, start, stop, strand,", REVIEW_EFF_PARTIALS,
+    "FROM review_annotations_v WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start"),
     params = list(id, path, scaffold))
   hdr <- paste0(">Feature ", seqid)
   if (nrow(d) == 0) {
     return(paste0(hdr, "\n"))
   }
-  st <- DBI::dbGetQuery(con, "SELECT sequence, length FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
+  st <- DBI::dbGetQuery(con, "SELECT sequence, length FROM review_units_v WHERE ID = ? AND path = ? AND scaffold = ?",
     params = list(id, path, scaffold))
   seq <- if (nrow(st)) st$sequence[1] else NA_character_
   seqlen <- if (nrow(st) && !is.na(st$length[1])) st$length[1] else max(d$stop)
@@ -221,20 +221,18 @@ partial_ends <- function(d, seqlen, trimmed = FALSE) {
     p3 = eff(flag("partial_stop"), ifelse(minus, left, right)))
 }
 
-#' Is each end of a unit trimmed now? (compared with its pre-trim snapshot)
+#' Is each end of a unit trimmed? Read from the kept window of its review copy
+#'
+#' A unit without a copy, or a database without the review layer, is untrimmed.
+#' Readers of the original tables pass c(FALSE, FALSE) instead of calling this.
 #' @return c(left, right); any() says whether the unit is trimmed at all.
 #' @noRd
 unit_trimmed <- function(con, id, path, scaffold) {
-  b <- tryCatch(DBI::dbGetQuery(con,
-    "SELECT b.sequence bak, a.sequence cur FROM assembly_backup b JOIN assemblies a
-       ON a.ID = b.ID AND a.path = b.path AND a.scaffold = b.scaffold
-     WHERE b.ID = ? AND b.path = ? AND b.scaffold = ?",
+  w <- tryCatch(DBI::dbGetQuery(con,
+    "SELECT trim_start, trim_end, orig_length FROM review_units_v WHERE ID = ? AND path = ? AND scaffold = ?",
     params = list(id, as.integer(path), as.integer(scaffold))), error = function(e) data.frame())
-  if (nrow(b) == 0 || is.na(b$bak[1])) return(c(FALSE, FALSE))
-  if (is.na(b$cur[1])) return(c(TRUE, TRUE))
-  off <- as.integer(regexpr(b$cur[1], b$bak[1], fixed = TRUE))
-  if (off < 1) return(c(TRUE, TRUE))
-  c(off > 1, off + nchar(b$cur[1]) - 1 < nchar(b$bak[1]))
+  if (nrow(w) == 0) return(c(FALSE, FALSE))
+  c(isTRUE(w$trim_start[1] > 1), isTRUE(w$trim_end[1] < w$orig_length[1]))
 }
 
 #' TRUE where a submission_risk string carries a tag the export window asks
@@ -249,24 +247,33 @@ has_screen_risk <- function(risk) {
 #' Findings are listed worst first. The red ones (off target, contaminant,
 #' severe chimera, ITSx chimeric) are the tags `has_screen_risk()` reads, so
 #' Lock and Export ask about them. "ok" needs every unit screened on_target;
-#' with nothing flagged and no usable screen the cell says "no reference".
+#' with nothing flagged and no usable screen the cell says "no reference". An
+#' ITSx result that is missing or not_run is the amber "ITSx not checked".
 #' Only kept scaffolds count.
 #' @param con Open project DB connection.
 #' @param by "unit" (one row per ID, path, scaffold) or "sample" (one per ID).
+#' @param review TRUE reads the review layer (Annotation Review): a contig
+#'   whose checks are not done shows its state instead of findings.
 #' @return data.frame(ID, \[path, scaffold,\] checks, checks_tone)
 #' @noRd
-unit_checks <- function(con, by = c("unit", "sample")) {
+unit_checks <- function(con, by = c("unit", "sample"), review = FALSE) {
   by <- match.arg(by)
-  u <- DBI::dbGetQuery(con,
+  tb <- if (review) {
+    c("review_units_v", "review_screen_v", "review_chimera_v", "review_annotations_v")
+  } else {
+    c("annotate", "screen", "chimera", "annotations")
+  }
+  u <- DBI::dbGetQuery(con, sprintf(
     "SELECT an.ID, an.path, an.scaffold, sc.screen_verdict, ch.label AS chimera_label,
        an.chimeric, an.curate_flags, an.itsx_warnings,
-       (SELECT COUNT(*) FROM annotations f WHERE f.ID = an.ID AND f.path = an.path
+       (SELECT COUNT(*) FROM %4$s f WHERE f.ID = an.ID AND f.path = an.path
           AND f.scaffold = an.scaffold AND f.status = 'flag') AS n_feat_flags
-     FROM annotate an
+     FROM %1$s an
        JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
-       LEFT JOIN screen sc ON sc.ID = an.ID AND sc.path = an.path AND sc.scaffold = an.scaffold
-       LEFT JOIN chimera ch ON ch.ID = an.ID AND ch.path = an.path AND ch.scaffold = an.scaffold
-     WHERE COALESCE(asm.ignore, 0) = 0")
+       LEFT JOIN %2$s sc ON sc.ID = an.ID AND sc.path = an.path AND sc.scaffold = an.scaffold
+       LEFT JOIN %3$s ch ON ch.ID = an.ID AND ch.path = an.path AND ch.scaffold = an.scaffold
+     WHERE COALESCE(asm.ignore, 0) = 0
+     ORDER BY an.ID, an.path, an.scaffold", tb[1], tb[2], tb[3], tb[4]))
   txt <- function(x) { x <- as.character(x); x[is.na(x)] <- ""; x }
   fl <- strsplit(txt(u$curate_flags), "; ", fixed = TRUE)
   itsx <- txt(u$itsx_warnings)
@@ -278,12 +285,20 @@ unit_checks <- function(con, by = c("unit", "sample")) {
     "minor chimera" = u$chimera_label %in% "minor",
     "uncertain screen" = u$screen_verdict %in% "uncertain",
     "ITSx" = nzchar(itsx) & !startsWith(itsx, "not_run("),
+    "ITSx not checked" = is.na(u$itsx_warnings) | startsWith(itsx, "not_run("),
     "warnings" = vapply(fl, function(x) any(x != "contaminant"), logical(1)),
     "feature flags" = u$n_feat_flags > 0)
   cols <- if (by == "unit") c("ID", "path", "scaffold") else "ID"
   key <- if (by == "unit") unit_key(u$ID, u$path, u$scaffold) else u$ID
+  gate <- rep(NA_character_, nrow(u))
+  if (review) {
+    st <- review_unit_state(con, u[c("ID", "path", "scaffold")])$state
+    gate <- ifelse(st %in% "done", NA_character_, review_state_text(st))
+  }
   rows <- split(seq_len(nrow(u)), factor(key, levels = unique(key)))
   cell <- vapply(rows, function(i) {
+    g <- unique(stats::na.omit(gate[i]))
+    if (length(g)) return(c(paste(g, collapse = ", "), "info"))
     h <- colSums(hit[i, , drop = FALSE]) > 0
     tone <- if (any(h[1:4])) "danger" else if (any(h)) "warning"
       else if (all(u$screen_verdict[i] %in% "on_target")) "success" else "neutral"
@@ -298,7 +313,7 @@ unit_checks <- function(con, by = c("unit", "sample")) {
 
 #' README text explaining how to submit the bundle to NCBI
 #' @noRd
-submission_readme <- function(label, itsx_check = TRUE) {
+submission_readme <- function(label) {
   paste(c(
     paste0("RiboPilot GenBank submission bundle: ", label),
     paste0("Generated ", format(Sys.time(), "%Y-%m-%d %H:%M")),
@@ -355,16 +370,14 @@ submission_readme <- function(label, itsx_check = TRUE) {
     "evidence (a class-level switch, a ribotyper code, or read evidence only).",
     "It is not a submission risk; look at the contig's chimera check in the app.",
     "",
-    if (itsx_check) c(
-    "FINAL ITSx CHECK",
-    "----------------",
-    "Stock ITSx (default parameters, no organism group, the Portal's setup) was",
-    paste0("run over ", label, ".fasta; see the itsx_check column in ", label, "_summary.csv"),
-    paste0("and the per-record detail in ", label, "_itsx_check.csv (raw ITSx output in"),
-    "itsx_check/). It ran inside the project's container, and the same flags",
-    "were written back to the app's ITSx Warnings column. Empty means ITSx saw",
-    "nothing to flag; not_run(...) means ITSx was unavailable. Flags, and the",
-    "Portal problem each maps to:",
+    "ITSx CHECK",
+    "----------",
+    paste0("The itsx_check column in ", label, "_summary.csv is the stock ITSx check stored"),
+    "for each contig, the same as the app's ITSx Warnings column. RiboPilot runs",
+    "stock ITSx (default parameters, no organism group, the Portal's setup) on each",
+    "contig in the annotation step, and again when Update on Annotation Review",
+    "rechecks an edited contig. Export does not run ITSx. Empty means ITSx saw",
+    "nothing to flag. Flags, and the Portal problem each maps to:",
     "  itsx_chimeric             chimera: 5.8S overlaps SSU/LSU, or domains out of order",
     "  itsx_gap_in_ITS           gap: an N-run inside the ITSx-detected ITS span",
     "  itsx_no_5.8S / itsx_partial_5.8S   misassembly: 5.8S missing or truncated",
@@ -376,16 +389,37 @@ submission_readme <- function(label, itsx_check = TRUE) {
     "                            with ITSx's score for it vs. the best score for the sample's own group;",
     "                            \"tie\" or \"near tie\" (within 2 points) means the group call is unreliable",
     "  itsx_not_detected         ITSx found no ITS; the Portal cannot annotate it",
-    "")), collapse = "\n")
+    "not_run(...) means the check could not decide; the contig is exported as it",
+    "is. To check it again, unlock it on Annotation Review, set its State to Ready",
+    "to run, and press Update. The reasons:",
+    "  not_run(ITSx did not finish)         ITSx crashed or was stopped, for",
+    "                                       example when it ran out of memory",
+    "  not_run(ITSx check failed: <why>)    RiboPilot could not read the ITSx output",
+    "  not_run(not checked before upgrade)  the contig was locked when the project",
+    "                                       was upgraded and had no stored check",
+    "  not_run(not checked)                 no check is stored for this contig",
+    "  any other not_run(...)               written by an older RiboPilot, by its",
+    "                                       export ITSx run or its annotation step,",
+    "                                       for example not_run(no ITSx output) or",
+    "                                       not_run(docker not on PATH)",
+    "ITSx calls can shift with batch size. RiboPilot checks one contig at a time,",
+    "while the Portal checks the whole upload together, so the Portal may call a",
+    "borderline contig differently.",
+    ""), collapse = "\n")
 }
 
 #' Per-unit export summary data.frame
 #'
 #' `units` is a data.frame(ID, path, scaffold, seqid). Includes a
 #' `submission_risk` column (`risk_flags`) so the CSV and HTML report both
-#' surface portal-parity risk flags.
+#' surface portal-parity risk flags, and an `itsx_check` column: the stored
+#' stock ITSx check (annotate.itsx_warnings), `not_run(not checked)` when none
+#' is stored.
+#' @param review TRUE reads the per-contig values from the review layer (export,
+#'   Annotation Review); FALSE from the originals (Assemble step). The marks
+#'   come from annotate and the variant facts from the original screen in both.
 #' @noRd
-export_summary_df <- function(con, units) {
+export_summary_df <- function(con, units, review = FALSE) {
   if (nrow(units) == 0) return(NULL)
   n <- nrow(units)
   ids <- unique(as.character(units$ID))
@@ -393,22 +427,37 @@ export_summary_df <- function(con, units) {
   # one query per fact table for the whole unit set, joined in R
   fetch <- function(sql) tryCatch(DBI::dbGetQuery(con, sprintf(sql, qs), params = as.list(ids)),
     error = function(e) data.frame())
-  m <- fetch(
+  tb <- if (review) {
+    c(res = "review_units_v", seq = "review_units_v", ann = "review_annotations_v",
+      scr = "review_screen_v", chm = "review_chimera_v")
+  } else {
+    c(res = "annotate", seq = "assemblies", ann = "annotations", scr = "screen", chm = "chimera")
+  }
+  m <- fetch(if (review) {
+    "SELECT s.ID, an.path, an.scaffold, v.length, v.n_features,
+       v.missing, an.reviewed, an.partial, an.problematic
+     FROM samples s
+     JOIN annotate an ON an.ID = s.ID
+     JOIN review_units_v v ON v.ID = an.ID AND v.path = an.path AND v.scaffold = an.scaffold
+     WHERE s.ID IN (%s)"
+  } else {
     "SELECT s.ID, an.path, an.scaffold, asm.length, an.n_features,
        an.missing, an.reviewed, an.partial, an.problematic
      FROM samples s
      JOIN annotate an ON an.ID = s.ID
      JOIN assemblies asm ON asm.ID = s.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
-     WHERE s.ID IN (%s)")
-  chi <- fetch("SELECT ID, path, scaffold, chimeric FROM annotate WHERE ID IN (%s)")
-  chm <- fetch("SELECT ID, path, scaffold, label, reason FROM chimera WHERE ID IN (%s)")
-  ann <- fetch("SELECT ID, path, scaffold, element, start, stop FROM annotations
-                WHERE ID IN (%s) ORDER BY ID, path, scaffold, start")
-  asm <- fetch("SELECT ID, path, scaffold, sequence FROM assemblies WHERE ID IN (%s)")
+     WHERE s.ID IN (%s)"
+  })
+  chi <- fetch(paste("SELECT ID, path, scaffold, chimeric FROM", tb[["res"]], "WHERE ID IN (%s)"))
+  chm <- fetch(paste("SELECT ID, path, scaffold, label, reason FROM", tb[["chm"]], "WHERE ID IN (%s)"))
+  ann <- fetch(paste("SELECT ID, path, scaffold, element, start, stop FROM", tb[["ann"]],
+    "WHERE ID IN (%s) ORDER BY ID, path, scaffold, start"))
+  asm <- fetch(paste("SELECT ID, path, scaffold, sequence FROM", tb[["seq"]], "WHERE ID IN (%s)"))
   scr <- fetch("SELECT ID, path, scaffold, variant_class, variant_group, variant_identity
                 FROM screen WHERE ID IN (%s)")
-  sv <- fetch("SELECT ID, path, scaffold, screen_verdict, lca_taxon FROM screen WHERE ID IN (%s)")
-  nts <- fetch("SELECT ID, path, scaffold, curate_flags FROM annotate WHERE ID IN (%s)")
+  sv <- fetch(paste("SELECT ID, path, scaffold, screen_verdict, lca_taxon FROM", tb[["scr"]], "WHERE ID IN (%s)"))
+  nts <- fetch(paste("SELECT ID, path, scaffold, curate_flags FROM", tb[["res"]], "WHERE ID IN (%s)"))
+  itx <- fetch(paste("SELECT ID, path, scaffold, itsx_warnings FROM", tb[["res"]], "WHERE ID IN (%s)"))
   smp <- fetch("SELECT * FROM samples WHERE ID IN (%s)")
 
   ukey <- unit_key(units$ID, units$path, units$scaffold)
@@ -425,6 +474,8 @@ export_summary_df <- function(con, units) {
   v <- unit_variant_facts_df(scr, units)
   svi <- if (nrow(sv)) match(ukey, unit_key(sv$ID, sv$path, sv$scaffold)) else rep(NA_integer_, n)
   nti <- if (nrow(nts)) match(ukey, unit_key(nts$ID, nts$path, nts$scaffold)) else rep(NA_integer_, n)
+  itsx <- if (nrow(itx)) itx$itsx_warnings[match(ukey, unit_key(itx$ID, itx$path, itx$scaffold))] else rep(NA_character_, n)
+  itsx[is.na(itsx)] <- "not_run(not checked)"
 
   si <- match(units$ID, smp$ID)
   taxon <- (smp$Taxon %||% NA)[si]
@@ -459,6 +510,7 @@ export_summary_df <- function(con, units) {
     variant_identity = v$variant_identity, n_variants = v$n_variants,
     submission_risk = risk,
     chimera_warning = ifelse(chm_label %in% "minor", chm_reason, ""),
+    itsx_check = itsx,
     stringsAsFactors = FALSE)
 }
 
@@ -485,13 +537,45 @@ UNIT_MULTI_SQL <- "(SELECT COUNT(DISTINCT x.path) FROM assemblies x
 UNIT_EXPORTED_SQL <- "CASE WHEN an.export_time_stamp IS NULL THEN ''
    ELSE 'exported ' || date(an.export_time_stamp, 'unixepoch', 'localtime') END AS exported"
 
-#' The units an export writes, with their export group
+#' The Export step table: the units an export may write (EXPORTABLE_WHERE), one
+#' row per (ID, path, scaffold), with contig data and checks from the review
+#' layer and the marks from annotate. A contig whose checks are not done shows
+#' "checks not finished, left out" in exported and in check_state, which gates
+#' the check cells (rt_gated).
+#' @noRd
+EXPORT_STEP_SQL <- paste(
+  "SELECT s.ID, an.path, an.scaffold,", UNIT_MULTI_SQL, ", s.Taxon, s.sci_name, s.taxid, v.length,
+     v.n_features, v.missing,
+     v.n_flags, v.curate_flags, an.annotate_notes, v.itsx_warnings, sc.screen_verdict,
+     ch.label AS chimera_label, ch.reason AS chimera_reason,
+     an.reviewed, an.partial, an.export_group,
+     CASE WHEN COALESCE(v.check_switch, 1) != 2 THEN 'checks not finished, left out'
+          WHEN an.export_time_stamp IS NULL THEN ''
+          ELSE 'exported ' || date(an.export_time_stamp, 'unixepoch', 'localtime') END AS exported,
+     CASE WHEN COALESCE(v.check_switch, 1) != 2 THEN 'checks not finished, left out' END AS check_state,
+     an.time_stamp
+   FROM annotate an JOIN samples s ON s.ID = an.ID
+     JOIN assemble a ON a.ID = an.ID
+     JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
+     LEFT JOIN review_units_v v ON v.ID = an.ID AND v.path = an.path AND v.scaffold = an.scaffold
+     LEFT JOIN review_screen_v sc ON sc.ID = an.ID AND sc.path = an.path AND sc.scaffold = an.scaffold
+     LEFT JOIN review_chimera_v ch ON ch.ID = an.ID AND ch.path = an.path AND ch.scaffold = an.scaffold
+   WHERE", EXPORTABLE_WHERE)
+
+#' The units an export may write, with their export group
+#'
+#' `done` is 1 when the contig's checks are done (review_units_v.check_switch
+#' = 2). Only done units are written; every row counts toward the sibling count
+#' that names records, so record names do not change when checks finish.
 #' @noRd
 exportable_units <- function(con) {
   DBI::dbGetQuery(con, paste(
-    "SELECT an.ID, an.path, an.scaffold, an.export_group FROM annotate an
+    "SELECT an.ID, an.path, an.scaffold, an.export_group,
+       CASE WHEN v.check_switch = 2 THEN 1 ELSE 0 END AS done
+     FROM annotate an
      JOIN assemble a ON a.ID = an.ID
      JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
+     LEFT JOIN review_units_v v ON v.ID = an.ID AND v.path = an.path AND v.scaffold = an.scaffold
      WHERE", EXPORTABLE_WHERE, "ORDER BY an.ID, an.path, an.scaffold"))
 }
 
@@ -504,11 +588,14 @@ export_left_out <- function(con, group) {
        CASE WHEN COALESCE(an.problematic,'') = 'yes' THEN 'excluded from export'
             WHEN COALESCE(a.assemble_lock,0) != 1 THEN 'assembly not locked'
             WHEN COALESCE(an.annotate_lock,0) != 1 THEN 'annotation not locked'
-            ELSE 'contig dropped' END AS why
+            WHEN COALESCE(asm.ignore,0) != 0 THEN 'contig dropped'
+            ELSE 'checks not finished' END AS why
      FROM annotate an
      LEFT JOIN assemble a ON a.ID = an.ID
      LEFT JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
-     WHERE an.export_group = ? AND NOT (", EXPORTABLE_WHERE, ")
+     LEFT JOIN review_units_v v ON v.ID = an.ID AND v.path = an.path AND v.scaffold = an.scaffold
+     WHERE an.export_group = ? AND (NOT (", EXPORTABLE_WHERE, ")
+       OR (asm.ID IS NOT NULL AND v.check_switch IS NOT 2))
      ORDER BY an.ID, an.path, an.scaffold"), params = list(group))
 }
 
@@ -547,7 +634,7 @@ unit_variant_facts_df <- function(scr, units) {
 #' Inline SVG feature-map for one unit (for the HTML report)
 #' @noRd
 feature_map_svg <- function(con, id, path = 1L, scaffold = 1L, seqid = id) {
-  d <- DBI::dbGetQuery(con, "SELECT element, start, stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
+  d <- DBI::dbGetQuery(con, "SELECT element, start, stop FROM review_annotations_v WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
     params = list(id, path, scaffold))
   if (nrow(d) == 0) {
     return("<em>no annotations</em>")
@@ -620,7 +707,7 @@ feature_map_svg_text <- function(d, width = 900, height = 110) {
 #' `units` is a data.frame(ID, path, scaffold, seqid) - one row per exported unit.
 #' `smry` is the already-computed `export_summary_df()` for those units.
 #' @noRd
-export_report_html <- function(con, units, out_html, label, smry = export_summary_df(con, units)) {
+export_report_html <- function(con, units, out_html, label, smry = export_summary_df(con, units, review = TRUE)) {
   hdr <- c("seqid", "ID", "organism", "length", "n_features", "missing", "reviewed", "submission_risk",
     "chimera_warning", "itsx_check")
   rows <- apply(smry[, intersect(hdr, names(smry)), drop = FALSE], 1, function(r) {
@@ -669,26 +756,24 @@ export_report_html <- function(con, units, out_html, label, smry = export_summar
 #' @param export_opts Name of the saved FASTA-header configuration to use.
 #' @param fasta_header,fasta_header_marker Optional header templates
 #'   (\code{\{column\}} tokens) overriding the saved configuration.
-#' @param itsx_check Run stock ITSx (default parameters, no organism group) over
-#'   the exported records, the way NCBI's Submission Portal does, and report
-#'   what it would flag in the `itsx_check` column of the summary CSV and in
-#'   `<label>_itsx_check.csv`. Warn-only. ITSx runs inside the project's
-#'   container (docker / singularity per `.config`); a conda-executor project
-#'   uses the ITSx on PATH. Otherwise the column reads `not_run(...)`.
-#' @param itsx_cpu Threads for the ITSx check.
 #' @return (invisibly) the group output directory, with the summary data.frame
-#'   attached as attribute `summary`.
+#'   attached as attribute `summary` and the contigs left out because their
+#'   checks are not finished as attribute `not_done` (data.frame(ID, path,
+#'   scaffold)).
 #' @details A unit is exported when its sample's assembly and the unit's
-#'   annotation are both locked, its contig is kept, and it is not excluded
-#'   from export.
+#'   annotation are both locked, its contig is kept, it is not excluded from
+#'   export, and its checks are done (press Update on Annotation Review after
+#'   an edit). Every value written comes from the reviewed copy of the contig
+#'   when it has one. The `itsx_check` column of the summary CSV reports the stock
+#'   ITSx check stored for each contig (`not_run(not checked)` when none is
+#'   stored); export does not run ITSx.
 #' @export
 export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
                           out_dir = file.path(path, "out"),
                           label = NULL, markers = TRUE, report = TRUE, template = NULL,
                           run_table2asn = FALSE, zip = TRUE,
                           export_opts = "default", fasta_header = NULL,
-                          fasta_header_marker = NULL, itsx_check = TRUE,
-                          itsx_cpu = 2L) {
+                          fasta_header_marker = NULL) {
   con <- open_project_db(file.path(path, ".sqlite"))
   on.exit(DBI::dbDisconnect(con), add = TRUE)
 
@@ -701,6 +786,13 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
   if (!is.null(units) && nrow(units) > 0) {
     key <- function(d) paste(d$ID, as.integer(d$path), as.integer(d$scaffold))
     sel <- sel[key(sel) %in% key(units), , drop = FALSE]
+  }
+  not_done <- sel[sel$done != 1, c("ID", "path", "scaffold"), drop = FALSE]
+  rownames(not_done) <- NULL
+  sel <- sel[sel$done == 1, , drop = FALSE]
+  if (nrow(sel) == 0 && nrow(not_done) > 0) {
+    stop("No contigs to export: the checks of ", nrow(not_done), " contig(s) are not finished. ",
+      "Press Update on Annotation Review, then export again.", call. = FALSE)
   }
   if (nrow(sel) == 0) {
     stop("No contigs to export: a contig needs its assembly and its annotation locked, ",
@@ -781,7 +873,7 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
   for (ui in seq_len(nrow(units))) {
     id <- units$ID[ui]; upath <- units$path[ui]; uscaf <- units$scaffold[ui]; seqid <- units$seqid[ui]
     seq <- DBI::dbGetQuery(con,
-      "SELECT sequence FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
+      "SELECT sequence FROM review_units_v WHERE ID = ? AND path = ? AND scaffold = ?",
       params = list(id, upath, uscaf))$sequence[1]
     defline <- paste0(">", headers[ui])
     writeLines(c(defline, seq), file.path(sdir, paste0(seqid, ".fasta")))
@@ -791,7 +883,7 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
     group_tbl <- c(group_tbl, tbl)
 
     if (markers) {
-      ann <- DBI::dbGetQuery(con, "SELECT element, start, stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
+      ann <- DBI::dbGetQuery(con, "SELECT element, start, stop FROM review_annotations_v WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
         params = list(id, upath, uscaf))
       wm <- function(el, s, e) {
         if (is.na(s) || is.na(e) || e < s) {
@@ -823,7 +915,7 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
     }
   }
   # per-unit summary CSV (+ warn-only portal-parity submission-risk gate)
-  smry <- export_summary_df(con, units)
+  smry <- export_summary_df(con, units, review = TRUE)
   risky <- which(nzchar(smry$submission_risk))
   if (length(risky) > 0) {
     warning("Submission-risk flags on ", length(risky), " of ", nrow(smry),
@@ -831,25 +923,17 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
       paste(sprintf("%s[%s]", smry$seqid[risky], smry$submission_risk[risky]), collapse = ", "),
       call. = FALSE)
   }
-  # final ITSx check: stock run, as the Portal does it (warn-only)
-  if (isTRUE(itsx_check)) {
-    chk <- itsx_export_check(con, units, gdir, label, cpu = itsx_cpu, project = path)
-    smry$itsx_check <- chk$itsx_check[match(smry$seqid, chk$seqid)]
-    not_run <- startsWith(smry$itsx_check, "not_run(")
-    if (any(not_run)) {
-      message("ITSx check skipped: ", sub("^not_run\\((.*)\\)$", "\\1", smry$itsx_check[not_run][1]))
-    }
-    flagged <- which(nzchar(smry$itsx_check) & !not_run)
-    if (length(flagged) > 0) {
-      warning("ITSx check flags on ", length(flagged), " of ", nrow(smry),
-        " contig(s) (still exported; see itsx_check column): ",
-        paste(sprintf("%s[%s]", smry$seqid[flagged], smry$itsx_check[flagged]), collapse = ", "),
-        call. = FALSE)
-    }
+  # stored stock ITSx check, what the Portal will see (warn-only)
+  flagged <- which(nzchar(smry$itsx_check) & !startsWith(smry$itsx_check, "not_run("))
+  if (length(flagged) > 0) {
+    warning("ITSx check flags on ", length(flagged), " of ", nrow(smry),
+      " contig(s) (still exported; see itsx_check column): ",
+      paste(sprintf("%s[%s]", smry$seqid[flagged], smry$itsx_check[flagged]), collapse = ", "),
+      call. = FALSE)
   }
   smry <- .meta_join(smry, con)
   utils::write.csv(smry, file.path(gdir, paste0(label, "_summary.csv")), row.names = FALSE)
-  writeLines(submission_readme(label, itsx_check = isTRUE(itsx_check)), file.path(gdir, "README.txt"))
+  writeLines(submission_readme(label), file.path(gdir, "README.txt"))
   # HTML report
   if (isTRUE(report)) {
     tryCatch(export_report(con, units,
@@ -881,6 +965,7 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
   DBI::dbExecute(con, "UPDATE annotate SET export_time_stamp = ? WHERE ID = ? AND path = ? AND scaffold = ?",
     params = list(rep(as.integer(Sys.time()), nrow(units)), units$ID, units$path, units$scaffold))
   message("Exported ", nrow(units), " contig(s) to ", gdir,
+    if (nrow(not_done) > 0) paste0("\n  ", nrow(not_done), " contig(s) left out: checks not finished"),
     "\n  GenBank Portal takes FASTA only: upload ", label,
     ".fasta; NCBI auto-annotates the rRNA-ITS region (see README.txt).")
   if (isTRUE(zip)) {
@@ -893,6 +978,7 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
     }
   }
   attr(gdir, "summary") <- smry
+  attr(gdir, "not_done") <- not_done
   invisible(gdir)
 }
 
@@ -901,20 +987,28 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
 #' Writes one bundle per export group made in the app's Export step, using the
 #' default header template. When no group was made, writes every unit with
 #' both its assembly and its annotation locked into one bundle named "export".
+#' Only contigs whose checks are done are written; a group with none is
+#' skipped with a message.
 #' @param path Project directory.
 #' @param out_dir Project "out" directory; bundles land in `<out_dir>/export`.
 #' @return (invisibly) the bundle names written.
 #' @export
 export_project <- function(path = ".", out_dir = file.path(path, "out")) {
   con <- open_project_db(file.path(path, ".sqlite"))
-  g <- tryCatch(exportable_units(con)$export_group, finally = DBI::dbDisconnect(con))
+  ex <- tryCatch(exportable_units(con), finally = DBI::dbDisconnect(con))
+  g <- ex$export_group
   groups <- sort(unique(g[nzchar(g)]))
   if (length(groups) == 0) {
     export_bundle(path, out_dir = out_dir, zip = TRUE)
     return(invisible("export"))
   }
-  for (g in groups) export_bundle(path, group = g, out_dir = out_dir, zip = TRUE)
-  invisible(groups)
+  done <- groups[groups %in% ex$export_group[ex$done == 1]]
+  for (g in setdiff(groups, done)) {
+    message("Skipped export group ", g, ": the checks of its contigs are not finished. ",
+      "Press Update on Annotation Review, then export again.")
+  }
+  for (g in done) export_bundle(path, group = g, out_dir = out_dir, zip = TRUE)
+  invisible(done)
 }
 
 #' Plain FASTA for a set of assembly units, for the app's copy-to-clipboard

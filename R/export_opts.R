@@ -137,14 +137,14 @@ export_header_data <- function(con, units) {
     if (nrow(smp) == 0) smp <- data.frame(ID = id, stringsAsFactors = FALSE)
     smp <- smp[, !(names(smp) %in% c("R1", "R2")), drop = FALSE]
     asm <- DBI::dbGetQuery(con,
-      "SELECT length, topology, sequence FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
+      "SELECT length, topology, n_features, missing FROM review_units_v WHERE ID = ? AND path = ? AND scaffold = ?",
       params = list(id, p, s))
     ann <- DBI::dbGetQuery(con,
-      "SELECT n_features, missing, partial, reviewed, export_group
+      "SELECT partial, reviewed, export_group
          FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?",
       params = list(id, p, s))
-    feat <- DBI::dbGetQuery(con,
-      "SELECT * FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
+    feat <- DBI::dbGetQuery(con, paste("SELECT element, start, stop, strand,", REVIEW_EFF_PARTIALS,
+      "FROM review_annotations_v WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start"),
       params = list(id, p, s))
     seq_len_bp <- if (nrow(asm)) asm$length[1] else NA_integer_
     unit_partial <- isTRUE(nrow(ann) > 0 && identical(ann$partial[1], "yes"))
@@ -155,8 +155,8 @@ export_header_data <- function(con, units) {
       path = p, scaffold = s,
       length = seq_len_bp,
       topology = if (nrow(asm)) asm$topology[1] else NA_character_,
-      n_features = if (nrow(ann)) ann$n_features[1] else NA_integer_,
-      missing = if (nrow(ann)) ann$missing[1] else NA_character_,
+      n_features = if (nrow(asm)) asm$n_features[1] else NA_integer_,
+      missing = if (nrow(asm)) asm$missing[1] else NA_character_,
       partial = if (nrow(ann)) ann$partial[1] else NA_character_,
       reviewed = if (nrow(ann)) ann$reviewed[1] else NA_character_,
       export_group = if (nrow(ann)) ann$export_group[1] else NA_character_,

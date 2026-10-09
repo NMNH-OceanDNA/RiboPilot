@@ -10,6 +10,9 @@ rp_args(a, 2, "rp_screen.R <db> <id>")
 n <- local({
   con <- open_project_db(a[1])
   on.exit(DBI::dbDisconnect(con))
-  screen_sample(con, a[2], variants = FALSE)
+  n <- screen_sample(con, a[2], variants = FALSE)
+  w <- attr(n, "written")
+  for (i in seq_len(nrow(w))) RiboPilot:::review_follow_original(con, a[2], w$path[i], w$scaffold[i])
+  n
 })
 cat("screen: ", a[2], " - ", n, " unit(s)\n", sep = "")

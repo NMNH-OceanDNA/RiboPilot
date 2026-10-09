@@ -256,3 +256,22 @@ test_that("the Hydra profile never asks SGE for h_rss", {
   expect_true(any(grepl("mres=12G,h_data=3G", hdr, fixed = TRUE)))
   expect_equal(sum(grepl("mres=4G,h_data=4G", hdr, fixed = TRUE)), 2L)
 })
+
+
+test_that("a recheck submission's script and logs share one base name", {
+  skip_if_not_installed("withr")
+  dir <- withr::local_tempdir()
+  testthat::local_mocked_bindings(
+    is_hydra_cluster = function() FALSE,
+    nf_pin_version = function(...) NA_character_,
+    nf_recheck_command = function(path) c("run", "main_recheck.nf"),
+    .package = "RiboPilot")
+  base <- RiboPilot:::job_basename("recheck", as.POSIXct("2026-10-08 09:45:03", tz = "UTC"))
+  expect_equal(base, "recheck_2026-10-08_09-45-03")
+  txt <- RiboPilot:::build_recheck_submit_script(dir, sched = list(cmd = "qsub"), base = base)
+  expect_match(txt, file.path(dir, ".runs", "logs", paste0(base, ".$JOB_ID.log")), fixed = TRUE)
+  expect_match(txt, file.path(dir, ".runs", "nextflow", paste0(base, ".nextflow.log")), fixed = TRUE)
+  expect_match(txt, paste0("#$ -N ", base), fixed = TRUE)
+  expect_true(dir.exists(file.path(dir, ".runs", "logs")))
+  expect_true(dir.exists(file.path(dir, ".runs", "nextflow")))
+})

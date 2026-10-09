@@ -40,6 +40,7 @@ or scratch space, for example in your lab's `.Renviron` and shell profile.
 | `out/` | Per-sample outputs, and your exports in `out/export/`. | Keep. |
 | `work/` | Nextflow's working files, needed for **Resume previous run?**. | Safe to delete once every sample is locked and exported. |
 | `work_ref/`, `.reference/` | Working files of reference builds. | Safe to delete once every group is Ready. |
+| `work_recheck/`, `.recheck/` | Working files of the recheck that **Update** on Annotation Review runs. | Safe to delete when no recheck is running. |
 | `.nextflow/` | Nextflow's record of finished work, also needed for Resume. | Delete only together with `work/`. |
 | `.runs/` | One Nextflow log per run, the run reports, cluster job scripts, and the scheduler's logs. **Run Reports** reads it. | Logs; keep while you need them. |
 | `nextflow_logs/`, `jobs/`, `logs/`, `.nextflow.log` | The same, from older RiboPilot versions. | Logs; keep while you need them. |

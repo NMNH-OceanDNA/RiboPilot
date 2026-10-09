@@ -3,14 +3,16 @@
 LOCK_CHOICES <- c("Unlocked" = "0", "Locked" = "1")
 
 #' Lock + state status filter pickers (mirrors MitoPilot); values match the
-#' assemble/annotate lock (0/1) and switch (0/1/2/3/4) codes. Each mode gets its
+#' assemble/annotate lock (0/1) and switch (0/1/2/3/4) codes, plus 5 (waiting for
+#' the Assemble step's Update) on Annotation Review. Each mode gets its
 #' own picker ids (`<mode>_lock_filter` / `<mode>_state_filter`) so the Assemble
 #' and Annotate filters do not share a DOM id and leak across modes.
 #' @noRd
 filter_pickers <- function(mode) {
+  states <- if (mode == "Annotate") mp_state_choices("annotate") else STATE_CHOICES
   shiny::tagList(
     mp_filter_picker(paste0(mode, "_lock_filter"), "Lock:", LOCK_CHOICES, width = "140px"),
-    mp_filter_picker(paste0(mode, "_state_filter"), "State:", STATE_CHOICES, width = "140px")
+    mp_filter_picker(paste0(mode, "_state_filter"), "State:", states, width = "140px")
   )
 }
 
@@ -86,7 +88,6 @@ app_ui <- function(request) {
                 needs_selection = TRUE),
               btn("asmb_run_btn", "Update", icon = mp_icon("circle-play"), emphasis = "primary",
                 title = "Review and launch the RiboPilot pipeline")),
-            # No Update button here: one workflow, launched from Assemble.
             shiny::conditionalPanel("input.mode == 'Annotate'", id = "annot_ctrls", class = "mp-toolbar",
               btn("annot_state_btn", "State", title = "Set the pipeline state of the selected contigs",
                 needs_selection = TRUE),
@@ -95,7 +96,9 @@ app_ui <- function(request) {
               btn("annot_trim_btn", "Trim", icon = mp_icon("scissors"),
                 title = MP_TRIM_TIP()[["trim"]], needs_selection = TRUE),
               btn("annot_restore_btn", "Restore", icon = mp_icon("rotate-left"),
-                title = MP_TRIM_TIP()[["restore"]], needs_selection = TRUE)),
+                title = MP_TRIM_TIP()[["restore"]], needs_selection = TRUE),
+              btn("annot_run_btn", "Update", icon = mp_icon("circle-play"), emphasis = "primary",
+                title = "Review and launch the recheck of the contigs that are Ready to run")),
             shiny::conditionalPanel("input.mode == 'Export'", id = "export_ctrls", class = "mp-toolbar",
               btn("assign_group_btn", "Assign Group",
                 title = "Assign the selected contigs to an export group", needs_selection = TRUE),
@@ -107,7 +110,7 @@ app_ui <- function(request) {
                 style = "color:#888; font-size:0.85em;")),
             shiny::div(style = "margin-left:auto; display:flex; gap:0.9em; align-items:center;",
               btn("rr_open", "Run Reports", icon = mp_icon("file-lines"),
-                title = "Read the reports of past pipeline runs and reference builds"),
+                title = "Read the reports of past pipeline runs, rechecks, and reference builds"),
               # per-SAMPLE Nextflow task dirs: only meaningful on Assemble
               shiny::conditionalPanel("input.mode == 'Assemble'",
                 btn("workdirs_btn", "Work Dirs", icon = mp_icon("folder-tree"),

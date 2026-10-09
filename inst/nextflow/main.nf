@@ -17,11 +17,13 @@
 // decision is worse than useless, since "nothing found" and "not looked at yet"
 // render identically.
 //
-// Re-annotation lives here too. There is no second workflow: units queued after
-// review (a trim, an options change, a restored scaffold, an edited sequence)
-// enter through query_annotate_units and skip straight to the annotation chain,
-// paying for neither assembly nor a second remote BLAST. See
-// dev/design/15_WF2_DECOMMISSION.md.
+// Re-annotation lives here too: units queued for annotation alone (an
+// annotation or curation options change, a scaffold put back) enter through
+// query_annotate_units and skip straight to the annotation chain, paying for
+// neither assembly nor a second remote BLAST. See
+// dev/design/15_WF2_DECOMMISSION.md. A trim or a boundary edit on Annotation
+// Review queues nothing here: it changes the contig's review copy, and
+// main_recheck.nf reruns the checks on that copy without re-annotating it.
 
 include { preprocess; below_min_depth } from './modules/preprocess.nf'
 include { assemble } from './modules/assemble.nf'

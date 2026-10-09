@@ -55,7 +55,8 @@ run_reports_handlers <- function(input, output, session, project, refresh) {
     shiny::req(!is.null(df), nrow(df) > 0)
     disp <- data.frame(
       New = ifelse(df$base %in% new_bases, "New", ""),
-      Workflow = ifelse(df$workflow == "reference", "Reference build", "Pipeline"),
+      Workflow = ifelse(df$workflow == "reference", "Reference build",
+        ifelse(df$workflow == "recheck", "Recheck", "Pipeline")),
       Started = df$started,
       Duration = df$duration,
       Result = run_result_html(df$result),

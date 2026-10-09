@@ -23,6 +23,13 @@ bc_schema <- function(db) {
   stats::setNames(lapply(tbls, function(t) sort(DBI::dbListFields(con, t))), tbls)
 }
 
+bc_views <- function(db) {
+  con <- DBI::dbConnect(RSQLite::SQLite(), db)
+  on.exit(DBI::dbDisconnect(con))
+  v <- DBI::dbGetQuery(con, "SELECT name, sql FROM sqlite_master WHERE type = 'view' ORDER BY name")
+  stats::setNames(gsub("\\s+", " ", v$sql), v$name)
+}
+
 fake_step <- function(note = "add samples.extra") {
   list(note = note, fn = function(con) DBI::dbExecute(con, "ALTER TABLE samples ADD COLUMN extra TEXT"))
 }
@@ -125,6 +132,9 @@ test_that("a v1 database run through every step matches a fresh new_db()", {
   DBI::dbDisconnect(con)
   suppressMessages(backwards_compatibility(dirname(old)))
   expect_equal(bc_schema(old), bc_schema(file.path(dir, ".sqlite")))
+  expect_equal(bc_views(old), bc_views(file.path(dir, ".sqlite")))
+  expect_setequal(names(bc_views(old)), names(RiboPilot:::REVIEW_VIEWS_DDL))
+  expect_false("assembly_backup" %in% names(bc_schema(old)))
 })
 
 test_that("run_app stops on a project that needs an update", {

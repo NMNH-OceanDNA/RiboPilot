@@ -180,3 +180,86 @@ test_that("curation writes its flags to curate_flags and keeps the curator's not
   expect_match(a$curate_flags, "missing_18S", fixed = TRUE)
   expect_gt(a$n_flags, 0)
 })
+
+curate_seed <- function(con) {
+  DBI::dbExecute(con, "UPDATE samples SET lineage = ?, lineage_taxids = '33208;7711;186623;;;;'",
+    params = list(FISH))
+  DBI::dbExecute(con, "INSERT INTO assemblies (ID, path, scaffold, length, sequence)
+    VALUES ('S1', 1, 1, 6000, ?)", params = list(strrep("A", 6000)))
+  f <- good_feats()
+  f$model_coverage[f$element == "28S"] <- 60
+  DBI::dbAppendTable(con, "annotations", cbind(ID = "S1", path = 1L, scaffold = 1L, f))
+  DBI::dbExecute(con, "INSERT INTO blast_screen (ID, path, scaffold, lineage, lineage_taxids, is_nuclear_rrna)
+    VALUES ('S1', 1, 1, 'Eukaryota; Sar; Alveolata; Dinophyceae; Symbiodinium', '2759;2698737;33630;2864;;;', 1)")
+  DBI::dbExecute(con, "INSERT INTO blast_ref_alignment (ID, path, scaffold, accession, element, pid, aln_cov)
+    VALUES ('S1', 1, 1, 'ACC1', '28S', 60, 0.9)")
+}
+
+test_that("review_tbl routes only the review-layer tables", {
+  rt <- RiboPilot:::review_tbl
+  expect_equal(rt("annotations"), "annotations")
+  expect_equal(rt("annotate", review = FALSE), "annotate")
+  expect_equal(unname(vapply(names(RiboPilot:::REVIEW_MIRRORS), rt, "", review = TRUE)),
+    unname(RiboPilot:::REVIEW_MIRRORS))
+  expect_equal(rt("blast_ref_alignment", TRUE), "review_ref_alignment")
+  expect_equal(rt("assemblies", TRUE), "review_units")
+  expect_equal(rt("annotate", TRUE), "review_units")
+  for (t in c("samples", "curate_opts", "blast_searched", "blast_ref_candidates",
+              "blast_ref_sequences", "blast_ref_annotations", "coverage")) {
+    expect_error(rt(t, TRUE), t, fixed = TRUE)
+  }
+})
+
+test_that("curate_one(review = TRUE) curates the copy and leaves the original alone", {
+  con <- chimera_test_con(); on.exit(DBI::dbDisconnect(con))
+  curate_seed(con)
+  RiboPilot::curate_one(con, "S1", 1L, 1L)
+  RiboPilot:::review_copy(con, "S1", 1L, 1L)
+  orig <- function() list(
+    DBI::dbGetQuery(con, "SELECT element, status, flags, partial_start, partial_stop
+      FROM annotations ORDER BY element"),
+    DBI::dbGetQuery(con, "SELECT n_flags, curate_flags, time_stamp FROM annotate"))
+  before <- orig()
+  expect_equal(before[[2]]$curate_flags, "contaminant")
+  # the copy: 18S truncated, 28S complete, its own screen hit and reference identity
+  DBI::dbExecute(con, "UPDATE review_annotations SET model_coverage = 70, partial_start_user = 0
+    WHERE element = '18S'")
+  DBI::dbExecute(con, "UPDATE review_annotations SET model_coverage = 100 WHERE element = '28S'")
+  DBI::dbExecute(con, "UPDATE review_blast_screen SET lineage = ?, lineage_taxids = NULL",
+    params = list(FISH))
+  DBI::dbExecute(con, "UPDATE review_ref_alignment SET element = '18S'")
+  DBI::dbExecute(con, "UPDATE review_units SET time_stamp = 0")
+
+  RiboPilot::curate_one(con, "S1", 1L, 1L, review = TRUE)
+  expect_identical(orig(), before)
+  ra <- DBI::dbGetQuery(con, "SELECT element, status, flags, partial_start, partial_stop,
+    partial_start_user FROM review_annotations")
+  rownames(ra) <- ra$element
+  expect_equal(ra["18S", "flags"], "low_identity,truncated")
+  expect_equal(ra["18S", "partial_start"], 1L)
+  expect_true(is.na(ra["18S", "partial_stop"]))
+  expect_equal(ra["18S", "partial_start_user"], 0L)
+  expect_equal(ra["28S", "status"], "ok")
+  expect_true(is.na(ra["28S", "partial_stop"]))  # replaced, not kept
+  ru <- DBI::dbGetQuery(con, "SELECT n_flags, curate_flags, time_stamp FROM review_units")
+  expect_equal(ru$n_flags, 0L)
+  expect_true(is.na(ru$curate_flags))
+  expect_gt(ru$time_stamp, 0)
+
+  # original mode never touches the copy
+  copy <- DBI::dbGetQuery(con, "SELECT element, status, flags, partial_start, partial_stop
+    FROM review_annotations ORDER BY element")
+  RiboPilot::curate_one(con, "S1", 1L, 1L)
+  expect_identical(DBI::dbGetQuery(con, "SELECT element, status, flags, partial_start, partial_stop
+    FROM review_annotations ORDER BY element"), copy)
+})
+
+test_that("curate_one writes inside an open transaction", {
+  con <- chimera_test_con(); on.exit(DBI::dbDisconnect(con))
+  curate_seed(con)
+  DBI::dbBegin(con)
+  RiboPilot::curate_one(con, "S1", 1L, 1L)
+  expect_equal(DBI::dbGetQuery(con, "SELECT curate_flags FROM annotate")$curate_flags, "contaminant")
+  DBI::dbRollback(con)
+  expect_true(is.na(DBI::dbGetQuery(con, "SELECT curate_flags FROM annotate")$curate_flags))
+})

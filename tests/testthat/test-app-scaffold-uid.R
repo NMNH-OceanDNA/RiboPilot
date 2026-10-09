@@ -475,6 +475,9 @@ test_that("the Annotation Review title always names the unit", {
 test_that("a second assembly path is refused from the toolbar and from Lock & Close", {
   skip_if_not_installed("withr")
   dir <- mk_app_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  fixture_mark_done(con)
+  DBI::dbDisconnect(con)
   withr::local_dir(dir)
   locks <- function() RiboPilot:::app_query(
     "SELECT COALESCE(annotate_lock,0) AS lock, reviewed FROM annotate WHERE ID='S1'
@@ -532,6 +535,7 @@ test_that("toolbar marks skip locked units, and a mixed selection sets rather th
   dir <- mk_app_project()
   withr::local_dir(dir)
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  fixture_mark_done(con)
   DBI::dbExecute(con, "UPDATE annotate SET problematic = 'yes' WHERE path = 1 AND scaffold = 2")
   DBI::dbExecute(con, "UPDATE annotate SET annotate_lock = 1 WHERE path = 1 AND scaffold = 1")
   DBI::dbDisconnect(con)
@@ -756,21 +760,35 @@ test_that("a bulk drop refuses annotation-locked units and still drops the rest"
 })
 
 test_that("ITSx warnings reach the annotate rows, the scaffold view, and the sample roll-up", {
+  skip_if_not_installed("withr")
   dir <- mk_app_project()
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
   DBI::dbExecute(con, "UPDATE annotate SET itsx_warnings = 'itsx_chimeric' WHERE path = 1 AND scaffold = 1")
   DBI::dbExecute(con, "UPDATE annotate SET itsx_warnings = '' WHERE path = 1 AND scaffold = 2")
   DBI::dbDisconnect(con)
-  local_mocked_bindings(app_project = function() dir, .package = "RiboPilot")
+  withr::local_dir(dir)
   ev <- RiboPilot:::unit_evidence("S1")
   expect_equal(ev$itsx_warnings[ev$path == 1 & ev$scaffold == 1], "itsx_chimeric")
-  roll <- RiboPilot:::app_query(
-    "SELECT (SELECT CASE WHEN COUNT(x.itsx_warnings) = 0 THEN NULL ELSE
-        SUM(CASE WHEN COALESCE(x.itsx_warnings,'') <> ''
-                 AND x.itsx_warnings NOT LIKE 'not_run(%' THEN 1 ELSE 0 END)
-        || ' of ' || COUNT(x.itsx_warnings) || ' units' END
-      FROM annotate x WHERE x.ID = s.ID) AS itsx_warnings FROM samples s")
-  expect_equal(roll$itsx_warnings, "1 of 2 units")   # two checked, two not yet
+  set <- function(sql) { c2 <- RiboPilot:::app_con(); DBI::dbExecute(c2, sql); DBI::dbDisconnect(c2) }
+  js <- as.character(RiboPilot:::rt_itsx_badge())
+  clean <- regmatches(js, regexpr("\\^0 of [^/]+\\$", js))
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    roll <- function(k) { session$setInputs(refresh = k); all_rows()$itsx_warnings }
+    expect_equal(roll(1), "1 of 4 contigs, 2 not checked")
+    set("UPDATE annotate SET itsx_warnings = 'not_run(ITSx did not finish)' WHERE path = 2 AND scaffold = 1")
+    set("UPDATE annotate SET itsx_warnings = '' WHERE path = 2 AND scaffold = 2")
+    expect_equal(roll(2), "1 of 4 contigs, 1 not checked")
+    set("UPDATE annotate SET itsx_warnings = '' WHERE path = 1 AND scaffold = 1")
+    expect_equal(roll(3), "0 of 4 contigs, 1 not checked")
+    expect_false(grepl(clean, roll(4)))
+    # a dropped contig does not count
+    set("UPDATE assemblies SET ignore = 1 WHERE path = 2 AND scaffold = 1")
+    expect_equal(roll(5), "0 of 3 contigs")
+    expect_true(grepl(clean, roll(6)))
+    set("UPDATE annotate SET itsx_warnings = NULL")
+    expect_true(is.na(roll(7)))
+  })
 })
 
 test_that("Download selected rows writes only the ticked visible rows", {

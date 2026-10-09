@@ -431,29 +431,6 @@ test_that("plot_chimera builds from stored windows and segments", {
   expect_true(any(vapply(g$layers, function(l) inherits(l$geom, "GeomRect"), logical(1))))
 })
 
-test_that("plot_chimera keeps the original check after a trim and marks the cut", {
-  con <- chimera_test_con()
-  db <- DBI::dbGetInfo(con)$dbname
-  sq <- withr::with_seed(1, paste(sample(c("A", "C", "G", "T"), 4500, TRUE), collapse = ""))
-  DBI::dbExecute(con, "INSERT INTO assemblies (ID, path, scaffold, sequence, length) VALUES ('S1',1,1,?,4500)", params = list(sq))
-  DBI::dbExecute(con, "INSERT INTO annotations (ID, path, scaffold, element, start, stop, strand) VALUES ('S1',1,1,'18S',1001,2800,'+')")
-  DBI::dbExecute(con, "INSERT INTO chimera (ID, path, scaffold, score, label, junctions) VALUES ('S1',1,1,0.9,'severe','3500')")
-  DBI::dbExecute(con, "INSERT INTO chimera_windows (ID, path, scaffold, start, stop, pident) VALUES ('S1',1,1,1,500,99), ('S1',1,1,3001,3500,97)")
-  RiboPilot:::trim_assembly(con, "S1", 1L, 1L, 501, 3000)
-  DBI::dbExecute(con, "UPDATE annotations SET stop = stop - 100")
-  DBI::dbDisconnect(con)
-  g <- RiboPilot:::plot_chimera("S1", 1L, 1L, db = db)
-  b <- ggplot2::ggplot_build(g)
-  expect_equal(b$layout$panel_params[[1]]$x.range, c(0, 4500))
-  geoms <- vapply(g$layers, function(l) class(l$geom)[1], "")
-  gene <- b$data[[which(geoms == "GeomRect")[1]]]
-  expect_equal(c(gene$xmin, gene$xmax), c(1001, 2700))
-  expect_equal(nrow(b$data[[which(geoms == "GeomSegment")[1]]]), 2L)
-  expect_true(3500 %in% unlist(lapply(b$data[geoms == "GeomVline"], `[[`, "xintercept")))
-  cut <- unlist(lapply(b$data[geoms == "GeomVline"], `[[`, "xintercept"))
-  expect_true(all(c(500, 3000) %in% cut))
-})
-
 test_that("plot_chimera with NULL junctions/segments has no junction line", {
   con <- chimera_test_con()
   db <- DBI::dbGetInfo(con)$dbname
@@ -522,4 +499,175 @@ test_that("the junction table names the checks behind each junction and why", {
   expect_match(j$why[2], "Eurotiomycetes", fixed = TRUE)
   expect_match(j$why[2], "clipped", fixed = TRUE)
   expect_equal(nrow(RiboPilot:::chimera_junction_table("", NA_character_)), 0L)
+})
+
+test_that("chimera_unit(review = TRUE) scores the copy and writes only its mirrors", {
+  con <- chimera_test_con()
+  on.exit(DBI::dbDisconnect(con))
+  orig <- withr::with_seed(3, paste(sample(c("A", "C", "G", "T"), 4000, TRUE), collapse = ""))
+  DBI::dbExecute(con, "INSERT INTO assemblies (ID, path, scaffold, length, sequence) VALUES ('S1', 1, 1, 4000, ?),
+    ('S1', 1, 2, 4000, ?)", params = list(orig, orig))
+  DBI::dbExecute(con, "INSERT INTO annotate (ID, path, scaffold) VALUES ('S1', 1, 2)")
+  DBI::dbExecute(con, "UPDATE samples SET lineage_taxids = '33208;7711;186623;8030;8016;8017;8018' WHERE ID = 'S1'")
+  DBI::dbExecute(con, "UPDATE annotate SET chimeric = 0")
+  DBI::dbExecute(con, "INSERT INTO annotations (ID, path, scaffold, element, start, stop)
+    VALUES ('S1',1,1,'18S',1,1800), ('S1',1,1,'28S',2500,4000)")
+  DBI::dbExecute(con, "INSERT INTO coverage (ID, path, scaffold, depths, clips) VALUES ('S1',1,1,?,?)",
+    params = list(paste(rep(20, 4000), collapse = ","), paste(c(rep(0, 2199), 9, rep(0, 1800)), collapse = ",")))
+  DBI::dbExecute(con, "INSERT INTO chimera (ID, path, scaffold, score, label, reason) VALUES ('S1',1,1,0,'clean','original')")
+  DBI::dbExecute(con, "INSERT INTO chimera_windows (ID, path, scaffold, start, stop, pident)
+    VALUES ('S1',1,1,1,500,99), ('S1',1,1,3501,4000,99)")
+  RiboPilot:::review_copy(con, "S1", 1L, 1L)
+  # the copy: first 1000 bp trimmed off (18S cut to 1..800), chimeric per its own ITSx run, its own hits
+  DBI::dbExecute(con, "UPDATE review_units SET sequence = ?, length = 3000, trim_start = 1001, trim_end = 4000,
+    chimeric = 1", params = list(substr(orig, 1001, 4000)))
+  DBI::dbExecute(con, "UPDATE review_annotations SET start = max(start - 1000, 1), stop = stop - 1000")
+  fish <- "33208;7711;186623;8030;8016;8017;8018"
+  DBI::dbAppendTable(con, "review_blast_hits", data.frame(ID = "S1", path = 1L, scaffold = 1L,
+    hit_rank = 1:6, hsp = 1L, accession = paste0("A", 1:6), species = "Salmo salar",
+    lineage = "Animalia;Chordata;Actinopterygii;Salmoniformes;Salmonidae;Salmo;Salmo salar",
+    lineage_taxids = fish, pident = 99, bitscore = 900,
+    qstart = rep(c(1L, 1500L), each = 3), qend = rep(c(800L, 3000L), each = 3)))
+  fake_blast <- function(query, dbarg, task, out, ...) {
+    ids <- sub("^>", "", grep("^>", readLines(query), value = TRUE))
+    writeLines(sprintf("NC_1\tSalmo salar 18S\t99.0\t100\t0\t8030\t900\t500\t1\t500\t1\t500\t1800\t%s", ids), out)
+    0L
+  }
+  fake_rt <- function(fasta, outdir, ...) {
+    writeLines(c("#idx target class strnd p/f unexpected_features", "1 u18S SSU.Eukarya plus PASS -",
+      "2 u28S LSU.Eukarya plus PASS -"), file.path(outdir, "rt.ribotyper.short.out")); 0L
+  }
+  fake_lin <- function(taxids, dir) data.frame(taxid = 8030L,
+    lineage = "Animalia;Chordata;Actinopterygii;Salmoniformes;Salmonidae;Salmo;Salmo salar", lineage_taxids = fish)
+  testthat::local_mocked_bindings(chimera_run_blastn = fake_blast, chimera_run_ribotyper = fake_rt,
+    tk_ranked_lineage = fake_lin, .package = "RiboPilot")
+  originals <- function() list(DBI::dbGetQuery(con, "SELECT ID, path, scaffold, score, label, reason FROM chimera"),
+    DBI::dbGetQuery(con, "SELECT ID, path, scaffold, start, stop FROM chimera_windows ORDER BY start"))
+  before <- originals()
+
+  r <- RiboPilot:::chimera_unit(con, "S1", 1L, 1L, dbarg = "panel", review = TRUE)
+  expect_identical(originals(), before)
+  ch <- jsonlite::fromJSON(r$channels)
+  expect_equal(ch$reads$junctions, 1200L)
+  expect_equal(ch$ribotyper$score, 0.2)
+  expect_equal(jsonlite::fromJSON(r$gene_taxa)[, c("element", "n_hits")],
+    data.frame(element = c("18S", "28S"), n_hits = c(3L, 3L)))
+  rc <- DBI::dbGetQuery(con, "SELECT junctions, reason FROM review_chimera")
+  expect_equal(rc$junctions, "1200")
+  expect_equal(rc$reason, r$reason)
+  w <- DBI::dbGetQuery(con, "SELECT start, stop, clip_frac FROM review_chimera_windows ORDER BY start")
+  expect_equal(w$start, RiboPilot:::chimera_tile(3000)$start)
+  expect_equal(max(w$stop), 3000L)
+  expect_equal(w$start[w$clip_frac > 0], c(751L, 1001L))
+
+  # no copy: nothing to score in review mode
+  expect_null(RiboPilot:::chimera_unit(con, "S1", 1L, 2L, dbarg = "panel", review = TRUE))
+  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) AS n FROM review_chimera WHERE scaffold = 2")$n, 0L)
+
+  # original mode scores the original and leaves the copy alone
+  RiboPilot:::chimera_unit(con, "S1", 1L, 1L, dbarg = "panel")
+  expect_equal(DBI::dbGetQuery(con, "SELECT junctions, reason FROM review_chimera"), rc)
+  expect_equal(DBI::dbGetQuery(con, "SELECT junctions FROM chimera")$junctions, "2200")
+  expect_equal(DBI::dbGetQuery(con, "SELECT start FROM chimera_windows ORDER BY start")$start,
+    RiboPilot:::chimera_tile(4000)$start)
+  expect_equal(DBI::dbGetQuery(con, "SELECT start, stop, clip_frac FROM review_chimera_windows ORDER BY start"), w)
+})
+
+test_that("plot_chimera shows the copy on Annotation Review once its checks are done, and the original on the Assemble step", {
+  con <- chimera_test_con()
+  on.exit(DBI::dbDisconnect(con))
+  db <- DBI::dbGetInfo(con)$dbname
+  sq <- withr::with_seed(1, paste(sample(c("A", "C", "G", "T"), 4500, TRUE), collapse = ""))
+  DBI::dbExecute(con, "UPDATE assemble SET assemble_lock = 1")
+  DBI::dbExecute(con, "INSERT INTO assemblies (ID, path, scaffold, sequence, length) VALUES ('S1',1,1,?,4500)", params = list(sq))
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_switch = 2, n_features = 1, itsx_warnings = NULL")
+  DBI::dbExecute(con, "INSERT INTO annotations (ID, path, scaffold, element, start, stop, strand) VALUES ('S1',1,1,'18S',1001,2800,'+')")
+  DBI::dbExecute(con, "INSERT INTO chimera (ID, path, scaffold, score, label, junctions) VALUES ('S1',1,1,0.9,'severe','3500')")
+  DBI::dbExecute(con, "INSERT INTO chimera_windows (ID, path, scaffold, start, stop, pident) VALUES ('S1',1,1,1,500,99), ('S1',1,1,3001,3500,97)")
+  draw <- function(review) {
+    g <- RiboPilot:::plot_chimera("S1", 1L, 1L, db = db, review = review)
+    list(b = ggplot2::ggplot_build(g), geoms = vapply(g$layers, function(l) class(l$geom)[1], ""))
+  }
+  layer <- function(d, geom) d$b$data[d$geoms == geom]
+  note <- function(d) unlist(lapply(layer(d, "GeomText"), `[[`, "label"))
+  shows <- function(d, xmax, gene, junc, nwin) {
+    expect_equal(d$b$layout$panel_params[[1]]$x.range, c(0, xmax))
+    r <- layer(d, "GeomRect")[[1]]
+    expect_equal(c(r$xmin, r$xmax), gene)
+    expect_equal(unique(unlist(lapply(layer(d, "GeomVline"), `[[`, "xintercept"))), junc)
+    expect_equal(nrow(layer(d, "GeomSegment")[[1]]), nwin)
+  }
+  waiting <- "Not run yet. Press Update."
+
+  # no copy: the original counts as done once its ITSx value is stored
+  expect_equal(note(draw(TRUE)), waiting)
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_switch = 1")
+  expect_equal(note(draw(TRUE)), "Waiting for the Assemble step's Update.")
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_switch = 2")
+  DBI::dbExecute(con, "UPDATE annotate SET itsx_warnings = ''")
+  shows(draw(TRUE), 4500, c(1001, 2800), 3500, 2L)
+
+  # a trimmed copy waits for its recheck, even when a discarded run left rows behind
+  RiboPilot:::review_trim(con, "S1", 1L, 1L, 501, 3000)
+  expect_equal(note(draw(TRUE)), waiting)
+  DBI::dbExecute(con, "INSERT INTO review_chimera (ID, path, scaffold, score, label, junctions) VALUES ('S1',1,1,0.4,'minor','1200')")
+  DBI::dbExecute(con, "INSERT INTO review_chimera_windows (ID, path, scaffold, start, stop, pident) VALUES ('S1',1,1,1,500,98)")
+  expect_equal(note(draw(TRUE)), waiting)
+  DBI::dbExecute(con, "UPDATE review_units SET check_switch = 2")
+  shows(draw(TRUE), 2500, c(501, 2300), 1200, 1L)
+
+  # the Assemble step keeps the original check, with no trim marks
+  shows(draw(FALSE), 4500, c(1001, 2800), 3500, 2L)
+  expect_false("trim" %in% note(draw(FALSE)))
+  expect_false(exists("chimera_original", envir = asNamespace("RiboPilot"), inherits = FALSE))
+})
+
+test_that("the chimera panel reads the review layer on Annotation Review and the originals on the Assemble step", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+  con <- RiboPilot:::app_con()
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "INSERT INTO chimera (ID, path, scaffold, label, reason, junctions, db_source)
+    VALUES ('S1',1,1,'severe','original reason','3500','/x/orig.fa')")
+  fixture_mark_done(con)
+  RiboPilot:::review_copy(con, "S1", 1L, 1L)
+  RiboPilot:::review_invalidate(con, "S1", 1L, 1L)
+  DBI::dbExecute(con, "INSERT INTO review_chimera (ID, path, scaffold, label, reason, junctions, db_source)
+    VALUES ('S1',1,1,'minor','copy reason','1200','/x/copy.fa')")
+  drew <- NULL
+  local_mocked_bindings(plot_chimera = function(id, path = 1L, scaffold = 1L, db = NULL, review = FALSE) {
+    drew <<- review
+    ggplot2::ggplot()
+  })
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Annotate")
+    sel_unit(list(ID = "S1", path = 1L, scaffold = 1L))
+    session$flushReact()
+    # not run: the row a discarded recheck left stays hidden
+    expect_error(output$chimera_result)
+    expect_error(output$chimera_db_source)
+
+    DBI::dbExecute(con, "UPDATE review_units SET check_switch = 2")
+    refresh(refresh() + 1)
+    session$flushReact()
+    expect_match(output$chimera_result$html, "minor", fixed = TRUE)
+    expect_match(output$chimera_result$html, "copy reason", fixed = TRUE)
+    expect_equal(output$chimera_db_source, "windows searched against: copy.fa")
+    expect_match(output$chimera_junctions$html, '"position":[1200]', fixed = TRUE)
+    output$chimera_plot
+    expect_true(drew)
+
+    session$setInputs(mode = "Assemble")
+    sel_id("S1")
+    session$flushReact()
+    session$setInputs(scaf_examine = "S1|1|1")
+    session$flushReact()
+    expect_match(output$chimera_result$html, "severe", fixed = TRUE)
+    expect_equal(output$chimera_db_source, "windows searched against: orig.fa")
+    expect_match(output$chimera_junctions$html, '"position":[3500]', fixed = TRUE)
+    output$chimera_plot
+    expect_false(drew)
+  })
 })

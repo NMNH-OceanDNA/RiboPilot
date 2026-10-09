@@ -18,9 +18,7 @@ export_bundle(
   zip = TRUE,
   export_opts = "default",
   fasta_header = NULL,
-  fasta_header_marker = NULL,
-  itsx_check = TRUE,
-  itsx_cpu = 2L
+  fasta_header_marker = NULL
 )
 }
 \arguments{
@@ -53,25 +51,22 @@ copied into the bundle as \verb{<label>.sbt} so table2asn picks it up.}
 
 \item{fasta_header, fasta_header_marker}{Optional header templates
 (\code{\{column\}} tokens) overriding the saved configuration.}
-
-\item{itsx_check}{Run stock ITSx (default parameters, no organism group) over
-the exported records, the way NCBI's Submission Portal does, and report
-what it would flag in the \code{itsx_check} column of the summary CSV and in
-\verb{<label>_itsx_check.csv}. Warn-only. ITSx runs inside the project's
-container (docker / singularity per \code{.config}); a conda-executor project
-uses the ITSx on PATH. Otherwise the column reads \code{not_run(...)}.}
-
-\item{itsx_cpu}{Threads for the ITSx check.}
 }
 \value{
 (invisibly) the group output directory, with the summary data.frame
-attached as attribute \code{summary}.
+attached as attribute \code{summary} and the contigs left out because their
+checks are not finished as attribute \code{not_done} (data.frame(ID, path,
+scaffold)).
 }
 \description{
 Build a GenBank submission bundle for a set of samples (one export group)
 }
 \details{
 A unit is exported when its sample's assembly and the unit's
-annotation are both locked, its contig is kept, and it is not excluded
-from export.
+annotation are both locked, its contig is kept, it is not excluded from
+export, and its checks are done (press Update on Annotation Review after
+an edit). Every value written comes from the reviewed copy of the contig
+when it has one. The \code{itsx_check} column of the summary CSV reports the stock
+ITSx check stored for each contig (\verb{not_run(not checked)} when none is
+stored); export does not run ITSx.
 }

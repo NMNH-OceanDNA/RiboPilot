@@ -517,9 +517,15 @@ run_modal_title <- function(text, gears_id) {
 #' Headless (served to a remote browser, e.g. an SSH-tunneled cluster login
 #' node): running on the host would burn the login node, so offer an editable
 #' cluster job script to Submit as job / Save instead.
+#' @param pfx Prefix on every input and output id: "" for the Assemble step's
+#'   Update, "rc_" for the recheck on Annotation Review.
+#' @param title Window title; NULL gives the pipeline's.
+#' @param resume Offer the Resume box; the recheck has no -resume.
 #' @noRd
-run_modal <- function(n, headless = FALSE, sched = NULL, script = "") {
-  wf <- "RiboPilot pipeline"
+run_modal <- function(n, headless = FALSE, sched = NULL, script = "", pfx = "",
+                      title = NULL, resume = TRUE) {
+  id <- function(x) paste0(pfx, x)
+  title <- title %||% sprintf("RiboPilot pipeline - %d sample(s) or contig(s) to update", n)
   cluster_section <- if (headless) {
     tagList(
       hr(style = "margin:10px 0;"),
@@ -530,37 +536,37 @@ run_modal <- function(n, headless = FALSE, sched = NULL, script = "") {
         } else {
           sprintf("%s found. Check the queue or partition, account, and walltime in the script, then Submit as job (or Save script). The job log goes to .runs/logs/ and the Nextflow log to .runs/nextflow/ in the project folder. This window does not follow the job: use the reload button above the table to see new results, and Run Reports to see how the job went.", sched$name)
         }),
-      tags$textarea(id = "submit_script_text", rows = 11,
+      tags$textarea(id = id("submit_script_text"), rows = 11,
         style = "width:100%; font-family:monospace; font-size:0.78em;", script))
   }
   run_progress <- if (!headless) {
-    shinyjs::hidden(div(id = "nf_progress",
+    shinyjs::hidden(div(id = id("nf_progress"),
       hr(style = "margin:12px 0;"), h5("Progress:", style = "margin:0 0 4px;"),
       div(class = "code-block", style = "max-height:320px; overflow:auto;",
         tags$pre(style = "margin:0; background:transparent; border:0; color:inherit; white-space:pre-wrap;",
-          textOutput("nf_prog_all", container = tags$code)))))
+          textOutput(id("nf_prog_all"), container = tags$code)))))
   }
   footer <- if (headless) {
     mp_footer(
-      primary = if (!is.null(sched)) actionButton("submit_job", "Submit as job"),
+      primary = if (!is.null(sched)) actionButton(id("submit_job"), "Submit as job"),
       dismiss = NULL,
       extra = tagList(
-        actionButton("save_script", "Save script"),
-        actionButton("nf_close", "Close")))
+        actionButton(id("save_script"), "Save script"),
+        actionButton(id("nf_close"), "Close")))
   } else {
     mp_footer(
-      primary = actionButton("nf_start", "Run from App"), dismiss = NULL,
+      primary = actionButton(id("nf_start"), "Run from App"), dismiss = NULL,
       extra = tagList(
-        shinyjs::hidden(actionButton("nf_stop", "Stop")),
-        actionButton("nf_close", "Close")))
+        shinyjs::hidden(actionButton(id("nf_stop"), "Stop")),
+        actionButton(id("nf_close"), "Close")))
   }
   modalDialog(
-    title = run_modal_title(sprintf("%s - %d sample(s) or contig(s) to update", wf, n), "rp_gears"),
+    title = run_modal_title(title, id("rp_gears")),
     size = "l",
-    shinyWidgets::prettyCheckbox("nf_resume", "Resume previous run?", value = TRUE,
-      status = "primary", inline = TRUE),
+    if (resume) shinyWidgets::prettyCheckbox(id("nf_resume"), "Resume previous run?",
+      value = TRUE, status = "primary", inline = TRUE),
     h5("Nextflow command:", style = "margin:6px 0 4px;"),
-    div(class = "code-block", textOutput("nf_cmd_text")),
+    div(class = "code-block", textOutput(id("nf_cmd_text"))),
     run_progress,
     cluster_section,
     footer = footer
@@ -653,9 +659,11 @@ trim_modal <- function(n, a_from, a_to) {
       shinyjs::disabled(numericInput("trim_to", "To (bp)", value = a_to, min = 1, max = n))),
     div(style = "color:#c0392b; font-weight:bold; margin:6px 0 14px;", textOutput("trim_flank_hint")),
     textOutput("trim_chimera_hint"),
-    opts_help("Trimming cuts the flanks off the contig and shifts every ",
-      "feature coordinate + the coverage track to match. Features that fall entirely ",
-      "outside the kept range are removed. Use \"Restore assembly\" to undo."),
+    opts_help("Trimming cuts the flanks off this contig's review copy and shifts its ",
+      "feature coordinates and coverage track to match. Features that fall entirely ",
+      "outside the kept range are removed. The original stays as it is for the Assemble step. ",
+      "The contig's checks show not run until you press Update. Use \"Restore assembly\" to ",
+      "undo every edit."),
     footer = mp_footer(
       danger = actionButton("trim_apply", "Trim", icon = icon("scissors")), dismiss = NULL,
       # actionButton (not modalButton) so Cancel reopens the annotate details
@@ -670,7 +678,7 @@ trim_modal <- function(n, a_from, a_to) {
 #' @noRd
 batch_trim_modal <- function(restore = FALSE) {
   modalDialog(
-    title = if (restore) "Restore trimmed contigs" else "Trim contigs", easyClose = TRUE,
+    title = if (restore) "Restore contigs" else "Trim contigs", easyClose = TRUE,
     if (!restore) tagList(
       shinyWidgets::prettyRadioButtons("batch_trim_mode", "Trim to:",
         choices = c("Match gene ends" = "annotated", "Gene ends + flank" = "flank"),
@@ -690,7 +698,8 @@ batch_trim_summary <- function(p, restore = FALSE) {
   ok <- sum(is.na(p$reason)); bad <- p[!is.na(p$reason), , drop = FALSE]
   tagList(
     tags$p(paste0(mp_n(ok, "contig"), if (ok == 1) " is" else " are",
-      if (restore) " restored to full length and re-curated." else " trimmed and re-curated.")),
+      if (restore) " restored to the original: trims, boundary edits, and 5'/3' choices are deleted."
+      else " trimmed; their checks show not run until you press Update.")),
     if (nrow(bad)) tagList(
       tags$p(style = "margin:8px 0 4px;", paste0("Skipped (", nrow(bad), "):")),
       div(style ="max-height:200px; overflow-y:auto; border:1px solid #ddd; padding:4px 8px; font-size:0.9em;",
@@ -806,10 +815,7 @@ export_modal <- function(groups, templates = "default", template = "default",
             "(same {column} syntax, plus {element} and {product} for the marker itself)")),
           fasta_header_marker, "export_hdr_marker_status"))),
     mp_checkbox("export_report", "HTML report with alignments", value = flag("export_report", TRUE)),
-    opts_help("One HTML page with per-element alignments across the group."),
-    mp_checkbox("export_itsx_check", "Final ITSx check", value = flag("export_itsx_check", TRUE)),
-    opts_help("Runs stock ITSx over the exported records the way the NCBI Submission ",
-      "Portal does and lists what it would flag in the summary CSV. Can take a few minutes.")),
+    opts_help("One HTML page with per-element alignments across the group.")),
       div(class = "mp-export-side", cols_panel)),
     footer = mp_footer(primary = actionButton("export_go", "Export", icon = icon("download")),
       dismiss = "Cancel")
@@ -819,11 +825,14 @@ export_modal <- function(groups, templates = "default", template = "default",
 #' One-paragraph verdict for the export-complete dialog
 #'
 #' Reads the summary attached to [export_bundle()]'s return value; names the
-#' records the submission-risk gate flagged, and why, and says how many the
-#' ITSx check flagged, so a curator sees it before opening the CSV.
-#' @param smry data.frame from `export_summary_df()` (possibly with `itsx_check`).
+#' records the submission-risk gate flagged, and why, and counts the stored
+#' ITSx check (flagged, clean, not checked), naming the flagged records, so a
+#' curator sees both before opening the CSV.
+#' @param smry data.frame from `export_summary_df()`.
+#' @param not_done Contigs of the group left out because their checks are not
+#'   finished.
 #' @noRd
-export_check_summary_ui <- function(smry) {
+export_check_summary_ui <- function(smry, not_done = 0L) {
   if (is.null(smry) || nrow(smry) == 0) return(NULL)
   n <- nrow(smry)
   risky <- nzchar(smry$submission_risk %||% "")
@@ -834,24 +843,25 @@ export_check_summary_ui <- function(smry) {
         sum(risky), n, mp_id_list(sprintf("%s (%s)", smry$seqid[risky],
           risk_reasons(smry$submission_risk[risky])), max = 10)))
   }
-  if (!is.null(smry$itsx_check)) {
-    not_run <- startsWith(smry$itsx_check, "not_run(")
-    if (all(not_run)) {
-      lines[[length(lines) + 1]] <- tags$p(class = "mp-fg-warning",
-        "ITSx check not run: ", sub("^not_run\\((.*)\\)$", "\\1", smry$itsx_check[1]), ".")
-    } else {
-      flagged <- sum(nzchar(smry$itsx_check) & !not_run)
-      lines[[length(lines) + 1]] <- if (flagged == 0) {
-        tags$p(class = if (!any(risky)) "mp-fg-success", if (!any(risky)) HTML("&#10003; "),
-          sprintf("Final ITSx check: nothing flagged on %d record(s).", n))
-      } else {
-        tags$p(class = "mp-fg-warning", style = "font-weight:bold;",
-          sprintf("Final ITSx check flagged %d of %d record(s): %s. See the itsx_check column in the summary CSV.",
-            flagged, n, paste(smry$seqid[nzchar(smry$itsx_check) & !not_run], collapse = ", ")))
-      }
-    }
+  itsx <- smry$itsx_check
+  unchecked <- startsWith(itsx, "not_run(")
+  flagged <- nzchar(itsx) & !unchecked
+  counts <- sprintf("ITSx check: %d flagged, %d clean, %d not checked.",
+    sum(flagged), sum(!flagged & !unchecked), sum(unchecked))
+  lines[[length(lines) + 1]] <- if (any(flagged)) {
+    tags$p(class = "mp-fg-warning", style = "font-weight:bold;",
+      sprintf("%s Flagged: %s. See the itsx_check column in the summary CSV.", counts,
+        mp_id_list(sprintf("%s (%s)", smry$seqid[flagged], itsx[flagged]), max = 10)))
+  } else if (any(unchecked)) {
+    tags$p(class = "mp-fg-warning", sprintf("%s README.txt says how to check them again.", counts))
+  } else {
+    tags$p(class = if (!any(risky)) "mp-fg-success", if (!any(risky)) HTML("&#10003; "), counts)
   }
-  if (length(lines) == 0) return(NULL)
+  if (not_done > 0) {
+    lines[[length(lines) + 1]] <- tags$p(class = "mp-fg-warning",
+      sprintf("%s left out: checks not finished. Press Update on Annotation Review, then export again.",
+        mp_n(not_done, "contig")))
+  }
   do.call(tagList, lines)
 }
 
@@ -905,15 +915,18 @@ fixed_gutter <- function(g, left_cm = 3.2) {
   gt
 }
 
-#' Read-coverage track for one assembly unit, with feature regions shaded
+#' Read-coverage track for one unit on the review layer, with feature regions shaded
+#'
+#' A review copy shows the original track cut to its kept window, and its genes,
+#' in copy coordinates.
 #' @noRd
 plot_coverage <- function(id, path = 1L, scaffold = 1L) {
   if (is.null(id)) {
     return(NULL)
   }
-  cov <- app_query("SELECT depths FROM coverage WHERE ID = ? AND path = ? AND scaffold = ?",
-    params = list(id, path, scaffold))
-  if (nrow(cov) == 0 || is.na(cov$depths[1]) || !nzchar(cov$depths[1])) {
+  con <- app_con(); on.exit(DBI::dbDisconnect(con))
+  dep <- review_coverage(con, id, path, scaffold)$depths
+  if (!length(dep)) {
     # a supplied-assembly sample with no reads will never have coverage
     r1 <- app_query("SELECT R1 FROM preprocess WHERE ID = ?", params = list(id))$R1
     msg <- if (length(r1) && (is.na(r1[1]) || !nzchar(r1[1]))) {
@@ -925,9 +938,8 @@ plot_coverage <- function(id, path = 1L, scaffold = 1L) {
       ggplot2::annotate("text", 0, 0, label = msg) +
       ggplot2::theme_void())
   }
-  dep <- parse_depths(cov$depths)
   df <- data.frame(pos = seq_along(dep), depth = dep)
-  feats <- app_query("SELECT element, start, stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
+  feats <- app_query("SELECT element, start, stop FROM review_annotations_v WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
     params = list(id, path, scaffold))
   ymax <- max(df$depth, 1, na.rm = TRUE)
   dark <- darken_colors(RRNA_ELEMENT_COLORS)
@@ -1013,44 +1025,29 @@ chimera_result_text <- function(label, reason) {
     class = "mp-help-text", style = "font-weight:normal;", " (hover for the full reason)"))
 }
 
-#' A unit's chimera check as first run: before its first trim, in untrimmed
-#' coordinates, with the current genes moved to match and the kept span
-#' @param q Query function (sql, params).
+#' Chimera check plot for one unit
+#'
+#' review = TRUE (Annotation Review) reads the review layer and shows a note
+#' instead until the contig's checks are done. FALSE (Assemble step) reads the
+#' originals.
 #' @noRd
-chimera_original <- function(q, id, path, scaffold) {
-  ch <- q("SELECT label, junctions, segments, channels FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", list(id, path, scaffold))
-  win <- q("SELECT start, stop, pident, lineage FROM chimera_windows WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start", list(id, path, scaffold))
-  feats <- q("SELECT element, start, stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?", list(id, path, scaffold))
-  n <- q("SELECT length FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?", list(id, path, scaffold))$length
-  # a trimmed unit shows the check from before its first trim, in untrimmed coordinates
-  kept <- NULL
-  bak <- tryCatch(q("SELECT b.sequence bak, b.length, b.chimera, a.sequence cur FROM assembly_backup b
-    JOIN assemblies a ON a.ID = b.ID AND a.path = b.path AND a.scaffold = b.scaffold
-    WHERE b.ID = ? AND b.path = ? AND b.scaffold = ?", list(id, path, scaffold)), error = function(e) data.frame())
-  if (nrow(bak) && !is.na(bak$bak[1]) && !is.na(bak$cur[1])) {
-    off <- as.integer(regexpr(bak$cur[1], bak$bak[1], fixed = TRUE)) - 1L
-    if (off >= 0L && nchar(bak$cur[1]) < bak$length[1]) {
-      kept <- c(off, off + nchar(bak$cur[1]))
-      feats$start <- feats$start + off; feats$stop <- feats$stop + off
-      n <- bak$length[1]
-      if (!is.na(bak$chimera[1])) {
-        s <- jsonlite::fromJSON(bak$chimera[1])
-        ch <- s$chimera
-        win <- if (is.data.frame(s$windows)) s$windows[order(s$windows$start), ] else win[0, ]
-      }
+plot_chimera <- function(id, path = 1L, scaffold = 1L, db = NULL, review = FALSE) {
+  con <- if (is.null(db)) app_con() else open_project_db(db)
+  on.exit(DBI::dbDisconnect(con))
+  q <- function(sql, params = list(id, path, scaffold)) DBI::dbGetQuery(con, sql, params = params)
+  empty <- function(msg) ggplot2::ggplot() + ggplot2::annotate("text", 0, 0, label = msg) + ggplot2::theme_void()
+  if (review) {
+    st <- review_unit_state(con, data.frame(ID = id, path = as.integer(path), scaffold = as.integer(scaffold)))$state
+    if (!identical(st, "done")) {
+      return(empty(if (identical(st, "waiting")) "Waiting for the Assemble step's Update." else "Not run yet. Press Update."))
     }
   }
-  list(ch = ch, win = win, feats = feats, n = n, kept = kept)
-}
-
-plot_chimera <- function(id, path = 1L, scaffold = 1L, db = NULL) {
-  q <- if (is.null(db)) app_query else {
-    con <- open_project_db(db); on.exit(DBI::dbDisconnect(con))
-    function(sql, params = NULL) DBI::dbGetQuery(con, sql, params = params)
-  }
-  empty <- function(msg) ggplot2::ggplot() + ggplot2::annotate("text", 0, 0, label = msg) + ggplot2::theme_void()
-  o <- chimera_original(q, id, path, scaffold)
-  ch <- o$ch; win <- o$win; feats <- o$feats; n <- o$n; kept <- o$kept
+  tbl <- function(x) if (review) paste0("review_", x, "_v") else x
+  unit <- " WHERE ID = ? AND path = ? AND scaffold = ?"
+  ch <- q(paste0("SELECT label, junctions, segments FROM ", tbl("chimera"), unit))
+  win <- q(paste0("SELECT start, stop, pident FROM ", tbl("chimera_windows"), unit, " ORDER BY start"))
+  feats <- q(paste0("SELECT element, start, stop FROM ", tbl("annotations"), unit))
+  n <- q(paste0("SELECT length FROM ", if (review) "review_units_v" else "assemblies", unit))$length
   if (NROW(ch) == 0) return(empty("no chimera check yet (run the pipeline from Assemble > Update)"))
   seg <- if (!is.na(ch$segments[1])) jsonlite::fromJSON(ch$segments[1]) else data.frame()
   junc <- if (nzchar(ch$junctions[1] %|NA|% "")) as.integer(strsplit(ch$junctions[1], ",")[[1]]) else integer(0)
@@ -1096,15 +1093,6 @@ plot_chimera <- function(id, path = 1L, scaffold = 1L, db = NULL) {
     ggplot2::geom_label(data = fr(data.frame(x = junc, y = 12), "genes"), ggplot2::aes(x = x, y = y),
       label = sprintf("%s\njunction at %d bp", if (sev) "chimera" else "possible", junc), vjust = 0,
       size = 3.8, lineheight = 0.9, colour = jcol, fill = "white", linewidth = 0)
-  if (!is.null(kept)) {
-    cuts <- c(if (kept[1] > 0) kept[1], if (kept[2] < n) kept[2])
-    g <- g +
-      ggplot2::annotate("rect", xmin = c(0, kept[2]), xmax = c(kept[1], n), ymin = -Inf, ymax = Inf,
-        fill = "#5b5b5b", alpha = 0.32) +
-      ggplot2::geom_vline(xintercept = cuts, linetype = "dashed", colour = "#111111", linewidth = 0.7) +
-      ggplot2::geom_text(data = fr(data.frame(x = cuts, y = 12), "genes"), ggplot2::aes(x = x, y = y),
-        label = "trim", vjust = -0.3, size = 3.2, colour = "#111111")
-  }
   g + ggplot2::facet_grid(row ~ ., scales = "free_y", space = "free_y", switch = "y",
       labeller = ggplot2::as_labeller(c(genes = "", lineage = "lineage", ident = "% identity"))) +
     ggplot2::scale_x_continuous(breaks = seq(0, xmax, 1000), minor_breaks = seq(0, xmax, 500), expand = c(0, 0)) +

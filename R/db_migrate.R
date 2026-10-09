@@ -2,6 +2,10 @@
 #
 # Any table or column change edits new_db() AND appends a step here. Step k
 # takes a version k database to version k + 1. Released steps are never edited.
+# Views (REVIEW_VIEWS_DDL) are CREATE VIEW IF NOT EXISTS: a step that changes one
+# drops it first. While a view is broken every ALTER TABLE RENAME fails, so a
+# step that rebuilds a table a view reads drops the views and reruns
+# review_apply_schema() afterwards.
 
 #' Upgrade steps, oldest first: each is list(note = "...", fn = function(con) ...)
 #' @noRd
@@ -16,6 +20,14 @@ db_migrations <- function() {
     list(note = "when a unit was last exported (annotate.export_time_stamp)",
       fn = function(con) {
         DBI::dbExecute(con, "ALTER TABLE annotate ADD COLUMN export_time_stamp INTEGER")
+      }),
+    list(note = "review copies for edited contigs; ITSx origin and scores",
+      fn = function(con) {
+        DBI::dbExecute(con, "ALTER TABLE annotate ADD COLUMN itsx_origin TEXT")
+        DBI::dbExecute(con, "ALTER TABLE annotate ADD COLUMN itsx_scores TEXT")
+        review_apply_schema(con)
+        review_upgrade(con)
+        DBI::dbExecute(con, "DROP TABLE assembly_backup")
       })
   )
 }

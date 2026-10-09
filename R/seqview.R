@@ -70,21 +70,27 @@ seqview_ui <- function(prefix, summary, open = TRUE, pick = TRUE) {
 
 #' Send one unit to a viewer
 #' @param canvas Canvas id. @param input Input id for gene clicks, or NULL.
+#' @param review TRUE (Annotation Review): the review layer, with the copy's
+#'   coverage window and trimmed ends. FALSE (Assemble step): the originals.
 #' @noRd
-seqview_send <- function(session, canvas, input, id, path, scaffold, selected = NULL) {
-  p <- list(id, path, scaffold)
-  s <- app_query("SELECT sequence FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?", params = p)
+seqview_send <- function(session, canvas, input, id, path, scaffold, selected = NULL, review = FALSE) {
+  con <- app_con(); on.exit(DBI::dbDisconnect(con))
+  q <- function(sql, tail = "") DBI::dbGetQuery(con,
+    paste(sql, "WHERE ID = ? AND path = ? AND scaffold = ?", tail), params = list(id, path, scaffold))
+  s <- q(paste("SELECT sequence FROM", if (review) "review_units_v" else "assemblies"))
   if (!nrow(s) || is.na(s$sequence[1])) return(invisible())
-  f <- app_query("SELECT * FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start", params = p)
+  f <- q(paste("SELECT element, start, stop, strand,", if (review) REVIEW_EFF_PARTIALS else "partial_start, partial_stop",
+    "FROM", if (review) "review_annotations_v" else "annotations"), "ORDER BY start")
   if (nrow(f)) {
-    con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    e <- partial_ends(f, nchar(s$sequence[1]), unit_trimmed(con, id, path, scaffold))
+    e <- partial_ends(f, nchar(s$sequence[1]), if (review) unit_trimmed(con, id, path, scaffold) else c(FALSE, FALSE))
     f$partial_start <- as.integer(e$p5); f$partial_stop <- as.integer(e$p3)
   }
-  cov <- app_query("SELECT * FROM coverage WHERE ID = ? AND path = ? AND scaffold = ?", params = p)
-  dep <- if (nrow(cov)) parse_depths(cov$depths[1]) else NULL
-  clp <- if (nrow(cov) && !is.null(cov$clips)) parse_depths(cov$clips[1]) else NULL
-  pl <- seqview_payload(s$sequence[1], f, dep, clp, selected)
+  tr <- if (review) review_coverage(con, id, path, scaffold) else {
+    cov <- q("SELECT * FROM coverage")
+    list(depths = if (nrow(cov)) parse_depths(cov$depths[1]),
+      clips = if (nrow(cov) && !is.null(cov$clips)) parse_depths(cov$clips[1]))
+  }
+  pl <- seqview_payload(s$sequence[1], f, tr$depths, tr$clips, selected)
   pl$id <- canvas; pl$input <- input; pl$unit <- sprintf("%s_p%s_s%s", id, path, scaffold)
   session$sendCustomMessage("rpseq", pl)
 }

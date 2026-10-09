@@ -42,9 +42,11 @@ You can find warnings in three places:
 | `no_clade_ruleset` | contig | Your sample's group has no ruleset of its own, so the generic animal ranges were used. | Nothing. See [How the checks are tuned per group](#how-the-checks-are-tuned-per-group). |
 
 Two more columns have results from additional checks. **ITSx Warnings** reports what standard ITSx
-check finds for the contig (see [the final ITSx check](GenBank-Submission.html#check-before-you-submit)).
+check finds for the contig (see [the ITSx check](GenBank-Submission.html#check-before-you-submit)).
 For example
-`itsx_chimeric`, `itsx_no_5.8S`, or `itsx_boundary_shift(...)`. The **Chimera** column reports the
+`itsx_chimeric`, `itsx_no_5.8S`, or `itsx_boundary_shift(...)`. A grey "not run" means ITSx gave
+no answer for the contig, and a grey "not checked" means no ITSx check is stored yet; the Checks
+column lists both as "ITSx not checked". The **Chimera** column reports the
 chimera check's level, see [Chimeras](#chimeras-contigs-made-of-two-pieces).
 
 The contamination checks need a BLAST screen result. When a contig has none, for
@@ -65,9 +67,14 @@ contigs.
 | Checks says | Color | What happens |
 |---|---|---|
 | off target, contaminant, severe chimera, ITSx chimeric | red | Lock and the Export window ask first, until the contig is marked Reviewed. |
-| minor chimera, uncertain screen, ITSx, warnings, feature flags | amber | Worth a look, but nothing asks when you Lock or Export. |
+| minor chimera, uncertain screen, ITSx, ITSx not checked, warnings, feature flags | amber | Worth a look, but nothing asks when you Lock or Export. |
 | ok | green | The best BLAST matches are in your sample's phylum, and nothing is flagged. |
 | no reference | grey | Nothing is flagged, but the BLAST screen had no usable match to judge by. |
+
+On Annotation Review, a contig whose checks are not finished shows its state in the
+Checks column and in every check column (Warnings, ITSx Warnings, Screen, Chimera,
+and the BLAST columns) instead, for example "not run" after a trim, until
+**Update** on Annotation Review reruns its checks.
 
 # What the BLAST screen searches
 

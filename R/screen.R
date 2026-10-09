@@ -319,22 +319,27 @@ screen_channel_taxonomy <- function(hits, sample_taxids,
 #' @param con Open project DB connection.
 #' @param id,path,scaffold Assembly unit.
 #' @param force Recompute even when the stored row is current.
+#' @param review TRUE scores the contig's review copy: hits from
+#'   `review_blast_hits`, verdict to `review_screen`. The variant columns are
+#'   carried over from the original `screen` row, because variant grouping
+#'   compares every contig of a sample and is not rechecked.
 #' @return (invisibly) the verdict written, or the stored one when skipped.
 #' @export
-screen_one <- function(con, id, path = 1L, scaffold = 1L, force = FALSE) {
+screen_one <- function(con, id, path = 1L, scaffold = 1L, force = FALSE, review = FALSE) {
   path <- as.integer(path); scaffold <- as.integer(scaffold)
-  cur <- DBI::dbGetQuery(con,
-    "SELECT screen_verdict, screen_version FROM screen
-     WHERE ID = ? AND path = ? AND scaffold = ?", params = list(id, path, scaffold))
+  out_tbl <- review_tbl("screen", review)
+  cur <- DBI::dbGetQuery(con, sprintf(
+    "SELECT screen_verdict, screen_version FROM %s
+     WHERE ID = ? AND path = ? AND scaffold = ?", out_tbl), params = list(id, path, scaffold))
   if (!isTRUE(force) && nrow(cur) == 1 &&
       isTRUE((cur$screen_version[1] %|NA|% -1L) >= SCREEN_VERSION) &&
       !identical(cur$screen_verdict[1] %|NA|% "", "no_reference")) {
     return(invisible(cur$screen_verdict[1]))
   }
-  hits <- DBI::dbGetQuery(con,
-    "SELECT hit_rank, hit_class, bitscore, lineage_taxids, lineage FROM blast_hits
+  hits <- DBI::dbGetQuery(con, sprintf(
+    "SELECT hit_rank, hit_class, bitscore, lineage_taxids, lineage FROM %s
      WHERE ID = ? AND path = ? AND scaffold = ?
-     ORDER BY hit_rank, hsp", params = list(id, path, scaffold))
+     ORDER BY hit_rank, hsp", review_tbl("blast_hits", review)), params = list(id, path, scaffold))
   samp <- tryCatch(DBI::dbGetQuery(con,
     "SELECT lineage_taxids t FROM samples WHERE ID = ?", params = list(id))$t[1],
     error = function(e) NA_character_)
@@ -357,20 +362,27 @@ screen_one <- function(con, id, path = 1L, scaffold = 1L, force = FALSE) {
       }
     }
   }
+  row <- data.frame(
+    ID = id, path = path, scaffold = scaffold,
+    screen_verdict = r$verdict, screen_class = r$class,
+    screen_confidence = r$confidence, screen_reason = r$reason,
+    screen_version = SCREEN_VERSION, lca_taxid = r$lca_taxid,
+    lca_taxon = r$lca_taxon, lca_rank = r$lca_rank, lca_n_hits = r$lca_n_hits,
+    host_concordant = r$host_concordant, margin = r$margin,
+    time_stamp = as.integer(Sys.time()), stringsAsFactors = FALSE)
+  if (review) {
+    v <- DBI::dbGetQuery(con,
+      "SELECT variant_class, variant_group, variant_identity FROM screen
+       WHERE ID = ? AND path = ? AND scaffold = ?", params = list(id, path, scaffold))
+    row[names(v)] <- if (nrow(v) > 0) v[1, ] else NA
+  }
   # one transaction: a failed append after a committed delete would leave the
   # unit with no verdict at all
   DBI::dbWithTransaction(con, {
-    DBI::dbExecute(con,
-      "DELETE FROM screen WHERE ID = ? AND path = ? AND scaffold = ?",
+    DBI::dbExecute(con, sprintf(
+      "DELETE FROM %s WHERE ID = ? AND path = ? AND scaffold = ?", out_tbl),
       params = list(id, path, scaffold))
-    DBI::dbAppendTable(con, "screen", data.frame(
-      ID = id, path = path, scaffold = scaffold,
-      screen_verdict = r$verdict, screen_class = r$class,
-      screen_confidence = r$confidence, screen_reason = r$reason,
-      screen_version = SCREEN_VERSION, lca_taxid = r$lca_taxid,
-      lca_taxon = r$lca_taxon, lca_rank = r$lca_rank, lca_n_hits = r$lca_n_hits,
-      host_concordant = r$host_concordant, margin = r$margin,
-      time_stamp = as.integer(Sys.time()), stringsAsFactors = FALSE))
+    DBI::dbAppendTable(con, out_tbl, row)
   })
   invisible(r$verdict)
 }
@@ -380,15 +392,25 @@ screen_one <- function(con, id, path = 1L, scaffold = 1L, force = FALSE) {
 #' @param id Sample ID.
 #' @param force Recompute rows already at the current version.
 #' @param variants Also classify on-target units as isomers or paralogs. The pipeline's screen step passes FALSE; its triage step runs that check once annotation is done.
-#' @return (invisibly) the number of units screened.
+#' @return (invisibly) the number of units screened, with attribute "written":
+#'   data.frame(path, scaffold) of the units whose screen row was rewritten
+#'   rather than skipped as current.
 #' @export
 screen_sample <- function(con, id, force = FALSE, variants = TRUE) {
   u <- DBI::dbGetQuery(con,
     "SELECT path, scaffold FROM assemblies WHERE ID = ? ORDER BY path, scaffold",
     params = list(id))
-  for (i in seq_len(nrow(u))) screen_one(con, id, u$path[i], u$scaffold[i], force = force)
+  # screen_one() writes nothing for a row it skips
+  n_changes <- function() DBI::dbGetQuery(con, "SELECT total_changes() AS n")$n
+  wrote <- logical(nrow(u))
+  for (i in seq_len(nrow(u))) {
+    n0 <- n_changes()
+    screen_one(con, id, u$path[i], u$scaffold[i], force = force)
+    wrote[i] <- n_changes() > n0
+  }
   # after the loop, never before: screen_one() rewrites a row with DELETE plus
   # append, so a variant column written first would be silently wiped
   if (isTRUE(variants)) screen_variants(con, id)
-  invisible(nrow(u))
+  written <- data.frame(path = u$path[wrote], scaffold = u$scaffold[wrote])
+  invisible(structure(nrow(u), written = written))
 }

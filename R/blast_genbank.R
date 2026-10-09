@@ -59,14 +59,19 @@ ref_candidate_ok <- function(x) {
 #' @param taxdump_dir Optional pinned taxdump for resolving the screen hit's
 #'   lineage. Without it the lineage is left NA, which curation flags rather
 #'   than treats as clean.
+#' @param review TRUE stores the hits of the contig's review copy in
+#'   `review_blast_hits` and calls derive_blast_products() in review mode. The
+#'   sample's lineage taxids are never filled in.
 #' @return (invisibly) the ranked candidate data.frame.
 #' @export
-parse_blast_candidates <- function(con, id, path = 1L, scaffold = 1L, hits_file, taxdump_dir = NULL) {
+parse_blast_candidates <- function(con, id, path = 1L, scaffold = 1L, hits_file, taxdump_dir = NULL,
+                                   review = FALSE) {
   ts <- as.integer(Sys.time())
   path <- as.integer(path); scaffold <- as.integer(scaffold)
+  hits_tbl <- review_tbl("blast_hits", review)
   clear_unit <- function() {
     DBI::dbExecute(con,
-      "DELETE FROM blast_hits WHERE ID = ? AND path = ? AND scaffold = ?",
+      sprintf("DELETE FROM %s WHERE ID = ? AND path = ? AND scaffold = ?", hits_tbl),
       params = list(id, path, scaffold))
   }
 
@@ -75,7 +80,7 @@ parse_blast_candidates <- function(con, id, path = 1L, scaffold = 1L, hits_file,
     DBI::dbWithTransaction(con, clear_unit())
     # blast_hits is now empty for this unit; let derive_blast_products clear
     # the derived tables (and any now-stale assemblies.blast_*) too.
-    return(derive_blast_products(con, id, path, scaffold, ts = ts))
+    return(derive_blast_products(con, id, path, scaffold, ts = ts, review = review))
   }
   h$species <- extract_species(h$title)
   h$hit_class <- classify_hit_title(h$title)
@@ -95,7 +100,7 @@ parse_blast_candidates <- function(con, id, path = 1L, scaffold = 1L, hits_file,
   samp <- tryCatch(DBI::dbGetQuery(con,
     "SELECT lineage_taxids FROM samples WHERE ID = ?", params = list(id))$lineage_taxids[1],
     error = function(e) NA_character_)
-  if (is.na(samp %||% NA) || !nzchar(samp %||% "")) {
+  if (!review && (is.na(samp %||% NA) || !nzchar(samp %||% ""))) {
     tryCatch({
       ensure_sample_lineage_taxids(con, ids = id, taxdump_dir = taxdump_dir)
       samp <- DBI::dbGetQuery(con, "SELECT lineage_taxids FROM samples WHERE ID = ?",
@@ -129,9 +134,9 @@ parse_blast_candidates <- function(con, id, path = 1L, scaffold = 1L, hits_file,
     time_stamp = ts, stringsAsFactors = FALSE)
   DBI::dbWithTransaction(con, {
     clear_unit()
-    DBI::dbAppendTable(con, "blast_hits", hits)
+    DBI::dbAppendTable(con, hits_tbl, hits)
   })
-  derive_blast_products(con, id, path, scaffold, ts = ts)
+  derive_blast_products(con, id, path, scaffold, ts = ts, review = review)
 }
 
 #' Derive a unit's reference panel and contamination screen from stored hits
@@ -144,28 +149,37 @@ parse_blast_candidates <- function(con, id, path = 1L, scaffold = 1L, hits_file,
 #' @param id Sample ID.
 #' @param path,scaffold Assembly unit within the sample.
 #' @param ts Timestamp to stamp the written rows with.
+#' @param review TRUE derives the products of the contig's review copy: it
+#'   reads `review_blast_hits`, replaces the row in `review_blast_screen`, and
+#'   sets or clears the `blast_*` summary in `review_units`. The candidates
+#'   only pick the top hit; `blast_ref_candidates` is never written, and the
+#'   source label still comes from `blast_searched`.
 #' @return (invisibly) the ranked candidate data.frame.
 #' @export
 derive_blast_products <- function(con, id, path = 1L, scaffold = 1L,
-                                  ts = as.integer(Sys.time())) {
+                                  ts = as.integer(Sys.time()), review = FALSE) {
   path <- as.integer(path); scaffold <- as.integer(scaffold)
+  screen_tbl <- review_tbl("blast_screen", review)
+  unit_tbl <- review_tbl("assemblies", review)
   clear <- function() {
-    for (tbl in c("blast_ref_candidates", "blast_screen")) {
+    for (tbl in c(if (!review) "blast_ref_candidates", screen_tbl)) {
       DBI::dbExecute(con,
         sprintf("DELETE FROM %s WHERE ID = ? AND path = ? AND scaffold = ?", tbl),
         params = list(id, path, scaffold))
     }
   }
   clear_assembly_ref <- function() {
-    DBI::dbExecute(con,
-      "UPDATE assemblies SET blast_accession = NULL, blast_species = NULL, blast_pident = NULL,
+    DBI::dbExecute(con, sprintf(
+      "UPDATE %s SET blast_accession = NULL, blast_species = NULL, blast_pident = NULL,
          blast_qcovs = NULL, blast_evalue = NULL, blast_source = NULL
-       WHERE ID = ? AND path = ? AND scaffold = ?",
+       WHERE ID = ? AND path = ? AND scaffold = ?", unit_tbl),
       params = list(id, path, scaffold))
   }
-  h <- DBI::dbGetQuery(con,
-    "SELECT * FROM blast_hits WHERE ID = ? AND path = ? AND scaffold = ?
-     ORDER BY hit_rank, hsp",
+  h <- DBI::dbGetQuery(con, sprintf(
+    "SELECT hit_rank, hsp, accession, title, species, staxid, lineage, lineage_taxids,
+       rank_distance, pident, qcovs, evalue, bitscore, aln_len, hit_class
+     FROM %s WHERE ID = ? AND path = ? AND scaffold = ?
+     ORDER BY hit_rank, hsp", review_tbl("blast_hits", review)),
     params = list(id, path, scaffold))
   if (nrow(h) == 0) {
     DBI::dbWithTransaction(con, { clear(); clear_assembly_ref() })
@@ -185,9 +199,9 @@ derive_blast_products <- function(con, id, path = 1L, scaffold = 1L,
 
   DBI::dbWithTransaction(con, {
     clear()
-    write_blast_screen(con, id, path, scaffold, subj[1, ], hits = h, ts = ts)
+    write_blast_screen(con, id, path, scaffold, subj[1, ], hits = h, ts = ts, tbl = screen_tbl)
     if (!is.null(df)) {
-      DBI::dbAppendTable(con, "blast_ref_candidates", df)
+      if (!review) DBI::dbAppendTable(con, "blast_ref_candidates", df)
       top <- ref[1, ]
       searched_source <- DBI::dbGetQuery(con,
         "SELECT source FROM blast_searched WHERE ID = ? AND path = ? AND scaffold = ?",
@@ -198,10 +212,10 @@ derive_blast_products <- function(con, id, path = 1L, scaffold = 1L,
       } else {
         "core_nt"
       }
-      DBI::dbExecute(con,
-        "UPDATE assemblies SET blast_accession = ?, blast_species = ?, blast_pident = ?, blast_qcovs = ?,
+      DBI::dbExecute(con, sprintf(
+        "UPDATE %s SET blast_accession = ?, blast_species = ?, blast_pident = ?, blast_qcovs = ?,
            blast_evalue = ?, blast_source = ?
-         WHERE ID = ? AND path = ? AND scaffold = ?",
+         WHERE ID = ? AND path = ? AND scaffold = ?", unit_tbl),
         params = list(top$accession, top$species, top$pident, top$qcovs, top$evalue,
           blast_source, id, path, scaffold))
     } else {
@@ -274,9 +288,12 @@ parse_blast_hits_file <- function(hits_file) {
 #' `bitscore`. It is required: the flag is a property of the whole distribution,
 #' and any single-row fallback would restore the hit-number-one reading this
 #' replaced.
+#'
+#' `tbl` is the table appended to: `blast_screen`, or `review_blast_screen`
+#' for a review copy.
 #' @noRd
 write_blast_screen <- function(con, id, path, scaffold, top, hits,
-                               ts = as.integer(Sys.time())) {
+                               ts = as.integer(Sys.time()), tbl = "blast_screen") {
   row <- data.frame(
     ID = id, path = as.integer(path), scaffold = as.integer(scaffold),
     accession = top$accession, title = top$title, species = top$species,
@@ -287,7 +304,7 @@ write_blast_screen <- function(con, id, path, scaffold, top, hits,
     bitscore = top$bitscore %||% NA_real_,
     is_nuclear_rrna = consensus_hit_class(hits$hit_class, hits$bitscore),
     time_stamp = ts, stringsAsFactors = FALSE)
-  DBI::dbAppendTable(con, "blast_screen", row)
+  DBI::dbAppendTable(con, tbl, row)
   invisible(row$lineage)
 }
 

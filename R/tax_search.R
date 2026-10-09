@@ -100,14 +100,37 @@ assign_samples_taxid <- function(con, ids, taxid, taxdump_dir) {
   invisible(length(ids))
 }
 
-#' Recompute the contamination screen of samples whose taxon changed
+#' Recompute the lineage-dependent checks of samples whose taxon changed
+#'
+#' Per sample: the screen of every contig (then the variant facts), curation of
+#' every annotated contig, then the screen and curation of each review copy
+#' whose checks are done (locked ones too). Copies queued or running get rev
+#' raised, so a recheck already under way is discarded and the contig reruns
+#' with the new lineage. Last, the stored ITSx origin is judged again.
 #' @noRd
 rescreen_samples <- function(con, ids) {
   ids <- intersect(ids, DBI::dbGetQuery(con, "SELECT DISTINCT ID FROM assemblies")$ID)
   for (id in ids) {
     DBI::dbExecute(con, "DELETE FROM screen WHERE ID = ?", params = list(id))
     screen_sample(con, id)
+    u <- DBI::dbGetQuery(con,
+      "SELECT path, scaffold FROM annotate WHERE ID = ? AND n_features IS NOT NULL", params = list(id))
+    for (i in seq_len(nrow(u))) {
+      tryCatch(curate_one(con, id, u$path[i], u$scaffold[i]), error = function(e) NULL)
+    }
+    cp <- DBI::dbGetQuery(con,
+      "SELECT path, scaffold FROM review_units WHERE ID = ? AND check_switch = 2", params = list(id))
+    for (i in seq_len(nrow(cp))) {
+      tryCatch({
+        screen_one(con, id, cp$path[i], cp$scaffold[i], force = TRUE, review = TRUE)
+        curate_one(con, id, cp$path[i], cp$scaffold[i], review = TRUE)
+      }, error = function(e) NULL)
+    }
+    DBI::dbExecute(con,
+      "UPDATE review_units SET rev = rev + 1, time_stamp = ? WHERE ID = ? AND check_switch IN (1, 4)",
+      params = list(as.integer(Sys.time()), id))
   }
+  itsx_refresh_origin(con, ids)
   invisible(length(ids))
 }
 

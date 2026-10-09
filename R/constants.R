@@ -147,8 +147,9 @@ SCAFFOLD_COL_HELP <- list(
     "missing or partial 5.8S, a boundary far from RiboPilot's own, or an organism group",
     "outside the sample's lineage, shown with its score next to the sample's own group",
     "('tie' or 'near tie' means that group call is unreliable). Filled in by",
-    "the annotation step and updated again by export. Empty means clean; 'not run'",
-    "means ITSx produced no output."),
+    "the annotation step, and by Update on Annotation Review after a trim or an edit.",
+    "Empty means clean; 'not run' means ITSx gave no answer (hover for why);",
+    "'not checked' means no ITSx check is stored yet."),
   screen_verdict = paste("BLAST screen: whether the best matches look like the",
     "sample's own organism (on target), something else (off target), or the",
     "evidence is too thin to say."),
@@ -206,6 +207,8 @@ CHIMERA_COL_HELP <- list(
 #' Pipeline state registry. Order is lifecycle order, not numeric order.
 #' @noRd
 MP_STATE_META <- list(
+  `5` = list(label = "Waiting for Assemble Update", icon = "fa fa-clock",
+             tip = "The main pipeline has not finished this contig. Press Update on the Assemble step first."),
   `0` = list(label = "On hold",      icon = "fa fa-hourglass",
              tip = "Skipped by the next run until you set it to Ready to run."),
   `1` = list(label = "Ready to run", icon = "fa fa-play",
@@ -218,12 +221,12 @@ MP_STATE_META <- list(
              tip = "Failed. Open the sample's details to see why and what to try next.")
 )
 
-#' Codes each module can display.
+#' Codes each module can display. Annotation Review's 5 is display-only.
 #' @noRd
 MP_STATE_CODES <- list(
   taxonomy = c("0", "1", "4", "2", "3"),
   assemble = c("0", "1", "4", "2", "3"),
-  annotate = c("0", "1", "4", "2", "3")
+  annotate = c("5", "0", "1", "4", "2", "3")
 )
 
 #' Codes a user may set by hand.
@@ -402,8 +405,10 @@ MP_UNIT_LOCKED <- paste("This contig is locked, so it is read only here.",
 MP_TRIM_TIP <- function() {
   c(trim = paste0("Trim the selected contigs to their gene ends, or gene ends plus a flank. ",
       "Only contigs with all five features (", paste(BATCH_TRIM_FEATURES, collapse = ", "),
-      ") are trimmed; locked contigs and contigs queued in a running run are skipped."),
-    restore = paste0("Undo the trim on the selected contigs. Untrimmed and locked contigs are skipped."))
+      ") are trimmed; locked contigs are skipped. Trimmed contigs show their checks as not run ",
+      "until you press Update."),
+    restore = paste0("Restore the selected contigs to their originals: trims, boundary edits, and ",
+      "5'/3' choices are deleted. Contigs with no edits and locked contigs are skipped."))
 }
 
 #' Curator marks: what each toolbar button and window toggle says it will do,

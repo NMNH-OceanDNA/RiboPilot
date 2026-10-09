@@ -40,12 +40,14 @@ Reviewed. It offers **Leave them out**, **Export anyway**, or **Cancel**, and
 ![The Export window asking about CHIM01 before it is exported](figures/get-started/export-flagged-prompt.png)
 
 The export ends with a summary. If any exported record still carries a
-submission-risk flag, the summary names it and why, above the result of the
-final ITSx check; it is green only when nothing was flagged. In the test
-project CHIM01 was left out, so the summary only shows the final ITSx check,
-which flags one record:
+submission-risk flag, the summary names it and why, above the ITSx counts: how
+many records the stored ITSx check flagged, how many are clean, and how many
+were not checked, with the flagged records named. It is green only when nothing
+was flagged. Export does not run ITSx itself; see
+[the ITSx check](GenBank-Submission.html#check-before-you-submit). In the test
+project CHIM01 was left out, so the summary only shows the ITSx counts:
 
-![Export summary, with the final ITSx check flagging one record](figures/get-started/export-done.png)
+![Export summary, with the ITSx counts](figures/get-started/export-done.png)
 
 ::: {.alert .alert-hydra}
 [HYDRA]{.hydra-tag} **Buttons that open folders.** On RStudio Server, **Open

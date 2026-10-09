@@ -119,19 +119,23 @@ test_that("annotation and curation presets are set from the Assemble surface", {
   # ...and the Annotate-mode query no longer carries them. Anchored on that
   # query specifically: the Assemble one names the same columns in subselects,
   # so a whole-file search would pass while the tab still showed them.
-  i <- regexpr("an.annotate_lock, an.annotate_switch", srv, fixed = TRUE)
+  i <- regexpr("an.annotate_lock, COALESCE(v.check_switch, 1) AS annotate_switch", srv, fixed = TRUE)
   expect_true(i > 0)
   ann_q <- substr(srv, i, i + 700)
   expect_false(grepl("annotate_opts", ann_q, fixed = TRUE))
   expect_false(grepl("curate_opts", ann_q, fixed = TRUE))
 })
 
-test_that("the Annotate tab has no Update button", {
+test_that("the Annotation Review toolbar has its own Update button", {
   ui <- paste(deparse(RiboPilot:::app_ui), collapse = "\n")
   i <- regexpr("input.mode == 'Annotate'", ui, fixed = TRUE)
-  expect_true(i > 0)
-  block <- substr(ui, i, i + 400)
-  expect_false(grepl("run_btn", block, fixed = TRUE))
+  j <- regexpr("input.mode == 'Export'", ui, fixed = TRUE)
+  expect_true(i > 0 && j > i)
+  block <- substr(ui, i, j)
+  expect_true(grepl("annot_run_btn", block, fixed = TRUE))
+  expect_false(grepl("asmb_run_btn", block, fixed = TRUE))
+  html <- as.character(RiboPilot:::app_ui(NULL))
+  expect_true(grepl('id="annot_run_btn"', html, fixed = TRUE))
 })
 
 test_that("the mode picker shows Annotation Review but keys on Annotate", {
@@ -327,5 +331,29 @@ test_that("annotation options store per-tool rRNA caller flags", {
       "SELECT barrnap_opts, pybarrnap_opts FROM annotate_opts WHERE annotate_opts = 'fresh'")
     expect_equal(row$barrnap_opts, "--evalue 1e-3")
     expect_equal(row$pybarrnap_opts, "-e 1e-3")
+  })
+})
+
+test_that("saving annotation options follows the sample's review copies at once", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  fixture_mark_done(con)
+  for (s in 1:2) RiboPilot:::review_copy(con, "S1", 1L, s)
+  DBI::dbExecute(con, "UPDATE review_units SET edited = 1 WHERE scaffold = 2")
+  DBI::dbDisconnect(con)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    session$flushReact()
+    session$setInputs(set_annotate_opts = 1)
+    session$setInputs(no_name = "fresh", no_edit = TRUE, no_cpus = 2, no_mem = 4,
+      no_tool = "pybarrnap", no_kingdom = "euk", no_itsxtaxon = "all", no_itsxopts = "")
+    session$setInputs(update_no = 1)
+    # the State copy is gone; the edited copy keeps its edits and waits for Update
+    expect_equal(RiboPilot:::app_query(
+      "SELECT path, scaffold, edited, check_switch FROM review_units ORDER BY path, scaffold"),
+      data.frame(path = 1L, scaffold = 2L, edited = 1L, check_switch = 1L))
   })
 })

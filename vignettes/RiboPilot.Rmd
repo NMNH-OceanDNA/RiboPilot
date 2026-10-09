@@ -130,6 +130,11 @@ Two buttons appear in every step:
 </tbody>
 </table>
 
+On Annotation Review, **State** offers only Ready to run, which queues a contig
+for that step's own **Update**, and On hold, which keeps it out. A contig the
+pipeline has not finished annotating shows a sixth state there, **Waiting for
+Assemble Update**; see [Test project: Annotation Review](Test-Project-Annotate.html).
+
 - **Lock** means "I am done with this step for these rows". Locked rows cannot
   have their analysis options for that step changed, the next update does not re-run
   them, and they move on to the next step. You can unlock at any time.

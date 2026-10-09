@@ -619,6 +619,11 @@ opts_apply <- function(pfx, sp, input, deps, ids, cur) {
         params = list(nm, id))
       DBI::dbExecute(con, sprintf("UPDATE %s SET %s = 1 WHERE ID = ?", sp$queue_tbl, sp$queue),
         params = list(id))
+      if (sp$queue_tbl == "annotate") {
+        cp <- DBI::dbGetQuery(con, "SELECT path, scaffold FROM review_units WHERE ID = ?",
+          params = list(id))
+        for (i in seq_len(nrow(cp))) review_follow_original(con, id, cp$path[i], cp$scaffold[i])
+      }
     }
   })
   if (!saved) return()

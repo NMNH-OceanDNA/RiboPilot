@@ -186,3 +186,42 @@ test_that("a failed blast_hits insert leaves the unit's stored hits in place", {
   expect_equal(DBI::dbGetQuery(con, "SELECT ID, accession FROM blast_hits"), before)
   expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM blast_screen")$n, 1L)
 })
+
+test_that("a failed review_screen insert leaves the copy's stored verdict in place", {
+  con <- chimera_test_con(); on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "UPDATE samples SET lineage_taxids = ?", params = list(FISH_TAX))
+  DBI::dbExecute(con, "INSERT INTO assemblies (ID, path, scaffold, length, sequence)
+    VALUES ('S1', 1, 1, 8, 'ACGTACGT')")
+  RiboPilot:::review_copy(con, "S1", 1L, 1L)
+  for (i in 1:3) {
+    DBI::dbExecute(con,
+      "INSERT INTO review_blast_hits (ID,path,scaffold,hit_rank,hsp,bitscore,lineage_taxids,lineage,hit_class)
+       VALUES ('S1',1,1,?,1,?,?,'Eukaryota;Chordata;Actinopteri;o;f;g;s','rdna')",
+      params = list(i, 900 - i, FISH_TAX))
+  }
+  screen_one(con, "S1", 1, 1, review = TRUE)
+  before <- DBI::dbGetQuery(con, "SELECT screen_verdict, screen_reason FROM review_screen")
+  expect_equal(before$screen_verdict, "on_target")
+
+  block_inserts(con, "review_screen")
+  expect_error(screen_one(con, "S1", 1, 1, force = TRUE, review = TRUE), "blocked")
+  expect_equal(DBI::dbGetQuery(con, "SELECT screen_verdict, screen_reason FROM review_screen"), before)
+})
+
+test_that("a failed review_blast_hits insert leaves the copy's stored hits in place", {
+  con <- chimera_test_con(); on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "INSERT INTO assemblies (ID, path, scaffold, length, sequence)
+    VALUES ('S1', 1, 1, 8, 'ACGTACGT')")
+  RiboPilot:::review_copy(con, "S1", 1L, 1L)
+  f <- withr::local_tempfile()
+  writeLines(paste("AA1", "Danio rerio 18S ribosomal RNA gene", 99, 80, "1e-90", 7955,
+    1500, 1600, 1, 1600, 1, 1600, sep = "\t"), f)
+  parse_blast_candidates(con, "S1", 1, 1, f, review = TRUE)
+  before <- DBI::dbGetQuery(con, "SELECT ID, accession FROM review_blast_hits")
+  expect_equal(nrow(before), 1L)
+
+  block_inserts(con, "review_blast_hits")
+  expect_error(parse_blast_candidates(con, "S1", 1, 1, f, review = TRUE), "blocked")
+  expect_equal(DBI::dbGetQuery(con, "SELECT ID, accession FROM review_blast_hits"), before)
+  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM review_blast_screen")$n, 1L)
+})

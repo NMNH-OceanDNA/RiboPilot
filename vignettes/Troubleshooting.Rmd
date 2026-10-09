@@ -46,8 +46,8 @@ SRR22396893 | 2 contig(s) under min_assembly_length (500 bp) | Every assembled c
 
 What each part means:
 
-- **Workflow** through **Log**: which workflow ran (the pipeline, or a
-  reference build), when, how it ended and with what exit status, whether it
+- **Workflow** through **Log**: which workflow ran (the pipeline, a recheck, or
+  a reference build), when, how it ended and with what exit status, whether it
   was started from the app or as a job, and where its full log is.
 - **Tasks**: how many pipeline steps ran, were reused from an earlier run,
   failed, were retried, or were stopped.
@@ -57,7 +57,9 @@ What each part means:
   140), the likely cause, the last line of the step's error output, and its
   working folder.
 - **Failed samples**: samples that finished without a usable assembly, with the
-  pipeline's note and the likely cause.
+  pipeline's note and the likely cause. After a recheck (**Update** on
+  Annotation Review), **Failed contigs** lists instead each contig whose
+  recheck failed or did not finish, with its note.
 
 Samples that failed do not stop the others. Most steps skip a failed sample and
 carry on, so a run can finish with some samples done and a few failed.
@@ -79,6 +81,7 @@ The step names you may see, and what each step does:
 | `annotate_tools`, `reconcile` | Find the five features. |
 | `curate`, `screen`, `chimera` | Run the quality checks, the Screen verdict, and the chimera check. |
 | `triage` | Proposes which contigs to keep. |
+| `query_recheck`, `recheck_tools`, `recheck` | The recheck that **Update** on Annotation Review runs: pick the queued contigs, run barrnap and ITSx on each, then rerun its checks. |
 
 # Error codes
 
@@ -100,7 +103,7 @@ These are the codes the report explains, with what they usually mean:
 | any other | The tool stopped with an error. | Read the last error in the report, and the step's log (see below). |
 
 The memory-hungry steps (`preprocess`, `assemble`, `fallback_assemble`,
-`find_rrna_scan`, and `annotate_tools`) retry by themselves after codes 104, 134, 137, 139, 140, 143,
+`find_rrna_scan`, `annotate_tools`, and `recheck_tools`) retry by themselves after codes 104, 134, 137, 139, 140, 143,
 and 247, up to three times, with more memory each time. The report says how
 often a step was tried.
 

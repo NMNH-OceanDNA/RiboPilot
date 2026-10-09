@@ -212,10 +212,12 @@ test_that("export writes NMNH values and drops the empty modifier", {
   DBI::dbExecute(con, "INSERT INTO annotate VALUES('S1',1,1,1,'no','no','yes',0,1,'',NULL,NULL)")
   DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,1,'18S','rRNA',1,400)")
   DBI::dbExecute(con, "INSERT INTO assemble VALUES('S1',1)")
+  fixture_review_schema(con)
+  fixture_mark_done(con)
   DBI::dbDisconnect(con)
   local_mocked_bindings(.gbif_get = function(path) stop("offline"))
   g <- suppressWarnings(suppressMessages(export_bundle(dir, out_dir = file.path(dir, "out"),
-    report = FALSE, zip = FALSE, itsx_check = FALSE, label = "g1",
+    report = FALSE, zip = FALSE, label = "g1",
     fasta_header = nmnh_template_add(DEFAULT_FASTA_HEADER),
     fasta_header_marker = nmnh_template_add(DEFAULT_FASTA_HEADER_MARKER))))
   h <- grep("^>", readLines(file.path(g, "g1.fasta")), value = TRUE)

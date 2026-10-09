@@ -181,13 +181,19 @@ app_server <- function(input, output, session) {
            (SELECT COUNT(*) FROM assemblies x WHERE x.ID = s.ID) AS units,
            (SELECT COUNT(*) FROM assemblies x WHERE x.ID = s.ID
               AND COALESCE(x.ignore,0) = 0) AS kept,
-           -- per-sample roll-up of the stock-ITSx check: NULL until any unit
-           -- has been checked, else 'n of m contigs' flagged
+           -- per-sample roll-up of the stock-ITSx check over kept contigs: NULL
+           -- until any is checked, else 'n of m contigs' flagged, plus how many
+           -- have no result or a not_run one, so it never reads as clean then
            (SELECT CASE WHEN COUNT(x.itsx_warnings) = 0 THEN NULL ELSE
               SUM(CASE WHEN COALESCE(x.itsx_warnings,'') <> ''
                        AND x.itsx_warnings NOT LIKE 'not_run(%' THEN 1 ELSE 0 END)
-              || ' of ' || COUNT(x.itsx_warnings) || ' contigs' END
-            FROM annotate x WHERE x.ID = s.ID) AS itsx_warnings,
+              || ' of ' || COUNT(*) || ' contigs' ||
+              CASE WHEN SUM(x.itsx_warnings IS NULL OR x.itsx_warnings LIKE 'not_run(%') = 0 THEN ''
+                ELSE ', ' || SUM(x.itsx_warnings IS NULL OR x.itsx_warnings LIKE 'not_run(%') ||
+                  ' not checked' END END
+            FROM annotate x
+              JOIN assemblies y ON y.ID = x.ID AND y.path = x.path AND y.scaffold = x.scaffold
+            WHERE x.ID = s.ID AND COALESCE(y.ignore,0) = 0) AS itsx_warnings,
            (SELECT p.path FROM path_scores p WHERE p.ID = s.ID AND p.auto_select = 1) AS sel_path,
            (SELECT round(MAX(p.score),3) FROM path_scores p WHERE p.ID = s.ID) AS best_score,
            -- the rDNA contig search writes its own column because
@@ -202,35 +208,24 @@ app_server <- function(input, output, session) {
            LEFT JOIN preprocess pp ON s.ID = pp.ID
          WHERE s.taxonomy_lock = 1") |> with_checks("sample")
     } else if (mode == "Export") {
-      # the units an export writes (EXPORTABLE_WHERE), one row per (ID, path, scaffold)
-      app_query(paste(
-        "SELECT s.ID, an.path, an.scaffold,", UNIT_MULTI_SQL, ", s.Taxon, s.sci_name, s.taxid, asm.length,
-           an.n_features, an.missing,
-           an.n_flags, an.curate_flags, an.annotate_notes, an.itsx_warnings, sc.screen_verdict,
-           ch.label AS chimera_label, ch.reason AS chimera_reason,
-           an.reviewed, an.partial,
-           an.export_group,", UNIT_EXPORTED_SQL, ", an.time_stamp
-         FROM annotate an JOIN samples s ON s.ID = an.ID
-           JOIN assemble a ON a.ID = an.ID
-           JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
-           LEFT JOIN screen sc ON sc.ID = an.ID AND sc.path = an.path AND sc.scaffold = an.scaffold
-           LEFT JOIN chimera ch ON ch.ID = an.ID AND ch.path = an.path AND ch.scaffold = an.scaffold
-         WHERE", EXPORTABLE_WHERE))
+      app_query(EXPORT_STEP_SQL)
     } else {
       # annotate shows one row per non-ignored assembly UNIT of an assembly-locked
-      # sample (one (ID, path, scaffold) each, annotated independently)
-      app_query(paste(
-        "SELECT an.annotate_lock, an.annotate_switch, s.ID, an.path, an.scaffold,", UNIT_MULTI_SQL, ",
+      # sample (one (ID, path, scaffold) each, annotated independently). Contig
+      # data and check results come from the review layer (the contig's review
+      # copy, else its original); the marks, notes, and group from annotate.
+      d <- app_query(paste(
+        "SELECT an.annotate_lock, COALESCE(v.check_switch, 1) AS annotate_switch, s.ID, an.path, an.scaffold,", UNIT_MULTI_SQL, ",
            s.Taxon, s.sci_name, s.taxid,
-           asm.length, an.n_features, an.missing,
+           v.length, v.n_features, v.missing,
            -- blast_source says WHICH search named the species: the local seed
            -- BLAST, the local panel BLAST, or the remote core_nt one. Without
            -- it a seed or panel hit reads as a GenBank identification.
            -- blast_qcovs is written by the remote and local-panel paths only
            -- and its column was already defined but never selected.
-           asm.blast_species, asm.blast_accession, asm.blast_pident, asm.blast_qcovs,
-           asm.blast_source,
-           an.n_flags, an.curate_flags, an.itsx_warnings, sc.screen_verdict,
+           v.blast_species, v.blast_accession, v.blast_pident, v.blast_qcovs,
+           v.blast_source,
+           v.n_flags, v.curate_flags, v.itsx_warnings, sc.screen_verdict,
            ch.label AS chimera_label, ch.reason AS chimera_reason, an.reviewed,
            an.problematic, an.partial, an.annotate_notes,
            an.export_group,", UNIT_EXPORTED_SQL, ", an.time_stamp,
@@ -239,9 +234,20 @@ app_server <- function(input, output, session) {
            JOIN samples s ON s.ID = an.ID
            JOIN assemble a ON a.ID = an.ID
            JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
-           LEFT JOIN screen sc ON sc.ID = an.ID AND sc.path = an.path AND sc.scaffold = an.scaffold
-           LEFT JOIN chimera ch ON ch.ID = an.ID AND ch.path = an.path AND ch.scaffold = an.scaffold
-         WHERE a.assemble_lock = 1 AND COALESCE(asm.ignore, 0) = 0")) |> with_checks("unit")
+           JOIN review_units_v v ON v.ID = an.ID AND v.path = an.path AND v.scaffold = an.scaffold
+           LEFT JOIN review_screen_v sc ON sc.ID = an.ID AND sc.path = an.path AND sc.scaffold = an.scaffold
+           LEFT JOIN review_chimera_v ch ON ch.ID = an.ID AND ch.path = an.path AND ch.scaffold = an.scaffold
+         WHERE a.assemble_lock = 1 AND COALESCE(asm.ignore, 0) = 0")) |> with_checks("unit", review = TRUE)
+      # The State column shows the checks' state, 5 for a contig waiting for the
+      # Assemble step's Update; check_state gates the check cells (rt_gated).
+      con <- app_con(); on.exit(DBI::dbDisconnect(con))
+      st <- review_unit_state(con, d[c("ID", "path", "scaffold")])
+      d$annotate_switch[st$state %in% "waiting"] <- 5L
+      # No copy and nothing queued: Update has no copy to run, so hold, not Ready to run.
+      d$annotate_switch[st$state %in% "not run" & st$has_copy %in% 0] <- 0L
+      d$check_state <- ifelse(st$state %in% "done", NA_character_, review_state_text(st$state))
+      d$check_note <- st$check_note
+      d
     }
   })
 
@@ -250,9 +256,9 @@ app_server <- function(input, output, session) {
   samples_data <- reactive(all_rows()[visible_mask(), , drop = FALSE])
 
   # The Checks summary goes right after the row's ID (and path and scaffold).
-  with_checks <- function(d, by) {
+  with_checks <- function(d, by, review = FALSE) {
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    ck <- unit_checks(con, by)
+    ck <- unit_checks(con, by, review = review)
     k <- function(x) if (by == "unit") unit_key(x$ID, x$path, x$scaffold) else x$ID
     i <- match(k(d), k(ck))
     at <- max(match(c("ID", "path", "scaffold"), names(d)), na.rm = TRUE)
@@ -318,28 +324,30 @@ app_server <- function(input, output, session) {
       tax_alternatives = cd("tax_alternatives", minWidth = 260, html = TRUE, cell = rt_longtext()),
       checks = cd("checks", minWidth = 180, html = TRUE, cell = rt_checks_badge()),
       checks_tone = reactable::colDef(show = FALSE),
+      check_state = reactable::colDef(show = FALSE),
+      check_note = reactable::colDef(show = FALSE),
       reviewed = cd("reviewed", html = TRUE, align = "center", cell = rt_bool_badge(hide_no = TRUE)),
       problematic = cd("problematic", width = 110, html = TRUE, align = "center",
         cell = rt_bool_badge(hide_no = TRUE, yes_tone = "warning")),
       partial = cd("partial", width = 80, html = TRUE, align = "center",
         cell = rt_bool_badge(yes_tone = "warning", no_tone = "success")),
       n_flags = cd("n_flags", width = 100, html = TRUE, filterable = FALSE, align = "center",
-        cell = rt_flag_badge()),
+        cell = rt_gated(rt_flag_badge())),
       annotate_notes = cd("annotate_notes", minWidth = 160, html = TRUE, class = "mp-note-cell", cell = rt_longtext()),
       curate_flags = reactable::colDef(show = FALSE),
-      itsx_warnings = cd("itsx_warnings", minWidth = 130, html = TRUE, cell = rt_itsx_badge()),
+      itsx_warnings = cd("itsx_warnings", minWidth = 130, html = TRUE, cell = rt_gated(rt_itsx_badge())),
       screen_verdict = cd("screen_verdict", width = 110, html = TRUE, align = "center",
-        cell = rt_screen_badge()),
+        cell = rt_gated(rt_screen_badge())),
       chimera_label = cd("chimera_label", width = 100, html = TRUE, align = "center",
-        cell = rt_chimera_badge()),
+        cell = rt_gated(rt_chimera_badge())),
       chimera_reason = reactable::colDef(show = FALSE),
       reference = cd("reference", html = TRUE, cell = rt_ncbi_link()),
-      blast_species = cd("blast_species", minWidth = 160, html = TRUE, cell = rt_longtext()),
-      blast_accession = cd("blast_accession", minWidth = 130, html = TRUE, cell = rt_ncbi_link()),
-      blast_pident = cd("blast_pident", width = 130),
-      blast_qcovs = cd("blast_qcovs", width = 140),
+      blast_species = cd("blast_species", minWidth = 160, html = TRUE, cell = rt_gated(rt_longtext())),
+      blast_accession = cd("blast_accession", minWidth = 130, html = TRUE, cell = rt_gated(rt_ncbi_link())),
+      blast_pident = cd("blast_pident", width = 130, html = TRUE, cell = rt_gated()),
+      blast_qcovs = cd("blast_qcovs", width = 140, html = TRUE, cell = rt_gated()),
       blast_source = cd("blast_source", width = 100, html = TRUE, align = "center",
-        cell = rt_blast_source_badge()),
+        cell = rt_gated(rt_blast_source_badge())),
       details = cd("details", width = 80, align = "center", filterable = FALSE, sortable = FALSE,
         sticky = "right", class = "mp-actions-sticky", headerClass = "mp-actions-sticky", html = TRUE,
         cell = rt_icon_bttn_text(det_input, "fas fa-square-arrow-up-right fa-xs", title = det_tip)),
@@ -381,10 +389,11 @@ app_server <- function(input, output, session) {
       cols[[state_col]] <- cd(state_col, sticky = "left", html = TRUE, width = 54,
         align = "center", filterable = FALSE,
         cell = rt_dynamicIcon(icons = mp_state_icon_classes(mm$pfx), labels = mp_state_titles(mm$pfx),
-          inputId = "state_row"))
+          inputId = "state_row", note_col = "check_note"))
     }
     if (mode == "Export") {
       cols[["ID"]] <- cd("ID", sticky = "left", width = mp_fit_width(d$ID))
+      cols[["exported"]] <- cd("exported", width = 210, html = TRUE, cell = rt_gated(rt_text_pill("success")))
     }
     if (mode == "Reference" && ref_view() == "Samples") {
       cols[["ID"]] <- cd("ID", sticky = "left", width = mp_fit_width(d$ID))
@@ -762,9 +771,28 @@ app_server <- function(input, output, session) {
       action_label = "Lock anyway", danger = TRUE)
   }
   # Excluded units are never exported, so Lock does not ask about them.
-  lock_flagged <- function(u) {
-    f <- screen_flagged(u)
+  lock_flagged <- function(u, review = FALSE) {
+    f <- screen_flagged(u, review = review)
     if (nrow(f)) f[!(f$problematic %in% "yes"), , drop = FALSE] else f
+  }
+  # Annotation Review locks only contigs whose checks are done (S6.2).
+  need_checks_done <- function(u) {
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    g <- review_lock_gate(con, u)
+    bad <- !is.na(g)
+    if (!any(bad)) return(TRUE)
+    by <- split(sprintf("%s p%s.s%s", u$ID, u$path, u$scaffold)[bad], g[bad])
+    rp_alert(paste0("Lock needs finished checks, so nothing was locked. ",
+      paste0(vapply(by, mp_id_list, ""), ": ", names(by), collapse = " ")),
+      type = "warning", title = "Checks not finished")
+    FALSE
+  }
+  # Units that may still lock; the gate runs again at confirm, after the click.
+  still_lockable <- function(u) {
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    ok <- is.na(review_lock_gate(con, u))
+    if (!all(ok)) rp_toast("Some contigs changed since you clicked Lock and were skipped.", type = "warning")
+    u[ok, , drop = FALSE]
   }
   lock_sql <- function(mm, to) sprintf("UPDATE %s SET %s_lock = %d WHERE ID = ?", mm$tbl, mm$pfx, to)
   next_step <- c(taxonomy = "Assemble", assemble = "Annotation Review", annotate = "Export")
@@ -790,7 +818,10 @@ app_server <- function(input, output, session) {
       if (skip) unlock() else lock_next(unlock)
       return()
     }
-    do_lock <- function() set_flag(lock_sql(mm, 1L), verb = "locked", u = u)
+    do_lock <- function() {
+      lu <- if (identical(mm$pfx, "annotate")) still_lockable(u) else u
+      if (NROW(lu)) set_flag(lock_sql(mm, 1L), verb = "locked", u = lu)
+    }
     if (identical(mm$pfx, "taxonomy")) {
       weak <- d$ID[s][is.na(d$taxid[s])]
       if (length(weak) > 0) {
@@ -814,7 +845,9 @@ app_server <- function(input, output, session) {
          JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
          WHERE COALESCE(asm.ignore, 0) = 0 AND an.ID IN (%s)",
         paste(rep("?", length(ids)), collapse = ",")), params = as.list(ids))
-    f <- lock_flagged(units)
+    ann <- identical(mm$pfx, "annotate")
+    if (ann && !need_checks_done(units)) return()
+    f <- lock_flagged(units, review = ann)
     if (nrow(f)) return(confirm_flagged_lock(f, do_lock))
     do_lock()
   }
@@ -848,9 +881,23 @@ app_server <- function(input, output, session) {
     }
     mm <- mode_meta(input$mode)
     st <- as.integer(input$new_state)
-    set_flag(sprintf("UPDATE %s SET %s_switch = %d WHERE ID = ?", mm$tbl, mm$pfx, st), u = state_units())
+    if (identical(mm$pfx, "annotate")) set_check_state(state_units(), st)
+    else set_flag(sprintf("UPDATE %s SET %s_switch = %d WHERE ID = ?", mm$tbl, mm$pfx, st), u = state_units())
     removeModal()
   })
+  # State on Annotation Review queues (1) or holds (0) the recheck of each
+  # contig's review copy; locked and waiting contigs are listed, not changed.
+  set_check_state <- function(u, st) {
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    ok <- app_write(why <- review_set_state(con, u, st))
+    refresh(refresh() + 1)
+    if (!ok) return()
+    done <- is.na(why)
+    if (any(done)) mp_toast(paste(mp_n(sum(done), "contig"), "updated."))
+    if (!all(done)) mp_alert(paste("Left", mp_n(sum(!done), "contig"), "unchanged"),
+      text = paste0(mp_id_list(sprintf("%s p%s.s%s (%s)", u$ID[!done], u$path[!done],
+        u$scaffold[!done], why[!done])), "."), type = "warning")
+  }
   # Toolbar marks: the unlocked part of the selection goes one way
   # (mp_flag_next), as the toggles in the annotation window do; locked units
   # are left alone.
@@ -903,6 +950,13 @@ app_server <- function(input, output, session) {
   observeEvent(input$partial_btn, toolbar_flag("partial"))
 
   # ---- batch Trim / Restore on ticked units ----
+  # A trim or restore rewrites the unit's review copy, so it ends any
+  # boundary-edit session left open in the details window.
+  end_edit_session <- function() {
+    edit_active(FALSE); edit_backup(NULL); edit_dirty(FALSE)
+    shinyjs::hide("feat_edit_ctrls")
+    shinyWidgets::updatePrettyCheckbox(session, "feat_edit", value = FALSE)
+  }
   batch_trim <- reactiveVal(NULL)
   open_batch_trim <- function(restore) {
     u <- selected_units()
@@ -922,8 +976,7 @@ app_server <- function(input, output, session) {
   batch_trim_plan_now <- function() {
     b <- batch_trim(); req(b)
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    batch_trim_plan(con, b$u, batch_flank(), b$restore,
-      running = !is.null(run_lock_holder(app_project())))
+    batch_trim_plan(con, b$u, batch_flank(), b$restore)
   }
   observe(shinyjs::toggleState("batch_trim_go", condition = !batch_flank_bad()))
   output$batch_trim_summary <- renderUI({
@@ -938,6 +991,7 @@ app_server <- function(input, output, session) {
     if (!nrow(ok)) return(mp_toast("Nothing to change: every contig is skipped.", type = "warning"))
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
     err <- batch_trim_apply(con, ok, b$restore)
+    end_edit_session()
     removeModal(); batch_trim(NULL); edit_tick(edit_tick() + 1); refresh(refresh() + 1)
     skipped <- nrow(p) - nrow(ok)
     mp_toast(paste0(mp_n(sum(is.na(err)), "contig"), if (b$restore) " restored" else " trimmed",
@@ -1178,6 +1232,102 @@ app_server <- function(input, output, session) {
     },
     on_done = function(how) refresh(isolate(refresh()) + 1))
 
+  # ---- Recheck: Update on Annotation Review reruns the checks on review copies ----
+  rc_submit_base <- reactiveVal(NULL)   # timestamp shared by one submission's files
+
+  output$rc_nf_cmd_text <- renderText({
+    input$annot_run_btn
+    paste(c("nextflow", nf_recheck_command(app_project())), collapse = " ")
+  })
+
+  observeEvent(input$annot_run_btn, ignoreInit = TRUE, {
+    held <- run_lock_holder(app_project())
+    if (!is.null(held)) { rp_alert(run_lock_message(held, app_project()), type = "warning"); return() }
+    n <- nf_recheck_pending(app_project())
+    if (n == 0) {
+      w <- nf_recheck_waiting(app_project())
+      rp_alert(paste(c("No contigs are Ready to run. A trim or a moved gene boundary queues a",
+        "contig, and so does setting its State to Ready to run. Locked contigs are skipped.",
+        if (w > 0) paste0("Waiting for the Assemble step's Update: ", mp_n(w, "contig"), ".")),
+        collapse = " "), type = "warning", title = "Nothing to update")
+      return()
+    }
+    hl <- app_headless()
+    sched <- if (hl) detect_scheduler() else NULL
+    if (hl) rc_submit_base(job_basename("recheck"))
+    script <- if (hl) build_recheck_submit_script(app_project(), sched = sched,
+      base = rc_submit_base()) else ""
+    showModal(run_modal(n, headless = hl, sched = sched, script = script, pfx = "rc_",
+      title = sprintf("RiboPilot recheck - %d contig(s) to update", n), resume = FALSE))
+  })
+
+  write_recheck_script <- function() {
+    base <- rc_submit_base() %||% job_basename("recheck")
+    typed <- input$rc_submit_script_text %||% ""
+    script <- if (nzchar(trimws(typed))) typed else
+      build_recheck_submit_script(app_project(), base = base)
+    f <- job_path(app_project(), "script", paste0(base, ".sh"))
+    writeLines(script, f)
+    try(Sys.chmod(f, "0755"), silent = TRUE)
+    f
+  }
+  observeEvent(input$rc_save_script, {
+    f <- write_recheck_script()
+    rp_alert(paste0("Saved job script to ", f), type = "message")
+  })
+  rc_job_sent <- reactiveVal(FALSE)
+  rc_resubmit_ok <- reactiveVal(FALSE)
+  observeEvent(input$rc_submit_job, {
+    held <- run_lock_holder(app_project())
+    if (!is.null(held)) { rp_alert(run_lock_message(held, app_project()), type = "warning"); return() }
+    if (isTRUE(rc_job_sent()) && !isTRUE(rc_resubmit_ok())) {
+      rc_resubmit_ok(TRUE)
+      rp_alert(paste("A recheck job for this project was already submitted from this window and",
+        "may still be queued or running. Press Submit as job again to submit another."),
+        type = "warning")
+      return()
+    }
+    rc_resubmit_ok(FALSE)
+    sched <- detect_scheduler()
+    if (is.null(sched)) {
+      rp_alert("No scheduler (sbatch/qsub/bsub) found on PATH.", type = "warning"); return()
+    }
+    f <- write_recheck_script()
+    shinyWidgets::sendSweetAlert(title = "Submitting...",
+      text = paste0("Handing the job script to ", sched$cmd,
+        ". Hold tight, a busy cluster can take a few seconds to answer."),
+      type = "info", btn_labels = NA, closeOnClickOutside = FALSE)
+    later::later(function() {
+      shiny::withReactiveDomain(session, {
+        out <- tryCatch(submit_job(sched$cmd, f), error = function(e) conditionMessage(e))
+        rc_job_sent(TRUE)
+        rp_alert(paste0("Submitted via ", sched$cmd, ": ", paste(out, collapse = " ")),
+          type = "message")
+        removeModal()
+      })
+    }, delay = 0.1)
+  })
+
+  # Launched from .recheck so the pipeline's -resume history is never touched.
+  # nf_run_window writes the report before on_done, so contigs the run left
+  # running are reported as failures before they go back to the queue.
+  nf_run_window(input, output, session, pfx = "rc_", gears = "rc_rp_gears",
+    project = app_project, kind = "recheck", workflow = "recheck",
+    launch = function(nflog) {
+      wd <- file.path(app_project(), ".recheck")
+      dir.create(wd, recursive = TRUE, showWarnings = FALSE)
+      nf_spawn("nextflow", c("-log", nflog, nf_recheck_command(app_project()), "-ansi-log"),
+        wd, nf_env())
+    },
+    on_done = function(how) {
+      try(local({
+        con <- app_con()
+        on.exit(DBI::dbDisconnect(con))
+        recheck_release_running(con)
+      }), silent = TRUE)
+      refresh(isolate(refresh()) + 1)
+    })
+
   # Stop the app when the last browser session closes (survives refresh). After
   # the run windows, so the grace period starts once their runs have stopped.
   register_app_lifecycle(session)
@@ -1194,8 +1344,8 @@ app_server <- function(input, output, session) {
   # fields window reopens Export data as it was.
   take_export_snap <- function() {
     export_snap(lapply(stats::setNames(nm = c("export_group_sel", "export_template",
-      "fasta_header", "fasta_header_marker", "export_markers", "export_report",
-      "export_itsx_check")), function(id) input[[id]]))
+      "fasta_header", "fasta_header_marker", "export_markers", "export_report")),
+      function(id) input[[id]]))
   }
   snap_export <- function(source) {
     take_export_snap()
@@ -1214,10 +1364,11 @@ app_server <- function(input, output, session) {
     refresh()
     paste0(mp_n(nrow(export_units_df()), "contig"), " locked & ready")
   })
-  # Exportable units (exportable_units()), narrowed to one export group when given.
+  # Exportable units whose checks are done, narrowed to one export group when given.
   export_units_df <- function(group = NULL) {
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
     locked <- exportable_units(con)
+    locked <- locked[locked$done == 1, , drop = FALSE]
     if (is.null(group) || !nzchar(group)) return(locked)
     locked[!is.na(locked$export_group) & locked$export_group == group, , drop = FALSE]
   }
@@ -1249,7 +1400,7 @@ app_server <- function(input, output, session) {
   # the template.
   with_marker_fields <- function(d) {
     if (is.null(d)) return(NULL)
-    el <- app_query("SELECT element FROM annotations LIMIT 1")$element
+    el <- app_query("SELECT element FROM review_annotations_v LIMIT 1")$element
     el <- if (length(el)) el[1] else "18S"
     d$element <- el
     d$product <- rrna_element_product(el)
@@ -1836,7 +1987,7 @@ app_server <- function(input, output, session) {
     screen_then_proceed(u, grp)
   }
   screen_then_proceed <- function(u, grp) {
-    flagged <- screen_flagged(u)
+    flagged <- screen_flagged(u, review = TRUE)
     export_pending(u)
     if (nrow(flagged)) {
       showModal(export_screen_modal(flagged))
@@ -1860,10 +2011,10 @@ app_server <- function(input, output, session) {
     } else back_to_export()
   })
   # Units the contamination checks flagged that no curator has signed off on.
-  screen_flagged <- function(u) {
+  screen_flagged <- function(u, review = FALSE) {
     if (NROW(u) == 0) return(data.frame())
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    s <- export_summary_df(con, cbind(u, seqid = u$ID))
+    s <- export_summary_df(con, cbind(u, seqid = u$ID), review = review)
     s[has_screen_risk(s$submission_risk) & !(s$reviewed %in% "yes"), , drop = FALSE]
   }
   # export_bundle() rebuilds the group folder from scratch, so anything the
@@ -1890,7 +2041,7 @@ app_server <- function(input, output, session) {
   observeEvent(input$export_screen_keep, proceed_export(export_pending(), export_group_choice()))
   observeEvent(input$export_screen_skip, {
     u <- export_pending()
-    f <- screen_flagged(u)
+    f <- screen_flagged(u, review = TRUE)
     u <- u[!unit_key(u$ID, u$path, u$scaffold) %in% unit_key(f$ID, f$path, f$scaffold), , drop = FALSE]
     if (nrow(u) == 0) {
       back_to_export()
@@ -1900,31 +2051,27 @@ app_server <- function(input, output, session) {
     proceed_export(u, export_group_choice())
   })
   run_export <- function(u, grp) {
-    detail <- if (isTRUE(input$export_itsx_check)) {
-      "Writing files and running the final ITSx check. Hold tight, this can take a few minutes."
-    } else {
-      "Writing files. Hold tight."
-    }
-    gdir <- withProgress(message = "Exporting...", detail = detail, value = 0.5, tryCatch(
+    gdir <- withProgress(message = "Exporting...", detail = "Writing files. Hold tight.", value = 0.5, tryCatch(
       export_bundle(app_project(), units = u, group = grp,
         out_dir = file.path(app_project(), "out"), zip = FALSE,
         fasta_header = input$fasta_header,
         fasta_header_marker = input$fasta_header_marker,
         markers = isTRUE(input$export_markers),
-        report = isTRUE(input$export_report),
-        itsx_check = isTRUE(input$export_itsx_check)),
+        report = isTRUE(input$export_report)),
       error = function(e) {
         rp_alert(paste("Export failed:", conditionMessage(e)), type = "error")
         NULL
       }))
     if (is.null(gdir)) return(invisible())
     export_done_dir(gdir)
+    con <- app_con()
+    out <- tryCatch(export_left_out(con, grp), finally = DBI::dbDisconnect(con))
     removeModal()
     showModal(modalDialog(
       title = "Export complete", size = "m", easyClose = TRUE,
       tags$p("Data exported to:"),
       div(class = "code-block", style = "white-space:normal; word-break:break-all;", gdir),
-      export_check_summary_ui(attr(gdir, "summary")),
+      export_check_summary_ui(attr(gdir, "summary"), not_done = sum(out$why == "checks not finished")),
       footer = mp_footer(dismiss = "Close",
         extra = actionButton("open_export_dir", "Open folder", icon = icon("folder-open"), class = "btn-sm"))
     ))
@@ -2443,7 +2590,7 @@ app_server <- function(input, output, session) {
   edit_tick <- reactiveVal(0)         # bumps to re-render map/seq/table
   active_feature <- reactiveVal(NULL) # feature the editor + alignment act on
   edit_active <- reactiveVal(FALSE)   # in edit mode?
-  edit_backup <- reactiveVal(NULL)    # annotations snapshot for Reset
+  edit_backup <- reactiveVal(NULL)    # bounds and 5'/3' choices at Edit, for Reset
   edit_dirty <- reactiveVal(FALSE)    # nudged since entering edit mode?
 
   # reset per-unit modal state; select the first feature + load notes
@@ -2453,7 +2600,7 @@ app_server <- function(input, output, session) {
     shinyWidgets::updatePrettyCheckbox(session, "feat_edit", value = FALSE)
     u <- sel_unit(); active_feature(NULL)
     if (!is.null(u)) {
-      els <- app_query("SELECT element FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
+      els <- app_query("SELECT element FROM review_annotations_v WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
         params = uargs())$element
       if (length(els)) active_feature(els[1])
       a <- app_query("SELECT annotate_notes FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())
@@ -2461,18 +2608,20 @@ app_server <- function(input, output, session) {
     }
   })
 
-  # effective 5'/3' partial state of the unit's features (curator's flag, else automatic)
+  # effective 5'/3' partial state of the unit's features (user's choice, else
+  # curation's, else automatic); d comes from review_annotations_v with REVIEW_EFF_PARTIALS
   unit_partial_rows <- function(d) {
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
     u <- sel_unit()
-    n <- DBI::dbGetQuery(con, "SELECT length FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
+    n <- DBI::dbGetQuery(con, "SELECT length FROM review_units_v WHERE ID = ? AND path = ? AND scaffold = ?",
       params = uargs())$length
     e <- partial_ends(d, if (length(n)) n[1] else NA, unit_trimmed(con, u$ID, u$path, u$scaffold))
     d$partial_start <- as.integer(e$p5); d$partial_stop <- as.integer(e$p3)
     d
   }
   partial_state <- function(el) {
-    unit_partial_rows(app_query("SELECT * FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?",
+    unit_partial_rows(app_query(paste0("SELECT element, start, stop, strand, ", REVIEW_EFF_PARTIALS,
+      " FROM review_annotations_v WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?"),
       params = c(uargs(), list(el))))
   }
   active_partial <- reactive({
@@ -2498,13 +2647,37 @@ app_server <- function(input, output, session) {
 
   observe({
     edit_tick(); refresh(); u <- sel_unit(); req(u)
-    try(seqview_send(session, "seqv_ann-canvas", "seqv_ann_pick", u$ID, u$path, u$scaffold, active_feature()), silent = TRUE)
+    try(seqview_send(session, "seqv_ann-canvas", "seqv_ann_pick", u$ID, u$path, u$scaffold, active_feature(),
+      review = TRUE), silent = TRUE)
   })
   seqview_fit <- function(el) session$sendCustomMessage("rpseq_select", list(id = "seqv_ann-canvas", row = el))
   observeEvent(input$seqv_ann_pick, active_feature(input$seqv_ann_pick$row))
 
+  # Check state of the contig open in Annotation Review; its check results show
+  # only when it is done.
+  sel_check_state <- reactive({
+    edit_tick(); refresh(); u <- sel_unit(); req(u)
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    st <- review_unit_state(con, data.frame(ID = u$ID, path = as.integer(u$path),
+      scaffold = as.integer(u$scaffold)))$state
+    req(length(st) == 1)
+    st
+  })
+
   # Chimera panels follow the annotate modal's unit, or the assemble modal's
-  # highlighted scaffold.
+  # highlighted scaffold. Annotation Review reads the review layer once the
+  # contig's checks are done; the Assemble step reads the originals.
+  chim_unit <- reactive({
+    edit_tick(); refresh(); u <- hit_unit()
+    review <- identical(input$mode, "Annotate")
+    if (review) req(identical(sel_check_state(), "done"))
+    c(u, review = review)
+  })
+  chim_query <- function(cols, tbl, tail = "") {
+    u <- chim_unit()
+    app_query(sprintf("SELECT %s FROM %s WHERE ID = ? AND path = ? AND scaffold = ?%s", cols,
+      if (u$review) paste0("review_", tbl, "_v") else tbl, tail), list(u$ID, u$path, u$scaffold))
+  }
   hit_unit <- reactive({
     if ((input$mode %||% "Assemble") == "Annotate") {
       u <- sel_unit(); req(u); return(u)
@@ -2513,24 +2686,22 @@ app_server <- function(input, output, session) {
     list(ID = id, path = h$path, scaffold = h$scaffold)
   })
   output$chimera_plot <- renderPlot({
-    edit_tick(); refresh(); u <- hit_unit(); grid::grid.draw(fixed_gutter(plot_chimera(u$ID, u$path, u$scaffold)))
+    edit_tick(); refresh(); u <- hit_unit()
+    grid::grid.draw(fixed_gutter(plot_chimera(u$ID, u$path, u$scaffold, review = identical(input$mode, "Annotate"))))
   }, height = 296)
   output$chimera_result <- renderUI({
-    edit_tick(); refresh(); u <- hit_unit()
-    ch <- app_query("SELECT label, reason FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", list(u$ID, u$path, u$scaffold))
+    ch <- chim_query("label, reason", "chimera")
     req(nrow(ch) == 1, !is.na(ch$label[1]))
     chimera_result_text(ch$label[1], ch$reason[1])
   })
   output$chimera_db_source <- renderText({
-    edit_tick(); refresh(); u <- hit_unit()
-    ch <- app_query("SELECT db_source FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", list(u$ID, u$path, u$scaffold))
+    ch <- chim_query("db_source", "chimera")
     req(nrow(ch) == 1, !is.na(ch$db_source[1]))
     paste("windows searched against:", paste(basename(strsplit(ch$db_source[1], " ", fixed = TRUE)[[1]]), collapse = ", "))
   })
   output$chimera_segments <- reactable::renderReactable({
-    edit_tick(); refresh()
     u <- hit_unit()
-    ch <- app_query("SELECT segments FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", list(u$ID, u$path, u$scaffold))
+    ch <- chim_query("segments", "chimera")
     req(nrow(ch) == 1, !is.na(ch$segments[1]))
     s <- jsonlite::fromJSON(ch$segments[1])
     samp <- app_query("SELECT lineage_taxids FROM samples WHERE ID = ?", list(u$ID))
@@ -2549,13 +2720,10 @@ app_server <- function(input, output, session) {
         n_windows = reactable::colDef(width = 100, html = TRUE, header = rt_help_header("Windows", CHIMERA_COL_HELP$n_windows))))
   })
   output$chimera_junctions <- renderUI({
-    edit_tick(); refresh(); u <- hit_unit()
-    o <- chimera_original(app_query, u$ID, u$path, u$scaffold)
-    req(NROW(o$ch) == 1)
-    j <- chimera_junction_table(o$ch$junctions[1], o$ch$channels[1])
+    ch <- chim_query("junctions, channels", "chimera")
+    req(nrow(ch) == 1)
+    j <- chimera_junction_table(ch$junctions[1], ch$channels[1])
     if (!nrow(j)) return(tags$p(class = "mp-help-text", "No possible junction was found."))
-    if (!is.null(o$kept)) j$why <- ifelse(j$position <= o$kept[1] | j$position > o$kept[2],
-      paste(j$why, "This part is now trimmed away."), j$why)
     reactable::reactable(j, compact = TRUE, pagination = FALSE, wrap = TRUE,
       columns = list(
         position = reactable::colDef(width = 90, html = TRUE, header = rt_help_header("Position", CHIMERA_COL_HELP$position)),
@@ -2563,10 +2731,9 @@ app_server <- function(input, output, session) {
         why = reactable::colDef(minWidth = 300, html = TRUE, header = rt_help_header("Why", CHIMERA_COL_HELP$why))))
   })
   output$chimera_windows <- reactable::renderReactable({
-    edit_tick(); refresh()
     u <- hit_unit()
-    w <- app_query("SELECT start, stop, species, lineage, pident, bitscore, rank_distance, depth_median, clip_frac FROM chimera_windows WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
-      list(u$ID, u$path, u$scaffold))
+    w <- chim_query("start, stop, species, lineage, pident, bitscore, rank_distance, depth_median, clip_frac",
+      "chimera_windows", " ORDER BY start")
     req(nrow(w) > 0)
     w$lineage_short <- vapply(w$lineage, function(l) {
       if (is.na(l)) return(NA_character_)
@@ -2575,7 +2742,7 @@ app_server <- function(input, output, session) {
     }, character(1), USE.NAMES = FALSE)
     w <- w[, c("start", "stop", "species", "lineage_short", "pident", "bitscore", "rank_distance", "depth_median", "clip_frac", "lineage")]
     # each window belongs to the segment whose start is the last one at or before its own
-    ch <- app_query("SELECT segments FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", list(u$ID, u$path, u$scaffold))
+    ch <- chim_query("segments", "chimera")
     samp <- app_query("SELECT lineage_taxids FROM samples WHERE ID = ?", list(u$ID))
     cols <- if (nrow(ch) == 1 && !is.na(ch$segments[1])) {
       s <- jsonlite::fromJSON(ch$segments[1])
@@ -2648,10 +2815,10 @@ app_server <- function(input, output, session) {
     edit_tick()
     u <- sel_unit(); el <- active_feature()
     req(u, el)
-    a <- app_query("SELECT start, stop, length, type FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?",
+    a <- app_query("SELECT start, stop, length, type FROM review_annotations_v WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?",
       params = c(uargs(), list(el)))
     if (nrow(a) == 0) return(NULL)
-    seq <- app_query("SELECT sequence FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
+    seq <- app_query("SELECT sequence FROM review_units_v WHERE ID = ? AND path = ? AND scaffold = ?",
       params = uargs())$sequence[1]
     list(el = el, start = a$start[1], stop = a$stop[1], type = a$type[1], seq = seq %||% "")
   })
@@ -2712,8 +2879,9 @@ app_server <- function(input, output, session) {
   # ---- gene list (feature model); click a row -> active feature ----
   feature_rows <- reactive({
     edit_tick(); u <- sel_unit(); req(u)
-    unit_partial_rows(app_query("SELECT element, type, start, stop, length, strand, partial_start, partial_stop, status, flags
-       FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start", params = uargs()))
+    unit_partial_rows(app_query(paste0("SELECT element, type, start, stop, length, strand, ", REVIEW_EFF_PARTIALS,
+      ", status, flags FROM review_annotations_v WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start"),
+      params = uargs()))
   })
   output$feature_tbl <- reactable::renderReactable({
     d <- feature_rows(); act <- active_feature()
@@ -2764,13 +2932,17 @@ app_server <- function(input, output, session) {
 
   # ---- curation flags panel ----
   flag_rows <- reactive({
-    edit_tick(); u <- sel_unit(); req(u)
-    app_query("SELECT element, flags FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? AND status = 'flag' ORDER BY start",
+    req(identical(sel_check_state(), "done"))
+    app_query("SELECT element, flags FROM review_annotations_v WHERE ID = ? AND path = ? AND scaffold = ? AND status = 'flag' ORDER BY start",
       params = uargs())
   })
   output$curate_notes <- renderUI({
-    u <- sel_unit(); req(u)
-    a <- app_query("SELECT n_flags, curate_flags FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())
+    st <- sel_check_state()
+    if (st != "done") {
+      return(span(class = "mp-help-text",
+        sprintf("Checks %s. Curation warnings appear once they are done.", review_state_text(st))))
+    }
+    a <- app_query("SELECT n_flags, curate_flags FROM review_units_v WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())
     if (nrow(a) == 0 || is.na(a$n_flags[1]) || a$n_flags[1] == 0) {
       return(span(class = "mp-fg-success", HTML("&#10003; No warnings on the contig as a whole.")))
     }
@@ -2803,32 +2975,25 @@ app_server <- function(input, output, session) {
     if (is.null(b) || !nrow(b)) return(TRUE)
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
     u <- sel_unit()
-    app_write(DBI::dbWithTransaction(con, for (i in seq_len(nrow(b))) {
-      DBI::dbExecute(con,
-        "UPDATE annotations SET start = ?, stop = ?, length = ?, partial_start = ?, partial_stop = ?
-         WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?",
-        params = list(b$start[i], b$stop[i], b$stop[i] - b$start[i] + 1, b$partial_start[i], b$partial_stop[i],
-          u$ID, u$path, u$scaffold, b$element[i]))
-    }))
+    ok <- app_write(review_reset_session(con, u$ID, u$path, u$scaffold, b))
+    if (ok) reload_on_close(TRUE)
+    ok
   }
   save_edits <- function() {
-    con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    u <- sel_unit()
-    tryCatch(curate_one(con, u$ID, u$path, u$scaffold), error = function(e) NULL)  # refresh flags after edits
     edit_backup(NULL); edit_dirty(FALSE)
-    edit_tick(edit_tick() + 1); refresh(refresh() + 1)
+    edit_tick(edit_tick() + 1)
     rp_toast("Boundary edits saved.", type = "message")
   }
   observeEvent(input$feat_edit, ignoreInit = TRUE, {
     if (isTRUE(input$feat_edit)) {
-      if (lock_blocked()) {
+      if (lock_blocked() || waiting_blocked()) {
         shinyWidgets::updatePrettyCheckbox(session, "feat_edit", value = FALSE); return()
       }
       if (is.null(active_feature())) {
         shinyWidgets::updatePrettyCheckbox(session, "feat_edit", value = FALSE)
         rp_toast("Select a feature first.", type = "warning"); return()
       }
-      edit_backup(app_query("SELECT element, start, stop, partial_start, partial_stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?",
+      edit_backup(app_query("SELECT element, start, stop, partial_start_user, partial_stop_user FROM review_annotations_v WHERE ID = ? AND path = ? AND scaffold = ?",
         params = uargs()))
       edit_active(TRUE); edit_dirty(FALSE)
       shinyjs::show("feat_edit_ctrls")
@@ -2873,12 +3038,12 @@ app_server <- function(input, output, session) {
   # ---- trim the active unit to annotated / custom boundaries ----
   observeEvent(input$trim_btn, {
     u <- sel_unit(); req(u)
-    if (edits_block() || lock_blocked()) return()
-    s <- app_query("SELECT length FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())
+    if (edits_block() || lock_blocked() || waiting_blocked()) return()
+    s <- app_query("SELECT length FROM review_units_v WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())
     if (nrow(s) == 0 || is.na(s$length[1])) {
       rp_alert("No contig sequence to trim.", type = "warning"); return()
     }
-    span <- app_query("SELECT MIN(start) AS a, MAX(stop) AS b FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())
+    span <- app_query("SELECT MIN(start) AS a, MAX(stop) AS b FROM review_annotations_v WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())
     a_from <- if (nrow(span) && !is.na(span$a[1])) span$a[1] else 1L
     a_to <- if (nrow(span) && !is.na(span$b[1])) span$b[1] else s$length[1]
     showModal(trim_modal(s$length[1], a_from, a_to))
@@ -2889,8 +3054,8 @@ app_server <- function(input, output, session) {
   # custom mode (brushing the plot switches to custom).
   trim_span <- reactive({
     edit_tick(); u <- sel_unit(); req(u)
-    sp <- app_query("SELECT MIN(start) AS a, MAX(stop) AS b FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())
-    n <- app_query("SELECT length FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())$length
+    sp <- app_query("SELECT MIN(start) AS a, MAX(stop) AS b FROM review_annotations_v WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())
+    n <- app_query("SELECT length FROM review_units_v WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())$length
     n <- if (length(n)) n[1] else NA_integer_
     c(a = if (nrow(sp) && !is.na(sp$a[1])) sp$a[1] else 1L,
       b = if (nrow(sp) && !is.na(sp$b[1])) sp$b[1] else n, n = n)
@@ -2926,15 +3091,17 @@ app_server <- function(input, output, session) {
     edit_tick(); u <- sel_unit(); req(u); w <- trim_window(); plot_trim(u$ID, u$path, u$scaffold, w[1], w[2])
   }, height = 230)
   output$trim_chimera_hint <- renderText({
-    u <- sel_unit(); req(u)
-    ch <- app_query("SELECT junctions FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())
+    edit_tick(); u <- sel_unit(); req(u)
+    ch <- app_query("SELECT c.junctions FROM review_chimera_v c JOIN review_units_v v
+      ON v.ID = c.ID AND v.path = c.path AND v.scaffold = c.scaffold
+      WHERE c.ID = ? AND c.path = ? AND c.scaffold = ? AND v.check_switch = 2", params = uargs())
     req(nrow(ch) == 1, nzchar(ch$junctions[1] %|NA|% ""))
     sprintf("suggested junctions: %s", ch$junctions[1])
   })
   # Dragging a brush over the plot sets the custom window from the x-range.
   observeEvent(input$trim_brush, {
     b <- input$trim_brush; u <- sel_unit(); req(b, u)
-    n <- app_query("SELECT length FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())$length
+    n <- app_query("SELECT length FROM review_units_v WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())$length
     n <- if (length(n)) n[1] else NA
     lo <- max(1L, round(b$xmin)); hi <- round(b$xmax)
     if (!is.na(n)) hi <- min(n, hi)
@@ -2949,34 +3116,35 @@ app_server <- function(input, output, session) {
     if (lock_blocked()) return()
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
     w <- trim_window(); from <- w[1]; to <- w[2]
-    n <- DBI::dbGetQuery(con, "SELECT length FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
+    n <- DBI::dbGetQuery(con, "SELECT length FROM review_units_v WHERE ID = ? AND path = ? AND scaffold = ?",
       params = uargs())$length[1]
     if (is.na(from) || is.na(to) || from < 1 || from > to || (!is.na(n) && to > n)) {
       rp_alert(sprintf("Invalid trim range. From must be at least 1 and no more than To, and To no more than the contig's current length (%s bp).",
         n %|NA|% "?"), type = "error"); return()
     }
-    ok <- tryCatch({
-      trim_assembly(con, u$ID, u$path, u$scaffold, from, to)
-      tryCatch(curate_one(con, u$ID, u$path, u$scaffold), error = function(e) NULL)  # re-curate after the shift
-      TRUE
-    }, error = function(e) { rp_alert(conditionMessage(e), type = "error"); FALSE })
-    if (isTRUE(ok)) {
-      edit_tick(edit_tick() + 1); refresh(refresh() + 1)
-      show_annotate_unit()  # back to the details modal, now showing trimmed coords
-      rp_alert("Contig trimmed; feature coordinates + coverage shifted.", type = "message")
-    }
+    if (!app_write(review_trim(con, u$ID, u$path, u$scaffold, from, to))) return()
+    end_edit_session()
+    edit_tick(edit_tick() + 1); refresh(refresh() + 1)
+    show_annotate_unit()  # back to the details modal, now showing trimmed coords
+    rp_alert("Contig trimmed. Its checks show not run until you press Update.", type = "message")
   })
 
   # Cancel out of the trim modal: return to the annotate details modal.
   observeEvent(input$trim_cancel, { req(sel_unit()); show_annotate_unit() })
 
-  # ---- restore the active unit to its original (pre-trim) length ----
+  # ---- restore the active unit: delete its review copy ----
   observeEvent(input$restore_btn, {
     u <- sel_unit(); req(u)
     if (edits_block() || lock_blocked()) return()
-    len <- app_query("SELECT length FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())$length[1]
-    mp_confirm("restore_confirm", title = "Restore the full assembly?",
-      text = sprintf("The contig is %s bp now. Restoring undoes the trim and re-runs curation.", len %||% "?"),
+    v <- app_query("SELECT has_copy, length, orig_length FROM review_units_v WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = uargs())
+    if (!isTRUE(v$has_copy[1] == 1)) {
+      rp_alert("This contig has no edits to restore.", type = "warning"); return()
+    }
+    mp_confirm("restore_confirm", title = "Restore the original contig?",
+      text = sprintf(paste("The contig is %s bp now and %s bp originally. Restore deletes its trims,",
+        "boundary edits, 5'/3' choices, and the checks run on them. Marks, notes, group, and lock stay."),
+        v$length[1] %|NA|% "?", v$orig_length[1] %|NA|% "?"),
       action_label = "Restore", danger = TRUE)
   })
   observeEvent(input$restore_confirm, {
@@ -2984,24 +3152,21 @@ app_server <- function(input, output, session) {
     u <- sel_unit(); req(u)
     if (lock_blocked()) return()
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    ok <- tryCatch({
-      len <- restore_assembly(con, u$ID, u$path, u$scaffold)
-      tryCatch(curate_one(con, u$ID, u$path, u$scaffold), error = function(e) NULL)  # recompute flags for the full unit
-      len
-    }, error = function(e) { rp_alert(conditionMessage(e), type = "warning"); NULL })
-    if (!is.null(ok)) {
-      edit_tick(edit_tick() + 1); refresh(refresh() + 1)
-      show_annotate_unit()
-      rp_alert(paste0("Contig restored to original length (", ok, " bp)."), type = "message")
-    }
+    if (!app_write(review_drop(con, u$ID, u$path, u$scaffold))) return()
+    end_edit_session()
+    edit_tick(edit_tick() + 1); refresh(refresh() + 1)
+    show_annotate_unit()
+    len <- DBI::dbGetQuery(con, "SELECT length FROM review_units_v WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = uargs())$length[1]
+    rp_alert(paste0("Contig restored to its original (", len %|NA|% "?", " bp)."), type = "message")
   })
 
   # ---- notes ----
-  # the table reloads once the window closes, not on every keystroke
-  notes_dirty <- reactiveVal(FALSE)
+  # notes and edits reach the table once the window closes, not on every keystroke or nudge
+  reload_on_close <- reactiveVal(FALSE)
   observeEvent(input$modal_hidden, {
-    if (!notes_dirty()) return()
-    notes_dirty(FALSE); refresh(refresh() + 1)
+    if (!reload_on_close()) return()
+    reload_on_close(FALSE); refresh(refresh() + 1)
   })
   observeEvent(input$annotate_notes, ignoreInit = TRUE, {
     u <- sel_unit(); req(u)
@@ -3016,7 +3181,7 @@ app_server <- function(input, output, session) {
     if (lock_blocked()) return()
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
     if (app_write(DBI::dbExecute(con, "UPDATE annotate SET annotate_notes = ? WHERE ID = ? AND path = ? AND scaffold = ?",
-      params = c(list(new), uargs())))) notes_dirty(TRUE)
+      params = c(list(new), uargs())))) reload_on_close(TRUE)
   })
   observeEvent(input$annotate_notes_clear, {
     u <- sel_unit(); req(u)
@@ -3024,7 +3189,7 @@ app_server <- function(input, output, session) {
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
     if (!app_write(DBI::dbExecute(con, "UPDATE annotate SET annotate_notes = NULL WHERE ID = ? AND path = ? AND scaffold = ?",
       params = uargs()))) return()
-    notes_dirty(TRUE)
+    reload_on_close(TRUE)
     updateTextAreaInput(session, "annotate_notes", value = "")
     rp_toast("Notes cleared.", type = "message")
   })
@@ -3034,13 +3199,13 @@ app_server <- function(input, output, session) {
     cur <- app_query("SELECT user_notes FROM assemble WHERE ID = ?", params = list(id))$user_notes[1] %|NA|% ""
     if (identical(new, cur) || (!nzchar(new) && nzchar(cur))) return()
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    if (app_write(DBI::dbExecute(con, "UPDATE assemble SET user_notes = ? WHERE ID = ?", params = list(new, id)))) notes_dirty(TRUE)
+    if (app_write(DBI::dbExecute(con, "UPDATE assemble SET user_notes = ? WHERE ID = ?", params = list(new, id)))) reload_on_close(TRUE)
   })
   observeEvent(input$assemble_user_notes_clear, {
     id <- sel_id(); req(id)
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
     if (!app_write(DBI::dbExecute(con, "UPDATE assemble SET user_notes = NULL WHERE ID = ?", params = list(id)))) return()
-    notes_dirty(TRUE)
+    reload_on_close(TRUE)
     updateTextAreaInput(session, "assemble_user_notes", value = "")
     rp_toast("Notes cleared.", type = "message")
   })
@@ -3057,13 +3222,12 @@ app_server <- function(input, output, session) {
     if (end == "5") start <- start + if (dir == "out") -step else step
     else stop <- stop + if (dir == "out") step else -step
     start <- max(1, start); stop <- min(if (n > 0) n else stop, stop)
+    if (start == cx$start && stop == cx$stop) return()
     if (start > stop) { rp_toast("Boundaries would cross; nudge ignored.", type = "warning"); return() }
     u <- sel_unit()
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    if (!app_write(DBI::dbExecute(con,
-      "UPDATE annotations SET start = ?, stop = ?, length = ?, edited = 1 WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?",
-      params = list(start, stop, stop - start + 1, u$ID, u$path, u$scaffold, cx$el)))) return()
-    edit_dirty(TRUE); edit_tick(edit_tick() + 1)
+    if (!app_write(review_set_bounds(con, u$ID, u$path, u$scaffold, cx$el, start, stop))) return()
+    edit_dirty(TRUE); reload_on_close(TRUE); edit_tick(edit_tick() + 1)
   }
   observeEvent(input$nt_5_out, nudge_boundary("5", "out"))
   observeEvent(input$nt_5_in,  nudge_boundary("5", "in"))
@@ -3073,11 +3237,10 @@ app_server <- function(input, output, session) {
     if (!isTRUE(edit_active()) || lock_blocked()) return()
     el <- active_feature(); req(el)
     to <- if (isTRUE(partial_state(el)[[col]][1] == 1)) 0L else 1L
+    u <- sel_unit()
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    if (!app_write(DBI::dbExecute(con, sprintf(
-      "UPDATE annotations SET %s = ?, edited = 1 WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?",
-      col), params = c(list(to), uargs(), list(el))))) return()
-    edit_dirty(TRUE); edit_tick(edit_tick() + 1)
+    if (!app_write(review_set_partial(con, u$ID, u$path, u$scaffold, el, sub("partial_", "", col), to))) return()
+    edit_dirty(TRUE); reload_on_close(TRUE); edit_tick(edit_tick() + 1)
   }
   observeEvent(input$toggle_partial_start, toggle_partial("partial_start"))
   observeEvent(input$toggle_partial_stop, toggle_partial("partial_stop"))
@@ -3116,6 +3279,15 @@ app_server <- function(input, output, session) {
     rp_toast(MP_UNIT_LOCKED, type = "warning")
     TRUE
   }
+  # A contig waiting for the Assemble step's Update has no review layer to edit yet.
+  waiting_blocked <- function() {
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    u <- sel_unit(); req(u)
+    st <- review_unit_state(con, data.frame(ID = u$ID, path = as.integer(u$path), scaffold = as.integer(u$scaffold)))$state
+    if (!identical(st, "waiting")) return(FALSE)
+    rp_toast(WAITING_MSG, type = "warning")
+    TRUE
+  }
   # Unsaved boundary edits stop any exit from the annotation window.
   edits_block <- function() {
     if (!isTRUE(edit_dirty())) return(FALSE)
@@ -3130,13 +3302,14 @@ app_server <- function(input, output, session) {
   lock_unit <- function(close) {
     u <- sel_unit(); req(u)
     if (edits_block()) return()
-    if (!need_one_path(as.data.frame(u))) return()
-    f <- lock_flagged(as.data.frame(u))
+    if (!need_one_path(as.data.frame(u)) || !need_checks_done(as.data.frame(u))) return()
+    f <- lock_flagged(as.data.frame(u), review = TRUE)
     if (nrow(f)) return(confirm_flagged_lock(f, function() lock_unit_now(close)))
     lock_unit_now(close)
   }
   lock_unit_now <- function(close) {
     u <- sel_unit()
+    if (!NROW(still_lockable(as.data.frame(u)))) return()
     con <- app_con()
     on.exit(DBI::dbDisconnect(con))
     if (!app_write(DBI::dbExecute(con,

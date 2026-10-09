@@ -219,3 +219,57 @@ test_that("a shown metadata field is a column in every non-Reference view", {
     expect_false(col %in% names(all_rows()))
   })
 })
+
+test_that("Annotation Review reads the review layer and shows the state of unfinished checks", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  # p1.s1 done with an ITSx flag; p1.s2 still queued for the main pipeline;
+  # p2.s1 a copy whose recheck failed; p2.s2 a rechecked copy
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_switch = 2, itsx_warnings = 'itsx_chimeric'
+    WHERE path = 1 AND scaffold = 1")
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_switch = 2, itsx_warnings = '' WHERE path = 2")
+  copy <- function(s, len, sw, note, species) DBI::dbExecute(con, "INSERT INTO review_units (ID, path,
+      scaffold, sequence, length, trim_start, trim_end, edited, check_switch, check_note, rev,
+      n_features, itsx_warnings, blast_species)
+    VALUES ('S1', 2, ?, 'ACGT', ?, 1, ?, 1, ?, ?, CAST(? AS INTEGER), 3, '', ?)",
+    params = list(s, len, len, sw, note, "1760000000000", species))
+  copy(1L, 500L, 3L, "tool crashed", "Copy sp")
+  copy(2L, 800L, 2L, NA, "Danio rerio")
+  # p2.s2's original screen and chimera results differ from its copy's
+  DBI::dbExecute(con, "INSERT INTO screen (ID, path, scaffold, screen_verdict) VALUES ('S1', 2, 2, 'off_target')")
+  DBI::dbExecute(con, "INSERT INTO chimera (ID, path, scaffold, label) VALUES ('S1', 2, 2, 'severe')")
+  DBI::dbExecute(con, "INSERT INTO review_screen (ID, path, scaffold, screen_verdict) VALUES ('S1', 2, 2, 'on_target')")
+  DBI::dbDisconnect(con)
+  withr::local_dir(dir)
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Annotate")
+    d <- all_rows()
+    d <- d[order(d$path, d$scaffold), ]
+    expect_equal(d$length, c(6120L, 1442L, 500L, 800L))
+    expect_equal(d$blast_species, c("Danio rerio", "Danio rerio", "Copy sp", "Danio rerio"))
+    expect_equal(d$screen_verdict, c(NA, NA, NA, "on_target"))
+    expect_true(all(is.na(d$chimera_label)))
+    expect_equal(d$annotate_switch, c(2L, 5L, 3L, 2L))
+    expect_equal(d$check_state, c(NA, "waiting for Assemble Update", "failed", NA))
+    expect_equal(d$check_note, c(NA, NA, "tool crashed", NA))
+    expect_equal(d$checks, c("ITSx", "waiting for Assemble Update", "failed", "ok"))
+    expect_equal(d$checks_tone, c("warning", "info", "info", "success"))
+
+    session$setInputs(Annotate_state_filter = "5")
+    expect_equal(unit_key(samples_data()$ID, samples_data()$path, samples_data()$scaffold),
+      unit_key("S1", 1L, 2L))
+    j <- jsonlite::fromJSON(as.character(output$tbl), simplifyVector = FALSE)
+    cols <- j$x$tag$attribs$columns
+    names(cols) <- vapply(cols, function(c) c$id %||% "", "")
+    expect_false(cols$check_state$show)
+    expect_false(cols$check_note$show)
+    for (k in c("n_flags", "itsx_warnings", "screen_verdict", "chimera_label", "blast_species",
+                "blast_accession", "blast_pident", "blast_qcovs", "blast_source")) {
+      expect_match(cols[[k]]$cell, "row['check_state']", fixed = TRUE, info = k)
+      expect_true(isTRUE(cols[[k]]$html), info = k)
+    }
+    expect_match(cols$annotate_switch$cell, "(cellInfo.row || {})['check_note']", fixed = TRUE)
+    expect_match(cols$annotate_switch$cell, "Waiting for Assemble Update", fixed = TRUE)
+  })
+})

@@ -80,7 +80,7 @@ The columns to look at first:
   contigs the assembly produced, and how many contigs are kept. 0 kept contigs means
   there is nothing to export.
 - **ITSx Warnings**: shows any issues reported by the ITSx check; see
-  [the final ITSx check](GenBank-Submission.html#check-before-you-submit).
+  [the ITSx check](GenBank-Submission.html#check-before-you-submit).
 - **Notes**: what the pipeline noted about the sample, for example why it
   failed.
 - **User Notes**: your own notes on the sample, typed in the **Notes** box at

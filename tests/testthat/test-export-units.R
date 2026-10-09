@@ -28,12 +28,14 @@ mk_project <- function() {
   DBI::dbExecute(con, "ALTER TABLE annotate ADD COLUMN export_time_stamp INTEGER")
   DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, assemble_lock INT)")
   DBI::dbExecute(con, "INSERT INTO assemble VALUES('S1',1),('S2',1)")
+  fixture_review_schema(con)
+  fixture_mark_done(con)
   dir
 }
 
 bundle <- function(dir, ...) {
   suppressWarnings(export_bundle(dir, out_dir = file.path(dir, "out"),
-    markers = FALSE, report = FALSE, zip = FALSE, itsx_check = FALSE, ...))
+    markers = FALSE, report = FALSE, zip = FALSE, ...))
 }
 
 test_that("export_bundle honours a per-unit selection", {
@@ -112,7 +114,7 @@ test_that("export records the variant fact for a paralog and does NOT gate", {
   warns <- character(0)
   g <- withCallingHandlers(
     suppressMessages(export_bundle(dir, out_dir = file.path(dir, "out"),
-      markers = FALSE, report = FALSE, zip = FALSE, itsx_check = FALSE, ids = "S1")),
+      markers = FALSE, report = FALSE, zip = FALSE, ids = "S1")),
     warning = function(w) {
       warns <<- c(warns, conditionMessage(w)); invokeRestart("muffleWarning")
     })
@@ -169,8 +171,10 @@ test_that("bundle file contents are exactly as specified", {
   expect_equal(readLines(file.path(g, "exact_summary.csv")),
     c(paste0("\"seqid\",\"ID\",\"path\",\"scaffold\",\"organism\",\"length\",\"n_features\",",
         "\"missing\",\"reviewed\",\"partial\",\"problematic\",\"variant_class\",",
-        "\"variant_group\",\"variant_identity\",\"n_variants\",\"submission_risk\",\"chimera_warning\""),
-      "\"S2\",\"S2\",1,1,\"Genus speciesB\",400,2,\"\",\"yes\",\"no\",\"no\",NA,NA,NA,NA,\"\",\"\""))
+        "\"variant_group\",\"variant_identity\",\"n_variants\",\"submission_risk\",\"chimera_warning\",",
+        "\"itsx_check\""),
+      paste0("\"S2\",\"S2\",1,1,\"Genus speciesB\",400,2,\"\",\"yes\",\"no\",\"no\",NA,NA,NA,NA,\"\",\"\",",
+        "\"\"")))
 })
 
 test_that("an empty Taxon is flagged, and never rendered as the word NA", {
@@ -181,7 +185,7 @@ test_that("an empty Taxon is flagged, and never rendered as the word NA", {
   DBI::dbDisconnect(con)
 
   w <- testthat::capture_warnings(g <- suppressMessages(export_bundle(dir, out_dir = file.path(dir, "out"),
-    markers = TRUE, report = FALSE, zip = FALSE, itsx_check = FALSE, label = "notax")))
+    markers = TRUE, report = FALSE, zip = FALSE, label = "notax")))
   expect_true(any(grepl("missing_organism", w)))
   expect_true(any(grepl("Empty [organism=] on 3 of 3", w, fixed = TRUE)))
   # An empty modifier is left out of the header; the unit is still flagged.
@@ -211,7 +215,7 @@ test_that("set_export_group is atomic", {
   expect_equal(DBI::dbGetQuery(con, "SELECT export_group FROM annotate WHERE ID='OK'")$export_group, "g1")
 })
 
-test_that("a project with no screen table still exports, with NA variant columns", {
+test_that("a project with no screen rows still exports, with NA variant columns", {
   dir <- mk_project()
   g <- bundle(dir, ids = "S2", label = "noscreen")
   smry <- utils::read.csv(Sys.glob(file.path(g, "*_summary.csv")), stringsAsFactors = FALSE)
@@ -290,7 +294,7 @@ test_that("the zip lands in out/export from a relative project path, and is repl
   dir <- mk_project()
   withr::local_dir(dir)
   z <- function(...) suppressWarnings(suppressMessages(export_bundle(".", label = "z",
-    markers = FALSE, report = FALSE, itsx_check = FALSE, zip = TRUE, ...)))
+    markers = FALSE, report = FALSE, zip = TRUE, ...)))
   z()
   zf <- file.path("out", "export", "z.zip")
   expect_true(file.exists(zf))

@@ -107,6 +107,7 @@ reconcile_one <- function(con, id, path = 1L, scaffold = 1L, gff = NULL, positio
   feat <- reconcile_features(bar, its)
   chimeric <- as.integer(itsx_is_chimeric(pos_lines))
   ts <- as.integer(Sys.time())
+  missing <- setdiff(c(RRNA_GENES, RRNA_SPACERS), feat$element)
 
   # one transaction: a failed append after a committed delete would leave the
   # unit with no annotations at all
@@ -120,12 +121,12 @@ reconcile_one <- function(con, id, path = 1L, scaffold = 1L, gff = NULL, positio
         tool = feat$tool, edited = 0L, notes = NA_character_, time_stamp = ts, stringsAsFactors = FALSE)
       DBI::dbAppendTable(con, "annotations", df)
     }
+    DBI::dbExecute(con,
+      "UPDATE annotate SET n_features = ?, missing = ?, chimeric = ?, annotate_switch = 2,
+         itsx_warnings = NULL, itsx_origin = NULL, itsx_scores = NULL, time_stamp = ?
+       WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = list(nrow(feat), paste(missing, collapse = ","), chimeric, ts, id, path, scaffold))
   })
-  missing <- setdiff(c(RRNA_GENES, RRNA_SPACERS), feat$element)
-  DBI::dbExecute(con,
-    "UPDATE annotate SET n_features = ?, missing = ?, chimeric = ?, annotate_switch = 2, time_stamp = ?
-     WHERE ID = ? AND path = ? AND scaffold = ?",
-    params = list(nrow(feat), paste(missing, collapse = ","), chimeric, ts, id, path, scaffold))
   invisible(feat)
 }
 
@@ -234,18 +235,21 @@ refresh_sample_state <- function(con, id) {
   invisible(pending)
 }
 
-#' Per-unit tables whose rows describe one assembled sequence
+#' Per-unit tables whose rows describe one assembled sequence, review copies included
+#'
+#' Tables only, never a view: callers DELETE from each name.
 #' @noRd
 UNIT_EVIDENCE_TABLES <- c("annotations", "coverage", "screen", "chimera", "chimera_windows",
   "blast_hits", "blast_screen", "blast_searched", "blast_ref_candidates",
-  "blast_ref_alignment", "assembly_backup")
+  "blast_ref_alignment", REVIEW_TABLES)
 
 #' Forget everything known about a unit whose sequence was replaced
 #'
 #' A re-assembly can give a surviving (path, scaffold) key a different sequence.
-#' Its gene coordinates, BLAST hits, screen verdict, chimera call, and depth then
-#' describe another molecule, so they are deleted, and the unit's lock and
-#' curator marks are cleared so it is annotated and reviewed again.
+#' Its gene coordinates, BLAST hits, screen verdict, chimera call, check
+#' results, and depth then describe another molecule, so they are deleted, and
+#' the unit's lock and curator marks are cleared so it is annotated and
+#' reviewed again.
 #' @noRd
 reset_unit_evidence <- function(con, id, path, scaffold) {
   p <- list(id, as.integer(path), as.integer(scaffold))
@@ -255,7 +259,9 @@ reset_unit_evidence <- function(con, id, path, scaffold) {
   }
   DBI::dbExecute(con,
     "UPDATE annotate SET annotate_switch = 1, annotate_lock = 0, reviewed = 'no',
-       partial = 'no', problematic = 'no', export_group = NULL, n_features = NULL
+       partial = 'no', problematic = 'no', export_group = NULL, n_features = NULL,
+       chimeric = NULL, n_flags = NULL, curate_flags = NULL, itsx_warnings = NULL,
+       itsx_origin = NULL, itsx_scores = NULL
      WHERE ID = ? AND path = ? AND scaffold = ?", params = p)
 }
 
@@ -544,9 +550,6 @@ load_assemblies <- function(con, dir, ID) {
     }
   }
 
-  # A (re)assembly invalidates any pre-trim undo snapshots for this sample.
-  tryCatch(DBI::dbExecute(con, "DELETE FROM assembly_backup WHERE ID = ?", params = list(ID)),
-    error = function(e) NULL)
   # triage closes the sample, and it never runs for one with no unit to annotate
   n_work <- DBI::dbGetQuery(con,
     "SELECT COUNT(*) n FROM annotate an JOIN assemblies asm
@@ -557,87 +560,6 @@ load_assemblies <- function(con, dir, ID) {
     DBI::dbExecute(con, "UPDATE assemble SET assemble_switch = 2 WHERE ID = ?", params = list(ID))
   }
   invisible(nrow(df))
-}
-
-#' Trim one assembly unit (ID,path,scaffold) to \[from, to\], shifting its
-#' annotations and coverage to match. Features that fall entirely outside the
-#' kept range are dropped; overlapping features are clamped. Used by the Annotate
-#' tab's "Trim assembly" control.
-#'
-#' @param con Open DBI connection.
-#' @param id,path,scaffold Assembly unit.
-#' @param from,to 1-based inclusive kept range in the unit's coordinates.
-#' @return (invisibly) the new unit length.
-#' @noRd
-trim_assembly <- function(con, id, path = 1L, scaffold = 1L, from, to) {
-  path <- as.integer(path); scaffold <- as.integer(scaffold)
-  s <- DBI::dbGetQuery(con, "SELECT sequence FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
-    params = list(id, path, scaffold))
-  if (nrow(s) == 0 || is.na(s$sequence[1]) || !nzchar(s$sequence[1])) {
-    stop("No sequence for contig ", id, ".", path, ".", scaffold, call. = FALSE)
-  }
-  n <- nchar(s$sequence[1])
-  from <- max(1L, as.integer(from)); to <- min(n, as.integer(to))
-  if (from > to) stop("Invalid trim range.", call. = FALSE)
-
-  # Snapshot the untrimmed unit state, so [restore_assembly()] can undo this.
-  # A trim of an already trimmed unit keeps the snapshot, so restore always
-  # returns the full unit.
-  ensure_assembly_backup(con)
-  if (!any(unit_trimmed(con, id, path, scaffold))) {
-    ann0 <- DBI::dbGetQuery(con, "SELECT * FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?",
-      params = list(id, path, scaffold))
-    cov0 <- DBI::dbGetQuery(con, "SELECT depths FROM coverage WHERE ID = ? AND path = ? AND scaffold = ?",
-      params = list(id, path, scaffold))
-    DBI::dbExecute(con,
-      "INSERT OR REPLACE INTO assembly_backup (ID, path, scaffold, sequence, length, annotations, coverage, chimera, time_stamp)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      params = list(id, path, scaffold, s$sequence[1], n,
-        as.character(jsonlite::toJSON(ann0, dataframe = "rows", na = "null")),
-        if (nrow(cov0)) cov0$depths[1] else NA_character_,
-        chimera_snapshot(con, id, path, scaffold), as.integer(Sys.time())))
-  }
-  new_seq <- substr(s$sequence[1], from, to); new_len <- nchar(new_seq)
-
-  DBI::dbExecute(con, "UPDATE assemblies SET sequence = ?, length = ?, edited = 1 WHERE ID = ? AND path = ? AND scaffold = ?",
-    params = list(new_seq, new_len, id, path, scaffold))
-
-  ann <- DBI::dbGetQuery(con, "SELECT * FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?",
-    params = list(id, path, scaffold))
-  for (i in seq_len(nrow(ann))) {
-    ns <- ann$start[i] - from + 1; nt <- ann$stop[i] - from + 1
-    if (nt < 1 || ns > new_len) {
-      DBI::dbExecute(con, "DELETE FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?",
-        params = list(id, path, scaffold, ann$element[i]))
-      next
-    }
-    # a cut through the gene makes that end partial
-    minus <- identical(ann$strand[i], "-")
-    cut <- c(if (ns < 1) (if (minus) "partial_stop" else "partial_start"),
-      if (nt > new_len) (if (minus) "partial_start" else "partial_stop"))
-    for (col in cut) {
-      DBI::dbExecute(con, sprintf(
-        "UPDATE annotations SET %s = 1 WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?", col),
-        params = list(id, path, scaffold, ann$element[i]))
-    }
-    ns <- max(1L, ns); nt <- min(new_len, nt)
-    DBI::dbExecute(con,
-      "UPDATE annotations SET start = ?, stop = ?, length = ?, edited = 1 WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?",
-      params = list(ns, nt, nt - ns + 1, id, path, scaffold, ann$element[i]))
-  }
-
-  cov <- DBI::dbGetQuery(con, "SELECT depths FROM coverage WHERE ID = ? AND path = ? AND scaffold = ?",
-    params = list(id, path, scaffold))
-  dep <- if (nrow(cov) > 0) parse_depths(cov$depths) else numeric(0)
-  # `from` is clamped to the sequence, which can outrun a shorter depth track
-  # (truncated `samtools depth -a`, or a re-assembly coverage never re-ran on)
-  if (length(dep) > 0 && from <= length(dep)) {
-    write_coverage_summary(con, id, path, scaffold, dep[seq(from, min(length(dep), to))])
-  }
-  DBI::dbExecute(con, "UPDATE coverage SET clips = NULL WHERE ID = ? AND path = ? AND scaffold = ?",
-    params = list(id, path, scaffold))
-  chimera_shift(con, id, path, scaffold, from - 1L, new_len)
-  invisible(new_len)
 }
 
 #' Rewrite one unit's coverage row from a depth track
@@ -656,12 +578,6 @@ write_coverage_summary <- function(con, id, path, scaffold, dep) {
       round(stats::median(dep), 2), as.integer(min(dep)), as.integer(max(dep)),
       id, path, scaffold))
   invisible(TRUE)
-}
-
-#' Ensure the assembly_backup table exists (idempotent).
-#' @noRd
-ensure_assembly_backup <- function(con) {
-  DBI::dbExecute(con, ASSEMBLY_BACKUP_DDL)
 }
 
 #' Reconcile a unit's annotate row after its assemblies.ignore flag changed
@@ -716,53 +632,6 @@ reconcile_ignore_unit <- function(con, id, path, scaffold, ignore) {
   invisible()
 }
 
-#' Restore a sample's assembly to its original (pre-trim) state
-#'
-#' Reverses one or more `trim_assembly()` calls by writing back the snapshot
-#' taken at the first trim: the full-length sequence, the original annotation
-#' rows, and the untrimmed coverage track. The snapshot is left in place so a
-#' fresh trim + restore returns to the same original.
-#' @param con Open project DB connection. @param id,path,scaffold Assembly unit.
-#' @return (invisibly) the restored length.
-#' @noRd
-restore_assembly <- function(con, id, path = 1L, scaffold = 1L) {
-  ensure_assembly_backup(con)
-  path <- as.integer(path); scaffold <- as.integer(scaffold)
-  bak <- DBI::dbGetQuery(con,
-    "SELECT sequence, length, annotations, coverage, chimera FROM assembly_backup WHERE ID = ? AND path = ? AND scaffold = ?",
-    params = list(id, path, scaffold))
-  if (nrow(bak) == 0 || is.na(bak$sequence[1])) {
-    stop("No original assembly on record for this contig (nothing to restore).", call. = FALSE)
-  }
-  cur <- DBI::dbGetQuery(con, "SELECT sequence FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
-    params = list(id, path, scaffold))$sequence[1]
-  DBI::dbExecute(con, "UPDATE assemblies SET sequence = ?, length = ?, edited = 1 WHERE ID = ? AND path = ? AND scaffold = ?",
-    params = list(bak$sequence[1], bak$length[1], id, path, scaffold))
-
-  # one transaction: a failed restore after a committed delete would leave the
-  # unit with neither the trimmed annotations nor the snapshot ones
-  DBI::dbWithTransaction(con, {
-    DBI::dbExecute(con, "DELETE FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?",
-      params = list(id, path, scaffold))
-    if (!is.na(bak$annotations[1]) && nzchar(bak$annotations[1])) {
-      ann <- jsonlite::fromJSON(bak$annotations[1])
-      if (is.data.frame(ann) && nrow(ann) > 0) {
-        ann$ID <- id; ann$path <- path; ann$scaffold <- scaffold
-        DBI::dbAppendTable(con, "annotations", ann)
-      }
-    }
-  })
-
-  write_coverage_summary(con, id, path, scaffold, parse_depths(bak$coverage))
-  if (!is.na(bak$chimera[1])) {
-    chimera_restore(con, id, path, scaffold, bak$chimera[1])
-  } else {
-    off <- if (is.na(cur)) -1L else as.integer(regexpr(cur, bak$sequence[1], fixed = TRUE))
-    if (off > 1L) chimera_shift(con, id, path, scaffold, 1L - off, bak$length[1])
-  }
-  invisible(bak$length[1])
-}
-
 #' Kept window for a trim preset: gene ends widened by `flank`, clipped to the unit
 #' @param a,b Annotated span. @param n Unit length. @param flank bp added each side.
 #' @noRd
@@ -774,34 +643,31 @@ trim_bounds <- function(a, b, n, flank = 0L) {
 
 #' Which units a batch Trim (or Restore) can act on
 #'
+#' Plans from the review layer: a contig with a review copy is trimmed from the
+#' copy, in copy coordinates.
 #' @param con Open DBI connection.
 #' @param u data.frame(ID, path, scaffold).
 #' @param flank bp kept past the gene ends (0 = gene ends).
-#' @param restore TRUE plans a Restore instead: only trimmed units qualify.
-#' @param running TRUE when a run holds the project: queued units are skipped.
+#' @param restore TRUE plans a Restore instead: every unit with a review copy qualifies.
 #' @return `u` with from, to and reason (NA where the unit qualifies).
 #' @noRd
-batch_trim_plan <- function(con, u, flank = 0L, restore = FALSE, running = FALSE) {
+batch_trim_plan <- function(con, u, flank = 0L, restore = FALSE) {
   u$from <- rep(NA_integer_, nrow(u)); u$to <- u$from; u$reason <- rep(NA_character_, nrow(u))
   key <- "WHERE ID = ? AND path = ? AND scaffold = ?"
+  waiting <- if (restore || !nrow(u)) rep(FALSE, nrow(u)) else review_unit_state(con, u[c("ID", "path", "scaffold")])$state %in% "waiting"
   for (i in seq_len(nrow(u))) {
     q <- function(sql) DBI::dbGetQuery(con, paste(sql, key), params = list(u$ID[i], u$path[i], u$scaffold[i]))
     if (isTRUE(q("SELECT annotate_lock FROM annotate")$annotate_lock[1] == 1)) {
       u$reason[i] <- "annotation locked"; next
     }
-    st <- DBI::dbGetQuery(con, "SELECT assemble_switch FROM assemble WHERE ID = ?",
-      params = list(u$ID[i]))
-    if (running && (isTRUE(st$assemble_switch[1] %in% c(1, 4)) ||
-        isTRUE(q("SELECT annotate_switch FROM annotate")$annotate_switch[1] %in% c(1, 4)))) {
-      u$reason[i] <- "in the active run"; next
-    }
     if (restore) {
-      if (!any(unit_trimmed(con, u$ID[i], u$path[i], u$scaffold[i]))) u$reason[i] <- "not trimmed"
+      if (!review_has_copy(con, u$ID[i], u$path[i], u$scaffold[i])) u$reason[i] <- "no edits to restore"
       next
     }
-    n <- q("SELECT LENGTH(sequence) n FROM assemblies")$n
+    if (waiting[i]) { u$reason[i] <- WAITING_MSG; next }
+    n <- q("SELECT LENGTH(sequence) n FROM review_units_v")$n
     if (!length(n) || is.na(n[1]) || n[1] == 0) { u$reason[i] <- "no sequence"; next }
-    a <- q("SELECT element, start, stop FROM annotations")
+    a <- q("SELECT element, start, stop FROM review_annotations_v")
     miss <- setdiff(BATCH_TRIM_FEATURES, a$element)
     if (length(miss)) { u$reason[i] <- paste("missing", paste(miss, collapse = ", ")); next }
     a <- a[a$element %in% BATCH_TRIM_FEATURES, , drop = FALSE]
@@ -812,17 +678,16 @@ batch_trim_plan <- function(con, u, flank = 0L, restore = FALSE, running = FALSE
   u
 }
 
-#' Trim (or restore) each planned unit and re-curate it; one failure does not
-#' stop the rest.
+#' Trim (or restore) each planned unit's review copy; one failure does not stop
+#' the rest. A trim makes the copy on first touch; a restore deletes it.
 #' @param con Open DBI connection. @param p Eligible rows of [batch_trim_plan()].
 #' @param restore TRUE restores instead of trimming.
 #' @return Error message per unit, NA where it worked.
 #' @noRd
 batch_trim_apply <- function(con, p, restore = FALSE) {
   vapply(seq_len(nrow(p)), function(i) tryCatch({
-    if (restore) restore_assembly(con, p$ID[i], p$path[i], p$scaffold[i])
-    else trim_assembly(con, p$ID[i], p$path[i], p$scaffold[i], p$from[i], p$to[i])
-    tryCatch(curate_one(con, p$ID[i], p$path[i], p$scaffold[i]), error = function(e) NULL)
+    if (restore) review_drop(con, p$ID[i], p$path[i], p$scaffold[i])
+    else review_trim(con, p$ID[i], p$path[i], p$scaffold[i], p$from[i], p$to[i])
     NA_character_
   }, error = function(e) conditionMessage(e)), character(1))
 }
