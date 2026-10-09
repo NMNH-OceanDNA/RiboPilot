@@ -29,7 +29,7 @@ process find_rrna_scan {
 
     script:
     """
-    # Same kingdom translation as annotate_tools / R's rrna_kingdom_for(): the
+    # Same kingdom translation as bin/rp_rrna_tools.sh / R's rrna_kingdom_for(): the
     # Perl barrnap fork calls its eukaryote models "fun" and has no euk/all;
     # pybarrnap has no "fun".
     TOOL='${tool}'; KINGDOM='${kingdom}'

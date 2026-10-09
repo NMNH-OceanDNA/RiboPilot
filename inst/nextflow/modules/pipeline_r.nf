@@ -164,27 +164,9 @@ process annotate_tools {
       FROM annotate an JOIN annotate_opts ao ON an.annotate_opts = ao.annotate_opts
       WHERE an.ID = '${id}' AND an.path = ${upath} AND an.scaffold = ${uscaf};")"
 
-    # Same kingdom translation as R's rrna_kingdom_for(): the Perl barrnap fork
-    # calls its eukaryote Rfam models "fun" and has no euk/all; pybarrnap has no
-    # "fun". Passing the stored kingdom through untranslated makes the tool exit
-    # non-zero and the unit gets no anchors at all.
-    if [ "\$TOOL" = "barrnap" ]; then
-        case "\$KINGDOM" in euk|all) KINGDOM=fun ;; esac
-        barrnap --kingdom "\$KINGDOM" --quiet \$RRNAO unit.fasta > unit.barrnap.gff
-    else
-        case "\$KINGDOM" in fun) KINGDOM=euk ;; esac
-        pybarrnap -k "\$KINGDOM" -t ${task.cpus} -q \$RRNAO unit.fasta > unit.barrnap.gff
-    fi
-
-    ITSx -i unit.fasta -o unit.itsx --save_regions none --graphical F \
-        --cpu ${task.cpus} -t "\$ITSXT" --preserve T \$ITSXO || true
-    [ -f unit.itsx.positions.txt ] || : > unit.itsx.positions.txt
-
-    # second, stock run (defaults, no organism group): what NCBI's Submission
-    # Portal will see. Reconcile turns its output into annotate.itsx_warnings.
-    ITSx -i unit.fasta -o unit.itsx_check --preserve T --detailed_results T \
-        --save_regions none --graphical F --cpu ${task.cpus} || true
-    [ -f unit.itsx_check.positions.txt ] || : > unit.itsx_check.positions.txt
+    # barrnap/pybarrnap, tuned ITSx, and the stock ITSx check. Called plainly so a
+    # barrnap failure fails the task and an out-of-memory exit is retried.
+    rp_rrna_tools.sh unit.fasta "\$TOOL" "\$KINGDOM" "\$ITSXT" "\$ITSXO" "\$RRNAO" ${task.cpus}
     """
 }
 

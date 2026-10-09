@@ -1580,8 +1580,7 @@ test_that("the pick step runs even when every scan part failed, and scan parts r
 test_that("user rRNA caller flags reach both the per-unit and the scan commands", {
   nf <- readLines(system.file("nextflow", "modules", "pipeline_r.nf", package = "RiboPilot"))
   expect_true(any(grepl("barrnap_opts ELSE ao.pybarrnap_opts", nf, fixed = TRUE)))
-  expect_true(any(grepl("--quiet \\$RRNAO unit.fasta", nf, fixed = TRUE)))
-  expect_true(any(grepl("-q \\$RRNAO unit.fasta", nf, fixed = TRUE)))
+  expect_true(any(grepl('"\\$RRNAO" ${task.cpus}', nf, fixed = TRUE)))
   expect_true(any(grepl("AS rrna_opts", nf, fixed = TRUE)))
   scan <- readLines(system.file("nextflow", "modules", "find_rrna.nf", package = "RiboPilot"))
   expect_true(any(grepl("--quiet ${opts} ${chunk}", scan, fixed = TRUE)))
