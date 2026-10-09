@@ -20,5 +20,6 @@ local({
         paste("ITSx check failed:", conditionMessage(e))),
         error = function(e2) message("ITSx check result not stored: ", conditionMessage(e2)))
     })
+  RiboPilot:::review_follow_original(con, a[2], as.integer(a[3]), as.integer(a[4]))
 })
 cat("reconciled:", a[2], a[3], a[4], "\n")

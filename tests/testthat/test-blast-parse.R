@@ -376,6 +376,7 @@ test_that("a locally searched unit is labelled local_rrna, not core_nt", {
   DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',1,1,NULL,NULL,NULL,NULL,NULL,NULL,0)")
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S1',7955,NULL,?)", params = list(FISH_T))
   DBI::dbExecute(con, RiboPilot:::BLAST_SEARCHED_DDL)
+  DBI::dbExecute(con, RiboPilot:::REVIEW_UNITS_DDL)
 
   f <- write_hits(hit("AA1", "Danio rerio 18S ribosomal RNA gene", 99.1, 80, 1500, 1600, 1, 1600))
   RiboPilot:::parse_blast_candidates(con, "S1", 1, 1, f)

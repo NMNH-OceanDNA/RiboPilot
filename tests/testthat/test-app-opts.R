@@ -329,3 +329,27 @@ test_that("annotation options store per-tool rRNA caller flags", {
     expect_equal(row$pybarrnap_opts, "-e 1e-3")
   })
 })
+
+test_that("saving annotation options follows the sample's review copies at once", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  fixture_mark_done(con)
+  for (s in 1:2) RiboPilot:::review_copy(con, "S1", 1L, s)
+  DBI::dbExecute(con, "UPDATE review_units SET edited = 1 WHERE scaffold = 2")
+  DBI::dbDisconnect(con)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    session$flushReact()
+    session$setInputs(set_annotate_opts = 1)
+    session$setInputs(no_name = "fresh", no_edit = TRUE, no_cpus = 2, no_mem = 4,
+      no_tool = "pybarrnap", no_kingdom = "euk", no_itsxtaxon = "all", no_itsxopts = "")
+    session$setInputs(update_no = 1)
+    # the State copy is gone; the edited copy keeps its edits and waits for Update
+    expect_equal(RiboPilot:::app_query(
+      "SELECT path, scaffold, edited, check_switch FROM review_units ORDER BY path, scaffold"),
+      data.frame(path = 1L, scaffold = 2L, edited = 1L, check_switch = 1L))
+  })
+})

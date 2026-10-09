@@ -23,5 +23,6 @@ local({
   # local search, parse_blast_candidates ran before this row existed and
   # defaulted the label to core_nt.
   derive_blast_products(con, a[2], as.integer(a[3]), as.integer(a[4]))
+  RiboPilot:::review_follow_original(con, a[2], as.integer(a[3]), as.integer(a[4]))
 })
 cat("searched:", a[2], a[3], a[4], "\n")

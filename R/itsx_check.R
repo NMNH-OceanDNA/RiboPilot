@@ -247,6 +247,42 @@ itsx_origin_flag <- function(origin, scores, lineage) {
   sprintf("itsx_origin(%s)", if (nzchar(sc)) sc else unname(ITSX_ORIGINS[origin]) %|NA|% origin)
 }
 
+#' Judge the stored ITSx origin again after a sample's lineage changed (S6.3)
+#'
+#' For the originals and the done review copies (locked ones too) of samples
+#' `ids`, replaces the itsx_origin flag in itsx_warnings with the one the
+#' stored origin code and scores give under the sample's current lineage.
+#' Rows without a stored origin (checked before it was stored), never
+#' checked, not run, or with no ITS detected are left alone.
+#' @return (invisibly) the number of rows rewritten.
+#' @noRd
+itsx_refresh_origin <- function(con, ids) {
+  n <- 0L
+  for (tbl in c("annotate", "review_units")) {
+    for (id in ids) {
+      d <- DBI::dbGetQuery(con, sprintf(
+        "SELECT x.path, x.scaffold, x.itsx_warnings, x.itsx_origin, x.itsx_scores, s.lineage
+         FROM %s x JOIN samples s ON s.ID = x.ID
+         WHERE x.ID = ? AND x.itsx_origin IS NOT NULL AND x.itsx_origin != ''
+           AND x.itsx_warnings IS NOT NULL AND x.itsx_warnings != 'itsx_not_detected'
+           AND x.itsx_warnings NOT LIKE 'not_run(%%'%s", tbl,
+        if (tbl == "review_units") " AND x.check_switch = 2" else ""), params = list(id))
+      for (i in seq_len(nrow(d))) {
+        tok <- strsplit(d$itsx_warnings[i], ";", fixed = TRUE)[[1]]
+        tok <- c(tok[nzchar(tok) & !startsWith(tok, "itsx_origin(")],
+          itsx_origin_flag(d$itsx_origin[i], d$itsx_scores[i], d$lineage[i]))
+        new <- paste(tok[nzchar(tok)], collapse = ";")
+        if (identical(new, d$itsx_warnings[i])) next
+        DBI::dbExecute(con, sprintf(
+          "UPDATE %s SET itsx_warnings = ? WHERE ID = ? AND path = ? AND scaffold = ?", tbl),
+          params = list(new, id, d$path[i], d$scaffold[i]))
+        n <- n + 1L
+      }
+    }
+  }
+  invisible(n)
+}
+
 #' Portal-parity flags for one record from stock-ITSx output
 #'
 #' Pure: takes already-parsed ITSx output plus the record's sequence, RiboPilot

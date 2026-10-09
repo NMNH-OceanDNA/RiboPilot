@@ -393,7 +393,7 @@ test_that("screen_sample covers every unit", {
   con <- mk_screen_db(); on.exit(DBI::dbDisconnect(con))
   add_hits(con, 1, FISH_T); add_hits(con, 2, FISH_T)
   n <- screen_sample(con, "S1")
-  expect_equal(n, 2L)
+  expect_equal(as.integer(n), 2L)
   expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM screen")$n, 2L)
 })
 
@@ -556,4 +556,16 @@ test_that("screen_one(review = TRUE) scores the copy's hits and carries the orig
   expect_equal(screen_one(con, "S1", 1, 1, force = TRUE, review = TRUE), "no_reference")
   expect_match(copy_row()$screen_reason, "bundled")
   expect_identical(orig(), before)
+})
+
+test_that("screen_sample names the contigs whose screen row it rewrote", {
+  con <- mk_screen_db(); on.exit(DBI::dbDisconnect(con))
+  add_hits(con, 1, FISH_T); add_hits(con, 2, FISH_T)
+  written <- function(force = FALSE) attr(screen_sample(con, "S1", force = force), "written")
+  expect_equal(written(), data.frame(path = c(1L, 1L), scaffold = c(1L, 2L)))
+  # both rows are current now, so neither is rewritten
+  expect_equal(nrow(written()), 0L)
+  DBI::dbExecute(con, "UPDATE screen SET screen_version = 0 WHERE scaffold = 2")
+  expect_equal(written(), data.frame(path = 1L, scaffold = 2L))
+  expect_equal(written(force = TRUE), data.frame(path = c(1L, 1L), scaffold = c(1L, 2L)))
 })

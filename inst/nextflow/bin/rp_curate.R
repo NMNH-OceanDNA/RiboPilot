@@ -9,6 +9,8 @@ rp_args(a, 4, "rp_curate.R <db> <id> <path> <scaffold>")
 res <- local({
   con <- open_project_db(a[1])
   on.exit(DBI::dbDisconnect(con))
-  curate_one(con, a[2], path = as.integer(a[3]), scaffold = as.integer(a[4]))
+  res <- curate_one(con, a[2], path = as.integer(a[3]), scaffold = as.integer(a[4]))
+  RiboPilot:::review_follow_original(con, a[2], as.integer(a[3]), as.integer(a[4]))
+  res
 })
 cat("curated:", a[2], a[3], a[4], "-", res$n_flags, "flags\n")

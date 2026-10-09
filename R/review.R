@@ -382,3 +382,34 @@ review_tbl <- function(name, review = FALSE) {
   if (name %in% c("assemblies", "annotate")) return("review_units")
   stop("No review table for ", name, ".", call. = FALSE)
 }
+
+#' Follow a main-pipeline rerun on a contig's review copy (S5.3)
+#'
+#' The pipeline's per-contig scripts call this after they rewrite a contig's
+#' originals, and option changes call it at once. An unlocked copy made only
+#' by State (edited 0) is deleted, so the contig reads its new originals; an
+#' unlocked edited copy keeps its edits and its checks go back to not run; a
+#' locked copy is left alone, since the recheck skips locked contigs.
+#' @return invisible "none" (no copy), "locked", "dropped", or "invalidated".
+#' @noRd
+review_follow_original <- function(con, id, path, scaffold) {
+  path <- as.integer(path); scaffold <- as.integer(scaffold)
+  if (!review_has_copy(con, id, path, scaffold)) return(invisible("none"))
+  invisible(with_savepoint(con, {
+    u <- DBI::dbGetQuery(con,
+      "SELECT r.edited, COALESCE(an.annotate_lock, 0) AS locked FROM review_units r
+       LEFT JOIN annotate an ON an.ID = r.ID AND an.path = r.path AND an.scaffold = r.scaffold
+       WHERE r.ID = ? AND r.path = ? AND r.scaffold = ?", params = list(id, path, scaffold))
+    if (nrow(u) == 0) {
+      "none"
+    } else if (u$locked[1] == 1) {
+      "locked"
+    } else if (u$edited[1] == 0) {
+      review_drop(con, id, path, scaffold)
+      "dropped"
+    } else {
+      review_invalidate(con, id, path, scaffold)
+      "invalidated"
+    }
+  }))
+}

@@ -392,15 +392,25 @@ screen_one <- function(con, id, path = 1L, scaffold = 1L, force = FALSE, review 
 #' @param id Sample ID.
 #' @param force Recompute rows already at the current version.
 #' @param variants Also classify on-target units as isomers or paralogs. The pipeline's screen step passes FALSE; its triage step runs that check once annotation is done.
-#' @return (invisibly) the number of units screened.
+#' @return (invisibly) the number of units screened, with attribute "written":
+#'   data.frame(path, scaffold) of the units whose screen row was rewritten
+#'   rather than skipped as current.
 #' @export
 screen_sample <- function(con, id, force = FALSE, variants = TRUE) {
   u <- DBI::dbGetQuery(con,
     "SELECT path, scaffold FROM assemblies WHERE ID = ? ORDER BY path, scaffold",
     params = list(id))
-  for (i in seq_len(nrow(u))) screen_one(con, id, u$path[i], u$scaffold[i], force = force)
+  # screen_one() writes nothing for a row it skips
+  n_changes <- function() DBI::dbGetQuery(con, "SELECT total_changes() AS n")$n
+  wrote <- logical(nrow(u))
+  for (i in seq_len(nrow(u))) {
+    n0 <- n_changes()
+    screen_one(con, id, u$path[i], u$scaffold[i], force = force)
+    wrote[i] <- n_changes() > n0
+  }
   # after the loop, never before: screen_one() rewrites a row with DELETE plus
   # append, so a variant column written first would be silently wiped
   if (isTRUE(variants)) screen_variants(con, id)
-  invisible(nrow(u))
+  written <- data.frame(path = u$path[wrote], scaffold = u$scaffold[wrote])
+  invisible(structure(nrow(u), written = written))
 }
