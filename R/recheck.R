@@ -170,6 +170,9 @@ recheck_unit <- function(con, id, path, scaffold, rev, mode, tools_dir, dbarg = 
     curate_one(con, id, path, scaffold, review = TRUE)
     chimera_unit(con, id, path, scaffold, dbarg = dbarg, taxdump_dir = taxdump_dir,
       label_db = label_db, threads = threads, workdir = file.path(workdir, "chimera"), review = TRUE)
+    tryCatch(feature_blast_unit(con, id, path, scaffold, dbarg = dbarg, taxdump_dir = taxdump_dir,
+      threads = threads, workdir = file.path(workdir, "feature_blast"), review = TRUE),
+      error = function(e) NULL)
     NULL
   }, error = function(e) conditionMessage(e))
   ts <- as.integer(Sys.time())

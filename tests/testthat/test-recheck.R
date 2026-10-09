@@ -344,6 +344,10 @@ test_that("recheck_unit reruns every check on the copy and marks it done", {
   for (t in c("review_blast_hits", "review_blast_screen", "review_screen", "review_chimera")) {
     expect_gt(rc_count(con, t), 0, label = t)
   }
+  # map mode has no panel: the per-feature BLAST is stored as not run
+  fb <- DBI::dbGetQuery(con, paste("SELECT status, note FROM review_feature_blast WHERE", RC_UNIT))
+  expect_equal(nrow(fb), 5L)
+  expect_true(all(fb$status %in% c("not_run", "too_small")))
   expect_equal(rc_rev(con), rev)
   expect_equal(rc_originals(con), before)
 })
