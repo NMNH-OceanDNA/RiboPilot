@@ -992,7 +992,7 @@ test_that("NMNH user: status, cell edit, and Export anyway", {
     session$setInputs(mode = "Export")
     session$setInputs(export_group_sel = "g1", fasta_header = tpl,
       fasta_header_marker = RiboPilot:::DEFAULT_FASTA_HEADER_MARKER,
-      export_markers = FALSE, export_report = FALSE, export_itsx_check = FALSE)
+      export_markers = FALSE, export_report = FALSE)
     settle(session)
     expect_false(nmnh_res()$ok)
     expect_match(output$nmnh_status$html, "1 of 1 sample needs attention")

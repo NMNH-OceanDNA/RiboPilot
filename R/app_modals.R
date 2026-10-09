@@ -815,10 +815,7 @@ export_modal <- function(groups, templates = "default", template = "default",
             "(same {column} syntax, plus {element} and {product} for the marker itself)")),
           fasta_header_marker, "export_hdr_marker_status"))),
     mp_checkbox("export_report", "HTML report with alignments", value = flag("export_report", TRUE)),
-    opts_help("One HTML page with per-element alignments across the group."),
-    mp_checkbox("export_itsx_check", "Final ITSx check", value = flag("export_itsx_check", TRUE)),
-    opts_help("Runs stock ITSx over the exported records the way the NCBI Submission ",
-      "Portal does and lists what it would flag in the summary CSV. Can take a few minutes.")),
+    opts_help("One HTML page with per-element alignments across the group.")),
       div(class = "mp-export-side", cols_panel)),
     footer = mp_footer(primary = actionButton("export_go", "Export", icon = icon("download")),
       dismiss = "Cancel")
@@ -828,11 +825,14 @@ export_modal <- function(groups, templates = "default", template = "default",
 #' One-paragraph verdict for the export-complete dialog
 #'
 #' Reads the summary attached to [export_bundle()]'s return value; names the
-#' records the submission-risk gate flagged, and why, and says how many the
-#' ITSx check flagged, so a curator sees it before opening the CSV.
-#' @param smry data.frame from `export_summary_df()` (possibly with `itsx_check`).
+#' records the submission-risk gate flagged, and why, and counts the stored
+#' ITSx check (flagged, clean, not checked), naming the flagged records, so a
+#' curator sees both before opening the CSV.
+#' @param smry data.frame from `export_summary_df()`.
+#' @param not_done Contigs of the group left out because their checks are not
+#'   finished.
 #' @noRd
-export_check_summary_ui <- function(smry) {
+export_check_summary_ui <- function(smry, not_done = 0L) {
   if (is.null(smry) || nrow(smry) == 0) return(NULL)
   n <- nrow(smry)
   risky <- nzchar(smry$submission_risk %||% "")
@@ -843,24 +843,25 @@ export_check_summary_ui <- function(smry) {
         sum(risky), n, mp_id_list(sprintf("%s (%s)", smry$seqid[risky],
           risk_reasons(smry$submission_risk[risky])), max = 10)))
   }
-  if (!is.null(smry$itsx_check)) {
-    not_run <- startsWith(smry$itsx_check, "not_run(")
-    if (all(not_run)) {
-      lines[[length(lines) + 1]] <- tags$p(class = "mp-fg-warning",
-        "ITSx check not run: ", sub("^not_run\\((.*)\\)$", "\\1", smry$itsx_check[1]), ".")
-    } else {
-      flagged <- sum(nzchar(smry$itsx_check) & !not_run)
-      lines[[length(lines) + 1]] <- if (flagged == 0) {
-        tags$p(class = if (!any(risky)) "mp-fg-success", if (!any(risky)) HTML("&#10003; "),
-          sprintf("Final ITSx check: nothing flagged on %d record(s).", n))
-      } else {
-        tags$p(class = "mp-fg-warning", style = "font-weight:bold;",
-          sprintf("Final ITSx check flagged %d of %d record(s): %s. See the itsx_check column in the summary CSV.",
-            flagged, n, paste(smry$seqid[nzchar(smry$itsx_check) & !not_run], collapse = ", ")))
-      }
-    }
+  itsx <- smry$itsx_check
+  unchecked <- startsWith(itsx, "not_run(")
+  flagged <- nzchar(itsx) & !unchecked
+  counts <- sprintf("ITSx check: %d flagged, %d clean, %d not checked.",
+    sum(flagged), sum(!flagged & !unchecked), sum(unchecked))
+  lines[[length(lines) + 1]] <- if (any(flagged)) {
+    tags$p(class = "mp-fg-warning", style = "font-weight:bold;",
+      sprintf("%s Flagged: %s. See the itsx_check column in the summary CSV.", counts,
+        mp_id_list(sprintf("%s (%s)", smry$seqid[flagged], itsx[flagged]), max = 10)))
+  } else if (any(unchecked)) {
+    tags$p(class = "mp-fg-warning", sprintf("%s README.txt says how to check them again.", counts))
+  } else {
+    tags$p(class = if (!any(risky)) "mp-fg-success", if (!any(risky)) HTML("&#10003; "), counts)
   }
-  if (length(lines) == 0) return(NULL)
+  if (not_done > 0) {
+    lines[[length(lines) + 1]] <- tags$p(class = "mp-fg-warning",
+      sprintf("%s left out: checks not finished. Press Update on Annotation Review, then export again.",
+        mp_n(not_done, "contig")))
+  }
   do.call(tagList, lines)
 }
 

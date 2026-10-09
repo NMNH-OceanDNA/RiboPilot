@@ -313,7 +313,7 @@ unit_checks <- function(con, by = c("unit", "sample"), review = FALSE) {
 
 #' README text explaining how to submit the bundle to NCBI
 #' @noRd
-submission_readme <- function(label, itsx_check = TRUE) {
+submission_readme <- function(label) {
   paste(c(
     paste0("RiboPilot GenBank submission bundle: ", label),
     paste0("Generated ", format(Sys.time(), "%Y-%m-%d %H:%M")),
@@ -370,16 +370,14 @@ submission_readme <- function(label, itsx_check = TRUE) {
     "evidence (a class-level switch, a ribotyper code, or read evidence only).",
     "It is not a submission risk; look at the contig's chimera check in the app.",
     "",
-    if (itsx_check) c(
-    "FINAL ITSx CHECK",
-    "----------------",
-    "Stock ITSx (default parameters, no organism group, the Portal's setup) was",
-    paste0("run over ", label, ".fasta; see the itsx_check column in ", label, "_summary.csv"),
-    paste0("and the per-record detail in ", label, "_itsx_check.csv (raw ITSx output in"),
-    "itsx_check/). It ran inside the project's container, and the same flags",
-    "were written back to the app's ITSx Warnings column. Empty means ITSx saw",
-    "nothing to flag; not_run(...) means ITSx was unavailable. Flags, and the",
-    "Portal problem each maps to:",
+    "ITSx CHECK",
+    "----------",
+    paste0("The itsx_check column in ", label, "_summary.csv is the stock ITSx check stored"),
+    "for each contig, the same as the app's ITSx Warnings column. RiboPilot runs",
+    "stock ITSx (default parameters, no organism group, the Portal's setup) on each",
+    "contig in the annotation step, and again when Update on Annotation Review",
+    "rechecks an edited contig. Export does not run ITSx. Empty means ITSx saw",
+    "nothing to flag. Flags, and the Portal problem each maps to:",
     "  itsx_chimeric             chimera: 5.8S overlaps SSU/LSU, or domains out of order",
     "  itsx_gap_in_ITS           gap: an N-run inside the ITSx-detected ITS span",
     "  itsx_no_5.8S / itsx_partial_5.8S   misassembly: 5.8S missing or truncated",
@@ -391,14 +389,32 @@ submission_readme <- function(label, itsx_check = TRUE) {
     "                            with ITSx's score for it vs. the best score for the sample's own group;",
     "                            \"tie\" or \"near tie\" (within 2 points) means the group call is unreliable",
     "  itsx_not_detected         ITSx found no ITS; the Portal cannot annotate it",
-    "")), collapse = "\n")
+    "not_run(...) means the check could not decide; the contig is exported as it",
+    "is. To check it again, unlock it on Annotation Review, set its State to Ready",
+    "to run, and press Update. The reasons:",
+    "  not_run(ITSx did not finish)         ITSx crashed or was stopped, for",
+    "                                       example when it ran out of memory",
+    "  not_run(ITSx check failed: <why>)    RiboPilot could not read the ITSx output",
+    "  not_run(not checked before upgrade)  the contig was locked when the project",
+    "                                       was upgraded and had no stored check",
+    "  not_run(not checked)                 no check is stored for this contig",
+    "  any other not_run(...)               written by an older RiboPilot, by its",
+    "                                       export ITSx run or its annotation step,",
+    "                                       for example not_run(no ITSx output) or",
+    "                                       not_run(docker not on PATH)",
+    "ITSx calls can shift with batch size. RiboPilot checks one contig at a time,",
+    "while the Portal checks the whole upload together, so the Portal may call a",
+    "borderline contig differently.",
+    ""), collapse = "\n")
 }
 
 #' Per-unit export summary data.frame
 #'
 #' `units` is a data.frame(ID, path, scaffold, seqid). Includes a
 #' `submission_risk` column (`risk_flags`) so the CSV and HTML report both
-#' surface portal-parity risk flags.
+#' surface portal-parity risk flags, and an `itsx_check` column: the stored
+#' stock ITSx check (annotate.itsx_warnings), `not_run(not checked)` when none
+#' is stored.
 #' @noRd
 export_summary_df <- function(con, units) {
   if (nrow(units) == 0) return(NULL)
@@ -424,6 +440,7 @@ export_summary_df <- function(con, units) {
                 FROM screen WHERE ID IN (%s)")
   sv <- fetch("SELECT ID, path, scaffold, screen_verdict, lca_taxon FROM screen WHERE ID IN (%s)")
   nts <- fetch("SELECT ID, path, scaffold, curate_flags FROM annotate WHERE ID IN (%s)")
+  itx <- fetch("SELECT ID, path, scaffold, itsx_warnings FROM annotate WHERE ID IN (%s)")
   smp <- fetch("SELECT * FROM samples WHERE ID IN (%s)")
 
   ukey <- unit_key(units$ID, units$path, units$scaffold)
@@ -440,6 +457,8 @@ export_summary_df <- function(con, units) {
   v <- unit_variant_facts_df(scr, units)
   svi <- if (nrow(sv)) match(ukey, unit_key(sv$ID, sv$path, sv$scaffold)) else rep(NA_integer_, n)
   nti <- if (nrow(nts)) match(ukey, unit_key(nts$ID, nts$path, nts$scaffold)) else rep(NA_integer_, n)
+  itsx <- if (nrow(itx)) itx$itsx_warnings[match(ukey, unit_key(itx$ID, itx$path, itx$scaffold))] else rep(NA_character_, n)
+  itsx[is.na(itsx)] <- "not_run(not checked)"
 
   si <- match(units$ID, smp$ID)
   taxon <- (smp$Taxon %||% NA)[si]
@@ -474,6 +493,7 @@ export_summary_df <- function(con, units) {
     variant_identity = v$variant_identity, n_variants = v$n_variants,
     submission_risk = risk,
     chimera_warning = ifelse(chm_label %in% "minor", chm_reason, ""),
+    itsx_check = itsx,
     stringsAsFactors = FALSE)
 }
 
@@ -684,26 +704,20 @@ export_report_html <- function(con, units, out_html, label, smry = export_summar
 #' @param export_opts Name of the saved FASTA-header configuration to use.
 #' @param fasta_header,fasta_header_marker Optional header templates
 #'   (\code{\{column\}} tokens) overriding the saved configuration.
-#' @param itsx_check Run stock ITSx (default parameters, no organism group) over
-#'   the exported records, the way NCBI's Submission Portal does, and report
-#'   what it would flag in the `itsx_check` column of the summary CSV and in
-#'   `<label>_itsx_check.csv`. Warn-only. ITSx runs inside the project's
-#'   container (docker / singularity per `.config`); a conda-executor project
-#'   uses the ITSx on PATH. Otherwise the column reads `not_run(...)`.
-#' @param itsx_cpu Threads for the ITSx check.
 #' @return (invisibly) the group output directory, with the summary data.frame
 #'   attached as attribute `summary`.
 #' @details A unit is exported when its sample's assembly and the unit's
 #'   annotation are both locked, its contig is kept, and it is not excluded
-#'   from export.
+#'   from export. The `itsx_check` column of the summary CSV reports the stock
+#'   ITSx check stored for each contig (`not_run(not checked)` when none is
+#'   stored); export does not run ITSx.
 #' @export
 export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
                           out_dir = file.path(path, "out"),
                           label = NULL, markers = TRUE, report = TRUE, template = NULL,
                           run_table2asn = FALSE, zip = TRUE,
                           export_opts = "default", fasta_header = NULL,
-                          fasta_header_marker = NULL, itsx_check = TRUE,
-                          itsx_cpu = 2L) {
+                          fasta_header_marker = NULL) {
   con <- open_project_db(file.path(path, ".sqlite"))
   on.exit(DBI::dbDisconnect(con), add = TRUE)
 
@@ -846,25 +860,17 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
       paste(sprintf("%s[%s]", smry$seqid[risky], smry$submission_risk[risky]), collapse = ", "),
       call. = FALSE)
   }
-  # final ITSx check: stock run, as the Portal does it (warn-only)
-  if (isTRUE(itsx_check)) {
-    chk <- itsx_export_check(con, units, gdir, label, cpu = itsx_cpu, project = path)
-    smry$itsx_check <- chk$itsx_check[match(smry$seqid, chk$seqid)]
-    not_run <- startsWith(smry$itsx_check, "not_run(")
-    if (any(not_run)) {
-      message("ITSx check skipped: ", sub("^not_run\\((.*)\\)$", "\\1", smry$itsx_check[not_run][1]))
-    }
-    flagged <- which(nzchar(smry$itsx_check) & !not_run)
-    if (length(flagged) > 0) {
-      warning("ITSx check flags on ", length(flagged), " of ", nrow(smry),
-        " contig(s) (still exported; see itsx_check column): ",
-        paste(sprintf("%s[%s]", smry$seqid[flagged], smry$itsx_check[flagged]), collapse = ", "),
-        call. = FALSE)
-    }
+  # stored stock ITSx check, what the Portal will see (warn-only)
+  flagged <- which(nzchar(smry$itsx_check) & !startsWith(smry$itsx_check, "not_run("))
+  if (length(flagged) > 0) {
+    warning("ITSx check flags on ", length(flagged), " of ", nrow(smry),
+      " contig(s) (still exported; see itsx_check column): ",
+      paste(sprintf("%s[%s]", smry$seqid[flagged], smry$itsx_check[flagged]), collapse = ", "),
+      call. = FALSE)
   }
   smry <- .meta_join(smry, con)
   utils::write.csv(smry, file.path(gdir, paste0(label, "_summary.csv")), row.names = FALSE)
-  writeLines(submission_readme(label, itsx_check = isTRUE(itsx_check)), file.path(gdir, "README.txt"))
+  writeLines(submission_readme(label), file.path(gdir, "README.txt"))
   # HTML report
   if (isTRUE(report)) {
     tryCatch(export_report(con, units,

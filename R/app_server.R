@@ -1330,8 +1330,8 @@ app_server <- function(input, output, session) {
   # fields window reopens Export data as it was.
   take_export_snap <- function() {
     export_snap(lapply(stats::setNames(nm = c("export_group_sel", "export_template",
-      "fasta_header", "fasta_header_marker", "export_markers", "export_report",
-      "export_itsx_check")), function(id) input[[id]]))
+      "fasta_header", "fasta_header_marker", "export_markers", "export_report")),
+      function(id) input[[id]]))
   }
   snap_export <- function(source) {
     take_export_snap()
@@ -2036,19 +2036,13 @@ app_server <- function(input, output, session) {
     proceed_export(u, export_group_choice())
   })
   run_export <- function(u, grp) {
-    detail <- if (isTRUE(input$export_itsx_check)) {
-      "Writing files and running the final ITSx check. Hold tight, this can take a few minutes."
-    } else {
-      "Writing files. Hold tight."
-    }
-    gdir <- withProgress(message = "Exporting...", detail = detail, value = 0.5, tryCatch(
+    gdir <- withProgress(message = "Exporting...", detail = "Writing files. Hold tight.", value = 0.5, tryCatch(
       export_bundle(app_project(), units = u, group = grp,
         out_dir = file.path(app_project(), "out"), zip = FALSE,
         fasta_header = input$fasta_header,
         fasta_header_marker = input$fasta_header_marker,
         markers = isTRUE(input$export_markers),
-        report = isTRUE(input$export_report),
-        itsx_check = isTRUE(input$export_itsx_check)),
+        report = isTRUE(input$export_report)),
       error = function(e) {
         rp_alert(paste("Export failed:", conditionMessage(e)), type = "error")
         NULL

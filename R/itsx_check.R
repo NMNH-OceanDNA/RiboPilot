@@ -1,7 +1,8 @@
-# Final pre-export ITSx check, run the way NCBI's Submission Portal runs it:
-# stock ITSx, default parameters, no organism-group restriction. The pipeline's
-# own ITSx pass (annotation step) uses the project's itsx_taxon / itsx_opts and
-# happens before curation, so it cannot stand in for what the Portal will see.
+# Stock ITSx check, run the way NCBI's Submission Portal runs it: stock ITSx,
+# default parameters, no organism-group restriction. rp_rrna_tools.sh runs it
+# beside the tuned ITSx pass, which uses the project's itsx_taxon / itsx_opts and
+# so cannot stand in for what the Portal will see, in the annotation step and in
+# the recheck. itsx_check_one() stores the result; export only reports it.
 #
 # Portal review flags chimeric sequences, gaps between ITS regions, and
 # potential misassemblies. Each is mapped to what stock ITSx reports:
@@ -30,90 +31,6 @@ ITSX_LINEAGE_ORIGINS <- list(
   Chlorophyta = "G", Rhodophyta = "H", Alveolata = "A", Amoebozoa = "D",
   Euglenozoa = "E", Oomycota = "O", Rhizaria = "R", Bacillariophyta = "C",
   Phaeophyceae = "I", Haptophyta = "P", Apusozoa = "X", Parabasalia = "Y")
-
-#' How to invoke ITSx for a project: through its container, or from PATH
-#'
-#' The pipeline's tools live in the project's container (docker / singularity
-#' per `.config`), so the check runs ITSx there. Only a project on the conda
-#' executor (no container enabled) falls back to an ITSx on PATH.
-#' @param project Project directory (holds `.config`).
-#' @param workdir Directory the container must see: the check's input FASTA
-#'   and output land here. Bind-mounted at the same path.
-#' @param which Lookup for executables (injectable for tests).
-#' @return list(bin, prefix, message): `bin` is the executable to call and
-#'   `prefix` the arguments that go before ITSx's own; `bin` is "" and
-#'   `message` says why when the check cannot run.
-#' @noRd
-itsx_check_command <- function(project, workdir, which = Sys.which) {
-  cfg <- file.path(project, ".config")
-  lines <- if (file.exists(cfg)) readLines(cfg, warn = FALSE) else character(0)
-  engine <- config_container_engine(lines)
-  none <- function(msg) list(bin = "", prefix = character(0), message = msg)
-  if (is.na(engine)) {
-    bin <- unname(which("ITSx"))
-    if (!nzchar(bin)) return(none("ITSx not on PATH (no container enabled in .config)"))
-    return(list(bin = bin, prefix = character(0), message = ""))
-  }
-  img <- config_container_image(lines)
-  if (!nzchar(img)) return(none("no process.container image in .config"))
-  wd <- normalizePath(workdir, mustWork = FALSE)
-  if (identical(engine, "docker")) {
-    bin <- unname(which("docker"))
-    if (!nzchar(bin)) return(none("docker not on PATH"))
-    ids <- vapply(c("-u", "-g"), function(f) {
-      tryCatch(trimws(system2("id", f, stdout = TRUE, stderr = FALSE))[1], error = function(e) "")
-    }, character(1))
-    user <- if (all(nzchar(ids))) c("-u", paste(ids, collapse = ":")) else character(0)
-    return(list(bin = bin,
-      prefix = c("run", "--rm", user, "-v", shQuote(paste0(wd, ":", wd)), "-w", shQuote(wd), img, "ITSx"),
-      message = ""))
-  }
-  w <- which(c("singularity", "apptainer"))
-  w <- w[nzchar(w)]
-  if (length(w) < 1) return(none("singularity/apptainer not on PATH"))
-  list(bin = unname(w[1]),
-    prefix = c("exec", "--bind", shQuote(wd), "--pwd", shQuote(wd), singularity_image_ref(img, project, lines), "ITSx"),
-    message = "")
-}
-
-#' Run stock ITSx on a FASTA
-#'
-#' Only output-shaping options are passed (`--preserve`, `--detailed_results`,
-#' `--save_regions`, `--graphical`, `--cpu`). Detection parameters are left at
-#' their defaults on purpose: that is what the Portal runs.
-#' @param fasta Input FASTA; must sit inside the directory `cmd` was built for.
-#' @param out_prefix Output prefix (ITSx appends its own suffixes); same rule.
-#' @param cpu Threads.
-#' @param cmd list(bin, prefix, message) from `itsx_check_command()`.
-#' @return list(ok, positions, results, problematic, no_detections, chimeric,
-#'   message); `ok = FALSE` and a message when ITSx could not run.
-#' @noRd
-run_itsx_check <- function(fasta, out_prefix, cpu = 2L, cmd) {
-  empty <- list(ok = FALSE, positions = character(0), results = character(0),
-    problematic = character(0), no_detections = character(0), chimeric = character(0),
-    message = "")
-  if (!nzchar(cmd$bin %||% "")) {
-    empty$message <- cmd$message %||% "ITSx unavailable"
-    return(empty)
-  }
-  dir.create(dirname(out_prefix), showWarnings = FALSE, recursive = TRUE)
-  err <- tempfile("rp_itsx_check_err_")
-  on.exit(unlink(err), add = TRUE)
-  fasta <- normalizePath(fasta, mustWork = FALSE)
-  out_prefix <- file.path(normalizePath(dirname(out_prefix), mustWork = FALSE), basename(out_prefix))
-  st <- suppressWarnings(system2(cmd$bin, c(cmd$prefix,
-    "-i", shQuote(fasta), "-o", shQuote(out_prefix),
-    "--preserve", "T", "--detailed_results", "T", "--save_regions", "none",
-    "--graphical", "F", "--cpu", as.integer(cpu)),
-    stdout = FALSE, stderr = err))
-  if (!identical(as.integer(st), 0L)) {
-    empty$message <- paste("ITSx failed:",
-      paste(utils::tail(tryCatch(readLines(err, warn = FALSE), error = function(e) ""), 3L),
-        collapse = " | "))
-    return(empty)
-  }
-  c(list(ok = TRUE), read_itsx_outputs(out_prefix), list(message = ""))
-}
 
 #' Read the files ITSx wrote under `out_prefix`
 #' @return list(positions, results, problematic, no_detections, chimeric)
@@ -367,8 +284,8 @@ itsx_check_flags <- function(seqid, seq, ann, its, notes, res, prob,
 #' @param con Project DB connection.
 #' @param units data.frame(ID, path, scaffold, seqid); `seqid` is the record ID
 #'   as written in the checked FASTA.
-#' @param out list from `run_itsx_check()` / `read_itsx_outputs()`, plus `ok`
-#'   and `message` when the run itself failed.
+#' @param out list from `read_itsx_outputs()` plus `ok = TRUE`, or
+#'   `list(ok = FALSE, message = <why>)` when ITSx did not finish.
 #' @return data.frame(seqid, itsx_check, itsx_origin, itsx_scores, itsx_ITS1,
 #'   itsx_5.8S, itsx_ITS2, itsx_notes). `itsx_check` is "" when clean, the flag
 #'   list when not, or "not_run(<why>)" when ITSx could not be run.
@@ -509,37 +426,4 @@ itsx_check_one <- function(con, id, path = 1L, scaffold = 1L, out_prefix, review
   chk <- itsx_check_units(con, units, out, review = review)
   itsx_store_warnings(con, units, chk, review = review)
   invisible(chk)
-}
-
-#' Run the final ITSx check over an export's records
-#'
-#' Writes the ITSx output under `<gdir>/itsx_check/` and a per-record CSV
-#' `<gdir>/<label>_itsx_check.csv`, refreshes `annotate.itsx_warnings`, and
-#' returns one row per unit.
-#' @param con Project DB connection.
-#' @param units data.frame(ID, path, scaffold, seqid) as built by [export_bundle()].
-#' @param gdir Bundle directory.
-#' @param label Bundle label.
-#' @param cpu Threads for ITSx.
-#' @param project Project directory; its `.config` decides the container.
-#' @param cmd Override for `itsx_check_command()` (tests).
-#' @return data.frame as from `itsx_check_units()`.
-#' @noRd
-itsx_export_check <- function(con, units, gdir, label, cpu = 2L, project = ".", cmd = NULL) {
-  if (nrow(units) == 0) return(itsx_check_units(con, units, list(ok = TRUE)))
-  seqs <- unit_sequences(con, units)
-  cdir <- file.path(gdir, "itsx_check")
-  dir.create(cdir, showWarnings = FALSE, recursive = TRUE)
-  fa <- file.path(cdir, "records.fasta")
-  ok <- !is.na(seqs) & nzchar(seqs)
-  writeLines(as.vector(rbind(paste0(">", units$seqid[ok]), seqs[ok])), fa)
-
-  if (is.null(cmd)) cmd <- itsx_check_command(project, cdir)
-  out <- run_itsx_check(fa, file.path(cdir, "itsx"), cpu = cpu, cmd = cmd)
-  chk <- itsx_check_units(con, units, out)
-  itsx_store_warnings(con, units, chk)
-  if (isTRUE(out$ok)) {
-    utils::write.csv(chk, file.path(gdir, paste0(label, "_itsx_check.csv")), row.names = FALSE)
-  }
-  chk
 }

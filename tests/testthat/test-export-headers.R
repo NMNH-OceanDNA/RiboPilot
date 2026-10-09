@@ -184,7 +184,7 @@ test_that("an empty source modifier on any record is a warning, not only on the 
   DBI::dbExecute(con, "UPDATE samples SET voucher = 'USNM:1' WHERE ID = 'S1'")
   DBI::dbDisconnect(con)
   expect_warning(suppressMessages(export_bundle(dir, out_dir = file.path(dir, "out"), report = FALSE,
-    zip = FALSE, itsx_check = FALSE, label = "vou", fasta_header = "{seqid} [specimen-voucher={voucher}]")),
+    zip = FALSE, label = "vou", fasta_header = "{seqid} [specimen-voucher={voucher}]")),
     "Empty \\[specimen-voucher=\\] on 1 of 3 record\\(s\\) \\(S2\\)")
   d <- data.frame(ID = "S1", seqid = "S1", t = NA)
   expect_equal(validate_fasta_header("{seqid} [note={t}]", d)$level, "warn")

@@ -339,14 +339,32 @@ test_that("unit_checks names every finding, colours the worst, and agrees with t
   expect_equal(u$checks_tone, c("warning", "warning", "danger"))
 })
 
-test_that("the export done dialog names flagged records and is green only when nothing is flagged", {
-  smry <- data.frame(seqid = c("A", "B_p1_s1"), itsx_check = c("", ""),
-    submission_risk = c("", "off_target(Actiniaria);contaminant"))
+test_that("the export done dialog counts the stored ITSx check and is green only when all is clean", {
+  smry <- data.frame(seqid = c("A", "B_p1_s1", "C", "D"),
+    itsx_check = c("", "itsx_chimeric", "not_run(ITSx did not finish)", "not_run(not checked)"),
+    submission_risk = c("", "off_target(Actiniaria);contaminant", "", ""))
   html <- as.character(RiboPilot:::export_check_summary_ui(smry))
   expect_match(html, "B_p1_s1 (BLAST hits agree on Actiniaria; the best BLAST hit is from another phylum)",
     fixed = TRUE)
+  expect_match(html, "ITSx check: 1 flagged, 1 clean, 2 not checked. Flagged: B_p1_s1 (itsx_chimeric).",
+    fixed = TRUE)
+  expect_lt(regexpr("Submission-risk", html), regexpr("ITSx check:", html))
   expect_false(grepl("mp-fg-success", html, fixed = TRUE))
-  expect_lt(regexpr("Submission-risk", html), regexpr("Final ITSx", html))
+  expect_false(grepl("left out", html, fixed = TRUE))
+
+  # nothing flagged, but a contig not checked: never green
+  smry$submission_risk <- ""
+  smry$itsx_check <- c("", "", "", "not_run(not checked)")
+  html <- as.character(RiboPilot:::export_check_summary_ui(smry, not_done = 2L))
+  expect_match(html, "ITSx check: 0 flagged, 3 clean, 1 not checked.", fixed = TRUE)
+  expect_false(grepl("mp-fg-success", html, fixed = TRUE))
+  expect_match(html, "2 contigs left out: checks not finished. Press Update on Annotation Review", fixed = TRUE)
+
+  smry$itsx_check <- ""
+  smry$submission_risk <- c("", "off_target(Actiniaria);contaminant", "", "")
+  expect_false(grepl("mp-fg-success", as.character(RiboPilot:::export_check_summary_ui(smry)), fixed = TRUE))
   smry$submission_risk <- ""
   expect_match(as.character(RiboPilot:::export_check_summary_ui(smry)), "mp-fg-success", fixed = TRUE)
+  # the Export window no longer offers its own ITSx run
+  expect_false(grepl("export_itsx_check", as.character(RiboPilot:::export_modal("g1")), fixed = TRUE))
 })

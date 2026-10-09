@@ -1,5 +1,5 @@
-# Final pre-export ITSx check: parsers over stock-ITSx output, the pure flag
-# function, and the export_bundle wiring.
+# Stock ITSx check: parsers over stock-ITSx output, the pure flag function,
+# storing the result, and what export reports from it.
 
 pos_clean <- "S1\t15120 bp.\tSSU: 1-6832\tITS1: 6833-7243\t5.8S: 7244-7401\tITS2: 7402-7928\tLSU: 7929-15120\t"
 pos_chim <- "S2\t3000 bp.\tSSU: 1-1800\tITS1: 1801-2000\t5.8S: 2001-2160\tITS2: 2161-2400\tLSU: 2401-2900\tChimeric! "
@@ -123,54 +123,7 @@ test_that("a record ITSx did not detect is reported as such and nothing else", {
     RiboPilot:::parse_itsx_notes(pos_clean), no_res, no_prob)$flags, "itsx_not_detected")
 })
 
-test_that("run_itsx_check reports not-run when there is no way to call ITSx", {
-  out <- RiboPilot:::run_itsx_check("x.fa", tempfile(),
-    cmd = list(bin = "", prefix = character(0), message = "docker not on PATH"))
-  expect_false(out$ok)
-  expect_equal(out$message, "docker not on PATH")
-})
-
-# fake executable lookup: everything named in `have` exists
-fake_which <- function(have) function(x) stats::setNames(ifelse(x %in% have, paste0("/bin/", x), ""), x)
-
-write_cfg <- function(dir, ...) writeLines(c(...), file.path(dir, ".config"))
-
-test_that("itsx_check_command runs ITSx through docker when .config enables it", {
-  dir <- withr::local_tempdir()
-  write_cfg(dir, "docker {", "  enabled = true", "}", "process {", "  container = 'ribopilot:test'", "}")
-  wd <- file.path(dir, "out", "itsx_check")
-  cmd <- RiboPilot:::itsx_check_command(dir, wd, which = fake_which("docker"))
-  expect_equal(cmd$bin, "/bin/docker")
-  expect_equal(cmd$prefix[1:2], c("run", "--rm"))
-  expect_true(shQuote(paste0(wd, ":", wd)) %in% cmd$prefix)   # workdir mounted at itself
-  expect_equal(utils::tail(cmd$prefix, 2), c("ribopilot:test", "ITSx"))
-  # engine enabled but nothing to run it with
-  expect_equal(RiboPilot:::itsx_check_command(dir, wd, which = fake_which("ITSx"))$bin, "")
-})
-
-test_that("itsx_check_command uses singularity or apptainer for a singularity config", {
-  dir <- withr::local_tempdir()
-  sif <- file.path(dir, "rp.sif"); file.create(sif)
-  write_cfg(dir, "singularity {", "  enabled = true", "}", "process {", paste0("  container = '", sif, "'"), "}")
-  wd <- file.path(dir, "wd")
-  cmd <- RiboPilot:::itsx_check_command(dir, wd, which = fake_which("apptainer"))
-  expect_equal(cmd$bin, "/bin/apptainer")
-  expect_equal(cmd$prefix, c("exec", "--bind", shQuote(wd), "--pwd", shQuote(wd), sif, "ITSx"))
-  expect_match(RiboPilot:::itsx_check_command(dir, wd, which = fake_which("ITSx"))$message, "singularity")
-})
-
-test_that("itsx_check_command falls back to PATH only for a container-less config", {
-  dir <- withr::local_tempdir()
-  write_cfg(dir, "process {", "  executor = 'local'", "}")
-  cmd <- RiboPilot:::itsx_check_command(dir, dir, which = fake_which("ITSx"))
-  expect_equal(cmd$bin, "/bin/ITSx")
-  expect_equal(cmd$prefix, character(0))
-  expect_match(RiboPilot:::itsx_check_command(dir, dir, which = fake_which("docker"))$message, "not on PATH")
-  # no .config at all behaves the same
-  expect_equal(RiboPilot:::itsx_check_command(tempfile(), dir, which = fake_which("ITSx"))$bin, "/bin/ITSx")
-})
-
-# Minimal project for the export wiring (same shape as test-export-units.R)
+# Minimal project for itsx_check_one
 mk_itsx_project <- function() {
   dir <- withr::local_tempdir(.local_envir = parent.frame())
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
@@ -195,78 +148,136 @@ mk_itsx_project <- function() {
   dir
 }
 
-test_that("export_bundle writes a not_run itsx_check column when ITSx is unavailable", {
-  skip_if_not_installed("withr")
-  dir <- mk_itsx_project()
-  withr::local_envvar(PATH = tempdir())   # no ITSx, docker, or singularity here
-  g <- suppressWarnings(suppressMessages(export_bundle(dir, out_dir = file.path(dir, "out"),
-    markers = FALSE, report = FALSE, zip = FALSE)))
-  smry <- utils::read.csv(file.path(g, "export_summary.csv"), stringsAsFactors = FALSE)
-  expect_true("itsx_check" %in% names(smry))
-  expect_match(smry$itsx_check, "^not_run\\(")
-  expect_match(paste(readLines(file.path(g, "README.txt")), collapse = "\n"), "FINAL ITSx CHECK")
-  expect_equal(attr(g, "summary")$itsx_check, smry$itsx_check)
+test_that("export_summary_df carries the stored ITSx check, and NA as not checked", {
+  con <- chimera_test_con()
+  withr::defer(DBI::dbDisconnect(con))
+  vals <- c("", "itsx_no_5.8S;itsx_origin(Fungi)", "not_run(ITSx did not finish)", NA)
+  for (s in 1:4) {
+    DBI::dbExecute(con, "INSERT INTO assemblies (ID, path, scaffold, sequence, length) VALUES ('S1', 1, ?, 'ACGT', 4)",
+      params = list(s))
+    DBI::dbExecute(con, "INSERT OR IGNORE INTO annotate (ID, path, scaffold) VALUES ('S1', 1, ?)", params = list(s))
+    DBI::dbExecute(con, "UPDATE annotate SET itsx_warnings = ? WHERE ID = 'S1' AND path = 1 AND scaffold = ?",
+      params = list(vals[s], s))
+  }
+  units <- data.frame(ID = "S1", path = 1L, scaffold = 4:1, seqid = paste0("S1_p1_s", 4:1))
+  smry <- RiboPilot:::export_summary_df(con, units)
+  expect_equal(smry$itsx_check, c("not_run(not checked)", "not_run(ITSx did not finish)",
+    "itsx_no_5.8S;itsx_origin(Fungi)", ""))
+  expect_equal(utils::tail(names(smry), 1), "itsx_check")
 })
 
-test_that("itsx_check = FALSE leaves the column and README section out", {
-  skip_if_not_installed("withr")
-  dir <- mk_itsx_project()
-  g <- suppressWarnings(export_bundle(dir, out_dir = file.path(dir, "out"),
-    markers = FALSE, report = FALSE, zip = FALSE, itsx_check = FALSE))
-  smry <- utils::read.csv(file.path(g, "export_summary.csv"), stringsAsFactors = FALSE)
-  expect_false("itsx_check" %in% names(smry))
-  expect_false(file.exists(file.path(g, "export_itsx_check.csv")))
-  expect_false(grepl("FINAL ITSx CHECK", paste(readLines(file.path(g, "README.txt")), collapse = "\n")))
+test_that("export reports the stored ITSx check and never runs ITSx", {
+  skip_on_os("windows")
+  con <- chimera_test_con()
+  dir <- dirname(DBI::dbGetInfo(con)$dbname)
+  seq <- paste0(strrep("A", 200), strrep("C", 200))
+  DBI::dbExecute(con, "UPDATE assemble SET assemble_lock = 1")
+  DBI::dbExecute(con, "INSERT INTO assemblies (ID, path, scaffold, sequence, length, topology, ignore)
+    VALUES ('S1', 1, 1, ?, 400, 'linear', 0)", params = list(seq))
+  DBI::dbExecute(con, "INSERT INTO annotations (ID, path, scaffold, element, type, start, stop)
+    VALUES ('S1', 1, 1, '18S', 'rRNA', 1, 200), ('S1', 1, 1, '28S', 'rRNA', 201, 400)")
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_switch = 2, annotate_lock = 1, problematic = 'no',
+    n_features = 2, missing = '', itsx_warnings = 'itsx_chimeric'")
+  DBI::dbDisconnect(con)
+  # an ITSx first on PATH that leaves a mark when called
+  bin <- withr::local_tempdir()
+  writeLines(c("#!/bin/sh", sprintf("touch '%s'", file.path(bin, "called")), "exit 1"), file.path(bin, "ITSx"))
+  Sys.chmod(file.path(bin, "ITSx"), "0755")
+  withr::local_envvar(PATH = paste(bin, Sys.getenv("PATH"), sep = .Platform$path.sep))
+
+  expect_warning(g <- suppressMessages(export_bundle(dir, label = "g1", markers = FALSE,
+    report = FALSE, zip = FALSE)), "ITSx check flags on 1 of 1 contig(s)", fixed = TRUE)
+  expect_false(file.exists(file.path(bin, "called")))
+  expect_false(dir.exists(file.path(g, "itsx_check")))
+  expect_false(file.exists(file.path(g, "g1_itsx_check.csv")))
+  smry <- utils::read.csv(file.path(g, "g1_summary.csv"), stringsAsFactors = FALSE)
+  expect_equal(smry$itsx_check, "itsx_chimeric")
+  expect_equal(attr(g, "summary")$itsx_check, "itsx_chimeric")
+  readme <- paste(readLines(file.path(g, "README.txt")), collapse = "\n")
+  expect_false(grepl("FINAL ITSx CHECK", readme, fixed = TRUE))
+  for (x in c("ITSx CHECK", "Export does not run ITSx", "not_run(ITSx did not finish)",
+              "not_run(ITSx check failed: <why>)", "not_run(not checked before upgrade)",
+              "not_run(not checked)", "not_run(no ITSx output)", "not_run(docker not on PATH)",
+              "batch size")) {
+    expect_match(readme, x, fixed = TRUE)
+  }
+  con <- RiboPilot:::open_project_db(file.path(dir, ".sqlite"))
+  withr::defer(DBI::dbDisconnect(con))
+  expect_equal(DBI::dbGetQuery(con, "SELECT itsx_warnings FROM annotate")$itsx_warnings, "itsx_chimeric")
+  for (fn in c("itsx_export_check", "run_itsx_check", "itsx_check_command")) {
+    expect_false(exists(fn, envir = asNamespace("RiboPilot"), inherits = FALSE), info = fn)
+  }
 })
 
-test_that("a real ITSx run in the project's container over a genuine rDNA record is clean", {
+# Run `cmd` in the project's container the way Nextflow runs the pipeline's
+# tools: docker or singularity per .config, straight from PATH without one.
+# `workdir` is mounted at its own path and is the working directory.
+container_run <- function(project, workdir, cmd) {
+  cfg <- readLines(file.path(project, ".config"), warn = FALSE)
+  engine <- RiboPilot:::config_container_engine(cfg)
+  img <- RiboPilot:::config_container_image(cfg)
+  wd <- normalizePath(workdir)
+  if (is.na(engine)) {
+    skip_if(!nzchar(Sys.which("ITSx")), "ITSx not on PATH (no container enabled in .config)")
+    return(processx::run(cmd[1], cmd[-1], wd = wd, error_on_status = FALSE))
+  }
+  skip_if(!nzchar(img), "no process.container image in .config")
+  if (identical(engine, "docker")) {
+    skip_if(!nzchar(Sys.which("docker")), "docker not on PATH")
+    user <- paste(system2("id", "-u", stdout = TRUE), system2("id", "-g", stdout = TRUE), sep = ":")
+    return(processx::run("docker", c("run", "--rm", "-u", user, "-v", paste0(wd, ":", wd), "-w", wd,
+      img, cmd), wd = wd, error_on_status = FALSE))
+  }
+  bin <- Sys.which(c("singularity", "apptainer"))
+  skip_if(!any(nzchar(bin)), "singularity/apptainer not on PATH")
+  processx::run(unname(bin[nzchar(bin)][1]), c("exec", "--bind", wd, "--pwd", wd,
+    RiboPilot:::singularity_image_ref(img, project, cfg), cmd), wd = wd, error_on_status = FALSE)
+}
+
+test_that("a real stock ITSx run in the project's container over a genuine rDNA record is clean", {
   skip_if_not_installed("withr")
   proj <- Sys.getenv("RIBOPILOT_TEST_PROJECT", "")
   skip_if(!nzchar(proj), "RIBOPILOT_TEST_PROJECT not set")
   src <- file.path(proj, ".sqlite")
   skip_if(!file.exists(src), "test project database not present")
   skip_if(!file.exists(file.path(proj, ".config")), "test project has no .config")
-  probe <- RiboPilot:::itsx_check_command(proj, tempdir())
-  skip_if(!nzchar(probe$bin), probe$message)
-  scon <- DBI::dbConnect(RSQLite::SQLite(), src)
-  on.exit(DBI::dbDisconnect(scon), add = TRUE)
+  # read a copy: nothing is written next to the project's database
+  db <- file.path(withr::local_tempdir(), "src.sqlite")
+  file.copy(src, db)
+  scon <- DBI::dbConnect(RSQLite::SQLite(), db)
+  withr::defer(DBI::dbDisconnect(scon))
   u <- DBI::dbGetQuery(scon, "SELECT an.ID, an.path, an.scaffold FROM annotate an
     JOIN annotations a ON a.ID = an.ID AND a.path = an.path AND a.scaffold = an.scaffold
-    WHERE a.element = 'ITS1' LIMIT 1")
+    WHERE a.element = 'ITS1' ORDER BY an.ID, an.path, an.scaffold LIMIT 1")
   skip_if(nrow(u) == 0, "no ITS1-annotated unit in the local test project")
+  key <- unname(as.list(u[1, ]))
   seq <- DBI::dbGetQuery(scon, "SELECT sequence FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
-    params = unname(as.list(u[1, ])))$sequence[1]
-  ann <- DBI::dbGetQuery(scon, "SELECT element, type, start, stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?",
-    params = unname(as.list(u[1, ])))
+    params = key)$sequence[1]
+  ann <- DBI::dbGetQuery(scon, "SELECT element, type, start, stop FROM annotations
+    WHERE ID = ? AND path = ? AND scaffold = ?", params = key)
 
-  dir <- withr::local_tempdir()
-  file.copy(file.path(proj, ".config"), file.path(dir, ".config"))   # same container
-  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
-  DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT, Taxon TEXT, lineage TEXT)")
-  DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, sequence TEXT, length INT, topology TEXT, ignore INT)")
-  DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT, type TEXT, start INT, stop INT)")
-  DBI::dbExecute(con, "CREATE TABLE annotate(ID TEXT, path INT, scaffold INT, annotate_lock INT, problematic TEXT,
-    partial TEXT, reviewed TEXT, chimeric INT, n_features INT, missing TEXT, export_group TEXT)")
-  DBI::dbExecute(con, "INSERT INTO samples VALUES('REAL','Fish sp.','Metazoa;Chordata')")
-  DBI::dbExecute(con, "INSERT INTO assemblies VALUES('REAL',1,1,?,?,'linear',0)", params = list(seq, nchar(seq)))
-  DBI::dbExecute(con, "INSERT INTO annotate VALUES('REAL',1,1,1,'no','no','yes',0,5,'',NULL)")
-  DBI::dbExecute(con, "ALTER TABLE annotate ADD COLUMN export_time_stamp INTEGER")
-  DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, assemble_lock INT)")
-  DBI::dbExecute(con, "INSERT INTO assemble VALUES('REAL',1)")
-  for (i in seq_len(nrow(ann))) {
-    DBI::dbExecute(con, "INSERT INTO annotations VALUES('REAL',1,1,?,?,?,?)",
-      params = list(ann$element[i], ann$type[i], ann$start[i], ann$stop[i]))
-  }
-  DBI::dbDisconnect(con)
+  wd <- withr::local_tempdir()
+  file.copy(system.file("nextflow", "bin", "rp_rrna_tools.sh", package = "RiboPilot"), wd)
+  writeLines(c(">REAL.1.1", seq), file.path(wd, "unit.fasta"))
+  res <- container_run(proj, wd, c("bash", "rp_rrna_tools.sh", "unit.fasta", "", "", "", "", "", "4"))
+  st <- file.path(wd, "unit.tools_status")
+  expect_true("itsx_check=0" %in% (if (file.exists(st)) readLines(st)), info = res$stderr)
+  pre <- file.path(wd, "unit.itsx_check")
+  expect_true(RiboPilot:::itsx_run_finished(pre))
 
-  g <- suppressWarnings(export_bundle(dir, out_dir = file.path(dir, "out"),
-    markers = FALSE, report = FALSE, zip = FALSE, itsx_cpu = 4L))
-  smry <- utils::read.csv(file.path(g, "export_summary.csv"), stringsAsFactors = FALSE)
-  expect_true(smry$itsx_check %in% c("", NA))   # read.csv turns "" into NA
-  chk <- utils::read.csv(file.path(g, "export_itsx_check.csv"), stringsAsFactors = FALSE, check.names = FALSE)
+  con <- chimera_test_con("REAL")
+  withr::defer(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "UPDATE samples SET lineage = 'Metazoa;Chordata'")
+  DBI::dbExecute(con, "INSERT INTO assemblies (ID, path, scaffold, sequence, length) VALUES ('REAL', 1, 1, ?, ?)",
+    params = list(seq, nchar(seq)))
+  DBI::dbAppendTable(con, "annotations", cbind(data.frame(ID = "REAL", path = 1L, scaffold = 1L), ann))
+  chk <- RiboPilot:::itsx_check_one(con, "REAL", 1L, 1L, pre)
+  expect_equal(chk$itsx_check, "")
   expect_equal(chk$itsx_origin, "M")
+  expect_match(chk$itsx_scores, "M: ", fixed = TRUE)
   expect_match(chk$itsx_ITS1, "^[0-9]+-[0-9]+$")
-  expect_true(file.exists(file.path(g, "itsx_check", "itsx.positions.txt")))
+  expect_equal(unlist(DBI::dbGetQuery(con, "SELECT itsx_warnings, itsx_origin FROM annotate
+    WHERE ID = 'REAL' AND path = 1 AND scaffold = 1")), c(itsx_warnings = "", itsx_origin = "M"))
 })
 
 test_that("singularity_image_ref turns a Docker Hub name into something singularity can open", {
@@ -290,13 +301,6 @@ test_that("singularity_image_ref turns a Docker Hub name into something singular
   expect_equal(RiboPilot:::singularity_image_ref(img, dir, cfg), file.path(cd, "macguigand-ribopilot-0.0.0.9016.img"))
 })
 
-test_that("itsx_check_command hands singularity a docker:// URI for a Docker Hub image", {
-  dir <- withr::local_tempdir()
-  write_cfg(dir, "singularity {", "  enabled = true", "}", "process {", "  container = 'macguigand/ribopilot:0.1'", "}")
-  cmd <- RiboPilot:::itsx_check_command(dir, dir, which = fake_which("singularity"))
-  expect_equal(cmd$prefix[6], "docker://macguigand/ribopilot:0.1")
-})
-
 test_that("itsx_check_one stores stock-ITSx flags on the unit's annotate row", {
   dir <- mk_itsx_project()
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
@@ -314,42 +318,6 @@ test_that("itsx_check_one stores stock-ITSx flags on the unit's annotate row", {
   out <- RiboPilot:::itsx_check_one(con, "S1", 1L, 1L, file.path(dir, "missing"))
   expect_equal(out$itsx_check, "not_run(ITSx did not finish)")
   expect_match(DBI::dbGetQuery(con, "SELECT itsx_warnings FROM annotate")$itsx_warnings, "^not_run\\(")
-})
-
-test_that("export refreshes itsx_warnings on the annotate row", {
-  skip_if_not_installed("withr")
-  dir <- mk_itsx_project()
-  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
-  DBI::dbExecute(con, "ALTER TABLE annotate ADD COLUMN itsx_warnings TEXT")
-  DBI::dbExecute(con, "UPDATE annotate SET itsx_warnings = 'itsx_chimeric'")
-  DBI::dbDisconnect(con)
-  withr::local_envvar(PATH = tempdir())
-  suppressWarnings(suppressMessages(export_bundle(dir, out_dir = file.path(dir, "out"),
-    markers = FALSE, report = FALSE, zip = FALSE)))
-  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
-  withr::defer(DBI::dbDisconnect(con))
-  expect_match(DBI::dbGetQuery(con, "SELECT itsx_warnings FROM annotate")$itsx_warnings, "^not_run\\(")
-})
-
-test_that("the ITSx container call keeps a folder with a space as one argument", {
-  skip_on_os("windows")
-  root <- file.path(withr::local_tempdir(), "Batch 1")
-  wd <- file.path(root, "itsx_check")
-  dir.create(wd, recursive = TRUE)
-  write_cfg(root, "docker {", "  enabled = true", "}", "process {", "  container = 'ribopilot:test'", "}")
-  seen <- file.path(root, "args.txt")
-  fake <- file.path(root, "docker")
-  writeLines(c("#!/bin/sh", sprintf("for a in \"$@\"; do printf '%%s\\n' \"$a\"; done > '%s'", seen),
-    "exit 1"), fake)
-  Sys.chmod(fake, "0755")
-  cmd <- RiboPilot:::itsx_check_command(root, wd, which = function(x) stats::setNames(fake, x))
-  fa <- file.path(wd, "records.fasta")
-  writeLines(c(">a", "ACGT"), fa)
-  RiboPilot:::run_itsx_check(fa, file.path(wd, "itsx"), cmd = cmd)
-  a <- readLines(seen)
-  wdn <- normalizePath(wd)
-  expect_equal(a[which(a == "-v") + 1], paste0(wdn, ":", wdn))
-  expect_equal(a[which(a == "-w") + 1], wdn)
 })
 
 # stock-ITSx output files under `pre`; finished = FALSE leaves the summary
