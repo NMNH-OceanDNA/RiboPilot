@@ -38,6 +38,8 @@ mk_hdr_project <- function() {
   DBI::dbExecute(con, "ALTER TABLE annotate ADD COLUMN export_time_stamp INTEGER")
   DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, assemble_lock INT)")
   DBI::dbExecute(con, "INSERT INTO assemble VALUES('S1',1),('S2',1)")
+  fixture_review_schema(con)
+  fixture_mark_done(con)
   dir
 }
 

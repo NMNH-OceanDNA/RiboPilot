@@ -36,6 +36,7 @@ mk_report_project <- function(env = parent.frame()) {
     DBI::dbExecute(con, "INSERT INTO samples VALUES(?,?,NULL,NULL)",
       params = list(id, paste("Genus species", k)))
   }
+  fixture_review_schema(con)
   dir
 }
 

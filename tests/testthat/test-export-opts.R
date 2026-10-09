@@ -23,6 +23,7 @@ mk_opts_db <- function() {
     DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,1,?,?,?)",
       params = list(f[1], as.integer(f[2]), as.integer(f[3])))
   }
+  fixture_review_schema(con)
   con
 }
 

@@ -19,6 +19,8 @@ test_that("feature_table_text_con emits partials, gaps, and ITS notes", {
   DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,1,'18S','rRNA',1,100)")
   DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,1,'ITS1','misc_RNA',121,200)")
   DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,1,'28S','rRNA',201,260)")
+  fixture_review_schema(con)
+  DBI::dbExecute(con, "INSERT INTO annotate (ID, path, scaffold) VALUES ('S1', 1, 1)")
   tbl <- RiboPilot:::feature_table_text_con(con, "S1")
   expect_match(tbl, "<1\t100\trRNA")            # 5' partial
   expect_match(tbl, "201\t>260\trRNA")          # 3' partial
@@ -37,6 +39,8 @@ test_that("partial ends are marked per feature, strand-aware, and minus is writt
   DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',1,1, ?, 500)", params = list(strrep("A", 500)))
   DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,1,'18S','rRNA',100,260,'+',1,0)")
   DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,1,'28S','rRNA',300,460,'+',0,1)")
+  fixture_review_schema(con)
+  DBI::dbExecute(con, "INSERT INTO annotate (ID, path, scaffold) VALUES ('S1', 1, 1)")
   tbl <- RiboPilot:::feature_table_text_con(con, "S1")
   expect_match(tbl, "\n<100\t260\trRNA")
   expect_match(tbl, "\n300\t>460\trRNA")
@@ -97,6 +101,7 @@ test_that("a unit marked partial changes only the completeness wording", {
   DBI::dbExecute(con, "INSERT INTO annotate VALUES('S1',1,1,1,'','yes','yes',NULL)")
   DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',1,1, ?, 500, 'linear')", params = list(strrep("A", 500)))
   DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,1,'18S','rRNA',100,260,0,0)")
+  fixture_review_schema(con)
   expect_match(RiboPilot:::feature_table_text_con(con, "S1"), "\n100\t260\trRNA")
   h <- RiboPilot:::export_header_data(con, data.frame(ID = "S1", path = 1L, scaffold = 1L, seqid = "S1"))
   expect_equal(h$completeness, "partial sequence")
@@ -117,6 +122,7 @@ test_that("a partial end is exported partial, in the feature table and the defli
   DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',1,1, ?, 1694, 'linear')", params = list(strrep("A", 1694)))
   # 28S well inside the scaffold, 3' end not recovered
   DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,1,'28S','rRNA',155,1488,'length,truncated',0,1)")
+  fixture_review_schema(con)
   expect_match(RiboPilot:::feature_table_text_con(con, "S1"), "\n155\t>1488\trRNA")
   units <- data.frame(ID = "S1", path = 1L, scaffold = 1L, seqid = "S1")
   h <- RiboPilot:::export_header_data(con, units)
@@ -259,6 +265,7 @@ test_that("feature_map_svg falls back to a note when a unit has no annotations",
   con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
   on.exit(DBI::dbDisconnect(con))
   DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT, start INT, stop INT)")
+  fixture_review_schema(con)
   expect_equal(RiboPilot:::feature_map_svg(con, "S1"), "<em>no annotations</em>")
 })
 

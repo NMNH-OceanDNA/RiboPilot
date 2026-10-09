@@ -28,6 +28,8 @@ mk_project <- function() {
   DBI::dbExecute(con, "ALTER TABLE annotate ADD COLUMN export_time_stamp INTEGER")
   DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, assemble_lock INT)")
   DBI::dbExecute(con, "INSERT INTO assemble VALUES('S1',1),('S2',1)")
+  fixture_review_schema(con)
+  fixture_mark_done(con)
   dir
 }
 
@@ -172,7 +174,7 @@ test_that("bundle file contents are exactly as specified", {
         "\"variant_group\",\"variant_identity\",\"n_variants\",\"submission_risk\",\"chimera_warning\",",
         "\"itsx_check\""),
       paste0("\"S2\",\"S2\",1,1,\"Genus speciesB\",400,2,\"\",\"yes\",\"no\",\"no\",NA,NA,NA,NA,\"\",\"\",",
-        "\"not_run(not checked)\"")))
+        "\"\"")))
 })
 
 test_that("an empty Taxon is flagged, and never rendered as the word NA", {
@@ -213,7 +215,7 @@ test_that("set_export_group is atomic", {
   expect_equal(DBI::dbGetQuery(con, "SELECT export_group FROM annotate WHERE ID='OK'")$export_group, "g1")
 })
 
-test_that("a project with no screen table still exports, with NA variant columns", {
+test_that("a project with no screen rows still exports, with NA variant columns", {
   dir <- mk_project()
   g <- bundle(dir, ids = "S2", label = "noscreen")
   smry <- utils::read.csv(Sys.glob(file.path(g, "*_summary.csv")), stringsAsFactors = FALSE)

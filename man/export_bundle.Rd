@@ -54,15 +54,19 @@ copied into the bundle as \verb{<label>.sbt} so table2asn picks it up.}
 }
 \value{
 (invisibly) the group output directory, with the summary data.frame
-attached as attribute \code{summary}.
+attached as attribute \code{summary} and the contigs left out because their
+checks are not finished as attribute \code{not_done} (data.frame(ID, path,
+scaffold)).
 }
 \description{
 Build a GenBank submission bundle for a set of samples (one export group)
 }
 \details{
 A unit is exported when its sample's assembly and the unit's
-annotation are both locked, its contig is kept, and it is not excluded
-from export. The \code{itsx_check} column of the summary CSV reports the stock
+annotation are both locked, its contig is kept, it is not excluded from
+export, and its checks are done (press Update on Annotation Review after
+an edit). Every value written comes from the reviewed copy of the contig
+when it has one. The \code{itsx_check} column of the summary CSV reports the stock
 ITSx check stored for each contig (\verb{not_run(not checked)} when none is
 stored); export does not run ITSx.
 }

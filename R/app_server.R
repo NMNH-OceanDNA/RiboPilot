@@ -1972,7 +1972,7 @@ app_server <- function(input, output, session) {
     screen_then_proceed(u, grp)
   }
   screen_then_proceed <- function(u, grp) {
-    flagged <- screen_flagged(u)
+    flagged <- screen_flagged(u, review = TRUE)
     export_pending(u)
     if (nrow(flagged)) {
       showModal(export_screen_modal(flagged))
@@ -1996,10 +1996,10 @@ app_server <- function(input, output, session) {
     } else back_to_export()
   })
   # Units the contamination checks flagged that no curator has signed off on.
-  screen_flagged <- function(u) {
+  screen_flagged <- function(u, review = FALSE) {
     if (NROW(u) == 0) return(data.frame())
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    s <- export_summary_df(con, cbind(u, seqid = u$ID))
+    s <- export_summary_df(con, cbind(u, seqid = u$ID), review = review)
     s[has_screen_risk(s$submission_risk) & !(s$reviewed %in% "yes"), , drop = FALSE]
   }
   # export_bundle() rebuilds the group folder from scratch, so anything the
@@ -2026,7 +2026,7 @@ app_server <- function(input, output, session) {
   observeEvent(input$export_screen_keep, proceed_export(export_pending(), export_group_choice()))
   observeEvent(input$export_screen_skip, {
     u <- export_pending()
-    f <- screen_flagged(u)
+    f <- screen_flagged(u, review = TRUE)
     u <- u[!unit_key(u$ID, u$path, u$scaffold) %in% unit_key(f$ID, f$path, f$scaffold), , drop = FALSE]
     if (nrow(u) == 0) {
       back_to_export()

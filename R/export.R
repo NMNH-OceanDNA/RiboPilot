@@ -125,14 +125,14 @@ find_n_runs <- function(seq, min_len = MIN_ASSEMBLY_GAP) {
 #' the FASTA/feature id.
 #' @noRd
 feature_table_text_con <- function(con, id, path = 1L, scaffold = 1L, seqid = id) {
-  d <- DBI::dbGetQuery(con,
-    "SELECT * FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
+  d <- DBI::dbGetQuery(con, paste("SELECT element, type, start, stop, strand,", REVIEW_EFF_PARTIALS,
+    "FROM review_annotations_v WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start"),
     params = list(id, path, scaffold))
   hdr <- paste0(">Feature ", seqid)
   if (nrow(d) == 0) {
     return(paste0(hdr, "\n"))
   }
-  st <- DBI::dbGetQuery(con, "SELECT sequence, length FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
+  st <- DBI::dbGetQuery(con, "SELECT sequence, length FROM review_units_v WHERE ID = ? AND path = ? AND scaffold = ?",
     params = list(id, path, scaffold))
   seq <- if (nrow(st)) st$sequence[1] else NA_character_
   seqlen <- if (nrow(st) && !is.na(st$length[1])) st$length[1] else max(d$stop)
@@ -415,8 +415,11 @@ submission_readme <- function(label) {
 #' surface portal-parity risk flags, and an `itsx_check` column: the stored
 #' stock ITSx check (annotate.itsx_warnings), `not_run(not checked)` when none
 #' is stored.
+#' @param review TRUE reads the per-contig values from the review layer (export,
+#'   Annotation Review); FALSE from the originals (Assemble step). The marks
+#'   come from annotate and the variant facts from the original screen in both.
 #' @noRd
-export_summary_df <- function(con, units) {
+export_summary_df <- function(con, units, review = FALSE) {
   if (nrow(units) == 0) return(NULL)
   n <- nrow(units)
   ids <- unique(as.character(units$ID))
@@ -424,23 +427,37 @@ export_summary_df <- function(con, units) {
   # one query per fact table for the whole unit set, joined in R
   fetch <- function(sql) tryCatch(DBI::dbGetQuery(con, sprintf(sql, qs), params = as.list(ids)),
     error = function(e) data.frame())
-  m <- fetch(
+  tb <- if (review) {
+    c(res = "review_units_v", seq = "review_units_v", ann = "review_annotations_v",
+      scr = "review_screen_v", chm = "review_chimera_v")
+  } else {
+    c(res = "annotate", seq = "assemblies", ann = "annotations", scr = "screen", chm = "chimera")
+  }
+  m <- fetch(if (review) {
+    "SELECT s.ID, an.path, an.scaffold, v.length, v.n_features,
+       v.missing, an.reviewed, an.partial, an.problematic
+     FROM samples s
+     JOIN annotate an ON an.ID = s.ID
+     JOIN review_units_v v ON v.ID = an.ID AND v.path = an.path AND v.scaffold = an.scaffold
+     WHERE s.ID IN (%s)"
+  } else {
     "SELECT s.ID, an.path, an.scaffold, asm.length, an.n_features,
        an.missing, an.reviewed, an.partial, an.problematic
      FROM samples s
      JOIN annotate an ON an.ID = s.ID
      JOIN assemblies asm ON asm.ID = s.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
-     WHERE s.ID IN (%s)")
-  chi <- fetch("SELECT ID, path, scaffold, chimeric FROM annotate WHERE ID IN (%s)")
-  chm <- fetch("SELECT ID, path, scaffold, label, reason FROM chimera WHERE ID IN (%s)")
-  ann <- fetch("SELECT ID, path, scaffold, element, start, stop FROM annotations
-                WHERE ID IN (%s) ORDER BY ID, path, scaffold, start")
-  asm <- fetch("SELECT ID, path, scaffold, sequence FROM assemblies WHERE ID IN (%s)")
+     WHERE s.ID IN (%s)"
+  })
+  chi <- fetch(paste("SELECT ID, path, scaffold, chimeric FROM", tb[["res"]], "WHERE ID IN (%s)"))
+  chm <- fetch(paste("SELECT ID, path, scaffold, label, reason FROM", tb[["chm"]], "WHERE ID IN (%s)"))
+  ann <- fetch(paste("SELECT ID, path, scaffold, element, start, stop FROM", tb[["ann"]],
+    "WHERE ID IN (%s) ORDER BY ID, path, scaffold, start"))
+  asm <- fetch(paste("SELECT ID, path, scaffold, sequence FROM", tb[["seq"]], "WHERE ID IN (%s)"))
   scr <- fetch("SELECT ID, path, scaffold, variant_class, variant_group, variant_identity
                 FROM screen WHERE ID IN (%s)")
-  sv <- fetch("SELECT ID, path, scaffold, screen_verdict, lca_taxon FROM screen WHERE ID IN (%s)")
-  nts <- fetch("SELECT ID, path, scaffold, curate_flags FROM annotate WHERE ID IN (%s)")
-  itx <- fetch("SELECT ID, path, scaffold, itsx_warnings FROM annotate WHERE ID IN (%s)")
+  sv <- fetch(paste("SELECT ID, path, scaffold, screen_verdict, lca_taxon FROM", tb[["scr"]], "WHERE ID IN (%s)"))
+  nts <- fetch(paste("SELECT ID, path, scaffold, curate_flags FROM", tb[["res"]], "WHERE ID IN (%s)"))
+  itx <- fetch(paste("SELECT ID, path, scaffold, itsx_warnings FROM", tb[["res"]], "WHERE ID IN (%s)"))
   smp <- fetch("SELECT * FROM samples WHERE ID IN (%s)")
 
   ukey <- unit_key(units$ID, units$path, units$scaffold)
@@ -520,13 +537,20 @@ UNIT_MULTI_SQL <- "(SELECT COUNT(DISTINCT x.path) FROM assemblies x
 UNIT_EXPORTED_SQL <- "CASE WHEN an.export_time_stamp IS NULL THEN ''
    ELSE 'exported ' || date(an.export_time_stamp, 'unixepoch', 'localtime') END AS exported"
 
-#' The units an export writes, with their export group
+#' The units an export may write, with their export group
+#'
+#' `done` is 1 when the contig's checks are done (review_units_v.check_switch
+#' = 2). Only done units are written; every row counts toward the sibling count
+#' that names records, so record names do not change when checks finish.
 #' @noRd
 exportable_units <- function(con) {
   DBI::dbGetQuery(con, paste(
-    "SELECT an.ID, an.path, an.scaffold, an.export_group FROM annotate an
+    "SELECT an.ID, an.path, an.scaffold, an.export_group,
+       CASE WHEN v.check_switch = 2 THEN 1 ELSE 0 END AS done
+     FROM annotate an
      JOIN assemble a ON a.ID = an.ID
      JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
+     LEFT JOIN review_units_v v ON v.ID = an.ID AND v.path = an.path AND v.scaffold = an.scaffold
      WHERE", EXPORTABLE_WHERE, "ORDER BY an.ID, an.path, an.scaffold"))
 }
 
@@ -539,11 +563,14 @@ export_left_out <- function(con, group) {
        CASE WHEN COALESCE(an.problematic,'') = 'yes' THEN 'excluded from export'
             WHEN COALESCE(a.assemble_lock,0) != 1 THEN 'assembly not locked'
             WHEN COALESCE(an.annotate_lock,0) != 1 THEN 'annotation not locked'
-            ELSE 'contig dropped' END AS why
+            WHEN COALESCE(asm.ignore,0) != 0 THEN 'contig dropped'
+            ELSE 'checks not finished' END AS why
      FROM annotate an
      LEFT JOIN assemble a ON a.ID = an.ID
      LEFT JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
-     WHERE an.export_group = ? AND NOT (", EXPORTABLE_WHERE, ")
+     LEFT JOIN review_units_v v ON v.ID = an.ID AND v.path = an.path AND v.scaffold = an.scaffold
+     WHERE an.export_group = ? AND (NOT (", EXPORTABLE_WHERE, ")
+       OR (asm.ID IS NOT NULL AND v.check_switch IS NOT 2))
      ORDER BY an.ID, an.path, an.scaffold"), params = list(group))
 }
 
@@ -582,7 +609,7 @@ unit_variant_facts_df <- function(scr, units) {
 #' Inline SVG feature-map for one unit (for the HTML report)
 #' @noRd
 feature_map_svg <- function(con, id, path = 1L, scaffold = 1L, seqid = id) {
-  d <- DBI::dbGetQuery(con, "SELECT element, start, stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
+  d <- DBI::dbGetQuery(con, "SELECT element, start, stop FROM review_annotations_v WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
     params = list(id, path, scaffold))
   if (nrow(d) == 0) {
     return("<em>no annotations</em>")
@@ -655,7 +682,7 @@ feature_map_svg_text <- function(d, width = 900, height = 110) {
 #' `units` is a data.frame(ID, path, scaffold, seqid) - one row per exported unit.
 #' `smry` is the already-computed `export_summary_df()` for those units.
 #' @noRd
-export_report_html <- function(con, units, out_html, label, smry = export_summary_df(con, units)) {
+export_report_html <- function(con, units, out_html, label, smry = export_summary_df(con, units, review = TRUE)) {
   hdr <- c("seqid", "ID", "organism", "length", "n_features", "missing", "reviewed", "submission_risk",
     "chimera_warning", "itsx_check")
   rows <- apply(smry[, intersect(hdr, names(smry)), drop = FALSE], 1, function(r) {
@@ -705,10 +732,14 @@ export_report_html <- function(con, units, out_html, label, smry = export_summar
 #' @param fasta_header,fasta_header_marker Optional header templates
 #'   (\code{\{column\}} tokens) overriding the saved configuration.
 #' @return (invisibly) the group output directory, with the summary data.frame
-#'   attached as attribute `summary`.
+#'   attached as attribute `summary` and the contigs left out because their
+#'   checks are not finished as attribute `not_done` (data.frame(ID, path,
+#'   scaffold)).
 #' @details A unit is exported when its sample's assembly and the unit's
-#'   annotation are both locked, its contig is kept, and it is not excluded
-#'   from export. The `itsx_check` column of the summary CSV reports the stock
+#'   annotation are both locked, its contig is kept, it is not excluded from
+#'   export, and its checks are done (press Update on Annotation Review after
+#'   an edit). Every value written comes from the reviewed copy of the contig
+#'   when it has one. The `itsx_check` column of the summary CSV reports the stock
 #'   ITSx check stored for each contig (`not_run(not checked)` when none is
 #'   stored); export does not run ITSx.
 #' @export
@@ -730,6 +761,13 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
   if (!is.null(units) && nrow(units) > 0) {
     key <- function(d) paste(d$ID, as.integer(d$path), as.integer(d$scaffold))
     sel <- sel[key(sel) %in% key(units), , drop = FALSE]
+  }
+  not_done <- sel[sel$done != 1, c("ID", "path", "scaffold"), drop = FALSE]
+  rownames(not_done) <- NULL
+  sel <- sel[sel$done == 1, , drop = FALSE]
+  if (nrow(sel) == 0 && nrow(not_done) > 0) {
+    stop("No contigs to export: the checks of ", nrow(not_done), " contig(s) are not finished. ",
+      "Press Update on Annotation Review, then export again.", call. = FALSE)
   }
   if (nrow(sel) == 0) {
     stop("No contigs to export: a contig needs its assembly and its annotation locked, ",
@@ -810,7 +848,7 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
   for (ui in seq_len(nrow(units))) {
     id <- units$ID[ui]; upath <- units$path[ui]; uscaf <- units$scaffold[ui]; seqid <- units$seqid[ui]
     seq <- DBI::dbGetQuery(con,
-      "SELECT sequence FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
+      "SELECT sequence FROM review_units_v WHERE ID = ? AND path = ? AND scaffold = ?",
       params = list(id, upath, uscaf))$sequence[1]
     defline <- paste0(">", headers[ui])
     writeLines(c(defline, seq), file.path(sdir, paste0(seqid, ".fasta")))
@@ -820,7 +858,7 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
     group_tbl <- c(group_tbl, tbl)
 
     if (markers) {
-      ann <- DBI::dbGetQuery(con, "SELECT element, start, stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
+      ann <- DBI::dbGetQuery(con, "SELECT element, start, stop FROM review_annotations_v WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
         params = list(id, upath, uscaf))
       wm <- function(el, s, e) {
         if (is.na(s) || is.na(e) || e < s) {
@@ -852,7 +890,7 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
     }
   }
   # per-unit summary CSV (+ warn-only portal-parity submission-risk gate)
-  smry <- export_summary_df(con, units)
+  smry <- export_summary_df(con, units, review = TRUE)
   risky <- which(nzchar(smry$submission_risk))
   if (length(risky) > 0) {
     warning("Submission-risk flags on ", length(risky), " of ", nrow(smry),
@@ -902,6 +940,7 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
   DBI::dbExecute(con, "UPDATE annotate SET export_time_stamp = ? WHERE ID = ? AND path = ? AND scaffold = ?",
     params = list(rep(as.integer(Sys.time()), nrow(units)), units$ID, units$path, units$scaffold))
   message("Exported ", nrow(units), " contig(s) to ", gdir,
+    if (nrow(not_done) > 0) paste0("\n  ", nrow(not_done), " contig(s) left out: checks not finished"),
     "\n  GenBank Portal takes FASTA only: upload ", label,
     ".fasta; NCBI auto-annotates the rRNA-ITS region (see README.txt).")
   if (isTRUE(zip)) {
@@ -914,6 +953,7 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
     }
   }
   attr(gdir, "summary") <- smry
+  attr(gdir, "not_done") <- not_done
   invisible(gdir)
 }
 
@@ -922,20 +962,28 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
 #' Writes one bundle per export group made in the app's Export step, using the
 #' default header template. When no group was made, writes every unit with
 #' both its assembly and its annotation locked into one bundle named "export".
+#' Only contigs whose checks are done are written; a group with none is
+#' skipped with a message.
 #' @param path Project directory.
 #' @param out_dir Project "out" directory; bundles land in `<out_dir>/export`.
 #' @return (invisibly) the bundle names written.
 #' @export
 export_project <- function(path = ".", out_dir = file.path(path, "out")) {
   con <- open_project_db(file.path(path, ".sqlite"))
-  g <- tryCatch(exportable_units(con)$export_group, finally = DBI::dbDisconnect(con))
+  ex <- tryCatch(exportable_units(con), finally = DBI::dbDisconnect(con))
+  g <- ex$export_group
   groups <- sort(unique(g[nzchar(g)]))
   if (length(groups) == 0) {
     export_bundle(path, out_dir = out_dir, zip = TRUE)
     return(invisible("export"))
   }
-  for (g in groups) export_bundle(path, group = g, out_dir = out_dir, zip = TRUE)
-  invisible(groups)
+  done <- groups[groups %in% ex$export_group[ex$done == 1]]
+  for (g in setdiff(groups, done)) {
+    message("Skipped export group ", g, ": the checks of its contigs are not finished. ",
+      "Press Update on Annotation Review, then export again.")
+  }
+  for (g in done) export_bundle(path, group = g, out_dir = out_dir, zip = TRUE)
+  invisible(done)
 }
 
 #' Plain FASTA for a set of assembly units, for the app's copy-to-clipboard
