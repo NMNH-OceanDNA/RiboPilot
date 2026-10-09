@@ -135,6 +135,8 @@ recheck_model_coverage <- function(con, id, path, scaffold, gff) {
 recheck_unit <- function(con, id, path, scaffold, rev, mode, tools_dir, dbarg = NULL,
                          taxdump_dir = NULL, label_db = NULL, threads = 1L,
                          workdir = tempfile("recheck_")) {
+  stopifnot(is.character(rev), length(rev) == 1)
+  if (!isTRUE(nzchar(dbarg, keepNA = TRUE))) dbarg <- NULL
   path <- as.integer(path); scaffold <- as.integer(scaffold)
   unit <- "WHERE ID = ? AND path = ? AND scaffold = ?"
   guard <- paste(unit, "AND rev = CAST(? AS INTEGER) AND check_switch IN (1, 4)")
@@ -176,9 +178,9 @@ recheck_unit <- function(con, id, path, scaffold, rev, mode, tools_dir, dbarg = 
       check_note = NULL, time_stamp = ?", guard), params = c(list(ts, ts), pg))
     return(invisible(if (n == 1) "done" else "stale"))
   }
-  DBI::dbExecute(con, paste("UPDATE review_units SET check_switch = 3, check_note = ?, time_stamp = ?",
+  n <- DBI::dbExecute(con, paste("UPDATE review_units SET check_switch = 3, check_note = ?, time_stamp = ?",
     guard), params = c(list(err, ts), pg))
-  invisible("failed")
+  invisible(if (n == 1) "failed" else "stale")
 }
 
 #' After an in-app recheck run: copies left running go back to not run

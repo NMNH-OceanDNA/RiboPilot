@@ -93,7 +93,7 @@ rc_cov <- function(con, tbl = "review_annotations") {
 # Every original table the recheck could touch, whole.
 rc_originals <- function(con) {
   tb <- c("assemblies", "annotate", "annotations", "coverage", "screen", "chimera", "chimera_windows",
-    "blast_hits", "blast_screen", "blast_ref_candidates", "blast_ref_alignment")
+    "blast_hits", "blast_screen", "blast_ref_candidates", "blast_ref_alignment", "blast_searched", "path_scores")
   stats::setNames(lapply(tb, function(t) DBI::dbReadTable(con, t)), tb)
 }
 
@@ -396,7 +396,7 @@ test_that("an error in a step marks the copy failed, under the rev guard", {
     RiboPilot:::review_trim(con, id, path, scaffold, 1L, 5900L)
     stop("screen broke")
   }, .package = "RiboPilot")
-  expect_equal(RiboPilot:::recheck_unit(con, "S1", 1L, 1L, rev, "map", rc_tools()), "failed")
+  expect_equal(RiboPilot:::recheck_unit(con, "S1", 1L, 1L, rev, "map", rc_tools()), "stale")
   u <- rc_copy(con)
   expect_equal(u$check_switch, 1L)
   expect_true(is.na(u$check_note))
@@ -460,4 +460,15 @@ test_that("recheck_release_running puts copies left running back to not run", {
   expect_true(all(r$time_stamp[1:2] >= t0))
   expect_equal(r$time_stamp[3:4], c(5L, 5L))
   expect_equal(RiboPilot:::recheck_release_running(con), 0L)
+})
+
+test_that("NA dbarg reaches chimera_unit as NULL and a numeric rev errors", {
+  con <- rc_project()
+  RiboPilot:::review_trim(con, "S1", 1L, 1L, 1L, 6000L)
+  seen <- "unset"
+  local_mocked_bindings(chimera_unit = function(con, id, path, scaffold, dbarg = NULL, ...) seen <<- dbarg,
+    .package = "RiboPilot")
+  RiboPilot:::recheck_unit(con, "S1", 1L, 1L, rc_rev(con), "map", rc_tools(), dbarg = NA_character_)
+  expect_null(seen)
+  expect_error(RiboPilot:::recheck_unit(con, "S1", 1L, 1L, 1.76e12, "map", rc_tools()))
 })
