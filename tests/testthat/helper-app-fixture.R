@@ -92,6 +92,7 @@ fixture_review_schema <- function(con) {
     }
   }
   RiboPilot:::review_apply_schema(con)
+  RiboPilot:::feature_blast_apply_schema(con)
   invisible()
 }
 

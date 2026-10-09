@@ -117,7 +117,7 @@ review_invalidate <- function(con, id, path, scaffold) {
       params = c(list(cnt$n_features, cnt$missing, as.integer(Sys.time())), p))
     if (n == 0) stop(sprintf("No review copy for contig %s.%d.%d.", id, path, scaffold), call. = FALSE)
     for (m in REVIEW_MIRRORS[c("blast_hits", "blast_screen", "screen", "chimera", "chimera_windows",
-                               "blast_ref_alignment")]) {
+                               "blast_ref_alignment", "feature_blast", "feature_blast_hits")]) {
       DBI::dbExecute(con, sprintf("DELETE FROM %s WHERE ID = ? AND path = ? AND scaffold = ?", m),
         params = p)
     }
@@ -371,7 +371,7 @@ review_set_state <- function(con, units, state) {
 
 #' Table a check function reads or writes
 #'
-#' The name itself when review is FALSE. In review mode the 7 mirrored tables
+#' The name itself when review is FALSE. In review mode the mirrored tables
 #' map to their review_* mirror, and assemblies (sequence, length, blast_*) and
 #' annotate (result columns only) map to review_units. Shared tables and
 #' coverage are never routed, so asking for one is an error.

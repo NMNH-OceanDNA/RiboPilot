@@ -28,7 +28,9 @@ db_migrations <- function() {
         review_apply_schema(con)
         review_upgrade(con)
         DBI::dbExecute(con, "DROP TABLE assembly_backup")
-      })
+      }),
+    list(note = "per-feature BLAST (feature_blast, feature_blast_hits) and review copies",
+      fn = feature_blast_apply_schema)
   )
 }
 

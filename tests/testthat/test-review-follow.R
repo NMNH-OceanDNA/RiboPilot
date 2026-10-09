@@ -36,7 +36,7 @@ test_that("review_follow_original drops a State copy, invalidates an edited one,
       params = list(s)))
   rev3 <- DBI::dbGetQuery(con, "SELECT CAST(rev AS TEXT) AS rev FROM review_units WHERE scaffold = 3")$rev
   before <- lapply(4:5, snap)
-  expect_equal(unname(n_rows(3)), c(1L, 1L, 0L, 0L, 1L, 0L, 0L, 0L))
+  expect_equal(unname(n_rows(3)), c(1L, 1L, 0L, 0L, 1L, 0L, 0L, 0L, 0L, 0L))
 
   expect_invisible(follow(1))
   expect_equal(follow(1), "none")

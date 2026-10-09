@@ -142,6 +142,57 @@ CHIMERA_WINDOWS_DDL <- "CREATE TABLE IF NOT EXISTS chimera_windows (
   PRIMARY KEY (ID, path, scaffold, start)
 );"
 
+#' DDL for feature_blast: one local panel BLAST call per core feature of a unit.
+#' @noRd
+FEATURE_BLAST_DDL <- "CREATE TABLE IF NOT EXISTS feature_blast (
+  ID TEXT NOT NULL,
+  path INTEGER NOT NULL DEFAULT 1,
+  scaffold INTEGER NOT NULL DEFAULT 1,
+  element TEXT NOT NULL,
+  start INTEGER,
+  stop INTEGER,
+  length INTEGER,
+  task TEXT,
+  low_conf INTEGER,
+  status TEXT,
+  note TEXT,
+  accession TEXT,
+  species TEXT,
+  staxid INTEGER,
+  lineage TEXT,
+  lineage_taxids TEXT,
+  n_tied INTEGER,
+  match_rank TEXT,
+  rank_distance INTEGER,
+  pident REAL,
+  qcovs REAL,
+  evalue REAL,
+  bitscore REAL,
+  db_source TEXT,
+  time_stamp INTEGER,
+  PRIMARY KEY (ID, path, scaffold, element)
+);"
+
+#' DDL for feature_blast_hits: top hits per feature, one row per subject.
+#' @noRd
+FEATURE_BLAST_HITS_DDL <- "CREATE TABLE IF NOT EXISTS feature_blast_hits (
+  ID TEXT NOT NULL,
+  path INTEGER NOT NULL DEFAULT 1,
+  scaffold INTEGER NOT NULL DEFAULT 1,
+  element TEXT NOT NULL,
+  hit_rank INTEGER NOT NULL,
+  accession TEXT,
+  title TEXT,
+  staxid INTEGER,
+  lineage TEXT,
+  pident REAL,
+  qcovs REAL,
+  evalue REAL,
+  bitscore REAL,
+  hit_class TEXT,
+  PRIMARY KEY (ID, path, scaffold, element, hit_rank)
+);"
+
 #' DDL for annotations: the nrDNA feature model per unit.
 #'
 #' status/flags are filled by curation (curate_one); tool/edited by annotation.
@@ -353,9 +404,10 @@ REVIEW_UNITS_DDL <- "CREATE TABLE IF NOT EXISTS review_units (
 #' @noRd
 REVIEW_MIRRORS <- c(annotations = "review_annotations", blast_hits = "review_blast_hits",
   blast_screen = "review_blast_screen", screen = "review_screen", chimera = "review_chimera",
-  chimera_windows = "review_chimera_windows", blast_ref_alignment = "review_ref_alignment")
+  chimera_windows = "review_chimera_windows", blast_ref_alignment = "review_ref_alignment",
+  feature_blast = "review_feature_blast", feature_blast_hits = "review_feature_blast_hits")
 
-#' The eight review tables, review_units first
+#' The review tables, review_units first
 #' @noRd
 REVIEW_TABLES <- c("review_units", unname(REVIEW_MIRRORS))
 
@@ -375,6 +427,8 @@ REVIEW_SCREEN_DDL <- review_mirror_ddl(SCREEN_DDL, "screen")
 REVIEW_CHIMERA_DDL <- review_mirror_ddl(CHIMERA_DDL, "chimera")
 REVIEW_CHIMERA_WINDOWS_DDL <- review_mirror_ddl(CHIMERA_WINDOWS_DDL, "chimera_windows")
 REVIEW_REF_ALIGNMENT_DDL <- review_mirror_ddl(BLAST_REF_ALIGNMENT_DDL, "blast_ref_alignment")
+REVIEW_FEATURE_BLAST_DDL <- review_mirror_ddl(FEATURE_BLAST_DDL, "feature_blast")
+REVIEW_FEATURE_BLAST_HITS_DDL <- review_mirror_ddl(FEATURE_BLAST_HITS_DDL, "feature_blast_hits")
 
 #' Column names of a CREATE TABLE constant, in order
 #' @noRd
@@ -433,6 +487,24 @@ review_apply_schema <- function(con) {
   for (ddl in c(REVIEW_UNITS_DDL, REVIEW_ANNOTATIONS_DDL, REVIEW_BLAST_HITS_DDL,
                 REVIEW_BLAST_SCREEN_DDL, REVIEW_SCREEN_DDL, REVIEW_CHIMERA_DDL,
                 REVIEW_CHIMERA_WINDOWS_DDL, REVIEW_REF_ALIGNMENT_DDL, REVIEW_VIEWS_DDL)) {
+    DBI::dbExecute(con, ddl)
+  }
+  invisible()
+}
+
+FEATURE_BLAST_VIEWS_DDL <- c(
+  review_feature_blast_v = review_view_ddl("review_feature_blast_v", "feature_blast",
+    ddl_cols(FEATURE_BLAST_DDL)),
+  review_feature_blast_hits_v = review_view_ddl("review_feature_blast_hits_v", "feature_blast_hits",
+    ddl_cols(FEATURE_BLAST_HITS_DDL)))
+
+#' Create feature_blast, feature_blast_hits, their review mirrors and views
+#'
+#' Kept apart from review_apply_schema(), which released migration step 4 calls.
+#' @noRd
+feature_blast_apply_schema <- function(con) {
+  for (ddl in c(FEATURE_BLAST_DDL, FEATURE_BLAST_HITS_DDL, REVIEW_FEATURE_BLAST_DDL,
+                REVIEW_FEATURE_BLAST_HITS_DDL, FEATURE_BLAST_VIEWS_DDL)) {
     DBI::dbExecute(con, ddl)
   }
   invisible()
