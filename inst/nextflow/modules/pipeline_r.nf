@@ -44,11 +44,12 @@ process query_samples {
     """
 }
 
-// WF2: assembled samples queued for (re-)annotation, with their annotate_opts
+// Assembled units queued for (re-)annotation, with their annotate_opts
 // compute settings.
-// Units queued for annotation ONLY: a trim, an annotate_opts or curate_opts
-// change, a restored scaffold, an edited sequence. WF2 used to own this; there
-// is one workflow now (dev/design/15_WF2_DECOMMISSION.md).
+// Units queued for annotation ONLY: an annotate_opts or curate_opts change, or
+// a scaffold put back. WF2 used to own this; it is an arm of main.nf now
+// (dev/design/15_WF2_DECOMMISSION.md). Trims and boundary edits change review
+// copies, which main_recheck.nf rechecks; they never queue units here.
 //
 // Samples this run is about to assemble are EXCLUDED. Assembly re-seeds a
 // sample's annotate units itself, so without the exclusion a sample queued for

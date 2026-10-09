@@ -147,11 +147,32 @@ However, some warning messages may also appear during the export process.
 contig that the BLAST screen or the chimera check flagged, and that you
 have not marked "Reviewed". You can choose to **Leave them out** or  **Export anyway**.
 
-**The final ITSx check.** NCBI runs a standard ITSx check on every rRNA and ITS
+**The ITSx check.** NCBI runs a standard ITSx check on every rRNA and ITS
 submission. It may suggest that you remove records judged chimeric, gapped, or misassembled by ITSx.
-RiboPilot runs the same check on your records after writing them. The result is printed at export and
-recorded in the `itsx_check` column of `<group>_summary.csv` and in
-`<group>_itsx_check.csv`. It only warns: nothing is removed.
+RiboPilot runs the same stock ITSx check on every contig when it annotates it, and again when
+**Update** on Annotation Review rechecks a contig you trimmed or edited. Export does not run
+ITSx: it reports the stored result in the `itsx_check` column of `<group>_summary.csv`, and the
+Export done window counts the flagged, clean, and not checked records and names the flagged
+ones. The **ITSx Warnings** column in the app shows the same flags. It only warns: nothing is
+removed.
+
+RiboPilot checks one contig at a time, while NCBI runs ITSx on your whole upload at once.
+ITSx's calls can shift a little with the set of sequences it is given, so on borderline
+records NCBI's check may differ from RiboPilot's.
+
+An `itsx_check` value that starts with `not_run` means ITSx gave no answer for that record.
+The record still counts as checked, so it can be locked and exported, and NCBI checks it
+again when you upload. To check it again in RiboPilot, unlock the contig in Annotation
+Review, set its State to Ready to run, press **Update**, and lock it again once its checks
+are finished.
+
+| Value | What it means |
+|---|---|
+| `not_run(ITSx did not finish)` | ITSx crashed or was stopped before it finished this contig. |
+| `not_run(ITSx check failed: <message>)` | Reading the ITSx result failed; the message says why. |
+| `not_run(not checked before upgrade)` | The contig was locked in an older RiboPilot version that stored no ITSx check for it. |
+| `not_run(not checked)` | No ITSx check is stored for the record. |
+| any other `not_run(...)` | Stored by an older RiboPilot version, for example `not_run(no ITSx output)`. |
 
 **The submission_risk column.** Each record's row in `<group>_summary.csv` lists
 any of these flags:
@@ -180,11 +201,9 @@ out/export/<group>/
     <group>.tbl             feature tables (for your records; not uploaded)
     <group>_summary.csv     one row per record, with submission_risk
     <group>_report.html     review report with feature maps and alignments
-    <group>_itsx_check.csv  what stock ITSx says about each record
     README.txt              how to submit
     samples/                one .fasta and .tbl per record
     markers/                one folder per marker (18S, ITS1, and so on)
-    itsx_check/             raw ITSx output behind the check
 ```
 
 The summary CSV also says which records are variants of each other, in the

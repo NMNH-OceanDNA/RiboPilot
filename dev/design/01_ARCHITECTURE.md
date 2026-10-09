@@ -104,21 +104,38 @@ assembly comes from the Nextflow cache), so a stopped run resumes on its own,
 and `nf_pending_count()` counts it as pending. Work queued on units alone (an
 annotation or curation option change, a scaffold put back) leaves the sample
 state as it is; `query_annotate_units` takes those units without
-re-assembling, so trims and edits survive.
+re-assembling. Re-annotation rewrites only the original tables. Trims and
+edits live in review copies (the `review_*` tables), which it never rewrites:
+an unlocked edited copy keeps its edits and is queued for the recheck, an
+unedited copy is dropped, and a locked copy is left alone (see
+`dev/specs/2026-10-08-contig-recheck-design.md`, section 5.3).
 
 Same DB-write discipline as MitoPilot: **writes happen driver-side over JDBC/DBI,
 not from a head-node local executor**, and curate/validate commits assemblies +
 annotations atomically in one transaction (carry over MitoPilot's
 `curate-validate atomic writer` and `DB writes driver-side` lessons).
 
-## Nextflow workflow
+## Nextflow workflows
 
-ONE workflow, `inst/nextflow/main.nf`. It takes two kinds of work: samples
-queued for assembly, and units queued for annotation only (a trim, an options
-change, a restored scaffold, an edited sequence). The second kind skips
-preprocess, assembly, scoring, the remote BLAST and coverage. There is no WF2:
-`main_annotate.nf` and `run_annotate()` were deleted, see
-`15_WF2_DECOMMISSION.md`. Modules mirror MitoPilot's stage split:
+Two workflows work on a project's samples; a third, `main_reference.nf`,
+builds reference databases.
+
+`inst/nextflow/main.nf`, launched by Update on the Assemble step, takes two
+kinds of work: samples queued for assembly, and units queued for annotation
+only (an annotation or curation options change, a scaffold put back). The
+second kind skips preprocess, assembly, scoring, the remote BLAST and
+coverage. There is no WF2: `main_annotate.nf` and `run_annotate()` were
+deleted, see `15_WF2_DECOMMISSION.md`.
+
+`inst/nextflow/main_recheck.nf`, launched by Update on Annotation Review,
+reruns the offline checks on the review copies of contigs the user trimmed or
+edited, one contig at a time (`query_recheck -> recheck_tools -> recheck`). It
+never re-annotates and never contacts NCBI. It calls the same R check
+functions (with `review = TRUE`) and the same `bin/rp_rrna_tools.sh` as
+main.nf, so there is no second copy of the pipeline to drift. See
+`dev/specs/2026-10-08-contig-recheck-design.md`.
+
+main.nf's modules mirror MitoPilot's stage split:
 
 ```
 preprocess  -> fastp trim, read/depth QC              (reuse MitoPilot module)

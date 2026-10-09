@@ -75,3 +75,30 @@ test_that("the tool-version table matches the image pins, and the citation parse
     meta = list(Version = "9.9.9", Encoding = "UTF-8"))
   expect_match(format(cit, style = "text"), "9.9.9", fixed = TRUE)
 })
+
+test_that("docs describe the stored ITSx check and Update on Annotation Review", {
+  root <- testthat::test_path("../..")
+  vig <- file.path(root, "vignettes")
+  skip_if_not(dir.exists(vig), "package sources not available")
+  flat <- function(f) gsub("\\s+", " ", paste(readLines(f, warn = FALSE), collapse = " "))
+  pages <- c(list.files(vig, "[.]Rmd$", full.names = TRUE), file.path(root, "README.Rmd"))
+  docs <- vapply(pages, flat, character(1))
+  stale <- c("final ITSx check", "_itsx_check.csv", "itsx_check/",
+    "keep the values from the last pipeline run", "quality flags are recalculated right away")
+  bad <- as.character(unlist(lapply(stale, function(b) {
+    hit <- grepl(b, docs, fixed = TRUE)
+    if (any(hit)) paste0(b, " (", basename(pages[hit]), ")")
+  })))
+  expect_equal(bad, character(0))
+  gb <- flat(file.path(vig, "GenBank-Submission.Rmd"))
+  legend <- c("`not_run(ITSx did not finish)`", "`not_run(ITSx check failed: <message>)`",
+    "`not_run(not checked before upgrade)`", "`not_run(not checked)`")
+  expect_equal(legend[!vapply(legend, grepl, logical(1), x = gb, fixed = TRUE)], character(0))
+  ann <- flat(file.path(vig, "Test-Project-Annotate.Rmd"))
+  expect_true(grepl("press **Update** in the Annotation Review toolbar", ann, fixed = TRUE))
+  expect_true(grepl("\"Press Update first.\"", ann, fixed = TRUE))
+  expect_true(grepl("it undoes every trim, gene boundary edit, and 5'/3' choice", ann, fixed = TRUE))
+  tip <- RiboPilot:::SCAFFOLD_COL_HELP$itsx_warnings
+  expect_false(grepl("export", tip, fixed = TRUE))
+  expect_true(grepl("'not checked'", tip, fixed = TRUE))
+})

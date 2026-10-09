@@ -48,7 +48,7 @@ setup without a container (unsupported) uses whatever versions you installed.
 | BLAST+ | `blast` | 2.17.0 | The BLAST screen, path scoring, and the chimera check. | Camacho et al. 2009 |
 | pybarrnap | `pybarrnap` | 0.5.2 | Finds the 18S, 5.8S, and 28S genes (default). | Shimoyama, pybarrnap |
 | barrnap | `barrnap` | 1.10.6 | Finds the rRNA genes when chosen as rRNA anchor tool in Annotate Options. | Seemann, barrnap |
-| ITSx | `itsx` | 1.1.3 | Finds ITS1 and ITS2, and runs the final ITSx check at export. | Bengtsson-Palme et al. 2013 |
+| ITSx | `itsx` | 1.1.3 | Finds ITS1 and ITS2, and runs the stock ITSx check on each contig. | Bengtsson-Palme et al. 2013 |
 | HMMER | `hmmer` | 3.4 | Used by ITSx. | Eddy 2011 |
 | Ribovore | (GitHub release) | 1.0.5 | Its ribotyper checks the 18S and 28S structure in the chimera check. | Schaffer et al. 2021 |
 | Infernal | (installed with Ribovore) | 1.1.5 | Used by ribotyper. | Nawrocki and Eddy 2013 |

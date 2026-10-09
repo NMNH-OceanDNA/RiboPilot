@@ -78,9 +78,37 @@ partial contig, open the details window and click the "Trim Assembly" button. Th
 range.
 
 RiboPilot saves the original contig, so you can use the **Restore** button (or **Restore assembly** in a contig's window) 
-to undo a trim.
+to undo a trim. Restore returns the contig to its original sequence, features, and
+check results: it undoes every trim, gene boundary edit, and 5'/3' choice on the
+contig. Your Reviewed, Exclude, and Partial marks, notes, and export group stay
+as they are.
 
-After a trim or an edit to gene boundaries, the contig's quality flags are recalculated right away. 
-BLAST, chimera checks, ITSx, and coverage results keep the values from the last pipeline run.
+After a trim or an edit to gene boundaries, the contig's checks are marked "not run". 
+Trims and edits change a working copy of the contig; the original, which the
+Assemble step shows, keeps the pipeline's results. Until the checks run again,
+the contig's State shows **Ready to run**, and its check columns and **Checks**
+say "not run". To run them, press **Update** in the Annotation Review toolbar,
+then **Run from App** (on a cluster, the window offers a job script, as in the
+Assemble step). Update reruns every check that works offline on each queued
+contig: feature counts, how complete each gene is, the ITSx checks, the BLAST
+hits (a new search of the bundled rDNA database when the contig was found
+there, otherwise its original hits cut to the trimmed contig), the BLAST
+screen, the reference alignment, the quality flags, and the chimera check. It
+does not re-annotate the contig, and it never contacts NCBI.
+
+**State** in Annotation Review offers **Ready to run**, which queues a contig
+for the next Update, and **On hold**, which keeps it out. A contig the
+pipeline has not finished annotating shows **Waiting for Assemble Update**:
+press **Update** in the Assemble step first.
+
+**Lock** refuses the whole click if any selected contig's checks are not
+finished: nothing is locked, and a message lists those contigs with what to do
+next, for example "Press Update first." (or "Press Update on the Assemble step
+first." for a contig still waiting for that step). **Exclude & Lock** always
+works. Export leaves out any contig whose checks are not finished.
+
+If a contig you edited is annotated again in the Assemble step, for example
+after you change its annotation options, it keeps your edits and its checks are
+queued again. **Restore** then gives you the new annotation.
 
 <p class="next-step"><a href="Test-Project-Export.html">Next: Export &rarr;</a></p>
