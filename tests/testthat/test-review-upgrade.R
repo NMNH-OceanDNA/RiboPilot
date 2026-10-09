@@ -69,8 +69,8 @@ ru_trim <- function(con, s, snap = TRUE) {
 test_that("step 4 turns old trims and edits into review copies and lists what it could not convert", {
   dir <- withr::local_tempdir()
   con <- ru_v4(dir)
-  for (s in 1:12) {
-    ru_unit(con, s, lock = as.integer(s %in% c(4, 5, 12)), sw = if (s == 4) 1L else 2L,
+  for (s in 1:13) {
+    ru_unit(con, s, lock = as.integer(s %in% c(4, 5, 12, 13)), sw = if (s %in% c(4, 13)) 1L else 2L,
       itsx = if (s %in% c(4, 5)) NA_character_ else if (s == 12) "" else "itsx_x")
   }
   # 1 trimmed; 2 trimmed, then restored; 3 nudged, its 5' end set by hand;
@@ -78,7 +78,7 @@ test_that("step 4 turns old trims and edits into review copies and lists what it
   # snapshot; 6 its sequence is not in the backup; 7 backup without a sequence;
   # 8 snapshots holding a column the tables no longer have; 9 its features
   # cannot be written back; 10 trimmed, then lost its annotate row; 11 fails
-  # part way; 12 locked and done
+  # part way; 12 locked and done; 13 locked, edited, fails once in the first pass
   for (s in c(1, 5:11)) ru_trim(con, s, snap = s != 5)
   DBI::dbExecute(con, "INSERT INTO assembly_backup (ID, path, scaffold, sequence, length)
     VALUES ('S1', 1, 2, ?, 200)", params = list(RU_SEQ))
@@ -92,12 +92,19 @@ test_that("step 4 turns old trims and edits into review copies and lists what it
   DBI::dbExecute(con, "CREATE TRIGGER ru_boom BEFORE INSERT ON annotations WHEN NEW.scaffold = 9
     BEGIN SELECT RAISE(ABORT, 'ru_boom'); END")
   DBI::dbExecute(con, "DELETE FROM annotate WHERE scaffold = 10")
+  DBI::dbExecute(con, "UPDATE annotations SET edited = 1 WHERE scaffold = 13 AND element = '18S'")
   DBI::dbDisconnect(con)
 
   real <- RiboPilot:::review_invalidate
+  real_done <- RiboPilot:::review_upgrade_done
+  tries13 <- 0L
   local_mocked_bindings(review_invalidate = function(con, id, path, scaffold) {
     if (scaffold == 11) stop("disk full")
     real(con, id, path, scaffold)
+  },
+  review_upgrade_done = function(con, id, path, scaffold) {
+    if (scaffold == 13 && (tries13 <<- tries13 + 1L) == 1L) stop("disk full 13")
+    real_done(con, id, path, scaffold)
   })
   msgs <- testthat::capture_messages(backwards_compatibility(dir))
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
@@ -137,10 +144,10 @@ test_that("step 4 turns old trims and edits into review copies and lists what it
   # trimmed originals are put back and curated again; the others keep their state
   expect_equal(DBI::dbGetQuery(con, "SELECT length, sequence = ? AS full FROM assemblies ORDER BY scaffold",
       params = list(RU_SEQ)),
-    data.frame(length = c(rep(200L, 5), 130L, 130L, 200L, 130L, 130L, 130L, 200L),
-      full = c(rep(1L, 5), 0L, 0L, 1L, 0L, 0L, 0L, 1L)))
+    data.frame(length = c(rep(200L, 5), 130L, 130L, 200L, 130L, 130L, 130L, 200L, 200L),
+      full = c(rep(1L, 5), 0L, 0L, 1L, 0L, 0L, 0L, 1L, 1L)))
   expect_equal(DBI::dbGetQuery(con, "SELECT start FROM annotations WHERE element = '18S' ORDER BY scaffold")$start,
-    c(21L, 21L, 25L, 21L, 21L, 1L, 1L, 21L, 1L, 1L, 1L, 21L))
+    c(21L, 21L, 25L, 21L, 21L, 1L, 1L, 21L, 1L, 1L, 1L, 21L, 21L))
   expect_equal(DBI::dbGetQuery(con, "SELECT element, start, stop, edited FROM annotations WHERE scaffold = 8
       ORDER BY start"),
     data.frame(element = c("18S", "ITS1", "28S"), start = c(21L, 81L, 121L), stop = c(80L, 120L, 190L),
@@ -152,7 +159,11 @@ test_that("step 4 turns old trims and edits into review copies and lists what it
   expect_true(all(is.na(an$itsx_warnings[back])))
   expect_false(any(an$curate_flags[back] %in% "stale"))
   expect_equal(an$itsx_warnings[an$scaffold %in% c(3, 6, 7, 9, 11)], rep("itsx_x", 5))
-  expect_equal(an$curate_flags[!back], rep("stale", 8))
+  expect_equal(an$curate_flags[!back], rep("stale", 9))
+  an2 <- DBI::dbGetQuery(con, "SELECT scaffold, n_features, missing FROM annotate WHERE scaffold IN (1, 5, 8)")
+  expect_equal(an2$n_features, rep(3L, 3))
+  expect_equal(an2$missing, rep("5.8S,ITS2", 3))
+  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) AS n FROM review_units WHERE scaffold = 13")$n, 0L)
   cv <- DBI::dbGetQuery(con, "SELECT median_depth, depths FROM coverage WHERE scaffold IN (1, 9) ORDER BY scaffold")
   expect_equal(cv$median_depth, c(10, 15))
   expect_equal(lengths(strsplit(cv$depths, ",")), c(200L, 130L))
@@ -168,9 +179,9 @@ test_that("step 4 turns old trims and edits into review copies and lists what it
 
   v <- DBI::dbGetQuery(con, "SELECT scaffold, has_copy, orig_length, check_switch FROM review_units_v
     ORDER BY scaffold")
-  expect_equal(v, data.frame(scaffold = c(1:9, 11:12), has_copy = c(1L, 0L, rep(1L, 7), 0L, 0L),
-    orig_length = c(rep(200L, 5), 130L, 130L, 200L, 130L, 130L, 200L),
-    check_switch = c(1L, 2L, 1L, 2L, 2L, 1L, 1L, 1L, 1L, 2L, 2L)))
+  expect_equal(v, data.frame(scaffold = c(1:9, 11:13), has_copy = c(1L, 0L, rep(1L, 7), 0L, 0L, 0L),
+    orig_length = c(rep(200L, 5), 130L, 130L, 200L, 130L, 130L, 200L, 200L),
+    check_switch = c(1L, 2L, 1L, 2L, 2L, 1L, 1L, 1L, 1L, 2L, 2L, 1L)))
 
   m <- grep("S1.1.", msgs, fixed = TRUE, value = TRUE)
   expect_length(m, 1)
@@ -180,7 +191,10 @@ test_that("step 4 turns old trims and edits into review copies and lists what it
   expect_match(m, "S1.1.7 (original not restored: the saved original has no sequence)", fixed = TRUE)
   expect_match(m, "S1.1.8 (chimera result shifted back instead of restored: ", fixed = TRUE)
   expect_match(m, "S1.1.9 (original not restored: ru_boom", fixed = TRUE)
-  expect_match(m, "Not converted, left as they were: S1.1.11 (disk full).", fixed = TRUE)
+  expect_match(m, "Not converted, left as they were: S1.1.11 (disk full); S1.1.13 (disk full 13).", fixed = TRUE)
+  expect_equal(lengths(regmatches(m, gregexpr("S1.1.13", m, fixed = TRUE))), 1L)
+  expect_equal(lengths(regmatches(m, gregexpr("only in the database backup", m, fixed = TRUE))), 2L)
+  expect_match(m, ".sqlite.bak.<timestamp>", fixed = TRUE)
   expect_match(m, "Locked contigs marked done without a recheck: S1.1.4.", fixed = TRUE)
   expect_match(m, "Trimmed contigs left as they are (dropped or never annotated): S1.1.10.", fixed = TRUE)
   expect_no_match(m, "S1\\.1\\.(1|2|3|5|12)\\b", perl = TRUE)

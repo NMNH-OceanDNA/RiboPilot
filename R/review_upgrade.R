@@ -40,6 +40,7 @@ review_upgrade <- function(con) {
      JOIN annotate an ON an.ID = v.ID AND an.path = v.path AND an.scaffold = v.scaffold
      WHERE v.has_copy = 0 AND an.annotate_lock = 1 AND v.check_switch IS NOT 2
      ORDER BY v.ID, v.path, v.scaffold")
+  lk <- lk[!uid(lk) %in% sub(" \\(.*$", "", skip), , drop = FALSE]
   for (i in seq_len(nrow(lk))) {
     x <- lk[i, ]
     r <- tryCatch(with_savepoint(con, {
@@ -61,12 +62,14 @@ review_upgrade <- function(con) {
          WHERE an.ID = b.ID AND an.path = b.path AND an.scaffold = b.scaffold)
      ORDER BY b.ID, b.path, b.scaffold"))
 
+  bak <- paste(" The untrimmed originals of these contigs are only in the database backup made",
+    "before the upgrade (.sqlite.bak.<timestamp>).")
   txt <- c(
     if (n) sprintf(paste("Moved the edits of %d contig(s) to review copies on Annotation Review; the",
       "Assemble step shows the original contigs. Press Update on Annotation Review to recheck the",
       "unlocked ones."), n),
-    if (length(bad)) paste0("Converted with problems: ", paste(bad, collapse = "; "), "."),
-    if (length(skip)) paste0("Not converted, left as they were: ", paste(skip, collapse = "; "), "."),
+    if (length(bad)) paste0("Converted with problems: ", paste(bad, collapse = "; "), ".", bak),
+    if (length(skip)) paste0("Not converted, left as they were: ", paste(skip, collapse = "; "), ".", bak),
     if (length(done)) paste0("Locked contigs marked done without a recheck: ", paste(done, collapse = ", "), "."),
     if (length(left)) paste0("Trimmed contigs left as they are (dropped or never annotated): ",
       paste(left, collapse = ", "), "."))
@@ -106,6 +109,7 @@ review_upgrade_unit <- function(con, u) {
       probs <- if (inherits(r, "error")) paste("original not restored:", conditionMessage(r)) else c(r,
         tryCatch({
           curate_one(con, id, path, scaffold)
+          review_upgrade_counts(con, id, path, scaffold)
           NULL
         }, error = function(e) paste("curation not rerun on the original:", conditionMessage(e))))
     }
@@ -135,6 +139,7 @@ review_upgrade_original <- function(con, u, off) {
     DBI::dbAppendTable(con, "annotations", ann[intersect(names(ann), DBI::dbListFields(con, "annotations"))])
   }
   write_coverage_summary(con, id, path, scaffold, parse_depths(u$bak_cov))
+  review_upgrade_counts(con, id, path, scaffold)
   DBI::dbExecute(con, "UPDATE annotate SET itsx_warnings = NULL WHERE ID = ? AND path = ? AND scaffold = ?",
     params = key)
   DBI::dbExecute(con, "UPDATE review_units SET trim_start = ?, trim_end = ? WHERE ID = ? AND path = ? AND scaffold = ?",
@@ -163,4 +168,14 @@ review_upgrade_done <- function(con, id, path, scaffold) {
      WHERE ID = ? AND path = ? AND scaffold = ?",
     params = list(cnt$n_features, cnt$missing, as.integer(Sys.time()), id, as.integer(path),
       as.integer(scaffold)))
+}
+
+#' Recount annotate.n_features and missing from the original features
+#' @noRd
+review_upgrade_counts <- function(con, id, path, scaffold) {
+  el <- DBI::dbGetQuery(con, "SELECT element FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(id, as.integer(path), as.integer(scaffold)))$element
+  DBI::dbExecute(con, "UPDATE annotate SET n_features = ?, missing = ? WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(length(el), paste(setdiff(c(RRNA_GENES, RRNA_SPACERS), el), collapse = ","), id,
+      as.integer(path), as.integer(scaffold)))
 }
