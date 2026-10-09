@@ -368,3 +368,17 @@ review_set_state <- function(con, units, state) {
     })
   }, character(1))
 }
+
+#' Table a check function reads or writes
+#'
+#' The name itself when review is FALSE. In review mode the 7 mirrored tables
+#' map to their review_* mirror, and assemblies (sequence, length, blast_*) and
+#' annotate (result columns only) map to review_units. Shared tables and
+#' coverage are never routed, so asking for one is an error.
+#' @noRd
+review_tbl <- function(name, review = FALSE) {
+  if (!review) return(name)
+  if (name %in% names(REVIEW_MIRRORS)) return(REVIEW_MIRRORS[[name]])
+  if (name %in% c("assemblies", "annotate")) return("review_units")
+  stop("No review table for ", name, ".", call. = FALSE)
+}

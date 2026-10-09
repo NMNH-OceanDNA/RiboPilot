@@ -289,14 +289,19 @@ resolve_ruleset <- function(con, id, path = 1L, scaffold = 1L, ruleset = NULL) {
 #' @param id Sample ID.
 #' @param path,scaffold Assembly unit within the sample.
 #' @param ruleset Optional ruleset override (else read from `curate_opts`).
+#' @param review TRUE curates the contig's review copy: it reads and writes the
+#'   review tables and replaces the copy's partial ends on every run (the user's
+#'   choice is kept in `partial_start_user` and `partial_stop_user`).
 #' @return (invisibly) the curate_rrna_core() result.
 #' @export
-curate_one <- function(con, id, path = 1L, scaffold = 1L, ruleset = NULL) {
+curate_one <- function(con, id, path = 1L, scaffold = 1L, ruleset = NULL, review = FALSE) {
   path <- as.integer(path); scaffold <- as.integer(scaffold)
+  ann_tbl <- review_tbl("annotations", review)
+  scr_tbl <- review_tbl("blast_screen", review)
 
-  feats <- DBI::dbGetQuery(con,
-    "SELECT element, type, start, stop, length, strand, model_coverage FROM annotations
-     WHERE ID = ? AND path = ? AND scaffold = ?",
+  feats <- DBI::dbGetQuery(con, sprintf(
+    "SELECT element, type, start, stop, length, strand, model_coverage FROM %s
+     WHERE ID = ? AND path = ? AND scaffold = ?", ann_tbl),
     params = list(id, path, scaffold))
 
   smp <- DBI::dbGetQuery(con, "SELECT lineage, lineage_taxids FROM samples WHERE ID = ?",
@@ -313,8 +318,9 @@ curate_one <- function(con, id, path = 1L, scaffold = 1L, ruleset = NULL) {
   # BLAST/ref absent).
   ref_pid <- NULL
   ref_cov <- NULL
-  rp <- tryCatch(DBI::dbGetQuery(con,
-    "SELECT element, pid, aln_cov FROM blast_ref_alignment WHERE ID = ? AND path = ? AND scaffold = ?",
+  rp <- tryCatch(DBI::dbGetQuery(con, sprintf(
+    "SELECT element, pid, aln_cov FROM %s WHERE ID = ? AND path = ? AND scaffold = ?",
+    review_tbl("blast_ref_alignment", review)),
     params = list(id, path, scaffold)), error = function(e) data.frame())
   if (nrow(rp) > 0) {
     ref_pid <- stats::setNames(rp$pid, rp$element)
@@ -324,13 +330,13 @@ curate_one <- function(con, id, path = 1L, scaffold = 1L, ruleset = NULL) {
   # path_scores.blast_lineage. The latter comes from BLAST against the clade
   # seed DB, so its lineage is host-clade by construction and can never conflict
   # with the sample's -- the check could not fire.
-  scr <- tryCatch(DBI::dbGetQuery(con,
-    "SELECT lineage, is_nuclear_rrna FROM blast_screen WHERE ID = ? AND path = ? AND scaffold = ?",
+  scr <- tryCatch(DBI::dbGetQuery(con, sprintf(
+    "SELECT lineage, is_nuclear_rrna FROM %s WHERE ID = ? AND path = ? AND scaffold = ?", scr_tbl),
     params = list(id, path, scaffold)), error = function(e) data.frame())
   hit_lineage <- if (nrow(scr) > 0) scr$lineage[1] else NA_character_
   hit_is_nuc <- if (nrow(scr) > 0) as.integer(scr$is_nuclear_rrna[1]) else NA_integer_
-  hit_taxids <- tryCatch(DBI::dbGetQuery(con,
-    "SELECT lineage_taxids t FROM blast_screen WHERE ID = ? AND path = ? AND scaffold = ?",
+  hit_taxids <- tryCatch(DBI::dbGetQuery(con, sprintf(
+    "SELECT lineage_taxids t FROM %s WHERE ID = ? AND path = ? AND scaffold = ?", scr_tbl),
     params = list(id, path, scaffold))$t[1], error = function(e) NA_character_)
 
   res <- curate_rrna_core(feats, params, ref_pid = ref_pid, ref_cov = ref_cov,
@@ -345,21 +351,23 @@ curate_one <- function(con, id, path = 1L, scaffold = 1L, ruleset = NULL) {
   }
 
   ts <- as.integer(Sys.time())
-  DBI::dbWithTransaction(con, {
+  partials <- if (review) "partial_start = ?, partial_stop = ?" else
+    "partial_start = COALESCE(partial_start, ?), partial_stop = COALESCE(partial_stop, ?)"
+  with_savepoint(con, {
     if (nrow(res$features) > 0) {
       for (i in seq_len(nrow(res$features))) {
-        DBI::dbExecute(con,
-          "UPDATE annotations SET status = ?, flags = ?, partial_start = COALESCE(partial_start, ?),
-             partial_stop = COALESCE(partial_stop, ?)
-           WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?",
+        DBI::dbExecute(con, sprintf(
+          "UPDATE %s SET status = ?, flags = ?, %s
+           WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?", ann_tbl, partials),
           params = list(res$features$status[i],
             if (nzchar(res$features$flags[i])) res$features$flags[i] else NA_character_,
             res$features$partial_start[i], res$features$partial_stop[i],
             id, path, scaffold, res$features$element[i]))
       }
     }
-    DBI::dbExecute(con,
-      "UPDATE annotate SET n_flags = ?, curate_flags = ?, time_stamp = ? WHERE ID = ? AND path = ? AND scaffold = ?",
+    DBI::dbExecute(con, sprintf(
+      "UPDATE %s SET n_flags = ?, curate_flags = ?, time_stamp = ? WHERE ID = ? AND path = ? AND scaffold = ?",
+      review_tbl("annotate", review)),
       params = list(res$n_flags, res$notes, ts, id, path, scaffold))
   })
   invisible(res)

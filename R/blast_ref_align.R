@@ -4,13 +4,14 @@
 
 #' Multiple alignment of a sample's element against ALL of its BLAST-hit
 #' references (the ranked blast_ref_candidates that have a fetched sequence + a
-#' parsed feature for the element). Uses the sample's CURRENT boundaries, so the
-#' view redraws on edits. Returns an aligned DNAStringSet (sample first) or NULL.
+#' parsed feature for the element). Reads the review layer (the contig's copy
+#' when it has one), so the view redraws on edits. Returns an aligned
+#' DNAStringSet (sample first) or NULL.
 #' @noRd
 compute_feature_msa <- function(con, id, path = 1L, scaffold = 1L, element, max_hits = Inf) {
-  s_seq <- app_query_con(con, "SELECT sequence FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
+  s_seq <- app_query_con(con, "SELECT sequence FROM review_units_v WHERE ID = ? AND path = ? AND scaffold = ?",
     id, path, scaffold)$sequence
-  sa <- app_query_con(con, "SELECT start, stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?",
+  sa <- app_query_con(con, "SELECT start, stop FROM review_annotations_v WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?",
     id, path, scaffold, element)
   if (length(s_seq) == 0 || nrow(sa) == 0) return(NULL)
   s_sub <- substr(s_seq[1], sa$start[1], sa$stop[1])
@@ -77,12 +78,15 @@ REF_ALN_MIN_BP <- 50
 #' @param con Open project DB connection.
 #' @param id Sample ID.
 #' @param path,scaffold Assembly unit within the sample.
+#' @param review TRUE aligns the contig's review copy (its sequence and
+#'   features) and writes `review_ref_alignment`; the reference tables are shared.
 #' @return (invisibly) number of element alignments written.
 #' @export
-compute_ref_alignment <- function(con, id, path = 1L, scaffold = 1L) {
+compute_ref_alignment <- function(con, id, path = 1L, scaffold = 1L, review = FALSE) {
   ts <- as.integer(Sys.time())
   path <- as.integer(path); scaffold <- as.integer(scaffold)
-  DBI::dbExecute(con, "DELETE FROM blast_ref_alignment WHERE ID = ? AND path = ? AND scaffold = ?",
+  out_tbl <- review_tbl("blast_ref_alignment", review)
+  DBI::dbExecute(con, sprintf("DELETE FROM %s WHERE ID = ? AND path = ? AND scaffold = ?", out_tbl),
     params = list(id, path, scaffold))
 
   # Reference = the unit's top nuclear-rDNA BLAST candidate.
@@ -92,16 +96,16 @@ compute_ref_alignment <- function(con, id, path = 1L, scaffold = 1L) {
   if (length(acc) == 0 || is.na(acc[1]) || !nzchar(acc[1])) return(invisible(0L))
   acc <- acc[1]
 
-  s_seq <- app_query_con(con, "SELECT sequence FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
-    id, path, scaffold)$sequence
+  s_seq <- app_query_con(con, sprintf("SELECT sequence FROM %s WHERE ID = ? AND path = ? AND scaffold = ?",
+    review_tbl("assemblies", review)), id, path, scaffold)$sequence
   r_seq <- app_query_con(con, "SELECT sequence FROM blast_ref_sequences WHERE accession = ?", acc)$sequence
   if (length(s_seq) == 0 || length(r_seq) == 0 || !nzchar(s_seq[1]) || !nzchar(r_seq[1])) {
     return(invisible(0L))
   }
   s_seq <- s_seq[1]; r_seq <- r_seq[1]
 
-  s_ann <- app_query_con(con, "SELECT element, start, stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?",
-    id, path, scaffold)
+  s_ann <- app_query_con(con, sprintf("SELECT element, start, stop FROM %s WHERE ID = ? AND path = ? AND scaffold = ?",
+    review_tbl("annotations", review)), id, path, scaffold)
   r_ann <- app_query_con(con, "SELECT element, start, stop, strand FROM blast_ref_annotations WHERE accession = ?", acc)
   if (nrow(s_ann) == 0 || nrow(r_ann) == 0) return(invisible(0L))
 
@@ -125,7 +129,7 @@ compute_ref_alignment <- function(con, id, path = 1L, scaffold = 1L) {
         aln_cov < REF_ALN_MIN_COV || nchar(gsub("-", "", s_aln)) < REF_ALN_MIN_BP) {
       next
     }
-    DBI::dbAppendTable(con, "blast_ref_alignment", data.frame(ID = id, path = path, scaffold = scaffold,
+    DBI::dbAppendTable(con, out_tbl, data.frame(ID = id, path = path, scaffold = scaffold,
       accession = acc, element = el, pid = round(pid, 1), aln_cov = round(aln_cov, 3), aln_len = nchar(s_aln),
       time_stamp = ts, stringsAsFactors = FALSE))
     n <- n + 1L
