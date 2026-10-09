@@ -18,7 +18,7 @@ EXPORT_CHECK_COLS <- c("n_features", "missing", "chimeric", "n_flags", "curate_f
 # review = FALSE branches of unit_checks and export_summary_df serve the
 # Assemble step.
 EXPORT_VIEW_ALLOW <- list(
-  unit_fasta_text = "assemblies", UNIT_MULTI_SQL = "assemblies",
+  unit_fasta_text = "assemblies", UNIT_MULTI_SQL = "assemblies", EXPORT_STEP_SQL = "assemblies",
   exportable_units = "assemblies", export_left_out = "assemblies",
   unit_checks = c(EXPORT_ORIG_TABLES, "annotate"),
   export_summary_df = c(EXPORT_ORIG_TABLES, "annotate"))
@@ -34,7 +34,7 @@ export_strings <- function(f) {
     s <- pd[pd$token == "STR_CONST" & pd$line1 >= sr[1] & pd$line2 <= sr[3], ]
     if (nrow(s) == 0) return(NULL)
     data.frame(fn = nm, file = basename(f),
-      txt = vapply(s$text, function(x) eval(parse(text = x)), character(1)),
+      txt = vapply(s$id, function(i) eval(parse(text = utils::getParseText(pd, i))), character(1)),
       stringsAsFactors = FALSE)
   })
   do.call(rbind, out)
@@ -89,4 +89,22 @@ test_that("every export summary in the export code reads the review layer", {
   expect_length(calls, 1)
   expect_match(calls, "review = TRUE", fixed = TRUE)
   expect_false(any(grepl("dbGetQuery|dbExecute|dbReadTable|dbSendQuery", rmd)))
+})
+
+test_that("the Export step table and its marker fields read the review layer", {
+  root <- export_view_root()
+  s <- export_strings(file.path(root, "R", "export.R"))
+  txt <- paste(s$txt[s$fn == "EXPORT_STEP_SQL"], collapse = "\n")
+  for (v in c("review_units_v", "review_screen_v", "review_chimera_v")) {
+    expect_match(txt, v, fixed = TRUE, info = v)
+  }
+  f <- file.path(root, "R", "app_server.R")
+  expect_match(paste(readLines(f, warn = FALSE), collapse = "\n"), "app_query(EXPORT_STEP_SQL)", fixed = TRUE)
+  pd <- utils::getParseData(parse(f, keep.source = TRUE))
+  sym <- pd$id[pd$token == "SYMBOL" & pd$text == "with_marker_fields"]
+  defs <- vapply(sym, function(i) utils::getParseText(pd, pd$parent[pd$id == pd$parent[pd$id == i]]), "")
+  def <- grep("^with_marker_fields <- function", defs, value = TRUE)
+  expect_length(def, 1)
+  expect_match(def, "FROM review_annotations_v", fixed = TRUE)
+  expect_equal(intersect(sql_tables(def), EXPORT_ORIG_TABLES), character(0))
 })

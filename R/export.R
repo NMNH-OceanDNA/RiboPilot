@@ -537,6 +537,31 @@ UNIT_MULTI_SQL <- "(SELECT COUNT(DISTINCT x.path) FROM assemblies x
 UNIT_EXPORTED_SQL <- "CASE WHEN an.export_time_stamp IS NULL THEN ''
    ELSE 'exported ' || date(an.export_time_stamp, 'unixepoch', 'localtime') END AS exported"
 
+#' The Export step table: the units an export may write (EXPORTABLE_WHERE), one
+#' row per (ID, path, scaffold), with contig data and checks from the review
+#' layer and the marks from annotate. A contig whose checks are not done shows
+#' "checks not finished, left out" in exported and in check_state, which gates
+#' the check cells (rt_gated).
+#' @noRd
+EXPORT_STEP_SQL <- paste(
+  "SELECT s.ID, an.path, an.scaffold,", UNIT_MULTI_SQL, ", s.Taxon, s.sci_name, s.taxid, v.length,
+     v.n_features, v.missing,
+     v.n_flags, v.curate_flags, an.annotate_notes, v.itsx_warnings, sc.screen_verdict,
+     ch.label AS chimera_label, ch.reason AS chimera_reason,
+     an.reviewed, an.partial, an.export_group,
+     CASE WHEN COALESCE(v.check_switch, 1) != 2 THEN 'checks not finished, left out'
+          WHEN an.export_time_stamp IS NULL THEN ''
+          ELSE 'exported ' || date(an.export_time_stamp, 'unixepoch', 'localtime') END AS exported,
+     CASE WHEN COALESCE(v.check_switch, 1) != 2 THEN 'checks not finished, left out' END AS check_state,
+     an.time_stamp
+   FROM annotate an JOIN samples s ON s.ID = an.ID
+     JOIN assemble a ON a.ID = an.ID
+     JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
+     LEFT JOIN review_units_v v ON v.ID = an.ID AND v.path = an.path AND v.scaffold = an.scaffold
+     LEFT JOIN review_screen_v sc ON sc.ID = an.ID AND sc.path = an.path AND sc.scaffold = an.scaffold
+     LEFT JOIN review_chimera_v ch ON ch.ID = an.ID AND ch.path = an.path AND ch.scaffold = an.scaffold
+   WHERE", EXPORTABLE_WHERE)
+
 #' The units an export may write, with their export group
 #'
 #' `done` is 1 when the contig's checks are done (review_units_v.check_switch

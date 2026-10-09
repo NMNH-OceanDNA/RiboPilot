@@ -208,20 +208,7 @@ app_server <- function(input, output, session) {
            LEFT JOIN preprocess pp ON s.ID = pp.ID
          WHERE s.taxonomy_lock = 1") |> with_checks("sample")
     } else if (mode == "Export") {
-      # the units an export writes (EXPORTABLE_WHERE), one row per (ID, path, scaffold)
-      app_query(paste(
-        "SELECT s.ID, an.path, an.scaffold,", UNIT_MULTI_SQL, ", s.Taxon, s.sci_name, s.taxid, asm.length,
-           an.n_features, an.missing,
-           an.n_flags, an.curate_flags, an.annotate_notes, an.itsx_warnings, sc.screen_verdict,
-           ch.label AS chimera_label, ch.reason AS chimera_reason,
-           an.reviewed, an.partial,
-           an.export_group,", UNIT_EXPORTED_SQL, ", an.time_stamp
-         FROM annotate an JOIN samples s ON s.ID = an.ID
-           JOIN assemble a ON a.ID = an.ID
-           JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
-           LEFT JOIN screen sc ON sc.ID = an.ID AND sc.path = an.path AND sc.scaffold = an.scaffold
-           LEFT JOIN chimera ch ON ch.ID = an.ID AND ch.path = an.path AND ch.scaffold = an.scaffold
-         WHERE", EXPORTABLE_WHERE))
+      app_query(EXPORT_STEP_SQL)
     } else {
       # annotate shows one row per non-ignored assembly UNIT of an assembly-locked
       # sample (one (ID, path, scaffold) each, annotated independently). Contig
@@ -404,6 +391,7 @@ app_server <- function(input, output, session) {
     }
     if (mode == "Export") {
       cols[["ID"]] <- cd("ID", sticky = "left", width = mp_fit_width(d$ID))
+      cols[["exported"]] <- cd("exported", width = 210, html = TRUE, cell = rt_gated(rt_text_pill("success")))
     }
     if (mode == "Reference" && ref_view() == "Samples") {
       cols[["ID"]] <- cd("ID", sticky = "left", width = mp_fit_width(d$ID))
@@ -1350,10 +1338,11 @@ app_server <- function(input, output, session) {
     refresh()
     paste0(mp_n(nrow(export_units_df()), "contig"), " locked & ready")
   })
-  # Exportable units (exportable_units()), narrowed to one export group when given.
+  # Exportable units whose checks are done, narrowed to one export group when given.
   export_units_df <- function(group = NULL) {
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
     locked <- exportable_units(con)
+    locked <- locked[locked$done == 1, , drop = FALSE]
     if (is.null(group) || !nzchar(group)) return(locked)
     locked[!is.na(locked$export_group) & locked$export_group == group, , drop = FALSE]
   }
@@ -1385,7 +1374,7 @@ app_server <- function(input, output, session) {
   # the template.
   with_marker_fields <- function(d) {
     if (is.null(d)) return(NULL)
-    el <- app_query("SELECT element FROM annotations LIMIT 1")$element
+    el <- app_query("SELECT element FROM review_annotations_v LIMIT 1")$element
     el <- if (length(el)) el[1] else "18S"
     d$element <- el
     d$product <- rrna_element_product(el)
@@ -2049,12 +2038,14 @@ app_server <- function(input, output, session) {
       }))
     if (is.null(gdir)) return(invisible())
     export_done_dir(gdir)
+    con <- app_con()
+    out <- tryCatch(export_left_out(con, grp), finally = DBI::dbDisconnect(con))
     removeModal()
     showModal(modalDialog(
       title = "Export complete", size = "m", easyClose = TRUE,
       tags$p("Data exported to:"),
       div(class = "code-block", style = "white-space:normal; word-break:break-all;", gdir),
-      export_check_summary_ui(attr(gdir, "summary")),
+      export_check_summary_ui(attr(gdir, "summary"), not_done = sum(out$why == "checks not finished")),
       footer = mp_footer(dismiss = "Close",
         extra = actionButton("open_export_dir", "Open folder", icon = icon("folder-open"), class = "btn-sm"))
     ))

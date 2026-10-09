@@ -1073,3 +1073,86 @@ test_that("the export fixture answers every review view", {
     data.frame(has_copy = 0L, length = 600L, check_switch = 2L))
   expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) AS n FROM review_annotations_v")$n, 3L)
 })
+
+# S1 p1.s1 done, with a review copy (length 500, 4 flags); S1 p1.s2 locked in
+# g1 but not checked by ITSx yet, so its checks are not done.
+mk_export_not_done <- function(env = parent.frame()) {
+  dir <- mk_export_project(env)
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "INSERT INTO assemblies (ID, path, scaffold, topology, length, sequence, ignore)
+    VALUES ('S1', 1, 2, 'linear', 400, ?, 0)", params = list(strrep("ACGT", 100)))
+  DBI::dbExecute(con, "INSERT INTO annotate (ID, path, scaffold, annotate_switch, annotate_lock,
+    reviewed, problematic, partial, n_features, n_flags, itsx_warnings, time_stamp)
+    VALUES ('S1', 1, 2, 2, 1, 'no', 'no', 'no', 0, 0, NULL, 1)")
+  DBI::dbExecute(con, "UPDATE annotate SET export_group = 'g1'")
+  RiboPilot:::review_copy(con, "S1", 1L, 1L)
+  DBI::dbExecute(con, "UPDATE review_units SET length = 500, n_flags = 4
+    WHERE ID = 'S1' AND path = 1 AND scaffold = 1")
+  dir
+}
+
+test_that("the Export step reads the review layer and leaves out contigs whose checks are not done", {
+  skip_if_not_installed("withr")
+  dir <- mk_export_not_done()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "DELETE FROM annotations")
+  DBI::dbExecute(con, "DELETE FROM review_annotations WHERE element != '18S'")
+  DBI::dbExecute(con, "UPDATE review_annotations SET element = '28S'")
+  DBI::dbDisconnect(con)
+  withr::local_dir(dir)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Export", export_group_sel = "g1",
+      fasta_header = RiboPilot:::DEFAULT_FASTA_HEADER,
+      fasta_header_marker = RiboPilot:::DEFAULT_FASTA_HEADER_MARKER,
+      export_markers = TRUE, export_report = FALSE)
+    settle(session)
+    d <- samples_data()
+    d <- d[order(d$scaffold), ]
+    expect_equal(d$scaffold, c(1L, 2L))
+    expect_equal(d$length, c(500L, 400L))
+    expect_equal(d$n_flags, c(4L, 0L))
+    expect_equal(d$exported, c("", "checks not finished, left out"))
+    expect_equal(d$check_state, c(NA, "checks not finished, left out"))
+    j <- jsonlite::fromJSON(as.character(output$tbl), simplifyVector = FALSE)
+    cd <- Filter(function(c) identical(c$id, "exported"), j$x$tag$attribs$columns)[[1]]
+    expect_match(paste(unlist(cd$cell), collapse = " "), "check_state", fixed = TRUE)
+
+    u <- export_units_df("g1")
+    expect_equal(u$scaffold, 1L)
+    expect_equal(nrow(export_units_df()), 1L)
+    expect_equal(output$export_sel_n, "1 contig locked & ready")
+    con <- RiboPilot:::app_con()
+    expect_equal(app_export_seqids(con, u), "S1_p1_s1")
+    DBI::dbDisconnect(con)
+    expect_equal(export_hdr_data()$seqid, "S1_p1_s1")
+    expect_equal(export_hdr_data_marker()$element, "28S")
+    expect_match(output$export_summary$html, "1 contig in group", fixed = TRUE)
+    expect_match(output$export_summary$html, "S1 p1.s2 (checks not finished)", fixed = TRUE)
+  })
+})
+
+test_that("Export writes only the done contig and its done dialog counts the one left out", {
+  skip_if_not_installed("withr")
+  dir <- mk_export_not_done()
+  withr::local_dir(dir)
+  shown <- character(0)
+  local_mocked_bindings(showModal = function(ui, ...) shown <<- c(shown, as.character(ui)))
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Export", export_group_sel = "g1",
+      fasta_header = RiboPilot:::DEFAULT_FASTA_HEADER,
+      fasta_header_marker = RiboPilot:::DEFAULT_FASTA_HEADER_MARKER,
+      export_markers = FALSE, export_report = FALSE)
+    settle(session)
+    session$setInputs(export_go = 1)
+    settle(session)
+  })
+  fa <- readLines(file.path(dir, "out", "export", "g1", "g1.fasta"))
+  expect_equal(grep("^>", fa, value = TRUE), grep("^>S1_p1_s1", fa, value = TRUE))
+  expect_length(grep("^>", fa), 1)
+  done <- grep("Export complete", shown, value = TRUE)
+  expect_length(done, 1)
+  expect_match(done, "1 contig left out: checks not finished.", fixed = TRUE)
+})
