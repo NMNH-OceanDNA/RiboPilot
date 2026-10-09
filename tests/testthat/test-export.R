@@ -54,27 +54,34 @@ test_that("partial ends are marked per feature, strand-aware, and minus is writt
   expect_match(RiboPilot:::feature_table_text_con(con, "S1"), "\n<260\t1\trRNA")
 })
 
-test_that("a scaffold end marks a gene partial only on an untrimmed unit", {
-  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+test_that("unit_trimmed reads the kept window of the review copy", {
+  con <- chimera_test_con()
   on.exit(DBI::dbDisconnect(con))
-  DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT, type TEXT,
-    start INT, stop INT, strand TEXT, partial_start INT, partial_stop INT)")
-  DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, sequence TEXT, length INT)")
-  DBI::dbExecute(con, RiboPilot:::ASSEMBLY_BACKUP_DDL)
-  DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',1,1, ?, 300)", params = list(strrep("A", 300)))
-  DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,1,'18S','rRNA',1,300,'+',NULL,NULL)")
-  expect_match(RiboPilot:::feature_table_text_con(con, "S1"), "\n<1\t>300\trRNA")
-  # trimmed: the snapshot holds a longer sequence, so the ends are cut, not assembly ends
-  DBI::dbExecute(con, "INSERT INTO assembly_backup (ID, path, scaffold, sequence) VALUES ('S1',1,1,?)",
-    params = list(paste0(strrep("C", 50), strrep("A", 300), strrep("G", 50))))
-  expect_match(RiboPilot:::feature_table_text_con(con, "S1"), "\n1\t300\trRNA")
-  # only the 3' tail cut: base 1 is still an assembly end
-  DBI::dbExecute(con, "UPDATE assembly_backup SET sequence = ?",
-    params = list(paste0(strrep("A", 300), strrep("G", 50))))
-  expect_match(RiboPilot:::feature_table_text_con(con, "S1"), "\n<1\t300\trRNA")
-  # restored: snapshot and sequence agree again
-  DBI::dbExecute(con, "UPDATE assembly_backup SET sequence = ?", params = list(strrep("A", 300)))
-  expect_match(RiboPilot:::feature_table_text_con(con, "S1"), "\n<1\t>300\trRNA")
+  DBI::dbExecute(con, "INSERT INTO assemblies (ID, path, scaffold, length, sequence) VALUES ('S1', 1, 1, 400, ?)",
+    params = list(strrep("A", 400)))
+  DBI::dbExecute(con, "INSERT INTO annotations (ID, path, scaffold, element, type, start, stop, strand)
+    VALUES ('S1', 1, 1, '18S', 'rRNA', 1, 400, '+')")
+  tr <- function() RiboPilot:::unit_trimmed(con, "S1", 1L, 1L)
+  # no copy: both ends are assembly ends
+  expect_equal(tr(), c(FALSE, FALSE))
+  expect_match(RiboPilot:::feature_table_text_con(con, "S1"), "\n<1\t>400\trRNA")
+  expect_equal(RiboPilot:::unit_trimmed(con, "S9", 1L, 1L), c(FALSE, FALSE))
+
+  win <- function(a, b) {
+    DBI::dbExecute(con, "DELETE FROM review_units")
+    DBI::dbExecute(con, "INSERT INTO review_units (ID, path, scaffold, sequence, length, trim_start, trim_end, rev)
+      VALUES ('S1', 1, 1, ?, ?, ?, ?, 1)", params = list(strrep("A", b - a + 1L), b - a + 1L, a, b))
+    tr()
+  }
+  expect_equal(win(51L, 350L), c(TRUE, TRUE))
+  expect_equal(win(1L, 350L), c(FALSE, TRUE))
+  expect_equal(win(51L, 400L), c(TRUE, FALSE))
+  expect_equal(win(1L, 400L), c(FALSE, FALSE))
+
+  # a database without the review layer reads as untrimmed
+  mem <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+  on.exit(DBI::dbDisconnect(mem), add = TRUE)
+  expect_equal(RiboPilot:::unit_trimmed(mem, "S1", 1L, 1L), c(FALSE, FALSE))
 })
 
 test_that("a unit marked partial changes only the completeness wording", {

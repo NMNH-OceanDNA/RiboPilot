@@ -922,6 +922,13 @@ app_server <- function(input, output, session) {
   observeEvent(input$partial_btn, toolbar_flag("partial"))
 
   # ---- batch Trim / Restore on ticked units ----
+  # A trim or restore rewrites the unit's review copy, so it ends any
+  # boundary-edit session left open in the details window.
+  end_edit_session <- function() {
+    edit_active(FALSE); edit_backup(NULL); edit_dirty(FALSE)
+    shinyjs::hide("feat_edit_ctrls")
+    shinyWidgets::updatePrettyCheckbox(session, "feat_edit", value = FALSE)
+  }
   batch_trim <- reactiveVal(NULL)
   open_batch_trim <- function(restore) {
     u <- selected_units()
@@ -941,8 +948,7 @@ app_server <- function(input, output, session) {
   batch_trim_plan_now <- function() {
     b <- batch_trim(); req(b)
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    batch_trim_plan(con, b$u, batch_flank(), b$restore,
-      running = !is.null(run_lock_holder(app_project())))
+    batch_trim_plan(con, b$u, batch_flank(), b$restore)
   }
   observe(shinyjs::toggleState("batch_trim_go", condition = !batch_flank_bad()))
   output$batch_trim_summary <- renderUI({
@@ -957,6 +963,7 @@ app_server <- function(input, output, session) {
     if (!nrow(ok)) return(mp_toast("Nothing to change: every contig is skipped.", type = "warning"))
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
     err <- batch_trim_apply(con, ok, b$restore)
+    end_edit_session()
     removeModal(); batch_trim(NULL); edit_tick(edit_tick() + 1); refresh(refresh() + 1)
     skipped <- nrow(p) - nrow(ok)
     mp_toast(paste0(mp_n(sum(is.na(err)), "contig"), if (b$restore) " restored" else " trimmed",
@@ -2989,11 +2996,11 @@ app_server <- function(input, output, session) {
   observeEvent(input$trim_btn, {
     u <- sel_unit(); req(u)
     if (edits_block() || lock_blocked()) return()
-    s <- app_query("SELECT length FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())
+    s <- app_query("SELECT length FROM review_units_v WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())
     if (nrow(s) == 0 || is.na(s$length[1])) {
       rp_alert("No contig sequence to trim.", type = "warning"); return()
     }
-    span <- app_query("SELECT MIN(start) AS a, MAX(stop) AS b FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())
+    span <- app_query("SELECT MIN(start) AS a, MAX(stop) AS b FROM review_annotations_v WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())
     a_from <- if (nrow(span) && !is.na(span$a[1])) span$a[1] else 1L
     a_to <- if (nrow(span) && !is.na(span$b[1])) span$b[1] else s$length[1]
     showModal(trim_modal(s$length[1], a_from, a_to))
@@ -3004,8 +3011,8 @@ app_server <- function(input, output, session) {
   # custom mode (brushing the plot switches to custom).
   trim_span <- reactive({
     edit_tick(); u <- sel_unit(); req(u)
-    sp <- app_query("SELECT MIN(start) AS a, MAX(stop) AS b FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())
-    n <- app_query("SELECT length FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())$length
+    sp <- app_query("SELECT MIN(start) AS a, MAX(stop) AS b FROM review_annotations_v WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())
+    n <- app_query("SELECT length FROM review_units_v WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())$length
     n <- if (length(n)) n[1] else NA_integer_
     c(a = if (nrow(sp) && !is.na(sp$a[1])) sp$a[1] else 1L,
       b = if (nrow(sp) && !is.na(sp$b[1])) sp$b[1] else n, n = n)
@@ -3041,15 +3048,17 @@ app_server <- function(input, output, session) {
     edit_tick(); u <- sel_unit(); req(u); w <- trim_window(); plot_trim(u$ID, u$path, u$scaffold, w[1], w[2])
   }, height = 230)
   output$trim_chimera_hint <- renderText({
-    u <- sel_unit(); req(u)
-    ch <- app_query("SELECT junctions FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())
+    edit_tick(); u <- sel_unit(); req(u)
+    ch <- app_query("SELECT c.junctions FROM review_chimera_v c JOIN review_units_v v
+      ON v.ID = c.ID AND v.path = c.path AND v.scaffold = c.scaffold
+      WHERE c.ID = ? AND c.path = ? AND c.scaffold = ? AND v.check_switch = 2", params = uargs())
     req(nrow(ch) == 1, nzchar(ch$junctions[1] %|NA|% ""))
     sprintf("suggested junctions: %s", ch$junctions[1])
   })
   # Dragging a brush over the plot sets the custom window from the x-range.
   observeEvent(input$trim_brush, {
     b <- input$trim_brush; u <- sel_unit(); req(b, u)
-    n <- app_query("SELECT length FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())$length
+    n <- app_query("SELECT length FROM review_units_v WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())$length
     n <- if (length(n)) n[1] else NA
     lo <- max(1L, round(b$xmin)); hi <- round(b$xmax)
     if (!is.na(n)) hi <- min(n, hi)
@@ -3064,34 +3073,35 @@ app_server <- function(input, output, session) {
     if (lock_blocked()) return()
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
     w <- trim_window(); from <- w[1]; to <- w[2]
-    n <- DBI::dbGetQuery(con, "SELECT length FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
+    n <- DBI::dbGetQuery(con, "SELECT length FROM review_units_v WHERE ID = ? AND path = ? AND scaffold = ?",
       params = uargs())$length[1]
     if (is.na(from) || is.na(to) || from < 1 || from > to || (!is.na(n) && to > n)) {
       rp_alert(sprintf("Invalid trim range. From must be at least 1 and no more than To, and To no more than the contig's current length (%s bp).",
         n %|NA|% "?"), type = "error"); return()
     }
-    ok <- tryCatch({
-      trim_assembly(con, u$ID, u$path, u$scaffold, from, to)
-      tryCatch(curate_one(con, u$ID, u$path, u$scaffold), error = function(e) NULL)  # re-curate after the shift
-      TRUE
-    }, error = function(e) { rp_alert(conditionMessage(e), type = "error"); FALSE })
-    if (isTRUE(ok)) {
-      edit_tick(edit_tick() + 1); refresh(refresh() + 1)
-      show_annotate_unit()  # back to the details modal, now showing trimmed coords
-      rp_alert("Contig trimmed; feature coordinates + coverage shifted.", type = "message")
-    }
+    if (!app_write(review_trim(con, u$ID, u$path, u$scaffold, from, to))) return()
+    end_edit_session()
+    edit_tick(edit_tick() + 1); refresh(refresh() + 1)
+    show_annotate_unit()  # back to the details modal, now showing trimmed coords
+    rp_alert("Contig trimmed. Its checks show not run until you press Update.", type = "message")
   })
 
   # Cancel out of the trim modal: return to the annotate details modal.
   observeEvent(input$trim_cancel, { req(sel_unit()); show_annotate_unit() })
 
-  # ---- restore the active unit to its original (pre-trim) length ----
+  # ---- restore the active unit: delete its review copy ----
   observeEvent(input$restore_btn, {
     u <- sel_unit(); req(u)
     if (edits_block() || lock_blocked()) return()
-    len <- app_query("SELECT length FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())$length[1]
-    mp_confirm("restore_confirm", title = "Restore the full assembly?",
-      text = sprintf("The contig is %s bp now. Restoring undoes the trim and re-runs curation.", len %||% "?"),
+    v <- app_query("SELECT has_copy, length, orig_length FROM review_units_v WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = uargs())
+    if (!isTRUE(v$has_copy[1] == 1)) {
+      rp_alert("This contig has no edits to restore.", type = "warning"); return()
+    }
+    mp_confirm("restore_confirm", title = "Restore the original contig?",
+      text = sprintf(paste("The contig is %s bp now and %s bp originally. Restore deletes its trims,",
+        "boundary edits, 5'/3' choices, and the checks run on them. Marks, notes, group, and lock stay."),
+        v$length[1] %|NA|% "?", v$orig_length[1] %|NA|% "?"),
       action_label = "Restore", danger = TRUE)
   })
   observeEvent(input$restore_confirm, {
@@ -3099,16 +3109,13 @@ app_server <- function(input, output, session) {
     u <- sel_unit(); req(u)
     if (lock_blocked()) return()
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    ok <- tryCatch({
-      len <- restore_assembly(con, u$ID, u$path, u$scaffold)
-      tryCatch(curate_one(con, u$ID, u$path, u$scaffold), error = function(e) NULL)  # recompute flags for the full unit
-      len
-    }, error = function(e) { rp_alert(conditionMessage(e), type = "warning"); NULL })
-    if (!is.null(ok)) {
-      edit_tick(edit_tick() + 1); refresh(refresh() + 1)
-      show_annotate_unit()
-      rp_alert(paste0("Contig restored to original length (", ok, " bp)."), type = "message")
-    }
+    if (!app_write(review_drop(con, u$ID, u$path, u$scaffold))) return()
+    end_edit_session()
+    edit_tick(edit_tick() + 1); refresh(refresh() + 1)
+    show_annotate_unit()
+    len <- DBI::dbGetQuery(con, "SELECT length FROM review_units_v WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = uargs())$length[1]
+    rp_alert(paste0("Contig restored to its original (", len %|NA|% "?", " bp)."), type = "message")
   })
 
   # ---- notes ----

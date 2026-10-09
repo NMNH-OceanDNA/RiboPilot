@@ -559,7 +559,7 @@ test_that("an excluded path does not count against one locked path per sample", 
   expect_false(RiboPilot:::need_one_path(u, session = NULL))
 })
 
-# trim_assembly() writes these; fixture_review_schema() adds any the fixture lacks
+# the review layer reads these; fixture_review_schema() adds any the fixture lacks
 add_trim_cols <- function(dir) {
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
   on.exit(DBI::dbDisconnect(con))
@@ -573,7 +573,8 @@ test_that("a locked unit is read only in the annotation window", {
   withr::local_dir(dir)
   snap <- function() RiboPilot:::app_query(
     "SELECT asm.length, an.problematic, an.annotate_notes,
-       (SELECT stop FROM annotations WHERE element = '18S') AS stop18
+       (SELECT stop FROM annotations WHERE element = '18S') AS stop18,
+       (SELECT COUNT(*) FROM review_units) AS n_copies
      FROM assemblies asm JOIN annotate an ON an.ID = asm.ID")
 
   # the window says so, and offers Close instead of Lock & Close
@@ -598,14 +599,19 @@ test_that("a locked unit is read only in the annotation window", {
   })
 })
 
-test_that("a second trim offers the unit's current span, not the first trim's", {
+test_that("a trim writes the review copy, and a second trim offers the copy's span", {
   skip_if_not_installed("withr")
   dir <- mk_export_project()
   add_trim_cols(dir)
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
   DBI::dbExecute(con, "UPDATE annotate SET annotate_lock = 0")
+  DBI::dbExecute(con, "UPDATE annotate SET itsx_warnings = NULL")
+  DBI::dbExecute(con, "UPDATE coverage SET depths = ?", params = list(paste(1:600, collapse = ",")))
+  DBI::dbExecute(con, "INSERT INTO chimera (ID, path, scaffold, label, junctions) VALUES ('S1', 1, 1, 'severe', '300')")
   DBI::dbDisconnect(con)
   withr::local_dir(dir)
+  alerts <- character(0)
+  local_mocked_bindings(rp_alert = function(msg, ...) alerts <<- c(alerts, msg))
 
   shiny::testServer(RiboPilot:::app_server, {
     session$setInputs(mode = "Annotate")
@@ -613,18 +619,100 @@ test_that("a second trim offers the unit's current span, not the first trim's", 
     session$setInputs(trim_mode = "annotated")
     session$flushReact()
     expect_equal(unname(trim_span()), c(10, 420, 600))
+    # the junction hint is a check result, shown only once the contig's checks are done
+    expect_error(output$trim_chimera_hint)
+    c2 <- RiboPilot:::app_con(); fixture_mark_done(c2); DBI::dbDisconnect(c2)
+    edit_tick(edit_tick() + 1)
+    session$flushReact()
+    expect_equal(output$trim_chimera_hint, "suggested junctions: 300")
+
+    active_feature("18S")
+    session$setInputs(feat_edit = TRUE)
+    expect_false(is.null(edit_backup()))
     session$setInputs(trim_from = 10, trim_to = 420, trim_apply = 1)
     session$flushReact()
+    expect_equal(utils::tail(alerts, 1), "Contig trimmed. Its checks show not run until you press Update.")
+    # the trim ends the Edit session, so a later Reset cannot write pre-trim coordinates
+    expect_null(edit_backup())
+    expect_false(edit_active())
     expect_equal(unname(trim_span()), c(1, 411, 411))
+    expect_equal(RiboPilot:::app_query("SELECT trim_start, trim_end, check_switch FROM review_units"),
+      data.frame(trim_start = 10L, trim_end = 420L, check_switch = 1L))
 
-    # a 5 bp flank around the trimmed unit keeps every base of 18S
+    # not run on the copy: no hint; once done, the copy's own junctions
+    expect_error(output$trim_chimera_hint)
+    c2 <- RiboPilot:::app_con()
+    DBI::dbExecute(c2, "UPDATE review_units SET check_switch = 2")
+    DBI::dbExecute(c2, "INSERT INTO review_chimera (ID, path, scaffold, label, junctions) VALUES ('S1', 1, 1, 'severe', '291')")
+    DBI::dbDisconnect(c2)
+    edit_tick(edit_tick() + 1)
+    session$flushReact()
+    expect_equal(output$trim_chimera_hint, "suggested junctions: 291")
+
+    # the trim window plots the copy: the coverage cut to the window, genes in copy coordinates
+    g <- RiboPilot:::plot_trim("S1", 1L, 1L, 1, 411)
+    expect_equal(range(g$data$pos), c(1L, 411L))
+    expect_equal(g$data$depth[1], 10)
+    f <- g$layers[[1]]$data
+    expect_equal(c(f$start[f$element == "18S"], f$stop[f$element == "18S"]), c(1L, 191L))
+
+    # a 5 bp flank around the trimmed copy keeps every base of 18S
     session$setInputs(trim_mode = "flank", trim_flank = 5)
     session$flushReact()
     expect_equal(trim_preset(), c(1, 411))
     session$setInputs(trim_from = 1, trim_to = 411, trim_apply = 2)
     session$flushReact()
-    expect_equal(RiboPilot:::app_query("SELECT start, stop FROM annotations WHERE element = '18S'"),
+    expect_equal(RiboPilot:::app_query("SELECT start, stop FROM review_annotations_v WHERE element = '18S'"),
       data.frame(start = 1L, stop = 191L))
+    # the original stays as the pipeline left it, for the Assemble step
+    expect_equal(RiboPilot:::app_query("SELECT start, stop FROM annotations WHERE element = '18S'"),
+      data.frame(start = 10L, stop = 200L))
+    expect_equal(RiboPilot:::app_query("SELECT length FROM assemblies")$length, 600L)
+  })
+})
+
+test_that("Restore deletes the copy and keeps the marks; a contig without a copy has nothing to restore", {
+  skip_if_not_installed("withr")
+  dir <- mk_export_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_lock = 0, annotate_notes = 'keep me', export_group = 'g1'")
+  DBI::dbDisconnect(con)
+  withr::local_dir(dir)
+  alerts <- character(0)
+  local_mocked_bindings(rp_alert = function(msg, ...) alerts <<- c(alerts, msg))
+  asked <- character(0)
+  local_mocked_bindings(mp_confirm = function(id, title, text, ...) asked <<- c(asked, text))
+  copies <- function() RiboPilot:::app_query("SELECT COUNT(*) AS n FROM review_units")$n
+  marks <- function() RiboPilot:::app_query(
+    "SELECT reviewed, problematic, partial, annotate_notes, export_group, annotate_lock FROM annotate")
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Annotate")
+    sel_unit(list(ID = "S1", path = 1L, scaffold = 1L))
+    session$flushReact()
+    session$setInputs(restore_btn = 1)
+    expect_equal(utils::tail(alerts, 1), "This contig has no edits to restore.")
+    expect_length(asked, 0)
+
+    # marks write annotate only and never make a copy
+    session$setInputs(mark_partial = 1)
+    expect_equal(copies(), 0)
+    session$setInputs(trim_from = 10, trim_to = 420, trim_apply = 1)
+    expect_equal(copies(), 1)
+    before <- marks()
+    expect_equal(before$partial, "yes")
+
+    active_feature("18S")
+    session$setInputs(feat_edit = TRUE)
+    session$setInputs(restore_btn = 2)
+    expect_match(asked[1], "411 bp now and 600 bp originally", fixed = TRUE)
+    expect_match(asked[1], "Marks, notes, group, and lock stay.", fixed = TRUE)
+    session$setInputs(restore_confirm = TRUE)
+    expect_equal(copies(), 0)
+    expect_equal(marks(), before)
+    expect_null(edit_backup())
+    expect_equal(utils::tail(alerts, 1), "Contig restored to its original (600 bp).")
+    expect_equal(unname(trim_span()), c(10, 420, 600))
   })
 })
 

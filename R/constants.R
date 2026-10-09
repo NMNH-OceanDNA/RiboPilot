@@ -404,8 +404,10 @@ MP_UNIT_LOCKED <- paste("This contig is locked, so it is read only here.",
 MP_TRIM_TIP <- function() {
   c(trim = paste0("Trim the selected contigs to their gene ends, or gene ends plus a flank. ",
       "Only contigs with all five features (", paste(BATCH_TRIM_FEATURES, collapse = ", "),
-      ") are trimmed; locked contigs and contigs queued in a running run are skipped."),
-    restore = paste0("Undo the trim on the selected contigs. Untrimmed and locked contigs are skipped."))
+      ") are trimmed; locked contigs are skipped. Trimmed contigs show their checks as not run ",
+      "until you press Update."),
+    restore = paste0("Restore the selected contigs to their originals: trims, boundary edits, and ",
+      "5'/3' choices are deleted. Contigs with no edits and locked contigs are skipped."))
 }
 
 #' Curator marks: what each toolbar button and window toggle says it will do,

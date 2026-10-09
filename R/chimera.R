@@ -596,19 +596,7 @@ chimera_shift <- function(con, id, path, scaffold, offset, len) {
   invisible()
 }
 
-#' A unit's chimera result and windows as JSON, kept with the trim backup
-#' @noRd
-chimera_snapshot <- function(con, id, path, scaffold) {
-  p <- list(id, as.integer(path), as.integer(scaffold))
-  tryCatch({
-    ch <- DBI::dbGetQuery(con, "SELECT * FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", params = p)
-    if (!nrow(ch)) return(NA_character_)
-    w <- DBI::dbGetQuery(con, "SELECT * FROM chimera_windows WHERE ID = ? AND path = ? AND scaffold = ?", params = p)
-    as.character(jsonlite::toJSON(list(chimera = ch, windows = w), dataframe = "rows", na = "null", digits = NA))
-  }, error = function(e) NA_character_)
-}
-
-#' Put back the chimera result and windows saved by `chimera_snapshot()`
+#' Put back a chimera result and windows stored as JSON (assembly_backup.chimera)
 #' @noRd
 chimera_restore <- function(con, id, path, scaffold, snap) {
   s <- jsonlite::fromJSON(snap)

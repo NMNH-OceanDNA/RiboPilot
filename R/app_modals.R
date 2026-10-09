@@ -659,9 +659,11 @@ trim_modal <- function(n, a_from, a_to) {
       shinyjs::disabled(numericInput("trim_to", "To (bp)", value = a_to, min = 1, max = n))),
     div(style = "color:#c0392b; font-weight:bold; margin:6px 0 14px;", textOutput("trim_flank_hint")),
     textOutput("trim_chimera_hint"),
-    opts_help("Trimming cuts the flanks off the contig and shifts every ",
-      "feature coordinate + the coverage track to match. Features that fall entirely ",
-      "outside the kept range are removed. Use \"Restore assembly\" to undo."),
+    opts_help("Trimming cuts the flanks off this contig's review copy and shifts its ",
+      "feature coordinates and coverage track to match. Features that fall entirely ",
+      "outside the kept range are removed. The original stays as it is for the Assemble step. ",
+      "The contig's checks show not run until you press Update. Use \"Restore assembly\" to ",
+      "undo every edit."),
     footer = mp_footer(
       danger = actionButton("trim_apply", "Trim", icon = icon("scissors")), dismiss = NULL,
       # actionButton (not modalButton) so Cancel reopens the annotate details
@@ -676,7 +678,7 @@ trim_modal <- function(n, a_from, a_to) {
 #' @noRd
 batch_trim_modal <- function(restore = FALSE) {
   modalDialog(
-    title = if (restore) "Restore trimmed contigs" else "Trim contigs", easyClose = TRUE,
+    title = if (restore) "Restore contigs" else "Trim contigs", easyClose = TRUE,
     if (!restore) tagList(
       shinyWidgets::prettyRadioButtons("batch_trim_mode", "Trim to:",
         choices = c("Match gene ends" = "annotated", "Gene ends + flank" = "flank"),
@@ -696,7 +698,8 @@ batch_trim_summary <- function(p, restore = FALSE) {
   ok <- sum(is.na(p$reason)); bad <- p[!is.na(p$reason), , drop = FALSE]
   tagList(
     tags$p(paste0(mp_n(ok, "contig"), if (ok == 1) " is" else " are",
-      if (restore) " restored to full length and re-curated." else " trimmed and re-curated.")),
+      if (restore) " restored to the original: trims, boundary edits, and 5'/3' choices are deleted."
+      else " trimmed; their checks show not run until you press Update.")),
     if (nrow(bad)) tagList(
       tags$p(style = "margin:8px 0 4px;", paste0("Skipped (", nrow(bad), "):")),
       div(style ="max-height:200px; overflow-y:auto; border:1px solid #ddd; padding:4px 8px; font-size:0.9em;",
@@ -911,15 +914,18 @@ fixed_gutter <- function(g, left_cm = 3.2) {
   gt
 }
 
-#' Read-coverage track for one assembly unit, with feature regions shaded
+#' Read-coverage track for one unit on the review layer, with feature regions shaded
+#'
+#' A review copy shows the original track cut to its kept window, and its genes,
+#' in copy coordinates.
 #' @noRd
 plot_coverage <- function(id, path = 1L, scaffold = 1L) {
   if (is.null(id)) {
     return(NULL)
   }
-  cov <- app_query("SELECT depths FROM coverage WHERE ID = ? AND path = ? AND scaffold = ?",
-    params = list(id, path, scaffold))
-  if (nrow(cov) == 0 || is.na(cov$depths[1]) || !nzchar(cov$depths[1])) {
+  con <- app_con(); on.exit(DBI::dbDisconnect(con))
+  dep <- review_coverage(con, id, path, scaffold)$depths
+  if (!length(dep)) {
     # a supplied-assembly sample with no reads will never have coverage
     r1 <- app_query("SELECT R1 FROM preprocess WHERE ID = ?", params = list(id))$R1
     msg <- if (length(r1) && (is.na(r1[1]) || !nzchar(r1[1]))) {
@@ -931,9 +937,8 @@ plot_coverage <- function(id, path = 1L, scaffold = 1L) {
       ggplot2::annotate("text", 0, 0, label = msg) +
       ggplot2::theme_void())
   }
-  dep <- parse_depths(cov$depths)
   df <- data.frame(pos = seq_along(dep), depth = dep)
-  feats <- app_query("SELECT element, start, stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
+  feats <- app_query("SELECT element, start, stop FROM review_annotations_v WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
     params = list(id, path, scaffold))
   ymax <- max(df$depth, 1, na.rm = TRUE)
   dark <- darken_colors(RRNA_ELEMENT_COLORS)

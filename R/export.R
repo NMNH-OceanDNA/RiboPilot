@@ -221,20 +221,18 @@ partial_ends <- function(d, seqlen, trimmed = FALSE) {
     p3 = eff(flag("partial_stop"), ifelse(minus, left, right)))
 }
 
-#' Is each end of a unit trimmed now? (compared with its pre-trim snapshot)
+#' Is each end of a unit trimmed? Read from the kept window of its review copy
+#'
+#' A unit without a copy, or a database without the review layer, is untrimmed.
+#' Readers of the original tables pass c(FALSE, FALSE) instead of calling this.
 #' @return c(left, right); any() says whether the unit is trimmed at all.
 #' @noRd
 unit_trimmed <- function(con, id, path, scaffold) {
-  b <- tryCatch(DBI::dbGetQuery(con,
-    "SELECT b.sequence bak, a.sequence cur FROM assembly_backup b JOIN assemblies a
-       ON a.ID = b.ID AND a.path = b.path AND a.scaffold = b.scaffold
-     WHERE b.ID = ? AND b.path = ? AND b.scaffold = ?",
+  w <- tryCatch(DBI::dbGetQuery(con,
+    "SELECT trim_start, trim_end, orig_length FROM review_units_v WHERE ID = ? AND path = ? AND scaffold = ?",
     params = list(id, as.integer(path), as.integer(scaffold))), error = function(e) data.frame())
-  if (nrow(b) == 0 || is.na(b$bak[1])) return(c(FALSE, FALSE))
-  if (is.na(b$cur[1])) return(c(TRUE, TRUE))
-  off <- as.integer(regexpr(b$cur[1], b$bak[1], fixed = TRUE))
-  if (off < 1) return(c(TRUE, TRUE))
-  c(off > 1, off + nchar(b$cur[1]) - 1 < nchar(b$bak[1]))
+  if (nrow(w) == 0) return(c(FALSE, FALSE))
+  c(isTRUE(w$trim_start[1] > 1), isTRUE(w$trim_end[1] < w$orig_length[1]))
 }
 
 #' TRUE where a submission_risk string carries a tag the export window asks

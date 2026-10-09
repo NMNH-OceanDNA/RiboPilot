@@ -431,29 +431,6 @@ test_that("plot_chimera builds from stored windows and segments", {
   expect_true(any(vapply(g$layers, function(l) inherits(l$geom, "GeomRect"), logical(1))))
 })
 
-test_that("plot_chimera keeps the original check after a trim and marks the cut", {
-  con <- chimera_test_con()
-  db <- DBI::dbGetInfo(con)$dbname
-  sq <- withr::with_seed(1, paste(sample(c("A", "C", "G", "T"), 4500, TRUE), collapse = ""))
-  DBI::dbExecute(con, "INSERT INTO assemblies (ID, path, scaffold, sequence, length) VALUES ('S1',1,1,?,4500)", params = list(sq))
-  DBI::dbExecute(con, "INSERT INTO annotations (ID, path, scaffold, element, start, stop, strand) VALUES ('S1',1,1,'18S',1001,2800,'+')")
-  DBI::dbExecute(con, "INSERT INTO chimera (ID, path, scaffold, score, label, junctions) VALUES ('S1',1,1,0.9,'severe','3500')")
-  DBI::dbExecute(con, "INSERT INTO chimera_windows (ID, path, scaffold, start, stop, pident) VALUES ('S1',1,1,1,500,99), ('S1',1,1,3001,3500,97)")
-  RiboPilot:::trim_assembly(con, "S1", 1L, 1L, 501, 3000)
-  DBI::dbExecute(con, "UPDATE annotations SET stop = stop - 100")
-  DBI::dbDisconnect(con)
-  g <- RiboPilot:::plot_chimera("S1", 1L, 1L, db = db)
-  b <- ggplot2::ggplot_build(g)
-  expect_equal(b$layout$panel_params[[1]]$x.range, c(0, 4500))
-  geoms <- vapply(g$layers, function(l) class(l$geom)[1], "")
-  gene <- b$data[[which(geoms == "GeomRect")[1]]]
-  expect_equal(c(gene$xmin, gene$xmax), c(1001, 2700))
-  expect_equal(nrow(b$data[[which(geoms == "GeomSegment")[1]]]), 2L)
-  expect_true(3500 %in% unlist(lapply(b$data[geoms == "GeomVline"], `[[`, "xintercept")))
-  cut <- unlist(lapply(b$data[geoms == "GeomVline"], `[[`, "xintercept"))
-  expect_true(all(c(500, 3000) %in% cut))
-})
-
 test_that("plot_chimera with NULL junctions/segments has no junction line", {
   con <- chimera_test_con()
   db <- DBI::dbGetInfo(con)$dbname

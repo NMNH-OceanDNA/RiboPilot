@@ -212,7 +212,7 @@ review_map_hits <- function(con, id, path, scaffold) {
 #' Trim a contig's review copy to positions from..to of the copy (S5.2)
 #'
 #' The sequence is cut from the original by the new window. Features are
-#' shifted, clamped, or dropped as trim_assembly did; a cut end gets
+#' shifted, clamped, or dropped by the window; a cut end gets
 #' partial_*_user = 1 in the feature's own orientation. Makes the copy on first
 #' touch and marks its checks not run.
 #' @return invisible new length.
