@@ -9,11 +9,6 @@ mk_batch_project <- function(env = parent.frame()) {
   dir <- mk_app_project(env)
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
   on.exit(DBI::dbDisconnect(con))
-  for (sql in c("ALTER TABLE assemblies ADD COLUMN edited INT",
-    "ALTER TABLE annotations ADD COLUMN length INT", "ALTER TABLE annotations ADD COLUMN edited INT",
-    "ALTER TABLE annotations ADD COLUMN type TEXT", "ALTER TABLE coverage ADD COLUMN clips TEXT")) {
-    DBI::dbExecute(con, sql)
-  }
   DBI::dbExecute(con, "UPDATE assemblies SET sequence = ?, length = 600", params = list(withr::with_seed(1, paste(sample(c("A", "C", "G", "T"), 600, TRUE), collapse = ""))))
   for (u in list(c(1, 1), c(1, 2), c(2, 1), c(2, 2))) {
     feats <- if (all(u == c(1, 2))) FIVE[1:3] else FIVE

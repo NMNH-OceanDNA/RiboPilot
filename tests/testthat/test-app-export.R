@@ -559,14 +559,11 @@ test_that("an excluded path does not count against one locked path per sample", 
   expect_false(RiboPilot:::need_one_path(u, session = NULL))
 })
 
-# trim_assembly() writes these; the export fixture was made without them
+# trim_assembly() writes these; fixture_review_schema() adds any the fixture lacks
 add_trim_cols <- function(dir) {
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
   on.exit(DBI::dbDisconnect(con))
-  DBI::dbExecute(con, "ALTER TABLE assemblies ADD COLUMN edited INT")
-  DBI::dbExecute(con, "ALTER TABLE annotations ADD COLUMN length INT")
-  DBI::dbExecute(con, "ALTER TABLE annotations ADD COLUMN edited INT")
-  DBI::dbExecute(con, "ALTER TABLE coverage ADD COLUMN clips TEXT")
+  fixture_review_schema(con)
 }
 
 test_that("a locked unit is read only in the annotation window", {
@@ -970,4 +967,18 @@ test_that("turning on marker export after NMNH adds the NMNH fields to the marke
     session$setInputs(export_markers = TRUE)
     expect_true(RiboPilot:::nmnh_template_on(sent$fasta_header_marker))
   })
+})
+
+test_that("the export fixture answers every review view", {
+  skip_if_not_installed("withr")
+  dir <- mk_export_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  on.exit(DBI::dbDisconnect(con))
+  for (v in names(RiboPilot:::REVIEW_VIEWS_DDL)) {
+    expect_no_error(DBI::dbGetQuery(con, sprintf("SELECT ID, path, scaffold FROM %s LIMIT 1", v)))
+  }
+  # locked and annotated, but no stored ITSx value: not done until fixture_mark_done()
+  expect_equal(DBI::dbGetQuery(con, "SELECT has_copy, length, check_switch FROM review_units_v"),
+    data.frame(has_copy = 0L, length = 600L, check_switch = 1L))
+  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) AS n FROM review_annotations_v")$n, 3L)
 })

@@ -389,28 +389,7 @@ new_db <- function(
   # row is the unfiltered best hit and is what the contaminant check reads: it
   # is the only place that can say "this is not the host, and not even nuclear
   # rDNA".
-  DBI::dbExecute(
-    con,
-    "CREATE TABLE blast_screen (
-      ID TEXT NOT NULL,
-      path INTEGER NOT NULL DEFAULT 1,
-      scaffold INTEGER NOT NULL DEFAULT 1,
-      accession TEXT,
-      title TEXT,
-      species TEXT,
-      staxid INTEGER,
-      lineage TEXT,
-      lineage_taxids TEXT,
-      rank_distance INTEGER,
-      pident REAL,
-      qcovs REAL,
-      evalue REAL,
-      bitscore REAL,
-      is_nuclear_rrna INTEGER,
-      time_stamp INTEGER,
-      PRIMARY KEY (ID, path, scaffold)
-    );"
-  )
+  DBI::dbExecute(con, BLAST_SCREEN_DDL)
 
   # blast_ref_sequences (fetched NCBI reference records, deduped by accession) ----
   DBI::dbExecute(
@@ -444,21 +423,7 @@ new_db <- function(
   )
 
   # blast_ref_alignment (per-feature sample-vs-reference nucleotide alignment) ----
-  DBI::dbExecute(
-    con,
-    "CREATE TABLE blast_ref_alignment (
-      ID TEXT NOT NULL,
-      path INTEGER NOT NULL DEFAULT 1,
-      scaffold INTEGER NOT NULL DEFAULT 1,
-      accession TEXT NOT NULL,
-      element TEXT NOT NULL,
-      pid REAL,
-      aln_cov REAL,
-      aln_len INTEGER,
-      time_stamp INTEGER,
-      PRIMARY KEY (ID, path, scaffold, accession, element)
-    );"
-  )
+  DBI::dbExecute(con, BLAST_REF_ALIGNMENT_DDL)
 
   # coverage (per-position read depth per assembly unit) ----
   DBI::dbExecute(
@@ -481,33 +446,8 @@ new_db <- function(
   # assembly_backup (original pre-trim state so a trim can be undone) ----
   DBI::dbExecute(con, ASSEMBLY_BACKUP_DDL)
 
-  # annotations (nrDNA feature model per assembly unit) ----
-  # status/flags are filled by curation (curate_one); tool/edited by annotation.
-  # partial_start/partial_stop: 5'/3' end partial in the feature's own orientation.
-  DBI::dbExecute(
-    con,
-    "CREATE TABLE annotations (
-      ID TEXT NOT NULL,
-      path INTEGER NOT NULL DEFAULT 1,
-      scaffold INTEGER NOT NULL DEFAULT 1,
-      element TEXT NOT NULL,
-      type TEXT,
-      start INTEGER,
-      stop INTEGER,
-      length INTEGER,
-      strand TEXT,
-      model_coverage REAL,
-      partial_start INTEGER,
-      partial_stop INTEGER,
-      tool TEXT,
-      status TEXT,
-      flags TEXT,
-      edited INTEGER,
-      notes TEXT,
-      time_stamp INTEGER,
-      PRIMARY KEY (ID, path, scaffold, element)
-    );"
-  )
+  # annotations (nrDNA feature model per assembly unit; see ANNOTATIONS_DDL) ----
+  DBI::dbExecute(con, ANNOTATIONS_DDL)
 
   # annotate (per-unit annotation + curation summary) ----
   # One row per assembly unit (ID, path, scaffold); seeded per unit by
@@ -536,6 +476,8 @@ new_db <- function(
       export_group TEXT,
       time_stamp INTEGER,
       export_time_stamp INTEGER,
+      itsx_origin TEXT,
+      itsx_scores TEXT,
       PRIMARY KEY (ID, path, scaffold)
     );"
   )
@@ -602,6 +544,9 @@ new_db <- function(
   DBI::dbExecute(con, SCREEN_DDL)
   DBI::dbExecute(con, CHIMERA_DDL)
   DBI::dbExecute(con, CHIMERA_WINDOWS_DDL)
+
+  # review copies of edited contigs and the views over them (see REVIEW_VIEWS_DDL) ----
+  review_apply_schema(con)
 
   # path_scores (taxonomy-aware candidate scoring + auto-select) ----
   DBI::dbExecute(

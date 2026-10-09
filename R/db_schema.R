@@ -142,6 +142,70 @@ CHIMERA_WINDOWS_DDL <- "CREATE TABLE IF NOT EXISTS chimera_windows (
   PRIMARY KEY (ID, path, scaffold, start)
 );"
 
+#' DDL for annotations: the nrDNA feature model per unit.
+#'
+#' status/flags are filled by curation (curate_one); tool/edited by annotation.
+#' partial_start/partial_stop: 5'/3' end partial in the feature's own orientation.
+#' @noRd
+ANNOTATIONS_DDL <- "CREATE TABLE IF NOT EXISTS annotations (
+  ID TEXT NOT NULL,
+  path INTEGER NOT NULL DEFAULT 1,
+  scaffold INTEGER NOT NULL DEFAULT 1,
+  element TEXT NOT NULL,
+  type TEXT,
+  start INTEGER,
+  stop INTEGER,
+  length INTEGER,
+  strand TEXT,
+  model_coverage REAL,
+  partial_start INTEGER,
+  partial_stop INTEGER,
+  tool TEXT,
+  status TEXT,
+  flags TEXT,
+  edited INTEGER,
+  notes TEXT,
+  time_stamp INTEGER,
+  PRIMARY KEY (ID, path, scaffold, element)
+);"
+
+#' DDL for blast_screen: the unfiltered top remote hit the contaminant check reads.
+#' @noRd
+BLAST_SCREEN_DDL <- "CREATE TABLE IF NOT EXISTS blast_screen (
+  ID TEXT NOT NULL,
+  path INTEGER NOT NULL DEFAULT 1,
+  scaffold INTEGER NOT NULL DEFAULT 1,
+  accession TEXT,
+  title TEXT,
+  species TEXT,
+  staxid INTEGER,
+  lineage TEXT,
+  lineage_taxids TEXT,
+  rank_distance INTEGER,
+  pident REAL,
+  qcovs REAL,
+  evalue REAL,
+  bitscore REAL,
+  is_nuclear_rrna INTEGER,
+  time_stamp INTEGER,
+  PRIMARY KEY (ID, path, scaffold)
+);"
+
+#' DDL for blast_ref_alignment: per-feature sample-vs-reference alignment.
+#' @noRd
+BLAST_REF_ALIGNMENT_DDL <- "CREATE TABLE IF NOT EXISTS blast_ref_alignment (
+  ID TEXT NOT NULL,
+  path INTEGER NOT NULL DEFAULT 1,
+  scaffold INTEGER NOT NULL DEFAULT 1,
+  accession TEXT NOT NULL,
+  element TEXT NOT NULL,
+  pid REAL,
+  aln_cov REAL,
+  aln_len INTEGER,
+  time_stamp INTEGER,
+  PRIMARY KEY (ID, path, scaffold, accession, element)
+);"
+
 #' DDL for the assembly_backup table (original pre-trim state, for undo/restore).
 #' @noRd
 ASSEMBLY_BACKUP_DDL <- "CREATE TABLE IF NOT EXISTS assembly_backup (
@@ -260,5 +324,131 @@ meta_apply_schema <- function(con) {
     }
   }
   .nmnh_ensure_table(con)
+  invisible()
+}
+
+#' DDL for review_units: a contig's review copy; a row here means it has one.
+#'
+#' trim_start/trim_end: the kept window in original coordinates. check_switch:
+#' 2 done, 1 not run, 4 running, 3 failed, 0 on hold. rev starts at the time in
+#' milliseconds and goes up by one on every invalidation.
+#' @noRd
+REVIEW_UNITS_DDL <- "CREATE TABLE IF NOT EXISTS review_units (
+  ID TEXT NOT NULL,
+  path INTEGER NOT NULL,
+  scaffold INTEGER NOT NULL,
+  sequence TEXT,
+  length INTEGER,
+  trim_start INTEGER,
+  trim_end INTEGER,
+  edited INTEGER NOT NULL DEFAULT 0,
+  check_switch INTEGER,
+  check_note TEXT,
+  rev INTEGER NOT NULL,
+  checked_at INTEGER,
+  n_features INTEGER,
+  missing TEXT,
+  chimeric INTEGER,
+  n_flags INTEGER,
+  curate_flags TEXT,
+  itsx_warnings TEXT,
+  itsx_origin TEXT,
+  itsx_scores TEXT,
+  blast_accession TEXT,
+  blast_species TEXT,
+  blast_pident REAL,
+  blast_qcovs REAL,
+  blast_evalue REAL,
+  blast_source TEXT,
+  time_stamp INTEGER,
+  PRIMARY KEY (ID, path, scaffold)
+);"
+
+#' Review mirror of each original per-contig table
+#' @noRd
+REVIEW_MIRRORS <- c(annotations = "review_annotations", blast_hits = "review_blast_hits",
+  blast_screen = "review_blast_screen", screen = "review_screen", chimera = "review_chimera",
+  chimera_windows = "review_chimera_windows", blast_ref_alignment = "review_ref_alignment")
+
+#' The eight review tables, review_units first
+#' @noRd
+REVIEW_TABLES <- c("review_units", unname(REVIEW_MIRRORS))
+
+#' An original's DDL with the table renamed to its mirror
+#' @noRd
+review_mirror_ddl <- function(ddl, orig) {
+  sub(paste0("CREATE TABLE IF NOT EXISTS ", orig, " ("),
+    paste0("CREATE TABLE IF NOT EXISTS ", REVIEW_MIRRORS[[orig]], " ("), ddl, fixed = TRUE)
+}
+
+REVIEW_ANNOTATIONS_DDL <- sub("  PRIMARY KEY",
+  "  partial_start_user INTEGER,\n  partial_stop_user INTEGER,\n  PRIMARY KEY",
+  review_mirror_ddl(ANNOTATIONS_DDL, "annotations"), fixed = TRUE)
+REVIEW_BLAST_HITS_DDL <- review_mirror_ddl(BLAST_HITS_DDL, "blast_hits")
+REVIEW_BLAST_SCREEN_DDL <- review_mirror_ddl(BLAST_SCREEN_DDL, "blast_screen")
+REVIEW_SCREEN_DDL <- review_mirror_ddl(SCREEN_DDL, "screen")
+REVIEW_CHIMERA_DDL <- review_mirror_ddl(CHIMERA_DDL, "chimera")
+REVIEW_CHIMERA_WINDOWS_DDL <- review_mirror_ddl(CHIMERA_WINDOWS_DDL, "chimera_windows")
+REVIEW_REF_ALIGNMENT_DDL <- review_mirror_ddl(BLAST_REF_ALIGNMENT_DDL, "blast_ref_alignment")
+
+#' Column names of a CREATE TABLE constant, in order
+#' @noRd
+ddl_cols <- function(ddl) {
+  x <- sub("[ ,].*", "", trimws(strsplit(ddl, "\n", fixed = TRUE)[[1]][-1]))
+  x[grepl("^[A-Za-z_]", x) & x != "PRIMARY"]
+}
+
+REVIEW_COPY_SQL <- "EXISTS (SELECT 1 FROM review_units r
+  WHERE r.ID = x.ID AND r.path = x.path AND r.scaffold = x.scaffold)"
+
+#' CREATE VIEW: mirror rows of contigs with a copy, original rows of the rest
+#' @noRd
+review_view_ddl <- function(view, orig, cols, fallback = paste0("x.", cols)) {
+  paste0("CREATE VIEW IF NOT EXISTS ", view, " AS\nSELECT ", paste0("x.", cols, collapse = ", "),
+    "\nFROM ", REVIEW_MIRRORS[[orig]], " x\nWHERE ", REVIEW_COPY_SQL,
+    "\nUNION ALL\nSELECT ", paste(fallback, collapse = ", "),
+    "\nFROM ", orig, " x\nWHERE NOT ", REVIEW_COPY_SQL)
+}
+
+#' The review layer Annotation Review and export read
+#'
+#' A contig nobody touched reads its originals. In review_units_v such a contig
+#' reads as not run (1) when it is done (2) but has no stored ITSx value.
+#' @noRd
+REVIEW_VIEWS_DDL <- c(
+  review_units_v = paste0("CREATE VIEW IF NOT EXISTS review_units_v AS
+SELECT x.ID, x.path, x.scaffold, 1 AS has_copy, a.topology, a.length AS orig_length,
+  x.sequence, x.length, x.trim_start, x.trim_end, x.edited, x.check_switch, x.check_note,
+  x.rev, x.checked_at, x.n_features, x.missing, x.chimeric, x.n_flags, x.curate_flags,
+  x.itsx_warnings, x.itsx_origin, x.itsx_scores, x.blast_accession, x.blast_species,
+  x.blast_pident, x.blast_qcovs, x.blast_evalue, x.blast_source, x.time_stamp
+FROM review_units x
+JOIN assemblies a ON a.ID = x.ID AND a.path = x.path AND a.scaffold = x.scaffold
+UNION ALL
+SELECT x.ID, x.path, x.scaffold, 0, x.topology, x.length,
+  x.sequence, x.length, 1, x.length, 0,
+  CASE WHEN an.annotate_switch = 2 AND an.itsx_warnings IS NULL THEN 1 ELSE an.annotate_switch END,
+  NULL, NULL, NULL, an.n_features, an.missing, an.chimeric, an.n_flags, an.curate_flags,
+  an.itsx_warnings, an.itsx_origin, an.itsx_scores, x.blast_accession, x.blast_species,
+  x.blast_pident, x.blast_qcovs, x.blast_evalue, x.blast_source, an.time_stamp
+FROM assemblies x
+JOIN annotate an ON an.ID = x.ID AND an.path = x.path AND an.scaffold = x.scaffold
+WHERE NOT ", REVIEW_COPY_SQL),
+  review_annotations_v = review_view_ddl("review_annotations_v", "annotations",
+    c(ddl_cols(ANNOTATIONS_DDL), "partial_start_user", "partial_stop_user"),
+    c(paste0("x.", ddl_cols(ANNOTATIONS_DDL)), "NULL AS partial_start_user", "NULL AS partial_stop_user")),
+  review_screen_v = review_view_ddl("review_screen_v", "screen", ddl_cols(SCREEN_DDL)),
+  review_chimera_v = review_view_ddl("review_chimera_v", "chimera", ddl_cols(CHIMERA_DDL)),
+  review_chimera_windows_v = review_view_ddl("review_chimera_windows_v", "chimera_windows",
+    ddl_cols(CHIMERA_WINDOWS_DDL)))
+
+#' Create the review tables, then the views over them (idempotent)
+#' @noRd
+review_apply_schema <- function(con) {
+  for (ddl in c(REVIEW_UNITS_DDL, REVIEW_ANNOTATIONS_DDL, REVIEW_BLAST_HITS_DDL,
+                REVIEW_BLAST_SCREEN_DDL, REVIEW_SCREEN_DDL, REVIEW_CHIMERA_DDL,
+                REVIEW_CHIMERA_WINDOWS_DDL, REVIEW_REF_ALIGNMENT_DDL, REVIEW_VIEWS_DDL)) {
+    DBI::dbExecute(con, ddl)
+  }
   invisible()
 }
