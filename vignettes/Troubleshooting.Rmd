@@ -12,17 +12,13 @@ vignette: >
 When a run ends with a failure, the app shows a report instead of the usual
 "Run finished with no failures." The title says how the run ended: "Run
 finished with failures" (the run finished, but some samples or steps failed),
-"Run failed" (the run itself stopped with an error), or "Run stopped". Press
-**Copy report** to copy the report, for example to send it to us:
+"Run failed" (the run itself stopped with an error), or "Run stopped".
 
 ![A run report naming the failed sample and its likely cause, with the copy button](figures/get-started/run-finished.png)
 
 RiboPilot also saves every report in the project's `.runs/reports` folder. Press
 **Run Reports** in the toolbar to see past runs, reference builds, and jobs
-submitted to a cluster, newest first, and click a run to read its report. When
-a run you did not watch (a cluster job, for example) has finished since you
-last looked, the app says so when it opens and when you press the reload
-button. Here is a report from the test project, run on the full read sets
+submitted to a cluster, newest first. Here is a report from the test project, run on the full read sets
 (`full_size = TRUE`), where a second sample also fails:
 
 ```
@@ -44,7 +40,7 @@ SRR14433899 | 11 or more paths exceed max_paths (10) | GetOrganelle found more a
 SRR22396893 | 2 contig(s) under min_assembly_length (500 bp) | Every assembled contig was shorter than Min assembly length.
 ```
 
-What each part means:
+What each section means:
 
 - **Workflow** through **Log**: which workflow ran (the pipeline, a recheck, or
   a reference build), when, how it ended and with what exit status, whether it
@@ -113,8 +109,7 @@ Some failures are not an error code: too few reads, only short contigs
 assembled, or no rRNA genes found. The Notes column says why, and the sample's
 details window shows a red box with the reason and what to try next. To rescue
 a sample whose assembly failed, see the rescue section of the
-[Assemble walkthrough](Test-Project-Assemble.html#rescue-a-sample-that-failed). To pick
-between the assemblers, see
+[assemble walkthrough](Test-Project-Assemble.html#rescue-a-sample-that-failed) and
 [choosing an assembly method](Assembly-Methods.html).
 
 # Where to look
@@ -146,7 +141,7 @@ stopped" report appears. If Nextflow does not stop within a minute, RiboPilot
 stops it by force, and the report says that some task containers may still be
 running: check them before you start a new run.
 
-Only one run can go at a time for a project, and a stopped run still counts
+You can only spin up one run at a time for a project, and a stopped run still counts
 until its tasks have finished cleaning up. Pressing **Update** before then
 gives a message that a run is already going (see below).
 
