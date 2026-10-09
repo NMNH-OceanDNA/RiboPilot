@@ -190,6 +190,8 @@ mk_itsx_project <- function() {
   DBI::dbExecute(con, "ALTER TABLE annotate ADD COLUMN export_time_stamp INTEGER")
   DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, assemble_lock INT)")
   DBI::dbExecute(con, "INSERT INTO assemble VALUES('S1',1)")
+  DBI::dbExecute(con, "ALTER TABLE annotate ADD COLUMN itsx_origin TEXT")
+  DBI::dbExecute(con, "ALTER TABLE annotate ADD COLUMN itsx_scores TEXT")
   dir
 }
 
@@ -262,7 +264,7 @@ test_that("a real ITSx run in the project's container over a genuine rDNA record
   smry <- utils::read.csv(file.path(g, "export_summary.csv"), stringsAsFactors = FALSE)
   expect_true(smry$itsx_check %in% c("", NA))   # read.csv turns "" into NA
   chk <- utils::read.csv(file.path(g, "export_itsx_check.csv"), stringsAsFactors = FALSE, check.names = FALSE)
-  expect_equal(chk$itsx_origin, "Metazoa")
+  expect_equal(chk$itsx_origin, "M")
   expect_match(chk$itsx_ITS1, "^[0-9]+-[0-9]+$")
   expect_true(file.exists(file.path(g, "itsx_check", "itsx.positions.txt")))
 })
@@ -304,12 +306,13 @@ test_that("itsx_check_one stores stock-ITSx flags on the unit's annotate row", {
   writeLines("S1.1.1\t400 bp.\tSSU: 1-200\tLSU: 201-400\tBroken or partial sequence, no 5.8S! ",
     paste0(pre, ".positions.txt"))
   writeLines("S1.1.1\t400\tM\t1\t2\tSSU\t\t\t\t\t\t\t\tSSU,LSU", paste0(pre, ".extraction.results"))
+  writeLines("ITSx run finished at Thu Oct  8 12:00:00 2026.", paste0(pre, ".summary.txt"))
   out <- RiboPilot:::itsx_check_one(con, "S1", 1L, 1L, pre)
   expect_equal(out$itsx_check, "itsx_no_5.8S")
   expect_equal(DBI::dbGetQuery(con, "SELECT itsx_warnings FROM annotate")$itsx_warnings, "itsx_no_5.8S")
   # no ITSx output at all: recorded as not run, never an error
   out <- RiboPilot:::itsx_check_one(con, "S1", 1L, 1L, file.path(dir, "missing"))
-  expect_match(out$itsx_check, "^not_run\\(")
+  expect_equal(out$itsx_check, "not_run(ITSx did not finish)")
   expect_match(DBI::dbGetQuery(con, "SELECT itsx_warnings FROM annotate")$itsx_warnings, "^not_run\\(")
 })
 
@@ -347,4 +350,136 @@ test_that("the ITSx container call keeps a folder with a space as one argument",
   wdn <- normalizePath(wd)
   expect_equal(a[which(a == "-v") + 1], paste0(wdn, ":", wdn))
   expect_equal(a[which(a == "-w") + 1], wdn)
+})
+
+# stock-ITSx output files under `pre`; finished = FALSE leaves the summary
+# without its last line, as a killed run does
+itsx_out <- function(pre, positions = character(0), results = character(0), finished = TRUE,
+                     err = NULL) {
+  writeLines(positions, paste0(pre, ".positions.txt"))
+  writeLines(results, paste0(pre, ".extraction.results"))
+  writeLines(c("Number of sequences in input file: 1",
+    if (finished) "ITSx run finished at Thu Oct  8 12:00:00 2026."), paste0(pre, ".summary.txt"))
+  if (!is.null(err)) writeLines(err, paste0(pre, ".err"))
+  pre
+}
+
+test_that("an ITSx run counts as finished only with its summary line and no error on stderr", {
+  pre <- file.path(withr::local_tempdir(), "unit.itsx_check")
+  fin <- RiboPilot:::itsx_run_finished
+  expect_false(fin(pre))
+  itsx_out(pre, finished = FALSE)
+  expect_false(fin(pre))
+  itsx_out(pre)
+  expect_true(fin(pre))
+  writeLines("Thank you for using ITSx!", paste0(pre, ".err"))
+  expect_true(fin(pre))
+  for (e in c("FATAL ERROR :: Could not locate HMMER binaries!",
+              "ERROR :: No input file was specified, and the --stdin option was set to F (false).",
+              "FATAL ERROR! HMMER run seems to have been terminated before it was completed.")) {
+    writeLines(c("Thank you for using ITSx!", e), paste0(pre, ".err"))
+    expect_false(fin(pre), info = e)
+  }
+})
+
+test_that("itsx_check_one stores the origin code and scores, and not_run when ITSx did not finish", {
+  con <- chimera_test_con()
+  withr::defer(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "UPDATE samples SET lineage = 'Metazoa;Chordata' WHERE ID = 'S1'")
+  DBI::dbExecute(con, "INSERT INTO annotate (ID, path, scaffold, itsx_warnings, itsx_origin, itsx_scores)
+    VALUES ('S1', 1, 2, 'itsx_chimeric', 'F', 'F: 1 1e-10 40')")
+  stored <- function() DBI::dbGetQuery(con, "SELECT itsx_warnings, itsx_origin, itsx_scores FROM annotate
+    WHERE ID = 'S1' ORDER BY path, scaffold")
+  d <- withr::local_tempdir()
+  pos <- sub("^S1\t", "S1.1.1\t", pos_clean)
+  res <- sub("^S1\t", "S1.1.1\t", sub("\tM\t", "\tF\t", res_clean, fixed = TRUE))
+  sc <- "F: 4 1e-08 33.15, M: 4 2.9e-16 49.9"
+
+  chk <- RiboPilot:::itsx_check_one(con, "S1", 1L, 1L, itsx_out(file.path(d, "a"), pos, res))
+  expect_equal(names(chk), c("seqid", "itsx_check", "itsx_origin", "itsx_scores", "itsx_ITS1",
+    "itsx_5.8S", "itsx_ITS2", "itsx_notes"))
+  expect_equal(unlist(stored()[1, ]), c(itsx_warnings = "itsx_origin(score: Fungi 33.15 vs Metazoa 49.9)",
+    itsx_origin = "F", itsx_scores = sc))
+  # checked, but ITSx gave no origin
+  RiboPilot:::itsx_check_one(con, "S1", 1L, 1L, itsx_out(file.path(d, "b"), pos))
+  expect_equal(unlist(stored()[1, ]), c(itsx_warnings = "", itsx_origin = "", itsx_scores = ""))
+  # a finished run that found nothing is a result, not a failure
+  RiboPilot:::itsx_check_one(con, "S1", 1L, 1L, itsx_out(file.path(d, "c")))
+  expect_equal(stored()$itsx_warnings[1], "itsx_not_detected")
+  # killed, failed with an error, or never ran: not_run, with no origin or scores
+  runs <- list(itsx_out(file.path(d, "e"), pos, res, finished = FALSE),
+    itsx_out(file.path(d, "f"), pos, res, err = "FATAL ERROR :: Could not locate HMMER binaries!"),
+    file.path(d, "missing"))
+  for (p in runs) {
+    chk <- RiboPilot:::itsx_check_one(con, "S1", 1L, 1L, p)
+    expect_true(is.na(chk$itsx_origin) && is.na(chk$itsx_scores))
+    got <- stored()
+    expect_equal(got$itsx_warnings[1], "not_run(ITSx did not finish)", info = p)
+    expect_true(is.na(got$itsx_origin[1]) && is.na(got$itsx_scores[1]), info = p)
+    DBI::dbExecute(con, "UPDATE annotate SET itsx_origin = 'M', itsx_scores = 'M: 1 1e-10 40'
+      WHERE ID = 'S1' AND path = 1 AND scaffold = 1")
+  }
+  expect_equal(unlist(stored()[2, ]), c(itsx_warnings = "itsx_chimeric", itsx_origin = "F",
+    itsx_scores = "F: 1 1e-10 40"))
+})
+
+test_that("itsx_origin_flag builds the origin flag from a stored code and score string", {
+  f <- RiboPilot:::itsx_origin_flag
+  sc <- "F: 4 1e-08 33.15, M: 4 2.9e-16 49.9"
+  expect_equal(f("F", sc, "Metazoa;Chordata"), "itsx_origin(score: Fungi 33.15 vs Metazoa 49.9)")
+  expect_equal(f("F", "", "Metazoa;Chordata"), "itsx_origin(Fungi)")
+  expect_equal(f("Z", NA_character_, "Metazoa;Chordata"), "itsx_origin(Z)")
+  expect_equal(f("M", sc, "Metazoa;Chordata"), "")
+  expect_equal(f("F", sc, "Bacteria;Proteobacteria"), "")
+  expect_equal(f("F", sc, NA_character_), "")
+  expect_equal(f("", sc, "Metazoa"), "")
+  expect_equal(f(NA_character_, sc, "Metazoa"), "")
+})
+
+test_that("itsx_store_not_run writes the original or the review copy, never both", {
+  con <- chimera_test_con()
+  withr::defer(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "UPDATE annotate SET itsx_warnings = '', itsx_origin = 'M', itsx_scores = 'M: 1 1e-10 40'")
+  DBI::dbExecute(con, "INSERT INTO annotate (ID, path, scaffold, itsx_warnings) VALUES ('S1', 1, 2, 'itsx_chimeric')")
+  DBI::dbExecute(con, "INSERT INTO review_units (ID, path, scaffold, rev, itsx_warnings, itsx_origin, itsx_scores)
+    VALUES ('S1', 1, 1, 1, '', 'M', 'M: 1 1e-10 40')")
+  get <- function(tbl) DBI::dbGetQuery(con, sprintf(
+    "SELECT itsx_warnings, itsx_origin, itsx_scores FROM %s WHERE ID = 'S1' AND path = 1 AND scaffold = 1", tbl))
+
+  RiboPilot:::itsx_store_not_run(con, "S1", 1L, 1L, "ITSx check failed: boom")
+  an <- get("annotate")
+  expect_equal(an$itsx_warnings, "not_run(ITSx check failed: boom)")
+  expect_true(is.na(an$itsx_origin) && is.na(an$itsx_scores))
+  expect_equal(get("review_units")$itsx_origin, "M")
+  expect_equal(DBI::dbGetQuery(con, "SELECT itsx_warnings FROM annotate WHERE scaffold = 2")$itsx_warnings,
+    "itsx_chimeric")
+
+  RiboPilot:::itsx_store_not_run(con, "S1", 1L, 1L, "ITSx did not finish", review = TRUE)
+  ru <- get("review_units")
+  expect_equal(ru$itsx_warnings, "not_run(ITSx did not finish)")
+  expect_true(is.na(ru$itsx_origin) && is.na(ru$itsx_scores))
+  expect_equal(get("annotate")$itsx_warnings, "not_run(ITSx check failed: boom)")
+
+  # a failed write raises in review mode and stays silent on the original
+  for (tbl in c("annotate", "review_units")) {
+    DBI::dbExecute(con, sprintf(
+      "CREATE TRIGGER block_%s BEFORE UPDATE ON %s BEGIN SELECT RAISE(ABORT, 'blocked'); END", tbl, tbl))
+  }
+  expect_error(RiboPilot:::itsx_store_not_run(con, "S1", 1L, 1L, "x", review = TRUE), "blocked")
+  expect_no_error(RiboPilot:::itsx_store_not_run(con, "S1", 1L, 1L, "x"))
+})
+
+test_that("the fake ITSx finishes like the real one, so pipeline tests store a real check", {
+  skip_on_os("windows")
+  tools <- local_fake_pipeline_tools()
+  con <- chimera_test_con()
+  withr::defer(DBI::dbDisconnect(con))
+  d <- withr::local_tempdir()
+  unit <- file.path(d, "unit.fasta")
+  writeLines(c(">S1.1.1", "ACGT"), unit)
+  system2(file.path(tools$bin, "ITSx"), c("-i", unit, "-o", file.path(d, "unit.itsx_check")))
+  expect_true(RiboPilot:::itsx_run_finished(file.path(d, "unit.itsx_check")))
+  chk <- RiboPilot:::itsx_check_one(con, "S1", 1L, 1L, file.path(d, "unit.itsx_check"))
+  expect_equal(chk$itsx_check, "")
+  expect_equal(DBI::dbGetQuery(con, "SELECT itsx_warnings FROM annotate WHERE ID = 'S1'")$itsx_warnings, "")
 })

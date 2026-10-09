@@ -21,5 +21,7 @@ one-row data.frame as from \code{itsx_check_units()}, invisibly.
 \description{
 The annotation step runs stock ITSx next to its own tuned run and hands the
 \verb{<out_prefix>.*} files to reconcile, which calls this after the unit's
-annotations are written.
+annotations are written. ITSx exits 0 on fatal errors, so a run counts only
+when \verb{<out_prefix>.summary.txt} says it finished and \verb{<out_prefix>.err} has
+no error line; otherwise the contig stores \verb{not_run(ITSx did not finish)}.
 }

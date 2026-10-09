@@ -15,7 +15,8 @@ mk_asm_db <- function(dir) {
   DBI::dbExecute(con, "CREATE TABLE annotate(ID TEXT, path INT, scaffold INT, annotate_switch INT,
                        annotate_lock INT, annotate_opts TEXT, curate_opts TEXT, reviewed TEXT,
                        partial TEXT, problematic TEXT, export_group TEXT, n_features INT,
-                       PRIMARY KEY (ID, path, scaffold))")
+                       chimeric INT, n_flags INT, curate_flags TEXT, itsx_warnings TEXT,
+                       itsx_origin TEXT, itsx_scores TEXT, PRIMARY KEY (ID, path, scaffold))")
   DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT)")
   DBI::dbExecute(con, "CREATE TABLE assembly_backup(ID TEXT, path INT, scaffold INT)")
   DBI::dbExecute(con, "CREATE TABLE coverage(ID TEXT, path INT, scaffold INT, mean_depth REAL)")
@@ -435,7 +436,8 @@ test_that("a re-assembly that changes a unit's sequence clears its old evidence 
       params = list(s))
   }
   DBI::dbExecute(con, "UPDATE annotate SET annotate_switch = 2, annotate_lock = 1, reviewed = 'yes',
-    partial = 'yes', export_group = 'g1'")
+    partial = 'yes', export_group = 'g1', chimeric = 1, n_flags = 2, curate_flags = 'short_18S',
+    itsx_warnings = 'itsx_chimeric', itsx_origin = 'F', itsx_scores = 'F: 1 1e-10 40'")
 
   # scaffold 1 comes back as a different contig; scaffold 2 is unchanged
   fa <- file.path(dir, "S1_assembly_1.fasta")
@@ -452,6 +454,10 @@ test_that("a re-assembly that changes a unit's sequence clears its old evidence 
   expect_equal(an$annotate_switch, c(1L, 2L))
   expect_equal(an$reviewed, c("no", "yes"))
   expect_equal(an$export_group, c(NA, "g1"))
+  for (col in c("chimeric", "n_flags", "curate_flags", "itsx_warnings", "itsx_origin", "itsx_scores")) {
+    expect_true(is.na(an[[col]][1]), info = col)
+    expect_false(is.na(an[[col]][2]), info = col)
+  }
   # the unchanged unit keeps everything
   expect_equal(ev("annotations", 2), 1)
   expect_equal(ev("screen", 2), 1)

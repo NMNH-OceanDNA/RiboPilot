@@ -232,6 +232,21 @@ itsx_origin_scores <- function(scores, origin, expected) {
     unname(ITSX_ORIGINS[best]) %|NA|% best, format(exp_sc[best]), tie)
 }
 
+#' The itsx_origin flag for an ITSx origin code and the sample's lineage
+#'
+#' @param origin ITSx origin letter ("" or NA when ITSx gave none).
+#' @param scores ITSx group-score string, verbatim.
+#' @param lineage Sample lineage string or NA.
+#' @return The itsx_origin flag when the origin is outside the groups the
+#'   lineage expects, else "".
+#' @noRd
+itsx_origin_flag <- function(origin, scores, lineage) {
+  expected <- itsx_expected_origins(lineage)
+  if (is.null(expected) || is.na(origin) || !nzchar(origin) || origin %in% expected) return("")
+  sc <- itsx_origin_scores(scores, origin, expected)
+  sprintf("itsx_origin(%s)", if (nzchar(sc)) sc else unname(ITSX_ORIGINS[origin]) %|NA|% origin)
+}
+
 #' Portal-parity flags for one record from stock-ITSx output
 #'
 #' Pure: takes already-parsed ITSx output plus the record's sequence, RiboPilot
@@ -304,13 +319,9 @@ itsx_check_flags <- function(seqid, seq, ann, its, notes, res, prob,
   }
 
   # origin group vs. sample lineage
-  expected <- itsx_expected_origins(lineage)
-  if (nrow(my_res) > 0 && !is.null(expected)) {
-    o <- my_res$origin[1]
-    if (!is.na(o) && nzchar(o) && !(o %in% expected)) {
-      sc <- itsx_origin_scores(my_res$scores[1], o, expected)
-      flags <- c(flags, sprintf("itsx_origin(%s)", if (nzchar(sc)) sc else unname(ITSX_ORIGINS[o]) %|NA|% o))
-    }
+  if (nrow(my_res) > 0) {
+    of <- itsx_origin_flag(my_res$origin[1], my_res$scores[1], lineage)
+    if (nzchar(of)) flags <- c(flags, of)
   }
   list(flags = flags, note = paste(flags, collapse = ";"))
 }
@@ -322,14 +333,18 @@ itsx_check_flags <- function(seqid, seq, ann, its, notes, res, prob,
 #'   as written in the checked FASTA.
 #' @param out list from `run_itsx_check()` / `read_itsx_outputs()`, plus `ok`
 #'   and `message` when the run itself failed.
-#' @return data.frame(seqid, itsx_check, itsx_origin, itsx_ITS1, itsx_5.8S,
-#'   itsx_ITS2, itsx_notes). `itsx_check` is "" when clean, the flag list when
-#'   not, or "not_run(<why>)" when ITSx could not be run.
+#' @return data.frame(seqid, itsx_check, itsx_origin, itsx_scores, itsx_ITS1,
+#'   itsx_5.8S, itsx_ITS2, itsx_notes). `itsx_check` is "" when clean, the flag
+#'   list when not, or "not_run(<why>)" when ITSx could not be run.
+#'   `itsx_origin` is ITSx's one-letter origin code and `itsx_scores` its
+#'   group-score string, verbatim; both are "" when ITSx reported none and NA
+#'   only on not_run rows.
 #' @noRd
 itsx_check_units <- function(con, units, out) {
   n <- nrow(units)
   blank <- data.frame(seqid = units$seqid, itsx_check = rep("", n),
-    itsx_origin = rep(NA_character_, n), itsx_ITS1 = rep(NA_character_, n),
+    itsx_origin = rep(NA_character_, n), itsx_scores = rep(NA_character_, n),
+    itsx_ITS1 = rep(NA_character_, n),
     `itsx_5.8S` = rep(NA_character_, n), itsx_ITS2 = rep(NA_character_, n),
     itsx_notes = rep("", n), stringsAsFactors = FALSE, check.names = FALSE)
   if (n == 0) return(blank)
@@ -367,8 +382,9 @@ itsx_check_units <- function(con, units, out) {
       no_detections = out$no_detections, chimeric_ids = out$chimeric,
       lineage = if (length(lineage)) lineage else NA_character_)
     blank$itsx_check[i] <- fl$note
-    o <- res$origin[match(sid, res$seqid)]
-    blank$itsx_origin[i] <- if (length(o) && !is.na(o)) unname(ITSX_ORIGINS[o]) %|NA|% o else NA_character_
+    j <- match(sid, res$seqid)
+    blank$itsx_origin[i] <- res$origin[j] %|NA|% ""
+    blank$itsx_scores[i] <- res$scores[j] %|NA|% ""
     blank$itsx_ITS1[i] <- rng(sid, "ITS1")
     blank$`itsx_5.8S`[i] <- rng(sid, "5.8S")
     blank$itsx_ITS2[i] <- rng(sid, "ITS2")
@@ -389,26 +405,53 @@ unit_sequences <- function(con, units) {
   }, character(1))
 }
 
-#' Record each unit's flags in annotate.itsx_warnings
+#' Record each unit's ITSx check: itsx_warnings, itsx_origin, itsx_scores
 #'
-#' Silent when the column is absent (a project made before it existed).
+#' Writes the annotate row, or the review copy (review_units) when `review` is
+#' TRUE. On the annotate row a failed write is silent (a project made before
+#' the columns existed); on a review copy it raises.
 #' @noRd
-itsx_store_warnings <- function(con, units, chk) {
-  v <- chk$itsx_check[match(units$seqid, chk$seqid)]
+itsx_store_warnings <- function(con, units, chk, review = FALSE) {
+  m <- match(units$seqid, chk$seqid)
+  sql <- sprintf("UPDATE %s SET itsx_warnings = ?, itsx_origin = ?, itsx_scores = ?
+    WHERE ID = ? AND path = ? AND scaffold = ?", if (review) "review_units" else "annotate")
   for (i in seq_len(nrow(units))) {
-    tryCatch(DBI::dbExecute(con,
-      "UPDATE annotate SET itsx_warnings = ? WHERE ID = ? AND path = ? AND scaffold = ?",
-      params = list(v[i], units$ID[i], units$path[i], units$scaffold[i])),
-      error = function(e) NULL)
+    tryCatch(DBI::dbExecute(con, sql, params = list(chk$itsx_check[m[i]], chk$itsx_origin[m[i]],
+      chk$itsx_scores[m[i]], units$ID[i], units$path[i], units$scaffold[i])),
+      error = function(e) if (review) stop(e))
   }
-  invisible(v)
+  invisible(chk$itsx_check[m])
+}
+
+#' Store `not_run(<reason>)` as a unit's ITSx check, with no origin or scores
+#' @noRd
+itsx_store_not_run <- function(con, id, path, scaffold, reason, review = FALSE) {
+  units <- data.frame(ID = id, path = as.integer(path), scaffold = as.integer(scaffold),
+    seqid = paste(id, path, scaffold, sep = "."), stringsAsFactors = FALSE)
+  itsx_store_warnings(con, units, itsx_check_units(con, units, list(ok = FALSE, message = reason)),
+    review = review)
+}
+
+#' Did a stock ITSx run finish?
+#'
+#' ITSx exits 0 on fatal errors, so its exit status says nothing. A run counts
+#' as finished when `<out_prefix>.summary.txt` contains "ITSx run finished" and
+#' its captured stderr, `<out_prefix>.err` (absent counts as empty), has no
+#' ERROR or FATAL line.
+#' @noRd
+itsx_run_finished <- function(out_prefix) {
+  rd <- function(f) if (file.exists(f)) readLines(f, warn = FALSE) else character(0)
+  any(grepl("ITSx run finished", rd(paste0(out_prefix, ".summary.txt")), fixed = TRUE)) &&
+    !any(grepl("ERROR|FATAL", rd(paste0(out_prefix, ".err"))))
 }
 
 #' Pipeline-side check for one unit from ITSx output already on disk
 #'
 #' The annotation step runs stock ITSx next to its own tuned run and hands the
 #' `<out_prefix>.*` files to reconcile, which calls this after the unit's
-#' annotations are written.
+#' annotations are written. ITSx exits 0 on fatal errors, so a run counts only
+#' when `<out_prefix>.summary.txt` says it finished and `<out_prefix>.err` has
+#' no error line; otherwise the contig stores `not_run(ITSx did not finish)`.
 #' @param con Open DBI connection.
 #' @param id Sample ID.
 #' @param path,scaffold Assembly unit within the sample.
@@ -418,10 +461,10 @@ itsx_store_warnings <- function(con, units, chk) {
 itsx_check_one <- function(con, id, path = 1L, scaffold = 1L, out_prefix) {
   units <- data.frame(ID = id, path = as.integer(path), scaffold = as.integer(scaffold),
     seqid = paste(id, path, scaffold, sep = "."), stringsAsFactors = FALSE)
-  out <- if (file.exists(paste0(out_prefix, ".positions.txt"))) {
+  out <- if (itsx_run_finished(out_prefix)) {
     c(list(ok = TRUE), read_itsx_outputs(out_prefix))
   } else {
-    list(ok = FALSE, message = "no ITSx output")
+    list(ok = FALSE, message = "ITSx did not finish")
   }
   chk <- itsx_check_units(con, units, out)
   itsx_store_warnings(con, units, chk)

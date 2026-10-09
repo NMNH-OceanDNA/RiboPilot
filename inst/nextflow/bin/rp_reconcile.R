@@ -14,6 +14,11 @@ local({
   # stock-ITSx warnings: advisory, must never sink the unit's annotation
   if (length(a) >= 7) tryCatch(
     itsx_check_one(con, a[2], as.integer(a[3]), as.integer(a[4]), a[7]),
-    error = function(e) message("ITSx check skipped: ", conditionMessage(e)))
+    error = function(e) {
+      message("ITSx check failed: ", conditionMessage(e))
+      tryCatch(RiboPilot:::itsx_store_not_run(con, a[2], as.integer(a[3]), as.integer(a[4]),
+        paste("ITSx check failed:", conditionMessage(e))),
+        error = function(e2) message("ITSx check result not stored: ", conditionMessage(e2)))
+    })
 })
 cat("reconciled:", a[2], a[3], a[4], "\n")

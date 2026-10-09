@@ -107,6 +107,7 @@ reconcile_one <- function(con, id, path = 1L, scaffold = 1L, gff = NULL, positio
   feat <- reconcile_features(bar, its)
   chimeric <- as.integer(itsx_is_chimeric(pos_lines))
   ts <- as.integer(Sys.time())
+  missing <- setdiff(c(RRNA_GENES, RRNA_SPACERS), feat$element)
 
   # one transaction: a failed append after a committed delete would leave the
   # unit with no annotations at all
@@ -120,12 +121,12 @@ reconcile_one <- function(con, id, path = 1L, scaffold = 1L, gff = NULL, positio
         tool = feat$tool, edited = 0L, notes = NA_character_, time_stamp = ts, stringsAsFactors = FALSE)
       DBI::dbAppendTable(con, "annotations", df)
     }
+    DBI::dbExecute(con,
+      "UPDATE annotate SET n_features = ?, missing = ?, chimeric = ?, annotate_switch = 2,
+         itsx_warnings = NULL, itsx_origin = NULL, itsx_scores = NULL, time_stamp = ?
+       WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = list(nrow(feat), paste(missing, collapse = ","), chimeric, ts, id, path, scaffold))
   })
-  missing <- setdiff(c(RRNA_GENES, RRNA_SPACERS), feat$element)
-  DBI::dbExecute(con,
-    "UPDATE annotate SET n_features = ?, missing = ?, chimeric = ?, annotate_switch = 2, time_stamp = ?
-     WHERE ID = ? AND path = ? AND scaffold = ?",
-    params = list(nrow(feat), paste(missing, collapse = ","), chimeric, ts, id, path, scaffold))
   invisible(feat)
 }
 
@@ -245,9 +246,10 @@ UNIT_EVIDENCE_TABLES <- c("annotations", "coverage", "screen", "chimera", "chime
 #' Forget everything known about a unit whose sequence was replaced
 #'
 #' A re-assembly can give a surviving (path, scaffold) key a different sequence.
-#' Its gene coordinates, BLAST hits, screen verdict, chimera call, and depth then
-#' describe another molecule, so they are deleted, and the unit's lock and
-#' curator marks are cleared so it is annotated and reviewed again.
+#' Its gene coordinates, BLAST hits, screen verdict, chimera call, check
+#' results, and depth then describe another molecule, so they are deleted, and
+#' the unit's lock and curator marks are cleared so it is annotated and
+#' reviewed again.
 #' @noRd
 reset_unit_evidence <- function(con, id, path, scaffold) {
   p <- list(id, as.integer(path), as.integer(scaffold))
@@ -257,7 +259,9 @@ reset_unit_evidence <- function(con, id, path, scaffold) {
   }
   DBI::dbExecute(con,
     "UPDATE annotate SET annotate_switch = 1, annotate_lock = 0, reviewed = 'no',
-       partial = 'no', problematic = 'no', export_group = NULL, n_features = NULL
+       partial = 'no', problematic = 'no', export_group = NULL, n_features = NULL,
+       chimeric = NULL, n_flags = NULL, curate_flags = NULL, itsx_warnings = NULL,
+       itsx_origin = NULL, itsx_scores = NULL
      WHERE ID = ? AND path = ? AND scaffold = ?", params = p)
 }
 
