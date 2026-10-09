@@ -234,11 +234,13 @@ refresh_sample_state <- function(con, id) {
   invisible(pending)
 }
 
-#' Per-unit tables whose rows describe one assembled sequence
+#' Per-unit tables whose rows describe one assembled sequence, review copies included
+#'
+#' Tables only, never a view: callers DELETE from each name.
 #' @noRd
 UNIT_EVIDENCE_TABLES <- c("annotations", "coverage", "screen", "chimera", "chimera_windows",
   "blast_hits", "blast_screen", "blast_searched", "blast_ref_candidates",
-  "blast_ref_alignment", "assembly_backup")
+  "blast_ref_alignment", "assembly_backup", REVIEW_TABLES)
 
 #' Forget everything known about a unit whose sequence was replaced
 #'
