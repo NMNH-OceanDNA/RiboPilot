@@ -133,7 +133,7 @@ test_that("the Trim and Restore buttons act on eligible ticked units only", {
     session$flushReact()
     session$setInputs(tbl__reactable__selected = seq_len(nrow(samples_data())), annot_trim_btn = 1)
     html <- output$batch_trim_summary$html
-    expect_match(html, "2 contigs are trimmed; their checks show not run until you press Update.", fixed = TRUE)
+    expect_match(html, "2 contigs are trimmed. Checks show \"not run\" until you run Update in the Annotation Review step.", fixed = TRUE)
     expect_false(grepl("re-curated", html, fixed = TRUE))
     expect_match(html, "S1 p1 s2: missing ITS2, 28S", fixed = TRUE)
     expect_match(html, "S1 p2 s1: annotation locked", fixed = TRUE)
