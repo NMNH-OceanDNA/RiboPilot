@@ -2755,7 +2755,7 @@ app_server <- function(input, output, session) {
         reactable::reactable(h, compact = TRUE, pagination = FALSE, wrap = FALSE, columns = list(
           accession = reactable::colDef(name = "Accession", width = 115, html = TRUE, cell = rt_ncbi_link()),
           title = reactable::colDef(name = "Title", minWidth = 240, html = TRUE, cell = rt_longtext()),
-          pident = reactable::colDef(name = "%ID", width = 65),
+          pident = reactable::colDef(name = "%ID", width = 65, format = reactable::colFormat(digits = 1)),
           qcovs = reactable::colDef(name = "Cov", width = 60),
           bitscore = reactable::colDef(name = "Bits", width = 70),
           hit_class = reactable::colDef(name = "Class", width = 100)))
@@ -2766,10 +2766,10 @@ app_server <- function(input, output, session) {
         status = reactable::colDef(name = "Status", minWidth = 150),
         species = reactable::colDef(name = "Best match", minWidth = 160, na = ""),
         match_rank = reactable::colDef(name = "Match rank", width = 100, na = ""),
-        pident = reactable::colDef(name = "%ID", width = 65, na = ""),
+        pident = reactable::colDef(name = "%ID", width = 65, na = "", format = reactable::colFormat(digits = 1)),
         qcovs = reactable::colDef(name = "Cov", width = 60, na = ""),
         evalue = reactable::colDef(name = "E-value", width = 80, na = "",
-          format = reactable::colFormat(digits = 2)),
+          cell = function(v) if (is.na(v)) "" else formatC(v, format = "e", digits = 1)),
         note = reactable::colDef(name = "Note", minWidth = 200)))
   })
   output$chimera_junctions <- renderUI({
