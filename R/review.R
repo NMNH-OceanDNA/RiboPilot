@@ -139,3 +139,72 @@ review_drop <- function(con, id, path, scaffold) {
   })
   invisible()
 }
+
+
+#' A contig's read coverage on the review layer (S4.5)
+#'
+#' The original coverage tracks, cut to the copy's kept window when the contig
+#' has a copy. A short track is cut, never padded. A track is NULL when the
+#' coverage row or the track is missing, or nothing of it lies in the window.
+#' Coverage is read with SELECT * because older projects and test fixtures lack
+#' the clips column.
+#' @return list(depths, clips): numeric vectors in copy coordinates, or NULL.
+#' @noRd
+review_coverage <- function(con, id, path, scaffold) {
+  p <- list(id, as.integer(path), as.integer(scaffold))
+  cv <- DBI::dbGetQuery(con, "SELECT * FROM coverage WHERE ID = ? AND path = ? AND scaffold = ?", params = p)
+  w <- DBI::dbGetQuery(con,
+    "SELECT trim_start, trim_end FROM review_units WHERE ID = ? AND path = ? AND scaffold = ?", params = p)
+  cut <- function(col) {
+    if (!nrow(cv) || !col %in% names(cv)) return(NULL)
+    v <- parse_depths(cv[[col]][1])
+    if (nrow(w)) v <- v[seq_along(v) >= w$trim_start & seq_along(v) <= w$trim_end]
+    if (length(v)) v
+  }
+  list(depths = cut("depths"), clips = cut("clips"))
+}
+
+#' Coverage summary of a depth track, rounded as write_coverage_summary() rounds it
+#' @return list(mean_depth, median_depth, min_depth, max_depth), or NULL for an
+#'   empty track.
+#' @noRd
+review_coverage_summary <- function(dep) {
+  if (!length(dep)) return(NULL)
+  list(mean_depth = round(mean(dep), 2), median_depth = round(stats::median(dep), 2),
+    min_depth = as.integer(min(dep)), max_depth = as.integer(max(dep)))
+}
+
+#' A copy's BLAST hits mapped from the original's (S4.5)
+#'
+#' The original HSPs that overlap the copy's kept window, clipped to it and
+#' shifted to copy coordinates. A clipped HSP gets aln_len = its clipped span
+#' and NA sstart and send; pident and bitscore stay as stored. qcovs is
+#' recomputed per subject as the union of its kept spans over the copy length,
+#' rounded as BLAST rounds it. hit_rank and hsp keep their stored values, so a
+#' subject or HSP clipped away leaves a gap.
+#' @return data.frame with the blast_hits columns; zero rows when nothing overlaps.
+#' @noRd
+review_map_hits <- function(con, id, path, scaffold) {
+  path <- as.integer(path); scaffold <- as.integer(scaffold)
+  p <- list(id, path, scaffold)
+  w <- DBI::dbGetQuery(con,
+    "SELECT trim_start, trim_end FROM review_units WHERE ID = ? AND path = ? AND scaffold = ?", params = p)
+  if (!nrow(w)) stop(sprintf("No review copy for contig %s.%d.%d.", id, path, scaffold), call. = FALSE)
+  h <- DBI::dbGetQuery(con, sprintf(
+    "SELECT %s FROM blast_hits WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY hit_rank, hsp",
+    paste(ddl_cols(BLAST_HITS_DDL), collapse = ", ")), params = p)
+  h <- h[!is.na(h$qstart) & !is.na(h$qend) & h$qend >= w$trim_start & h$qstart <= w$trim_end, , drop = FALSE]
+  qs <- pmax(h$qstart, w$trim_start)
+  qe <- pmin(h$qend, w$trim_end)
+  cut <- qs != h$qstart | qe != h$qend
+  h$aln_len[cut] <- qe[cut] - qs[cut] + 1L
+  h$sstart[cut] <- NA
+  h$send[cut] <- NA
+  h$qstart <- qs - w$trim_start + 1L
+  h$qend <- qe - w$trim_start + 1L
+  span <- stats::ave(seq_len(nrow(h)), h$hit_rank,
+    FUN = function(i) length(unique(unlist(Map(seq, h$qstart[i], h$qend[i])))))
+  h$qcovs <- floor(100 * span / (w$trim_end - w$trim_start + 1) + 0.5)
+  rownames(h) <- NULL
+  h
+}
