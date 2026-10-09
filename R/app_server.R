@@ -769,9 +769,21 @@ app_server <- function(input, output, session) {
       action_label = "Lock anyway", danger = TRUE)
   }
   # Excluded units are never exported, so Lock does not ask about them.
-  lock_flagged <- function(u) {
-    f <- screen_flagged(u)
+  lock_flagged <- function(u, review = FALSE) {
+    f <- screen_flagged(u, review = review)
     if (nrow(f)) f[!(f$problematic %in% "yes"), , drop = FALSE] else f
+  }
+  # Annotation Review locks only contigs whose checks are done (S6.2).
+  need_checks_done <- function(u) {
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    g <- review_lock_gate(con, u)
+    bad <- !is.na(g)
+    if (!any(bad)) return(TRUE)
+    by <- split(sprintf("%s p%s.s%s", u$ID, u$path, u$scaffold)[bad], g[bad])
+    rp_alert(paste0("Lock needs finished checks, so nothing was locked. ",
+      paste0(vapply(by, mp_id_list, ""), ": ", names(by), collapse = " ")),
+      type = "warning", title = "Checks not finished")
+    FALSE
   }
   lock_sql <- function(mm, to) sprintf("UPDATE %s SET %s_lock = %d WHERE ID = ?", mm$tbl, mm$pfx, to)
   next_step <- c(taxonomy = "Assemble", assemble = "Annotation Review", annotate = "Export")
@@ -821,7 +833,9 @@ app_server <- function(input, output, session) {
          JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
          WHERE COALESCE(asm.ignore, 0) = 0 AND an.ID IN (%s)",
         paste(rep("?", length(ids)), collapse = ",")), params = as.list(ids))
-    f <- lock_flagged(units)
+    ann <- identical(mm$pfx, "annotate")
+    if (ann && !need_checks_done(units)) return()
+    f <- lock_flagged(units, review = ann)
     if (nrow(f)) return(confirm_flagged_lock(f, do_lock))
     do_lock()
   }
@@ -3266,8 +3280,8 @@ app_server <- function(input, output, session) {
   lock_unit <- function(close) {
     u <- sel_unit(); req(u)
     if (edits_block()) return()
-    if (!need_one_path(as.data.frame(u))) return()
-    f <- lock_flagged(as.data.frame(u))
+    if (!need_one_path(as.data.frame(u)) || !need_checks_done(as.data.frame(u))) return()
+    f <- lock_flagged(as.data.frame(u), review = TRUE)
     if (nrow(f)) return(confirm_flagged_lock(f, function() lock_unit_now(close)))
     lock_unit_now(close)
   }

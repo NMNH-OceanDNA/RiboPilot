@@ -456,3 +456,21 @@ review_state_text <- function(state) {
   unname(c(done = "done", `not run` = "not run", running = "running", failed = "failed",
     `on hold` = "on hold", waiting = "waiting for Assemble Update")[state])
 }
+
+#' Why each unit cannot be locked on Annotation Review (S6.2)
+#'
+#' NA where Lock may go ahead: the checks are done, or the contig is excluded
+#' (an excluded contig is never exported). Otherwise the next step to take.
+#' @noRd
+review_lock_gate <- function(con, units) {
+  if (!NROW(units)) return(character(0))
+  st <- review_unit_state(con, units)
+  ex <- DBI::dbGetQuery(con, "SELECT ID, path, scaffold FROM annotate WHERE problematic = 'yes'")
+  again <- "Set State to Ready to run, then press Update."
+  msg <- unname(c(waiting = "Press Update on the Assemble step first.", `not run` = again,
+    running = "Wait for the running Update to finish.", failed = again, `on hold` = again,
+    done = NA_character_)[st$state])
+  msg[st$state == "not run" & st$has_copy %in% 1] <- "Press Update first."
+  msg[unit_key(units$ID, units$path, units$scaffold) %in% unit_key(ex$ID, ex$path, ex$scaffold)] <- NA_character_
+  msg
+}

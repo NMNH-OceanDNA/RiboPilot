@@ -475,6 +475,9 @@ test_that("the Annotation Review title always names the unit", {
 test_that("a second assembly path is refused from the toolbar and from Lock & Close", {
   skip_if_not_installed("withr")
   dir <- mk_app_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  fixture_mark_done(con)
+  DBI::dbDisconnect(con)
   withr::local_dir(dir)
   locks <- function() RiboPilot:::app_query(
     "SELECT COALESCE(annotate_lock,0) AS lock, reviewed FROM annotate WHERE ID='S1'
@@ -532,6 +535,7 @@ test_that("toolbar marks skip locked units, and a mixed selection sets rather th
   dir <- mk_app_project()
   withr::local_dir(dir)
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  fixture_mark_done(con)
   DBI::dbExecute(con, "UPDATE annotate SET problematic = 'yes' WHERE path = 1 AND scaffold = 2")
   DBI::dbExecute(con, "UPDATE annotate SET annotate_lock = 1 WHERE path = 1 AND scaffold = 1")
   DBI::dbDisconnect(con)
