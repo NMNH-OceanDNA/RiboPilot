@@ -244,9 +244,12 @@ app_server <- function(input, output, session) {
       st <- review_unit_state(con, d[c("ID", "path", "scaffold")])
       fb <- app_query("SELECT ID, path, scaffold, element, status, lineage FROM review_feature_blast_v")
       fw <- feature_blast_warning_text(fb)
-      d$feature_blast_warnings <- fw$feature_blast_warnings[match(
+      fbw <- fw$feature_blast_warnings[match(
         unit_key(d$ID, d$path, d$scaffold), unit_key(fw$ID, fw$path, fw$scaffold))]
-      d$feature_blast_warnings[is.na(d$feature_blast_warnings)] <- ""
+      fbw[is.na(fbw)] <- ""
+      at <- match("chimera_reason", names(d))
+      d <- cbind(d[seq_len(at)], feature_blast_warnings = fbw, d[-seq_len(at)],
+        stringsAsFactors = FALSE)
       d$annotate_switch[st$state %in% "waiting"] <- 5L
       # No copy and nothing queued: Update has no copy to run, so hold, not Ready to run.
       d$annotate_switch[st$state %in% "not run" & st$has_copy %in% 0] <- 0L

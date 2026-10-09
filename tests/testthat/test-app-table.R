@@ -251,6 +251,7 @@ test_that("Annotation Review reads the review layer and shows the state of unfin
     d <- d[order(d$path, d$scaffold), ]
     expect_equal(d$feature_blast_warnings,
       c("ITS1: no hit; 28S: no BLAST, feature too small", "", "", ""))
+    expect_equal(match("feature_blast_warnings", names(d)), match("chimera_reason", names(d)) + 1L)
     expect_equal(d$length, c(6120L, 1442L, 500L, 800L))
     expect_equal(d$blast_species, c("Danio rerio", "Danio rerio", "Copy sp", "Danio rerio"))
     expect_equal(d$screen_verdict, c(NA, NA, NA, "on_target"))
