@@ -211,3 +211,32 @@ test_that("runs pin Nextflow and switch off its update check", {
   expect_equal(env[["NXF_DISABLE_CHECK_LATEST"]], "true")
   expect_equal(unname(env[1]), "current")
 })
+
+
+test_that("a recheck report lists the contigs the run left failed or running", {
+  d <- withr::local_tempdir()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(d, ".sqlite"))
+  DBI::dbExecute(con, RiboPilot:::REVIEW_UNITS_DDL)
+  DBI::dbExecute(con, "INSERT INTO review_units (ID, path, scaffold, rev, check_switch,
+    check_note, time_stamp) VALUES
+    ('S1', 1, 10, 1, 4, NULL, 200), ('S1', 1, 2, 1, 3, 'chimera check: no hits', 200),
+    ('OLD', 1, 1, 1, 3, 'an earlier run', 50), ('DONE', 1, 1, 1, 2, NULL, 200),
+    ('QUEUED', 1, 1, 1, 1, NULL, 200)")
+  f <- RiboPilot:::run_failed_rechecks(con, 100)
+  expect_equal(f$ID, c("S1.1.2", "S1.1.10"))
+  expect_equal(f$note, c("chimera check: no hits", "recheck did not finish"))
+  expect_length(RiboPilot:::run_failed_rechecks(con, 100, until = 150)$ID, 0)
+  DBI::dbDisconnect(con)
+  base <- RiboPilot:::job_basename("recheck", as.POSIXct(100, origin = "1970-01-01"))
+  log <- file.path(d, paste0(base, ".nextflow.log"))
+  r <- RiboPilot:::nf_run_report(d, log, 0L)
+  expect_equal(r$type, "warning")
+  expect_match(r$lead, "Run finished, but 2 contig(s) failed.", fixed = TRUE)
+  expect_match(r$text, "Failed contigs (contig | note):", fixed = TRUE)
+  expect_match(r$text, "S1.1.10 | recheck did not finish", fixed = TRUE)
+  expect_false(grepl("Failed samples", r$text, fixed = TRUE))
+  expect_false(grepl("assembler", r$text, fixed = TRUE))
+  stopped <- RiboPilot:::nf_run_report(d, log, 1L, how = "stopped")
+  expect_equal(stopped$lead,
+    "Run stopped. Nextflow stopped its tasks. Press Update on Annotation Review.")
+})

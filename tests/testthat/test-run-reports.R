@@ -116,3 +116,18 @@ test_that("the Run Reports window copes with a project that has no runs", {
     expect_equal(nrow(h$runs()), 0L)
   })
 })
+
+
+test_that("Run Reports names a recheck run as such", {
+  d <- withr::local_tempdir()
+  put_log(d, "recheck_2026-09-08_12-51-00")
+  shiny::testServer(function(input, output, session) {
+    h <- RiboPilot:::run_reports_handlers(input, output, session, function() d,
+      refresh = shiny::reactive(input$refresh))
+  }, {
+    session$setInputs(rr_open = 1)
+    expect_equal(h$runs()$workflow, "recheck")
+    expect_match(output$rr_tbl, "Recheck", fixed = TRUE)
+    expect_false(grepl("Pipeline", output$rr_tbl, fixed = TRUE))
+  })
+})

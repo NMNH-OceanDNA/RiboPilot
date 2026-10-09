@@ -517,9 +517,15 @@ run_modal_title <- function(text, gears_id) {
 #' Headless (served to a remote browser, e.g. an SSH-tunneled cluster login
 #' node): running on the host would burn the login node, so offer an editable
 #' cluster job script to Submit as job / Save instead.
+#' @param pfx Prefix on every input and output id: "" for the Assemble step's
+#'   Update, "rc_" for the recheck on Annotation Review.
+#' @param title Window title; NULL gives the pipeline's.
+#' @param resume Offer the Resume box; the recheck has no -resume.
 #' @noRd
-run_modal <- function(n, headless = FALSE, sched = NULL, script = "") {
-  wf <- "RiboPilot pipeline"
+run_modal <- function(n, headless = FALSE, sched = NULL, script = "", pfx = "",
+                      title = NULL, resume = TRUE) {
+  id <- function(x) paste0(pfx, x)
+  title <- title %||% sprintf("RiboPilot pipeline - %d sample(s) or contig(s) to update", n)
   cluster_section <- if (headless) {
     tagList(
       hr(style = "margin:10px 0;"),
@@ -530,37 +536,37 @@ run_modal <- function(n, headless = FALSE, sched = NULL, script = "") {
         } else {
           sprintf("%s found. Check the queue or partition, account, and walltime in the script, then Submit as job (or Save script). The job log goes to .runs/logs/ and the Nextflow log to .runs/nextflow/ in the project folder. This window does not follow the job: use the reload button above the table to see new results, and Run Reports to see how the job went.", sched$name)
         }),
-      tags$textarea(id = "submit_script_text", rows = 11,
+      tags$textarea(id = id("submit_script_text"), rows = 11,
         style = "width:100%; font-family:monospace; font-size:0.78em;", script))
   }
   run_progress <- if (!headless) {
-    shinyjs::hidden(div(id = "nf_progress",
+    shinyjs::hidden(div(id = id("nf_progress"),
       hr(style = "margin:12px 0;"), h5("Progress:", style = "margin:0 0 4px;"),
       div(class = "code-block", style = "max-height:320px; overflow:auto;",
         tags$pre(style = "margin:0; background:transparent; border:0; color:inherit; white-space:pre-wrap;",
-          textOutput("nf_prog_all", container = tags$code)))))
+          textOutput(id("nf_prog_all"), container = tags$code)))))
   }
   footer <- if (headless) {
     mp_footer(
-      primary = if (!is.null(sched)) actionButton("submit_job", "Submit as job"),
+      primary = if (!is.null(sched)) actionButton(id("submit_job"), "Submit as job"),
       dismiss = NULL,
       extra = tagList(
-        actionButton("save_script", "Save script"),
-        actionButton("nf_close", "Close")))
+        actionButton(id("save_script"), "Save script"),
+        actionButton(id("nf_close"), "Close")))
   } else {
     mp_footer(
-      primary = actionButton("nf_start", "Run from App"), dismiss = NULL,
+      primary = actionButton(id("nf_start"), "Run from App"), dismiss = NULL,
       extra = tagList(
-        shinyjs::hidden(actionButton("nf_stop", "Stop")),
-        actionButton("nf_close", "Close")))
+        shinyjs::hidden(actionButton(id("nf_stop"), "Stop")),
+        actionButton(id("nf_close"), "Close")))
   }
   modalDialog(
-    title = run_modal_title(sprintf("%s - %d sample(s) or contig(s) to update", wf, n), "rp_gears"),
+    title = run_modal_title(title, id("rp_gears")),
     size = "l",
-    shinyWidgets::prettyCheckbox("nf_resume", "Resume previous run?", value = TRUE,
-      status = "primary", inline = TRUE),
+    if (resume) shinyWidgets::prettyCheckbox(id("nf_resume"), "Resume previous run?",
+      value = TRUE, status = "primary", inline = TRUE),
     h5("Nextflow command:", style = "margin:6px 0 4px;"),
-    div(class = "code-block", textOutput("nf_cmd_text")),
+    div(class = "code-block", textOutput(id("nf_cmd_text"))),
     run_progress,
     cluster_section,
     footer = footer

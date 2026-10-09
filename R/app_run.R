@@ -168,6 +168,21 @@ build_reference_submit_script <- function(project, manifest, ref_dir, api_key = 
   job_script(project, cmd, sched, base)
 }
 
+#' Cluster job script for a recheck run
+#'
+#' Launched from its own folder, so the pipeline's -resume history in the
+#' project folder is never touched; the job creates that folder itself.
+#' @param base Timestamped name for this submission's script and logs.
+#' @noRd
+build_recheck_submit_script <- function(project, sched = detect_scheduler(),
+                                        base = job_basename("recheck")) {
+  rc <- file.path(project, ".recheck")
+  args <- c(nf_log_opt(project, base), nf_recheck_command(project), "-ansi-log", "false")
+  cmd <- c(paste("mkdir -p", shQuote(rc)), paste("cd", shQuote(rc)),
+    paste(c(shQuote("nextflow"), shQuote(args)), collapse = " "))
+  job_script(project, cmd, sched, base)
+}
+
 #' Open the RiboPilot app
 #'
 #' Launches the R-Shiny app for reviewing and curating a RiboPilot project.
@@ -225,7 +240,8 @@ run_app <- function(project = getwd(), host = NULL, port = NULL, launch.browser 
 RiboPilot <- run_app
 #' Wire one Nextflow run window: start, live progress, graceful stop, close
 #'
-#' Shared by the Update window (`pfx = ""`) and the Reference build window
+#' Shared by the Assemble step's Update window (`pfx = ""`), the recheck window
+#' on Annotation Review (`pfx = "rc_"`), and the Reference build window
 #' (`pfx = "ref_"`). Inputs `<pfx>nf_start`, `<pfx>nf_stop`, `<pfx>nf_close`,
 #' `<pfx>nf_close_confirm`; outputs `<pfx>nf_prog_all` and the
 #' `<pfx>nf_progress` panel. A run holds the project's run lock until Nextflow
@@ -233,7 +249,8 @@ RiboPilot <- run_app
 #' @param gears Id of the spinner in the window title.
 #' @param project function() -> project folder.
 #' @param kind Run kind named in the lock.
-#' @param workflow Workflow named in the run's files ("pipeline", "reference").
+#' @param workflow Workflow named in the run's files ("pipeline", "recheck",
+#'   "reference").
 #' @param launch function(nflog) -> a running processx process, or NULL when
 #'   there is nothing to run. May stop() with a message for the user.
 #' @param on_lines function(lines) called with new output, or NULL.

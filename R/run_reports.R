@@ -210,6 +210,26 @@ run_failed_samples <- function(con, since, until = NA) {
     params = list(floor(as.numeric(since)), until)), error = function(e) empty)
 }
 
+#' Contigs a recheck run left failed or still running, with their notes
+#'
+#' A contig still running has no note yet: the app writes "recheck did not
+#' finish" only after the report.
+#' @param since,until Epoch seconds (or POSIXct) bounding the run.
+#' @return data.frame(ID, note); ID is `<ID>.<path>.<scaffold>`.
+#' @noRd
+run_failed_rechecks <- function(con, since, until = NA) {
+  empty <- data.frame(ID = character(0), note = character(0), stringsAsFactors = FALSE)
+  if (is.null(con) || length(since) == 0 || is.na(since)) return(empty)
+  until <- if (is.na(until)) 4e9 else as.numeric(until) + 1
+  tryCatch(DBI::dbGetQuery(con,
+    "SELECT r.ID || '.' || r.path || '.' || r.scaffold AS ID,
+            COALESCE(r.check_note, 'recheck did not finish') AS note
+       FROM review_units r
+      WHERE r.check_switch IN (3, 4) AND r.time_stamp >= ? AND r.time_stamp <= ?
+      ORDER BY r.ID, r.path, r.scaffold",
+    params = list(floor(as.numeric(since)), until)), error = function(e) empty)
+}
+
 #' Duration as "1h 2m 3s"
 #' @noRd
 fmt_duration <- function(secs) {
@@ -246,7 +266,9 @@ nf_run_report <- function(project, log, status = NULL, how = "done", con = NULL)
   status <- as.integer(status)
   since <- run_base_time(base)
   if (is.na(since)) since <- f$started
-  bad <- if (workflow != "reference") run_failed_samples(con, since, f$ended) else
+  recheck <- workflow == "recheck"
+  bad <- if (recheck) run_failed_rechecks(con, since, f$ended) else
+    if (workflow != "reference") run_failed_samples(con, since, f$ended) else
     run_failed_samples(NULL, NA)
   n_t <- nrow(f$tasks); n_s <- nrow(bad)
   failed <- (!is.na(status) && status != 0L) || f$fatal
@@ -258,13 +280,16 @@ nf_run_report <- function(project, log, status = NULL, how = "done", con = NULL)
       lead = paste("Nextflow did not stop within", NF_STOP_WAIT, "seconds and was killed,",
         "and the task containers it left were removed.")) else
       list(type = "warning", title = "Run stopped",
-        lead = paste("Run stopped. Nextflow stopped its tasks.", if (workflow != "reference")
-          "Press Update with Resume ticked to continue where it left off." else "Press Build again to restart it.")),
+        lead = paste("Run stopped. Nextflow stopped its tasks.", switch(workflow,
+          reference = "Press Build again to restart it.",
+          recheck = "Press Update on Annotation Review.",
+          "Press Update with Resume ticked to continue where it left off."))),
     failed = list(type = "error", title = "Run failed",
       lead = paste0("The run stopped with an error: ", f$error %|NA|% "see the log", ".")),
     failures = list(type = "warning", title = "Run finished with failures",
       lead = sprintf("Run finished, but %s failed. Copy the report below to send it to the developers.",
-        paste(c(if (n_t) sprintf("%d task(s)", n_t), if (n_s) sprintf("%d sample(s)", n_s)),
+        paste(c(if (n_t) sprintf("%d task(s)", n_t),
+          if (n_s) sprintf(if (recheck) "%d contig(s)" else "%d sample(s)", n_s)),
           collapse = " and "))),
     finished = list(type = "message", title = "Run finished", lead = "Run finished with no failures."))
 
@@ -286,7 +311,8 @@ nf_run_report <- function(project, log, status = NULL, how = "done", con = NULL)
     sprintf("%s | %s | %s | %s%s | %s | %s", f$tasks$sample, f$tasks$step, f$tasks$exit,
       f$tasks$cause, ifelse(f$tasks$tries > 1, sprintf("; tried %d times", f$tasks$tries), ""),
       ifelse(nzchar(f$tasks$stderr), f$tasks$stderr, "-"), f$tasks$workdir))
-  samples <- if (n_s == 0) character(0) else c("",
+  samples <- if (n_s == 0) character(0) else if (recheck) c("",
+    "Failed contigs (contig | note):", sprintf("%s | %s", bad$ID, bad$note)) else c("",
     "Failed samples (sample | note | likely cause):",
     sprintf("%s | %s | %s", bad$ID, bad$note,
       vapply(bad$note, function(n) failure_hint(n)$why, "", USE.NAMES = FALSE)))

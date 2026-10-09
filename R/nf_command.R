@@ -225,3 +225,24 @@ nf_recheck_pending <- function(path) {
   on.exit(DBI::dbDisconnect(con))
   as.integer(nrow(DBI::dbGetQuery(con, RECHECK_QUEUE_SQL)))
 }
+
+
+#' Count the contigs that wait for the Assemble step's Update
+#'
+#' Unlocked, kept contigs of assembly-locked samples that have no review copy
+#' and whose original is queued for the main pipeline or was never annotated.
+#' The recheck cannot take them; "Nothing to update" says how many there are.
+#' @noRd
+nf_recheck_waiting <- function(path) {
+  con <- open_project_db(file.path(path, ".sqlite"))
+  on.exit(DBI::dbDisconnect(con))
+  as.integer(DBI::dbGetQuery(con,
+    "SELECT COUNT(*) AS n FROM annotate an
+       JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
+       JOIN assemble a ON a.ID = an.ID
+      WHERE a.assemble_lock = 1 AND COALESCE(asm.ignore, 0) = 0
+        AND COALESCE(an.annotate_lock, 0) = 0
+        AND NOT EXISTS (SELECT 1 FROM review_units r
+                         WHERE r.ID = an.ID AND r.path = an.path AND r.scaffold = an.scaffold)
+        AND (an.annotate_switch IN (1,4) OR an.n_features IS NULL)")$n)
+}

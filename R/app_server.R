@@ -1178,6 +1178,102 @@ app_server <- function(input, output, session) {
     },
     on_done = function(how) refresh(isolate(refresh()) + 1))
 
+  # ---- Recheck: Update on Annotation Review reruns the checks on review copies ----
+  rc_submit_base <- reactiveVal(NULL)   # timestamp shared by one submission's files
+
+  output$rc_nf_cmd_text <- renderText({
+    input$annot_run_btn
+    paste(c("nextflow", nf_recheck_command(app_project())), collapse = " ")
+  })
+
+  observeEvent(input$annot_run_btn, ignoreInit = TRUE, {
+    held <- run_lock_holder(app_project())
+    if (!is.null(held)) { rp_alert(run_lock_message(held, app_project()), type = "warning"); return() }
+    n <- nf_recheck_pending(app_project())
+    if (n == 0) {
+      w <- nf_recheck_waiting(app_project())
+      rp_alert(paste(c("No contigs are Ready to run. A trim or a moved gene boundary queues a",
+        "contig, and so does setting its State to Ready to run. Locked contigs are skipped.",
+        if (w > 0) paste0("Waiting for the Assemble step's Update: ", mp_n(w, "contig"), ".")),
+        collapse = " "), type = "warning", title = "Nothing to update")
+      return()
+    }
+    hl <- app_headless()
+    sched <- if (hl) detect_scheduler() else NULL
+    if (hl) rc_submit_base(job_basename("recheck"))
+    script <- if (hl) build_recheck_submit_script(app_project(), sched = sched,
+      base = rc_submit_base()) else ""
+    showModal(run_modal(n, headless = hl, sched = sched, script = script, pfx = "rc_",
+      title = sprintf("RiboPilot recheck - %d contig(s) to update", n), resume = FALSE))
+  })
+
+  write_recheck_script <- function() {
+    base <- rc_submit_base() %||% job_basename("recheck")
+    typed <- input$rc_submit_script_text %||% ""
+    script <- if (nzchar(trimws(typed))) typed else
+      build_recheck_submit_script(app_project(), base = base)
+    f <- job_path(app_project(), "script", paste0(base, ".sh"))
+    writeLines(script, f)
+    try(Sys.chmod(f, "0755"), silent = TRUE)
+    f
+  }
+  observeEvent(input$rc_save_script, {
+    f <- write_recheck_script()
+    rp_alert(paste0("Saved job script to ", f), type = "message")
+  })
+  rc_job_sent <- reactiveVal(FALSE)
+  rc_resubmit_ok <- reactiveVal(FALSE)
+  observeEvent(input$rc_submit_job, {
+    held <- run_lock_holder(app_project())
+    if (!is.null(held)) { rp_alert(run_lock_message(held, app_project()), type = "warning"); return() }
+    if (isTRUE(rc_job_sent()) && !isTRUE(rc_resubmit_ok())) {
+      rc_resubmit_ok(TRUE)
+      rp_alert(paste("A recheck job for this project was already submitted from this window and",
+        "may still be queued or running. Press Submit as job again to submit another."),
+        type = "warning")
+      return()
+    }
+    rc_resubmit_ok(FALSE)
+    sched <- detect_scheduler()
+    if (is.null(sched)) {
+      rp_alert("No scheduler (sbatch/qsub/bsub) found on PATH.", type = "warning"); return()
+    }
+    f <- write_recheck_script()
+    shinyWidgets::sendSweetAlert(title = "Submitting...",
+      text = paste0("Handing the job script to ", sched$cmd,
+        ". Hold tight, a busy cluster can take a few seconds to answer."),
+      type = "info", btn_labels = NA, closeOnClickOutside = FALSE)
+    later::later(function() {
+      shiny::withReactiveDomain(session, {
+        out <- tryCatch(submit_job(sched$cmd, f), error = function(e) conditionMessage(e))
+        rc_job_sent(TRUE)
+        rp_alert(paste0("Submitted via ", sched$cmd, ": ", paste(out, collapse = " ")),
+          type = "message")
+        removeModal()
+      })
+    }, delay = 0.1)
+  })
+
+  # Launched from .recheck so the pipeline's -resume history is never touched.
+  # nf_run_window writes the report before on_done, so contigs the run left
+  # running are reported as failures before they go back to the queue.
+  nf_run_window(input, output, session, pfx = "rc_", gears = "rc_rp_gears",
+    project = app_project, kind = "recheck", workflow = "recheck",
+    launch = function(nflog) {
+      wd <- file.path(app_project(), ".recheck")
+      dir.create(wd, recursive = TRUE, showWarnings = FALSE)
+      nf_spawn("nextflow", c("-log", nflog, nf_recheck_command(app_project()), "-ansi-log"),
+        wd, nf_env())
+    },
+    on_done = function(how) {
+      try(local({
+        con <- app_con()
+        on.exit(DBI::dbDisconnect(con))
+        recheck_release_running(con)
+      }), silent = TRUE)
+      refresh(isolate(refresh()) + 1)
+    })
+
   # Stop the app when the last browser session closes (survives refresh). After
   # the run windows, so the grace period starts once their runs have stopped.
   register_app_lifecycle(session)

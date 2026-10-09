@@ -126,12 +126,16 @@ test_that("annotation and curation presets are set from the Assemble surface", {
   expect_false(grepl("curate_opts", ann_q, fixed = TRUE))
 })
 
-test_that("the Annotate tab has no Update button", {
+test_that("the Annotation Review toolbar has its own Update button", {
   ui <- paste(deparse(RiboPilot:::app_ui), collapse = "\n")
   i <- regexpr("input.mode == 'Annotate'", ui, fixed = TRUE)
-  expect_true(i > 0)
-  block <- substr(ui, i, i + 400)
-  expect_false(grepl("run_btn", block, fixed = TRUE))
+  j <- regexpr("input.mode == 'Export'", ui, fixed = TRUE)
+  expect_true(i > 0 && j > i)
+  block <- substr(ui, i, j)
+  expect_true(grepl("annot_run_btn", block, fixed = TRUE))
+  expect_false(grepl("asmb_run_btn", block, fixed = TRUE))
+  html <- as.character(RiboPilot:::app_ui(NULL))
+  expect_true(grepl('id="annot_run_btn"', html, fixed = TRUE))
 })
 
 test_that("the mode picker shows Annotation Review but keys on Annotate", {

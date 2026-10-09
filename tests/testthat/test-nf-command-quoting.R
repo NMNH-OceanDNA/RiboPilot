@@ -135,3 +135,22 @@ test_that("the reference submit script quotes per argument too", {
   expect_equal(words[which(words == "--projectDir") + 1], proj)
   expect_equal(utils::tail(words, 2), c("-ansi-log", "false"))
 })
+
+
+test_that("the recheck submit script makes and enters .recheck, with no -resume", {
+  skip_if_not_installed("withr")
+  proj <- file.path(withr::local_tempdir(), "my project")
+  dir.create(proj)
+  mk_cfg_project(proj, c("params {", "  rawDir = '/data/raw'", "}"))
+  script <- RiboPilot:::build_recheck_submit_script(proj, sched = NULL)
+  words <- shell_words(script)
+  expect_equal(words[which(words == "--projectDir") + 1], proj)
+  expect_equal(words[which(words == "-work-dir") + 1], file.path(proj, "work_recheck"))
+  expect_false("-resume" %in% words)
+  expect_equal(dirname(words[which(words == "-log") + 1]), file.path(proj, ".runs", "nextflow"))
+  expect_equal(utils::tail(words, 2), c("-ansi-log", "false"))
+  lines <- strsplit(script, "\n", fixed = TRUE)[[1]]
+  rc <- file.path(proj, ".recheck")
+  expect_lt(match(paste("mkdir -p", shQuote(rc)), lines), match(paste("cd", shQuote(rc)), lines))
+  expect_lt(match(paste("cd", shQuote(rc)), lines), grep("^'nextflow'", lines))
+})
