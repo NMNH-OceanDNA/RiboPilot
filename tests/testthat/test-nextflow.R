@@ -766,6 +766,7 @@ test_that("blast.nf falls back to remote when a configured local panel fails ins
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S1',7955,NULL,NULL)")
   DBI::dbExecute(con, RiboPilot:::BLAST_HITS_DDL)
   DBI::dbExecute(con, RiboPilot:::BLAST_SEARCHED_DDL)
+  DBI::dbExecute(con, RiboPilot:::REVIEW_UNITS_DDL)
   DBI::dbExecute(con, "CREATE TABLE blast_ref_candidates(ID TEXT, path INT, scaffold INT, rank INT,
     accession TEXT, species TEXT, title TEXT, pident REAL, qcovs REAL, evalue REAL, bitscore REAL, time_stamp INT)")
   DBI::dbExecute(con, "CREATE TABLE blast_screen(ID TEXT, path INT, scaffold INT, accession TEXT, title TEXT,
@@ -856,6 +857,7 @@ mk_dbarg_project <- function(root, blastdb) {
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S1',7955,NULL,NULL)")
   DBI::dbExecute(con, RiboPilot:::BLAST_HITS_DDL)
   DBI::dbExecute(con, RiboPilot:::BLAST_SEARCHED_DDL)
+  DBI::dbExecute(con, RiboPilot:::REVIEW_UNITS_DDL)
   DBI::dbExecute(con, "CREATE TABLE blast_ref_candidates(ID TEXT, path INT, scaffold INT, rank INT,
     accession TEXT, species TEXT, title TEXT, pident REAL, qcovs REAL, evalue REAL, bitscore REAL, time_stamp INT)")
   DBI::dbExecute(con, "CREATE TABLE blast_screen(ID TEXT, path INT, scaffold INT, accession TEXT, title TEXT,
@@ -1081,6 +1083,7 @@ test_that("blast_genbank records provenance for a discovered, unconfigured panel
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S1',7955,NULL,NULL)")
   DBI::dbExecute(con, RiboPilot:::BLAST_HITS_DDL)
   DBI::dbExecute(con, RiboPilot:::BLAST_SEARCHED_DDL)
+  DBI::dbExecute(con, RiboPilot:::REVIEW_UNITS_DDL)
   DBI::dbExecute(con, "CREATE TABLE blast_ref_candidates(ID TEXT, path INT, scaffold INT, rank INT,
     accession TEXT, species TEXT, title TEXT, pident REAL, qcovs REAL, evalue REAL, bitscore REAL, time_stamp INT)")
   DBI::dbExecute(con, "CREATE TABLE blast_screen(ID TEXT, path INT, scaffold INT, accession TEXT, title TEXT,
@@ -1167,6 +1170,7 @@ test_that("blast.nf warns when extra_opts sets -evalue for a local search", {
     # no assemblies rows: UNITS resolves empty, so the per-unit loop never runs
     DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, sequence TEXT, ignore INT)")
     DBI::dbExecute(con, RiboPilot:::BLAST_SEARCHED_DDL)
+    DBI::dbExecute(con, RiboPilot:::REVIEW_UNITS_DDL)
     DBI::dbDisconnect(con)
 
     writeLines(c(
@@ -1287,6 +1291,7 @@ test_that("a local failure on one unit does not disable local search for the res
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S1',7955,NULL,NULL)")
   DBI::dbExecute(con, RiboPilot:::BLAST_HITS_DDL)
   DBI::dbExecute(con, RiboPilot:::BLAST_SEARCHED_DDL)
+  DBI::dbExecute(con, RiboPilot:::REVIEW_UNITS_DDL)
   DBI::dbExecute(con, "CREATE TABLE blast_ref_candidates(ID TEXT, path INT, scaffold INT, rank INT,
     accession TEXT, species TEXT, title TEXT, pident REAL, qcovs REAL, evalue REAL, bitscore REAL, time_stamp INT)")
   DBI::dbExecute(con, "CREATE TABLE blast_screen(ID TEXT, path INT, scaffold INT, accession TEXT, title TEXT,
