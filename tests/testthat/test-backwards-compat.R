@@ -134,6 +134,7 @@ test_that("a v1 database run through every step matches a fresh new_db()", {
   expect_equal(bc_schema(old), bc_schema(file.path(dir, ".sqlite")))
   expect_equal(bc_views(old), bc_views(file.path(dir, ".sqlite")))
   expect_setequal(names(bc_views(old)), names(RiboPilot:::REVIEW_VIEWS_DDL))
+  expect_false("assembly_backup" %in% names(bc_schema(old)))
 })
 
 test_that("run_app stops on a project that needs an update", {

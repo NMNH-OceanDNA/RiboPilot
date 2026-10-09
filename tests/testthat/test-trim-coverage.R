@@ -1,7 +1,7 @@
 # Helpers the schema step 4 upgrade uses to write a trimmed contig's original
 # back: the coverage summary (median_depth is the column the contig table and
 # triage read) and the chimera rows, moved by a shift or put back from the JSON
-# an older trim stored in assembly_backup.chimera.
+# an older trim saved.
 
 mk_trim_db <- function(dir, seq, depths) {
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
@@ -111,4 +111,32 @@ test_that("shifting away every junction clears the chimera label, and chimera_re
   expect_equal(ch()$label, "severe")
   expect_equal(ch()$junctions, "30")
   expect_equal(nrow(DBI::dbGetQuery(con, "SELECT * FROM chimera_windows")), 2L)
+})
+
+test_that("chimera_shift and chimera_restore work inside an open transaction", {
+  dir <- withr::local_tempdir()
+  con <- mk_trim_db(dir, strrep("ACGT", 25), rep(20, 100))
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "INSERT INTO chimera (ID, path, scaffold, label, junctions) VALUES ('S1',1,1,'severe','30,70')")
+  DBI::dbExecute(con, "INSERT INTO chimera_windows (ID, path, scaffold, start, stop, pident, lineage, lineage_taxids)
+    VALUES ('S1',1,1,1,40,99,'K;P;C1;o;f;g;s','1;2;3;;;;'), ('S1',1,1,51,90,99,'K;P;C2;o;f;g;s','1;2;4;;;;')")
+  win <- function() DBI::dbGetQuery(con, "SELECT start FROM chimera_windows ORDER BY start")$start
+  snap <- chimera_json(con)
+
+  DBI::dbWithTransaction(con, {
+    RiboPilot:::chimera_shift(con, "S1", 1L, 1L, 40L, 60L)
+    expect_equal(win(), 11L)
+    RiboPilot:::chimera_restore(con, "S1", 1L, 1L, snap)
+  })
+  expect_equal(win(), c(1L, 51L))
+
+  # a snapshot that no longer fits the table leaves the rows as they were
+  bad <- sub('"label":', '"retired":1,"label":', snap, fixed = TRUE)
+  DBI::dbWithTransaction(con, {
+    expect_error(RiboPilot:::chimera_restore(con, "S1", 1L, 1L, bad))
+    expect_equal(win(), c(1L, 51L))
+    RiboPilot:::chimera_shift(con, "S1", 1L, 1L, 40L, 60L)
+  })
+  expect_equal(win(), 11L)
+  expect_false(RSQLite::sqliteIsTransacting(con))
 })

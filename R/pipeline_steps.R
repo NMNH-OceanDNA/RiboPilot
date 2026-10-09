@@ -241,7 +241,7 @@ refresh_sample_state <- function(con, id) {
 #' @noRd
 UNIT_EVIDENCE_TABLES <- c("annotations", "coverage", "screen", "chimera", "chimera_windows",
   "blast_hits", "blast_screen", "blast_searched", "blast_ref_candidates",
-  "blast_ref_alignment", "assembly_backup", REVIEW_TABLES)
+  "blast_ref_alignment", REVIEW_TABLES)
 
 #' Forget everything known about a unit whose sequence was replaced
 #'
@@ -550,9 +550,6 @@ load_assemblies <- function(con, dir, ID) {
     }
   }
 
-  # A (re)assembly invalidates any pre-trim undo snapshots for this sample.
-  tryCatch(DBI::dbExecute(con, "DELETE FROM assembly_backup WHERE ID = ?", params = list(ID)),
-    error = function(e) NULL)
   # triage closes the sample, and it never runs for one with no unit to annotate
   n_work <- DBI::dbGetQuery(con,
     "SELECT COUNT(*) n FROM annotate an JOIN assemblies asm

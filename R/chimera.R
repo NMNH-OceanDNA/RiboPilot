@@ -583,7 +583,7 @@ chimera_shift <- function(con, id, path, scaffold, offset, len) {
   gone <- any(!is.na(j0)) && !length(j)
   reason <- gsub(" ()", "", chimera_reason(seg, list(), j), fixed = TRUE)
   if (gone) reason <- sub("no junction", "junctions trimmed away", reason, fixed = TRUE)
-  DBI::dbWithTransaction(con, {
+  with_savepoint(con, {
     DBI::dbExecute(con, "DELETE FROM chimera_windows WHERE ID = ? AND path = ? AND scaffold = ?", params = p)
     if (nrow(w)) DBI::dbAppendTable(con, "chimera_windows", w)
     DBI::dbExecute(con,
@@ -596,12 +596,12 @@ chimera_shift <- function(con, id, path, scaffold, offset, len) {
   invisible()
 }
 
-#' Put back a chimera result and windows stored as JSON (assembly_backup.chimera)
+#' Put back a chimera result and windows saved as JSON by an older trim
 #' @noRd
 chimera_restore <- function(con, id, path, scaffold, snap) {
   s <- jsonlite::fromJSON(snap)
   p <- list(id, as.integer(path), as.integer(scaffold))
-  DBI::dbWithTransaction(con, {
+  with_savepoint(con, {
     DBI::dbExecute(con, "DELETE FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", params = p)
     DBI::dbExecute(con, "DELETE FROM chimera_windows WHERE ID = ? AND path = ? AND scaffold = ?", params = p)
     DBI::dbAppendTable(con, "chimera", as.data.frame(s$chimera))

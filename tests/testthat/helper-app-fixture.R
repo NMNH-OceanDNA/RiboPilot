@@ -3,8 +3,7 @@
 
 fixture_fill_schema <- function(con) {
   for (ddl in list(RiboPilot:::BLAST_HITS_DDL, RiboPilot:::BLAST_SEARCHED_DDL, RiboPilot:::TRIAGE_OPTS_DDL,
-                   RiboPilot:::SCREEN_DDL, RiboPilot:::ASSEMBLY_BACKUP_DDL,
-                   RiboPilot:::REFERENCE_DDL, RiboPilot:::REFERENCE_CONFIG_DDL,
+                   RiboPilot:::SCREEN_DDL, RiboPilot:::REFERENCE_DDL, RiboPilot:::REFERENCE_CONFIG_DDL,
                    RiboPilot:::CHIMERA_DDL, RiboPilot:::CHIMERA_WINDOWS_DDL,
                    RiboPilot:::META_RECORDS_DDL, RiboPilot:::META_STATUS_DDL,
                    RiboPilot:::META_EXPORT_FIELDS_DDL, RiboPilot:::META_CSV_MAP_DDL,

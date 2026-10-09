@@ -26,6 +26,8 @@ db_migrations <- function() {
         DBI::dbExecute(con, "ALTER TABLE annotate ADD COLUMN itsx_origin TEXT")
         DBI::dbExecute(con, "ALTER TABLE annotate ADD COLUMN itsx_scores TEXT")
         review_apply_schema(con)
+        review_upgrade(con)
+        DBI::dbExecute(con, "DROP TABLE assembly_backup")
       })
   )
 }

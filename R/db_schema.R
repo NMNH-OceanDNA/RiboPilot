@@ -206,21 +206,6 @@ BLAST_REF_ALIGNMENT_DDL <- "CREATE TABLE IF NOT EXISTS blast_ref_alignment (
   PRIMARY KEY (ID, path, scaffold, accession, element)
 );"
 
-#' DDL for the assembly_backup table (original pre-trim state, for undo/restore).
-#' @noRd
-ASSEMBLY_BACKUP_DDL <- "CREATE TABLE IF NOT EXISTS assembly_backup (
-  ID TEXT NOT NULL,
-  path INTEGER NOT NULL DEFAULT 1,
-  scaffold INTEGER NOT NULL DEFAULT 1,
-  sequence TEXT,
-  length INTEGER,
-  annotations TEXT,
-  coverage TEXT,
-  chimera TEXT,
-  time_stamp INTEGER,
-  PRIMARY KEY (ID, path, scaffold)
-);"
-
 #' DDL for the reference table (one row per clade reference-database group).
 #' @noRd
 REFERENCE_DDL <- "CREATE TABLE IF NOT EXISTS reference (

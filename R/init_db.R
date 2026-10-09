@@ -443,9 +443,6 @@ new_db <- function(
     );"
   )
 
-  # assembly_backup (original pre-trim state so a trim can be undone) ----
-  DBI::dbExecute(con, ASSEMBLY_BACKUP_DDL)
-
   # annotations (nrDNA feature model per assembly unit; see ANNOTATIONS_DDL) ----
   DBI::dbExecute(con, ANNOTATIONS_DDL)
 
