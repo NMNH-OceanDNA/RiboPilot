@@ -42,10 +42,10 @@ test_that("recheck_tools records tool failures, retries out-of-memory exits, and
     "workflow {",
     "    recheck_tools(Channel.of(",
     "        tuple('S1', 1, 1, '1791234567890', 1, 1, 'map'),",
-    "        tuple('S1', 1, 2, '1791234567890', 1, 1, 'local'),",
+    "        tuple('S1', 1, 2, '1791234567890', 2, 1, 'local'),",
     "        tuple('S1', 1, 3, '1791234567889', 1, 1, 'map'),",
     "        tuple('S1', 1, 4, '1791234567890', 1, 1, 'map')))",
-    "    recheck_tools.out.view { \"EMITTED ${it[0]}.${it[1]}.${it[2]} ${it[3]} ${it[4]} ${it[5].text.readLines().join(',')}\" }",
+    "    recheck_tools.out.view { \"EMITTED ${it[0]}.${it[1]}.${it[2]} ${it[3]} ${it[4]} ${it[5].text.readLines().join(',')} n=${it[9]}\" }",
     "}"), file.path(root, "main.nf"))
 
   res <- processx::run("nextflow", c("run", file.path(root, "main.nf"),
@@ -59,7 +59,7 @@ test_that("recheck_tools records tool failures, retries out-of-memory exits, and
   expect_equal(sort(readLines(file.path(root, "seen"))),
     c("S1.1.1", "S1.1.2", "S1.1.2", rep("S1.1.4", 4)))
   expect_match(res$stdout, "EMITTED S1.1.1 1791234567890 map barrnap=1,itsx=0,itsx_check=0", fixed = TRUE)
-  expect_match(res$stdout, "EMITTED S1.1.2 1791234567890 local barrnap=0,itsx=0,itsx_check=0", fixed = TRUE)
+  expect_match(res$stdout, "EMITTED S1.1.2 1791234567890 local barrnap=0,itsx=0,itsx_check=0 n=2", fixed = TRUE)
   expect_no_match(res$stdout, "EMITTED S1.1.3", fixed = TRUE)
   expect_no_match(res$stdout, "EMITTED S1.1.4", fixed = TRUE)
 })

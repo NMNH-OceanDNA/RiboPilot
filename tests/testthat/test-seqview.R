@@ -132,25 +132,3 @@ test_that("each details window sends its own layer to the sequence viewer", {
   expect_true(sent[["seqv_ann-canvas"]])
   expect_false(sent[["seqv_asm-canvas"]])
 })
-
-test_that("each details window sends its own layer to the sequence viewer", {
-  skip_if_not_installed("withr")
-  dir <- mk_app_project()
-  withr::local_dir(dir)
-  sent <- list()
-  local_mocked_bindings(seqview_send = function(session, canvas, input, id, path, scaffold, selected = NULL,
-    review = FALSE) sent[[canvas]] <<- review)
-
-  shiny::testServer(RiboPilot:::app_server, {
-    session$setInputs(mode = "Annotate")
-    sel_unit(list(ID = "S1", path = 1L, scaffold = 1L))
-    session$flushReact()
-    session$setInputs(mode = "Assemble")
-    sel_id("S1")
-    session$flushReact()
-    session$setInputs(scaf_examine = "S1|1|1")
-    session$flushReact()
-  })
-  expect_true(sent[["seqv_ann-canvas"]])
-  expect_false(sent[["seqv_asm-canvas"]])
-})

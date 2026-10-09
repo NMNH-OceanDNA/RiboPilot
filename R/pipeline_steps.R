@@ -654,6 +654,7 @@ trim_bounds <- function(a, b, n, flank = 0L) {
 batch_trim_plan <- function(con, u, flank = 0L, restore = FALSE) {
   u$from <- rep(NA_integer_, nrow(u)); u$to <- u$from; u$reason <- rep(NA_character_, nrow(u))
   key <- "WHERE ID = ? AND path = ? AND scaffold = ?"
+  waiting <- if (restore || !nrow(u)) rep(FALSE, nrow(u)) else review_unit_state(con, u[c("ID", "path", "scaffold")])$state %in% "waiting"
   for (i in seq_len(nrow(u))) {
     q <- function(sql) DBI::dbGetQuery(con, paste(sql, key), params = list(u$ID[i], u$path[i], u$scaffold[i]))
     if (isTRUE(q("SELECT annotate_lock FROM annotate")$annotate_lock[1] == 1)) {
@@ -663,6 +664,7 @@ batch_trim_plan <- function(con, u, flank = 0L, restore = FALSE) {
       if (!review_has_copy(con, u$ID[i], u$path[i], u$scaffold[i])) u$reason[i] <- "no edits to restore"
       next
     }
+    if (waiting[i]) { u$reason[i] <- WAITING_MSG; next }
     n <- q("SELECT LENGTH(sequence) n FROM review_units_v")$n
     if (!length(n) || is.na(n[1]) || n[1] == 0) { u$reason[i] <- "no sequence"; next }
     a <- q("SELECT element, start, stop FROM review_annotations_v")

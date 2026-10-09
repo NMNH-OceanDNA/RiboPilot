@@ -141,3 +141,42 @@ test_that("Lock on Annotation Review asks about flags found on the review copy",
     expect_equal(lk(), c(0L, 0L, 0L, 0L))
   })
 })
+
+test_that("a contig invalidated between click and confirm is not locked", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  fixture_mark_done(con)
+  RiboPilot:::review_copy(con, "S1", 1L, 1L)
+  DBI::dbExecute(con, "UPDATE review_units SET check_switch = 2, itsx_warnings = '', curate_flags = 'contaminant'
+    WHERE ID = 'S1' AND path = 1 AND scaffold = 1")
+  DBI::dbDisconnect(con)
+  withr::local_dir(dir)
+  local_mocked_bindings(mp_alert = function(...) NULL)
+  lk <- function() RiboPilot:::app_query(
+    "SELECT COALESCE(annotate_lock, 0) AS v FROM annotate WHERE ID = 'S1' ORDER BY path, scaffold")$v
+  set <- function(sql) { c2 <- RiboPilot:::app_con(); DBI::dbExecute(c2, sql); DBI::dbDisconnect(c2) }
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Annotate")
+    session$flushReact()
+    d <- samples_data()
+    row <- function(p, s) which(d$path == p & d$scaffold == s)[1]
+    session$setInputs(tbl__reactable__selected = row(1, 1), annot_lock_btn = 1)
+    session$flushReact()
+    set("UPDATE review_units SET check_switch = 1 WHERE path = 1 AND scaffold = 1")
+    session$setInputs(lock_confirm = TRUE)
+    expect_equal(lk(), c(0L, 0L, 0L, 0L))
+
+    sel_unit(list(ID = "S1", path = 1L, scaffold = 1L))
+    session$setInputs(modal_lock = 1)
+    session$flushReact()
+    set("UPDATE review_units SET check_switch = 2 WHERE path = 1 AND scaffold = 1")
+    session$setInputs(modal_lock = 2)
+    session$flushReact()
+    set("UPDATE review_units SET check_switch = 1 WHERE path = 1 AND scaffold = 1")
+    session$setInputs(lock_confirm = FALSE)
+    session$setInputs(lock_confirm = TRUE)
+    expect_equal(lk(), c(0L, 0L, 0L, 0L))
+  })
+})

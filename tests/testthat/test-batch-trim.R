@@ -17,6 +17,7 @@ mk_batch_project <- function(env = parent.frame()) {
       params = list(u[1], u[2], f[1], as.integer(f[2]), as.integer(f[3])))
   }
   DBI::dbExecute(con, "UPDATE annotate SET annotate_lock = 1 WHERE path = 2 AND scaffold = 1")
+  fixture_mark_done(con)
   dir
 }
 
@@ -37,14 +38,17 @@ test_that("only unlocked units with all five features are eligible, with reasons
     c("no edits to restore", "no edits to restore", "annotation locked", "no edits to restore"))
 })
 
-test_that("contigs queued for a run are trimmed like any other", {
+test_that("contigs waiting for the Assemble step's Update are refused; copies are trimmed", {
   skip_if_not_installed("withr")
   dir <- mk_batch_project()
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
   on.exit(DBI::dbDisconnect(con))
   DBI::dbExecute(con, "UPDATE assemble SET assemble_lock = 1, assemble_switch = 4")
   DBI::dbExecute(con, "UPDATE annotate SET annotate_switch = 4")
-  expect_equal(RiboPilot:::batch_trim_plan(con, units4)$reason, c(NA, "missing ITS2, 28S", "annotation locked", NA))
+  w <- "Press Update on the Assemble step first."
+  expect_equal(RiboPilot:::batch_trim_plan(con, units4)$reason, c(w, w, "annotation locked", w))
+  RiboPilot:::review_copy(con, "S1", 1L, 1L)
+  expect_equal(RiboPilot:::batch_trim_plan(con, units4)$reason[1], NA_character_)
   expect_false("running" %in% names(formals(RiboPilot:::batch_trim_plan)))
 })
 

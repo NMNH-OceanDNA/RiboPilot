@@ -1675,7 +1675,13 @@ test_that("recheck_tools runs the tools only on the queued rev and fails only on
   expect_length(codes, 1)
   codes <- as.integer(strsplit(sub(".* in ([0-9|]+)\\).*", "\\1", codes), "|", fixed = TRUE)[[1]])
   expect_setequal(codes, RiboPilot:::NF_RETRY_CODES)
-  expect_match(txt, "path('unit.itsx_check*'), optional: true", fixed = TRUE)
+  expect_match(txt, "path('unit.itsx_check*'), val(nthreads), optional: true", fixed = TRUE)
+})
+
+test_that("recheck takes its cpus from the nthreads recheck_tools passes on", {
+  body <- recheck_body(recheck_nf, "recheck")
+  expect_true(any(trimws(body) == "cpus { nthreads as int }"))
+  expect_true(any(grepl("path(chk), val(nthreads)", body, fixed = TRUE)))
 })
 
 test_that("the recheck process resolves the panel and labels as the chimera process does", {

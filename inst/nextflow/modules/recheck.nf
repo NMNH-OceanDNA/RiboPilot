@@ -67,7 +67,7 @@ process recheck_tools {
     tuple val(id), val(upath), val(uscaf), val(rev), val(nthreads), val(mem), val(mode)
     output:
     tuple val(id), val(upath), val(uscaf), val(rev), val(mode), path('unit.tools_status'),
-          path('unit.barrnap.gff'), path('unit.itsx.positions.txt'), path('unit.itsx_check*'), optional: true
+          path('unit.barrnap.gff'), path('unit.itsx.positions.txt'), path('unit.itsx_check*'), val(nthreads), optional: true
     script:
     """
     sqlite3 -cmd '.timeout 10000' '${params.db}' \
@@ -103,8 +103,9 @@ process recheck {
     cache false
     tag "${id}.${upath}.${uscaf}"
     errorStrategy 'ignore'
+    cpus { nthreads as int }
     input:
-    tuple val(id), val(upath), val(uscaf), val(rev), val(mode), path(status), path(gff), path(pos), path(chk)
+    tuple val(id), val(upath), val(uscaf), val(rev), val(mode), path(status), path(gff), path(pos), path(chk), val(nthreads)
     script:
     """
     DBARG=""

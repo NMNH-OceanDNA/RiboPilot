@@ -71,8 +71,8 @@
   contigs for that Update. A contig whose original still waits for the
   Assemble step's Update says so.
 * Lock on Annotation Review refuses the whole click when a selected contig's
-  checks are not finished, and lists those contigs with what to do next. Exclude & Lock still works. Export leaves such contigs
-  out and counts them.
+  checks are not finished, and lists those contigs with what to do next.
+  Exclude & Lock still works. Export leaves such contigs out and counts them.
 * Restore deletes the working copy, so the contig shows its original sequence,
   features, and checks again. It undoes trims, boundary edits, and 5'/3'
   choices; marks, notes, and export group stay. Restore on the toolbar works on

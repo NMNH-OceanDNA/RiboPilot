@@ -243,6 +243,8 @@ app_server <- function(input, output, session) {
       con <- app_con(); on.exit(DBI::dbDisconnect(con))
       st <- review_unit_state(con, d[c("ID", "path", "scaffold")])
       d$annotate_switch[st$state %in% "waiting"] <- 5L
+      # No copy and nothing queued: Update has no copy to run, so hold, not Ready to run.
+      d$annotate_switch[st$state %in% "not run" & st$has_copy %in% 0] <- 0L
       d$check_state <- ifelse(st$state %in% "done", NA_character_, review_state_text(st$state))
       d$check_note <- st$check_note
       d
@@ -785,6 +787,13 @@ app_server <- function(input, output, session) {
       type = "warning", title = "Checks not finished")
     FALSE
   }
+  # Units that may still lock; the gate runs again at confirm, after the click.
+  still_lockable <- function(u) {
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    ok <- is.na(review_lock_gate(con, u))
+    if (!all(ok)) rp_toast("Some contigs changed since you clicked Lock and were skipped.", type = "warning")
+    u[ok, , drop = FALSE]
+  }
   lock_sql <- function(mm, to) sprintf("UPDATE %s SET %s_lock = %d WHERE ID = ?", mm$tbl, mm$pfx, to)
   next_step <- c(taxonomy = "Assemble", assemble = "Annotation Review", annotate = "Export")
   lock_rows <- function(s) {
@@ -809,7 +818,10 @@ app_server <- function(input, output, session) {
       if (skip) unlock() else lock_next(unlock)
       return()
     }
-    do_lock <- function() set_flag(lock_sql(mm, 1L), verb = "locked", u = u)
+    do_lock <- function() {
+      lu <- if (identical(mm$pfx, "annotate")) still_lockable(u) else u
+      if (NROW(lu)) set_flag(lock_sql(mm, 1L), verb = "locked", u = lu)
+    }
     if (identical(mm$pfx, "taxonomy")) {
       weak <- d$ID[s][is.na(d$taxid[s])]
       if (length(weak) > 0) {
@@ -2974,7 +2986,7 @@ app_server <- function(input, output, session) {
   }
   observeEvent(input$feat_edit, ignoreInit = TRUE, {
     if (isTRUE(input$feat_edit)) {
-      if (lock_blocked()) {
+      if (lock_blocked() || waiting_blocked()) {
         shinyWidgets::updatePrettyCheckbox(session, "feat_edit", value = FALSE); return()
       }
       if (is.null(active_feature())) {
@@ -3026,7 +3038,7 @@ app_server <- function(input, output, session) {
   # ---- trim the active unit to annotated / custom boundaries ----
   observeEvent(input$trim_btn, {
     u <- sel_unit(); req(u)
-    if (edits_block() || lock_blocked()) return()
+    if (edits_block() || lock_blocked() || waiting_blocked()) return()
     s <- app_query("SELECT length FROM review_units_v WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())
     if (nrow(s) == 0 || is.na(s$length[1])) {
       rp_alert("No contig sequence to trim.", type = "warning"); return()
@@ -3210,6 +3222,7 @@ app_server <- function(input, output, session) {
     if (end == "5") start <- start + if (dir == "out") -step else step
     else stop <- stop + if (dir == "out") step else -step
     start <- max(1, start); stop <- min(if (n > 0) n else stop, stop)
+    if (start == cx$start && stop == cx$stop) return()
     if (start > stop) { rp_toast("Boundaries would cross; nudge ignored.", type = "warning"); return() }
     u <- sel_unit()
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
@@ -3266,6 +3279,15 @@ app_server <- function(input, output, session) {
     rp_toast(MP_UNIT_LOCKED, type = "warning")
     TRUE
   }
+  # A contig waiting for the Assemble step's Update has no review layer to edit yet.
+  waiting_blocked <- function() {
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    u <- sel_unit(); req(u)
+    st <- review_unit_state(con, data.frame(ID = u$ID, path = as.integer(u$path), scaffold = as.integer(u$scaffold)))$state
+    if (!identical(st, "waiting")) return(FALSE)
+    rp_toast(WAITING_MSG, type = "warning")
+    TRUE
+  }
   # Unsaved boundary edits stop any exit from the annotation window.
   edits_block <- function() {
     if (!isTRUE(edit_dirty())) return(FALSE)
@@ -3287,6 +3309,7 @@ app_server <- function(input, output, session) {
   }
   lock_unit_now <- function(close) {
     u <- sel_unit()
+    if (!NROW(still_lockable(as.data.frame(u)))) return()
     con <- app_con()
     on.exit(DBI::dbDisconnect(con))
     if (!app_write(DBI::dbExecute(con,

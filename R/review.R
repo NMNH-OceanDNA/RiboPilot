@@ -450,6 +450,8 @@ review_unit_state <- function(con, units = NULL) {
   d
 }
 
+WAITING_MSG <- "Press Update on the Assemble step first."
+
 #' Words for review_unit_state()'s state, as the table cells show them
 #' @noRd
 review_state_text <- function(state) {
@@ -467,7 +469,7 @@ review_lock_gate <- function(con, units) {
   st <- review_unit_state(con, units)
   ex <- DBI::dbGetQuery(con, "SELECT ID, path, scaffold FROM annotate WHERE problematic = 'yes'")
   again <- "Set State to Ready to run, then press Update."
-  msg <- unname(c(waiting = "Press Update on the Assemble step first.", `not run` = again,
+  msg <- unname(c(waiting = WAITING_MSG, `not run` = again,
     running = "Wait for the running Update to finish.", failed = again, `on hold` = again,
     done = NA_character_)[st$state])
   msg[st$state == "not run" & st$has_copy %in% 1] <- "Press Update first."

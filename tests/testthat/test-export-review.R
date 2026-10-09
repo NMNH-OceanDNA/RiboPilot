@@ -62,6 +62,21 @@ test_that("a trimmed minus-strand copy exports its own sequence, features, and p
   expect_equal(h$length, 437L)
 })
 
+test_that("the user's 5'/3' choices on a copy override curation's in the feature table", {
+  p <- mk_review_export()
+  con <- p$con
+  RiboPilot:::review_trim(con, "S1", 1L, 1L, 51L, 487L)
+  DBI::dbExecute(con, "UPDATE review_units SET check_switch = 2, itsx_warnings = ''")
+  tbl <- function() readLines(file.path(review_bundle(p$dir, group = "g1"), "samples", "S1.tbl"))
+  base <- tbl()
+  expect_equal(base[c(2, 4)], c("150\t>1\trRNA", "<437\t351\trRNA"))
+  # curation's marks stand until the user says otherwise
+  DBI::dbExecute(con, "UPDATE review_annotations SET partial_start_user = 0 WHERE element = '18S'")
+  DBI::dbExecute(con, "UPDATE review_annotations SET partial_stop_user = 0 WHERE element = '28S'")
+  DBI::dbExecute(con, "UPDATE review_annotations SET partial_start_user = 1 WHERE element = '28S'")
+  expect_equal(tbl()[c(2, 4)], c("<150\t1\trRNA", "437\t351\trRNA"))
+})
+
 test_that("an untrimmed contig without a copy marks its assembly ends partial", {
   p <- mk_review_export()
   g <- review_bundle(p$dir, group = "g1")

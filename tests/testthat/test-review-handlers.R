@@ -192,3 +192,54 @@ test_that("State on Annotation Review queues or holds the recheck on copies and 
   # the main pipeline's queue is not touched
   expect_equal(hq("SELECT annotate_switch FROM annotate ORDER BY path, scaffold")$annotate_switch, c(2L, 2L, 2L, 1L))
 })
+
+test_that("a contig with no copy and no ITSx result shows On hold, not Ready to run", {
+  skip_if_not_installed("withr")
+  dir <- mk_handler_project()
+  withr::local_dir(dir)
+  hx("UPDATE annotate SET itsx_warnings = NULL WHERE path = 1 AND scaffold = 2")
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Annotate")
+    session$flushReact()
+    d <- samples_data()
+    sw <- function(p, s) d$annotate_switch[d$path == p & d$scaffold == s]
+    expect_equal(sw(1, 2), 0L)
+    expect_equal(sw(1, 1), 2L)
+  })
+})
+
+test_that("a nudge that clamps to the same bounds makes no copy", {
+  skip_if_not_installed("withr")
+  dir <- mk_handler_project()
+  withr::local_dir(dir)
+  hx("UPDATE annotations SET start = 1 WHERE element = '18S'")
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Annotate")
+    sel_unit(list(ID = "S1", path = 1L, scaffold = 1L))
+    session$flushReact()
+    session$setInputs(feat_edit = TRUE)
+    session$setInputs(nt_5_out = 1)
+    expect_equal(hq("SELECT COUNT(*) AS n FROM review_units")$n, 0)
+    expect_false(isTRUE(edit_dirty()))
+  })
+})
+
+test_that("Edit and Trim refuse a contig waiting for the Assemble step's Update", {
+  skip_if_not_installed("withr")
+  dir <- mk_handler_project()
+  withr::local_dir(dir)
+  hx("UPDATE annotate SET annotate_switch = 1 WHERE path = 1 AND scaffold = 1")
+  said <- character(0)
+  local_mocked_bindings(rp_toast = function(text, ...) said <<- c(said, text),
+    rp_alert = function(text, ...) said <<- c(said, text))
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Annotate")
+    sel_unit(list(ID = "S1", path = 1L, scaffold = 1L))
+    session$flushReact()
+    session$setInputs(feat_edit = TRUE)
+    expect_false(isTRUE(edit_active()))
+    session$setInputs(trim_btn = 1)
+    expect_equal(said, rep("Press Update on the Assemble step first.", 2))
+    expect_equal(hq("SELECT COUNT(*) AS n FROM review_units")$n, 0)
+  })
+})
