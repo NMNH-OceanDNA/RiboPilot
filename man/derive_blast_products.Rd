@@ -9,7 +9,8 @@ derive_blast_products(
   id,
   path = 1L,
   scaffold = 1L,
-  ts = as.integer(Sys.time())
+  ts = as.integer(Sys.time()),
+  review = FALSE
 )
 }
 \arguments{
@@ -20,6 +21,12 @@ derive_blast_products(
 \item{path, scaffold}{Assembly unit within the sample.}
 
 \item{ts}{Timestamp to stamp the written rows with.}
+
+\item{review}{TRUE derives the products of the contig's review copy: it
+reads \code{review_blast_hits}, replaces the row in \code{review_blast_screen}, and
+sets or clears the \verb{blast_*} summary in \code{review_units}. The candidates
+only pick the top hit; \code{blast_ref_candidates} is never written, and the
+source label still comes from \code{blast_searched}.}
 }
 \value{
 (invisibly) the ranked candidate data.frame.

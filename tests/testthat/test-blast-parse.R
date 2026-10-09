@@ -402,3 +402,61 @@ test_that("a remotely searched unit is still labelled core_nt", {
   expect_equal(DBI::dbGetQuery(con,
     "SELECT blast_source FROM assemblies WHERE ID='S1'")$blast_source[1], "core_nt")
 })
+
+test_that("parse_blast_candidates(review = TRUE) writes only the copy's tables", {
+  con <- chimera_test_con(); on.exit(DBI::dbDisconnect(con))
+  called <- 0L
+  local_mocked_bindings(.package = "RiboPilot",
+    ensure_sample_lineage_taxids = function(...) {
+      called <<- called + 1L
+      invisible(0L)
+    })
+  DBI::dbExecute(con, "INSERT INTO assemblies (ID, path, scaffold, length, sequence)
+    VALUES ('S1', 1, 1, 8, 'ACGTACGT')")
+  DBI::dbExecute(con, "INSERT INTO blast_searched (ID, path, scaffold, query_md5, source)
+    VALUES ('S1', 1, 1, 'x', 'local')")
+  parse_blast_candidates(con, "S1", 1, 1,
+    write_hits(hit("ORIG1", "Danio rerio 18S ribosomal RNA gene", 99.1, 80, 1500, 1600, 1, 1600)))
+  expect_equal(called, 1L)
+  RiboPilot:::review_copy(con, "S1", 1L, 1L)
+  orig <- function() list(
+    DBI::dbGetQuery(con, "SELECT hit_rank, hsp, accession, pident FROM blast_hits ORDER BY hit_rank, hsp"),
+    DBI::dbGetQuery(con, "SELECT rank, accession, time_stamp FROM blast_ref_candidates ORDER BY rank"),
+    DBI::dbGetQuery(con, "SELECT accession, is_nuclear_rrna, time_stamp FROM blast_screen"),
+    DBI::dbGetQuery(con, "SELECT blast_accession, blast_species, blast_pident, blast_qcovs,
+      blast_evalue, blast_source FROM assemblies"))
+  before <- orig()
+  expect_equal(before[[4]]$blast_accession, "ORIG1")
+  summ <- function() DBI::dbGetQuery(con, "SELECT blast_accession, blast_species, blast_pident,
+    blast_qcovs, blast_source FROM review_units")
+
+  res <- parse_blast_candidates(con, "S1", 1, 1, write_hits(c(
+    hit("CONTAM", "Saprolegnia parasitica strain X genome assembly", 99.0, 90, 5000, 6000, 1, 6000,
+      staxid = 4769),
+    hit("NEWREF", "Danio rerio 28S ribosomal RNA gene", 92.0, 70, 1200, 1400, 1, 1400))),
+    review = TRUE)
+  expect_equal(called, 1L)
+  expect_identical(orig(), before)
+  expect_equal(res$accession, "NEWREF")
+  expect_equal(DBI::dbGetQuery(con, "SELECT accession FROM review_blast_hits ORDER BY hit_rank")$accession,
+    c("CONTAM", "NEWREF"))
+  expect_equal(DBI::dbGetQuery(con, "SELECT accession, is_nuclear_rrna FROM review_blast_screen"),
+    data.frame(accession = "CONTAM", is_nuclear_rrna = 0L))
+  expect_equal(summ(), data.frame(blast_accession = "NEWREF", blast_species = "Danio rerio",
+    blast_pident = 92, blast_qcovs = 70, blast_source = "local_rrna"))
+
+  # no candidate left: the summary is cleared, the screen hit stays
+  DBI::dbExecute(con, "UPDATE review_blast_hits SET pident = 10, qcovs = 5, aln_len = 10")
+  expect_equal(nrow(RiboPilot:::derive_blast_products(con, "S1", 1, 1, review = TRUE)), 0L)
+  expect_true(all(vapply(summ(), is.na, logical(1))))
+  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM review_blast_screen")$n, 1L)
+  expect_identical(orig(), before)
+
+  # no hits: the copy's hits, screen hit, and summary are cleared
+  DBI::dbExecute(con, "UPDATE review_units SET blast_accession = 'X'")
+  parse_blast_candidates(con, "S1", 1, 1, write_hits("NO_SIGNIFICANT_HITS"), review = TRUE)
+  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM review_blast_hits")$n, 0L)
+  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM review_blast_screen")$n, 0L)
+  expect_true(is.na(summ()$blast_accession))
+  expect_identical(orig(), before)
+})

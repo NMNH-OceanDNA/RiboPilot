@@ -492,3 +492,68 @@ test_that("a remote search whose hits all fail to resolve does not suggest anoth
   expect_false(grepl("remote search", r$screen_reason[1]))
   expect_equal(r$screen_reason[1], "no hit resolved to a usable lineage")
 })
+
+# The original holds three fish hits, an on_target verdict, and variant facts
+# from the Assemble step; the copy holds three fungal hits and no screen row
+# yet, as review_invalidate() leaves it.
+review_screen_seed <- function(con) {
+  DBI::dbExecute(con, "UPDATE samples SET lineage_taxids = ?", params = list(FISH_T))
+  DBI::dbExecute(con, "INSERT INTO assemblies (ID, path, scaffold, length, sequence)
+    VALUES ('S1', 1, 1, 8, 'ACGTACGT')")
+  ins <- function(tbl, tax, lin) {
+    for (i in 1:3) {
+      DBI::dbExecute(con, sprintf(
+        "INSERT INTO %s (ID, path, scaffold, hit_rank, hsp, bitscore, lineage_taxids, lineage, hit_class)
+         VALUES ('S1', 1, 1, ?, 1, ?, ?, ?, 'rdna')", tbl),
+        params = list(i, 900 - i, tax, lin))
+    }
+  }
+  ins("blast_hits", FISH_T, "Eukaryota;Chordata;Actinopteri;o;f;g;s")
+  screen_one(con, "S1", 1, 1)
+  DBI::dbExecute(con, "UPDATE screen SET variant_class = 'isomer', variant_group = 'S1.g1',
+    variant_identity = 99.5, screen_reason = 'ORIG'")
+  RiboPilot:::review_copy(con, "S1", 1L, 1L)
+  DBI::dbExecute(con, "DELETE FROM review_screen")
+  DBI::dbExecute(con, "DELETE FROM review_blast_hits")
+  ins("review_blast_hits", FUNGI_T, "Eukaryota;Ascomycota;Sordariomycetes;o;f;g;s")
+}
+
+test_that("screen_one(review = TRUE) scores the copy's hits and carries the original's variant facts", {
+  con <- chimera_test_con(); on.exit(DBI::dbDisconnect(con))
+  review_screen_seed(con)
+  orig <- function() DBI::dbGetQuery(con, "SELECT screen_verdict, screen_reason, screen_version,
+    lca_n_hits, variant_class, variant_group, variant_identity, time_stamp FROM screen")
+  before <- orig()
+  expect_equal(before$screen_verdict, "on_target")
+  copy_row <- function() DBI::dbGetQuery(con, "SELECT screen_verdict, screen_class, screen_reason,
+    screen_version, variant_class, variant_group, variant_identity FROM review_screen")
+
+  # the original row is current, so a version skip that read it would write nothing
+  expect_equal(screen_one(con, "S1", 1, 1, review = TRUE), "off_target")
+  r <- copy_row()
+  expect_equal(nrow(r), 1L)
+  expect_equal(r$screen_verdict, "off_target")
+  expect_equal(r$screen_class, "fungal")
+  expect_equal(r$screen_version, RiboPilot:::SCREEN_VERSION)
+  expect_equal(r[, c("variant_class", "variant_group", "variant_identity")],
+    data.frame(variant_class = "isomer", variant_group = "S1.g1", variant_identity = 99.5))
+  expect_identical(orig(), before)
+
+  # the version skip reads the copy's row
+  DBI::dbExecute(con, "UPDATE review_screen SET screen_reason = 'SENTINEL'")
+  screen_one(con, "S1", 1, 1, review = TRUE)
+  expect_equal(copy_row()$screen_reason, "SENTINEL")
+  screen_one(con, "S1", 1, 1, force = TRUE, review = TRUE)
+  r <- copy_row()
+  expect_equal(nrow(r), 1L)
+  expect_false(identical(r$screen_reason, "SENTINEL"))
+  expect_equal(r$variant_class, "isomer")
+
+  # no hits on the copy: the search source still comes from blast_searched
+  DBI::dbExecute(con, "DELETE FROM review_blast_hits")
+  DBI::dbExecute(con, "INSERT INTO blast_searched (ID, path, scaffold, query_md5, source)
+    VALUES ('S1', 1, 1, 'x', 'local')")
+  expect_equal(screen_one(con, "S1", 1, 1, force = TRUE, review = TRUE), "no_reference")
+  expect_match(copy_row()$screen_reason, "bundled")
+  expect_identical(orig(), before)
+})
