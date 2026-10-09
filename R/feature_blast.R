@@ -7,8 +7,6 @@ FEATURE_BLAST_MIN_LEN <- 50L
 FEATURE_BLAST_LOWCONF_LEN <- 100L
 FEATURE_BLAST_EVALUE <- 1e-5
 FEATURE_BLAST_KEEP_HITS <- 10L
-# rank_distance() at or past this shares nothing with the sample at phylum or deeper
-FEATURE_BLAST_OFF_DISTANCE <- 6L
 
 #' blastn task for a feature length: NA (too small), "blastn", or "megablast"
 #' @noRd
@@ -34,9 +32,7 @@ feature_blast_targets <- function(con, id, path, scaffold, review = FALSE) {
     return(data.frame(element = character(0), start = integer(0), stop = integer(0),
       length = integer(0), sequence = character(0), stringsAsFactors = FALSE))
   }
-  # a feature across the origin of a circular contig has stop < start
-  f$sequence <- ifelse(f$stop >= f$start, substring(seq, f$start, f$stop),
-    paste0(substring(seq, f$start), substring(seq, 1L, f$stop)))
+  f$sequence <- substring(seq, f$start, f$stop)
   f$length <- nchar(f$sequence)
   rownames(f) <- NULL
   f[, c("element", "start", "stop", "length", "sequence")]
@@ -47,8 +43,8 @@ feature_blast_targets <- function(con, id, path, scaffold, review = FALSE) {
 #' `hits` comes from parse_blast_hits_file() with qseqid = element, plus
 #' lineage and lineage_taxids columns. Near-tied hits (within CHIMERA_TIE_FRAC
 #' of the top bitscore) collapse to the clade they share, as the chimera
-#' windows do; the feature is off-target only when neither that clade nor any
-#' tied hit shares the sample's phylum.
+#' windows do; the feature is off-target only when no tied hit (or the best
+#' hit, without a tie) is in the sample's phylum, and every phylum is known.
 #' @return list(calls = one row per target, hits = top hits per element).
 #' @noRd
 feature_blast_calls <- function(hits, targets, sample_taxids = NA_character_) {
@@ -106,14 +102,21 @@ feature_blast_calls <- function(hits, targets, sample_taxids = NA_character_) {
     }
     row$rank_distance <- rd_of(row$lineage_taxids)
     row$match_rank <- rank_distance_label(row$rank_distance)
-    best_rd <- suppressWarnings(min(c(row$rank_distance, rd_of(tied$lineage_taxids)), na.rm = TRUE))
+    # off target only when every candidate's phylum is known and none is the sample's
+    phy <- function(x) vapply(x, function(v) parse_rank_taxids(v)[2], integer(1), USE.NAMES = FALSE)
+    cand <- if (nrow(tied)) tied$lineage_taxids else b$lineage_taxids
+    sp <- if (has_sample) phy(sample_taxids) else NA_integer_
+    cp <- if (any(is.na(cand))) NA_integer_ else phy(cand)
     row$status <- if (!has_sample) {
       row$note <- "sample lineage unknown"
       "ok"
-    } else if (is.na(row$lineage_taxids)) {
+    } else if (is.na(b$lineage_taxids)) {
       row$note <- "hit has no taxonomy"
       "ok"
-    } else if (best_rd >= FEATURE_BLAST_OFF_DISTANCE) "off_target" else "ok"
+    } else if (is.na(sp) || anyNA(cp)) {
+      row$note <- "phylum unknown"
+      "ok"
+    } else if (!sp %in% cp) "off_target" else "ok"
     row
   })
   calls <- if (length(calls)) do.call(rbind, calls) else NULL
@@ -176,6 +179,7 @@ feature_blast_unit <- function(con, id, path = 1L, scaffold = 1L, dbarg = NULL, 
     hits$lineage <- if (nrow(lin)) lin$lineage[i] else NA_character_
     hits$lineage_taxids <- if (nrow(lin)) lin$lineage_taxids[i] else NA_character_
   }
+  tryCatch(ensure_sample_lineage_taxids(con, ids = id, taxdump_dir = taxdump_dir), error = function(e) NULL)
   samp <- tryCatch(DBI::dbGetQuery(con, "SELECT lineage_taxids FROM samples WHERE ID = ?",
     params = list(id))$lineage_taxids[1], error = function(e) NA_character_)
   res <- feature_blast_calls(hits, targets, samp %||% NA_character_)

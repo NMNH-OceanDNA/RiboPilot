@@ -270,7 +270,9 @@ process chimera {
 process feature_blast {
     cache false
     tag "${id}.${upath}.${uscaf}"
-    errorStrategy 'ignore'
+    // Retry first: DB lock contention with chimera and curate clears on its own.
+    errorStrategy { task.attempt <= 2 ? 'retry' : 'ignore' }
+    maxRetries 2
     input:
     tuple val(id), val(upath), val(uscaf)
     output:

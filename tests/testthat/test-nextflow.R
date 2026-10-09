@@ -1779,7 +1779,7 @@ test_that("feature_blast runs on reconcile.out and stays out of triage", {
   expect_length(start, 1)
   end <- start - 1 + which(pipeline_r_nf[start:length(pipeline_r_nf)] == "}")[1]
   body <- pipeline_r_nf[start:end]
-  expect_true(any(grepl("errorStrategy 'ignore'", body)))
+  expect_true(any(grepl("errorStrategy { task.attempt <= 2 ? 'retry' : 'ignore' }", body, fixed = TRUE)))
   expect_true(any(grepl("cache false", body)))
   expect_true(any(grepl("rp_feature_blast.R", body, fixed = TRUE)))
 })

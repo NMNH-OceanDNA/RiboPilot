@@ -172,7 +172,7 @@ recheck_unit <- function(con, id, path, scaffold, rev, mode, tools_dir, dbarg = 
       label_db = label_db, threads = threads, workdir = file.path(workdir, "chimera"), review = TRUE)
     tryCatch(feature_blast_unit(con, id, path, scaffold, dbarg = dbarg, taxdump_dir = taxdump_dir,
       threads = threads, workdir = file.path(workdir, "feature_blast"), review = TRUE),
-      error = function(e) NULL)
+      error = function(e) message("feature BLAST failed: ", conditionMessage(e)))
     NULL
   }, error = function(e) conditionMessage(e))
   ts <- as.integer(Sys.time())

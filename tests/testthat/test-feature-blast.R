@@ -78,6 +78,16 @@ test_that("a tie across kingdoms is not off-target when a tied hit shares the ph
   expect_equal(fb_call(h2, el = "5.8S", len = 160L)$status, "off_target")
 })
 
+test_that("a hit or sample with no phylum is never off-target", {
+  nophy <- c(lin = "Viridiplantae;;Magnoliopsida;Rosales;Moraceae;Morus;Morus alba",
+    tax = "33090;;3398;3744;3487;3497;3498")
+  r <- fb_call(fb_hit("ITS2", "P1", "Morus alba ITS2", 500, nophy), el = "ITS2")
+  expect_equal(r$status, "ok")
+  expect_equal(r$note, "phylum unknown")
+  r2 <- fb_call(fb_hit("ITS2", "P1", "Morus alba ITS2", 500, FB_PLANT), el = "ITS2", sample = "33208;;;;;;")
+  expect_equal(r2$status, "ok")
+})
+
 test_that("without a sample lineage nothing is off-target", {
   r <- fb_call(fb_hit("ITS2", "P1", "Morus alba ITS2", 500, FB_PLANT), el = "ITS2", sample = NA_character_)
   expect_equal(r$status, "ok")

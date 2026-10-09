@@ -425,3 +425,17 @@ test_that("a re-assembly deletes the copies of changed and vanished contigs", {
   RiboPilot:::reset_unit_evidence(con, "S1", 1L, 2L)
   expect_equal(unname(rc_counts(con, 2)), rep(0L, RC_NT))
 })
+
+test_that("review_copy() and review_drop() skip mirrors an older schema does not have yet", {
+  con <- chimera_test_con(); on.exit(DBI::dbDisconnect(con))
+  rc_seed(con)
+  for (v in names(RiboPilot:::FEATURE_BLAST_VIEWS_DDL)) DBI::dbExecute(con, paste("DROP VIEW", v))
+  for (t in c("review_feature_blast", "review_feature_blast_hits", "feature_blast", "feature_blast_hits")) {
+    DBI::dbExecute(con, paste("DROP TABLE", t))
+  }
+  expect_true(RiboPilot:::review_copy(con, "S1", 1L, 1L))
+  expect_equal(nrow(rc_rows(con, "review_annotations", scaffold = 1)), 3L)
+  RiboPilot:::review_invalidate(con, "S1", 1L, 1L)
+  RiboPilot:::review_drop(con, "S1", 1L, 1L)
+  expect_false(RiboPilot:::review_has_copy(con, "S1", 1L, 1L))
+})
