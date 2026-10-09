@@ -29,7 +29,7 @@ include { preprocess; below_min_depth } from './modules/preprocess.nf'
 include { assemble } from './modules/assemble.nf'
 include { fallback_assemble } from './modules/fallback.nf'
 include { find_rrna; stage_assembly } from './modules/find_rrna.nf'
-include { query_samples; query_annotate_units; query_sample_units; score; annotate_tools; reconcile; curate; triage; screen; chimera } from './modules/pipeline_r.nf'
+include { query_samples; query_annotate_units; query_sample_units; score; annotate_tools; reconcile; curate; triage; screen; chimera; feature_blast } from './modules/pipeline_r.nf'
 include { blast_genbank } from './modules/blast.nf'
 include { blast_ref_fetch; blast_ref_align } from './modules/blast_ref.nf'
 include { coverage } from './modules/coverage.nf'
@@ -192,6 +192,9 @@ workflow {
         .combine(blast_genbank.out.collect().map { 'ready' }.ifEmpty('ready'))
         .map { 'ready' }
     chimera(reconcile.out.combine(chim_done).map { id, upath, uscaf, _r -> tuple(id, upath, uscaf) })
+
+    // Per-feature BLAST of each annotated contig; advisory, not joined into triage.
+    feature_blast(reconcile.out)
 
     // Propose keep/drop/undecided once ALL of a sample's units are curated AND
     // chimera-checked, so sibling concordance and the within-sample depth ratio

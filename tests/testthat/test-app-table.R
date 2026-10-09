@@ -240,12 +240,17 @@ test_that("Annotation Review reads the review layer and shows the state of unfin
   DBI::dbExecute(con, "INSERT INTO screen (ID, path, scaffold, screen_verdict) VALUES ('S1', 2, 2, 'off_target')")
   DBI::dbExecute(con, "INSERT INTO chimera (ID, path, scaffold, label) VALUES ('S1', 2, 2, 'severe')")
   DBI::dbExecute(con, "INSERT INTO review_screen (ID, path, scaffold, screen_verdict) VALUES ('S1', 2, 2, 'on_target')")
+  DBI::dbExecute(con, "INSERT INTO feature_blast (ID, path, scaffold, element, status, lineage)
+    VALUES ('S1', 1, 1, 'ITS1', 'no_hit', NULL), ('S1', 1, 1, '28S', 'too_small', NULL),
+           ('S1', 1, 1, '18S', 'ok', NULL)")
   DBI::dbDisconnect(con)
   withr::local_dir(dir)
   shiny::testServer(RiboPilot:::app_server, {
     session$setInputs(mode = "Annotate")
     d <- all_rows()
     d <- d[order(d$path, d$scaffold), ]
+    expect_equal(d$feature_blast_warnings,
+      c("ITS1: no hit; 28S: no BLAST, feature too small", "", "", ""))
     expect_equal(d$length, c(6120L, 1442L, 500L, 800L))
     expect_equal(d$blast_species, c("Danio rerio", "Danio rerio", "Copy sp", "Danio rerio"))
     expect_equal(d$screen_verdict, c(NA, NA, NA, "on_target"))
@@ -264,12 +269,35 @@ test_that("Annotation Review reads the review layer and shows the state of unfin
     names(cols) <- vapply(cols, function(c) c$id %||% "", "")
     expect_false(cols$check_state$show)
     expect_false(cols$check_note$show)
-    for (k in c("n_flags", "itsx_warnings", "screen_verdict", "chimera_label", "blast_species",
+    for (k in c("n_flags", "itsx_warnings", "screen_verdict", "chimera_label", "feature_blast_warnings", "blast_species",
                 "blast_accession", "blast_pident", "blast_qcovs", "blast_source")) {
       expect_match(cols[[k]]$cell, "row['check_state']", fixed = TRUE, info = k)
       expect_true(isTRUE(cols[[k]]$html), info = k)
     }
     expect_match(cols$annotate_switch$cell, "(cellInfo.row || {})['check_note']", fixed = TRUE)
     expect_match(cols$annotate_switch$cell, "Waiting for Assemble Update", fixed = TRUE)
+  })
+})
+
+test_that("the Feature BLAST panel lists one row per feature once checks are done", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+  con <- RiboPilot:::app_con()
+  on.exit(DBI::dbDisconnect(con))
+  fixture_mark_done(con)
+  RiboPilot:::review_copy(con, "S1", 1L, 1L)
+  DBI::dbExecute(con, "INSERT INTO review_feature_blast (ID, path, scaffold, element, length, status, low_conf, species)
+    VALUES ('S1',1,1,'28S',80,'ok',1,'Danio rerio'), ('S1',1,1,'18S',1800,'no_hit',0,NULL)")
+  DBI::dbExecute(con, "INSERT INTO review_feature_blast_hits (ID, path, scaffold, element, hit_rank, accession, title)
+    VALUES ('S1',1,1,'28S',1,'AB000001','Danio rerio 28S')")
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Annotate")
+    sel_unit(list(ID = "S1", path = 1L, scaffold = 1L))
+    session$flushReact()
+    j <- jsonlite::fromJSON(as.character(output$feature_blast_tbl), simplifyVector = FALSE)
+    expect_equal(unlist(j$x$tag$attribs$data$element), c("18S", "28S"))
+    expect_equal(unlist(j$x$tag$attribs$data$status), c("No hit", "OK"))
+    expect_match(j$x$tag$attribs$data$note[[2]], "Low confidence")
   })
 })

@@ -1769,3 +1769,17 @@ test_that("building the recheck command records no panel provenance", {
   on.exit(DBI::dbDisconnect(con))
   expect_equal(RiboPilot:::blastdb_provenance(con), "")
 })
+
+test_that("feature_blast runs on reconcile.out and stays out of triage", {
+  include_line <- grep("^include \\{.*\\} from './modules/pipeline_r.nf'$", main_nf, value = TRUE)
+  expect_match(include_line, "\\bfeature_blast\\b")
+  expect_length(grep("^\\s*feature_blast\\(reconcile\\.out\\)\\s*$", main_nf), 1)
+  expect_false(any(grepl("feature_blast\\.out", main_nf)))
+  start <- grep("^process feature_blast \\{", pipeline_r_nf)
+  expect_length(start, 1)
+  end <- start - 1 + which(pipeline_r_nf[start:length(pipeline_r_nf)] == "}")[1]
+  body <- pipeline_r_nf[start:end]
+  expect_true(any(grepl("errorStrategy 'ignore'", body)))
+  expect_true(any(grepl("cache false", body)))
+  expect_true(any(grepl("rp_feature_blast.R", body, fixed = TRUE)))
+})

@@ -77,7 +77,7 @@ test_that("a contig without a copy is answered from review_units alone", {
 test_that("each per-contig pipeline script follows the copy of the contig it wrote", {
   bin <- system.file("nextflow", "bin", package = "RiboPilot")
   for (f in c("rp_reconcile.R", "rp_blast.R", "rp_searched.R", "rp_curate.R", "rp_chimera.R",
-              "rp_screen.R")) {
+              "rp_feature_blast.R", "rp_screen.R")) {
     txt <- readLines(file.path(bin, f), warn = FALSE)
     expect_equal(sum(grepl("RiboPilot:::review_follow_original(con, a[2], ", txt, fixed = TRUE)), 1L,
       info = f)

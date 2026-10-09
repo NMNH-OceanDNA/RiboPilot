@@ -265,3 +265,23 @@ process chimera {
       '${params.db}' '${id}' ${upath} ${uscaf} "\$DBARG" '${params.taxdump_dir}' "\$LABELS"
     """
 }
+
+// Per-feature BLAST of each core feature against the reference panel.
+process feature_blast {
+    cache false
+    tag "${id}.${upath}.${uscaf}"
+    errorStrategy 'ignore'
+    input:
+    tuple val(id), val(upath), val(uscaf)
+    output:
+    tuple val(id), val(upath), val(uscaf)
+    script:
+    """
+    DBARG=""
+    if [ -z "\${RIBOPILOT_NO_LOCAL_BLAST:-}" ]; then
+        DBARG=\$(RIBOPILOT_SRC='${params.ribopilot_src}' rp_dbarg.R '${params.blastdb}' 2>/dev/null || echo "")
+    fi
+    RP_THREADS=${task.cpus} RIBOPILOT_SRC='${params.ribopilot_src}' rp_feature_blast.R \
+      '${params.db}' '${id}' ${upath} ${uscaf} "\$DBARG" '${params.taxdump_dir}'
+    """
+}

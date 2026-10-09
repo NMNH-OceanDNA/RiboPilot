@@ -174,7 +174,9 @@ SCAFFOLD_COL_HELP <- list(
   chimera = paste("Chimera check: whether different parts of this contig match different",
     "lineages or show read-level breakpoints. severe: parts match different phyla or",
     "kingdoms; the export flags the record as chimeric and asks about it. minor: weaker",
-    "evidence, listed in the export report only. clean: nothing found. Hover for the evidence.")
+    "evidence, listed in the export report only. clean: nothing found. Hover for the evidence."),
+  feature_blast = paste("Features whose own BLAST search against the bundled rDNA database found no hit,",
+    "a non-rDNA hit, or a hit outside the sample's phylum, and features under 50 bp too small to search.")
 )
 
 #' Column help for the chimera segment and window tables (annotate modal)
@@ -296,6 +298,7 @@ MP_COL_NAMES <- c(
   screen_verdict   = "Screen",
   chimera_label    = "Chimera",
   chimera_reason   = "Chimera Reason",
+  feature_blast_warnings = "Feature BLAST warnings",
   reference        = "Reference",
   blast_species    = "BLAST Species",
   blast_accession  = "BLAST Accession",
@@ -361,6 +364,7 @@ MP_COL_TIPS <- c(
   itsx_warnings    = SCAFFOLD_COL_HELP$itsx_warnings,
   screen_verdict   = SCAFFOLD_COL_HELP$screen_verdict,
   chimera_label    = SCAFFOLD_COL_HELP$chimera,
+  feature_blast_warnings = SCAFFOLD_COL_HELP$feature_blast,
   pre_opts         = "Named set of read preprocessing parameters",
   assemble_opts    = "Named set of assembly parameters",
   blast_opts       = "Named set of BLAST search parameters",

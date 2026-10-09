@@ -52,6 +52,11 @@
   chimeric; amber for things worth a look; green "ok".
 * Chimera calls are clean, minor, or severe. Only severe calls are a submission
   risk; minor calls are listed in the report.
+* Each core feature (18S, ITS1, 5.8S, ITS2, 28S) is now searched on its own
+  against the bundled rDNA database. A new Feature BLAST warnings column in
+  Annotation Review lists features with no hit, a non-rDNA hit, a hit outside
+  the sample's phylum, or too short to search (under 50 bp), and a Feature
+  BLAST panel in the details window shows each feature's matches.
 * Changing a sample's taxon updates its lineage and screens it again. A name
   that matches more than one organism is never picked automatically.
 * Isomer and paralog classes are computed after annotation finishes.

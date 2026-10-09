@@ -242,6 +242,11 @@ app_server <- function(input, output, session) {
       # Assemble step's Update; check_state gates the check cells (rt_gated).
       con <- app_con(); on.exit(DBI::dbDisconnect(con))
       st <- review_unit_state(con, d[c("ID", "path", "scaffold")])
+      fb <- app_query("SELECT ID, path, scaffold, element, status, lineage FROM review_feature_blast_v")
+      fw <- feature_blast_warning_text(fb)
+      d$feature_blast_warnings <- fw$feature_blast_warnings[match(
+        unit_key(d$ID, d$path, d$scaffold), unit_key(fw$ID, fw$path, fw$scaffold))]
+      d$feature_blast_warnings[is.na(d$feature_blast_warnings)] <- ""
       d$annotate_switch[st$state %in% "waiting"] <- 5L
       # No copy and nothing queued: Update has no copy to run, so hold, not Ready to run.
       d$annotate_switch[st$state %in% "not run" & st$has_copy %in% 0] <- 0L
@@ -341,6 +346,8 @@ app_server <- function(input, output, session) {
       chimera_label = cd("chimera_label", width = 100, html = TRUE, align = "center",
         cell = rt_gated(rt_chimera_badge())),
       chimera_reason = reactable::colDef(show = FALSE),
+      feature_blast_warnings = cd("feature_blast_warnings", minWidth = 180, html = TRUE,
+        cell = rt_gated(rt_longtext())),
       reference = cd("reference", html = TRUE, cell = rt_ncbi_link()),
       blast_species = cd("blast_species", minWidth = 160, html = TRUE, cell = rt_gated(rt_longtext())),
       blast_accession = cd("blast_accession", minWidth = 130, html = TRUE, cell = rt_gated(rt_ncbi_link())),
@@ -455,7 +462,8 @@ app_server <- function(input, output, session) {
         Options = c("pre_opts", "assemble_opts", "blast_opts", "annotate_opts", "curate_opts")),
       Annotate = list(
         BLAST = c("blast_species", "blast_accession", "blast_pident", "blast_qcovs", "blast_source"),
-        `Check details` = c("n_flags", "itsx_warnings", "screen_verdict", "chimera_label")),
+        `Check details` = c("n_flags", "itsx_warnings", "screen_verdict", "chimera_label",
+          "feature_blast_warnings")),
       NULL)
     keep_cols <- cols[intersect(names(cols), names(d))]
     if (mode != "Reference") {
@@ -2718,6 +2726,51 @@ app_server <- function(input, output, session) {
         pident = reactable::colDef(width = 100, format = reactable::colFormat(digits = 1), html = TRUE,
           header = rt_help_header("Identity %", CHIMERA_COL_HELP$pident)),
         n_windows = reactable::colDef(width = 100, html = TRUE, header = rt_help_header("Windows", CHIMERA_COL_HELP$n_windows))))
+  })
+  output$feature_blast_tbl <- reactable::renderReactable({
+    d <- chim_query("element, length, status, low_conf, note, species, match_rank, pident, qcovs, evalue, accession",
+      "feature_blast")
+    d <- d[order(match(d$element, FEATURE_BLAST_ELEMENTS)), , drop = FALSE]
+    if (nrow(d) == 0) {
+      return(reactable::reactable(data.frame(
+        ` ` = "No feature BLAST result for this contig yet. Run Update to search its features.",
+        check.names = FALSE), compact = TRUE))
+    }
+    hits <- chim_query("element, accession, title, pident, qcovs, bitscore, hit_class",
+      "feature_blast_hits", " ORDER BY element, hit_rank")
+    lab <- c(ok = "OK", no_hit = "No hit", non_rdna = "Non-rDNA hit", off_target = "Off-target",
+      too_small = "No BLAST, feature too small", not_run = "Not run")
+    d$status <- ifelse(d$status %in% names(lab), lab[d$status], d$status)
+    d$note[d$status %in% "too_small"] <- NA_character_
+    low <- d$low_conf %in% 1
+    d$note <- ifelse(low, ifelse(is.na(d$note) | !nzchar(d$note), "Low confidence (under 100 bp)",
+      paste0("Low confidence (under 100 bp); ", d$note)), ifelse(is.na(d$note), "", d$note))
+    elements <- d$element
+    d <- d[c("element", "length", "status", "species", "match_rank", "pident", "qcovs", "evalue", "note")]
+    reactable::reactable(d, compact = TRUE, pagination = FALSE, wrap = FALSE,
+      defaultColDef = reactable::colDef(align = "left"),
+      details = function(index) {
+        h <- hits[hits$element == elements[index], c("accession", "title", "pident", "qcovs", "bitscore", "hit_class"), drop = FALSE]
+        if (nrow(h) == 0) return(NULL)
+        reactable::reactable(h, compact = TRUE, pagination = FALSE, wrap = FALSE, columns = list(
+          accession = reactable::colDef(name = "Accession", width = 115, html = TRUE, cell = rt_ncbi_link()),
+          title = reactable::colDef(name = "Title", minWidth = 240, html = TRUE, cell = rt_longtext()),
+          pident = reactable::colDef(name = "%ID", width = 65),
+          qcovs = reactable::colDef(name = "Cov", width = 60),
+          bitscore = reactable::colDef(name = "Bits", width = 70),
+          hit_class = reactable::colDef(name = "Class", width = 100)))
+      },
+      columns = list(
+        element = reactable::colDef(name = "Feature", width = 80),
+        length = reactable::colDef(name = "Length", width = 70),
+        status = reactable::colDef(name = "Status", minWidth = 150),
+        species = reactable::colDef(name = "Best match", minWidth = 160, na = ""),
+        match_rank = reactable::colDef(name = "Match rank", width = 100, na = ""),
+        pident = reactable::colDef(name = "%ID", width = 65, na = ""),
+        qcovs = reactable::colDef(name = "Cov", width = 60, na = ""),
+        evalue = reactable::colDef(name = "E-value", width = 80, na = "",
+          format = reactable::colFormat(digits = 2)),
+        note = reactable::colDef(name = "Note", minWidth = 200)))
   })
   output$chimera_junctions <- renderUI({
     ch <- chim_query("junctions, channels", "chimera")

@@ -31,8 +31,8 @@ Each kept contig of a locked sample is one row:
 ![The Annotation Review table, one row per contig](figures/get-started/annotation-table.png)
 
 The **Checks** column summarizes each contig's checks as in the Assemble step.
-The Warnings, ITSx Warnings, Screen, and Chimera columns show a breakdown of each
-contig check.
+The Warnings, ITSx Warnings, Screen, Chimera, and Feature BLAST warnings columns
+show a breakdown of each contig check.
 
 [Quality checks and flags](Curation-Flags.html) explains what each warning
 means.
@@ -44,7 +44,7 @@ Click a contig's ID to see more details.
 The window shows a table of annotated features (18S, ITS1,
 5.8S, ITS2, 28S), **Sequence and read coverage**, **Edit active feature boundaries**, 
 the **Reference alignment**, **Curation warnings**, the
-**Chimera check**, and **Notes**. Your notes also show in the table's **User
+**Chimera check**, **Feature BLAST**, and **Notes**. Your notes also show in the table's **User
 Notes** column once you close the window.
 
 **Sequence and read coverage** draws the contig as an interactive map: read depth,
@@ -93,7 +93,8 @@ Assemble step). Update reruns every check that works offline on each queued
 contig: feature counts, how complete each gene is, the ITSx checks, the BLAST
 hits (a new search of the bundled rDNA database when the contig was found
 there, otherwise its original hits cut to the trimmed contig), the BLAST
-screen, the reference alignment, the quality flags, and the chimera check. It
+screen, the reference alignment, the quality flags, the chimera check, and
+the feature BLAST. It
 does not re-annotate the contig, and it never contacts NCBI.
 
 **State** in Annotation Review offers **Ready to run**, which queues a contig

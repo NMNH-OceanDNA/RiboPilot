@@ -48,6 +48,8 @@ For example
 no answer for the contig, and a grey "not checked" means no ITSx check is stored yet; the Checks
 column lists both as "ITSx not checked". The **Chimera** column reports the
 chimera check's level, see [Chimeras](#chimeras-contigs-made-of-two-pieces).
+The **Feature BLAST warnings** column lists features whose own BLAST search
+looks wrong, see [Feature BLAST](#feature-blast-each-feature-searched-on-its-own).
 
 The contamination checks need a BLAST screen result. When a contig has none, for
 example because NCBI could not be reached, RiboPilot does not skip the check: it
@@ -95,6 +97,45 @@ To change how the BLAST search works, open a sample's **BLAST Options** in the A
 In Annotation Review, the **Hit Source** column says which
 database was used to determine the assembly's best BLAST hit: "bundled", "NCBI", or "seed file"
 (the assembly's own seed database, which is only a hint).
+
+# Feature BLAST: each feature searched on its own
+
+The contig BLAST search can look fine while one feature is wrong. A contig
+search keeps its top 50 matches, and these mostly come from the long 18S and 28S
+genes, so an ITS1 that matches nothing goes unnoticed. That can point to a poor
+assembly or to contamination.
+
+So RiboPilot also searches each core feature (18S, ITS1, 5.8S, ITS2, 28S) on
+its own against the bundled rDNA database. It never goes to NCBI. This runs
+after annotation, and again when **Update** rechecks a contig.
+
+The **Feature BLAST warnings** column in Annotation Review lists only the
+features that need a look:
+
+| Warning | Meaning |
+|---|---|
+| no hit | Nothing in the database matched the feature. |
+| non-rDNA hit | The best match is not a nuclear rDNA record. |
+| off-target (Ascomycota) | The best match shares nothing with your sample at phylum level or below; the group in brackets is the match's phylum. |
+| no BLAST, feature too small | The feature is under 50 bp, too short for a useful search. |
+
+Very short pieces of DNA match many organisms equally well, so their matches say
+little about who they came from. Features of 50 to 99 bp are searched but marked
+low confidence. 5.8S is so conserved that it often matches many groups equally.
+
+When several matches score almost the same, RiboPilot names the group they all
+belong to instead of picking one, for example "Chordata (12 tied hits)". The
+feature counts as off target only when that group, and every tied match, falls
+outside your sample's phylum.
+
+The **Feature BLAST** panel in a contig's details window shows every feature's
+best match, how closely it matches your sample (species, genus, family, and so
+on), and its percent identity and coverage. Expand a row to see the top 10
+matches. If the database is not available, for example when an Update only
+moves the original hits onto a trimmed contig, the features show "Not run".
+
+The feature BLAST only reports. It does not change the Checks column, the
+quality flags, triage, or export.
 
 # How contigs are kept or dropped (auto-triage)
 
