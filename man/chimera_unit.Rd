@@ -13,7 +13,8 @@ chimera_unit(
   taxdump_dir = NULL,
   label_db = NULL,
   threads = 1L,
-  workdir = tempfile("chimera_")
+  workdir = tempfile("chimera_"),
+  review = FALSE
 )
 }
 \arguments{
@@ -33,6 +34,11 @@ NULL/"" to fall back to \code{label_db} in identity-only mode.}
 \item{threads}{blastn thread count.}
 
 \item{workdir}{Scratch directory for intermediate files.}
+
+\item{review}{TRUE checks the contig's review copy: its sequence, features,
+hits, and ITSx chimera flag come from the review tables, coverage is cut
+to the copy's window, and the result goes to \code{review_chimera} and
+\code{review_chimera_windows}.}
 }
 \value{
 (invisibly) the written \code{chimera} row, as a list.

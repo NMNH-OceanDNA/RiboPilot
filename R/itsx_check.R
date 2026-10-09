@@ -340,7 +340,7 @@ itsx_check_flags <- function(seqid, seq, ann, its, notes, res, prob,
 #'   group-score string, verbatim; both are "" when ITSx reported none and NA
 #'   only on not_run rows.
 #' @noRd
-itsx_check_units <- function(con, units, out) {
+itsx_check_units <- function(con, units, out, review = FALSE) {
   n <- nrow(units)
   blank <- data.frame(seqid = units$seqid, itsx_check = rep("", n),
     itsx_origin = rep(NA_character_, n), itsx_scores = rep(NA_character_, n),
@@ -352,7 +352,7 @@ itsx_check_units <- function(con, units, out) {
     blank$itsx_check <- sprintf("not_run(%s)", out$message %||% "ITSx unavailable")
     return(blank)
   }
-  seqs <- unit_sequences(con, units)
+  seqs <- unit_sequences(con, units, review = review)
   its <- parse_itsx(out$positions)
   if (nrow(its) == 0) {
     its <- data.frame(seqid = character(0), element = character(0),
@@ -374,8 +374,9 @@ itsx_check_units <- function(con, units, out) {
   }
   for (i in seq_len(n)) {
     sid <- units$seqid[i]
-    ann <- DBI::dbGetQuery(con,
-      "SELECT element, start, stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
+    ann <- DBI::dbGetQuery(con, sprintf(
+      "SELECT element, start, stop FROM %s WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
+      review_tbl("annotations", review)),
       params = list(units$ID[i], units$path[i], units$scaffold[i]))
     lineage <- lin$lineage[match(units$ID[i], lin$ID)]
     fl <- itsx_check_flags(sid, seqs[i], ann, its, notes, res, prob,
@@ -394,12 +395,13 @@ itsx_check_units <- function(con, units, out) {
   blank
 }
 
-#' Scaffold sequence of each unit (NA when absent)
+#' Sequence of each unit (NA when absent): the contig's, or its review copy's when `review` is TRUE
 #' @noRd
-unit_sequences <- function(con, units) {
+unit_sequences <- function(con, units, review = FALSE) {
   vapply(seq_len(nrow(units)), function(i) {
-    r <- DBI::dbGetQuery(con,
-      "SELECT sequence FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
+    r <- DBI::dbGetQuery(con, sprintf(
+      "SELECT sequence FROM %s WHERE ID = ? AND path = ? AND scaffold = ?",
+      review_tbl("assemblies", review)),
       params = list(units$ID[i], units$path[i], units$scaffold[i]))
     if (nrow(r)) r$sequence[1] else NA_character_
   }, character(1))
@@ -456,9 +458,11 @@ itsx_run_finished <- function(out_prefix) {
 #' @param id Sample ID.
 #' @param path,scaffold Assembly unit within the sample.
 #' @param out_prefix ITSx output prefix (files `<out_prefix>.positions.txt` etc.).
+#' @param review TRUE checks the contig's review copy (its sequence and
+#'   features) and stores the result on the copy instead of the annotate row.
 #' @return one-row data.frame as from `itsx_check_units()`, invisibly.
 #' @export
-itsx_check_one <- function(con, id, path = 1L, scaffold = 1L, out_prefix) {
+itsx_check_one <- function(con, id, path = 1L, scaffold = 1L, out_prefix, review = FALSE) {
   units <- data.frame(ID = id, path = as.integer(path), scaffold = as.integer(scaffold),
     seqid = paste(id, path, scaffold, sep = "."), stringsAsFactors = FALSE)
   out <- if (itsx_run_finished(out_prefix)) {
@@ -466,8 +470,8 @@ itsx_check_one <- function(con, id, path = 1L, scaffold = 1L, out_prefix) {
   } else {
     list(ok = FALSE, message = "ITSx did not finish")
   }
-  chk <- itsx_check_units(con, units, out)
-  itsx_store_warnings(con, units, chk)
+  chk <- itsx_check_units(con, units, out, review = review)
+  itsx_store_warnings(con, units, chk, review = review)
   invisible(chk)
 }
 

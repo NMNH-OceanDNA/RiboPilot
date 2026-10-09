@@ -483,3 +483,49 @@ test_that("the fake ITSx finishes like the real one, so pipeline tests store a r
   expect_equal(chk$itsx_check, "")
   expect_equal(DBI::dbGetQuery(con, "SELECT itsx_warnings FROM annotate WHERE ID = 'S1'")$itsx_warnings, "")
 })
+
+test_that("itsx_check_one(review = TRUE) checks the copy's sequence and features and stores on the copy", {
+  con <- chimera_test_con()
+  withr::defer(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "UPDATE samples SET lineage = 'Metazoa;Chordata' WHERE ID = 'S1'")
+  s <- withr::with_seed(5, paste(sample(c("A", "C", "G", "T"), 1000, TRUE), collapse = ""))
+  DBI::dbExecute(con, "INSERT INTO assemblies (ID, path, scaffold, length, sequence) VALUES ('S1', 1, 1, 1000, ?)",
+    params = list(s))
+  DBI::dbExecute(con, "INSERT INTO annotations (ID, path, scaffold, element, start, stop) VALUES
+    ('S1',1,1,'18S',1,300), ('S1',1,1,'ITS1',301,500), ('S1',1,1,'5.8S',501,660),
+    ('S1',1,1,'ITS2',661,800), ('S1',1,1,'28S',801,1000)")
+  DBI::dbExecute(con, "UPDATE annotate SET itsx_warnings = 'itsx_chimeric', itsx_origin = 'F',
+    itsx_scores = 'F: 1 1e-10 40'")
+  RiboPilot:::review_copy(con, "S1", 1L, 1L)
+  # the copy: an N-run inside ITS2, and an ITS1 that ends 50 bp before the one ITSx finds
+  m <- paste0(substr(s, 1, 700), strrep("N", 20), substr(s, 721, 1000))
+  DBI::dbExecute(con, "UPDATE review_units SET sequence = ?", params = list(m))
+  DBI::dbExecute(con, "UPDATE review_annotations SET stop = 450 WHERE element = 'ITS1'")
+  units <- data.frame(ID = "S1", path = 1L, scaffold = c(1L, 2L))
+  expect_equal(RiboPilot:::unit_sequences(con, units, review = TRUE), c(m, NA))
+  expect_equal(RiboPilot:::unit_sequences(con, units), c(s, NA))
+
+  get <- function(tbl) unlist(DBI::dbGetQuery(con, sprintf("SELECT itsx_warnings, itsx_origin, itsx_scores
+    FROM %s WHERE ID = 'S1' AND path = 1 AND scaffold = 1", tbl)))
+  sc <- "F: 4 1e-08 33.15, M: 4 2.9e-16 49.9"
+  pre <- itsx_out(file.path(withr::local_tempdir(), "unit.itsx_check"),
+    "S1.1.1\t1000 bp.\tSSU: 1-300\tITS1: 301-500\t5.8S: 501-660\tITS2: 661-800\tLSU: 801-1000\t",
+    paste0("S1.1.1\t1000\tM\t0\t4\t2.9e-16\t49.9\t49.9\t1\t1000\t1_SSU\t4_LSU\t\t1_SSU,2_5.8,3_End,4_LSU\t", sc))
+  flags <- "itsx_gap_in_ITS;itsx_boundary_shift(ITS1:50bp)"
+  chk <- RiboPilot:::itsx_check_one(con, "S1", 1L, 1L, pre, review = TRUE)
+  expect_equal(chk$itsx_check, flags)
+  expect_equal(get("review_units"), c(itsx_warnings = flags, itsx_origin = "M", itsx_scores = sc))
+  expect_equal(get("annotate"), c(itsx_warnings = "itsx_chimeric", itsx_origin = "F", itsx_scores = "F: 1 1e-10 40"))
+
+  # original mode checks the original and leaves the copy alone
+  expect_equal(RiboPilot:::itsx_check_one(con, "S1", 1L, 1L, pre)$itsx_check, "")
+  expect_equal(get("annotate"), c(itsx_warnings = "", itsx_origin = "M", itsx_scores = sc))
+  expect_equal(get("review_units")[["itsx_warnings"]], flags)
+
+  # a run that did not finish is not_run on the copy only
+  RiboPilot:::itsx_check_one(con, "S1", 1L, 1L, file.path(dirname(pre), "missing"), review = TRUE)
+  ru <- get("review_units")
+  expect_equal(ru[["itsx_warnings"]], "not_run(ITSx did not finish)")
+  expect_true(is.na(ru[["itsx_origin"]]) && is.na(ru[["itsx_scores"]]))
+  expect_equal(get("annotate")[["itsx_warnings"]], "")
+})

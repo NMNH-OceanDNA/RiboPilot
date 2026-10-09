@@ -444,26 +444,33 @@ chimera_label_prefix <- function(label_db, workdir) {
 #' @param label_db Path to a labels FASTA/BLAST db used when `dbarg` is absent.
 #' @param threads blastn thread count.
 #' @param workdir Scratch directory for intermediate files.
+#' @param review TRUE checks the contig's review copy: its sequence, features,
+#'   hits, and ITSx chimera flag come from the review tables, coverage is cut
+#'   to the copy's window, and the result goes to `review_chimera` and
+#'   `review_chimera_windows`.
 #' @return (invisibly) the written `chimera` row, as a list.
 #' @export
 chimera_unit <- function(con, id, path = 1L, scaffold = 1L, dbarg = NULL, taxdump_dir = NULL,
-                         label_db = NULL, threads = 1L, workdir = tempfile("chimera_")) {
+                         label_db = NULL, threads = 1L, workdir = tempfile("chimera_"), review = FALSE) {
   dir.create(workdir, showWarnings = FALSE, recursive = TRUE)
   label_db <- chimera_label_prefix(label_db, workdir)
-  seq <- DBI::dbGetQuery(con, "SELECT sequence FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
-    params = list(id, path, scaffold))$sequence[1]
+  seq <- DBI::dbGetQuery(con, sprintf("SELECT sequence FROM %s WHERE ID = ? AND path = ? AND scaffold = ?",
+    review_tbl("assemblies", review)), params = list(id, path, scaffold))$sequence[1]
   if (is.na(seq %||% NA) || !nzchar(seq)) return(invisible(NULL))
-  feats <- DBI::dbGetQuery(con, "SELECT element, start, stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
-    params = list(id, path, scaffold))
-  hits <- tryCatch(DBI::dbGetQuery(con, "SELECT accession, bitscore, qstart, qend, lineage_taxids, lineage, species, pident FROM blast_hits WHERE ID = ? AND path = ? AND scaffold = ?",
-    params = list(id, path, scaffold)), error = function(e) data.frame())
+  feats <- DBI::dbGetQuery(con, sprintf("SELECT element, start, stop FROM %s WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
+    review_tbl("annotations", review)), params = list(id, path, scaffold))
+  hits <- tryCatch(DBI::dbGetQuery(con, sprintf("SELECT accession, bitscore, qstart, qend, lineage_taxids, lineage, species, pident FROM %s WHERE ID = ? AND path = ? AND scaffold = ?",
+    review_tbl("blast_hits", review)), params = list(id, path, scaffold)), error = function(e) data.frame())
   samp <- tryCatch(DBI::dbGetQuery(con, "SELECT lineage_taxids FROM samples WHERE ID = ?", params = list(id))$lineage_taxids[1],
     error = function(e) NA_character_)
-  cov <- tryCatch(DBI::dbGetQuery(con, "SELECT depths, clips FROM coverage WHERE ID = ? AND path = ? AND scaffold = ?",
-    params = list(id, path, scaffold)), error = function(e) data.frame())
-  itsx <- tryCatch(DBI::dbGetQuery(con, "SELECT chimeric FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?",
-    params = list(id, path, scaffold))$chimeric[1], error = function(e) NA)
+  itsx <- tryCatch(DBI::dbGetQuery(con, sprintf("SELECT chimeric FROM %s WHERE ID = ? AND path = ? AND scaffold = ?",
+    review_tbl("annotate", review)), params = list(id, path, scaffold))$chimeric[1], error = function(e) NA)
   track <- function(x) if (length(x) && !is.na(x) && nzchar(x)) as.numeric(strsplit(x, ",", fixed = TRUE)[[1]]) else NULL
+  cov <- if (review) review_coverage(con, id, path, scaffold) else {
+    cv <- tryCatch(DBI::dbGetQuery(con, "SELECT depths, clips FROM coverage WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = list(id, path, scaffold)), error = function(e) data.frame())
+    list(depths = if (nrow(cv)) track(cv$depths[1]), clips = if (nrow(cv) && "clips" %in% names(cv)) track(cv$clips[1]))
+  }
 
   # channel 1
   gene_taxa <- if (nrow(hits) && nrow(feats)) chimera_gene_lca(hits, feats) else NULL
@@ -513,8 +520,8 @@ chimera_unit <- function(con, id, path = 1L, scaffold = 1L, dbarg = NULL, taxdum
   }
 
   # channel 4
-  depths <- if (nrow(cov)) track(cov$depths[1]) else NULL
-  clips <- if (nrow(cov) && "clips" %in% names(cov)) track(cov$clips[1]) else NULL
+  depths <- cov$depths
+  clips <- cov$clips
   ch_reads <- chimera_channel_reads(depths, clips, feats, seq)
 
   channels <- list(genes = ch_genes, windows = ch_windows, ribotyper = ch_rt, reads = ch_reads)
@@ -537,13 +544,17 @@ chimera_unit <- function(con, id, path = 1L, scaffold = 1L, dbarg = NULL, taxdum
     channels = jsonlite::toJSON(channels, auto_unbox = TRUE),
     ribotyper_codes = codes, db_source = db_use %||% NA_character_, time_stamp = ts,
     stringsAsFactors = FALSE)
+  ch_tbl <- review_tbl("chimera", review)
+  win_tbl <- review_tbl("chimera_windows", review)
   DBI::dbWithTransaction(con, {
-    DBI::dbExecute(con, "DELETE FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", params = list(id, path, scaffold))
-    DBI::dbExecute(con, "DELETE FROM chimera_windows WHERE ID = ? AND path = ? AND scaffold = ?", params = list(id, path, scaffold))
-    DBI::dbAppendTable(con, "chimera", row)
+    DBI::dbExecute(con, sprintf("DELETE FROM %s WHERE ID = ? AND path = ? AND scaffold = ?", ch_tbl),
+      params = list(id, path, scaffold))
+    DBI::dbExecute(con, sprintf("DELETE FROM %s WHERE ID = ? AND path = ? AND scaffold = ?", win_tbl),
+      params = list(id, path, scaffold))
+    DBI::dbAppendTable(con, ch_tbl, row)
     if (!is.null(windows) && nrow(windows)) {
       windows$ID <- id; windows$path <- path; windows$scaffold <- scaffold
-      DBI::dbAppendTable(con, "chimera_windows", windows[, c("ID", "path", "scaffold", "start", "stop", "accession",
+      DBI::dbAppendTable(con, win_tbl, windows[, c("ID", "path", "scaffold", "start", "stop", "accession",
         "species", "staxid", "lineage", "lineage_taxids", "rank_distance", "hit_class", "pident", "bitscore",
         "depth_median", "clip_frac", "db_source")])
     }

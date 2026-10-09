@@ -523,3 +523,75 @@ test_that("the junction table names the checks behind each junction and why", {
   expect_match(j$why[2], "clipped", fixed = TRUE)
   expect_equal(nrow(RiboPilot:::chimera_junction_table("", NA_character_)), 0L)
 })
+
+test_that("chimera_unit(review = TRUE) scores the copy and writes only its mirrors", {
+  con <- chimera_test_con()
+  on.exit(DBI::dbDisconnect(con))
+  orig <- withr::with_seed(3, paste(sample(c("A", "C", "G", "T"), 4000, TRUE), collapse = ""))
+  DBI::dbExecute(con, "INSERT INTO assemblies (ID, path, scaffold, length, sequence) VALUES ('S1', 1, 1, 4000, ?),
+    ('S1', 1, 2, 4000, ?)", params = list(orig, orig))
+  DBI::dbExecute(con, "INSERT INTO annotate (ID, path, scaffold) VALUES ('S1', 1, 2)")
+  DBI::dbExecute(con, "UPDATE samples SET lineage_taxids = '33208;7711;186623;8030;8016;8017;8018' WHERE ID = 'S1'")
+  DBI::dbExecute(con, "UPDATE annotate SET chimeric = 0")
+  DBI::dbExecute(con, "INSERT INTO annotations (ID, path, scaffold, element, start, stop)
+    VALUES ('S1',1,1,'18S',1,1800), ('S1',1,1,'28S',2500,4000)")
+  DBI::dbExecute(con, "INSERT INTO coverage (ID, path, scaffold, depths, clips) VALUES ('S1',1,1,?,?)",
+    params = list(paste(rep(20, 4000), collapse = ","), paste(c(rep(0, 2199), 9, rep(0, 1800)), collapse = ",")))
+  DBI::dbExecute(con, "INSERT INTO chimera (ID, path, scaffold, score, label, reason) VALUES ('S1',1,1,0,'clean','original')")
+  DBI::dbExecute(con, "INSERT INTO chimera_windows (ID, path, scaffold, start, stop, pident)
+    VALUES ('S1',1,1,1,500,99), ('S1',1,1,3501,4000,99)")
+  RiboPilot:::review_copy(con, "S1", 1L, 1L)
+  # the copy: first 1000 bp trimmed off (18S cut to 1..800), chimeric per its own ITSx run, its own hits
+  DBI::dbExecute(con, "UPDATE review_units SET sequence = ?, length = 3000, trim_start = 1001, trim_end = 4000,
+    chimeric = 1", params = list(substr(orig, 1001, 4000)))
+  DBI::dbExecute(con, "UPDATE review_annotations SET start = max(start - 1000, 1), stop = stop - 1000")
+  fish <- "33208;7711;186623;8030;8016;8017;8018"
+  DBI::dbAppendTable(con, "review_blast_hits", data.frame(ID = "S1", path = 1L, scaffold = 1L,
+    hit_rank = 1:6, hsp = 1L, accession = paste0("A", 1:6), species = "Salmo salar",
+    lineage = "Animalia;Chordata;Actinopterygii;Salmoniformes;Salmonidae;Salmo;Salmo salar",
+    lineage_taxids = fish, pident = 99, bitscore = 900,
+    qstart = rep(c(1L, 1500L), each = 3), qend = rep(c(800L, 3000L), each = 3)))
+  fake_blast <- function(query, dbarg, task, out, ...) {
+    ids <- sub("^>", "", grep("^>", readLines(query), value = TRUE))
+    writeLines(sprintf("NC_1\tSalmo salar 18S\t99.0\t100\t0\t8030\t900\t500\t1\t500\t1\t500\t1800\t%s", ids), out)
+    0L
+  }
+  fake_rt <- function(fasta, outdir, ...) {
+    writeLines(c("#idx target class strnd p/f unexpected_features", "1 u18S SSU.Eukarya plus PASS -",
+      "2 u28S LSU.Eukarya plus PASS -"), file.path(outdir, "rt.ribotyper.short.out")); 0L
+  }
+  fake_lin <- function(taxids, dir) data.frame(taxid = 8030L,
+    lineage = "Animalia;Chordata;Actinopterygii;Salmoniformes;Salmonidae;Salmo;Salmo salar", lineage_taxids = fish)
+  testthat::local_mocked_bindings(chimera_run_blastn = fake_blast, chimera_run_ribotyper = fake_rt,
+    tk_ranked_lineage = fake_lin, .package = "RiboPilot")
+  originals <- function() list(DBI::dbGetQuery(con, "SELECT ID, path, scaffold, score, label, reason FROM chimera"),
+    DBI::dbGetQuery(con, "SELECT ID, path, scaffold, start, stop FROM chimera_windows ORDER BY start"))
+  before <- originals()
+
+  r <- RiboPilot:::chimera_unit(con, "S1", 1L, 1L, dbarg = "panel", review = TRUE)
+  expect_identical(originals(), before)
+  ch <- jsonlite::fromJSON(r$channels)
+  expect_equal(ch$reads$junctions, 1200L)
+  expect_equal(ch$ribotyper$score, 0.2)
+  expect_equal(jsonlite::fromJSON(r$gene_taxa)[, c("element", "n_hits")],
+    data.frame(element = c("18S", "28S"), n_hits = c(3L, 3L)))
+  rc <- DBI::dbGetQuery(con, "SELECT junctions, reason FROM review_chimera")
+  expect_equal(rc$junctions, "1200")
+  expect_equal(rc$reason, r$reason)
+  w <- DBI::dbGetQuery(con, "SELECT start, stop, clip_frac FROM review_chimera_windows ORDER BY start")
+  expect_equal(w$start, RiboPilot:::chimera_tile(3000)$start)
+  expect_equal(max(w$stop), 3000L)
+  expect_equal(w$start[w$clip_frac > 0], c(751L, 1001L))
+
+  # no copy: nothing to score in review mode
+  expect_null(RiboPilot:::chimera_unit(con, "S1", 1L, 2L, dbarg = "panel", review = TRUE))
+  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) AS n FROM review_chimera WHERE scaffold = 2")$n, 0L)
+
+  # original mode scores the original and leaves the copy alone
+  RiboPilot:::chimera_unit(con, "S1", 1L, 1L, dbarg = "panel")
+  expect_equal(DBI::dbGetQuery(con, "SELECT junctions, reason FROM review_chimera"), rc)
+  expect_equal(DBI::dbGetQuery(con, "SELECT junctions FROM chimera")$junctions, "2200")
+  expect_equal(DBI::dbGetQuery(con, "SELECT start FROM chimera_windows ORDER BY start")$start,
+    RiboPilot:::chimera_tile(4000)$start)
+  expect_equal(DBI::dbGetQuery(con, "SELECT start, stop, clip_frac FROM review_chimera_windows ORDER BY start"), w)
+})
