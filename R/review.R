@@ -208,3 +208,163 @@ review_map_hits <- function(con, id, path, scaffold) {
   rownames(h) <- NULL
   h
 }
+
+#' Trim a contig's review copy to positions from..to of the copy (S5.2)
+#'
+#' The sequence is cut from the original by the new window. Features are
+#' shifted, clamped, or dropped as trim_assembly did; a cut end gets
+#' partial_*_user = 1 in the feature's own orientation. Makes the copy on first
+#' touch and marks its checks not run.
+#' @return invisible new length.
+#' @noRd
+review_trim <- function(con, id, path, scaffold, from, to) {
+  path <- as.integer(path); scaffold <- as.integer(scaffold)
+  p <- list(id, path, scaffold)
+  key <- "WHERE ID = ? AND path = ? AND scaffold = ?"
+  invisible(with_savepoint(con, {
+    review_copy(con, id, path, scaffold)
+    r <- DBI::dbGetQuery(con,
+      "SELECT r.sequence, r.trim_start, a.sequence AS orig FROM review_units r
+       JOIN assemblies a ON a.ID = r.ID AND a.path = r.path AND a.scaffold = r.scaffold
+       WHERE r.ID = ? AND r.path = ? AND r.scaffold = ?", params = p)
+    if (nrow(r) == 0 || is.na(r$sequence[1]) || !nzchar(r$sequence[1])) {
+      stop(sprintf("No sequence for contig %s.%d.%d.", id, path, scaffold), call. = FALSE)
+    }
+    from <- max(1L, as.integer(from)); to <- min(nchar(r$sequence[1]), as.integer(to))
+    if (!isTRUE(from <= to)) stop("Invalid trim range.", call. = FALSE)
+    w <- as.integer(r$trim_start[1]) + c(from, to) - 1L
+    sq <- substr(r$orig[1], w[1], w[2]); n <- nchar(sq)
+    DBI::dbExecute(con, paste("UPDATE review_units SET sequence = ?, length = ?, trim_start = ?, trim_end = ?,
+      edited = 1", key), params = c(list(sq, n, w[1], w[2]), p))
+    ann <- DBI::dbGetQuery(con, paste("SELECT element, start, stop, strand FROM review_annotations", key),
+      params = p)
+    fkey <- paste(key, "AND element = ?")
+    for (i in seq_len(nrow(ann))) {
+      fp <- c(p, list(ann$element[i]))
+      ns <- ann$start[i] - from + 1L; nt <- ann$stop[i] - from + 1L
+      if (nt < 1 || ns > n) {
+        DBI::dbExecute(con, paste("DELETE FROM review_annotations", fkey), params = fp)
+        next
+      }
+      minus <- identical(ann$strand[i], "-")
+      cut <- c(if (ns < 1) (if (minus) "partial_stop_user" else "partial_start_user"),
+        if (nt > n) (if (minus) "partial_start_user" else "partial_stop_user"))
+      for (col in cut) {
+        DBI::dbExecute(con, sprintf("UPDATE review_annotations SET %s = 1 %s", col, fkey), params = fp)
+      }
+      ns <- max(1L, ns); nt <- min(n, nt)
+      DBI::dbExecute(con, paste("UPDATE review_annotations SET start = ?, stop = ?, length = ?, edited = 1", fkey),
+        params = c(list(ns, nt, nt - ns + 1L), fp))
+    }
+    review_invalidate(con, id, path, scaffold)
+    n
+  }))
+}
+
+#' Write one feature of a copy and mark feature and copy edited
+#' @noRd
+review_edit_feature <- function(con, id, path, scaffold, element, set, vals) {
+  n <- DBI::dbExecute(con, sprintf("UPDATE review_annotations SET %s, edited = 1
+    WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?", set),
+    params = c(vals, list(id, path, scaffold, element)))
+  if (n == 0) stop(sprintf("No feature %s on contig %s.%d.%d.", element, id, path, scaffold), call. = FALSE)
+  DBI::dbExecute(con, "UPDATE review_units SET edited = 1 WHERE ID = ? AND path = ? AND scaffold = ?",
+    params = list(id, path, scaffold))
+}
+
+#' Move a feature's boundaries on the copy (Edit mode nudge); checks go to not run
+#' @return invisible new rev, as text.
+#' @noRd
+review_set_bounds <- function(con, id, path, scaffold, element, start, stop) {
+  path <- as.integer(path); scaffold <- as.integer(scaffold)
+  start <- as.integer(start); stop <- as.integer(stop)
+  invisible(with_savepoint(con, {
+    review_copy(con, id, path, scaffold)
+    review_edit_feature(con, id, path, scaffold, element, "start = ?, stop = ?, length = ?",
+      list(start, stop, stop - start + 1L))
+    review_invalidate(con, id, path, scaffold)
+  }))
+}
+
+#' Set the user's 5' (start) or 3' (stop) partial choice on a copy's feature
+#'
+#' No check reads partial ends, so the check state is kept.
+#' @noRd
+review_set_partial <- function(con, id, path, scaffold, element, end = c("start", "stop"), value) {
+  end <- match.arg(end)
+  path <- as.integer(path); scaffold <- as.integer(scaffold)
+  with_savepoint(con, {
+    review_copy(con, id, path, scaffold)
+    review_edit_feature(con, id, path, scaffold, element, sprintf("partial_%s_user = ?", end),
+      list(as.integer(value)))
+  })
+  invisible()
+}
+
+#' Write an Edit session's starting bounds and user partials back (Reset, Discard)
+#'
+#' backup: data.frame(element, start, stop, partial_start_user,
+#' partial_stop_user) read from review_annotations_v when Edit was ticked.
+#' Features the copy no longer has are skipped.
+#' @return invisible TRUE when a boundary moved back and the checks were
+#'   marked not run again; FALSE otherwise, including without a copy.
+#' @noRd
+review_reset_session <- function(con, id, path, scaffold, backup) {
+  path <- as.integer(path); scaffold <- as.integer(scaffold)
+  p <- list(id, path, scaffold)
+  invisible(with_savepoint(con, if (!review_has_copy(con, id, path, scaffold)) FALSE else {
+    cur <- DBI::dbGetQuery(con,
+      "SELECT element, start, stop FROM review_annotations WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = p)
+    b <- backup[backup$element %in% cur$element, , drop = FALSE]
+    m <- match(b$element, cur$element)
+    moved <- !identical(as.integer(c(cur$start[m], cur$stop[m])), as.integer(c(b$start, b$stop)))
+    for (i in seq_len(nrow(b))) {
+      DBI::dbExecute(con,
+        "UPDATE review_annotations SET start = ?, stop = ?, length = ?, partial_start_user = ?,
+           partial_stop_user = ?
+         WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?",
+        params = c(list(b$start[i], b$stop[i], b$stop[i] - b$start[i] + 1, b$partial_start_user[i],
+          b$partial_stop_user[i]), p, list(b$element[i])))
+    }
+    if (moved) review_invalidate(con, id, path, scaffold)
+    moved
+  }))
+}
+
+#' State on Annotation Review: 1 Ready to run (queue the recheck), 0 On hold
+#'
+#' Ready to run makes the copy if needed and marks its checks not run; On hold
+#' sets check_switch 0 and keeps rev. Locked contigs are refused, and so is
+#' Ready to run on a contig without a copy whose original the main pipeline
+#' has queued or never annotated.
+#' @param units data.frame(ID, path, scaffold).
+#' @return character, NA where the state was set, else the reason.
+#' @noRd
+review_set_state <- function(con, units, state) {
+  state <- as.integer(state)
+  if (!isTRUE(state %in% 0:1)) stop("state must be 1 (Ready to run) or 0 (On hold).", call. = FALSE)
+  vapply(seq_len(nrow(units)), function(i) {
+    id <- units$ID[i]; path <- as.integer(units$path[i]); scaffold <- as.integer(units$scaffold[i])
+    p <- list(id, path, scaffold)
+    with_savepoint(con, {
+      a <- DBI::dbGetQuery(con, "SELECT annotate_lock, annotate_switch, n_features FROM annotate
+        WHERE ID = ? AND path = ? AND scaffold = ?", params = p)
+      if (isTRUE(a$annotate_lock[1] == 1)) {
+        "unlock first"
+      } else if (state == 1L && !review_has_copy(con, id, path, scaffold) &&
+                 (a$annotate_switch[1] %in% c(1, 4) || is.na(a$n_features[1]))) {
+        "press Update on the Assemble step first"
+      } else {
+        review_copy(con, id, path, scaffold)
+        if (state == 1L) {
+          review_invalidate(con, id, path, scaffold)
+        } else {
+          DBI::dbExecute(con, "UPDATE review_units SET check_switch = 0, time_stamp = ?
+            WHERE ID = ? AND path = ? AND scaffold = ?", params = c(list(as.integer(Sys.time())), p))
+        }
+        NA_character_
+      }
+    })
+  }, character(1))
+}
