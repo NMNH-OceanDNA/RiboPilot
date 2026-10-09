@@ -669,7 +669,7 @@ trim_modal <- function(n, a_from, a_to) {
     opts_help("Trimming cuts the flanks off this contig's review copy and shifts its ",
       "feature coordinates and coverage track to match. Features that fall entirely ",
       "outside the kept range are removed. The original stays as it is for the Assemble step. ",
-      "The contig's checks show not run until you press Update. Use \"Restore assembly\" to ",
+      "Checks show \"not run\" until you run Update in the Annotation Review step. Use \"Restore assembly\" to ",
       "undo every edit."),
     footer = mp_footer(
       danger = actionButton("trim_apply", "Trim", icon = icon("scissors")), dismiss = NULL,
@@ -706,7 +706,7 @@ batch_trim_summary <- function(p, restore = FALSE) {
   tagList(
     tags$p(paste0(mp_n(ok, "contig"), if (ok == 1) " is" else " are",
       if (restore) " restored to the original: trims, boundary edits, and 5'/3' choices are deleted."
-      else " trimmed; their checks show not run until you press Update.")),
+      else " trimmed. Checks show \"not run\" until you run Update in the Annotation Review step.")),
     if (nrow(bad)) tagList(
       tags$p(style = "margin:8px 0 4px;", paste0("Skipped (", nrow(bad), "):")),
       div(style ="max-height:200px; overflow-y:auto; border:1px solid #ddd; padding:4px 8px; font-size:0.9em;",

@@ -3182,7 +3182,7 @@ app_server <- function(input, output, session) {
     end_edit_session()
     edit_tick(edit_tick() + 1); refresh(refresh() + 1)
     show_annotate_unit()  # back to the details modal, now showing trimmed coords
-    rp_alert("Contig trimmed. Its checks show not run until you press Update.", type = "message")
+    rp_alert("Contig trimmed. Checks show \"not run\" until you run Update in the Annotation Review step.", type = "message")
   })
 
   # Cancel out of the trim modal: return to the annotate details modal.

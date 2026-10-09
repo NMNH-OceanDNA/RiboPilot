@@ -631,7 +631,7 @@ test_that("a trim writes the review copy, and a second trim offers the copy's sp
     expect_false(is.null(edit_backup()))
     session$setInputs(trim_from = 10, trim_to = 420, trim_apply = 1)
     session$flushReact()
-    expect_equal(utils::tail(alerts, 1), "Contig trimmed. Its checks show not run until you press Update.")
+    expect_equal(utils::tail(alerts, 1), "Contig trimmed. Checks show \"not run\" until you run Update in the Annotation Review step.")
     # the trim ends the Edit session, so a later Reset cannot write pre-trim coordinates
     expect_null(edit_backup())
     expect_false(edit_active())
