@@ -174,3 +174,25 @@ test_that("feature_blast_unit(review = TRUE) reads and writes the review copy", 
   expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) AS n FROM feature_blast")$n, 0L)
   expect_equal(DBI::dbGetQuery(con, "SELECT element FROM review_feature_blast_v")$element, "ITS1")
 })
+
+test_that("feature_blast_unit() runs real blastn against a tiny panel", {
+  skip_if(!nzchar(Sys.which("blastn")) || !nzchar(Sys.which("makeblastdb")))
+  con <- chimera_test_con(); on.exit(DBI::dbDisconnect(con))
+  seq <- fb_seed(con)
+  d <- withr::local_tempdir()
+  writeLines(c(">REF1 Danio rerio 18S ribosomal RNA", substring(seq, 1, 1800),
+    ">REF2 Morus alba 28S ribosomal RNA", substring(seq, 2201, 3000)), file.path(d, "p.fa"))
+  writeLines(c("REF1 7955", "REF2 3498"), file.path(d, "p.map"))
+  system2("makeblastdb", c("-in", file.path(d, "p.fa"), "-dbtype", "nucl", "-parse_seqids",
+    "-taxid_map", file.path(d, "p.map"), "-out", file.path(d, "p")), stdout = FALSE, stderr = FALSE)
+  testthat::local_mocked_bindings(tk_ranked_lineage = function(taxids, dir) data.frame(taxid = c(7955L, 3498L),
+    lineage = c(FB_DANIO[["lin"]], FB_PLANT[["lin"]]), lineage_taxids = c(FB_DANIO[["tax"]], FB_PLANT[["tax"]])),
+    .package = "RiboPilot")
+  RiboPilot:::feature_blast_unit(con, "S1", 1L, 1L, dbarg = file.path(d, "p"), workdir = file.path(d, "w"))
+  fb <- DBI::dbGetQuery(con, "SELECT element, status, accession, staxid, match_rank FROM feature_blast")
+  fb <- fb[match(c("18S", "ITS1", "5.8S", "ITS2", "28S"), fb$element), ]
+  expect_equal(fb$status, c("ok", "no_hit", "too_small", "no_hit", "off_target"))
+  expect_equal(fb$accession[1], "REF1")
+  expect_equal(fb$staxid[c(1, 5)], c(7955L, 3498L))
+  expect_equal(fb$match_rank[1], "species")
+})
