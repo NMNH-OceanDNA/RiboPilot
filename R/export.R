@@ -249,24 +249,33 @@ has_screen_risk <- function(risk) {
 #' Findings are listed worst first. The red ones (off target, contaminant,
 #' severe chimera, ITSx chimeric) are the tags `has_screen_risk()` reads, so
 #' Lock and Export ask about them. "ok" needs every unit screened on_target;
-#' with nothing flagged and no usable screen the cell says "no reference".
+#' with nothing flagged and no usable screen the cell says "no reference". An
+#' ITSx result that is missing or not_run is the amber "ITSx not checked".
 #' Only kept scaffolds count.
 #' @param con Open project DB connection.
 #' @param by "unit" (one row per ID, path, scaffold) or "sample" (one per ID).
+#' @param review TRUE reads the review layer (Annotation Review): a contig
+#'   whose checks are not done shows its state instead of findings.
 #' @return data.frame(ID, \[path, scaffold,\] checks, checks_tone)
 #' @noRd
-unit_checks <- function(con, by = c("unit", "sample")) {
+unit_checks <- function(con, by = c("unit", "sample"), review = FALSE) {
   by <- match.arg(by)
-  u <- DBI::dbGetQuery(con,
+  tb <- if (review) {
+    c("review_units_v", "review_screen_v", "review_chimera_v", "review_annotations_v")
+  } else {
+    c("annotate", "screen", "chimera", "annotations")
+  }
+  u <- DBI::dbGetQuery(con, sprintf(
     "SELECT an.ID, an.path, an.scaffold, sc.screen_verdict, ch.label AS chimera_label,
        an.chimeric, an.curate_flags, an.itsx_warnings,
-       (SELECT COUNT(*) FROM annotations f WHERE f.ID = an.ID AND f.path = an.path
+       (SELECT COUNT(*) FROM %4$s f WHERE f.ID = an.ID AND f.path = an.path
           AND f.scaffold = an.scaffold AND f.status = 'flag') AS n_feat_flags
-     FROM annotate an
+     FROM %1$s an
        JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
-       LEFT JOIN screen sc ON sc.ID = an.ID AND sc.path = an.path AND sc.scaffold = an.scaffold
-       LEFT JOIN chimera ch ON ch.ID = an.ID AND ch.path = an.path AND ch.scaffold = an.scaffold
-     WHERE COALESCE(asm.ignore, 0) = 0")
+       LEFT JOIN %2$s sc ON sc.ID = an.ID AND sc.path = an.path AND sc.scaffold = an.scaffold
+       LEFT JOIN %3$s ch ON ch.ID = an.ID AND ch.path = an.path AND ch.scaffold = an.scaffold
+     WHERE COALESCE(asm.ignore, 0) = 0
+     ORDER BY an.ID, an.path, an.scaffold", tb[1], tb[2], tb[3], tb[4]))
   txt <- function(x) { x <- as.character(x); x[is.na(x)] <- ""; x }
   fl <- strsplit(txt(u$curate_flags), "; ", fixed = TRUE)
   itsx <- txt(u$itsx_warnings)
@@ -278,12 +287,20 @@ unit_checks <- function(con, by = c("unit", "sample")) {
     "minor chimera" = u$chimera_label %in% "minor",
     "uncertain screen" = u$screen_verdict %in% "uncertain",
     "ITSx" = nzchar(itsx) & !startsWith(itsx, "not_run("),
+    "ITSx not checked" = is.na(u$itsx_warnings) | startsWith(itsx, "not_run("),
     "warnings" = vapply(fl, function(x) any(x != "contaminant"), logical(1)),
     "feature flags" = u$n_feat_flags > 0)
   cols <- if (by == "unit") c("ID", "path", "scaffold") else "ID"
   key <- if (by == "unit") unit_key(u$ID, u$path, u$scaffold) else u$ID
+  gate <- rep(NA_character_, nrow(u))
+  if (review) {
+    st <- review_unit_state(con, u[c("ID", "path", "scaffold")])$state
+    gate <- ifelse(st %in% "done", NA_character_, review_state_text(st))
+  }
   rows <- split(seq_len(nrow(u)), factor(key, levels = unique(key)))
   cell <- vapply(rows, function(i) {
+    g <- unique(stats::na.omit(gate[i]))
+    if (length(g)) return(c(paste(g, collapse = ", "), "info"))
     h <- colSums(hit[i, , drop = FALSE]) > 0
     tone <- if (any(h[1:4])) "danger" else if (any(h)) "warning"
       else if (all(u$screen_verdict[i] %in% "on_target")) "success" else "neutral"

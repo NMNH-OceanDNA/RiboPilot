@@ -56,9 +56,15 @@ rt_lock_icon <- function(inputId = NULL) {
 #'   is unchanged.
 #' @param inputId optional Shiny input id. When supplied the icon is a button
 #'   that sends its 1-based row index to this input.
+#' @param note_col optional column of the row; its text, when the row has one,
+#'   is added to the glyph's name.
 #'
 #' @noRd
-rt_dynamicIcon <- function(icons = NULL, labels = NULL, inputId = NULL) {
+rt_dynamicIcon <- function(icons = NULL, labels = NULL, inputId = NULL, note_col = NULL) {
+  note <- if (is.null(note_col)) "" else sprintf(
+    "var note = (cellInfo.row || {})['%s'];
+      if (label && note) label += ' Note: ' + String(note).replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;').replace(/'/g, '&#39;');", note_col)
   if (length(icons) == 0) {
     return({
       htmlwidgets::JS("function(cellInfo) {return cellInfo.value}")
@@ -73,6 +79,7 @@ rt_dynamicIcon <- function(icons = NULL, labels = NULL, inputId = NULL) {
       var labels = %s;
       var icon = icons[value] || '';
       var label = labels[value];
+      %s
       var name = label ?
         ` role='img' aria-label='${label}' title='${label}'` : '';
       var html = `<i class='${icon}'${name} ` +
@@ -85,7 +92,7 @@ rt_dynamicIcon <- function(icons = NULL, labels = NULL, inputId = NULL) {
         html + `</a>`;
     }
     ",
-    mp_js_obj(icons), mp_js_obj(labels), inputId %||% ""
+    mp_js_obj(icons), mp_js_obj(labels), note, inputId %||% ""
   ) |> htmlwidgets::JS()
 }
 
@@ -224,21 +231,50 @@ rt_flag_badge <- function() {
     }")
 }
 
-#' Render the stock-ITSx check: tick when clean, grey when not run, amber pill
-#' with the flag list otherwise (or the 'n of m contigs' roll-up on a sample row)
+#' Render the stock-ITSx check: grey when never checked or not run, blank when
+#' clean, amber pill with the flag list otherwise. A sample row's roll-up ticks
+#' only when it reads exactly '0 of <m> contigs'.
 #' @noRd
 rt_itsx_badge <- function() {
   htmlwidgets::JS(
     "function(cellInfo) {
       var v = cellInfo.value
-      if (v === null || v === undefined || v === '') return ''
+      if (v === null || v === undefined) return '<span style=\"color:#999;\">not checked</span>'
       v = String(v)
+      if (v === '') return ''
       var esc = v.replace(/\"/g, '&quot;')
       if (v.indexOf('not_run(') === 0) return '<span title=\"' + esc + '\" style=\"color:#999;\">not run</span>'
-      if (/^0 of /.test(v)) return '<span class=\"mp-fg-success\">&#10003;</span>'
+      if (/^0 of [0-9]+ contigs$/.test(v)) return '<span class=\"mp-fg-success\">&#10003;</span>'
       var txt = v.split(';').join('; ')
       return '<span title=\"' + esc + '\" class=\"mp-pill mp-pill-warning\">' + txt + '</span>'
     }")
+}
+
+#' Show a check's state instead of its result while the checks are not done
+#'
+#' A row with a `check_state` ("not run", "running", "failed", "on hold", or
+#' "waiting for Assemble Update") gets an info pill, titled with the row's
+#' `check_note` when it has one. Other rows render through `cell`, or show the
+#' plain value when `cell` is NULL.
+#' @noRd
+rt_gated <- function(cell = NULL) {
+  inner <- if (is.null(cell)) {
+    "function(cellInfo) { var v = cellInfo.value; return (v === null || v === undefined) ? '' : String(v); }"
+  } else {
+    as.character(cell)
+  }
+  htmlwidgets::JS(sprintf(
+    "function(cellInfo) {
+      var row = cellInfo.row || {};
+      var st = row['check_state'];
+      if (st) {
+        var note = row['check_note'];
+        var tip = note ? ' title=\"' + String(note).replace(/&/g, '&amp;').replace(/\"/g, '&quot;')
+          .replace(/</g, '&lt;') + '\"' : '';
+        return '<span class=\"mp-pill mp-pill-info\"' + tip + '>' + st + '</span>';
+      }
+      return (%s)(cellInfo);
+    }", inner))
 }
 
 #' Render a kept-contig count: red when nothing survives triage, else plain

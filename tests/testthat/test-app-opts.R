@@ -119,7 +119,7 @@ test_that("annotation and curation presets are set from the Assemble surface", {
   # ...and the Annotate-mode query no longer carries them. Anchored on that
   # query specifically: the Assemble one names the same columns in subselects,
   # so a whole-file search would pass while the tab still showed them.
-  i <- regexpr("an.annotate_lock, an.annotate_switch", srv, fixed = TRUE)
+  i <- regexpr("an.annotate_lock, COALESCE(v.check_switch, 1) AS annotate_switch", srv, fixed = TRUE)
   expect_true(i > 0)
   ann_q <- substr(srv, i, i + 700)
   expect_false(grepl("annotate_opts", ann_q, fixed = TRUE))

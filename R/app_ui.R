@@ -3,14 +3,16 @@
 LOCK_CHOICES <- c("Unlocked" = "0", "Locked" = "1")
 
 #' Lock + state status filter pickers (mirrors MitoPilot); values match the
-#' assemble/annotate lock (0/1) and switch (0/1/2/3/4) codes. Each mode gets its
+#' assemble/annotate lock (0/1) and switch (0/1/2/3/4) codes, plus 5 (waiting for
+#' the Assemble step's Update) on Annotation Review. Each mode gets its
 #' own picker ids (`<mode>_lock_filter` / `<mode>_state_filter`) so the Assemble
 #' and Annotate filters do not share a DOM id and leak across modes.
 #' @noRd
 filter_pickers <- function(mode) {
+  states <- if (mode == "Annotate") mp_state_choices("annotate") else STATE_CHOICES
   shiny::tagList(
     mp_filter_picker(paste0(mode, "_lock_filter"), "Lock:", LOCK_CHOICES, width = "140px"),
-    mp_filter_picker(paste0(mode, "_state_filter"), "State:", STATE_CHOICES, width = "140px")
+    mp_filter_picker(paste0(mode, "_state_filter"), "State:", states, width = "140px")
   )
 }
 

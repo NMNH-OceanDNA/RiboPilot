@@ -413,3 +413,46 @@ review_follow_original <- function(con, id, path, scaffold) {
     }
   }))
 }
+
+#' Check state of contigs, as Annotation Review shows it
+#'
+#' One row per kept contig of the assembly-locked samples, ordered by ID, path,
+#' scaffold; or, with `units` (data.frame(ID, path, scaffold)), one row per
+#' unit in its order, matched in R. "waiting": no copy, and the original is
+#' queued for the main pipeline or was never annotated (the contigs
+#' nf_recheck_waiting() counts). Otherwise check_switch decides: 2 done,
+#' 1 or NULL not run, 4 running, 3 failed, 0 on hold.
+#' @noRd
+review_unit_state <- function(con, units = NULL) {
+  d <- DBI::dbGetQuery(con, paste(
+    "SELECT v.ID, v.path, v.scaffold, v.has_copy, v.check_switch, an.annotate_switch,
+       an.annotate_lock, an.n_features, v.check_note
+     FROM review_units_v v
+     JOIN annotate an ON an.ID = v.ID AND an.path = v.path AND an.scaffold = v.scaffold",
+    if (is.null(units)) {
+      "JOIN assemblies asm ON asm.ID = v.ID AND asm.path = v.path AND asm.scaffold = v.scaffold
+     JOIN assemble a ON a.ID = v.ID
+     WHERE a.assemble_lock = 1 AND COALESCE(asm.ignore, 0) = 0"
+    },
+    "ORDER BY v.ID, v.path, v.scaffold"))
+  if (!is.null(units)) {
+    d <- d[match(unit_key(units$ID, units$path, units$scaffold), unit_key(d$ID, d$path, d$scaffold)), ,
+      drop = FALSE]
+    d$ID <- as.character(units$ID)
+    d$path <- as.integer(units$path)
+    d$scaffold <- as.integer(units$scaffold)
+    rownames(d) <- NULL
+  }
+  waiting <- d$has_copy %in% 0 & (d$annotate_switch %in% c(1, 4) | is.na(d$n_features))
+  st <- unname(c(`0` = "on hold", `1` = "not run", `2` = "done", `3` = "failed",
+    `4` = "running")[as.character(d$check_switch)])
+  d$state <- as.character(ifelse(waiting, "waiting", ifelse(is.na(st), "not run", st)))
+  d
+}
+
+#' Words for review_unit_state()'s state, as the table cells show them
+#' @noRd
+review_state_text <- function(state) {
+  unname(c(done = "done", `not run` = "not run", running = "running", failed = "failed",
+    `on hold` = "on hold", waiting = "waiting for Assemble Update")[state])
+}

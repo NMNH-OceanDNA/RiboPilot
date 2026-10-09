@@ -291,7 +291,8 @@ test_that("unit_checks names every finding, colours the worst, and agrees with t
   for (s in 1:4) {
     DBI::dbExecute(con, "INSERT INTO assemblies (ID, path, scaffold, sequence, length, ignore) VALUES ('S1',1,?,'ACGT',4,0)",
       params = list(s))
-    DBI::dbExecute(con, "INSERT INTO annotate (ID, path, scaffold) VALUES ('S1',1,?)", params = list(s))
+    DBI::dbExecute(con, "INSERT INTO annotate (ID, path, scaffold, itsx_warnings) VALUES ('S1',1,?,'')",
+      params = list(s))
     DBI::dbExecute(con, "INSERT INTO screen (ID, path, scaffold, screen_verdict) VALUES ('S1',1,?,'on_target')",
       params = list(s))
   }
@@ -321,6 +322,14 @@ test_that("unit_checks names every finding, colours the worst, and agrees with t
   DBI::dbExecute(con, "DELETE FROM screen WHERE scaffold = 1")
   expect_equal(RiboPilot:::unit_checks(con, "unit")[1, c("checks", "checks_tone")],
     data.frame(checks = "no reference", checks_tone = "neutral"))
+
+  # never checked, or checked without a verdict: an amber item, never ok
+  DBI::dbExecute(con, "UPDATE annotate SET itsx_warnings = NULL WHERE scaffold = 1")
+  DBI::dbExecute(con, "UPDATE annotate SET itsx_warnings = 'not_run(ITSx did not finish)' WHERE scaffold = 2")
+  u <- RiboPilot:::unit_checks(con, "unit")
+  expect_equal(u$checks, c("ITSx not checked", "minor chimera, ITSx not checked, feature flags",
+    "off target, contaminant"))
+  expect_equal(u$checks_tone, c("warning", "warning", "danger"))
 })
 
 test_that("the export done dialog names flagged records and is green only when nothing is flagged", {

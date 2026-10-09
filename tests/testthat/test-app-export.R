@@ -33,7 +33,7 @@ mk_export_project <- function(env = parent.frame()) {
   DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',1,1,'linear',600,?,0,'Danio rerio','A1',99,88,'core_nt')",
     params = list(paste(rep("ACGT", 150), collapse = "")))
   # annotation-locked, so the unit is exportable
-  DBI::dbExecute(con, "INSERT INTO annotate VALUES('S1',1,1,2,1,'default','default','yes','no','no',3,'',0,NULL,NULL,NULL,1)")
+  DBI::dbExecute(con, "INSERT INTO annotate VALUES('S1',1,1,2,1,'default','default','yes','no','no',3,'',0,NULL,'',NULL,1)")
   for (f in list(c("18S", 10, 200), c("ITS1", 201, 260), c("5.8S", 261, 420))) {
     DBI::dbExecute(con, "INSERT INTO annotations (ID, path, scaffold, element, type, start, stop) VALUES('S1',1,1,?,?,?,?)",
       params = list(f[1], RiboPilot:::rrna_element_type(f[1]),
@@ -977,8 +977,8 @@ test_that("the export fixture answers every review view", {
   for (v in names(RiboPilot:::REVIEW_VIEWS_DDL)) {
     expect_no_error(DBI::dbGetQuery(con, sprintf("SELECT ID, path, scaffold FROM %s LIMIT 1", v)))
   }
-  # locked and annotated, but no stored ITSx value: not done until fixture_mark_done()
+  # locked, annotated, and checked by ITSx: done
   expect_equal(DBI::dbGetQuery(con, "SELECT has_copy, length, check_switch FROM review_units_v"),
-    data.frame(has_copy = 0L, length = 600L, check_switch = 1L))
+    data.frame(has_copy = 0L, length = 600L, check_switch = 2L))
   expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) AS n FROM review_annotations_v")$n, 3L)
 })

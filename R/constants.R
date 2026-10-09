@@ -206,6 +206,8 @@ CHIMERA_COL_HELP <- list(
 #' Pipeline state registry. Order is lifecycle order, not numeric order.
 #' @noRd
 MP_STATE_META <- list(
+  `5` = list(label = "Waiting for Assemble Update", icon = "fa fa-clock",
+             tip = "The main pipeline has not finished this contig. Press Update on the Assemble step first."),
   `0` = list(label = "On hold",      icon = "fa fa-hourglass",
              tip = "Skipped by the next run until you set it to Ready to run."),
   `1` = list(label = "Ready to run", icon = "fa fa-play",
@@ -218,12 +220,12 @@ MP_STATE_META <- list(
              tip = "Failed. Open the sample's details to see why and what to try next.")
 )
 
-#' Codes each module can display.
+#' Codes each module can display. Annotation Review's 5 is display-only.
 #' @noRd
 MP_STATE_CODES <- list(
   taxonomy = c("0", "1", "4", "2", "3"),
   assemble = c("0", "1", "4", "2", "3"),
-  annotate = c("0", "1", "4", "2", "3")
+  annotate = c("5", "0", "1", "4", "2", "3")
 )
 
 #' Codes a user may set by hand.

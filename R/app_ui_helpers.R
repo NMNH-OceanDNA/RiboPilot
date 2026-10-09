@@ -164,7 +164,7 @@ mp_opts_saved_toast <- function(n, set, noun = "sample",
 #' @noRd
 mp_state_icon_classes <- function(module) {
   codes <- MP_STATE_CODES[[module]]
-  tone <- c(`0` = "mp-fg-neutral", `1` = "mp-fg-neutral", `4` = "mp-fg-neutral",
+  tone <- c(`5` = "mp-fg-neutral", `0` = "mp-fg-neutral", `1` = "mp-fg-neutral", `4` = "mp-fg-neutral",
             `2` = "mp-fg-success", `3` = "mp-fg-danger")
   stats::setNames(paste(mp_state_icons(module), tone[codes]), codes)
 }

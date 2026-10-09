@@ -181,13 +181,19 @@ app_server <- function(input, output, session) {
            (SELECT COUNT(*) FROM assemblies x WHERE x.ID = s.ID) AS units,
            (SELECT COUNT(*) FROM assemblies x WHERE x.ID = s.ID
               AND COALESCE(x.ignore,0) = 0) AS kept,
-           -- per-sample roll-up of the stock-ITSx check: NULL until any unit
-           -- has been checked, else 'n of m contigs' flagged
+           -- per-sample roll-up of the stock-ITSx check over kept contigs: NULL
+           -- until any is checked, else 'n of m contigs' flagged, plus how many
+           -- have no result or a not_run one, so it never reads as clean then
            (SELECT CASE WHEN COUNT(x.itsx_warnings) = 0 THEN NULL ELSE
               SUM(CASE WHEN COALESCE(x.itsx_warnings,'') <> ''
                        AND x.itsx_warnings NOT LIKE 'not_run(%' THEN 1 ELSE 0 END)
-              || ' of ' || COUNT(x.itsx_warnings) || ' contigs' END
-            FROM annotate x WHERE x.ID = s.ID) AS itsx_warnings,
+              || ' of ' || COUNT(*) || ' contigs' ||
+              CASE WHEN SUM(x.itsx_warnings IS NULL OR x.itsx_warnings LIKE 'not_run(%') = 0 THEN ''
+                ELSE ', ' || SUM(x.itsx_warnings IS NULL OR x.itsx_warnings LIKE 'not_run(%') ||
+                  ' not checked' END END
+            FROM annotate x
+              JOIN assemblies y ON y.ID = x.ID AND y.path = x.path AND y.scaffold = x.scaffold
+            WHERE x.ID = s.ID AND COALESCE(y.ignore,0) = 0) AS itsx_warnings,
            (SELECT p.path FROM path_scores p WHERE p.ID = s.ID AND p.auto_select = 1) AS sel_path,
            (SELECT round(MAX(p.score),3) FROM path_scores p WHERE p.ID = s.ID) AS best_score,
            -- the rDNA contig search writes its own column because
@@ -218,19 +224,21 @@ app_server <- function(input, output, session) {
          WHERE", EXPORTABLE_WHERE))
     } else {
       # annotate shows one row per non-ignored assembly UNIT of an assembly-locked
-      # sample (one (ID, path, scaffold) each, annotated independently)
-      app_query(paste(
-        "SELECT an.annotate_lock, an.annotate_switch, s.ID, an.path, an.scaffold,", UNIT_MULTI_SQL, ",
+      # sample (one (ID, path, scaffold) each, annotated independently). Contig
+      # data and check results come from the review layer (the contig's review
+      # copy, else its original); the marks, notes, and group from annotate.
+      d <- app_query(paste(
+        "SELECT an.annotate_lock, COALESCE(v.check_switch, 1) AS annotate_switch, s.ID, an.path, an.scaffold,", UNIT_MULTI_SQL, ",
            s.Taxon, s.sci_name, s.taxid,
-           asm.length, an.n_features, an.missing,
+           v.length, v.n_features, v.missing,
            -- blast_source says WHICH search named the species: the local seed
            -- BLAST, the local panel BLAST, or the remote core_nt one. Without
            -- it a seed or panel hit reads as a GenBank identification.
            -- blast_qcovs is written by the remote and local-panel paths only
            -- and its column was already defined but never selected.
-           asm.blast_species, asm.blast_accession, asm.blast_pident, asm.blast_qcovs,
-           asm.blast_source,
-           an.n_flags, an.curate_flags, an.itsx_warnings, sc.screen_verdict,
+           v.blast_species, v.blast_accession, v.blast_pident, v.blast_qcovs,
+           v.blast_source,
+           v.n_flags, v.curate_flags, v.itsx_warnings, sc.screen_verdict,
            ch.label AS chimera_label, ch.reason AS chimera_reason, an.reviewed,
            an.problematic, an.partial, an.annotate_notes,
            an.export_group,", UNIT_EXPORTED_SQL, ", an.time_stamp,
@@ -239,9 +247,18 @@ app_server <- function(input, output, session) {
            JOIN samples s ON s.ID = an.ID
            JOIN assemble a ON a.ID = an.ID
            JOIN assemblies asm ON asm.ID = an.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
-           LEFT JOIN screen sc ON sc.ID = an.ID AND sc.path = an.path AND sc.scaffold = an.scaffold
-           LEFT JOIN chimera ch ON ch.ID = an.ID AND ch.path = an.path AND ch.scaffold = an.scaffold
-         WHERE a.assemble_lock = 1 AND COALESCE(asm.ignore, 0) = 0")) |> with_checks("unit")
+           JOIN review_units_v v ON v.ID = an.ID AND v.path = an.path AND v.scaffold = an.scaffold
+           LEFT JOIN review_screen_v sc ON sc.ID = an.ID AND sc.path = an.path AND sc.scaffold = an.scaffold
+           LEFT JOIN review_chimera_v ch ON ch.ID = an.ID AND ch.path = an.path AND ch.scaffold = an.scaffold
+         WHERE a.assemble_lock = 1 AND COALESCE(asm.ignore, 0) = 0")) |> with_checks("unit", review = TRUE)
+      # The State column shows the checks' state, 5 for a contig waiting for the
+      # Assemble step's Update; check_state gates the check cells (rt_gated).
+      con <- app_con(); on.exit(DBI::dbDisconnect(con))
+      st <- review_unit_state(con, d[c("ID", "path", "scaffold")])
+      d$annotate_switch[st$state %in% "waiting"] <- 5L
+      d$check_state <- ifelse(st$state %in% "done", NA_character_, review_state_text(st$state))
+      d$check_note <- st$check_note
+      d
     }
   })
 
@@ -250,9 +267,9 @@ app_server <- function(input, output, session) {
   samples_data <- reactive(all_rows()[visible_mask(), , drop = FALSE])
 
   # The Checks summary goes right after the row's ID (and path and scaffold).
-  with_checks <- function(d, by) {
+  with_checks <- function(d, by, review = FALSE) {
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    ck <- unit_checks(con, by)
+    ck <- unit_checks(con, by, review = review)
     k <- function(x) if (by == "unit") unit_key(x$ID, x$path, x$scaffold) else x$ID
     i <- match(k(d), k(ck))
     at <- max(match(c("ID", "path", "scaffold"), names(d)), na.rm = TRUE)
@@ -318,28 +335,30 @@ app_server <- function(input, output, session) {
       tax_alternatives = cd("tax_alternatives", minWidth = 260, html = TRUE, cell = rt_longtext()),
       checks = cd("checks", minWidth = 180, html = TRUE, cell = rt_checks_badge()),
       checks_tone = reactable::colDef(show = FALSE),
+      check_state = reactable::colDef(show = FALSE),
+      check_note = reactable::colDef(show = FALSE),
       reviewed = cd("reviewed", html = TRUE, align = "center", cell = rt_bool_badge(hide_no = TRUE)),
       problematic = cd("problematic", width = 110, html = TRUE, align = "center",
         cell = rt_bool_badge(hide_no = TRUE, yes_tone = "warning")),
       partial = cd("partial", width = 80, html = TRUE, align = "center",
         cell = rt_bool_badge(yes_tone = "warning", no_tone = "success")),
       n_flags = cd("n_flags", width = 100, html = TRUE, filterable = FALSE, align = "center",
-        cell = rt_flag_badge()),
+        cell = rt_gated(rt_flag_badge())),
       annotate_notes = cd("annotate_notes", minWidth = 160, html = TRUE, class = "mp-note-cell", cell = rt_longtext()),
       curate_flags = reactable::colDef(show = FALSE),
-      itsx_warnings = cd("itsx_warnings", minWidth = 130, html = TRUE, cell = rt_itsx_badge()),
+      itsx_warnings = cd("itsx_warnings", minWidth = 130, html = TRUE, cell = rt_gated(rt_itsx_badge())),
       screen_verdict = cd("screen_verdict", width = 110, html = TRUE, align = "center",
-        cell = rt_screen_badge()),
+        cell = rt_gated(rt_screen_badge())),
       chimera_label = cd("chimera_label", width = 100, html = TRUE, align = "center",
-        cell = rt_chimera_badge()),
+        cell = rt_gated(rt_chimera_badge())),
       chimera_reason = reactable::colDef(show = FALSE),
       reference = cd("reference", html = TRUE, cell = rt_ncbi_link()),
-      blast_species = cd("blast_species", minWidth = 160, html = TRUE, cell = rt_longtext()),
-      blast_accession = cd("blast_accession", minWidth = 130, html = TRUE, cell = rt_ncbi_link()),
-      blast_pident = cd("blast_pident", width = 130),
-      blast_qcovs = cd("blast_qcovs", width = 140),
+      blast_species = cd("blast_species", minWidth = 160, html = TRUE, cell = rt_gated(rt_longtext())),
+      blast_accession = cd("blast_accession", minWidth = 130, html = TRUE, cell = rt_gated(rt_ncbi_link())),
+      blast_pident = cd("blast_pident", width = 130, html = TRUE, cell = rt_gated()),
+      blast_qcovs = cd("blast_qcovs", width = 140, html = TRUE, cell = rt_gated()),
       blast_source = cd("blast_source", width = 100, html = TRUE, align = "center",
-        cell = rt_blast_source_badge()),
+        cell = rt_gated(rt_blast_source_badge())),
       details = cd("details", width = 80, align = "center", filterable = FALSE, sortable = FALSE,
         sticky = "right", class = "mp-actions-sticky", headerClass = "mp-actions-sticky", html = TRUE,
         cell = rt_icon_bttn_text(det_input, "fas fa-square-arrow-up-right fa-xs", title = det_tip)),
@@ -381,7 +400,7 @@ app_server <- function(input, output, session) {
       cols[[state_col]] <- cd(state_col, sticky = "left", html = TRUE, width = 54,
         align = "center", filterable = FALSE,
         cell = rt_dynamicIcon(icons = mp_state_icon_classes(mm$pfx), labels = mp_state_titles(mm$pfx),
-          inputId = "state_row"))
+          inputId = "state_row", note_col = "check_note"))
     }
     if (mode == "Export") {
       cols[["ID"]] <- cd("ID", sticky = "left", width = mp_fit_width(d$ID))
