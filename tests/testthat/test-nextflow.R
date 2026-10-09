@@ -418,8 +418,12 @@ test_that("the shipped config sets pipefail and throttles the NCBI processes", {
   txt <- paste(cfg, collapse = " ")
   # without pipefail, `bowtie2 | samtools sort` reports samtools' exit status
   expect_match(txt, "pipefail")
-  expect_match(txt, "blast_genbank\\|blast_ref_fetch")
-  expect_match(txt, "maxForks")
+  # throttle lives on the processes: a config selector warns in workflows without them
+  expect_false(grepl("blast_genbank|blast_ref_fetch", txt, fixed = TRUE))
+  for (f in c("blast.nf", "blast_ref.nf")) {
+    nf <- paste(readLines(system.file("nextflow", "modules", f, package = "RiboPilot")), collapse = " ")
+    expect_match(nf, "maxForks 3")
+  }
 })
 
 test_that("an out-of-memory kill retries with more memory instead of dropping", {
