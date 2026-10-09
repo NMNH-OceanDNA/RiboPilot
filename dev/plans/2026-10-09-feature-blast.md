@@ -21,6 +21,8 @@ Deviations from spec:
 - non_rdna fires only on hit class "other"; "uninformative" titles (assembly records) are judged by taxonomy.
 - No coordinate stale marker: `review_invalidate()` already deletes a copy's feature BLAST rows on any edit,
   and the table gates check cells until the recheck is done.
+- No reverse complement for minus-strand features: blastn searches both strands.
+- Off-target compares phylum taxids directly; an unknown phylum on either side reads "ok" with note "phylum unknown".
 
 ## Task 3: Main workflow wiring (subagent, Sonnet)
 
