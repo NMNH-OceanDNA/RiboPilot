@@ -1024,44 +1024,29 @@ chimera_result_text <- function(label, reason) {
     class = "mp-help-text", style = "font-weight:normal;", " (hover for the full reason)"))
 }
 
-#' A unit's chimera check as first run: before its first trim, in untrimmed
-#' coordinates, with the current genes moved to match and the kept span
-#' @param q Query function (sql, params).
+#' Chimera check plot for one unit
+#'
+#' review = TRUE (Annotation Review) reads the review layer and shows a note
+#' instead until the contig's checks are done. FALSE (Assemble step) reads the
+#' originals.
 #' @noRd
-chimera_original <- function(q, id, path, scaffold) {
-  ch <- q("SELECT label, junctions, segments, channels FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", list(id, path, scaffold))
-  win <- q("SELECT start, stop, pident, lineage FROM chimera_windows WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start", list(id, path, scaffold))
-  feats <- q("SELECT element, start, stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?", list(id, path, scaffold))
-  n <- q("SELECT length FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?", list(id, path, scaffold))$length
-  # a trimmed unit shows the check from before its first trim, in untrimmed coordinates
-  kept <- NULL
-  bak <- tryCatch(q("SELECT b.sequence bak, b.length, b.chimera, a.sequence cur FROM assembly_backup b
-    JOIN assemblies a ON a.ID = b.ID AND a.path = b.path AND a.scaffold = b.scaffold
-    WHERE b.ID = ? AND b.path = ? AND b.scaffold = ?", list(id, path, scaffold)), error = function(e) data.frame())
-  if (nrow(bak) && !is.na(bak$bak[1]) && !is.na(bak$cur[1])) {
-    off <- as.integer(regexpr(bak$cur[1], bak$bak[1], fixed = TRUE)) - 1L
-    if (off >= 0L && nchar(bak$cur[1]) < bak$length[1]) {
-      kept <- c(off, off + nchar(bak$cur[1]))
-      feats$start <- feats$start + off; feats$stop <- feats$stop + off
-      n <- bak$length[1]
-      if (!is.na(bak$chimera[1])) {
-        s <- jsonlite::fromJSON(bak$chimera[1])
-        ch <- s$chimera
-        win <- if (is.data.frame(s$windows)) s$windows[order(s$windows$start), ] else win[0, ]
-      }
+plot_chimera <- function(id, path = 1L, scaffold = 1L, db = NULL, review = FALSE) {
+  con <- if (is.null(db)) app_con() else open_project_db(db)
+  on.exit(DBI::dbDisconnect(con))
+  q <- function(sql, params = list(id, path, scaffold)) DBI::dbGetQuery(con, sql, params = params)
+  empty <- function(msg) ggplot2::ggplot() + ggplot2::annotate("text", 0, 0, label = msg) + ggplot2::theme_void()
+  if (review) {
+    st <- review_unit_state(con, data.frame(ID = id, path = as.integer(path), scaffold = as.integer(scaffold)))$state
+    if (!identical(st, "done")) {
+      return(empty(if (identical(st, "waiting")) "Waiting for the Assemble step's Update." else "Not run yet. Press Update."))
     }
   }
-  list(ch = ch, win = win, feats = feats, n = n, kept = kept)
-}
-
-plot_chimera <- function(id, path = 1L, scaffold = 1L, db = NULL) {
-  q <- if (is.null(db)) app_query else {
-    con <- open_project_db(db); on.exit(DBI::dbDisconnect(con))
-    function(sql, params = NULL) DBI::dbGetQuery(con, sql, params = params)
-  }
-  empty <- function(msg) ggplot2::ggplot() + ggplot2::annotate("text", 0, 0, label = msg) + ggplot2::theme_void()
-  o <- chimera_original(q, id, path, scaffold)
-  ch <- o$ch; win <- o$win; feats <- o$feats; n <- o$n; kept <- o$kept
+  tbl <- function(x) if (review) paste0("review_", x, "_v") else x
+  unit <- " WHERE ID = ? AND path = ? AND scaffold = ?"
+  ch <- q(paste0("SELECT label, junctions, segments FROM ", tbl("chimera"), unit))
+  win <- q(paste0("SELECT start, stop, pident FROM ", tbl("chimera_windows"), unit, " ORDER BY start"))
+  feats <- q(paste0("SELECT element, start, stop FROM ", tbl("annotations"), unit))
+  n <- q(paste0("SELECT length FROM ", if (review) "review_units_v" else "assemblies", unit))$length
   if (NROW(ch) == 0) return(empty("no chimera check yet (run the pipeline from Assemble > Update)"))
   seg <- if (!is.na(ch$segments[1])) jsonlite::fromJSON(ch$segments[1]) else data.frame()
   junc <- if (nzchar(ch$junctions[1] %|NA|% "")) as.integer(strsplit(ch$junctions[1], ",")[[1]]) else integer(0)
@@ -1107,15 +1092,6 @@ plot_chimera <- function(id, path = 1L, scaffold = 1L, db = NULL) {
     ggplot2::geom_label(data = fr(data.frame(x = junc, y = 12), "genes"), ggplot2::aes(x = x, y = y),
       label = sprintf("%s\njunction at %d bp", if (sev) "chimera" else "possible", junc), vjust = 0,
       size = 3.8, lineheight = 0.9, colour = jcol, fill = "white", linewidth = 0)
-  if (!is.null(kept)) {
-    cuts <- c(if (kept[1] > 0) kept[1], if (kept[2] < n) kept[2])
-    g <- g +
-      ggplot2::annotate("rect", xmin = c(0, kept[2]), xmax = c(kept[1], n), ymin = -Inf, ymax = Inf,
-        fill = "#5b5b5b", alpha = 0.32) +
-      ggplot2::geom_vline(xintercept = cuts, linetype = "dashed", colour = "#111111", linewidth = 0.7) +
-      ggplot2::geom_text(data = fr(data.frame(x = cuts, y = 12), "genes"), ggplot2::aes(x = x, y = y),
-        label = "trim", vjust = -0.3, size = 3.2, colour = "#111111")
-  }
   g + ggplot2::facet_grid(row ~ ., scales = "free_y", space = "free_y", switch = "y",
       labeller = ggplot2::as_labeller(c(genes = "", lineage = "lineage", ident = "% identity"))) +
     ggplot2::scale_x_continuous(breaks = seq(0, xmax, 1000), minor_breaks = seq(0, xmax, 500), expand = c(0, 0)) +

@@ -2636,13 +2636,37 @@ app_server <- function(input, output, session) {
 
   observe({
     edit_tick(); refresh(); u <- sel_unit(); req(u)
-    try(seqview_send(session, "seqv_ann-canvas", "seqv_ann_pick", u$ID, u$path, u$scaffold, active_feature()), silent = TRUE)
+    try(seqview_send(session, "seqv_ann-canvas", "seqv_ann_pick", u$ID, u$path, u$scaffold, active_feature(),
+      review = TRUE), silent = TRUE)
   })
   seqview_fit <- function(el) session$sendCustomMessage("rpseq_select", list(id = "seqv_ann-canvas", row = el))
   observeEvent(input$seqv_ann_pick, active_feature(input$seqv_ann_pick$row))
 
+  # Check state of the contig open in Annotation Review; its check results show
+  # only when it is done.
+  sel_check_state <- reactive({
+    edit_tick(); refresh(); u <- sel_unit(); req(u)
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    st <- review_unit_state(con, data.frame(ID = u$ID, path = as.integer(u$path),
+      scaffold = as.integer(u$scaffold)))$state
+    req(length(st) == 1)
+    st
+  })
+
   # Chimera panels follow the annotate modal's unit, or the assemble modal's
-  # highlighted scaffold.
+  # highlighted scaffold. Annotation Review reads the review layer once the
+  # contig's checks are done; the Assemble step reads the originals.
+  chim_unit <- reactive({
+    edit_tick(); refresh(); u <- hit_unit()
+    review <- identical(input$mode, "Annotate")
+    if (review) req(identical(sel_check_state(), "done"))
+    c(u, review = review)
+  })
+  chim_query <- function(cols, tbl, tail = "") {
+    u <- chim_unit()
+    app_query(sprintf("SELECT %s FROM %s WHERE ID = ? AND path = ? AND scaffold = ?%s", cols,
+      if (u$review) paste0("review_", tbl, "_v") else tbl, tail), list(u$ID, u$path, u$scaffold))
+  }
   hit_unit <- reactive({
     if ((input$mode %||% "Assemble") == "Annotate") {
       u <- sel_unit(); req(u); return(u)
@@ -2651,24 +2675,22 @@ app_server <- function(input, output, session) {
     list(ID = id, path = h$path, scaffold = h$scaffold)
   })
   output$chimera_plot <- renderPlot({
-    edit_tick(); refresh(); u <- hit_unit(); grid::grid.draw(fixed_gutter(plot_chimera(u$ID, u$path, u$scaffold)))
+    edit_tick(); refresh(); u <- hit_unit()
+    grid::grid.draw(fixed_gutter(plot_chimera(u$ID, u$path, u$scaffold, review = identical(input$mode, "Annotate"))))
   }, height = 296)
   output$chimera_result <- renderUI({
-    edit_tick(); refresh(); u <- hit_unit()
-    ch <- app_query("SELECT label, reason FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", list(u$ID, u$path, u$scaffold))
+    ch <- chim_query("label, reason", "chimera")
     req(nrow(ch) == 1, !is.na(ch$label[1]))
     chimera_result_text(ch$label[1], ch$reason[1])
   })
   output$chimera_db_source <- renderText({
-    edit_tick(); refresh(); u <- hit_unit()
-    ch <- app_query("SELECT db_source FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", list(u$ID, u$path, u$scaffold))
+    ch <- chim_query("db_source", "chimera")
     req(nrow(ch) == 1, !is.na(ch$db_source[1]))
     paste("windows searched against:", paste(basename(strsplit(ch$db_source[1], " ", fixed = TRUE)[[1]]), collapse = ", "))
   })
   output$chimera_segments <- reactable::renderReactable({
-    edit_tick(); refresh()
     u <- hit_unit()
-    ch <- app_query("SELECT segments FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", list(u$ID, u$path, u$scaffold))
+    ch <- chim_query("segments", "chimera")
     req(nrow(ch) == 1, !is.na(ch$segments[1]))
     s <- jsonlite::fromJSON(ch$segments[1])
     samp <- app_query("SELECT lineage_taxids FROM samples WHERE ID = ?", list(u$ID))
@@ -2687,13 +2709,10 @@ app_server <- function(input, output, session) {
         n_windows = reactable::colDef(width = 100, html = TRUE, header = rt_help_header("Windows", CHIMERA_COL_HELP$n_windows))))
   })
   output$chimera_junctions <- renderUI({
-    edit_tick(); refresh(); u <- hit_unit()
-    o <- chimera_original(app_query, u$ID, u$path, u$scaffold)
-    req(NROW(o$ch) == 1)
-    j <- chimera_junction_table(o$ch$junctions[1], o$ch$channels[1])
+    ch <- chim_query("junctions, channels", "chimera")
+    req(nrow(ch) == 1)
+    j <- chimera_junction_table(ch$junctions[1], ch$channels[1])
     if (!nrow(j)) return(tags$p(class = "mp-help-text", "No possible junction was found."))
-    if (!is.null(o$kept)) j$why <- ifelse(j$position <= o$kept[1] | j$position > o$kept[2],
-      paste(j$why, "This part is now trimmed away."), j$why)
     reactable::reactable(j, compact = TRUE, pagination = FALSE, wrap = TRUE,
       columns = list(
         position = reactable::colDef(width = 90, html = TRUE, header = rt_help_header("Position", CHIMERA_COL_HELP$position)),
@@ -2701,10 +2720,9 @@ app_server <- function(input, output, session) {
         why = reactable::colDef(minWidth = 300, html = TRUE, header = rt_help_header("Why", CHIMERA_COL_HELP$why))))
   })
   output$chimera_windows <- reactable::renderReactable({
-    edit_tick(); refresh()
     u <- hit_unit()
-    w <- app_query("SELECT start, stop, species, lineage, pident, bitscore, rank_distance, depth_median, clip_frac FROM chimera_windows WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
-      list(u$ID, u$path, u$scaffold))
+    w <- chim_query("start, stop, species, lineage, pident, bitscore, rank_distance, depth_median, clip_frac",
+      "chimera_windows", " ORDER BY start")
     req(nrow(w) > 0)
     w$lineage_short <- vapply(w$lineage, function(l) {
       if (is.na(l)) return(NA_character_)
@@ -2713,7 +2731,7 @@ app_server <- function(input, output, session) {
     }, character(1), USE.NAMES = FALSE)
     w <- w[, c("start", "stop", "species", "lineage_short", "pident", "bitscore", "rank_distance", "depth_median", "clip_frac", "lineage")]
     # each window belongs to the segment whose start is the last one at or before its own
-    ch <- app_query("SELECT segments FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?", list(u$ID, u$path, u$scaffold))
+    ch <- chim_query("segments", "chimera")
     samp <- app_query("SELECT lineage_taxids FROM samples WHERE ID = ?", list(u$ID))
     cols <- if (nrow(ch) == 1 && !is.na(ch$segments[1])) {
       s <- jsonlite::fromJSON(ch$segments[1])
@@ -2903,13 +2921,17 @@ app_server <- function(input, output, session) {
 
   # ---- curation flags panel ----
   flag_rows <- reactive({
-    edit_tick(); u <- sel_unit(); req(u)
-    app_query("SELECT element, flags FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? AND status = 'flag' ORDER BY start",
+    req(identical(sel_check_state(), "done"))
+    app_query("SELECT element, flags FROM review_annotations_v WHERE ID = ? AND path = ? AND scaffold = ? AND status = 'flag' ORDER BY start",
       params = uargs())
   })
   output$curate_notes <- renderUI({
-    u <- sel_unit(); req(u)
-    a <- app_query("SELECT n_flags, curate_flags FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())
+    st <- sel_check_state()
+    if (st != "done") {
+      return(span(class = "mp-help-text",
+        sprintf("Checks %s. Curation warnings appear once they are done.", review_state_text(st))))
+    }
+    a <- app_query("SELECT n_flags, curate_flags FROM review_units_v WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())
     if (nrow(a) == 0 || is.na(a$n_flags[1]) || a$n_flags[1] == 0) {
       return(span(class = "mp-fg-success", HTML("&#10003; No warnings on the contig as a whole.")))
     }

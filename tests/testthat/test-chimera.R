@@ -572,3 +572,102 @@ test_that("chimera_unit(review = TRUE) scores the copy and writes only its mirro
     RiboPilot:::chimera_tile(4000)$start)
   expect_equal(DBI::dbGetQuery(con, "SELECT start, stop, clip_frac FROM review_chimera_windows ORDER BY start"), w)
 })
+
+test_that("plot_chimera shows the copy on Annotation Review once its checks are done, and the original on the Assemble step", {
+  con <- chimera_test_con()
+  on.exit(DBI::dbDisconnect(con))
+  db <- DBI::dbGetInfo(con)$dbname
+  sq <- withr::with_seed(1, paste(sample(c("A", "C", "G", "T"), 4500, TRUE), collapse = ""))
+  DBI::dbExecute(con, "UPDATE assemble SET assemble_lock = 1")
+  DBI::dbExecute(con, "INSERT INTO assemblies (ID, path, scaffold, sequence, length) VALUES ('S1',1,1,?,4500)", params = list(sq))
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_switch = 2, n_features = 1, itsx_warnings = NULL")
+  DBI::dbExecute(con, "INSERT INTO annotations (ID, path, scaffold, element, start, stop, strand) VALUES ('S1',1,1,'18S',1001,2800,'+')")
+  DBI::dbExecute(con, "INSERT INTO chimera (ID, path, scaffold, score, label, junctions) VALUES ('S1',1,1,0.9,'severe','3500')")
+  DBI::dbExecute(con, "INSERT INTO chimera_windows (ID, path, scaffold, start, stop, pident) VALUES ('S1',1,1,1,500,99), ('S1',1,1,3001,3500,97)")
+  draw <- function(review) {
+    g <- RiboPilot:::plot_chimera("S1", 1L, 1L, db = db, review = review)
+    list(b = ggplot2::ggplot_build(g), geoms = vapply(g$layers, function(l) class(l$geom)[1], ""))
+  }
+  layer <- function(d, geom) d$b$data[d$geoms == geom]
+  note <- function(d) unlist(lapply(layer(d, "GeomText"), `[[`, "label"))
+  shows <- function(d, xmax, gene, junc, nwin) {
+    expect_equal(d$b$layout$panel_params[[1]]$x.range, c(0, xmax))
+    r <- layer(d, "GeomRect")[[1]]
+    expect_equal(c(r$xmin, r$xmax), gene)
+    expect_equal(unique(unlist(lapply(layer(d, "GeomVline"), `[[`, "xintercept"))), junc)
+    expect_equal(nrow(layer(d, "GeomSegment")[[1]]), nwin)
+  }
+  waiting <- "Not run yet. Press Update."
+
+  # no copy: the original counts as done once its ITSx value is stored
+  expect_equal(note(draw(TRUE)), waiting)
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_switch = 1")
+  expect_equal(note(draw(TRUE)), "Waiting for the Assemble step's Update.")
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_switch = 2")
+  DBI::dbExecute(con, "UPDATE annotate SET itsx_warnings = ''")
+  shows(draw(TRUE), 4500, c(1001, 2800), 3500, 2L)
+
+  # a trimmed copy waits for its recheck, even when a discarded run left rows behind
+  RiboPilot:::review_trim(con, "S1", 1L, 1L, 501, 3000)
+  expect_equal(note(draw(TRUE)), waiting)
+  DBI::dbExecute(con, "INSERT INTO review_chimera (ID, path, scaffold, score, label, junctions) VALUES ('S1',1,1,0.4,'minor','1200')")
+  DBI::dbExecute(con, "INSERT INTO review_chimera_windows (ID, path, scaffold, start, stop, pident) VALUES ('S1',1,1,1,500,98)")
+  expect_equal(note(draw(TRUE)), waiting)
+  DBI::dbExecute(con, "UPDATE review_units SET check_switch = 2")
+  shows(draw(TRUE), 2500, c(501, 2300), 1200, 1L)
+
+  # the Assemble step keeps the original check, with no trim marks
+  shows(draw(FALSE), 4500, c(1001, 2800), 3500, 2L)
+  expect_false("trim" %in% note(draw(FALSE)))
+  expect_false(exists("chimera_original", envir = asNamespace("RiboPilot"), inherits = FALSE))
+})
+
+test_that("the chimera panel reads the review layer on Annotation Review and the originals on the Assemble step", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+  con <- RiboPilot:::app_con()
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "INSERT INTO chimera (ID, path, scaffold, label, reason, junctions, db_source)
+    VALUES ('S1',1,1,'severe','original reason','3500','/x/orig.fa')")
+  fixture_mark_done(con)
+  RiboPilot:::review_copy(con, "S1", 1L, 1L)
+  RiboPilot:::review_invalidate(con, "S1", 1L, 1L)
+  DBI::dbExecute(con, "INSERT INTO review_chimera (ID, path, scaffold, label, reason, junctions, db_source)
+    VALUES ('S1',1,1,'minor','copy reason','1200','/x/copy.fa')")
+  drew <- NULL
+  local_mocked_bindings(plot_chimera = function(id, path = 1L, scaffold = 1L, db = NULL, review = FALSE) {
+    drew <<- review
+    ggplot2::ggplot()
+  })
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Annotate")
+    sel_unit(list(ID = "S1", path = 1L, scaffold = 1L))
+    session$flushReact()
+    # not run: the row a discarded recheck left stays hidden
+    expect_error(output$chimera_result)
+    expect_error(output$chimera_db_source)
+
+    DBI::dbExecute(con, "UPDATE review_units SET check_switch = 2")
+    refresh(refresh() + 1)
+    session$flushReact()
+    expect_match(output$chimera_result$html, "minor", fixed = TRUE)
+    expect_match(output$chimera_result$html, "copy reason", fixed = TRUE)
+    expect_equal(output$chimera_db_source, "windows searched against: copy.fa")
+    expect_match(output$chimera_junctions$html, '"position":[1200]', fixed = TRUE)
+    output$chimera_plot
+    expect_true(drew)
+
+    session$setInputs(mode = "Assemble")
+    sel_id("S1")
+    session$flushReact()
+    session$setInputs(scaf_examine = "S1|1|1")
+    session$flushReact()
+    expect_match(output$chimera_result$html, "severe", fixed = TRUE)
+    expect_equal(output$chimera_db_source, "windows searched against: orig.fa")
+    expect_match(output$chimera_junctions$html, '"position":[3500]', fixed = TRUE)
+    output$chimera_plot
+    expect_false(drew)
+  })
+})
