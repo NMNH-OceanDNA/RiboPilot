@@ -1,10 +1,15 @@
-# Shared Nextflow command builder used by run_assembly() (CLI) and the app's
-# Update modal (processx). Returns the argument vector that follows the
-# `nextflow` binary, so both a `bash -c "cd .. && nextflow <args>"` call and
+# Nextflow command builders: nf_command() for the main pipeline, used by
+# run_assembly() (CLI) and the Assemble step's Update (processx), and
+# nf_recheck_command() for the recheck behind the Update on Annotation Review.
+# Each returns the argument vector that follows the `nextflow` binary, so both a
+# `bash -c "cd .. && nextflow <args>"` call and
 # `processx::process$new("nextflow", args, wd = path)` can use it.
 #
-# There is ONE workflow. Re-annotation used to be WF2 (main_annotate.nf) and is
-# now an arm of WF1: dev/design/15_WF2_DECOMMISSION.md.
+# The main pipeline is ONE workflow: re-annotation used to be WF2
+# (main_annotate.nf) and is now an arm of WF1 (dev/design/15_WF2_DECOMMISSION.md).
+# The recheck (main_recheck.nf) is a second workflow on purpose: it reads and
+# writes only the review copies, never the originals
+# (dev/specs/2026-10-08-contig-recheck-design.md, section 7).
 
 #' Build the Nextflow argument vector for the project workflow
 #'
@@ -178,4 +183,45 @@ nf_pending_count <- function(path) {
         AND COALESCE(asm.ignore,0) = 0
         AND NOT (a.assemble_switch IN (1,4) AND COALESCE(a.assemble_lock,0) = 0)")$n
   as.integer(n_asm + n_ann)
+}
+
+#' Build the Nextflow argument vector for the recheck workflow
+#'
+#' main_recheck.nf reruns the offline checks on the review copies queued on
+#' Annotation Review. It is launched from `<project>/.recheck` with its own work
+#' folder, and every recheck process is uncached, so there is no `-resume` and
+#' the main pipeline's run history is never touched. Never stops on a blank
+#' rawDir (the recheck reads no reads), never passes an empty parameter value
+#' (Nextflow turns `--x ''` into the string "true"), and has no side effects: it
+#' also backs the command preview.
+#' @param path Project directory (contains `.sqlite`, `.config`).
+#' @return character vector of args (starting with "run").
+#' @noRd
+nf_recheck_command <- function(path) {
+  cfg <- file.path(path, ".config")
+  cfg_lines <- if (file.exists(cfg)) readLines(cfg) else character(0)
+  raw_dir <- config_param(cfg_lines, "rawDir") %|NA|% ""
+  if (raw_dir %in% c("NA", "NULL")) raw_dir <- ""
+  blastdb <- nf_blastdb(path)
+  c("run", app_sys("nextflow", "main_recheck.nf"), "-c", cfg,
+    "-work-dir", file.path(path, "work_recheck"),
+    "--db", file.path(path, ".sqlite"),
+    "--projectDir", path,
+    if (nzchar(raw_dir)) c("--rawDir", raw_dir),
+    nf_pkg_args(),
+    "--taxdump_dir", file.path(path, ".taxonomy"),
+    if (nzchar(blastdb)) c("--blastdb", blastdb),
+    container_bind_opts(cfg_lines,
+      reference_mount_dirs(path,
+        c(path, if (nzchar(raw_dir)) raw_dir, config_mounted_dirs(cfg_lines)))))
+}
+
+#' Count the contigs the recheck workflow would take (Annotation Review's Update)
+#'
+#' The rows of RECHECK_QUEUE_SQL, the selection query_recheck makes.
+#' @noRd
+nf_recheck_pending <- function(path) {
+  con <- open_project_db(file.path(path, ".sqlite"))
+  on.exit(DBI::dbDisconnect(con))
+  as.integer(nrow(DBI::dbGetQuery(con, RECHECK_QUEUE_SQL)))
 }

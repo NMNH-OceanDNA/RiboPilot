@@ -50,7 +50,7 @@ process {
     }
 
     // memory per sample comes from the project database
-    withName: 'preprocess|assemble|fallback_assemble|annotate_tools|find_rrna_scan' {
+    withName: 'preprocess|assemble|fallback_assemble|annotate_tools|find_rrna_scan|recheck_tools' {
         clusterOptions = {
             def m = (mem as int) * task.attempt
             def perCpu = m / (task.cpus ?: 1)

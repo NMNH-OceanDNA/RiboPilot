@@ -191,3 +191,30 @@ recheck_release_running <- function(con) {
   DBI::dbExecute(con, "UPDATE review_units SET check_switch = 1, check_note = 'recheck did not finish',
     time_stamp = ? WHERE check_switch = 4", params = list(as.integer(Sys.time())))
 }
+
+#' The copies the recheck workflow takes
+#'
+#' Queued or running copies (check_switch 1 or 4) of unlocked, kept contigs on
+#' samples whose assembly and taxonomy are locked, with the compute settings of
+#' their annotate options and a BLAST mode: "local" when the sample searches
+#' and the contig's original search was local, "map" otherwise (SPEC S7.2).
+#' query_recheck in inst/nextflow/modules/recheck.nf runs this text through the
+#' sqlite3 CLI, and nf_recheck_pending() counts its rows; test-nextflow.R keeps
+#' the two identical. One SELECT with no trailing semicolon and no dollar sign,
+#' double quote, or backslash, so it passes through the Nextflow script string
+#' and the shell unchanged.
+#' @noRd
+RECHECK_QUEUE_SQL <- "SELECT r.ID, r.path, r.scaffold, CAST(r.rev AS TEXT) AS rev,
+    COALESCE(ao.cpus,4) AS cpus, COALESCE(ao.memory,8) AS mem,
+    CASE WHEN COALESCE(bo.run_blast,1) = 1 AND EXISTS (SELECT 1 FROM blast_searched bs
+      WHERE bs.ID = r.ID AND bs.path = r.path AND bs.scaffold = r.scaffold AND bs.source = 'local')
+    THEN 'local' ELSE 'map' END AS mode
+  FROM review_units r
+  JOIN annotate an ON an.ID = r.ID AND an.path = r.path AND an.scaffold = r.scaffold
+  JOIN annotate_opts ao ON an.annotate_opts = ao.annotate_opts
+  JOIN assemblies asm ON asm.ID = r.ID AND asm.path = r.path AND asm.scaffold = r.scaffold
+  JOIN assemble a ON a.ID = r.ID
+  JOIN samples s ON s.ID = r.ID
+  LEFT JOIN blast_opts bo ON bo.blast_opts = a.blast_opts
+  WHERE r.check_switch IN (1,4) AND COALESCE(an.annotate_lock,0) = 0
+    AND COALESCE(asm.ignore,0) = 0 AND a.assemble_lock = 1 AND s.taxonomy_lock = 1"

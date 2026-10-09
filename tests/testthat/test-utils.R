@@ -68,11 +68,12 @@ test_that("grouping, export, and the run count open the project with the busy ti
   RiboPilot:::clear_export_group(dir, "S1")
   RiboPilot:::sample_assembler(dir, "S1")
   RiboPilot:::nf_pending_count(dir)
+  RiboPilot:::nf_recheck_pending(dir)
   RiboPilot:::project_has_reads(dir)
   RiboPilot:::reference_mount_dirs(dir)
   expect_error(RiboPilot::export_bundle(dir), "No contigs to export")
   expect_error(RiboPilot::export_project(dir), "No contigs to export")
-  expect_equal(opened, 9L)
+  expect_equal(opened, 10L)
 })
 
 test_that("filesystem type is probed once per directory", {
