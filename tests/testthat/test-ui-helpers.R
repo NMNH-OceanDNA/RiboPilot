@@ -155,3 +155,11 @@ test_that("only Annotation Review offers Waiting for Assemble Update, and nobody
   expect_equal(MP_STATE_CODES$assemble, c("0", "1", "4", "2", "3"))
   expect_equal(MP_STATE_SETTABLE, c("0", "1", "4", "2", "3"))
 })
+
+test_that("the State window on Annotation Review offers only Ready to run and On hold", {
+  html <- as.character(RiboPilot:::mp_state_modal(c("S1 p1.s1", "S1 p1.s2"), mode = "annotate"))
+  expect_match(html, "Set state for 2 contigs")
+  expect_match(html, "Ready to run.*On hold")
+  expect_false(grepl("In progress|Success|Failed", html))
+  expect_match(html, "Checked again by the next Update on Annotation Review", fixed = TRUE)
+})

@@ -867,9 +867,23 @@ app_server <- function(input, output, session) {
     }
     mm <- mode_meta(input$mode)
     st <- as.integer(input$new_state)
-    set_flag(sprintf("UPDATE %s SET %s_switch = %d WHERE ID = ?", mm$tbl, mm$pfx, st), u = state_units())
+    if (identical(mm$pfx, "annotate")) set_check_state(state_units(), st)
+    else set_flag(sprintf("UPDATE %s SET %s_switch = %d WHERE ID = ?", mm$tbl, mm$pfx, st), u = state_units())
     removeModal()
   })
+  # State on Annotation Review queues (1) or holds (0) the recheck of each
+  # contig's review copy; locked and waiting contigs are listed, not changed.
+  set_check_state <- function(u, st) {
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    ok <- app_write(why <- review_set_state(con, u, st))
+    refresh(refresh() + 1)
+    if (!ok) return()
+    done <- is.na(why)
+    if (any(done)) mp_toast(paste(mp_n(sum(done), "contig"), "updated."))
+    if (!all(done)) mp_alert(paste("Left", mp_n(sum(!done), "contig"), "unchanged"),
+      text = paste0(mp_id_list(sprintf("%s p%s.s%s (%s)", u$ID[!done], u$path[!done],
+        u$scaffold[!done], why[!done])), "."), type = "warning")
+  }
   # Toolbar marks: the unlocked part of the selection goes one way
   # (mp_flag_next), as the toggles in the annotation window do; locked units
   # are left alone.
@@ -2565,7 +2579,7 @@ app_server <- function(input, output, session) {
   edit_tick <- reactiveVal(0)         # bumps to re-render map/seq/table
   active_feature <- reactiveVal(NULL) # feature the editor + alignment act on
   edit_active <- reactiveVal(FALSE)   # in edit mode?
-  edit_backup <- reactiveVal(NULL)    # annotations snapshot for Reset
+  edit_backup <- reactiveVal(NULL)    # bounds and 5'/3' choices at Edit, for Reset
   edit_dirty <- reactiveVal(FALSE)    # nudged since entering edit mode?
 
   # reset per-unit modal state; select the first feature + load notes
@@ -2575,7 +2589,7 @@ app_server <- function(input, output, session) {
     shinyWidgets::updatePrettyCheckbox(session, "feat_edit", value = FALSE)
     u <- sel_unit(); active_feature(NULL)
     if (!is.null(u)) {
-      els <- app_query("SELECT element FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
+      els <- app_query("SELECT element FROM review_annotations_v WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
         params = uargs())$element
       if (length(els)) active_feature(els[1])
       a <- app_query("SELECT annotate_notes FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?", params = uargs())
@@ -2583,18 +2597,20 @@ app_server <- function(input, output, session) {
     }
   })
 
-  # effective 5'/3' partial state of the unit's features (curator's flag, else automatic)
+  # effective 5'/3' partial state of the unit's features (user's choice, else
+  # curation's, else automatic); d comes from review_annotations_v with REVIEW_EFF_PARTIALS
   unit_partial_rows <- function(d) {
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
     u <- sel_unit()
-    n <- DBI::dbGetQuery(con, "SELECT length FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
+    n <- DBI::dbGetQuery(con, "SELECT length FROM review_units_v WHERE ID = ? AND path = ? AND scaffold = ?",
       params = uargs())$length
     e <- partial_ends(d, if (length(n)) n[1] else NA, unit_trimmed(con, u$ID, u$path, u$scaffold))
     d$partial_start <- as.integer(e$p5); d$partial_stop <- as.integer(e$p3)
     d
   }
   partial_state <- function(el) {
-    unit_partial_rows(app_query("SELECT * FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?",
+    unit_partial_rows(app_query(paste0("SELECT element, start, stop, strand, ", REVIEW_EFF_PARTIALS,
+      " FROM review_annotations_v WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?"),
       params = c(uargs(), list(el))))
   }
   active_partial <- reactive({
@@ -2770,10 +2786,10 @@ app_server <- function(input, output, session) {
     edit_tick()
     u <- sel_unit(); el <- active_feature()
     req(u, el)
-    a <- app_query("SELECT start, stop, length, type FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?",
+    a <- app_query("SELECT start, stop, length, type FROM review_annotations_v WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?",
       params = c(uargs(), list(el)))
     if (nrow(a) == 0) return(NULL)
-    seq <- app_query("SELECT sequence FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
+    seq <- app_query("SELECT sequence FROM review_units_v WHERE ID = ? AND path = ? AND scaffold = ?",
       params = uargs())$sequence[1]
     list(el = el, start = a$start[1], stop = a$stop[1], type = a$type[1], seq = seq %||% "")
   })
@@ -2834,8 +2850,9 @@ app_server <- function(input, output, session) {
   # ---- gene list (feature model); click a row -> active feature ----
   feature_rows <- reactive({
     edit_tick(); u <- sel_unit(); req(u)
-    unit_partial_rows(app_query("SELECT element, type, start, stop, length, strand, partial_start, partial_stop, status, flags
-       FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start", params = uargs()))
+    unit_partial_rows(app_query(paste0("SELECT element, type, start, stop, length, strand, ", REVIEW_EFF_PARTIALS,
+      ", status, flags FROM review_annotations_v WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start"),
+      params = uargs()))
   })
   output$feature_tbl <- reactable::renderReactable({
     d <- feature_rows(); act <- active_feature()
@@ -2925,20 +2942,13 @@ app_server <- function(input, output, session) {
     if (is.null(b) || !nrow(b)) return(TRUE)
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
     u <- sel_unit()
-    app_write(DBI::dbWithTransaction(con, for (i in seq_len(nrow(b))) {
-      DBI::dbExecute(con,
-        "UPDATE annotations SET start = ?, stop = ?, length = ?, partial_start = ?, partial_stop = ?
-         WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?",
-        params = list(b$start[i], b$stop[i], b$stop[i] - b$start[i] + 1, b$partial_start[i], b$partial_stop[i],
-          u$ID, u$path, u$scaffold, b$element[i]))
-    }))
+    ok <- app_write(review_reset_session(con, u$ID, u$path, u$scaffold, b))
+    if (ok) reload_on_close(TRUE)
+    ok
   }
   save_edits <- function() {
-    con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    u <- sel_unit()
-    tryCatch(curate_one(con, u$ID, u$path, u$scaffold), error = function(e) NULL)  # refresh flags after edits
     edit_backup(NULL); edit_dirty(FALSE)
-    edit_tick(edit_tick() + 1); refresh(refresh() + 1)
+    edit_tick(edit_tick() + 1)
     rp_toast("Boundary edits saved.", type = "message")
   }
   observeEvent(input$feat_edit, ignoreInit = TRUE, {
@@ -2950,7 +2960,7 @@ app_server <- function(input, output, session) {
         shinyWidgets::updatePrettyCheckbox(session, "feat_edit", value = FALSE)
         rp_toast("Select a feature first.", type = "warning"); return()
       }
-      edit_backup(app_query("SELECT element, start, stop, partial_start, partial_stop FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?",
+      edit_backup(app_query("SELECT element, start, stop, partial_start_user, partial_stop_user FROM review_annotations_v WHERE ID = ? AND path = ? AND scaffold = ?",
         params = uargs()))
       edit_active(TRUE); edit_dirty(FALSE)
       shinyjs::show("feat_edit_ctrls")
@@ -3119,11 +3129,11 @@ app_server <- function(input, output, session) {
   })
 
   # ---- notes ----
-  # the table reloads once the window closes, not on every keystroke
-  notes_dirty <- reactiveVal(FALSE)
+  # notes and edits reach the table once the window closes, not on every keystroke or nudge
+  reload_on_close <- reactiveVal(FALSE)
   observeEvent(input$modal_hidden, {
-    if (!notes_dirty()) return()
-    notes_dirty(FALSE); refresh(refresh() + 1)
+    if (!reload_on_close()) return()
+    reload_on_close(FALSE); refresh(refresh() + 1)
   })
   observeEvent(input$annotate_notes, ignoreInit = TRUE, {
     u <- sel_unit(); req(u)
@@ -3138,7 +3148,7 @@ app_server <- function(input, output, session) {
     if (lock_blocked()) return()
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
     if (app_write(DBI::dbExecute(con, "UPDATE annotate SET annotate_notes = ? WHERE ID = ? AND path = ? AND scaffold = ?",
-      params = c(list(new), uargs())))) notes_dirty(TRUE)
+      params = c(list(new), uargs())))) reload_on_close(TRUE)
   })
   observeEvent(input$annotate_notes_clear, {
     u <- sel_unit(); req(u)
@@ -3146,7 +3156,7 @@ app_server <- function(input, output, session) {
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
     if (!app_write(DBI::dbExecute(con, "UPDATE annotate SET annotate_notes = NULL WHERE ID = ? AND path = ? AND scaffold = ?",
       params = uargs()))) return()
-    notes_dirty(TRUE)
+    reload_on_close(TRUE)
     updateTextAreaInput(session, "annotate_notes", value = "")
     rp_toast("Notes cleared.", type = "message")
   })
@@ -3156,13 +3166,13 @@ app_server <- function(input, output, session) {
     cur <- app_query("SELECT user_notes FROM assemble WHERE ID = ?", params = list(id))$user_notes[1] %|NA|% ""
     if (identical(new, cur) || (!nzchar(new) && nzchar(cur))) return()
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    if (app_write(DBI::dbExecute(con, "UPDATE assemble SET user_notes = ? WHERE ID = ?", params = list(new, id)))) notes_dirty(TRUE)
+    if (app_write(DBI::dbExecute(con, "UPDATE assemble SET user_notes = ? WHERE ID = ?", params = list(new, id)))) reload_on_close(TRUE)
   })
   observeEvent(input$assemble_user_notes_clear, {
     id <- sel_id(); req(id)
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
     if (!app_write(DBI::dbExecute(con, "UPDATE assemble SET user_notes = NULL WHERE ID = ?", params = list(id)))) return()
-    notes_dirty(TRUE)
+    reload_on_close(TRUE)
     updateTextAreaInput(session, "assemble_user_notes", value = "")
     rp_toast("Notes cleared.", type = "message")
   })
@@ -3182,10 +3192,8 @@ app_server <- function(input, output, session) {
     if (start > stop) { rp_toast("Boundaries would cross; nudge ignored.", type = "warning"); return() }
     u <- sel_unit()
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    if (!app_write(DBI::dbExecute(con,
-      "UPDATE annotations SET start = ?, stop = ?, length = ?, edited = 1 WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?",
-      params = list(start, stop, stop - start + 1, u$ID, u$path, u$scaffold, cx$el)))) return()
-    edit_dirty(TRUE); edit_tick(edit_tick() + 1)
+    if (!app_write(review_set_bounds(con, u$ID, u$path, u$scaffold, cx$el, start, stop))) return()
+    edit_dirty(TRUE); reload_on_close(TRUE); edit_tick(edit_tick() + 1)
   }
   observeEvent(input$nt_5_out, nudge_boundary("5", "out"))
   observeEvent(input$nt_5_in,  nudge_boundary("5", "in"))
@@ -3195,11 +3203,10 @@ app_server <- function(input, output, session) {
     if (!isTRUE(edit_active()) || lock_blocked()) return()
     el <- active_feature(); req(el)
     to <- if (isTRUE(partial_state(el)[[col]][1] == 1)) 0L else 1L
+    u <- sel_unit()
     con <- app_con(); on.exit(DBI::dbDisconnect(con))
-    if (!app_write(DBI::dbExecute(con, sprintf(
-      "UPDATE annotations SET %s = ?, edited = 1 WHERE ID = ? AND path = ? AND scaffold = ? AND element = ?",
-      col), params = c(list(to), uargs(), list(el))))) return()
-    edit_dirty(TRUE); edit_tick(edit_tick() + 1)
+    if (!app_write(review_set_partial(con, u$ID, u$path, u$scaffold, el, sub("partial_", "", col), to))) return()
+    edit_dirty(TRUE); reload_on_close(TRUE); edit_tick(edit_tick() + 1)
   }
   observeEvent(input$toggle_partial_start, toggle_partial("partial_start"))
   observeEvent(input$toggle_partial_stop, toggle_partial("partial_stop"))

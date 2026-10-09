@@ -803,8 +803,8 @@ test_that("the 5' and 3' partial toggles keep with Save and undo with Reset", {
   DBI::dbExecute(con, "UPDATE annotate SET annotate_lock = 0")
   DBI::dbDisconnect(con)
   withr::local_dir(dir)
-  p <- function() unname(unlist(RiboPilot:::app_query(
-    "SELECT partial_start, partial_stop FROM annotations WHERE element = '18S'")))
+  p <- function() as.integer(unlist(RiboPilot:::app_query(
+    "SELECT partial_start_user, partial_stop_user FROM review_annotations_v WHERE element = '18S'")))
 
   shiny::testServer(RiboPilot:::app_server, {
     session$setInputs(mode = "Annotate")
@@ -831,7 +831,7 @@ test_that("the 5' and 3' partial toggles keep with Save and undo with Reset", {
     expect_equal(p(), c(0L, 1L))
 
     # a gene at the scaffold end is automatically partial; a click clears it explicitly
-    c2 <- RiboPilot:::app_con(); DBI::dbExecute(c2, "UPDATE annotations SET start = 1, partial_start = NULL WHERE element = '18S'")
+    c2 <- RiboPilot:::app_con(); DBI::dbExecute(c2, "UPDATE review_annotations SET start = 1, partial_start_user = NULL WHERE element = '18S'")
     DBI::dbDisconnect(c2)
     edit_tick(edit_tick() + 1)
     session$flushReact()
@@ -844,6 +844,9 @@ test_that("the 5' and 3' partial toggles keep with Save and undo with Reset", {
     session$setInputs(toggle_partial_stop = 2)
     expect_equal(p(), c(0L, 1L))
   })
+  # the choices live on the review copy; the original feature never changes
+  expect_equal(RiboPilot:::app_query("SELECT start, partial_start, partial_stop FROM annotations WHERE element = '18S'"),
+    data.frame(start = 10L, partial_start = NA_integer_, partial_stop = NA_integer_))
 })
 
 test_that("the Export window offers token chips, and choosing fields returns to the window", {
