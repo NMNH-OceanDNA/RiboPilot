@@ -65,7 +65,9 @@ review_copy <- function(con, id, path, scaffold) {
   invisible(with_savepoint(con, {
     made <- !review_has_copy(con, id, path, scaffold)
     if (made) {
-      for (m in REVIEW_MIRRORS) {
+      # an older schema mid-upgrade may lack mirrors a later step adds
+      mirrors <- REVIEW_MIRRORS[REVIEW_MIRRORS %in% DBI::dbListTables(con)]
+      for (m in mirrors) {
         DBI::dbExecute(con, sprintf("DELETE FROM %s WHERE ID = ? AND path = ? AND scaffold = ?", m),
           params = p)
       }
@@ -75,7 +77,7 @@ review_copy <- function(con, id, path, scaffold) {
          WHERE ID = ? AND path = ? AND scaffold = ? AND has_copy = 0", cols, cols),
         params = c(list(review_new_rev(), as.integer(Sys.time())), p))
       if (n == 0) stop(sprintf("No sequence for contig %s.%d.%d.", id, path, scaffold), call. = FALSE)
-      for (orig in names(REVIEW_MIRRORS)) {
+      for (orig in names(mirrors)) {
         mc <- paste(intersect(DBI::dbListFields(con, orig), DBI::dbListFields(con, REVIEW_MIRRORS[[orig]])),
           collapse = ", ")
         DBI::dbExecute(con, sprintf(
@@ -116,8 +118,8 @@ review_invalidate <- function(con, id, path, scaffold) {
        WHERE ID = ? AND path = ? AND scaffold = ?",
       params = c(list(cnt$n_features, cnt$missing, as.integer(Sys.time())), p))
     if (n == 0) stop(sprintf("No review copy for contig %s.%d.%d.", id, path, scaffold), call. = FALSE)
-    for (m in REVIEW_MIRRORS[c("blast_hits", "blast_screen", "screen", "chimera", "chimera_windows",
-                               "blast_ref_alignment")]) {
+    for (m in intersect(REVIEW_MIRRORS[c("blast_hits", "blast_screen", "screen", "chimera", "chimera_windows",
+                               "blast_ref_alignment", "feature_blast", "feature_blast_hits")], DBI::dbListTables(con))) {
       DBI::dbExecute(con, sprintf("DELETE FROM %s WHERE ID = ? AND path = ? AND scaffold = ?", m),
         params = p)
     }
@@ -134,7 +136,7 @@ review_invalidate <- function(con, id, path, scaffold) {
 #' @noRd
 review_drop <- function(con, id, path, scaffold) {
   p <- list(id, as.integer(path), as.integer(scaffold))
-  with_savepoint(con, for (t in REVIEW_TABLES) {
+  with_savepoint(con, for (t in intersect(REVIEW_TABLES, DBI::dbListTables(con))) {
     DBI::dbExecute(con, sprintf("DELETE FROM %s WHERE ID = ? AND path = ? AND scaffold = ?", t), params = p)
   })
   invisible()
@@ -371,7 +373,7 @@ review_set_state <- function(con, units, state) {
 
 #' Table a check function reads or writes
 #'
-#' The name itself when review is FALSE. In review mode the 7 mirrored tables
+#' The name itself when review is FALSE. In review mode the mirrored tables
 #' map to their review_* mirror, and assemblies (sequence, length, blast_*) and
 #' annotate (result columns only) map to review_units. Shared tables and
 #' coverage are never routed, so asking for one is an error.

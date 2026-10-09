@@ -98,6 +98,7 @@ search:
   - reference/auto_triage_sample.html
   - reference/bitscore_weighted_lca.html
   - reference/chimera_unit.html
+  - reference/feature_blast_unit.html
   - reference/compute_ref_alignment.html
   - reference/curate_one.html
   - reference/curate_rrna_core.html
@@ -222,6 +223,7 @@ reference:
   - auto_triage_sample
   - bitscore_weighted_lca
   - chimera_unit
+  - feature_blast_unit
   - compute_ref_alignment
   - curate_one
   - curate_rrna_core

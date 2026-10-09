@@ -46,6 +46,8 @@ rc_seed <- function(con) {
 }
 
 # One row in each mirror, as a discarded recheck or an edit would leave them.
+RC_NT <- length(RiboPilot:::REVIEW_TABLES)
+
 rc_mirror_rows <- function(con, s) {
   p <- list(s)
   DBI::dbExecute(con, "INSERT INTO review_annotations (ID, path, scaffold, element) VALUES ('S1', 1, ?, '18S')",
@@ -59,6 +61,10 @@ rc_mirror_rows <- function(con, s) {
     params = p)
   DBI::dbExecute(con, "INSERT INTO review_ref_alignment (ID, path, scaffold, accession, element)
     VALUES ('S1', 1, ?, 'R9', '28S')", params = p)
+  DBI::dbExecute(con, "INSERT INTO review_feature_blast (ID, path, scaffold, element) VALUES ('S1', 1, ?, 'ITS1')",
+    params = p)
+  DBI::dbExecute(con, "INSERT INTO review_feature_blast_hits (ID, path, scaffold, element, hit_rank)
+    VALUES ('S1', 1, ?, 'ITS1', 1)", params = p)
 }
 
 # Rows of a table, by column name, in a stable order.
@@ -126,7 +132,7 @@ rc_lifecycle <- function(con) {
   }
   expect_equal(nrow(rc_rows(con, "review_annotations", scaffold = 1)), 3L)
   expect_true(all(is.na(rc_rows(con, "review_annotations", c("partial_start_user", "partial_stop_user")))))
-  expect_equal(unname(rc_counts(con, 2)), rep(0L, 8))
+  expect_equal(unname(rc_counts(con, 2)), rep(0L, RC_NT))
   expect_identical(rc_originals(con), orig)
 
   # a second touch changes nothing
@@ -184,7 +190,7 @@ rc_lifecycle <- function(con) {
   expect_equal(ra$tool, c("barrnap", "barrnap"))
   expect_true(all(is.na(ra[, c("status", "flags", "partial_start", "partial_stop")])))
   expect_equal(ra$partial_start_user, c(0L, NA))
-  expect_equal(unname(rc_counts(con, 1)), c(1L, 2L, rep(0L, 6)))
+  expect_equal(unname(rc_counts(con, 1)), c(1L, 2L, rep(0L, RC_NT - 2L)))
   # the other contig's copy and every original are untouched
   expect_identical(lapply(stats::setNames(nm = RiboPilot:::REVIEW_TABLES[-1]), function(t)
     rc_rows(con, t, scaffold = 2)), other)
@@ -197,8 +203,8 @@ rc_lifecycle <- function(con) {
   # drop: the contig reads its originals again; the other copy stays
   RiboPilot:::review_drop(con, "S1", 1L, 1L)
   expect_false(RiboPilot:::review_has_copy(con, "S1", 1L, 1L))
-  expect_equal(unname(rc_counts(con, 1)), rep(0L, 8))
-  expect_equal(unname(rc_counts(con, 2)), c(1L, 3L, 2L, 1L, 1L, 1L, 2L, 1L))
+  expect_equal(unname(rc_counts(con, 1)), rep(0L, RC_NT))
+  expect_equal(unname(rc_counts(con, 2)), c(1L, 3L, 2L, 1L, 1L, 1L, 2L, 1L, 0L, 0L))
   expect_equal(DBI::dbGetQuery(con, "SELECT has_copy, length, check_switch FROM review_units_v
     WHERE ID = 'S1' AND path = 1 AND scaffold = 1"), data.frame(has_copy = 0L, length = 200L, check_switch = 2L))
   expect_identical(rc_originals(con), orig)
@@ -346,9 +352,9 @@ test_that("review_copy() copies by column name on a hand-built database", {
   RiboPilot:::review_invalidate(con, "S1", 2L, 1L)
   expect_equal(DBI::dbGetQuery(con, "SELECT n_features, missing FROM review_units"),
     data.frame(n_features = 1L, missing = "5.8S,28S,ITS1,ITS2"))
-  expect_equal(unname(rc_counts(con, 1, path = 2)), c(1L, 1L, rep(0L, 6)))
+  expect_equal(unname(rc_counts(con, 1, path = 2)), c(1L, 1L, rep(0L, RC_NT - 2L)))
   RiboPilot:::review_drop(con, "S1", 2L, 1L)
-  expect_equal(unname(rc_counts(con, 1, path = 2)), rep(0L, 8))
+  expect_equal(unname(rc_counts(con, 1, path = 2)), rep(0L, RC_NT))
 })
 
 test_that("review_copy() refuses a contig with no annotate or assemblies row and writes nothing", {
@@ -357,7 +363,7 @@ test_that("review_copy() refuses a contig with no annotate or assemblies row and
   DBI::dbExecute(con, "DELETE FROM annotate WHERE scaffold = 2")
   expect_error(RiboPilot:::review_copy(con, "S1", 1L, 2L), "No sequence for contig S1.1.2.", fixed = TRUE)
   expect_error(RiboPilot:::review_copy(con, "S1", 1L, 9L), "No sequence for contig S1.1.9.", fixed = TRUE)
-  expect_equal(unname(rc_counts(con, 2)), rep(0L, 8))
+  expect_equal(unname(rc_counts(con, 2)), rep(0L, RC_NT))
   expect_error(RiboPilot:::review_invalidate(con, "S1", 1L, 1L), "No review copy for contig S1.1.1.",
     fixed = TRUE)
   expect_false(RSQLite::sqliteIsTransacting(con))
@@ -369,7 +375,7 @@ test_that("a failure part way through review_copy() leaves no copy", {
   DBI::dbExecute(con, "CREATE TRIGGER rc_boom BEFORE INSERT ON review_ref_alignment
     BEGIN SELECT RAISE(ABORT, 'rc_boom'); END")
   expect_error(RiboPilot:::review_copy(con, "S1", 1L, 1L), "rc_boom")
-  expect_equal(unname(rc_counts(con, 1)), rep(0L, 8))
+  expect_equal(unname(rc_counts(con, 1)), rep(0L, RC_NT))
   expect_false(RSQLite::sqliteIsTransacting(con))
 })
 
@@ -381,7 +387,7 @@ test_that("review_copy, review_invalidate, and review_drop join an open transact
     RiboPilot:::review_invalidate(con, "S1", 1L, 1L)
     stop("outer failed")
   }), "outer failed")
-  expect_equal(unname(rc_counts(con, 1)), rep(0L, 8))
+  expect_equal(unname(rc_counts(con, 1)), rep(0L, RC_NT))
 
   DBI::dbWithTransaction(con, {
     RiboPilot:::review_copy(con, "S1", 1L, 1L)
@@ -390,8 +396,8 @@ test_that("review_copy, review_invalidate, and review_drop join an open transact
     RiboPilot:::review_drop(con, "S1", 1L, 2L)
   })
   expect_equal(rc_unit(con, 1)$check_switch, 1L)
-  expect_equal(unname(rc_counts(con, 1)), c(1L, 3L, rep(0L, 6)))
-  expect_equal(unname(rc_counts(con, 2)), rep(0L, 8))
+  expect_equal(unname(rc_counts(con, 1)), c(1L, 3L, rep(0L, RC_NT - 2L)))
+  expect_equal(unname(rc_counts(con, 2)), rep(0L, RC_NT))
 })
 
 test_that("a re-assembly deletes the copies of changed and vanished contigs", {
@@ -407,15 +413,29 @@ test_that("a re-assembly deletes the copies of changed and vanished contigs", {
     RiboPilot:::review_copy(con, "S1", 1L, s)
     rc_mirror_rows(con, s)
   }
-  expect_equal(unname(rc_counts(con, 1)), rep(1L, 8))
+  expect_equal(unname(rc_counts(con, 1)), rep(1L, RC_NT))
 
   # scaffold 1 comes back with another sequence, 2 unchanged, 3 gone
   fa(list("1" = sq[[4]], "2" = sq[[2]]))
   RiboPilot:::load_assemblies(con, out, "S1")
-  expect_equal(unname(rc_counts(con, 1)), rep(0L, 8))
-  expect_equal(unname(rc_counts(con, 2)), rep(1L, 8))
-  expect_equal(unname(rc_counts(con, 3)), rep(0L, 8))
+  expect_equal(unname(rc_counts(con, 1)), rep(0L, RC_NT))
+  expect_equal(unname(rc_counts(con, 2)), rep(1L, RC_NT))
+  expect_equal(unname(rc_counts(con, 3)), rep(0L, RC_NT))
 
   RiboPilot:::reset_unit_evidence(con, "S1", 1L, 2L)
-  expect_equal(unname(rc_counts(con, 2)), rep(0L, 8))
+  expect_equal(unname(rc_counts(con, 2)), rep(0L, RC_NT))
+})
+
+test_that("review_copy() and review_drop() skip mirrors an older schema does not have yet", {
+  con <- chimera_test_con(); on.exit(DBI::dbDisconnect(con))
+  rc_seed(con)
+  for (v in names(RiboPilot:::FEATURE_BLAST_VIEWS_DDL)) DBI::dbExecute(con, paste("DROP VIEW", v))
+  for (t in c("review_feature_blast", "review_feature_blast_hits", "feature_blast", "feature_blast_hits")) {
+    DBI::dbExecute(con, paste("DROP TABLE", t))
+  }
+  expect_true(RiboPilot:::review_copy(con, "S1", 1L, 1L))
+  expect_equal(nrow(rc_rows(con, "review_annotations", scaffold = 1)), 3L)
+  RiboPilot:::review_invalidate(con, "S1", 1L, 1L)
+  RiboPilot:::review_drop(con, "S1", 1L, 1L)
+  expect_false(RiboPilot:::review_has_copy(con, "S1", 1L, 1L))
 })

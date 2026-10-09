@@ -544,6 +544,7 @@ new_db <- function(
 
   # review copies of edited contigs and the views over them (see REVIEW_VIEWS_DDL) ----
   review_apply_schema(con)
+  feature_blast_apply_schema(con)
 
   # path_scores (taxonomy-aware candidate scoring + auto-select) ----
   DBI::dbExecute(

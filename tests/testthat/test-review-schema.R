@@ -118,7 +118,7 @@ test_that("new_db() makes each review table like its original, and annotate gain
     c("name", "type", "notnull", "dflt_value", "pk")]
   m <- RiboPilot:::REVIEW_MIRRORS
   expect_equal(names(m), c("annotations", "blast_hits", "blast_screen", "screen", "chimera",
-    "chimera_windows", "blast_ref_alignment"))
+    "chimera_windows", "blast_ref_alignment", "feature_blast", "feature_blast_hits"))
   expect_equal(RiboPilot:::REVIEW_TABLES, c("review_units", unname(m)))
   for (orig in names(m)[-1]) expect_equal(info(m[[orig]]), info(orig), info = orig)
   ra <- info("review_annotations")
@@ -140,7 +140,7 @@ test_that("new_db() makes each review table like its original, and annotate gain
     c("export_time_stamp", "itsx_origin", "itsx_scores"))
 
   views <- DBI::dbGetQuery(con, "SELECT name FROM sqlite_master WHERE type = 'view'")$name
-  expect_setequal(views, names(RiboPilot:::REVIEW_VIEWS_DDL))
+  expect_setequal(views, c(names(RiboPilot:::REVIEW_VIEWS_DDL), names(RiboPilot:::FEATURE_BLAST_VIEWS_DDL)))
   expect_equal(DBI::dbListFields(con, "review_units_v"), c("ID", "path", "scaffold", "has_copy",
     "topology", "orig_length", "sequence", "length", "trim_start", "trim_end", "edited",
     "check_switch", "check_note", "rev", "checked_at", "n_features", "missing", "chimeric", "n_flags",

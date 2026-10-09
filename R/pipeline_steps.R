@@ -241,7 +241,7 @@ refresh_sample_state <- function(con, id) {
 #' @noRd
 UNIT_EVIDENCE_TABLES <- c("annotations", "coverage", "screen", "chimera", "chimera_windows",
   "blast_hits", "blast_screen", "blast_searched", "blast_ref_candidates",
-  "blast_ref_alignment", REVIEW_TABLES)
+  "blast_ref_alignment", "feature_blast", "feature_blast_hits", REVIEW_TABLES)
 
 #' Forget everything known about a unit whose sequence was replaced
 #'

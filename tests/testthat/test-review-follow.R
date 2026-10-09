@@ -36,7 +36,7 @@ test_that("review_follow_original drops a State copy, invalidates an edited one,
       params = list(s)))
   rev3 <- DBI::dbGetQuery(con, "SELECT CAST(rev AS TEXT) AS rev FROM review_units WHERE scaffold = 3")$rev
   before <- lapply(4:5, snap)
-  expect_equal(unname(n_rows(3)), c(1L, 1L, 0L, 0L, 1L, 0L, 0L, 0L))
+  expect_equal(unname(n_rows(3)), c(1L, 1L, 0L, 0L, 1L, 0L, 0L, 0L, 0L, 0L))
 
   expect_invisible(follow(1))
   expect_equal(follow(1), "none")
@@ -77,7 +77,7 @@ test_that("a contig without a copy is answered from review_units alone", {
 test_that("each per-contig pipeline script follows the copy of the contig it wrote", {
   bin <- system.file("nextflow", "bin", package = "RiboPilot")
   for (f in c("rp_reconcile.R", "rp_blast.R", "rp_searched.R", "rp_curate.R", "rp_chimera.R",
-              "rp_screen.R")) {
+              "rp_feature_blast.R", "rp_screen.R")) {
     txt <- readLines(file.path(bin, f), warn = FALSE)
     expect_equal(sum(grepl("RiboPilot:::review_follow_original(con, a[2], ", txt, fixed = TRUE)), 1L,
       info = f)
