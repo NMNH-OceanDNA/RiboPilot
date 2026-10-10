@@ -57,6 +57,10 @@
   Annotation Review lists features with no hit, a non-rDNA hit, a hit outside
   the sample's phylum, or too short to search (under 50 bp), and a Feature
   BLAST panel in the details window shows each feature's matches.
+* The chimera check now searches 200 bp windows every 100 bp (was 500 bp every
+  250 bp), so it catches shorter foreign stretches. A switch between classes
+  still needs about 500 bp on each side, which keeps conserved stretches from
+  raising false alarms.
 * Changing a sample's taxon updates its lineage and screens it again. A name
   that matches more than one organism is never picked automatically.
 * Isomer and paralog classes are computed after annotation finishes.
