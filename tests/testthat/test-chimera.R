@@ -203,6 +203,22 @@ test_that("a sliver segment cannot fire the window channel", {
   expect_equal(ch$score, 0)
 })
 
+test_that("a class-level switch needs four windows a side; a phylum switch needs two", {
+  fish <- "33208;7711;186623;8030;8016;8017;8018"
+  frog <- "33208;7711;8292;8342;8343;8344;8345"
+  fung <- "4751;4890;147545;5042;5043;5044;5045"
+  seg <- function(lt, taxon, nw) data.frame(start = c(1L, 401L), stop = c(500L, 900L),
+    taxon = c("Actinopteri", taxon), rank = "class", species = "sp", pident = 100,
+    n_windows = nw, db_source = "panel", lineage_taxids = c(fish, lt), stringsAsFactors = FALSE)
+  expect_equal(RiboPilot:::chimera_channel_windows(seg(frog, "Amphibia", c(4L, 2L)))$score, 0)
+  ch <- RiboPilot:::chimera_channel_windows(seg(frog, "Amphibia", c(4L, 4L)))
+  expect_equal(ch$score, 0.5)
+  expect_false(ch$severe)
+  ch <- RiboPilot:::chimera_channel_windows(seg(fung, "Eurotiomycetes", c(4L, 2L)))
+  expect_equal(ch$score, 0.5)
+  expect_true(ch$severe)
+})
+
 test_that("identity-only mode reports junctions but scores zero", {
   w <- chim_win(seq(1, 3001, 250), NA_character_, NA_character_,
     pident = c(rep(99, 6), rep(80, 7)))
@@ -558,7 +574,7 @@ test_that("chimera_unit(review = TRUE) scores the copy and writes only its mirro
   w <- DBI::dbGetQuery(con, "SELECT start, stop, clip_frac FROM review_chimera_windows ORDER BY start")
   expect_equal(w$start, RiboPilot:::chimera_tile(3000)$start)
   expect_equal(max(w$stop), 3000L)
-  expect_equal(w$start[w$clip_frac > 0], c(751L, 1001L))
+  expect_equal(w$start[w$clip_frac > 0], c(1001L, 1101L))
 
   # no copy: nothing to score in review mode
   expect_null(RiboPilot:::chimera_unit(con, "S1", 1L, 2L, dbarg = "panel", review = TRUE))

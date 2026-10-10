@@ -151,7 +151,7 @@ chimera_panel <- function() {
     tags$p(style = "margin:2px 0 4px; font-weight:600;", uiOutput("chimera_result", inline = TRUE)),
     tags$p(class = "mp-help-text", style = "margin:2px 0 4px;",
       "Looks for pieces of different origin joined in one contig, using the genes' BLAST hits, ",
-      "500 bp BLAST windows, ribotyper, and read depth and clipping. Severe (different phyla or ",
+      "200 bp BLAST windows, ribotyper, and read depth and clipping. Severe (different phyla or ",
       "kingdoms) is flagged at export; minor is only reported. Unresolved windows match several ",
       "classes equally and do not count."),
     tags$p(class = "mp-help-text", style = "margin:2px 0 4px;", textOutput("chimera_db_source", inline = TRUE)),
