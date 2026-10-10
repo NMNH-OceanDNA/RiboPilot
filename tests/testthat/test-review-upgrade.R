@@ -109,7 +109,7 @@ test_that("step 4 turns old trims and edits into review copies and lists what it
   msgs <- testthat::capture_messages(backwards_compatibility(dir))
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
   on.exit(DBI::dbDisconnect(con))
-  expect_equal(RiboPilot:::project_schema_version(file.path(dir, ".sqlite")), 5L)
+  expect_equal(RiboPilot:::project_schema_version(file.path(dir, ".sqlite")), RiboPilot:::current_schema_version())
   expect_false("assembly_backup" %in% DBI::dbListTables(con))
 
   # the copies hold the trimmed or edited state; unlocked ones wait for Update

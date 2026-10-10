@@ -187,7 +187,7 @@ CHIMERA_COL_HELP <- list(
   taxon = "Best-hit lineage at class rank, shared by every window in the segment. 'nohit' means no window in the stretch matched the bundled rDNA database. 'unresolved' means the top hits tie across classes (a conserved stretch), so the windows say nothing about origin.",
   species = "The strongest single hit inside the segment: a species, or the clade tied hits share.",
   pident = "Mean percent identity of the windows' best hits.",
-  n_windows = "Number of 500 bp windows (step 250) collapsed into this segment.",
+  n_windows = "Number of 200 bp windows (step 100) collapsed into this segment.",
   win_species = "The window's best hit: a species, or, when several hits score about the same, the clade they share and the number of tied hits. The lineage is cut back to that clade.",
   lineage = "Best-hit lineage, last three ranks shown; hover for the full ranked lineage.",
   win_pident = "Percent identity of the window's best hit.",
@@ -195,7 +195,7 @@ CHIMERA_COL_HELP <- list(
   rank_distance = "Ranks between the hit and this sample's own lineage: 0 = same species, 7 = nothing shared.",
   depth_median = "Median read depth across the window.",
   position = "Estimated join position (bp), on the same scale as the plot.",
-  checks = "Checks that put a junction near this position: genes (the 18S, 5.8S, and 28S BLAST hits), windows (500 bp BLAST windows), and reads (read depth and clipped reads).",
+  checks = "Checks that put a junction near this position: genes (the 18S, 5.8S, and 28S BLAST hits), windows (200 bp BLAST windows), and reads (read depth and clipped reads).",
   why = "What each check saw here.",
   clip_frac = "Largest fraction of reads soft-clipped at one position in the window; high values mark a read-level breakpoint."
 )
