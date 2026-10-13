@@ -31,8 +31,7 @@
   --mp-surface-dark:   #2d2d2d;  /* command/log surface                */
   --mp-on-dark:        #dcdcdc;
   --mp-nmnh-accent:    #ffcd00;  /* Smithsonian yellow, decoration only */
-  --rp-ident:          #9e9e9e;  /* BLAST identity track fill            */
-  --rp-ident-stroke:   #4d4d4d;
+  --rp-ident-stroke:   #4d4d4d;  /* BLAST identity track outline         */
 
   /* type */
   --mp-font-mono: Menlo, Monaco, Consolas, "Courier New", monospace;
