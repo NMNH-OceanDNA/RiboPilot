@@ -48,8 +48,8 @@
 ## Chimera check in the sequence viewer
 
 * The chimera evidence now lives in the sequence viewer of the Assemble and
-  Annotation Review windows: an **Origin** track colours each stretch by the
-  class its BLAST windows match (grey is the sample's own lineage), a **Window
+  Annotation Review windows: a **BLAST origin** track colours each stretch by the
+  class its BLAST windows match (grey is the sample's own lineage), a **BLAST
   identity** track shows the hit identity, and dashed lines mark possible
   junctions. Hover for the match. The static chimera plot is gone.
 * The Chimera check panel shows the reason under the call instead of on hover,
