@@ -98,7 +98,7 @@ The BLAST evidence shows that the best overall match is a *Penicillium* mold:
 
 ![CHIM01's BLAST evidence, with its best match a Penicillium mold](figures/get-started/assemble-details-chim01.png)
 
-The **Sequence and read coverage** viewer shows where. Its **Origin** track
+The **Sequence and read coverage** viewer shows where. Its **BLAST origin** track
 colours each stretch of the contig by the class its BLAST windows match (grey is
 the sample's own lineage), and a dashed red line marks the join between the fish
 and the mold, near 2,625 bp. Hover over the track to read the match. The

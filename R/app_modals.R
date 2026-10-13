@@ -154,7 +154,7 @@ chimera_panel <- function() {
       "200 bp BLAST windows against the bundled rDNA database, ribotyper (checks that each gene is one whole gene), ",
       "and read depth and clipping. Severe (different phyla or kingdoms) is flagged at export; minor is only reported. ",
       "Unresolved windows match several classes equally and do not count. ",
-      "The Origin track and the dashed junction lines in the sequence viewer above show where."),
+      "The BLAST origin track and the dashed junction lines in the sequence viewer above show where."),
     tags$p(class = "mp-help-text", style = "margin:2px 0 4px;",
       "Click a row to zoom the viewer to it; expand a row for its windows."),
     reactable::reactableOutput("chimera_segments"),

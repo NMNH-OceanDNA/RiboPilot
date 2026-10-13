@@ -41,7 +41,7 @@
   'use strict';
   var G = window.rpseq.geom;
   var MAX_PPB = 14, NT_LETTER = 8, NT_BAR = 3;
-  var RULER_H = 22, LANE_H = 22, NT_H = 20, GUTTER = 60, PAD = 4, COV_H = 60, CLIP_H = 36, IDENT_H = 36, ORIGIN_H = 18, GAP = 12;
+  var RULER_H = 22, LANE_H = 22, NT_H = 20, GUTTER = 100, PAD = 4, COV_H = 60, CLIP_H = 36, IDENT_H = 36, ORIGIN_H = 18, GAP = 12;
   var BASE = { A: '#4faf45', C: '#e0a53f', G: '#e0555a', T: '#4a90d9', N: '#666666' };
   var viewers = {}, last = {};
 
@@ -161,7 +161,7 @@
     var y = RULER_H + PAD;
     if (this.covOn()) { this.drawTrack(c, W, y, COV_H, this.depth, this.depthMax, 'depth', false); y += COV_H + GAP; }
     if (this.clipOn()) { this.drawTrack(c, W, y, CLIP_H, this.clip, 1, 'clipped', true); y += CLIP_H + GAP; }
-    if (this.identOn()) { this.drawTrack(c, W, y, IDENT_H, this.ident, 100, '% id', false, 70); y += IDENT_H + GAP; }
+    if (this.identOn()) { this.drawTrack(c, W, y, IDENT_H, this.ident, 100, 'BLAST %id', false, 70); y += IDENT_H + GAP; }
     if (this.originOn()) { this.drawOrigin(c, W, y); y += ORIGIN_H + GAP; }
     this.drawLanes(c);
     if (this.ntOn()) this.drawNt(c, this.topH() + this.nLanes * LANE_H + PAD);
@@ -278,7 +278,7 @@
       if (lab) { c.fillStyle = '#333'; c.fillText(lab, (x0 + x1) / 2, y + ORIGIN_H / 2); }
     }, this);
     c.fillStyle = cssVar('--mp-text-muted', '#6a6a6a'); c.textAlign = 'right';
-    c.fillText('origin', GUTTER - 6, y + ORIGIN_H / 2, GUTTER - 10);
+    c.fillText('BLAST origin', GUTTER - 6, y + ORIGIN_H / 2, GUTTER - 10);
   };
   Viewer.prototype.drawJunctions = function (c, H) {
     if (!this.junctions) return;
