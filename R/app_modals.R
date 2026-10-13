@@ -148,14 +148,13 @@ rp_sample_nav <- function() {
 #' @noRd
 chimera_panel <- function() {
   tagList(
-    tags$p(style = "margin:2px 0 4px; font-weight:600;", uiOutput("chimera_result", inline = TRUE)),
+    tags$div(style = "margin:2px 0 6px; font-weight:600;", uiOutput("chimera_result")),
     tags$p(class = "mp-help-text", style = "margin:2px 0 4px;",
       "Looks for pieces of different origin joined in one contig, using the genes' BLAST hits, ",
-      "200 bp BLAST windows, ribotyper, and read depth and clipping. Severe (different phyla or ",
-      "kingdoms) is flagged at export; minor is only reported. Unresolved windows match several ",
-      "classes equally and do not count."),
-    tags$p(class = "mp-help-text", style = "margin:2px 0 4px;", textOutput("chimera_db_source", inline = TRUE)),
-    plotOutput("chimera_plot", height = "300px"),
+      "200 bp BLAST windows against the bundled rDNA database, ribotyper (checks that each gene is one whole gene), ",
+      "and read depth and clipping. Severe (different phyla or kingdoms) is flagged at export; minor is only reported. ",
+      "Unresolved windows match several classes equally and do not count. ",
+      "The Origin track and the dashed junction lines in the sequence viewer above show where."),
     tags$p(class = "mp-help-text", style = "margin:2px 0 4px;",
       "Click a row to zoom the viewer to it; expand a row for its windows."),
     reactable::reactableOutput("chimera_segments"),
@@ -908,17 +907,6 @@ tint_colors <- function(cols, f = 0.80) {
   stats::setNames(grDevices::rgb(m[1, ], m[2, ], m[3, ], maxColorValue = 255), names(cols))
 }
 
-#' Pad a plot's left gutter (y title, axis text, strips) to a fixed width so
-#' plots stacked in a modal share one x axis. Returns a gtable; draw it with
-#' grid::grid.draw().
-#' @noRd
-fixed_gutter <- function(g, left_cm = 3.2) {
-  gt <- ggplot2::ggplotGrob(g)
-  l <- min(gt$layout$l[grepl("panel", gt$layout$name)])
-  have <- sum(grid::convertWidth(gt$widths[seq_len(l - 1)], "cm", valueOnly = TRUE))
-  gt$widths[1] <- gt$widths[1] + grid::unit(max(0, left_cm - have), "cm")
-  gt
-}
 
 #' Read-coverage track for one unit on the review layer, with feature regions shaded
 #'
@@ -966,7 +954,6 @@ plot_coverage <- function(id, path = 1L, scaffold = 1L) {
       size = 3.2, fontface = "bold", vjust = 0) +
       ggplot2::scale_colour_manual(values = dark, guide = "none")
   }
-  # same x extent and padding as plot_chimera so the two stack with aligned axes
   n <- nrow(df)
   g + ggplot2::scale_x_continuous(breaks = seq(0, n, 1000), minor_breaks = seq(0, n, 500), expand = c(0, 0)) +
     ggplot2::coord_cartesian(xlim = c(0, n), ylim = c(0, ymax * 1.16), clip = "off") +
@@ -1020,97 +1007,16 @@ chimera_seg_colors <- function(seg, sample_lt) {
   ifelse(nohit, "#FFFFFF", ifelse(host, "#B3B3B3", pal[seg$taxon]))
 }
 
-#' The chimera call for one unit, in words
+#' The chimera call for one unit, in words; a grey "not run" before the
+#' Annotation Review checks are done
 #' @noRd
-chimera_result_text <- function(label, reason) {
-  has <- !is.na(reason) && nzchar(reason)
+chimera_result_text <- function(label, reason, state = "done") {
+  if (!identical(state, "done")) return(tags$span("Chimera call: ",
+    tags$span(class = "mp-pill mp-pill-neutral", "not run"),
+    tags$span(class = "mp-help-text", style = "font-weight:normal;",
+      if (identical(state, "waiting")) " (waiting for the Assemble step's Update)" else " (press Update to run the checks)")))
   tone <- switch(label, clean = "success", severe = "danger", "warning")
-  tags$span(title = if (has) reason, "Chimera call: ",
-    tags$span(class = paste0("mp-pill mp-pill-", tone), label), if (has) tags$span(
-    class = "mp-help-text", style = "font-weight:normal;", " (hover for the full reason)"))
+  tagList(tags$span("Chimera call: ", tags$span(class = paste0("mp-pill mp-pill-", tone), label)),
+    if (!is.na(reason) && nzchar(reason)) tags$div(class = "mp-help-text", style = "font-weight:normal; margin-top:2px;", reason))
 }
 
-#' Chimera check plot for one unit
-#'
-#' review = TRUE (Annotation Review) reads the review layer and shows a note
-#' instead until the contig's checks are done. FALSE (Assemble step) reads the
-#' originals.
-#' @noRd
-plot_chimera <- function(id, path = 1L, scaffold = 1L, db = NULL, review = FALSE) {
-  con <- if (is.null(db)) app_con() else open_project_db(db)
-  on.exit(DBI::dbDisconnect(con))
-  q <- function(sql, params = list(id, path, scaffold)) DBI::dbGetQuery(con, sql, params = params)
-  empty <- function(msg) ggplot2::ggplot() + ggplot2::annotate("text", 0, 0, label = msg) + ggplot2::theme_void()
-  if (review) {
-    st <- review_unit_state(con, data.frame(ID = id, path = as.integer(path), scaffold = as.integer(scaffold)))$state
-    if (!identical(st, "done")) {
-      return(empty(if (identical(st, "waiting")) "Waiting for the Assemble step's Update." else "Not run yet. Press Update."))
-    }
-  }
-  tbl <- function(x) if (review) paste0("review_", x, "_v") else x
-  unit <- " WHERE ID = ? AND path = ? AND scaffold = ?"
-  ch <- q(paste0("SELECT label, junctions, segments FROM ", tbl("chimera"), unit))
-  win <- q(paste0("SELECT start, stop, pident FROM ", tbl("chimera_windows"), unit, " ORDER BY start"))
-  feats <- q(paste0("SELECT element, start, stop FROM ", tbl("annotations"), unit))
-  n <- q(paste0("SELECT length FROM ", if (review) "review_units_v" else "assemblies", unit))$length
-  if (NROW(ch) == 0) return(empty("no chimera check yet (run the pipeline from Assemble > Update)"))
-  seg <- if (!is.na(ch$segments[1])) jsonlite::fromJSON(ch$segments[1]) else data.frame()
-  junc <- if (nzchar(ch$junctions[1] %|NA|% "")) as.integer(strsplit(ch$junctions[1], ",")[[1]]) else integer(0)
-  xmax <- max(c(n, feats$stop, win$stop, seg$stop, 1), na.rm = TRUE)
-  # one facet per row; the two bar rows span 0..12 so facet heights come out
-  # roughly 1:1:3 against the 68..102 identity panel
-  rows <- c("genes", "lineage", "ident")
-  fr <- function(df, r) { df$row <- factor(r, levels = rows); df }
-  g <- ggplot2::ggplot() +
-    ggplot2::geom_blank(data = fr(data.frame(y = c(0, 12, 0, 12, 68, 102)), rep(rows, each = 2)), ggplot2::aes(y = y))
-  if (nrow(feats)) {
-    dark <- darken_colors(RRNA_ELEMENT_COLORS)
-    g <- g + ggplot2::geom_rect(data = fr(feats, "genes"), ggplot2::aes(xmin = start, xmax = stop, ymin = 1, ymax = 9, fill = element),
-      alpha = 0.28) +
-      ggplot2::scale_fill_manual(values = dark, guide = "none", na.value = "grey70") +
-      ggplot2::geom_text(data = fr(feats, "genes"), ggplot2::aes(x = (start + stop) / 2, y = 5, label = element, colour = element),
-        size = 3.2, fontface = "bold") +
-      ggplot2::scale_colour_manual(values = dark, guide = "none", na.value = "grey40")
-  }
-  if (nrow(seg)) {
-    samp <- q("SELECT lineage_taxids FROM samples WHERE ID = ?", list(id))
-    seg$col <- chimera_seg_colors(seg, if (nrow(samp)) samp$lineage_taxids[1] else NA_character_)
-    g <- g + ggplot2::geom_rect(data = fr(seg, "lineage"), ggplot2::aes(xmin = start, xmax = stop, ymin = 0.5, ymax = 11.5),
-      fill = seg$col, alpha = CHIMERA_SEG_ALPHA, colour = "grey40", linewidth = 0.3, linetype = ifelse(seg$col == "#FFFFFF", "dotted", "solid"))
-  }
-  if (nrow(win)) {
-    # one range line per window at its identity, dot at the midpoint filled by
-    # lineage segment; no-hit windows sit hollow just under the 70% floor
-    win$nohit <- is.na(win$pident)
-    win$y <- ifelse(win$nohit, 68, pmax(win$pident, 70))
-    win$col <- if (nrow(seg)) seg$col[findInterval(win$start, seg$start)] else "#B3B3B3"
-    win$col[win$nohit] <- "#FFFFFF"
-    g <- g + ggplot2::geom_segment(data = fr(win, "ident"), ggplot2::aes(x = start, xend = stop, y = y, yend = y),
-        colour = ifelse(win$nohit, "grey70", "grey30"), linewidth = 0.5,
-        linetype = ifelse(win$nohit, "dotted", "solid")) +
-      ggplot2::geom_point(data = fr(win, "ident"), ggplot2::aes(x = (start + stop) / 2, y = y),
-        shape = 21, size = 3, fill = win$col, colour = ifelse(win$nohit, "grey60", "grey30"))
-  }
-  sev <- identical(ch$label[1], "severe")
-  jcol <- if (sev) "#c0392b" else "#b9770e"
-  if (length(junc)) g <- g +
-    ggplot2::geom_vline(xintercept = junc, colour = jcol, linetype = "dashed", linewidth = 0.7) +
-    ggplot2::geom_label(data = fr(data.frame(x = junc, y = 12), "genes"), ggplot2::aes(x = x, y = y),
-      label = sprintf("%s\njunction at %d bp", if (sev) "chimera" else "possible", junc), vjust = 0,
-      size = 3.8, lineheight = 0.9, colour = jcol, fill = "white", linewidth = 0)
-  g + ggplot2::facet_grid(row ~ ., scales = "free_y", space = "free_y", switch = "y",
-      labeller = ggplot2::as_labeller(c(genes = "", lineage = "lineage", ident = "% identity"))) +
-    ggplot2::scale_x_continuous(breaks = seq(0, xmax, 1000), minor_breaks = seq(0, xmax, 500), expand = c(0, 0)) +
-    ggplot2::scale_y_continuous(breaks = c(70, 80, 90, 100), expand = c(0, 0)) +
-    ggplot2::coord_cartesian(xlim = c(0, xmax), clip = "off") +
-    ggplot2::labs(x = "position (bp)", y = NULL) +
-    ggplot2::theme_minimal(base_size = 11) +
-    ggplot2::theme(panel.grid.major.y = ggplot2::element_line(colour = "grey78", linewidth = 0.45),
-      panel.grid.minor.y = ggplot2::element_blank(),
-      panel.grid.major.x = ggplot2::element_line(colour = "grey78", linewidth = 0.45),
-      panel.grid.minor.x = ggplot2::element_line(colour = "grey86", linewidth = 0.3),
-      strip.placement = "outside",
-      strip.text.y.left = ggplot2::element_text(angle = 0, hjust = 1, face = "bold", colour = "grey30", size = 9.5),
-      axis.text = ggplot2::element_text(size = 10), panel.spacing.y = grid::unit(3, "pt"),
-      plot.margin = ggplot2::margin(36, 6, 6, 6))
-}

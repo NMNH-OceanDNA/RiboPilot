@@ -2702,19 +2702,14 @@ app_server <- function(input, output, session) {
     h <- sel_hit_unit(); id <- sel_id(); req(!is.null(h), id)
     list(ID = id, path = h$path, scaffold = h$scaffold)
   })
-  output$chimera_plot <- renderPlot({
-    edit_tick(); refresh(); u <- hit_unit()
-    grid::grid.draw(fixed_gutter(plot_chimera(u$ID, u$path, u$scaffold, review = identical(input$mode, "Annotate"))))
-  }, height = 296)
   output$chimera_result <- renderUI({
-    ch <- chim_query("label, reason", "chimera")
+    edit_tick(); refresh(); u <- hit_unit()
+    review <- identical(input$mode, "Annotate")
+    if (review && !identical(sel_check_state(), "done")) return(chimera_result_text(NA, NA, state = sel_check_state()))
+    ch <- app_query(sprintf("SELECT label, reason FROM %s WHERE ID = ? AND path = ? AND scaffold = ?",
+      if (review) "review_chimera_v" else "chimera"), list(u$ID, u$path, u$scaffold))
     req(nrow(ch) == 1, !is.na(ch$label[1]))
     chimera_result_text(ch$label[1], ch$reason[1])
-  })
-  output$chimera_db_source <- renderText({
-    ch <- chim_query("db_source", "chimera")
-    req(nrow(ch) == 1, !is.na(ch$db_source[1]))
-    paste("windows searched against:", paste(basename(strsplit(ch$db_source[1], " ", fixed = TRUE)[[1]]), collapse = ", "))
   })
   output$chimera_segments <- reactable::renderReactable({
     u <- hit_unit()
