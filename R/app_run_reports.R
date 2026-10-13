@@ -23,6 +23,7 @@ run_result_html <- function(result) {
 run_reports_handlers <- function(input, output, session, project, refresh) {
   runs <- shiny::reactiveVal(NULL)
   opened <- shiny::reactiveVal(0)
+  keep_sel <- NULL
   new_bases <- character(0)
 
   sync <- function() {
@@ -37,6 +38,7 @@ run_reports_handlers <- function(input, output, session, project, refresh) {
   show_reports <- function() {
     sync()
     df <- tryCatch(list_run_reports(project()), error = function(e) NULL)
+    keep_sel <<- NULL
     runs(df)
     opened(opened() + 1)
     body <- if (is.null(df) || nrow(df) == 0) {
@@ -65,7 +67,9 @@ run_reports_handlers <- function(input, output, session, project, refresh) {
       `Failed tasks` = df$n_failed_tasks,
       Launched = ifelse(df$launch %in% "job", "Job", "App"),
       check.names = FALSE, stringsAsFactors = FALSE)
+    sel <- match(keep_sel, df$base)
     reactable::reactable(disp, selection = "single", onClick = "select",
+      defaultSelected = if (length(sel) == 1 && !is.na(sel)) sel,
       height = if (nrow(disp) > 10) 380 else "auto",
       pagination = FALSE, compact = TRUE, highlight = TRUE, wrap = FALSE,
       columns = list(
@@ -91,6 +95,13 @@ run_reports_handlers <- function(input, output, session, project, refresh) {
         return(shiny::p(style = "margin-top: 1em;", "No report yet: the run has not recorded a finish."))
       }
       shiny::invalidateLater(15000)
+      sync()
+      fresh <- tryCatch(list_run_reports(project()), error = function(e) NULL)
+      old <- shiny::isolate(runs())
+      if (!is.null(fresh) && !identical(fresh[c("base", "result")], old[c("base", "result")])) {
+        keep_sel <<- run$base
+        runs(fresh)
+      }
       return(shiny::div(style = "margin-top: 1em;",
         shiny::p("No report yet: the run has not recorded a finish. Progress from its Nextflow log, ",
           "updated every 15 seconds. A run with no log update for a long time may have stopped."),

@@ -131,3 +131,23 @@ test_that("Run Reports names a recheck run as such", {
     expect_false(grepl("Pipeline", output$rr_tbl, fixed = TRUE))
   })
 })
+
+test_that("an open Run Reports window picks up a run that finishes", {
+  d <- withr::local_tempdir()
+  base <- "pipeline_2026-09-08_12-51-00"
+  put_log(d, base, rr_log(end = NULL))
+  shiny::testServer(function(input, output, session) {
+    h <- RiboPilot:::run_reports_handlers(input, output, session, function() d,
+      refresh = shiny::reactive(input$refresh))
+  }, {
+    session$setInputs(rr_open = 1)
+    session$setInputs(rr_tbl__reactable__selected = 1)
+    expect_match(output$rr_detail$html, "No report yet")
+    expect_equal(h$runs()$result, "unfinished")
+    put_log(d, base)
+    session$elapse(15000)
+    expect_equal(h$runs()$result, "finished")
+    expect_match(output$rr_detail$html, "RiboPilot run report")
+    expect_match(output$rr_tbl, "Finished")
+  })
+})
