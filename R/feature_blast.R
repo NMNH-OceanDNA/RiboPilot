@@ -154,6 +154,7 @@ feature_blast_unit <- function(con, id, path = 1L, scaffold = 1L, dbarg = NULL, 
   targets <- feature_blast_targets(con, id, path, scaffold, review)
   task <- feature_blast_task(targets$length)
   hits <- data.frame()
+  dc <- character(0)
   fail <- if (!isTRUE(nzchar(dbarg, keepNA = TRUE))) "no local BLAST panel" else NULL
   if (is.null(fail) && any(!is.na(task))) {
     dir.create(workdir, showWarnings = FALSE, recursive = TRUE)
@@ -170,6 +171,7 @@ feature_blast_unit <- function(con, id, path = 1L, scaffold = 1L, dbarg = NULL, 
       h2 <- run(mega & !targets$element %in% seen, "dc-megablast")
       h3 <- run(!is.na(task) & task == "blastn", "blastn")
       hits <- do.call(rbind, Filter(nrow, list(h1, h2, h3))) %||% data.frame()
+      dc <- if (nrow(h2)) unique(h2$qseqid) else character(0)
       NULL
     }, error = function(e) paste("BLAST failed:", conditionMessage(e)))
   }
@@ -184,6 +186,7 @@ feature_blast_unit <- function(con, id, path = 1L, scaffold = 1L, dbarg = NULL, 
     params = list(id))$lineage_taxids[1], error = function(e) NA_character_)
   res <- feature_blast_calls(hits, targets, samp %||% NA_character_)
   calls <- res$calls
+  if (!is.null(calls)) calls$task[calls$element %in% dc] <- "dc-megablast"
   if (!is.null(calls) && !is.null(fail)) {
     calls$status[calls$status != "too_small"] <- "not_run"
     calls$note[calls$status == "not_run"] <- fail
@@ -209,14 +212,16 @@ feature_blast_unit <- function(con, id, path = 1L, scaffold = 1L, dbarg = NULL, 
 
 #' The Annotation Review "Feature BLAST warnings" text per unit
 #'
-#' Lists no hit, non-rDNA, off-target, and too-small features in element order;
-#' "" when a unit has none.
+#' Lists no hit, non-rDNA, off-target, too-small, and weak (found only by the
+#' dc-megablast retry) features in element order; "" when a unit has none.
 #' @param fb Rows of feature_blast (or review_feature_blast_v) with ID, path,
-#'   scaffold, element, status, lineage.
+#'   scaffold, element, status, lineage, and optionally task.
 #' @return data.frame(ID, path, scaffold, feature_blast_warnings).
 #' @noRd
 feature_blast_warning_text <- function(fb) {
-  fb <- fb[fb$status %in% c("no_hit", "non_rdna", "off_target", "too_small"), , drop = FALSE]
+  if (is.null(fb$task)) fb$task <- rep(NA_character_, nrow(fb))
+  fb$status[fb$status %in% "ok" & fb$task %in% "dc-megablast"] <- "weak"
+  fb <- fb[fb$status %in% c("no_hit", "non_rdna", "off_target", "too_small", "weak"), , drop = FALSE]
   if (!nrow(fb)) {
     return(data.frame(ID = character(0), path = integer(0), scaffold = integer(0),
       feature_blast_warnings = character(0), stringsAsFactors = FALSE))
@@ -227,7 +232,7 @@ feature_blast_warning_text <- function(fb) {
     function(p) utils::tail(c(NA_character_, p[nzchar(p)]), 1), character(1))
   taxon <- ifelse(is.na(taxon), deepest, taxon)
   msg <- paste0(fb$element, ": ", c(no_hit = "no hit", non_rdna = "non-rDNA hit",
-    too_small = "no BLAST, feature too small", off_target = "off-target")[fb$status],
+    too_small = "no BLAST, feature too small", off_target = "off-target", weak = "weak hit")[fb$status],
     ifelse(fb$status == "off_target" & !is.na(taxon), paste0(" (", taxon, ")"), ""))
   k <- paste(fb$ID, fb$path, fb$scaffold, sep = "\r")
   out <- fb[!duplicated(k), c("ID", "path", "scaffold"), drop = FALSE]
