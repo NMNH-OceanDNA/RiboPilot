@@ -2780,7 +2780,7 @@ app_server <- function(input, output, session) {
         qcovs = reactable::colDef(name = "Cov", width = 60, na = ""),
         evalue = reactable::colDef(name = "E-value", width = 80, na = "",
           cell = function(v) if (is.na(v)) "" else formatC(v, format = "e", digits = 1)),
-        note = reactable::colDef(name = "Note", minWidth = 200)))
+        note = reactable::colDef(name = "Note", minWidth = 200, html = TRUE, cell = rt_longtext())))
   })
   output$chimera_junctions <- renderUI({
     ch <- chim_query("junctions, channels", "chimera")
