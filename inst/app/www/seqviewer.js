@@ -160,7 +160,7 @@
     var y = RULER_H + PAD;
     if (this.covOn()) { this.drawTrack(c, W, y, COV_H, this.depth, this.depthMax, 'depth', false); y += COV_H + GAP; }
     if (this.clipOn()) { this.drawTrack(c, W, y, CLIP_H, this.clip, 1, 'clipped', true); y += CLIP_H + GAP; }
-    if (this.identOn()) { this.drawTrack(c, W, y, IDENT_H, this.ident, 100, '% id', false); y += IDENT_H + GAP; }
+    if (this.identOn()) { this.drawTrack(c, W, y, IDENT_H, this.ident, 100, '% id', false, 70); y += IDENT_H + GAP; }
     if (this.originOn()) { this.drawOrigin(c, W, y); y += ORIGIN_H + GAP; }
     this.drawLanes(c);
     if (this.ntOn()) this.drawNt(c, this.topH() + this.nLanes * LANE_H + PAD);
@@ -222,7 +222,8 @@
   // blue; clipped-read fraction is grey with bars at or over the chimera
   // check's cutoff in Okabe-Ito orange. Runs of bars are filled as one shape,
   // since separate 1 px bars leave seams on scaled displays.
-  Viewer.prototype.drawTrack = function (c, W, y, h, vals, vmax, label, flag) {
+  Viewer.prototype.drawTrack = function (c, W, y, h, vals, vmax, label, flag, vmin) {
+    vmin = vmin || 0;
     var base = flag ? '#a0a0a0' : cssVar('--mp-primary', '#337ab7'), red = '#e69f00', muted = cssVar('--mp-text-muted', '#6a6a6a');
     var cut = this.clipFlag, cols = [];
     c.fillStyle = cssVar('--mp-surface-alt', '#f5f5f5'); c.fillRect(GUTTER, y, W - GUTTER, h);
@@ -244,7 +245,7 @@
       var open = false;
       for (var i = 0; i <= cols.length; i++) {
         var k = i < cols.length && cols[i] && keep(cols[i]);
-        var top = k ? (full ? y : y + h - Math.min(h, cols[i].v / vmax * h)) : 0;
+        var top = k ? (full ? y : y + h - Math.min(h, Math.max(0, cols[i].v - vmin) / (vmax - vmin) * h)) : 0;
         if (k && !open) { c.moveTo(GUTTER + i, y + h); open = true; }
         if (k) { c.lineTo(GUTTER + i, top); c.lineTo(GUTTER + i + 1, top); }
         if (!k && open) { c.lineTo(GUTTER + i, y + h); c.closePath(); open = false; }
@@ -252,7 +253,7 @@
       c.fill();
     };
     if (!flag) area('rgba(217, 83, 79, 0.35)', function (o) { return o.gap; }, true);
-    area(base, function (o) { return o.v > 0; }, false);
+    area(base, function (o) { return o.v > vmin; }, false);
     if (flag) area(red, function (o) { return o.v >= cut; }, false);
     c.strokeStyle = cssVar('--mp-border', '#ccc'); c.beginPath(); c.moveTo(GUTTER, y + h + 0.5); c.lineTo(W, y + h + 0.5); c.stroke();
     if (flag) { c.save(); c.strokeStyle = red; c.setLineDash([2, 3]); var fy = y + h - cut / vmax * h;
@@ -271,8 +272,8 @@
       if (x1 - x0 < 1) return;
       c.fillStyle = s.color; c.fillRect(x0, y, x1 - x0, ORIGIN_H);
       c.strokeStyle = cssVar('--mp-border', '#ccc'); c.strokeRect(x0 + 0.5, y + 0.5, x1 - x0 - 1, ORIGIN_H - 1);
-      var full = originText(s), lab = x1 - x0 > c.measureText(full).width + 8 ? full
-        : x1 - x0 > c.measureText(s.taxon).width + 8 ? s.taxon : null;
+      var full = originText(s), short = s.taxon === 'nohit' ? 'no hit' : s.taxon;
+      var lab = x1 - x0 > c.measureText(full).width + 8 ? full : x1 - x0 > c.measureText(short).width + 8 ? short : null;
       if (lab) { c.fillStyle = '#333'; c.fillText(lab, (x0 + x1) / 2, y + ORIGIN_H / 2); }
     }, this);
     c.fillStyle = cssVar('--mp-text-muted', '#6a6a6a'); c.textAlign = 'right';
@@ -373,6 +374,7 @@
       if (self.depth && self.depth[b.pos - 1] !== null) t += ' | depth ' + self.depth[b.pos - 1];
       if (self.clip && self.clip[b.pos - 1] !== null) t += ', clipped ' + (self.clip[b.pos - 1] * 100).toFixed(0) + '%';
       if (h) t += ' | ' + h.f.gene + ' ' + h.f.pos1.toLocaleString() + '-' + h.f.pos2.toLocaleString() + ' (' + h.f.dir + ')';
+      if (self.ident && self.ident[b.pos - 1] !== null) t += ' | window id ' + self.ident[b.pos - 1].toFixed(1) + '%';
       var o = self.originAt(b.pos);
       if (o) t += ' | ' + originText(o);
       var j = (self.junctions || []).find(function (q) { return Math.abs(self.x(q.pos) - px) <= 6; });
@@ -439,6 +441,7 @@
   window.rpseq.state = function (id) {
     var v = viewers[id]; if (!v) return null;
     return { len: v.len, viewStart: v.viewStart, ppb: v.ppb, selected: v.selected, height: v.height(), nLanes: v.nLanes,
+             origin: (v.origin || []).length, junctions: (v.junctions || []).length,
              features: v.feats.map(function (f) { return { row: f.row, gene: f.gene, pos1: f.pos1, pos2: f.pos2, lane: f.lane }; }) };
   };
   window.rpseq.fasta = function (id) { var v = get(id); return v ? v.visibleFasta() : null; };

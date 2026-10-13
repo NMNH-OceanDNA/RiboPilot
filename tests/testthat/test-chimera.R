@@ -476,6 +476,8 @@ test_that("the chimera panel shows the level and the reason in the open, and not
   expect_false(grepl("title=", x, fixed = TRUE))
   x <- as.character(RiboPilot:::chimera_result_text("clean", NA))
   expect_match(x, '<span class="mp-pill mp-pill-success">clean</span>', fixed = TRUE)
+  x <- as.character(RiboPilot:::chimera_result_text("severe", "1-750 nohit (NA, NA%); 751-900 Actinopteri (Mullidae, 99.1%)"))
+  expect_match(x, "1-750 nohit; 751-900", fixed = TRUE)
   x <- as.character(RiboPilot:::chimera_result_text(NA, NA, state = "not run"))
   expect_match(x, "not run", fixed = TRUE)
   expect_match(x, "press Update", fixed = TRUE)

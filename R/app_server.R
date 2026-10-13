@@ -2260,7 +2260,7 @@ app_server <- function(input, output, session) {
     lab <- app_query("SELECT label FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?",
       list(sel_id(), path, scaffold))$label
     if (length(lab) && !lab[1] %in% c(NA, "clean")) shinyjs::runjs(
-      "var d = document.getElementById('seqv_asm-canvas').closest('details'); if (d) d.open = true;")
+      "var c = document.getElementById('seqv_asm-canvas'), d = c && c.closest('details'); if (d) d.open = true;")
     reactable::updateReactable("assemble_scaffolds",
       meta = list(examined = paste(sel_id(), path, scaffold, sep = "|")))
   }

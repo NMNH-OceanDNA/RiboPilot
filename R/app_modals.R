@@ -1016,6 +1016,7 @@ chimera_result_text <- function(label, reason, state = "done") {
     tags$span(class = "mp-help-text", style = "font-weight:normal;",
       if (identical(state, "waiting")) " (waiting for the Assemble step's Update)" else " (press Update to run the checks)")))
   tone <- switch(label, clean = "success", severe = "danger", "warning")
+  reason <- gsub(" (NA, NA%)", "", reason, fixed = TRUE)
   tagList(tags$span("Chimera call: ", tags$span(class = paste0("mp-pill mp-pill-", tone), label)),
     if (!is.na(reason) && nzchar(reason)) tags$div(class = "mp-help-text", style = "font-weight:normal; margin-top:2px;", reason))
 }
