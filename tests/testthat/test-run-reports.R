@@ -142,6 +142,7 @@ test_that("an open Run Reports window picks up a run that finishes", {
   }, {
     session$setInputs(rr_open = 1)
     session$setInputs(rr_tbl__reactable__selected = 1)
+    output$rr_poll
     expect_match(output$rr_detail$html, "No report yet")
     expect_equal(h$runs()$result, "unfinished")
     put_log(d, base)
@@ -149,5 +150,24 @@ test_that("an open Run Reports window picks up a run that finishes", {
     expect_equal(h$runs()$result, "finished")
     expect_match(output$rr_detail$html, "RiboPilot run report")
     expect_match(output$rr_tbl, "Finished")
+  })
+})
+
+test_that("an open Run Reports window lists new runs every 15 seconds", {
+  d <- withr::local_tempdir()
+  shiny::testServer(function(input, output, session) {
+    h <- RiboPilot:::run_reports_handlers(input, output, session, function() d,
+      refresh = shiny::reactive(input$refresh))
+  }, {
+    session$setInputs(rr_open = 1)
+    output$rr_poll
+    expect_equal(nrow(h$runs()), 0L)
+    put_log(d, "pipeline_2026-09-08_12-51-00")
+    session$elapse(15000)
+    expect_equal(nrow(h$runs()), 1L)
+    output$rr_poll
+    put_log(d, "pipeline_2026-09-09_12-51-00", rr_log(end = NULL))
+    session$elapse(15000)
+    expect_equal(h$runs()$result, c("unfinished", "finished"))
   })
 })
