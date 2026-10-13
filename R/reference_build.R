@@ -422,6 +422,21 @@ usable_fasta <- function(f) {
   length(first) > 0 && startsWith(trimws(first[1]), ">")
 }
 
+#' Number of sequences in a FASTA, cached on path, size and mtime
+#' @noRd
+fasta_n_seqs <- local({
+  cache <- new.env(parent = emptyenv())
+  function(f) {
+    if (!usable_fasta(f)) return(NA_integer_)
+    fi <- file.info(f)
+    key <- paste(f, fi$size, as.numeric(fi$mtime))
+    if (is.null(cache[[key]])) {
+      cache[[key]] <- sum(readBin(f, "raw", fi$size) == as.raw(62L))
+    }
+    cache[[key]]
+  }
+})
+
 #' Is a stored database path still usable?
 #'
 #' A path is checked once, when it is wired, and the folder it points into can

@@ -45,6 +45,11 @@ reference_table <- function(con) {
     d$fail_reason[gone] <- paste("The seed/label FASTAs this group was wired to are no longer",
       "there. Build the database again, or point the group at one that exists.")
   }
+  ready <- !is.na(d$reference_switch) & d$reference_switch == 2 & d$status != "Database missing"
+  n_seqs <- rep(NA_integer_, nrow(d))
+  n_seqs[ready] <- vapply(d$database[ready], fasta_n_seqs, integer(1), USE.NAMES = FALSE)
+  d <- cbind(d[, seq_len(match("n_records", names(d))), drop = FALSE], n_seqs = n_seqs,
+    d[, -seq_len(match("n_records", names(d))), drop = FALSE])
   d$labels_db <- NULL
   d
 }

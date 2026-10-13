@@ -71,6 +71,19 @@ test_that("a Ready group whose FASTAs are gone reads as missing, not Ready", {
   expect_false("labels_db" %in% names(RiboPilot:::reference_table(con)))
 })
 
+test_that("a Ready group shows how many sequences its database holds", {
+  skip_if_not_installed("withr")
+  dir <- withr::local_tempdir()
+  p <- tab_db_paths(dir)
+  con <- mk_tab_db(p); on.exit(DBI::dbDisconnect(con))
+  writeLines(c(">a", "ACGT", ">b", "ACGT", ">c", "AC"), p$seeds)
+  d <- RiboPilot:::reference_table(con)
+  expect_equal(d$n_seqs[1], 3L)
+  expect_equal(match("n_seqs", names(d)), match("n_records", names(d)) + 1L)
+  DBI::dbExecute(con, "UPDATE reference SET reference_switch = 1")
+  expect_true(is.na(RiboPilot:::reference_table(con)$n_seqs[1]))
+})
+
 test_that("the ladder modal shows every rung with coverage and counts", {
   ladder <- data.frame(level = 2:5, rank = c("phylum", "class", "order", "family"),
     taxid = c(7586L, 7588L, 41692L, 7607L),

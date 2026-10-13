@@ -425,7 +425,8 @@ app_server <- function(input, output, session) {
         html = TRUE, cell = rt_link("ref_open_clade"))
       cols[["clade_rank"]] <- cd("clade_rank", width = 90)
       cols[["n_samples"]] <- cd("n_samples", width = 100)
-      cols[["n_records"]] <- cd("n_records", width = 160)
+      cols[["n_records"]] <- cd("n_records", width = 140)
+      cols[["n_seqs"]] <- cd("n_seqs", width = 160)
       cols[["database"]] <- cd("database", minWidth = 240, html = TRUE, cell = rt_longtext())
       cols[["fail_reason"]] <- cd("fail_reason", minWidth = 200, html = TRUE,
         cell = rt_link("ref_open_log"))

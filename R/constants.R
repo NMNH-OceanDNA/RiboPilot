@@ -333,7 +333,8 @@ MP_COL_NAMES <- c(
   clade_name       = "Clade",
   clade_rank       = "Rank",
   n_samples        = "# Samples",
-  n_records        = "# GenBank Records",
+  n_records        = "# GenBank Hits",
+  n_seqs           = "# Database Sequences",
   database         = "Database",
   fail_reason      = "Note",
   action           = "Action",
@@ -376,7 +377,10 @@ MP_COL_TIPS <- c(
   export_group     = "Named group this contig is exported with",
   exported         = "When this contig was last exported",
   time_stamp       = "When this row was last changed",
-  n_records        = "GenBank records available for this clade",
+  n_records        = paste("Records matching this clade's GenBank search, used to size groups.",
+    "The build drops exact duplicates (common in RefSeq genome annotations) and short records,",
+    "so the database is usually much smaller"),
+  n_seqs           = "Unique seed sequences in the built database; blank until it is built",
   tax_alternatives = "Every NCBI taxon the name matched, with its kingdom; click the ID to pick one"
 )
 
