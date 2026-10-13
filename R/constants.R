@@ -176,7 +176,8 @@ SCAFFOLD_COL_HELP <- list(
     "kingdoms; the export flags the record as chimeric and asks about it. minor: weaker",
     "evidence, listed in the export report only. clean: nothing found. Hover for the evidence."),
   feature_blast = paste("Features whose own BLAST search against the bundled rDNA database found no hit,",
-    "a non-rDNA hit, or a hit outside the sample's phylum, and features under 50 bp too small to search.")
+    "a non-rDNA hit, or a hit outside the sample's phylum, features under 50 bp too small to search,",
+    "and weak hits found only by the more sensitive dc-megablast retry.")
 )
 
 #' Column help for the chimera segment and window tables (annotate modal)

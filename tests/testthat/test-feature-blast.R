@@ -113,6 +113,9 @@ test_that("feature_blast_warning_text() lists problems in element order", {
   expect_equal(w$feature_blast_warnings,
     "ITS1: no hit; 5.8S: no BLAST, feature too small; ITS2: off-target (Streptophyta)")
   expect_equal(nrow(RiboPilot:::feature_blast_warning_text(fb[fb$status == "ok", ])), 0L)
+  fb$task <- c("megablast", NA, "megablast", "dc-megablast", "megablast")
+  expect_equal(RiboPilot:::feature_blast_warning_text(fb)$feature_blast_warnings,
+    "18S: weak hit; ITS1: no hit; 5.8S: no BLAST, feature too small; ITS2: off-target (Streptophyta)")
 })
 
 fb_seed <- function(con) {
@@ -138,6 +141,7 @@ test_that("feature_blast_unit() searches by length and stores calls and hits", {
     rows <- list(
       "18S" = fb_hit("18S", "A1", "Danio rerio 18S ribosomal RNA", 3000, FB_DANIO),
       "ITS1" = fb_hit("ITS1", "P1", "Morus alba internal transcribed spacer 1", 100, FB_PLANT))
+    if (task == "dc-megablast") rows[["28S"]] <- fb_hit("28S", "D1", "Danio rerio 28S ribosomal RNA", 500, FB_DANIO)
     do.call(rbind, rows[intersect(ids, names(rows))]) %||% data.frame()
   }
   fake_lin <- function(taxids, dir) data.frame(taxid = c(7955L, 3498L),
@@ -155,8 +159,11 @@ test_that("feature_blast_unit() searches by length and stores calls and hits", {
   expect_equal(fb$low_conf[fb$element == "ITS1"], 1L)
   expect_equal(fb$status[fb$element == "ITS1"], "off_target")
   expect_equal(fb$status[fb$element == "18S"], "ok")
+  expect_equal(fb$task[fb$element == "18S"], "megablast")
+  expect_equal(fb$status[fb$element == "28S"], "ok")
+  expect_equal(fb$task[fb$element == "28S"], "dc-megablast")
   expect_true(all(fb$db_source == "panel"))
-  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) AS n FROM feature_blast_hits")$n, 2L)
+  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) AS n FROM feature_blast_hits")$n, 3L)
 })
 
 test_that("feature_blast_unit() stores not_run without a panel or when blastn fails, and rewrites old rows", {

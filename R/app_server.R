@@ -242,7 +242,7 @@ app_server <- function(input, output, session) {
       # Assemble step's Update; check_state gates the check cells (rt_gated).
       con <- app_con(); on.exit(DBI::dbDisconnect(con))
       st <- review_unit_state(con, d[c("ID", "path", "scaffold")])
-      fb <- app_query("SELECT ID, path, scaffold, element, status, lineage FROM review_feature_blast_v")
+      fb <- app_query("SELECT ID, path, scaffold, element, status, lineage, task FROM review_feature_blast_v")
       fw <- feature_blast_warning_text(fb)
       fbw <- fw$feature_blast_warnings[match(
         unit_key(d$ID, d$path, d$scaffold), unit_key(fw$ID, fw$path, fw$scaffold))]
@@ -2732,7 +2732,7 @@ app_server <- function(input, output, session) {
         n_windows = reactable::colDef(width = 100, html = TRUE, header = rt_help_header("Windows", CHIMERA_COL_HELP$n_windows))))
   })
   output$feature_blast_tbl <- reactable::renderReactable({
-    d <- chim_query("element, length, status, low_conf, note, species, match_rank, pident, qcovs, evalue, accession",
+    d <- chim_query("element, length, status, task, low_conf, note, species, match_rank, pident, qcovs, evalue, accession",
       "feature_blast")
     d <- d[order(match(d$element, FEATURE_BLAST_ELEMENTS)), , drop = FALSE]
     if (nrow(d) == 0) {
@@ -2749,8 +2749,12 @@ app_server <- function(input, output, session) {
     low <- d$low_conf %in% 1
     d$note <- ifelse(low, ifelse(is.na(d$note) | !nzchar(d$note), "Low confidence (under 100 bp)",
       paste0("Low confidence (under 100 bp); ", d$note)), ifelse(is.na(d$note), "", d$note))
+    weak <- d$task %in% "dc-megablast" & d$status %in% "OK"
+    d$note <- ifelse(weak, ifelse(nzchar(d$note), paste0("Weak match: found only by the sensitive retry; ", d$note),
+      "Weak match: found only by the sensitive retry"), d$note)
+    d$task[d$status %in% c("No hit", "No BLAST, feature too small", "Not run")] <- NA_character_
     elements <- d$element
-    d <- d[c("element", "length", "status", "species", "match_rank", "pident", "qcovs", "evalue", "note")]
+    d <- d[c("element", "length", "status", "task", "species", "match_rank", "pident", "qcovs", "evalue", "note")]
     reactable::reactable(d, compact = TRUE, pagination = FALSE, wrap = FALSE,
       defaultColDef = reactable::colDef(align = "left"),
       details = function(index) {
@@ -2768,6 +2772,9 @@ app_server <- function(input, output, session) {
         element = reactable::colDef(name = "Feature", width = 80),
         length = reactable::colDef(name = "Length", width = 70),
         status = reactable::colDef(name = "Status", minWidth = 150),
+        task = reactable::colDef(name = "Search", width = 120, na = "",
+          cell = function(v) if (identical(v, "dc-megablast")) tags$span(style = "color:#b9770e; font-weight:bold;",
+            title = "Megablast found nothing; only the more sensitive dc-megablast retry found a match", "dc-megablast !") else v),
         species = reactable::colDef(name = "Best match", minWidth = 160, na = ""),
         match_rank = reactable::colDef(name = "Match rank", width = 100, na = ""),
         pident = reactable::colDef(name = "%ID", width = 65, na = "", format = reactable::colFormat(digits = 1)),

@@ -492,7 +492,8 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
       tags$p(class = "mp-help-text", style = "margin:2px 0 4px;",
         "Each core feature (18S, ITS1, 5.8S, ITS2, 28S) is searched on its own against the bundled",
         "rDNA database. A feature under 50 bp is not searched; 50 to 99 bp is low confidence.",
-        "Near-tied hits are named by the clade they share. Off-target means no match at phylum or below."),
+        "Near-tied hits are named by the clade they share. Off-target means no match at phylum or below.",
+        "Search is the algorithm that found the hit; dc-megablast (amber) means only the more sensitive retry found a match, a weak hit."),
       reactable::reactableOutput("feature_blast_tbl")),
 
     rp_details("Curation warnings", open = FALSE,
