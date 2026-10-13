@@ -190,3 +190,9 @@ test_that("the viewer gets the chimera evidence of its own layer, and none befor
   expect_equal(sent$junctions[[1]]$pos, 30L); expect_false(sent$junctions[[1]]$severe)
   expect_null(sent$origin)
 })
+
+test_that("the viewer controls offer the origin and window identity tracks", {
+  html <- as.character(RiboPilot:::seqview_ui("x", "s"))
+  expect_match(html, 'id="x-show_origin"', fixed = TRUE)
+  expect_match(html, 'id="x-show_ident"', fixed = TRUE)
+})
