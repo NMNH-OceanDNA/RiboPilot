@@ -24,6 +24,7 @@ run_reports_handlers <- function(input, output, session, project, refresh) {
   runs <- shiny::reactiveVal(NULL)
   opened <- shiny::reactiveVal(0)
   keep_sel <- NULL
+  polled <- FALSE
   new_bases <- character(0)
 
   sync <- function() {
@@ -39,6 +40,7 @@ run_reports_handlers <- function(input, output, session, project, refresh) {
     sync()
     df <- tryCatch(list_run_reports(project()), error = function(e) NULL)
     keep_sel <<- NULL
+    polled <<- FALSE
     runs(df)
     opened(opened() + 1)
     body <- if (is.null(df) || nrow(df) == 0) {
@@ -46,10 +48,32 @@ run_reports_handlers <- function(input, output, session, project, refresh) {
     } else {
       shiny::tagList(reactable::reactableOutput("rr_tbl"), shiny::uiOutput("rr_detail"))
     }
+    body <- shiny::tagList(body, shiny::uiOutput("rr_poll"))
     shiny::showModal(shiny::modalDialog(title = mp_modal_title("Run reports"),
       size = "l", easyClose = TRUE, body, footer = mp_footer(dismiss = "Close")))
   }
   shiny::observeEvent(input$rr_open, show_reports())
+
+  # every 15 seconds while the window is open: new runs and finished runs
+  poll <- function() {
+    sync()
+    fresh <- tryCatch(list_run_reports(project()), error = function(e) NULL)
+    old <- runs()
+    if (is.null(fresh) || !nrow(fresh) || identical(fresh[c("base", "result")], old[c("base", "result")])) {
+      return(invisible())
+    }
+    if (is.null(old) || !nrow(old)) return(show_reports())
+    i <- reactable::getReactableState("rr_tbl", "selected")
+    keep_sel <<- if (length(i) == 1 && i <= nrow(old)) old$base[i]
+    runs(fresh)
+  }
+  output$rr_poll <- shiny::renderUI({
+    opened()
+    shiny::invalidateLater(15000)
+    if (polled) shiny::isolate(poll())
+    polled <<- TRUE
+    NULL
+  })
 
   output$rr_tbl <- reactable::renderReactable({
     opened()
@@ -95,13 +119,6 @@ run_reports_handlers <- function(input, output, session, project, refresh) {
         return(shiny::p(style = "margin-top: 1em;", "No report yet: the run has not recorded a finish."))
       }
       shiny::invalidateLater(15000)
-      sync()
-      fresh <- tryCatch(list_run_reports(project()), error = function(e) NULL)
-      old <- shiny::isolate(runs())
-      if (!is.null(fresh) && !identical(fresh[c("base", "result")], old[c("base", "result")])) {
-        keep_sel <<- run$base
-        runs(fresh)
-      }
       return(shiny::div(style = "margin-top: 1em;",
         shiny::p("No report yet: the run has not recorded a finish. Progress from its Nextflow log, ",
           "updated every 15 seconds. A run with no log update for a long time may have stopped."),
