@@ -29,7 +29,13 @@ After defining groups, the Reference page automatically switches from a
 samples table to a groups table. Each row is one proposed group. The **Status** column says where that group
 stands ("Needs a database", "Building", "Ready", "Build failed", or "Left on
 current database"), and the rest of the row shows the clade, how many of your
-samples it covers, and how many GenBank records were found.
+samples it covers, how many GenBank records matched the clade's search
+(**# GenBank Hits**), and, once built, how many sequences the database holds
+(**# Database Sequences**). The second number is usually much smaller: the
+build keeps one copy of each identical sequence and drops short records.
+RefSeq genome annotations list many identical rDNA copies per genome, so a
+clade with many sequenced genomes can lose most of its hits this way. For
+example, Actinopteri had about 43,900 hits but built to about 12,100 sequences.
 
 ## Setting a group up
 

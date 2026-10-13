@@ -67,7 +67,36 @@ write_reference_groups <- function(con, groups, members) {
     if (nrow(members) > 0) bind_sample_ref(con, members$ref_id, members$ID)
     DBI::dbExecute(con, "UPDATE samples SET ref_source = 'auto' WHERE ref_id IS NOT NULL")
   })
+  follow_ref_dir(con)
   invisible(nrow(groups))
+}
+
+#' Move Ready groups whose folder database is in another reference folder
+#'
+#' A database at the folder layout's path (`<dir>/seeds/<ref_id>_rrna_seeds.fasta`)
+#' outside the current folder is rewired to the current folder's copy, or the
+#' group goes back to needing one. Hand-picked databases elsewhere are left alone.
+#' @noRd
+follow_ref_dir <- function(con) {
+  dir <- ref_config(con)$ref_dir
+  r <- DBI::dbGetQuery(con,
+    "SELECT ref_id, seeds_db FROM reference WHERE reference_switch = 2 AND seeds_db IS NOT NULL")
+  same <- function(x, y) normalizePath(x, mustWork = FALSE) == normalizePath(y, mustWork = FALSE)
+  for (i in seq_len(nrow(r))) {
+    s <- r$seeds_db[i]
+    if (basename(s) != basename(reference_db_paths(dir, r$ref_id[i])$seeds) ||
+        basename(dirname(s)) != "seeds" || same(dirname(dirname(s)), dir)) next
+    p <- reference_db_paths(dir, r$ref_id[i])
+    if (usable_fasta(p$seeds) && usable_fasta(p$labels)) {
+      wire_reference_db(con, r$ref_id[i], p$seeds, p$labels, source = "existing")
+    } else {
+      DBI::dbExecute(con,
+        "UPDATE reference SET reference_switch = 1, source = NULL, seeds_db = NULL,
+           labels_db = NULL, preset_name = NULL, fail_reason = NULL WHERE ref_id = ?",
+        params = list(r$ref_id[i]))
+    }
+  }
+  invisible(NULL)
 }
 
 #' User-group labels, as the named vector `suggest_reference_groups()` wants
@@ -421,6 +450,21 @@ usable_fasta <- function(f) {
   first <- tryCatch(readLines(f, n = 1, warn = FALSE), error = function(e) character(0))
   length(first) > 0 && startsWith(trimws(first[1]), ">")
 }
+
+#' Number of sequences in a FASTA, cached on path, size and mtime
+#' @noRd
+fasta_n_seqs <- local({
+  cache <- new.env(parent = emptyenv())
+  function(f) {
+    if (!usable_fasta(f)) return(NA_integer_)
+    fi <- file.info(f)
+    key <- paste(f, fi$size, as.numeric(fi$mtime))
+    if (is.null(cache[[key]])) {
+      cache[[key]] <- sum(readBin(f, "raw", fi$size) == as.raw(62L))
+    }
+    cache[[key]]
+  }
+})
 
 #' Is a stored database path still usable?
 #'
