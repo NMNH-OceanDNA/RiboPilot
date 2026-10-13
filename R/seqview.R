@@ -109,6 +109,8 @@ chimera_origin <- function(seg, win, junctions, label, channels, sample_lt, len)
   out <- list(origin = list(), junctions = list(), ident = NULL)
   if (NROW(seg)) {
     seg <- seg[order(seg$start), , drop = FALSE]
+    # stored JSON drops fields that were NA in every row
+    for (col in c("species", "pident")) if (is.null(seg[[col]])) seg[[col]] <- NA
     seg$col <- chimera_seg_colors(seg, sample_lt)
     stop <- pmin(seg$stop, c(seg$start[-1] - 1L, Inf))
     out$origin <- lapply(seq_len(nrow(seg)), function(i) list(

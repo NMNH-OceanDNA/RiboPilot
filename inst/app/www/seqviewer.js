@@ -115,11 +115,12 @@
     this.selected = row; this.fitRange(f.pos1, f.pos2);
   };
   Viewer.prototype.fitRange = function (pos1, pos2) {
+    // open first: a collapsed section has no width to measure
+    if (this.section) this.section.open = true;
     this.isWhole = false;
     var s = pos2 - pos1 + 1, margin = Math.max(3, s * 0.05);
     this.ppb = Math.min(MAX_PPB, this.width() / (s + 2 * margin));
-    this.viewStart = pos1 - margin; this.clamp();
-    if (this.section) this.section.open = true;
+    this.viewStart = (pos1 + pos2) / 2 - this.viewLen() / 2; this.clamp();
     this.draw();
   };
 

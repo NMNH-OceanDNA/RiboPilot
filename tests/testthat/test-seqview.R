@@ -196,3 +196,11 @@ test_that("the viewer controls offer the origin and window identity tracks", {
   expect_match(html, 'id="x-show_origin"', fixed = TRUE)
   expect_match(html, 'id="x-show_ident"', fixed = TRUE)
 })
+
+test_that("chimera_origin copes with stored segments that have no species column", {
+  # jsonlite drops NA fields, so an all-no-hit contig stores segments without species or pident
+  seg <- jsonlite::fromJSON('[{"start":1,"stop":600,"taxon":"nohit","n_windows":5}]')
+  o <- RiboPilot:::chimera_origin(seg, data.frame(), NA, "clean", NA, NA_character_, 600L)
+  expect_equal(o$origin[[1]]$species, "")
+  expect_equal(o$origin[[1]]$color, "#FFFFFF")
+})
