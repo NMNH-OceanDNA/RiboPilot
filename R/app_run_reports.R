@@ -65,7 +65,8 @@ run_reports_handlers <- function(input, output, session, project, refresh) {
       `Failed tasks` = df$n_failed_tasks,
       Launched = ifelse(df$launch %in% "job", "Job", "App"),
       check.names = FALSE, stringsAsFactors = FALSE)
-    reactable::reactable(disp, selection = "single", onClick = "select", height = 300,
+    reactable::reactable(disp, selection = "single", onClick = "select",
+      height = if (nrow(disp) > 10) 380 else "auto",
       pagination = FALSE, compact = TRUE, highlight = TRUE, wrap = FALSE,
       columns = list(
         New = reactable::colDef(name = "", maxWidth = 60, html = TRUE,
