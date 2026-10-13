@@ -90,7 +90,7 @@ Click a sample's ID to open its details. The window lists the sample's
 contigs, each with **K** (keep) and **D** (drop) buttons, as well as other 
 information like coverage, features annotated, and the verdict
 from the BLAST screen. Below the list are three panels for the highlighted contig:
-**BLAST evidence**, **Sequence and read coverage**, and **Chimera check**. 
+**BLAST evidence**, **Coverage and windowed BLAST**, and **Chimera check**. 
 
 CHIM01 is an artificial chimeric contig, crated by joining sequence data from
 *Penicillium* mold and the fish species *Upeneus parvus*.
@@ -98,7 +98,7 @@ The BLAST evidence shows that the best overall match is a *Penicillium* mold:
 
 ![CHIM01's BLAST evidence, with its best match a Penicillium mold](figures/get-started/assemble-details-chim01.png)
 
-The **Sequence and read coverage** viewer shows where. Its **BLAST origin** track
+The **Coverage and windowed BLAST** viewer shows where. Its **BLAST origin** track
 colours each stretch of the contig by the class its BLAST windows match (grey is
 the sample's own lineage), and a dashed red line marks the join between the fish
 and the mold, near 2,625 bp. Hover over the track to read the match. The
