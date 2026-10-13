@@ -215,8 +215,9 @@ matches a ray-finned fish:
 
 To judge a flag, open **Coverage and windowed BLAST** with **BLAST origin** ticked:
 each stretch is coloured by the class its BLAST windows match (grey is your
-lineage, white is no hit), **BLAST identity** shows the hit identity, and a
-dashed line marks a possible junction; hover for the match. The **Chimera
+lineage, white is no hit), **BLAST identity** shows the best hit's identity in
+each window in the same colours, and a dashed line marks a possible junction;
+hover for the match. The **Chimera
 check** panel below gives the call, the reason, and the segments; click a
 segment, window, or junction row to zoom the viewer to it. A real chimera shows
 a clean switch from one lineage to another at one point, often accompanied by a
