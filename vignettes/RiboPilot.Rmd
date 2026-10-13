@@ -11,7 +11,7 @@ RiboPilot takes genome-skim reads and assembles a GenBank-ready record of the nu
 ribosomal DNA repeat (rDNA). Starting a project requires only a few R commands, everything
 else happens in a R Shiny app.
 
-If you use [MitoPilot](https://github.com/Smithsonian/MitoPilot), this will feel
+If you use [MitoPilot](https://github.com/NMNH-OceanDNA/MitoPilot), this will feel
 familiar. RiboPilot has a similar layout, it takes the same mapping file, and it
 can run on the same samples. However, RiboPilot uses the `Taxon`
 column in the map file throughout the pipeline. Try to provide the species ID whenever possible,

@@ -108,4 +108,4 @@ EUKARYOME (whole rDNA repeat) + SILVA (anchor seeds).
 - SILVA: https://www.arb-silva.de/
 - Trevisan et al. 2022 (skimming for barcodes): https://peerj.com/articles/13790/
 - Green algae rRNA repeat by skimming: https://pmc.ncbi.nlm.nih.gov/articles/PMC5713310/
-- Smithsonian Ocean-DNA BLAST_18s_28s: https://smithsonian.github.io/NMNH-Ocean-DNA/qmd/hydraScripts/BLAST_18s_28s.html
+- Smithsonian Ocean-DNA BLAST_18s_28s: https://nmnh-oceandna.github.io/NMNH-Ocean-DNA/qmd/hydraScripts/BLAST_18s_28s.html

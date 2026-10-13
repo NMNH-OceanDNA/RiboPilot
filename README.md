@@ -15,7 +15,7 @@ the result and package it for submission to GenBank. If you already have
 an assembly, RiboPilot can [start from that instead of
 reads](https://dmacguigan.github.io/RiboPilot/articles/Your-Own-Project.html#already-have-an-assembly).
 RiboPilot is a companion to
-[MitoPilot](https://github.com/Smithsonian/MitoPilot), which does the
+[MitoPilot](https://github.com/NMNH-OceanDNA/MitoPilot), which does the
 same process for the mitochondrial genome. You can run both tools on the
 same samples and get both marker sets from one sequencing run.
 
