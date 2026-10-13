@@ -350,7 +350,7 @@ app_server <- function(input, output, session) {
         cell = rt_gated(rt_chimera_badge())),
       chimera_reason = reactable::colDef(show = FALSE),
       feature_blast_warnings = cd("feature_blast_warnings", minWidth = 180, html = TRUE,
-        cell = rt_gated(rt_longtext())),
+        cell = rt_gated(rt_feature_blast_badge())),
       reference = cd("reference", html = TRUE, cell = rt_ncbi_link()),
       blast_species = cd("blast_species", minWidth = 160, html = TRUE, cell = rt_gated(rt_longtext())),
       blast_accession = cd("blast_accession", minWidth = 130, html = TRUE, cell = rt_gated(rt_ncbi_link())),
