@@ -2743,16 +2743,15 @@ app_server <- function(input, output, session) {
     hits <- chim_query("element, accession, title, pident, qcovs, bitscore, hit_class",
       "feature_blast_hits", " ORDER BY element, hit_rank")
     lab <- c(ok = "OK", no_hit = "No hit", non_rdna = "Non-rDNA hit", off_target = "Off-target",
-      too_small = "No BLAST, feature too small", not_run = "Not run")
+      too_small = "Too small", not_run = "Not run")
     d$status <- ifelse(d$status %in% names(lab), lab[d$status], d$status)
-    d$note[d$status %in% "too_small"] <- NA_character_
     low <- d$low_conf %in% 1
     d$note <- ifelse(low, ifelse(is.na(d$note) | !nzchar(d$note), "Low confidence (under 100 bp)",
       paste0("Low confidence (under 100 bp); ", d$note)), ifelse(is.na(d$note), "", d$note))
     weak <- d$task %in% "dc-megablast" & d$status %in% "OK"
     d$note <- ifelse(weak, ifelse(nzchar(d$note), paste0("Weak match: found only by the sensitive retry; ", d$note),
       "Weak match: found only by the sensitive retry"), d$note)
-    d$task[d$status %in% c("No hit", "No BLAST, feature too small", "Not run")] <- NA_character_
+    d$task[d$status %in% c("No hit", "Too small", "Not run")] <- NA_character_
     elements <- d$element
     d <- d[c("element", "length", "status", "task", "species", "match_rank", "pident", "qcovs", "evalue", "note")]
     reactable::reactable(d, compact = TRUE, pagination = FALSE, wrap = FALSE,
@@ -2771,11 +2770,11 @@ app_server <- function(input, output, session) {
       columns = list(
         element = reactable::colDef(name = "Feature", width = 80),
         length = reactable::colDef(name = "Length", width = 70),
-        status = reactable::colDef(name = "Status", minWidth = 150),
+        status = reactable::colDef(name = "Status", width = 105),
         task = reactable::colDef(name = "Search", width = 120, na = "",
           cell = function(v) if (identical(v, "dc-megablast")) tags$span(style = "color:#b9770e; font-weight:bold;",
             title = "Megablast found nothing; only the more sensitive dc-megablast retry found a match", "dc-megablast !") else v),
-        species = reactable::colDef(name = "Best match", minWidth = 160, na = ""),
+        species = reactable::colDef(name = "Best match", minWidth = 260, na = ""),
         match_rank = reactable::colDef(name = "Match rank", width = 100, na = ""),
         pident = reactable::colDef(name = "%ID", width = 65, na = "", format = reactable::colFormat(digits = 1)),
         qcovs = reactable::colDef(name = "Cov", width = 60, na = ""),
