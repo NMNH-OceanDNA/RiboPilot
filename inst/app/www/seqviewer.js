@@ -161,7 +161,7 @@
     var y = RULER_H + PAD;
     if (this.covOn()) { this.drawTrack(c, W, y, COV_H, this.depth, this.depthMax, 'depth', false); y += COV_H + GAP; }
     if (this.clipOn()) { this.drawTrack(c, W, y, CLIP_H, this.clip, 1, 'clipped', true); y += CLIP_H + GAP; }
-    if (this.identOn()) { this.drawTrack(c, W, y, IDENT_H, this.ident, 100, 'BLAST %id', false, { vmin: 70, fill: cssVar('--rp-ident', '#8e6bbf'), stroke: cssVar('--rp-ident-stroke', '#5b3f8a') }); y += IDENT_H + GAP; }
+    if (this.identOn()) { this.drawTrack(c, W, y, IDENT_H, this.ident, 100, 'BLAST %id', false, { vmin: 70, fill: cssVar('--rp-ident', '#9e9e9e'), stroke: cssVar('--rp-ident-stroke', '#4d4d4d') }); y += IDENT_H + GAP; }
     if (this.originOn()) { this.drawOrigin(c, W, y); y += ORIGIN_H + GAP; }
     this.drawLanes(c);
     if (this.ntOn()) this.drawNt(c, this.topH() + this.nLanes * LANE_H + PAD);
