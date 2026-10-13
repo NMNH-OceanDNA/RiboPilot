@@ -2256,6 +2256,11 @@ app_server <- function(input, output, session) {
   examine_unit <- function(path, scaffold) {
     sel_hit_unit(list(path = path, scaffold = scaffold))
     shinyjs::runjs("document.querySelectorAll('#asm_unit_panels details').forEach(function(d){ d.open = false; });")
+    # a flagged contig opens the viewer so its origin track is in sight
+    lab <- app_query("SELECT label FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?",
+      list(sel_id(), path, scaffold))$label
+    if (length(lab) && !lab[1] %in% c(NA, "clean")) shinyjs::runjs(
+      "var d = document.getElementById('seqv_asm-canvas').closest('details'); if (d) d.open = true;")
     reactable::updateReactable("assemble_scaffolds",
       meta = list(examined = paste(sel_id(), path, scaffold, sep = "|")))
   }

@@ -634,3 +634,22 @@ test_that("the reason text leaves out the empty match of a no-hit segment", {
   r <- RiboPilot:::chimera_reason(seg, list(), integer(0))
   expect_equal(r, "1-750 nohit; 501-2500 Actinopterygii (Salmo salar, 99.0%); no junction")
 })
+
+test_that("examining a flagged contig opens its viewer section", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+  con <- RiboPilot:::app_con()
+  DBI::dbExecute(con, "INSERT INTO chimera (ID, path, scaffold, label) VALUES ('S1',1,1,'severe')")
+  DBI::dbDisconnect(con)
+  js <- character(0)
+  local_mocked_bindings(runjs = function(code) js <<- c(js, code), .package = "shinyjs")
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    sel_id("S1")
+    session$flushReact()
+    session$setInputs(scaf_examine = "S1|1|1")
+    session$flushReact()
+  })
+  expect_true(any(grepl("seqv_asm-canvas", js, fixed = TRUE) & grepl("open = true", js, fixed = TRUE)))
+})
