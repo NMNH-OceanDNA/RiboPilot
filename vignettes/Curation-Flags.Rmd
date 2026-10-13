@@ -198,7 +198,7 @@ Annotation Review table and in the **Checks** column:
 In the test project, CHIM01 is severe: the contig is an artificial chimera
 composed of sequence from ray-finned fish and *Penicillium* mold.
 
-![Chimera check for a real chimera](figures/get-started/assemble-chimera-chim01.png)
+![A real chimera in the sequence viewer: the origin track switches lineage at the junction](figures/get-started/assemble-chimera-chim01.png)
 
 RiboPilot attempts to handle false alarms. Windows in conserved
 stretches of 18S or 28S, where many groups match equally well, are shown as
@@ -213,10 +213,14 @@ matches a ray-finned fish:
 
 ![Chimera check for a weaker signal that needs a look](figures/curation/chimera-mild.png)
 
-To judge a flag, open the **Chimera check** panel, and hover over the contig's
-badge in the **Chimera** column to read the evidence behind the call. A real
-chimera shows a clean switch from one lineage to another at one point, often
-accompanied by a shift in read depth. 
+To judge a flag, open **Sequence and read coverage** with **Origin** ticked:
+each stretch is coloured by the class its BLAST windows match (grey is your
+lineage, white is no hit), **Window identity** shows the hit identity, and a
+dashed line marks a possible junction; hover for the match. The **Chimera
+check** panel below gives the call, the reason, and the segments; click a
+segment, window, or junction row to zoom the viewer to it. A real chimera shows
+a clean switch from one lineage to another at one point, often accompanied by a
+shift in read depth. 
 
 A lineage switch that sits inside a conserved stretch of
 18S or 28S, to a group that is not far from yours, is usually a false alarm. If
