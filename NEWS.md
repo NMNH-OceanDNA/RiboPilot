@@ -118,7 +118,9 @@
   copies the report.
 * **Run Reports** in the toolbar lists every run, reference build, and cluster
   job, with its result, and shows each one's report. The app says when a run it
-  did not watch, such as a cluster job, has finished.
+  did not watch, such as a cluster job, has finished. A running run selected in
+  the window switches to its result and report within 15 seconds of finishing.
+  The run list fits its runs and scrolls past 10.
 * Run files go in the project's `.runs/` folder: job scripts, scheduler logs,
   Nextflow logs, and reports. Runs from `run_assembly()` get their own log
   there too.
