@@ -687,3 +687,23 @@ test_that("the chimera panel reads the review layer on Annotation Review and the
     expect_false(drew)
   })
 })
+
+test_that("clicking a chimera table row zooms the open modal's viewer", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+  msgs <- list()
+  local_mocked_bindings(seqview_goto = function(session, canvas, pos1, pos2)
+    msgs[[length(msgs) + 1]] <<- list(canvas, pos1, pos2))
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Annotate")
+    sel_unit(list(ID = "S1", path = 1L, scaffold = 1L))
+    session$flushReact()
+    session$setInputs(chim_zoom = list(pos1 = 100, pos2 = 300, nonce = 1))
+    session$setInputs(mode = "Assemble")
+    session$setInputs(chim_zoom = list(pos1 = 2625, pos2 = 2625, nonce = 2))
+  })
+  expect_equal(msgs[[1]], list("seqv_ann-canvas", 100, 300))
+  expect_equal(msgs[[2]], list("seqv_asm-canvas", 2625, 2625))
+  expect_match(as.character(RiboPilot:::rt_zoom_row("start", "stop")), "chim_zoom", fixed = TRUE)
+})

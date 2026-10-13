@@ -156,17 +156,15 @@ chimera_panel <- function() {
       "classes equally and do not count."),
     tags$p(class = "mp-help-text", style = "margin:2px 0 4px;", textOutput("chimera_db_source", inline = TRUE)),
     plotOutput("chimera_plot", height = "300px"),
+    tags$p(class = "mp-help-text", style = "margin:2px 0 4px;",
+      "Click a row to zoom the viewer to it; expand a row for its windows."),
     reactable::reactableOutput("chimera_segments"),
     div(class = "rp-sub-list",
       htmltools::tagAppendAttributes(class = "rp-subsection", rp_details("Possible junctions",
         tags$p(class = "mp-help-text", style = "margin:2px 0 4px;",
           "Where the checks think two pieces may be joined, which checks point there, and why. ",
-          "Positions match the plot above."),
-        uiOutput("chimera_junctions"))),
-      htmltools::tagAppendAttributes(class = "rp-subsection", rp_details("All windows",
-        tags$p(class = "mp-help-text", style = "margin:2px 0 4px;",
-          "One row per window: its best BLAST hit in the bundled rDNA database, the hit identity, and the read evidence over that stretch."),
-        reactable::reactableOutput("chimera_windows"), open = FALSE))))
+          "Click a row to zoom the viewer to it."),
+        uiOutput("chimera_junctions")))))
 }
 
 #' Assemble details modal: contigs, their evidence, and keep/drop

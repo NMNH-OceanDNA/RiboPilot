@@ -148,3 +148,8 @@ seqview_chimera <- function(con, id, path, scaffold, review, len) {
     if (nrow(samp)) samp$lineage_taxids[1] else NA_character_, len)
   Filter(length, o)
 }
+
+#' Zoom one viewer to a range
+#' @noRd
+seqview_goto <- function(session, canvas, pos1, pos2)
+  session$sendCustomMessage("rpseq_goto", list(id = canvas, pos1 = as.integer(pos1), pos2 = as.integer(pos2)))

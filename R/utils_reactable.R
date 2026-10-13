@@ -760,6 +760,14 @@ rt_examine_row <- function(InputId) {
     }", InputId) |> htmlwidgets::JS()
 }
 
+#' Row click that zooms the open modal's sequence viewer to from..to
+#' @noRd
+rt_zoom_row <- function(from, to) htmlwidgets::JS(sprintf(
+  "function(rowInfo, column) {
+    if (column.id === '.details') return;
+    Shiny.setInputValue('chim_zoom', {pos1: rowInfo.row['%s'], pos2: rowInfo.row['%s'], nonce: Date.now()}, {priority: 'event'});
+  }", from, to))
+
 #' Row style for the contig table: grey when dropped, marked when examined
 #'
 #' The examined unit is read from the table's `meta`, which
