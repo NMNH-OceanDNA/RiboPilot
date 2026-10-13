@@ -140,12 +140,15 @@
   Viewer.prototype.originOn = function () { return this.showOrigin && !!this.origin; };
   Viewer.prototype.ntOn = function () { return this.showNt && this.ppb >= NT_BAR; };
   Viewer.prototype.topH = function () {
-    return RULER_H + PAD + (this.covOn() ? COV_H + GAP : 0) + (this.clipOn() ? CLIP_H + GAP : 0)
-      + (this.identOn() ? IDENT_H + GAP : 0) + (this.originOn() ? ORIGIN_H + GAP : 0);
+    return RULER_H + PAD + (this.covOn() ? COV_H + GAP : 0) + (this.clipOn() ? CLIP_H + GAP : 0);
   };
   Viewer.prototype.laneY = function (lane) { return this.topH() + lane * LANE_H; };
+  // chimera tracks sit under the genes and bases
+  Viewer.prototype.chimY = function () {
+    return this.topH() + this.nLanes * LANE_H + PAD + (this.ntOn() ? NT_H + PAD : 0) + GAP;
+  };
   Viewer.prototype.height = function () {
-    return this.topH() + this.nLanes * LANE_H + PAD + (this.ntOn() ? NT_H : 0) + PAD;
+    return this.chimY() + (this.identOn() ? IDENT_H + GAP : 0) + (this.originOn() ? ORIGIN_H + GAP : 0);
   };
   Viewer.prototype.draw = function () {
     if (!this.len || !this.canvas.offsetParent) return;
@@ -161,10 +164,12 @@
     var y = RULER_H + PAD;
     if (this.covOn()) { this.drawTrack(c, W, y, COV_H, this.depth, this.depthMax, 'depth', false); y += COV_H + GAP; }
     if (this.clipOn()) { this.drawTrack(c, W, y, CLIP_H, this.clip, 1, 'clipped', true); y += CLIP_H + GAP; }
-    if (this.identOn()) { this.drawTrack(c, W, y, IDENT_H, this.ident, 100, 'BLAST %id', false, { vmin: 70, fill: cssVar('--rp-ident', '#9e9e9e'), stroke: cssVar('--rp-ident-stroke', '#4d4d4d') }); y += IDENT_H + GAP; }
-    if (this.originOn()) { this.drawOrigin(c, W, y); y += ORIGIN_H + GAP; }
     this.drawLanes(c);
     if (this.ntOn()) this.drawNt(c, this.topH() + this.nLanes * LANE_H + PAD);
+    y = this.chimY();
+    var self = this, segColor = function (pos) { var o = self.originAt(pos); return o ? o.color : '#9e9e9e'; };
+    if (this.identOn()) { this.drawTrack(c, W, y, IDENT_H, this.ident, 100, 'BLAST %id', false, { vmin: 70, colorAt: segColor, stroke: cssVar('--rp-ident-stroke', '#4d4d4d') }); y += IDENT_H + GAP; }
+    if (this.originOn()) { this.drawOrigin(c, W, y); y += ORIGIN_H + GAP; }
     this.drawJunctions(c, H);
   };
   Viewer.prototype.drawRuler = function (c) {
@@ -225,7 +230,7 @@
   // since separate 1 px bars leave seams on scaled displays.
   Viewer.prototype.drawTrack = function (c, W, y, h, vals, vmax, label, flag, opt) {
     opt = opt || {}; var vmin = opt.vmin || 0;
-    var base = flag ? '#a0a0a0' : opt.fill || cssVar('--mp-primary', '#337ab7'), red = '#e69f00', muted = cssVar('--mp-text-muted', '#6a6a6a');
+    var base = flag ? '#a0a0a0' : cssVar('--mp-primary', '#337ab7'), red = '#e69f00', muted = cssVar('--mp-text-muted', '#6a6a6a');
     var cut = this.clipFlag, cols = [];
     c.fillStyle = cssVar('--mp-surface-alt', '#f5f5f5'); c.fillRect(GUTTER, y, W - GUTTER, h);
     for (var px = GUTTER; px < W; px++) {
@@ -237,7 +242,7 @@
         if (v === null || d > v) v = d;
         if (d === 0) gap = true;
       }
-      cols.push(v === null ? null : { v: v, gap: gap });
+      cols.push(v === null ? null : { v: v, gap: gap, c: opt.colorAt ? opt.colorAt(a) : base });
     }
     // columns holding any uncovered base get a full-height red wash, so gaps
     // survive the per-column max when zoomed out
@@ -255,7 +260,8 @@
       if (stroke) { c.strokeStyle = stroke; c.lineWidth = 1; c.stroke(); }
     };
     if (!flag) area('rgba(217, 83, 79, 0.35)', function (o) { return o.gap; }, true);
-    area(base, function (o) { return o.v > vmin; }, false, opt.stroke);
+    var fills = cols.reduce(function (acc, o) { if (o && acc.indexOf(o.c) < 0) acc.push(o.c); return acc; }, []);
+    fills.forEach(function (f) { area(f, function (o) { return o.v > vmin && o.c === f; }, false, opt.stroke); });
     if (flag) area(red, function (o) { return o.v >= cut; }, false);
     c.strokeStyle = cssVar('--mp-border', '#ccc'); c.beginPath(); c.moveTo(GUTTER, y + h + 0.5); c.lineTo(W, y + h + 0.5); c.stroke();
     if (flag) { c.save(); c.strokeStyle = red; c.setLineDash([2, 3]); var fy = y + h - cut / vmax * h;

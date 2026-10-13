@@ -67,7 +67,7 @@ seqview_ui <- function(prefix, summary, open = TRUE, pick = TRUE) {
       sprintf("Clipped reads is the share of reads soft-clipped at each base (shown where depth is at least 10); bars turn orange at %d%%, the chimera check's cutoff.",
         round(100 * CHIMERA_CLIP_FRAC)),
       " BLAST origin colours each stretch by the class its BLAST windows match: grey is your lineage, white is no hit, ",
-      "other colours are foreign; a dashed line marks a possible junction. BLAST identity is the best hit's identity in each window. ",
+      "other colours are foreign; a dashed line marks a possible junction. BLAST identity is the best hit's identity in each window, coloured like the origin band. ",
       "Hover for the match."),
     div(class = "rp-seqview",
       tags$canvas(id = id("canvas"), class = "rp-seqview-canvas"),
