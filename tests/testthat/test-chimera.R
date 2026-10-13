@@ -432,31 +432,6 @@ test_that("scaffold column help and badge exist", {
   expect_match(as.character(js), "severe")
 })
 
-test_that("plot_chimera builds from stored windows and segments", {
-  con <- chimera_test_con()
-  db <- DBI::dbGetInfo(con)$dbname
-  DBI::dbExecute(con, "INSERT INTO annotations (ID, path, scaffold, element, start, stop) VALUES ('S1',1,1,'18S',1,1800)")
-  DBI::dbExecute(con, "INSERT INTO chimera (ID, path, scaffold, score, label, junctions, segments) VALUES ('S1',1,1,0.9,'severe','2375',
-    '[{\"start\":1,\"stop\":2500,\"taxon\":\"Actinopterygii\",\"rank\":\"class\",\"species\":\"Salmo salar\",\"pident\":99,\"n_windows\":10},
-      {\"start\":2251,\"stop\":4500,\"taxon\":\"Eurotiomycetes\",\"rank\":\"class\",\"species\":\"Penicillium sp.\",\"pident\":97,\"n_windows\":9}]')")
-  DBI::dbExecute(con, "INSERT INTO chimera_windows (ID, path, scaffold, start, stop, pident, lineage) VALUES ('S1',1,1,1,500,99,'a;b;Actinopterygii'), ('S1',1,1,2251,2750,97,'f;a;Eurotiomycetes')")
-  DBI::dbDisconnect(con)
-  withr::local_options(list(ribopilot.db = db))
-  g <- RiboPilot:::plot_chimera("S1", 1L, 1L, db = db)
-  expect_s3_class(g, "ggplot")
-  expect_true(any(vapply(g$layers, function(l) inherits(l$geom, "GeomRect"), logical(1))))
-})
-
-test_that("plot_chimera with NULL junctions/segments has no junction line", {
-  con <- chimera_test_con()
-  db <- DBI::dbGetInfo(con)$dbname
-  DBI::dbExecute(con, "INSERT INTO chimera (ID, path, scaffold, score, label) VALUES ('S1',1,1,0.0,'clean')")
-  DBI::dbDisconnect(con)
-  g <- RiboPilot:::plot_chimera("S1", 1L, 1L, db = db)
-  expect_s3_class(g, "ggplot")
-  expect_false(any(vapply(g$layers, function(l) inherits(l$geom, "GeomVline"), logical(1))))
-})
-
 test_that("synthetic fixtures get the expected label and a junction within tolerance", {
   skip_if_not_installed("withr")
   skip_if(!nzchar(Sys.which("blastn")) || !nzchar(Sys.which("makeblastdb")), "blast not installed")
@@ -491,14 +466,21 @@ test_that("chimera table column help covers every displayed column", {
   expect_true(all(nzchar(unlist(h))))
 })
 
-test_that("the chimera panel opens with the unit's own level and reason", {
-  expect_match(as.character(RiboPilot:::chimera_panel()), "chimera_result", fixed = TRUE)
+test_that("the chimera panel shows the level and the reason in the open, and not run before a recheck", {
+  panel <- as.character(RiboPilot:::chimera_panel())
+  expect_match(panel, "chimera_result", fixed = TRUE)
+  expect_false(grepl("chimera_plot", panel, fixed = TRUE))
   x <- as.character(RiboPilot:::chimera_result_text("minor", "18S resolves to Chordata: agree only to phylum"))
   expect_match(x, '<span class="mp-pill mp-pill-warning">minor</span>', fixed = TRUE)
-  expect_match(x, 'title="18S resolves to Chordata: agree only to phylum"', fixed = TRUE)
+  expect_match(x, "agree only to phylum", fixed = TRUE)
+  expect_false(grepl("title=", x, fixed = TRUE))
   x <- as.character(RiboPilot:::chimera_result_text("clean", NA))
   expect_match(x, '<span class="mp-pill mp-pill-success">clean</span>', fixed = TRUE)
-  expect_false(grepl("title=", x, fixed = TRUE))
+  x <- as.character(RiboPilot:::chimera_result_text("severe", "1-750 nohit (NA, NA%); 751-900 Actinopteri (Mullidae, 99.1%)"))
+  expect_match(x, "1-750 nohit; 751-900", fixed = TRUE)
+  x <- as.character(RiboPilot:::chimera_result_text(NA, NA, state = "not run"))
+  expect_match(x, "not run", fixed = TRUE)
+  expect_match(x, "press Update", fixed = TRUE)
 })
 
 test_that("the junction table names the checks behind each junction and why", {
@@ -589,55 +571,6 @@ test_that("chimera_unit(review = TRUE) scores the copy and writes only its mirro
   expect_equal(DBI::dbGetQuery(con, "SELECT start, stop, clip_frac FROM review_chimera_windows ORDER BY start"), w)
 })
 
-test_that("plot_chimera shows the copy on Annotation Review once its checks are done, and the original on the Assemble step", {
-  con <- chimera_test_con()
-  on.exit(DBI::dbDisconnect(con))
-  db <- DBI::dbGetInfo(con)$dbname
-  sq <- withr::with_seed(1, paste(sample(c("A", "C", "G", "T"), 4500, TRUE), collapse = ""))
-  DBI::dbExecute(con, "UPDATE assemble SET assemble_lock = 1")
-  DBI::dbExecute(con, "INSERT INTO assemblies (ID, path, scaffold, sequence, length) VALUES ('S1',1,1,?,4500)", params = list(sq))
-  DBI::dbExecute(con, "UPDATE annotate SET annotate_switch = 2, n_features = 1, itsx_warnings = NULL")
-  DBI::dbExecute(con, "INSERT INTO annotations (ID, path, scaffold, element, start, stop, strand) VALUES ('S1',1,1,'18S',1001,2800,'+')")
-  DBI::dbExecute(con, "INSERT INTO chimera (ID, path, scaffold, score, label, junctions) VALUES ('S1',1,1,0.9,'severe','3500')")
-  DBI::dbExecute(con, "INSERT INTO chimera_windows (ID, path, scaffold, start, stop, pident) VALUES ('S1',1,1,1,500,99), ('S1',1,1,3001,3500,97)")
-  draw <- function(review) {
-    g <- RiboPilot:::plot_chimera("S1", 1L, 1L, db = db, review = review)
-    list(b = ggplot2::ggplot_build(g), geoms = vapply(g$layers, function(l) class(l$geom)[1], ""))
-  }
-  layer <- function(d, geom) d$b$data[d$geoms == geom]
-  note <- function(d) unlist(lapply(layer(d, "GeomText"), `[[`, "label"))
-  shows <- function(d, xmax, gene, junc, nwin) {
-    expect_equal(d$b$layout$panel_params[[1]]$x.range, c(0, xmax))
-    r <- layer(d, "GeomRect")[[1]]
-    expect_equal(c(r$xmin, r$xmax), gene)
-    expect_equal(unique(unlist(lapply(layer(d, "GeomVline"), `[[`, "xintercept"))), junc)
-    expect_equal(nrow(layer(d, "GeomSegment")[[1]]), nwin)
-  }
-  waiting <- "Not run yet. Press Update."
-
-  # no copy: the original counts as done once its ITSx value is stored
-  expect_equal(note(draw(TRUE)), waiting)
-  DBI::dbExecute(con, "UPDATE annotate SET annotate_switch = 1")
-  expect_equal(note(draw(TRUE)), "Waiting for the Assemble step's Update.")
-  DBI::dbExecute(con, "UPDATE annotate SET annotate_switch = 2")
-  DBI::dbExecute(con, "UPDATE annotate SET itsx_warnings = ''")
-  shows(draw(TRUE), 4500, c(1001, 2800), 3500, 2L)
-
-  # a trimmed copy waits for its recheck, even when a discarded run left rows behind
-  RiboPilot:::review_trim(con, "S1", 1L, 1L, 501, 3000)
-  expect_equal(note(draw(TRUE)), waiting)
-  DBI::dbExecute(con, "INSERT INTO review_chimera (ID, path, scaffold, score, label, junctions) VALUES ('S1',1,1,0.4,'minor','1200')")
-  DBI::dbExecute(con, "INSERT INTO review_chimera_windows (ID, path, scaffold, start, stop, pident) VALUES ('S1',1,1,1,500,98)")
-  expect_equal(note(draw(TRUE)), waiting)
-  DBI::dbExecute(con, "UPDATE review_units SET check_switch = 2")
-  shows(draw(TRUE), 2500, c(501, 2300), 1200, 1L)
-
-  # the Assemble step keeps the original check, with no trim marks
-  shows(draw(FALSE), 4500, c(1001, 2800), 3500, 2L)
-  expect_false("trim" %in% note(draw(FALSE)))
-  expect_false(exists("chimera_original", envir = asNamespace("RiboPilot"), inherits = FALSE))
-})
-
 test_that("the chimera panel reads the review layer on Annotation Review and the originals on the Assemble step", {
   skip_if_not_installed("withr")
   dir <- mk_app_project()
@@ -651,29 +584,21 @@ test_that("the chimera panel reads the review layer on Annotation Review and the
   RiboPilot:::review_invalidate(con, "S1", 1L, 1L)
   DBI::dbExecute(con, "INSERT INTO review_chimera (ID, path, scaffold, label, reason, junctions, db_source)
     VALUES ('S1',1,1,'minor','copy reason','1200','/x/copy.fa')")
-  drew <- NULL
-  local_mocked_bindings(plot_chimera = function(id, path = 1L, scaffold = 1L, db = NULL, review = FALSE) {
-    drew <<- review
-    ggplot2::ggplot()
-  })
 
   shiny::testServer(RiboPilot:::app_server, {
     session$setInputs(mode = "Annotate")
     sel_unit(list(ID = "S1", path = 1L, scaffold = 1L))
     session$flushReact()
     # not run: the row a discarded recheck left stays hidden
-    expect_error(output$chimera_result)
-    expect_error(output$chimera_db_source)
+    expect_match(output$chimera_result$html, "not run", fixed = TRUE)
+    expect_false(grepl("copy reason", output$chimera_result$html, fixed = TRUE))
 
     DBI::dbExecute(con, "UPDATE review_units SET check_switch = 2")
     refresh(refresh() + 1)
     session$flushReact()
     expect_match(output$chimera_result$html, "minor", fixed = TRUE)
     expect_match(output$chimera_result$html, "copy reason", fixed = TRUE)
-    expect_equal(output$chimera_db_source, "windows searched against: copy.fa")
     expect_match(output$chimera_junctions$html, '"position":[1200]', fixed = TRUE)
-    output$chimera_plot
-    expect_true(drew)
 
     session$setInputs(mode = "Assemble")
     sel_id("S1")
@@ -681,9 +606,52 @@ test_that("the chimera panel reads the review layer on Annotation Review and the
     session$setInputs(scaf_examine = "S1|1|1")
     session$flushReact()
     expect_match(output$chimera_result$html, "severe", fixed = TRUE)
-    expect_equal(output$chimera_db_source, "windows searched against: orig.fa")
     expect_match(output$chimera_junctions$html, '"position":[3500]', fixed = TRUE)
-    output$chimera_plot
-    expect_false(drew)
   })
+})
+
+test_that("clicking a chimera table row zooms the open modal's viewer", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+  msgs <- list()
+  local_mocked_bindings(seqview_goto = function(session, canvas, pos1, pos2)
+    msgs[[length(msgs) + 1]] <<- list(canvas, pos1, pos2))
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Annotate")
+    sel_unit(list(ID = "S1", path = 1L, scaffold = 1L))
+    session$flushReact()
+    session$setInputs(chim_zoom = list(pos1 = 100, pos2 = 300, nonce = 1))
+    session$setInputs(mode = "Assemble")
+    session$setInputs(chim_zoom = list(pos1 = 2625, pos2 = 2625, nonce = 2))
+  })
+  expect_equal(msgs[[1]], list("seqv_ann-canvas", 100, 300))
+  expect_equal(msgs[[2]], list("seqv_asm-canvas", 2625, 2625))
+  expect_match(as.character(RiboPilot:::rt_zoom_row("start", "stop")), "chim_zoom", fixed = TRUE)
+})
+
+test_that("the reason text leaves out the empty match of a no-hit segment", {
+  seg <- data.frame(start = c(1, 501), stop = c(750, 2500), taxon = c("nohit", "Actinopterygii"),
+    species = c(NA, "Salmo salar"), pident = c(NA, 99), stringsAsFactors = FALSE)
+  r <- RiboPilot:::chimera_reason(seg, list(), integer(0))
+  expect_equal(r, "1-750 nohit; 501-2500 Actinopterygii (Salmo salar, 99.0%); no junction")
+})
+
+test_that("examining a flagged contig opens its viewer section", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+  con <- RiboPilot:::app_con()
+  DBI::dbExecute(con, "INSERT INTO chimera (ID, path, scaffold, label) VALUES ('S1',1,1,'severe')")
+  DBI::dbDisconnect(con)
+  js <- character(0)
+  local_mocked_bindings(runjs = function(code) js <<- c(js, code), .package = "shinyjs")
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    sel_id("S1")
+    session$flushReact()
+    session$setInputs(scaf_examine = "S1|1|1")
+    session$flushReact()
+  })
+  expect_true(any(grepl("seqv_asm-canvas", js, fixed = TRUE) & grepl("open = true", js, fixed = TRUE)))
 })

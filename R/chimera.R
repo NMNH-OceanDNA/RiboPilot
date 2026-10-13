@@ -399,8 +399,11 @@ chimera_junction_table <- function(junctions, channels) {
 
 #' @noRd
 chimera_reason <- function(segments, channels, junctions) {
-  segtxt <- if (!is.null(segments) && nrow(segments)) paste(sprintf("%d-%d %s (%s, %.1f%%)",
-    segments$start, segments$stop, segments$taxon, segments$species %||% "", segments$pident), collapse = "; ")
+  segtxt <- if (!is.null(segments) && nrow(segments)) paste(mapply(function(a, b, t, sp, p) {
+    det <- c(if (!is.na(sp) && nzchar(sp)) sp, if (!is.na(p)) sprintf("%.1f%%", p))
+    paste0(a, "-", b, " ", t, if (length(det)) paste0(" (", paste(det, collapse = ", "), ")"))
+  }, segments$start, segments$stop, segments$taxon, segments$species %||% rep(NA_character_, nrow(segments)),
+    segments$pident), collapse = "; ")
     else "no window segments"
   jtxt <- if (length(junctions)) {
     who <- vapply(junctions, function(j) paste(names(channels)[vapply(channels, function(x)

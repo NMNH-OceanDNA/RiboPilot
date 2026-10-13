@@ -48,6 +48,7 @@ the **Reference alignment**, **Curation warnings**, the
 Notes** column once you close the window.
 
 **Sequence and read coverage** draws the contig as an interactive map: read depth,
+the chimera check's origin track and window identity,
 the percentage of clipped reads, the features as arrows (dashed ends are
 partial annotations), and the base pairs once you zoom in. Scroll to zoom, drag to pan, or type a
 position. Clicking a gene makes it the active feature that will show up in the **Edit

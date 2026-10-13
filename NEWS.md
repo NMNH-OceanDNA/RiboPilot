@@ -45,6 +45,20 @@
 * A `[modifier={field}]` with no value for a sample is left out of that
   record's FASTA header instead of being written empty.
 
+## Chimera check in the sequence viewer
+
+* The chimera evidence now lives in the sequence viewer of the Assemble and
+  Annotation Review windows: an **Origin** track colours each stretch by the
+  class its BLAST windows match (grey is the sample's own lineage), a **Window
+  identity** track shows the hit identity, and dashed lines mark possible
+  junctions. Hover for the match. The static chimera plot is gone.
+* The Chimera check panel shows the reason under the call instead of on hover,
+  says "not run" after a trim, and lists windows under their segment. Clicking
+  a segment, window, or junction row zooms the viewer to it. On the Assemble
+  window, a flagged contig opens the viewer by itself.
+* The lineage palette is down to three colours that stay apart under red-green
+  colour blindness.
+
 ## Quality checks
 
 * A Checks column on the Assemble and Annotation Review tables sums up each

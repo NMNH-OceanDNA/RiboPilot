@@ -2256,6 +2256,11 @@ app_server <- function(input, output, session) {
   examine_unit <- function(path, scaffold) {
     sel_hit_unit(list(path = path, scaffold = scaffold))
     shinyjs::runjs("document.querySelectorAll('#asm_unit_panels details').forEach(function(d){ d.open = false; });")
+    # a flagged contig opens the viewer so its origin track is in sight
+    lab <- app_query("SELECT label FROM chimera WHERE ID = ? AND path = ? AND scaffold = ?",
+      list(sel_id(), path, scaffold))$label
+    if (length(lab) && !lab[1] %in% c(NA, "clean")) shinyjs::runjs(
+      "var c = document.getElementById('seqv_asm-canvas'), d = c && c.closest('details'); if (d) d.open = true;")
     reactable::updateReactable("assemble_scaffolds",
       meta = list(examined = paste(sel_id(), path, scaffold, sep = "|")))
   }
@@ -2690,6 +2695,11 @@ app_server <- function(input, output, session) {
     app_query(sprintf("SELECT %s FROM %s WHERE ID = ? AND path = ? AND scaffold = ?%s", cols,
       if (u$review) paste0("review_", tbl, "_v") else tbl, tail), list(u$ID, u$path, u$scaffold))
   }
+  observeEvent(input$chim_zoom, {
+    z <- input$chim_zoom
+    seqview_goto(session, if (identical(input$mode, "Annotate")) "seqv_ann-canvas" else "seqv_asm-canvas",
+      z$pos1, z$pos2)
+  })
   hit_unit <- reactive({
     if ((input$mode %||% "Assemble") == "Annotate") {
       u <- sel_unit(); req(u); return(u)
@@ -2697,19 +2707,14 @@ app_server <- function(input, output, session) {
     h <- sel_hit_unit(); id <- sel_id(); req(!is.null(h), id)
     list(ID = id, path = h$path, scaffold = h$scaffold)
   })
-  output$chimera_plot <- renderPlot({
-    edit_tick(); refresh(); u <- hit_unit()
-    grid::grid.draw(fixed_gutter(plot_chimera(u$ID, u$path, u$scaffold, review = identical(input$mode, "Annotate"))))
-  }, height = 296)
   output$chimera_result <- renderUI({
-    ch <- chim_query("label, reason", "chimera")
+    edit_tick(); refresh(); u <- hit_unit()
+    review <- identical(input$mode, "Annotate")
+    if (review && !identical(sel_check_state(), "done")) return(chimera_result_text(NA, NA, state = sel_check_state()))
+    ch <- app_query(sprintf("SELECT label, reason FROM %s WHERE ID = ? AND path = ? AND scaffold = ?",
+      if (review) "review_chimera_v" else "chimera"), list(u$ID, u$path, u$scaffold))
     req(nrow(ch) == 1, !is.na(ch$label[1]))
     chimera_result_text(ch$label[1], ch$reason[1])
-  })
-  output$chimera_db_source <- renderText({
-    ch <- chim_query("db_source", "chimera")
-    req(nrow(ch) == 1, !is.na(ch$db_source[1]))
-    paste("windows searched against:", paste(basename(strsplit(ch$db_source[1], " ", fixed = TRUE)[[1]]), collapse = ", "))
   })
   output$chimera_segments <- reactable::renderReactable({
     u <- hit_unit()
@@ -2719,9 +2724,17 @@ app_server <- function(input, output, session) {
     samp <- app_query("SELECT lineage_taxids FROM samples WHERE ID = ?", list(u$ID))
     cols <- chimera_seg_colors(s, if (nrow(samp)) samp$lineage_taxids[1] else NA_character_)
     s <- s[, intersect(c("start", "stop", "taxon", "species", "pident", "n_windows"), names(s))]
-    reactable::reactable(s, compact = TRUE, pagination = FALSE,
+    w <- chim_query("start, stop, species, lineage, pident, bitscore, rank_distance, depth_median, clip_frac",
+      "chimera_windows", " ORDER BY start")
+    # each window belongs to the segment whose start is the last one at or before its own
+    w$seg <- findInterval(w$start, s$start)
+    reactable::reactable(s, compact = TRUE, pagination = FALSE, onClick = rt_zoom_row("start", "stop"),
       defaultColDef = reactable::colDef(minWidth = 70),
       rowStyle = function(index) list(background = grDevices::adjustcolor(cols[index], alpha.f = CHIMERA_SEG_ALPHA)),
+      details = function(index) {
+        ww <- w[w$seg == index, , drop = FALSE]
+        if (nrow(ww)) chimera_windows_tbl(ww)
+      },
       columns = list(
         start = reactable::colDef(width = 80, html = TRUE, header = rt_help_header("Start", CHIMERA_COL_HELP$start)),
         stop = reactable::colDef(width = 80, html = TRUE, header = rt_help_header("Stop", CHIMERA_COL_HELP$stop)),
@@ -2787,33 +2800,22 @@ app_server <- function(input, output, session) {
     req(nrow(ch) == 1)
     j <- chimera_junction_table(ch$junctions[1], ch$channels[1])
     if (!nrow(j)) return(tags$p(class = "mp-help-text", "No possible junction was found."))
-    reactable::reactable(j, compact = TRUE, pagination = FALSE, wrap = TRUE,
+    reactable::reactable(j, compact = TRUE, pagination = FALSE, wrap = TRUE, onClick = rt_zoom_row("position", "position"),
       columns = list(
         position = reactable::colDef(width = 90, html = TRUE, header = rt_help_header("Position", CHIMERA_COL_HELP$position)),
         checks = reactable::colDef(width = 130, html = TRUE, header = rt_help_header("Checks", CHIMERA_COL_HELP$checks)),
         why = reactable::colDef(minWidth = 300, html = TRUE, header = rt_help_header("Why", CHIMERA_COL_HELP$why))))
   })
-  output$chimera_windows <- reactable::renderReactable({
-    u <- hit_unit()
-    w <- chim_query("start, stop, species, lineage, pident, bitscore, rank_distance, depth_median, clip_frac",
-      "chimera_windows", " ORDER BY start")
-    req(nrow(w) > 0)
+  # One segment's windows, nested under its row in the segments table
+  chimera_windows_tbl <- function(w) {
     w$lineage_short <- vapply(w$lineage, function(l) {
       if (is.na(l)) return(NA_character_)
       p <- strsplit(l, ";", fixed = TRUE)[[1]]; p <- p[nzchar(p)]
       paste(utils::tail(p, 3), collapse = " > ")
     }, character(1), USE.NAMES = FALSE)
     w <- w[, c("start", "stop", "species", "lineage_short", "pident", "bitscore", "rank_distance", "depth_median", "clip_frac", "lineage")]
-    # each window belongs to the segment whose start is the last one at or before its own
-    ch <- chim_query("segments", "chimera")
-    samp <- app_query("SELECT lineage_taxids FROM samples WHERE ID = ?", list(u$ID))
-    cols <- if (nrow(ch) == 1 && !is.na(ch$segments[1])) {
-      s <- jsonlite::fromJSON(ch$segments[1])
-      chimera_seg_colors(s, if (nrow(samp)) samp$lineage_taxids[1] else NA_character_)[findInterval(w$start, s$start)]
-    } else rep("#FFFFFF", nrow(w))
-    reactable::reactable(w, compact = TRUE, pagination = TRUE, defaultPageSize = 15,
+    reactable::reactable(w, compact = TRUE, pagination = FALSE, onClick = rt_zoom_row("start", "stop"),
       defaultColDef = reactable::colDef(na = "", minWidth = 70, headerStyle = list(whiteSpace = "nowrap")),
-      rowStyle = function(index) list(background = grDevices::adjustcolor(cols[index], alpha.f = CHIMERA_SEG_ALPHA)),
       columns = list(
         start = reactable::colDef(width = 75, html = TRUE, header = rt_help_header("Start", CHIMERA_COL_HELP$start)),
         stop = reactable::colDef(width = 75, html = TRUE, header = rt_help_header("Stop", CHIMERA_COL_HELP$stop)),
@@ -2830,7 +2832,7 @@ app_server <- function(input, output, session) {
           header = rt_help_header("Depth", CHIMERA_COL_HELP$depth_median)),
         clip_frac = reactable::colDef(width = 90, format = reactable::colFormat(digits = 2), html = TRUE,
           header = rt_help_header("Clip frac", CHIMERA_COL_HELP$clip_frac))))
-  })
+  }
 
   # Annotate modal header badges: reviewed / problem / partial (live via refresh()).
   # Header flags for the open annotate unit: passive pills mirrored by the

@@ -98,10 +98,14 @@ The BLAST evidence shows that the best overall match is a *Penicillium* mold:
 
 ![CHIM01's BLAST evidence, with its best match a Penicillium mold](figures/get-started/assemble-details-chim01.png)
 
-But the the **Chimera check** panel shows more detail. You can see where the
-fish sequence was spliced with the mold sequence, near 2,625 bp:
+The **Sequence and read coverage** viewer shows where. Its **Origin** track
+colours each stretch of the contig by the class its BLAST windows match (grey is
+the sample's own lineage), and a dashed red line marks the join between the fish
+and the mold, near 2,625 bp. Hover over the track to read the match. The
+**Chimera check** panel below gives the call, the reason, and the segments;
+click a row to zoom the viewer to it.
 
-![Chimera check for CHIM01, with the join between the fish and the mold marked](figures/get-started/assemble-chimera-chim01.png)
+![CHIM01 in the sequence viewer, with the join between the fish and the mold marked](figures/get-started/assemble-chimera-chim01.png)
 
 RiboPilot proposes keep or drop for each contig (a process called triage), and
 never overwrites a call you made by hand. The **Triage** button runs the
