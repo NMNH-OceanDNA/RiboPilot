@@ -144,6 +144,12 @@
 * A locked unit is read only. Problematic is now Exclude from export. Lock &
   Close only locks; Mark Reviewed is separate. Only one assembly path per sample
   can be locked.
+* The Reference groups table's record count is now "# GenBank Hits", and a new
+  "# Database Sequences" column shows how many sequences a built database holds.
+  The build drops duplicate and short records, so it is usually much smaller.
+* After you change the reference folder, Propose groups points each group at
+  that folder's database, or marks it as needing one. Databases you picked
+  yourself from elsewhere are kept.
 
 ## Working at scale, reproducibility, and clusters
 
