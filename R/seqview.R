@@ -94,3 +94,31 @@ seqview_send <- function(session, canvas, input, id, path, scaffold, selected = 
   pl$id <- canvas; pl$input <- input; pl$unit <- sprintf("%s_p%s_s%s", id, path, scaffold)
   session$sendCustomMessage("rpseq", pl)
 }
+
+#' Chimera evidence for the viewer: de-overlapped origin segments, junctions,
+#' and per-base window identity. Pure.
+#' @noRd
+chimera_origin <- function(seg, win, junctions, label, channels, sample_lt, len) {
+  out <- list(origin = list(), junctions = list(), ident = NULL)
+  if (NROW(seg)) {
+    seg <- seg[order(seg$start), , drop = FALSE]
+    seg$col <- chimera_seg_colors(seg, sample_lt)
+    stop <- pmin(seg$stop, c(seg$start[-1] - 1L, Inf))
+    out$origin <- lapply(seq_len(nrow(seg)), function(i) list(
+      pos1 = as.integer(seg$start[i]), pos2 = as.integer(stop[i]), color = unname(seg$col[i]),
+      taxon = seg$taxon[i], species = seg$species[i] %|NA|% "", pident = seg$pident[i],
+      host = identical(unname(seg$col[i]), "#B3B3B3")))
+  }
+  if (NROW(win) && any(!is.na(win$pident))) {
+    id <- rep(NA_real_, len)
+    for (i in which(!is.na(win$pident))) {
+      r <- max(1L, win$start[i]):min(len, win$stop[i])
+      id[r] <- pmax(id[r], win$pident[i], na.rm = TRUE)
+    }
+    out$ident <- id
+  }
+  j <- chimera_junction_table(junctions, channels)
+  if (nrow(j)) out$junctions <- lapply(seq_len(nrow(j)), function(i) list(
+    pos = as.integer(j$position[i]), severe = identical(label, "severe"), checks = j$checks[i]))
+  out
+}

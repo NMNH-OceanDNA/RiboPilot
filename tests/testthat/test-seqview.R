@@ -132,3 +132,29 @@ test_that("each details window sends its own layer to the sequence viewer", {
   expect_true(sent[["seqv_ann-canvas"]])
   expect_false(sent[["seqv_asm-canvas"]])
 })
+
+test_that("chimera_origin de-overlaps segments for drawing and keeps the host grey", {
+  seg <- data.frame(start = c(1, 501, 2251), stop = c(750, 2500, 4500),
+    taxon = c("nohit", "Actinopterygii", "Eurotiomycetes"), species = c(NA, "Salmo salar", "Penicillium sp."),
+    pident = c(NA, 99, 97), n_windows = c(3, 10, 9),
+    lineage_taxids = c(NA, "33208;7711;7898", "4751;4890;147545"), stringsAsFactors = FALSE)
+  win <- data.frame(start = c(1, 2251), stop = c(500, 2750), pident = c(NA, 97))
+  o <- RiboPilot:::chimera_origin(seg, win, "2375", "severe", NA, "33208;7711;7898", 4500L)
+  expect_equal(vapply(o$origin, `[[`, 0, "pos2"), c(500, 2250, 4500))
+  expect_true(o$origin[[2]]$host); expect_false(o$origin[[3]]$host)
+  expect_equal(o$origin[[2]]$color, "#B3B3B3")
+  expect_equal(o$origin[[1]]$color, "#FFFFFF")
+  expect_equal(o$origin[[3]]$color, RiboPilot:::CHIMERA_LINEAGE_COLORS[1])
+  expect_equal(o$junctions[[1]]$pos, 2375L); expect_true(o$junctions[[1]]$severe)
+  expect_length(o$ident, 4500L)
+  expect_true(is.na(o$ident[1])); expect_equal(o$ident[2300], 97)
+})
+
+test_that("chimera_origin with no segments or junctions sends nothing", {
+  o <- RiboPilot:::chimera_origin(data.frame(), data.frame(), NA, "clean", NA, NA_character_, 100L)
+  expect_length(o$origin, 0L); expect_length(o$junctions, 0L); expect_null(o$ident)
+})
+
+test_that("the lineage palette has three colours", {
+  expect_equal(RiboPilot:::CHIMERA_LINEAGE_COLORS, c("#EEDD88", "#77AADD", "#AAAA00"))
+})

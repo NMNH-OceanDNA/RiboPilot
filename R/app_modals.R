@@ -1003,10 +1003,10 @@ plot_trim <- function(id, path = 1L, scaffold = 1L, from = NA, to = NA) {
 }
 
 #' Colorblind-safe fills for lineage segments, distinct from the feature colors
-#' (Tol light palette minus blue, orange, and pink). Shared by the chimera track
-#' and the segments table, which doubles as the legend.
+#' (Tol light yellow, blue, olive: apart under red-green colour blindness).
+#' Shared by the viewer's origin track and the segments table.
 #' @noRd
-CHIMERA_LINEAGE_COLORS <- c("#EEDD88", "#99DDFF", "#BBCC33", "#AAAA00", "#44BB99")
+CHIMERA_LINEAGE_COLORS <- c("#EEDD88", "#77AADD", "#AAAA00")
 CHIMERA_SEG_ALPHA <- 0.6  # shared by the lineage bar and the table row fills
 
 #' One fill per segment: white for no hit, grey for the sample's own lineage,
