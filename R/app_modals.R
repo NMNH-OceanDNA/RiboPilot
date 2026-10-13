@@ -198,7 +198,7 @@ assemble_modal <- function(id) {
           "Best matches among records whose title says nuclear rDNA:"),
         reactable::reactableOutput("unit_candidates")),
 
-      seqview_ui("seqv_asm", tagList("Sequence and read coverage for ", textOutput("hl_scaf_cov", inline = TRUE)),
+      seqview_ui("seqv_asm", tagList("Coverage and windowed BLAST for ", textOutput("hl_scaf_cov", inline = TRUE)),
         open = FALSE, pick = FALSE),
 
       rp_details(tagList("Chimera check for ", textOutput("hl_scaf_chim", inline = TRUE)), open = FALSE,
@@ -444,7 +444,7 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
     # Coverage, boundary editing, and the alignment are the review itself, so
     # they open by default; the Assemble window opens short because its panels
     # are per-scaffold evidence the reviewer picks through.
-    seqview_ui("seqv_ann", "Sequence and read coverage"),
+    seqview_ui("seqv_ann", "Coverage and windowed BLAST"),
 
     rp_details("Edit active feature boundaries", open = FALSE,
       # normalize control heights so the step box, +/- buttons, and Save/Reset

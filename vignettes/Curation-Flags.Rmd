@@ -27,7 +27,7 @@ You can find warnings in three places:
 
 | Warning | Source | What it means | What to do |
 |---|---|---|---|
-| `missing_18S`, `missing_5.8S`, `missing_28S` | contig | One of the three rRNA genes was not found. | Expected when the contig contains only part of the nuclear rDNA complex. Otherwise look at **Sequence and read coverage** for a break. |
+| `missing_18S`, `missing_5.8S`, `missing_28S` | contig | One of the three rRNA genes was not found. | Expected when the contig contains only part of the nuclear rDNA complex. Otherwise look at **Coverage and windowed BLAST** for a break. |
 | `missing_ITS1`, `missing_ITS2` | contig | A spacer was not found between its two genes. | Usually follows a missing gene. If both genes are there, check the boundaries in **Edit active feature boundaries**. |
 | `out_of_order` | contig | The features are not in the order 18S, ITS1, 5.8S, ITS2, 28S. | Possible assembly error. Export marks it `misassembly`. Check the feature map and read coverage before you submit it. |
 | `overlap` | contig and feature | A feature overlaps the one before it. | Move the boundary in **Edit active feature boundaries**. The export marks it `misassembly`. |
@@ -213,7 +213,7 @@ matches a ray-finned fish:
 
 ![Chimera check for a weaker signal that needs a look](figures/curation/chimera-mild.png)
 
-To judge a flag, open **Sequence and read coverage** with **BLAST origin** ticked:
+To judge a flag, open **Coverage and windowed BLAST** with **BLAST origin** ticked:
 each stretch is coloured by the class its BLAST windows match (grey is your
 lineage, white is no hit), **BLAST identity** shows the hit identity, and a
 dashed line marks a possible junction; hover for the match. The **Chimera

@@ -42,12 +42,12 @@ Click a contig's ID to see more details.
 ![A contig: its five features, read coverage, and gene map](figures/get-started/annotation-details.png)
 
 The window shows a table of annotated features (18S, ITS1,
-5.8S, ITS2, 28S), **Sequence and read coverage**, **Edit active feature boundaries**, 
+5.8S, ITS2, 28S), **Coverage and windowed BLAST**, **Edit active feature boundaries**, 
 the **Reference alignment**, **Curation warnings**, the
 **Chimera check**, **Feature BLAST**, and **Notes**. Your notes also show in the table's **User
 Notes** column once you close the window.
 
-**Sequence and read coverage** draws the contig as an interactive map: read depth,
+**Coverage and windowed BLAST** draws the contig as an interactive map: read depth,
 the chimera check's origin track and window identity,
 the percentage of clipped reads, the features as arrows (dashed ends are
 partial annotations), and the base pairs once you zoom in. Scroll to zoom, drag to pan, or type a
