@@ -46,3 +46,4 @@ out/
 update-version.log
 tests/testthat/testthat-problems.rds
 tests/testthat/_problems/
+__pycache__/
