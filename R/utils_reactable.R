@@ -250,6 +250,20 @@ rt_itsx_badge <- function() {
     }")
 }
 
+#' Feature BLAST warnings cell: red pill for off-target or non-rDNA, else amber
+#' @noRd
+rt_feature_blast_badge <- function() {
+  htmlwidgets::JS(
+    "function(cellInfo) {
+      var v = cellInfo.value
+      if (v === null || v === undefined || String(v) === '') return ''
+      v = String(v)
+      var esc = v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\"/g, '&quot;')
+      var tone = /off-target|non-rDNA/.test(v) ? 'danger' : 'warning'
+      return '<span title=\"' + esc + '\" class=\"mp-pill mp-pill-' + tone + '\">' + esc + '</span>'
+    }")
+}
+
 #' Show a check's state instead of its result while the checks are not done
 #'
 #' A row with a `check_state` ("not run", "running", "failed", "on hold", or
