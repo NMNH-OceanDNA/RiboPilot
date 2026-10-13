@@ -158,3 +158,35 @@ test_that("chimera_origin with no segments or junctions sends nothing", {
 test_that("the lineage palette has three colours", {
   expect_equal(RiboPilot:::CHIMERA_LINEAGE_COLORS, c("#EEDD88", "#77AADD", "#AAAA00"))
 })
+
+test_that("the viewer gets the chimera evidence of its own layer, and none before a recheck", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project()
+  withr::local_dir(dir)
+  con <- RiboPilot:::app_con()
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "UPDATE assemblies SET sequence = ?, length = 100 WHERE path = 1 AND scaffold = 1",
+    params = list(strrep("ACGTACGTAC", 10)))
+  DBI::dbExecute(con, "INSERT INTO chimera (ID, path, scaffold, label, junctions, segments) VALUES ('S1',1,1,'severe','50',
+    '[{\"start\":1,\"stop\":60,\"taxon\":\"Actinopterygii\",\"species\":\"Salmo salar\",\"pident\":99,\"n_windows\":3},
+      {\"start\":41,\"stop\":100,\"taxon\":\"Eurotiomycetes\",\"species\":\"Penicillium sp.\",\"pident\":97,\"n_windows\":3}]')")
+  DBI::dbExecute(con, "INSERT INTO chimera_windows (ID, path, scaffold, start, stop, pident) VALUES ('S1',1,1,1,20,99), ('S1',1,1,41,60,97)")
+  fixture_mark_done(con)
+  sent <- NULL
+  session <- list(sendCustomMessage = function(type, msg) sent <<- msg)
+
+  RiboPilot:::seqview_send(session, "seqv_asm-canvas", NULL, "S1", 1L, 1L)
+  expect_equal(vapply(sent$origin, `[[`, 0, "pos2"), c(40, 100))
+  expect_equal(sent$junctions[[1]]$pos, 50L)
+  expect_equal(sent$ident[50], 97)
+
+  RiboPilot:::review_trim(con, "S1", 1L, 1L, 21, 90)
+  RiboPilot:::seqview_send(session, "seqv_ann-canvas", NULL, "S1", 1L, 1L, review = TRUE)
+  expect_null(sent$origin); expect_null(sent$junctions); expect_null(sent$ident)
+
+  DBI::dbExecute(con, "INSERT INTO review_chimera (ID, path, scaffold, label, junctions) VALUES ('S1',1,1,'minor','30')")
+  DBI::dbExecute(con, "UPDATE review_units SET check_switch = 2")
+  RiboPilot:::seqview_send(session, "seqv_ann-canvas", NULL, "S1", 1L, 1L, review = TRUE)
+  expect_equal(sent$junctions[[1]]$pos, 30L); expect_false(sent$junctions[[1]]$severe)
+  expect_null(sent$origin)
+})

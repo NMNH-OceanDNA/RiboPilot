@@ -6,9 +6,10 @@
 #' unique within a unit.
 #' @param seq Unit sequence. @param feats Annotations (element, start, stop,
 #'   strand, partial_start, partial_stop). @param depths,clips Per-position
-#'   read depth and soft-clip counts, or NULL.
+#'   read depth and soft-clip counts, or NULL. @param chim [chimera_origin()]
+#'   keys to add, or NULL.
 #' @noRd
-seqview_payload <- function(seq, feats, depths = NULL, clips = NULL, selected = NULL) {
+seqview_payload <- function(seq, feats, depths = NULL, clips = NULL, selected = NULL, chim = NULL) {
   seq <- toupper(as.character(seq)[1] %|NA|% "")
   n <- nchar(seq)
   ok <- which(!is.na(feats$start) & !is.na(feats$stop))
@@ -31,6 +32,7 @@ seqview_payload <- function(seq, feats, depths = NULL, clips = NULL, selected = 
       if (any(!is.na(f))) out$clip <- f
     }
   }
+  out[names(chim)] <- chim
   out
 }
 
@@ -90,7 +92,8 @@ seqview_send <- function(session, canvas, input, id, path, scaffold, selected = 
     list(depths = if (nrow(cov)) parse_depths(cov$depths[1]),
       clips = if (nrow(cov) && !is.null(cov$clips)) parse_depths(cov$clips[1]))
   }
-  pl <- seqview_payload(s$sequence[1], f, tr$depths, tr$clips, selected)
+  chim <- seqview_chimera(con, id, path, scaffold, review, nchar(s$sequence[1]))
+  pl <- seqview_payload(s$sequence[1], f, tr$depths, tr$clips, selected, chim)
   pl$id <- canvas; pl$input <- input; pl$unit <- sprintf("%s_p%s_s%s", id, path, scaffold)
   session$sendCustomMessage("rpseq", pl)
 }
@@ -121,4 +124,23 @@ chimera_origin <- function(seg, win, junctions, label, channels, sample_lt, len)
   if (nrow(j)) out$junctions <- lapply(seq_len(nrow(j)), function(i) list(
     pos = as.integer(j$position[i]), severe = identical(label, "severe"), checks = j$checks[i]))
   out
+}
+
+#' Chimera evidence of one unit's layer; empty before the Annotation Review
+#' checks are done or without a chimera row
+#' @noRd
+seqview_chimera <- function(con, id, path, scaffold, review, len) {
+  if (review && !identical(review_unit_state(con,
+    data.frame(ID = id, path = as.integer(path), scaffold = as.integer(scaffold)))$state, "done")) return(list())
+  tbl <- function(x) if (review) paste0("review_", x, "_v") else x
+  q <- function(sql) DBI::dbGetQuery(con, paste(sql, "WHERE ID = ? AND path = ? AND scaffold = ?"),
+    params = list(id, path, scaffold))
+  ch <- q(paste("SELECT label, junctions, segments, channels FROM", tbl("chimera")))
+  if (!nrow(ch)) return(list())
+  win <- q(paste("SELECT start, stop, pident FROM", tbl("chimera_windows")))
+  seg <- if (!is.na(ch$segments[1])) jsonlite::fromJSON(ch$segments[1]) else data.frame()
+  samp <- DBI::dbGetQuery(con, "SELECT lineage_taxids FROM samples WHERE ID = ?", params = list(id))
+  o <- chimera_origin(seg, win, ch$junctions[1], ch$label[1], ch$channels[1],
+    if (nrow(samp)) samp$lineage_taxids[1] else NA_character_, len)
+  Filter(length, o)
 }
