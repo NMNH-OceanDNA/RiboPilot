@@ -201,7 +201,7 @@ assemble_modal <- function(id) {
       seqview_ui("seqv_asm", tagList("Coverage and windowed BLAST for ", textOutput("hl_scaf_cov", inline = TRUE)),
         open = FALSE, pick = FALSE),
 
-      rp_details(tagList("Chimera check for ", textOutput("hl_scaf_chim", inline = TRUE)), open = FALSE,
+      rp_details(tagList("Windowed BLAST details for ", textOutput("hl_scaf_chim", inline = TRUE)), open = FALSE,
         chimera_panel())),
 
     # Only a supplied assembly has these: the contigs the rDNA search found but
@@ -496,7 +496,7 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
       uiOutput("curate_notes"),
       reactable::reactableOutput("flag_tbl")),
 
-    rp_details("Chimera check", open = FALSE, chimera_panel()),
+    rp_details("Windowed BLAST details", open = FALSE, chimera_panel()),
 
     rp_details("Notes", open = FALSE,
       off(textAreaInput("annotate_notes", label = NULL, width = "100%",

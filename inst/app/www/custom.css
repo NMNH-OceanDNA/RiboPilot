@@ -785,6 +785,7 @@ details.rp-subsection > div { margin-left: 18px; }
   gap: var(--mp-space-2); margin: 0 0 var(--mp-space-2);
 }
 .rp-seqview-check { font-weight: normal; margin: 0; display: inline-flex; align-items: center; gap: 4px; }
+.rp-seqview-check input { margin: 0; }
 .rp-seqview {
   position: relative; border: 1px solid var(--mp-border);
   border-radius: var(--mp-radius); background: var(--mp-surface); overflow: hidden;
