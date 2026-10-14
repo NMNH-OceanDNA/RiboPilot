@@ -446,6 +446,8 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
     # are per-scaffold evidence the reviewer picks through.
     seqview_ui("seqv_ann", "Coverage and windowed BLAST"),
 
+    rp_details("Windowed BLAST details", open = FALSE, chimera_panel()),
+
     rp_details("Edit active feature boundaries", open = FALSE,
       # normalize control heights so the step box, +/- buttons, and Save/Reset
       # sit on one baseline
@@ -495,8 +497,6 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
     rp_details("Curation warnings", open = FALSE,
       uiOutput("curate_notes"),
       reactable::reactableOutput("flag_tbl")),
-
-    rp_details("Windowed BLAST details", open = FALSE, chimera_panel()),
 
     rp_details("Notes", open = FALSE,
       off(textAreaInput("annotate_notes", label = NULL, width = "100%",
