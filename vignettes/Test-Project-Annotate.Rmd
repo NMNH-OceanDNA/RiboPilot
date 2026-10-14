@@ -45,7 +45,8 @@ The window shows a table of annotated features (18S, ITS1,
 5.8S, ITS2, 28S), **Coverage and windowed BLAST**, **Edit active feature boundaries**, 
 the **Reference alignment**, **Curation warnings**, the
 **Chimera check**, **Feature BLAST**, and **Notes**. Your notes also show in the table's **User
-Notes** column once you close the window.
+Notes** column once you close the window. [Quality checks and flags](Curation-Flags.html)
+explains the chimera check and the feature BLAST, with CHIM01 as the example.
 
 **Coverage and windowed BLAST** draws the contig as an interactive map: read depth,
 the percentage of clipped reads, the features as arrows (dashed ends are
