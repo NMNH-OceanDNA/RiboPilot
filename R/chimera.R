@@ -221,11 +221,26 @@ chimera_segments <- function(windows, deciding = "class") {
   }))
 }
 
+#' Join same-class segments that no-hit or unresolved windows split
+#' @noRd
+chimera_join_segments <- function(s) {
+  if (nrow(s) < 2) return(s)
+  run <- cumsum(c(TRUE, s$taxon[-1] != s$taxon[-nrow(s)]))
+  do.call(rbind, lapply(split(seq_len(nrow(s)), run), function(ix) {
+    x <- s[ix[1], , drop = FALSE]
+    x$stop <- s$stop[ix[length(ix)]]
+    x$pident <- stats::weighted.mean(s$pident[ix], s$n_windows[ix], na.rm = TRUE)
+    x$n_windows <- sum(s$n_windows[ix])
+    x
+  }))
+}
+
 #' Channel 2: adjacent segments of comparable length in different classes
 #' @noRd
 chimera_channel_windows <- function(segments, identity_only = FALSE) {
   if (!nrow(segments)) return(chimera_unavailable())
-  s <- segments[segments$n_windows >= 2 & !segments$taxon %in% c("nohit", "unresolved"), , drop = FALSE]
+  s <- chimera_join_segments(
+    segments[segments$n_windows >= 2 & !segments$taxon %in% c("nohit", "unresolved"), , drop = FALSE])
   if (nrow(s) < 2) return(list(score = 0, junctions = integer(0),
     reason = sprintf("one lineage along the contig: %s", s$taxon[1] %|NA|% segments$taxon[1]),
     availability = "available"))
