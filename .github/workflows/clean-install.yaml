@@ -45,7 +45,7 @@ jobs:
           RP_REF: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           install.packages("remotes")
-          remotes::install_github("dmacguigan/RiboPilot", ref = Sys.getenv("RP_REF"))
+          remotes::install_github("NMNH-OceanDNA/RiboPilot", ref = Sys.getenv("RP_REF"))
           stopifnot(requireNamespace("RiboPilot", quietly = TRUE))
         shell: Rscript {0}
 

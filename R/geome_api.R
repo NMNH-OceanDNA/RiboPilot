@@ -17,7 +17,7 @@ geome_normalize_bcid <- function(x) {
 .geome_get <- function(path, query = list()) {
   req <- httr2::request(paste0(GEOME_API, "/", path)) |>
     httr2::req_url_query(!!!query) |>
-    httr2::req_user_agent("RiboPilot (https://github.com/dmacguigan/RiboPilot)") |>
+    httr2::req_user_agent("RiboPilot (https://github.com/NMNH-OceanDNA/RiboPilot)") |>
     httr2::req_timeout(30) |>
     httr2::req_retry(max_tries = 3,
                      is_transient = function(r) httr2::resp_status(r) %in% c(429, 502, 503, 504)) |>

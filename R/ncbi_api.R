@@ -33,7 +33,7 @@ ncbi_meta_key <- function() {
   q <- c(query, list(tool = "RiboPilot"), if (nzchar(key)) list(api_key = key))
   req <- httr2::request(paste0(NCBI_EUTILS, "/", endpoint, ".fcgi")) |>
     httr2::req_url_query(!!!q) |>
-    httr2::req_user_agent("RiboPilot (https://github.com/dmacguigan/RiboPilot)") |>
+    httr2::req_user_agent("RiboPilot (https://github.com/NMNH-OceanDNA/RiboPilot)") |>
     httr2::req_timeout(30) |>
     httr2::req_retry(max_tries = 3,
                      is_transient = function(r) httr2::resp_status(r) %in% c(429, 500, 502, 503, 504)) |>
