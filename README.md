@@ -9,6 +9,8 @@
 experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
 <!-- badges: end -->
 
+RiboPilot is a product of the [NMNH Ocean DNA initiative](https://naturalhistory.si.edu/initiatives/oceans/ocean-science-center/ocean-dna) and does not represent an official Smithsonian Institution position or product.
+
 RiboPilot assembles and annotates the **nuclear ribosomal DNA repeat
 (rDNA)** from genome skimming data, then helps you check and clean up
 the result and package it for submission to GenBank. If you already have
