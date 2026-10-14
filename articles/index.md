@@ -29,8 +29,6 @@
   flags](https://nmnh-oceandna.github.io/RiboPilot/articles/Curation-Flags.md):
 - [Preparing a GenBank
   submission](https://nmnh-oceandna.github.io/RiboPilot/articles/GenBank-Submission.md):
-- [Citing
-  RiboPilot](https://nmnh-oceandna.github.io/RiboPilot/articles/Citing.md):
 
 ### Metadata
 

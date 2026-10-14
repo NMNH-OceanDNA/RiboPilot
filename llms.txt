@@ -1,5 +1,8 @@
 # RiboPilot
 
+Please see the [documentation
+website](https://nmnh-oceandna.github.io/RiboPilot/) for more details.
+
 RiboPilot is a product of the [NMNH Ocean DNA
 initiative](https://naturalhistory.si.edu/initiatives/oceans/ocean-science-center/ocean-dna)
 and does not represent an official Smithsonian Institution position or
@@ -136,10 +139,7 @@ to walk through project initialization and the five steps in the app.
 
 # Citing RiboPilot
 
-Run `citation("RiboPilot")` in R. The [Citing
-RiboPilot](https://nmnh-oceandna.github.io/RiboPilot/articles/Citing.html)
-page lists the tools RiboPilot runs, with their versions and references,
-for your methods section.
+Run `citation("RiboPilot")` in R.
 
 # Getting help
 
@@ -243,8 +243,6 @@ Write GenBank submission files without the app.
   flags](https://nmnh-oceandna.github.io/RiboPilot/articles/Curation-Flags.md):
 - [Preparing a GenBank
   submission](https://nmnh-oceandna.github.io/RiboPilot/articles/GenBank-Submission.md):
-- [Citing
-  RiboPilot](https://nmnh-oceandna.github.io/RiboPilot/articles/Citing.md):
 
 ### Metadata
 
