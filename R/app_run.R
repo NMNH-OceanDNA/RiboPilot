@@ -212,8 +212,8 @@ run_app <- function(project = getwd(), host = NULL, port = NULL, launch.browser 
     stop("This project needs an update. Run backwards_compatibility(\"", project, "\") first.",
       call. = FALSE)
   }
-  check_nextflow_version("RiboPilot app")
   ensure_hydra_setup()
+  check_nextflow_version("RiboPilot app")
   if (is.null(launch.browser)) launch.browser <- interactive()
   if (is.null(headless)) headless <- detect_headless()
   headless <- isTRUE(headless)
