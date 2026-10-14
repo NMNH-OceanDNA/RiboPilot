@@ -9,7 +9,10 @@
 experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
 <!-- badges: end -->
 
-RiboPilot is a product of the [NMNH Ocean DNA initiative](https://naturalhistory.si.edu/initiatives/oceans/ocean-science-center/ocean-dna) and does not represent an official Smithsonian Institution position or product.
+RiboPilot is a product of the [NMNH Ocean DNA
+initiative](https://naturalhistory.si.edu/initiatives/oceans/ocean-science-center/ocean-dna)
+and does not represent an official Smithsonian Institution position or
+product.
 
 RiboPilot assembles and annotates the **nuclear ribosomal DNA repeat
 (rDNA)** from genome skimming data, then helps you check and clean up
@@ -138,10 +141,7 @@ to walk through project initialization and the five steps in the app.
 
 # Citing RiboPilot
 
-Run `citation("RiboPilot")` in R. The [Citing
-RiboPilot](https://nmnh-oceandna.github.io/RiboPilot/articles/Citing.html)
-page lists the tools RiboPilot runs, with their versions and references,
-for your methods section.
+Run `citation("RiboPilot")` in R.
 
 # Getting help
 
