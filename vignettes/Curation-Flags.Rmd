@@ -183,11 +183,11 @@ RiboPilot checks for a chimeric contigs in four ways:
 
 - **Gene by gene.** The 18S, 5.8S, and 28S genes each get their own best
   GenBank matches. Ideally these should agree on one lineage.
-- **Along the contig.** Overlapping 200 bp windows, one every 100 bp, are
-  searched against the bundled rDNA database. Neighboring windows that match the
-  same class are joined into segments. Neighboring segments that hit different 
-  taxonomic classes suggest a chimeric join. A switch between classes counts only
-  when each side spans at least four windows (about 500 bp), because short
+- **Along the contig.** The contig is cut into 150 bp windows, end to end, and
+  each is searched against the bundled rDNA database. Neighboring windows that
+  match the same class are joined into segments. Neighboring segments that hit
+  different taxonomic classes suggest a chimeric join. A switch between classes
+  counts only when each side spans at least three windows (450 bp), because short
   conserved stretches often match another class of the same phylum. A switch
   between phyla or kingdoms needs only two windows on each side.
 - **Gene structure.** The ribotyper tool checks that the 18S and 28S each look

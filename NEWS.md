@@ -73,10 +73,11 @@
   BLAST panel in the details window shows each feature's matches. Its Search
   column names the algorithm that found the hit; a hit found only by the more
   sensitive dc-megablast retry is shown in amber and listed as a weak hit.
-* The chimera check now searches 200 bp windows every 100 bp (was 500 bp every
-  250 bp), so it catches shorter foreign stretches. A switch between classes
-  still needs about 500 bp on each side, which keeps conserved stretches from
-  raising false alarms.
+* The chimera check now searches 150 bp windows end to end with no overlap
+  (was 500 bp windows every 250 bp), so it catches shorter foreign stretches
+  and every base belongs to one window. A switch between classes still needs
+  about 450 bp on each side, which keeps conserved stretches from raising
+  false alarms.
 * Changing a sample's taxon updates its lineage and screens it again. A name
   that matches more than one organism is never picked automatically.
 * Isomer and paralog classes are computed after annotation finishes.

@@ -57,6 +57,14 @@ test_that("tiling anchors the last window and handles short scaffolds", {
   expect_equal(RiboPilot:::chimera_tile(300, 500, 250), data.frame(start = 1L, stop = 300L))
 })
 
+test_that("default tiles are 150 bp with no overlap; a short tail joins the last tile", {
+  t <- RiboPilot:::chimera_tile(1000)
+  expect_equal(t$start, seq(1L, 901L, by = 150L))
+  expect_equal(t$stop, c(seq(150L, 900L, by = 150L), 1000L))
+  t <- RiboPilot:::chimera_tile(920)
+  expect_equal(utils::tail(t$start, 1), 751L); expect_equal(utils::tail(t$stop, 1), 920L)
+})
+
 test_that("rank_distance is 0 at same species and 7 when nothing is shared", {
   fish <- "33208;7711;186623;8030;8016;8017;8018"
   fung <- "4751;4890;147545;5042;5043;5044;5045"
@@ -556,7 +564,7 @@ test_that("chimera_unit(review = TRUE) scores the copy and writes only its mirro
   w <- DBI::dbGetQuery(con, "SELECT start, stop, clip_frac FROM review_chimera_windows ORDER BY start")
   expect_equal(w$start, RiboPilot:::chimera_tile(3000)$start)
   expect_equal(max(w$stop), 3000L)
-  expect_equal(w$start[w$clip_frac > 0], c(1001L, 1101L))
+  expect_equal(w$start[w$clip_frac > 0], 1051L)
 
   # no copy: nothing to score in review mode
   expect_null(RiboPilot:::chimera_unit(con, "S1", 1L, 2L, dbarg = "panel", review = TRUE))
