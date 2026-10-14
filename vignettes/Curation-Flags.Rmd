@@ -118,6 +118,7 @@ features that need a look:
 | non-rDNA hit | The best match is not a nuclear rDNA record. |
 | off-target (Ascomycota) | The best match shares nothing with your sample at phylum level or below; the group in brackets is the match's phylum. |
 | no BLAST, feature too small | The feature is under 50 bp, too short for a useful search. |
+| weak hit | Only the more sensitive dc-megablast retry found a match; megablast found nothing. |
 
 Very short pieces of DNA match many organisms equally well, so their matches say
 little about who they came from. Features of 50 to 99 bp are searched but marked
@@ -130,9 +131,17 @@ outside your sample's phylum.
 
 The **Feature BLAST** panel in a contig's details window shows every feature's
 best match, how closely it matches your sample (species, genus, family, and so
-on), and its percent identity and coverage. Expand a row to see the top 10
-matches. If the database is not available, for example when an Update only
-moves the original hits onto a trimmed contig, the features show "Not run".
+on), its percent identity and coverage, and in the **Search** column the
+algorithm that found the hit (megablast, dc-megablast, or blastn for short
+features). A hit found only by dc-megablast is shown in amber. Expand a row to
+see the top 10 matches. If the database is not available, for example when an
+Update only moves the original hits onto a trimmed contig, the features show
+"Not run".
+
+In the test project, CHIM01's 28S comes from a *Penicillium* mold, so its best
+match shares nothing with the fish sample and the feature is off target:
+
+![Feature BLAST for CHIM01: the 18S matches the fish, the 28S is off target](figures/curation/feature-blast-chim01.png)
 
 The feature BLAST only reports. It does not change the Checks column, the
 quality flags, triage, or export.
