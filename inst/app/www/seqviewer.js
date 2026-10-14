@@ -41,7 +41,7 @@
   'use strict';
   var G = window.rpseq.geom;
   var MAX_PPB = 14, NT_LETTER = 8, NT_BAR = 3;
-  var RULER_H = 22, LANE_H = 22, NT_H = 20, GUTTER = 100, PAD = 4, COV_H = 60, CLIP_H = 36, IDENT_H = 36, ORIGIN_H = 18, GAP = 12;
+  var RULER_H = 22, LANE_H = 22, NT_H = 20, GUTTER = 100, PAD = 4, COV_H = 60, CLIP_H = 36, WIN_ROW = 18, ORIGIN_H = 18, GAP = 12;
   var BASE = { A: '#4faf45', C: '#e0a53f', G: '#e0555a', T: '#4a90d9', N: '#666666' };
   var viewers = {}, last = {};
 
@@ -136,7 +136,7 @@
   // ---- drawing ----
   Viewer.prototype.covOn = function () { return this.showCov && !!this.depth; };
   Viewer.prototype.clipOn = function () { return this.showClip && !!this.clip; };
-  Viewer.prototype.identOn = function () { return this.showIdent && !!this.windows; };
+  Viewer.prototype.winOn = function () { return this.showWin && !!this.windows; };
   Viewer.prototype.originOn = function () { return this.showOrigin && !!this.origin; };
   Viewer.prototype.ntOn = function () { return this.showNt && this.ppb >= NT_BAR; };
   Viewer.prototype.topH = function () {
@@ -148,7 +148,7 @@
     return this.topH() + this.nLanes * LANE_H + PAD + (this.ntOn() ? NT_H + PAD : 0) + GAP;
   };
   Viewer.prototype.height = function () {
-    return this.chimY() + (this.identOn() ? IDENT_H + GAP : 0) + (this.originOn() ? ORIGIN_H + GAP : 0);
+    return this.chimY() + (this.originOn() ? ORIGIN_H + GAP : 0) + (this.winOn() ? 2 * WIN_ROW + GAP : 0);
   };
   Viewer.prototype.draw = function () {
     if (!this.len || !this.canvas.offsetParent) return;
@@ -167,8 +167,8 @@
     this.drawLanes(c);
     if (this.ntOn()) this.drawNt(c, this.topH() + this.nLanes * LANE_H + PAD);
     y = this.chimY();
-    if (this.identOn()) { this.drawIdent(c, W, y); y += IDENT_H + GAP; }
     if (this.originOn()) { this.drawOrigin(c, W, y); y += ORIGIN_H + GAP; }
+    if (this.winOn()) { this.drawWindows(c, W, y); y += 2 * WIN_ROW + GAP; }
     this.drawJunctions(c, H);
   };
   Viewer.prototype.drawRuler = function (c) {
@@ -268,40 +268,17 @@
   };
   // One rect per origin segment in its colour, labelled when the label fits
   // the visible part (same rule as the gene lanes).
-  // Two-colour diagonal stripes for the stretch two segments share
-  function stripes(c, a, b) {
-    var off = document.createElement('canvas'); off.width = off.height = 12;
-    var o = off.getContext('2d');
-    o.fillStyle = a; o.fillRect(0, 0, 12, 12);
-    o.fillStyle = b; o.beginPath();
-    o.moveTo(0, 6); o.lineTo(6, 0); o.lineTo(12, 0); o.lineTo(0, 12); o.closePath(); o.fill();
-    o.beginPath(); o.moveTo(6, 12); o.lineTo(12, 6); o.lineTo(12, 12); o.closePath(); o.fill();
-    return c.createPattern(off, 'repeat');
-  }
   Viewer.prototype.drawOrigin = function (c, W, y) {
     c.textAlign = 'center'; c.textBaseline = 'middle';
-    var segs = this.origin, border = cssVar('--mp-border', '#ccc');
-    segs.forEach(function (s, i) {
+    this.origin.forEach(function (s) {
       if (!this.inView(s)) return;
-      // label the part this segment does not share with its neighbours
-      var prev = segs[i - 1], next = segs[i + 1];
-      var l0 = prev && prev.pos2 >= s.pos1 ? prev.pos2 + 1 : s.pos1, l1 = next && next.pos1 <= s.pos2 ? next.pos1 - 1 : s.pos2;
       var x0 = Math.max(GUTTER, this.x(s.pos1)), x1 = Math.min(W, this.x(s.pos2 + 1));
       if (x1 - x0 < 1) return;
       c.fillStyle = s.color; c.fillRect(x0, y, x1 - x0, ORIGIN_H);
-      c.strokeStyle = border; c.strokeRect(x0 + 0.5, y + 0.5, x1 - x0 - 1, ORIGIN_H - 1);
-      var lx0 = Math.max(GUTTER, this.x(l0)), lx1 = Math.min(W, this.x(l1 + 1));
+      c.strokeStyle = cssVar('--mp-border', '#ccc'); c.strokeRect(x0 + 0.5, y + 0.5, x1 - x0 - 1, ORIGIN_H - 1);
       var full = originText(s), short = s.taxon === 'nohit' ? 'no hit' : s.taxon;
-      var lab = lx1 - lx0 > c.measureText(full).width + 8 ? full : lx1 - lx0 > c.measureText(short).width + 8 ? short : null;
-      if (lab) { c.fillStyle = '#333'; c.fillText(lab, (lx0 + lx1) / 2, y + ORIGIN_H / 2); }
-    }, this);
-    segs.forEach(function (s, i) {
-      var n = segs[i + 1];
-      if (!n || n.pos1 > s.pos2 || n.color === s.color) return;
-      var x0 = Math.max(GUTTER, this.x(n.pos1)), x1 = Math.min(W, this.x(s.pos2 + 1));
-      if (x1 - x0 < 1) return;
-      c.fillStyle = stripes(c, s.color, n.color); c.fillRect(x0, y, x1 - x0, ORIGIN_H);
-      c.strokeStyle = border; c.strokeRect(x0 + 0.5, y + 0.5, x1 - x0 - 1, ORIGIN_H - 1);
+      var lab = x1 - x0 > c.measureText(full).width + 8 ? full : x1 - x0 > c.measureText(short).width + 8 ? short : null;
+      if (lab) { c.fillStyle = '#333'; c.fillText(lab, (x0 + x1) / 2, y + ORIGIN_H / 2); }
     }, this);
     c.fillStyle = cssVar('--mp-text-muted', '#6a6a6a'); c.textAlign = 'right';
     c.fillText('BLAST origin', GUTTER - 6, y + ORIGIN_H / 2, GUTTER - 10);
@@ -316,32 +293,32 @@
     }, this);
     c.restore();
   };
-  // Every BLAST window as a see-through bar at its own coordinates: colour is
-  // its class, height its best hit's identity from 70 to 100%. Overlapping
-  // windows stack and show darker; a no-hit window is an empty box.
-  Viewer.prototype.drawIdent = function (c, W, y) {
-    var muted = cssVar('--mp-text-muted', '#6a6a6a');
-    c.fillStyle = cssVar('--mp-surface-alt', '#f5f5f5'); c.fillRect(GUTTER, y, W - GUTTER, IDENT_H);
+  // Every BLAST window as a bar: height is the best hit's identity from 70 to
+  // 100%, colour its class. Neighbours overlap by half, so odd and even windows
+  // alternate rows like brickwork; a no-hit window is an empty full-height box.
+  Viewer.prototype.drawWindows = function (c, W, y) {
+    var H = 2 * WIN_ROW, muted = cssVar('--mp-text-muted', '#6a6a6a');
+    c.fillStyle = cssVar('--mp-surface-alt', '#f5f5f5'); c.fillRect(GUTTER, y, W - GUTTER, H);
     c.strokeStyle = cssVar('--rp-ident-stroke', '#4d4d4d'); c.lineWidth = 1;
-    this.windows.forEach(function (w) {
+    this.windows.forEach(function (w, i) {
       if (!this.inView(w)) return;
       var x0 = Math.max(GUTTER, this.x(w.pos1)), x1 = Math.min(W, this.x(w.pos2 + 1));
       if (x1 - x0 < 1) return;
-      var h = w.pident === null || w.pident === undefined ? IDENT_H - 2 : Math.max(2, (w.pident - 70) / 30 * (IDENT_H - 2));
-      c.globalAlpha = 0.45; c.fillStyle = w.color; c.fillRect(x0, y + IDENT_H - 1 - h, x1 - x0, h);
-      c.globalAlpha = 0.7; c.strokeRect(x0 + 0.5, y + IDENT_H - 1 - h + 0.5, x1 - x0 - 1, h - 1);
-      c.globalAlpha = 1;
+      var top = y + (i % 2) * WIN_ROW, h = w.pident === null || w.pident === undefined ? WIN_ROW - 2
+        : Math.max(2, (w.pident - 70) / 30 * (WIN_ROW - 2));
+      c.fillStyle = w.color; c.fillRect(x0, top + WIN_ROW - 1 - h, x1 - x0, h);
+      c.strokeRect(x0 + 0.5, top + WIN_ROW - 1 - h + 0.5, x1 - x0 - 1, h - 1);
     }, this);
-    c.strokeStyle = cssVar('--mp-border', '#ccc'); c.beginPath(); c.moveTo(GUTTER, y + IDENT_H + 0.5); c.lineTo(W, y + IDENT_H + 0.5); c.stroke();
+    c.strokeStyle = cssVar('--mp-border', '#ccc'); c.beginPath(); c.moveTo(GUTTER, y + H + 0.5); c.lineTo(W, y + H + 0.5); c.stroke();
     c.fillStyle = muted; c.textAlign = 'right';
     c.textBaseline = 'top'; c.fillText('100%', GUTTER - 6, y);
-    c.textBaseline = 'bottom'; c.fillText('BLAST %id', GUTTER - 6, y + IDENT_H, GUTTER - 10);
+    c.textBaseline = 'bottom'; c.fillText('BLAST windows', GUTTER - 6, y + H, GUTTER - 10);
   };
   Viewer.prototype.windowsAt = function (pos) {
     return (this.windows || []).filter(function (w) { return pos >= w.pos1 && pos <= w.pos2; });
   };
-  Viewer.prototype.originsAt = function (pos) {
-    return (this.origin || []).filter(function (s) { return pos >= s.pos1 && pos <= s.pos2; });
+  Viewer.prototype.originAt = function (pos) {
+    return (this.origin || []).find(function (s) { return pos >= s.pos1 && pos <= s.pos2; }) || null;
   };
   function originText(s) {
     if (s.host) return s.taxon + ' (your lineage)';
@@ -425,8 +402,9 @@
       if (self.covOn() && self.depth[b.pos - 1] !== null) t += ' | depth ' + self.depth[b.pos - 1];
       if (self.clipOn() && self.clip[b.pos - 1] !== null) t += ', clipped ' + (self.clip[b.pos - 1] * 100).toFixed(0) + '%';
       if (h) t += ' | ' + h.f.gene + ' ' + h.f.pos1.toLocaleString() + '-' + h.f.pos2.toLocaleString() + ' (' + h.f.dir + ')';
-      if (self.originOn()) { var os = self.originsAt(b.pos).map(originText); if (os.length) t += ' | ' + os.join(os.length > 1 ? ' or ' : ''); }
-      if (self.identOn()) self.windowsAt(b.pos).forEach(function (w) {
+      var o = self.originOn() && self.originAt(b.pos);
+      if (o) t += ' | ' + originText(o);
+      if (self.winOn()) self.windowsAt(b.pos).forEach(function (w) {
         t += ' | window ' + w.pos1.toLocaleString() + '-' + w.pos2.toLocaleString() + ': ' + originText(w);
       });
       var j = (self.junctions || []).find(function (q) { return Math.abs(self.x(q.pos) - px) <= 6; });
@@ -449,7 +427,7 @@
         }
       });
     });
-    [['show_nt', 'showNt'], ['show_cov', 'showCov'], ['show_clip', 'showClip'], ['show_ident', 'showIdent'],
+    [['show_nt', 'showNt'], ['show_cov', 'showCov'], ['show_clip', 'showClip'], ['show_win', 'showWin'],
      ['show_origin', 'showOrigin']].forEach(function (pair) {
       var box = document.getElementById(prefix + '-' + pair[0]);
       if (box) { self[pair[1]] = box.checked; box.addEventListener('change', function () { self[pair[1]] = box.checked; self.draw(); }); }
