@@ -52,7 +52,7 @@
   class its BLAST windows match (grey is the sample's own lineage), a **BLAST
   identity** track shows the hit identity, and dashed lines mark possible
   junctions. Hover for the match. The static chimera plot is gone.
-* The Chimera check panel shows the reason under the call instead of on hover,
+* The Windowed BLAST details panel shows the reason under the call instead of on hover,
   says "not run" after a trim, and lists windows under their segment. Clicking
   a segment, window, or junction row zooms the viewer to it. On the Assemble
   window, a flagged contig opens the viewer by itself.
