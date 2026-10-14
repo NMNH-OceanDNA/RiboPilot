@@ -24,7 +24,7 @@ in your web browser. The step-by-step [Get started
 guide](https://nmnh-oceandna.github.io/RiboPilot/articles/RiboPilot.html)
 walks through a complete project from start to finish.
 
-# The nuclear rDNA unit
+# The nuclear ribosomal DNA unit
 
 Every cell carries the ribosomal RNA genes in a repeated unit that is
 copied hundreds to thousands of times in a row. Because there are so

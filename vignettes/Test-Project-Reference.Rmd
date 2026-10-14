@@ -9,6 +9,7 @@ vignette: >
 
 <div class="step-nav">
 <span class="step-label">Test project:</span>
+<a href="RiboPilot.html">0. Get started</a>
 <a href="Test-Project-Taxonomy.html">1. Taxonomy</a>
 <span class="current">2. Reference</span>
 <a href="Test-Project-Assemble.html">3. Assemble</a>
@@ -16,9 +17,9 @@ vignette: >
 <a href="Test-Project-Export.html">5. Export</a>
 </div>
 
-To assemble a sample, RiboPilot compares its reads with a reference database of
-rDNA sequences from related organisms. This step builds one database
-per group of related samples from GenBank, which can be reused across projects.
+To assemble a sample, RiboPilot needs a reference database of
+rDNA sequences from closely related organisms. This step groups samples and
+builds one database from GenBank per group, which can be reused across projects.
 
 To start, click **Propose groups**. RiboPilot automatically groups samples that can share a database.
 For the test project samples it proposes three groups. The red line warns that one of them,
@@ -26,25 +27,29 @@ Actinopteri (all ray-finned fishes), holds more records than the usual maximum:
 
 ![Proposed reference groups for the test samples](figures/get-started/reference-propose.png)
 
-Press **Apply**. Then switch to the **Groups** view, tick all three groups, and
+Click **Apply** to accept the proposed groups. 
+
+You should now see a **Groups** table. Tick all three groups and
 click **Set up database** at the end of any ticked row. The window offers
 **Download sequences from GenBank**, **Use a database I already have**, and
-**Leave these samples on their current database**. With a single group ticked,
+**Leave these samples on their current database**. With only a single group ticked,
 it also offers **Change which clade this group uses**:
 
 ![The choices for setting up a group's reference database](figures/get-started/reference-setup.png)
 
-Choose **Download sequences from GenBank**. The run window opens; press **Run
+Choose **Download sequences from GenBank** and press **Run
 from App**. The choice applies to every ticked group, so one run builds all
-three databases. Wait until every group's Status reads **Ready**:
-
-![Reference groups with their databases ready](figures/get-started/reference-ready.png)
+three databases. 
 
 ::: {.alert .alert-hydra}
 [HYDRA]{.hydra-tag} **Submit as job.** Press **Submit as job** in place of
 **Run from App**; see [Submit a run as a job](Clusters.html#submit-a-run-as-a-job).
 The app connects each database to the project once the job finishes.
 :::
+
+When done, every group's Status should read **Ready**:
+
+![Reference groups with their databases ready](figures/get-started/reference-ready.png)
 
 In our test, the Syngnathiformes database (about 10,500 GenBank records) took
 under 3 minutes and Pleuronectiformes (about 2,300 records) under 1 minute.

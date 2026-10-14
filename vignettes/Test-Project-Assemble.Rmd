@@ -9,6 +9,7 @@ vignette: >
 
 <div class="step-nav">
 <span class="step-label">Test project:</span>
+<a href="RiboPilot.html">0. Get started</a>
 <a href="Test-Project-Taxonomy.html">1. Taxonomy</a>
 <a href="Test-Project-Reference.html">2. Reference</a>
 <span class="current">3. Assemble</span>
@@ -28,6 +29,11 @@ stopped or failed run picks up where it left off. Leave it ticked.
 
 Press **Run from App**. Progress shows in the window, one line per step:
 
+::: {.alert .alert-hydra}
+[HYDRA]{.hydra-tag} **Submit as job.** Press **Submit as job** in place of
+**Run from App**; see [Submit a run as a job](Clusters.html#submit-a-run-as-a-job).
+:::
+
 ![Progress of a running pipeline](figures/get-started/run-progress.png)
 
 ::: {.alert .alert-warning}
@@ -36,27 +42,20 @@ Closing the tab or pressing **Stop** stops the run; see
 [Stopping and resuming a run](Troubleshooting.html#stopping-and-resuming-a-run).
 :::
 
-::: {.alert .alert-hydra}
-[HYDRA]{.hydra-tag} **Submit as job.** Press **Submit as job** in place of
-**Run from App**; see [Submit a run as a job](Clusters.html#submit-a-run-as-a-job).
-:::
-
 One pipeline run does everything for each sample: it cleans the reads, assembles the
 rDNA, picks and scores the contigs, compares them with GenBank, maps the reads
-back for depth, annotates the five features, runs the quality checks, and proposes
-which contigs to keep. There is no separate annotation run. The test run
-takes about 20 minutes.
+back to compute depth statistics, annotates the five features, runs the quality checks, and proposes
+which contigs to keep. The test run takes about 20 minutes.
 
 When the run ends, the app reports how it went. A clean run says "Run finished
 with no failures." Otherwise it shows a report that names every sample that
-failed and why. In the test project one sample fails on purpose:
+failed. In the test project one sample fails on purpose:
 
 ![End-of-run summary naming the sample that failed](figures/get-started/run-finished.png)
 
 If a step of the pipeline stops with an error, the report also names the
-sample, the step, the error code, and the likely cause. **Copy report** copies
-it so you can easily share it with the developers for assistance. The [Troubleshooting](Troubleshooting.html) page
-explains how to interpret the report.
+sample, the step, the error code, and the likely cause. The [Troubleshooting](Troubleshooting.html) page
+explains how to interpret the report in more detail.
 
 You can examine these reports later by clicking the **Run Reports** button in the top right
 corner of the app.
@@ -71,10 +70,10 @@ The columns to look at first:
 
 - **State**: a green check means the sample finished; a red triangle means it
   failed. Hover over the icon to see what it means.
-- **Lock**: open until you lock the sample.
-- **Checks**: summary of all quality checks for the sample's kept contigs.
-  Red means Lock and Export will ask about it first, amber is worth a look,
-  green is ok, and grey means there was nothing to compare with. See
+- **Lock**: shows an open lock icon until you lock the sample.
+- **Checks**: summary of all quality checks for the sample.
+  Red means a potentially serious issue, amber is worth a look but possibly benign,
+  green is ok, and gray means there was nothing to compare with. See
   [The Checks column](Curation-Flags.html#the-checks-column).
 - **# Paths**, **# Contigs**, and **# Kept**: how many assembly paths and
   contigs the assembly produced, and how many contigs are kept. 0 kept contigs means
@@ -86,11 +85,24 @@ The columns to look at first:
 - **User Notes**: your own notes on the sample, typed in the **Notes** box at
   the bottom of its details window.
 
-Click a sample's ID to open its details. The window lists the sample's
+In the Assemble step, you mostly choose which contigs to keep or drop.
+Trimming contigs and adjusting gene boundaries happens in the Annotation Review step.
+
+RiboPilot runs a triage process during the pipeline
+that automatically keeps or drops contigs. Use the **Triage** button at the top of the app
+to modify how the triage rules work and run the process again for selected samples.
+[Quality checks and flags](Curation-Flags.html) explains the triage rules.
+
+# View sample assembly details
+
+Click a sample's ID to open its details. This window lists the sample's
 contigs, each with **K** (keep) and **D** (drop) buttons, as well as other 
 information like coverage, features annotated, and the verdict
-from the BLAST screen. Below the list are three panels for the highlighted contig:
-**BLAST evidence**, **Coverage and windowed BLAST**, and **Windowed BLAST details**. 
+from the BLAST screen. 
+
+Clicking a contig row in the table highlights that row in blue. The
+**BLAST evidence**, **Coverage and windowed BLAST**, and **Windowed BLAST details** 
+panels all show information for the highlighted contig.
 
 CHIM01 is an artificial chimeric contig, crated by joining sequence data from
 *Penicillium* mold and the fish species *Upeneus parvus*.
@@ -98,32 +110,26 @@ The BLAST evidence shows that the best overall match is a *Penicillium* mold:
 
 ![CHIM01's BLAST evidence, with its best match a Penicillium mold](figures/get-started/assemble-details-chim01.png)
 
-The **Coverage and windowed BLAST** viewer shows where. Its **BLAST origin** track
-colours each stretch of the contig by the class its BLAST windows match (grey is
-the sample's own lineage), and a dashed red line marks the join between the fish
-and the mold, near 2,625 bp. Hover over the track to read the match. The
-**Windowed BLAST details** panel below gives the call, the reason, and the segments;
-click a row to zoom the viewer to it.
+The **Coverage and windowed BLAST** viewer shows more detail about the chimeric sequence.
+In the **BLAST origin** track, segments are colored by BLAST taxonomic match (gray is
+the sample's own lineage, yellow in this case represents the mold sequence).
+A dashed red line marks approximate position of the join between the fish
+and the mold sequences, near 2,625 bp. You can hover over the track to see more details. 
+
+The **Windowed BLAST details** panel provides more detail about the BLAST results for each
+section of the chimeric contig.
 
 ![CHIM01 in the sequence viewer, with the join between the fish and the mold marked](figures/get-started/assemble-chimera-chim01.png)
 
-RiboPilot proposes keep or drop for each contig (a process called triage), and
-never overwrites a call you made by hand. The **Triage** button runs the
-proposal again on the ticked samples, skipping any whose assembly is locked.
-[Quality checks and flags](Curation-Flags.html) explains the triage rules.
-
-In the Assemble step, you mostly choose which contigs to keep or drop contigs.
-Trimming contigs and adjusting gene boundaries happens in the Annotation Review step.
-
 # Rescue a sample that failed
 
-One test sample is expected to fail: every contig assembled for SRR22396893
+One sample in the test project is expected to fail: every contig assembled for SRR22396893
 is shorter than the default 500 bp minimum. Its State shows a red
-triangle. Open it to read why, and what to try next:
+triangle. The sample's details window shows additional information:
 
 ![Details of a failed sample, with the reason and the next step](figures/get-started/failed-sample.png)
 
-To follow that advice:
+To try fixing the failed sample:
 
 1. Click that sample's **Assembly Options** cell.
 2. Type a new name in **Parameter set name**, for example `baited`, and tick
@@ -143,19 +149,18 @@ job automatically. See the
 for the compute nodes on offer.
 :::
 
-When the run finishes, open SRR22396893's details. Baited SPAdes recovers
+When the run finishes, open SRR22396893's details again. Baited SPAdes recovers
 four contigs over 500 bp, but none spans the whole 18S-to-28S region.
-The two shorter contigs are set to Drop. Read depth for all of the contigs
-is low, which is likely why the we cannot assemble a larger contig.
+Read depth for all of the contigs is low, which is likely why the we cannot assemble a larger contig.
 
 ![Baited SPAdes contigs for SRR22396893: four partial pieces of 18S, ITS1, and 28S](figures/get-started/assemble-details-baited.png)
 
 For more information about assemblers in RiboPilot, see [Choosing an assembly method](Assembly-Methods.html)
 
-# Lock the samples when you are done reviewing
+# Lock samples when done
 
 Select one or more samples and press **Lock**. Locked samples now appear in the Annotation Review
 step. For this test run, lock all 12 passing samples. When Lock asks about
-CHIM01, press **Lock anyway**, so you can see the Export step catch it too.
+CHIM01, press **Lock anyway**, so you can see how the Export step will warn you about problematic contigs.
 
 <p class="next-step"><a href="Test-Project-Annotate.html">Next: Annotation Review &rarr;</a></p>
