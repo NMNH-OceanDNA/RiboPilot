@@ -1,4 +1,4 @@
-# RiboPilot (development version)
+# RiboPilot 0.1.0
 
 ## Before you upgrade
 

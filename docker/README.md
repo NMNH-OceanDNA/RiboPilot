@@ -91,7 +91,7 @@ RiboPilot::new_project(
   mapping_fn = "~/my_samples.csv",
   data_path  = "~/my_reads",
   executor   = "docker",
-  container  = "macguigand/ribopilot:v0.1.0"   # or a local tag, e.g. "ribopilot:0.0.0.9004"
+  container  = "macguigand/ribopilot:0.1.0"   # or a local tag, e.g. "ribopilot:0.0.0.9004"
 )
 ```
 

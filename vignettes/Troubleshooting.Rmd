@@ -29,7 +29,7 @@ Started:   2026-10-01 12:04:15
 Finished:  2026-10-01 12:31:59 (27m 44s)
 Result:    Finished with failures, exit status 0
 Launched:  from the app
-RiboPilot: 0.0.0.9019
+RiboPilot: 0.1.0
 Nextflow:  25.10.6
 Log:       ~/ribopilot_test/.runs/nextflow/pipeline_2026-10-01_12-04-14.nextflow.log
 Tasks:     178 succeeded, 0 cached, 0 failed and skipped, 0 retried, 0 aborted
