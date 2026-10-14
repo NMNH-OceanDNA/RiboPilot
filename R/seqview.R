@@ -60,15 +60,14 @@ seqview_ui <- function(prefix, summary, open = TRUE, pick = TRUE) {
       btn("zoom_out", NULL, icon("magnifying-glass-minus"), "Zoom out"),
       btn("copy", "Copy sequence", title = "Copy the bases in view as FASTA"),
       box("show_cov", "Coverage"), box("show_clip", "Clipped reads"),
-      box("show_origin", "BLAST origin"), box("show_win", "BLAST windows"), box("show_nt", "Nucleotides")),
+      box("show_ident", "BLAST identity"), box("show_origin", "BLAST origin"), box("show_nt", "Nucleotides")),
     tags$p(class = "mp-help-text", style = "margin:2px 0 4px;",
       paste0("Drag or scroll sideways to pan, scroll to zoom", if (pick) "; click a gene to select it",
         ". Letters appear when zoomed in. Copy sequence copies the bases in view. "),
       sprintf("Clipped reads is the share of reads soft-clipped at each base (shown where depth is at least 10); bars turn orange at %d%%, the chimera check's cutoff.",
         round(100 * CHIMERA_CLIP_FRAC)),
       " BLAST origin colours each stretch by the class its BLAST windows match: grey is your lineage, white is no hit, ",
-      "other colours are foreign; a dashed line marks a possible junction. BLAST windows draws every BLAST window ",
-      "as a bar, staggered on two rows because neighbours overlap, with the bar height as the best hit's identity. ",
+      "other colours are foreign; a dashed line marks a possible junction. BLAST identity is the best hit's identity in each window, coloured like the origin band. ",
       "Hover for the match."),
     div(class = "rp-seqview",
       tags$canvas(id = id("canvas"), class = "rp-seqview-canvas"),
@@ -103,51 +102,34 @@ seqview_send <- function(session, canvas, input, id, path, scaffold, selected = 
   session$sendCustomMessage("rpseq", pl)
 }
 
-#' Chimera evidence for the viewer: origin segments split at the midpoint of
-#' their overlap, every BLAST window in its class colour, and junctions. Pure.
+#' Chimera evidence for the viewer: de-overlapped origin segments, junctions,
+#' and per-base window identity. Pure.
 #' @noRd
 chimera_origin <- function(seg, win, junctions, label, channels, sample_lt, len) {
-  out <- list(origin = list(), windows = list(), junctions = list())
-  # stored JSON drops fields that were NA in every row
-  for (col in c("species", "pident", "lineage", "lineage_taxids")) {
-    if (NROW(seg) && is.null(seg[[col]])) seg[[col]] <- NA
-    if (NROW(win) && is.null(win[[col]])) win[[col]] <- NA
-  }
-  if (NROW(win)) {
-    key <- chimera_rank_name(win$lineage, "class")
-    key[is.na(key) & !is.na(win$lineage)] <- "unresolved"
-    key[is.na(key)] <- ifelse(is.na(win$pident[is.na(key)]), "nohit",
-      ifelse(win$pident[is.na(key)] >= CHIMERA_PID_DROP, "high_id", "low_id"))
-    win$taxon <- key
-  }
-  keep <- c("start", "stop", "taxon", "species", "pident", "lineage_taxids")
-  both <- rbind(if (NROW(seg)) seg[keep] else NULL, if (NROW(win)) win[keep] else NULL)
-  if (!NROW(both)) {
-    out$junctions <- chimera_origin_junctions(junctions, label, channels)
-    return(out)
-  }
-  both$col <- unname(chimera_seg_colors(both, sample_lt))
-  rows <- function(d) lapply(seq_len(nrow(d)), function(i) list(
-    pos1 = as.integer(d$start[i]), pos2 = as.integer(d$stop[i]), color = d$col[i],
-    taxon = d$taxon[i], species = d$species[i] %|NA|% "", pident = d$pident[i],
-    host = identical(d$col[i], "#B3B3B3")))
+  out <- list(origin = list(), junctions = list(), ident = NULL)
   if (NROW(seg)) {
-    s <- both[seq_len(nrow(seg)), ]; s <- s[order(s$start), ]
-    mid <- (s$stop[-nrow(s)] + s$start[-1]) %/% 2L
-    s$stop <- pmin(s$stop, c(mid, Inf)); s$start <- pmax(s$start, c(-Inf, mid + 1L))
-    out$origin <- rows(s)
+    seg <- seg[order(seg$start), , drop = FALSE]
+    # stored JSON drops fields that were NA in every row
+    for (col in c("species", "pident")) if (is.null(seg[[col]])) seg[[col]] <- NA
+    seg$col <- chimera_seg_colors(seg, sample_lt)
+    stop <- pmin(seg$stop, c(seg$start[-1] - 1L, Inf))
+    out$origin <- lapply(seq_len(nrow(seg)), function(i) list(
+      pos1 = as.integer(seg$start[i]), pos2 = as.integer(stop[i]), color = unname(seg$col[i]),
+      taxon = seg$taxon[i], species = seg$species[i] %|NA|% "", pident = seg$pident[i],
+      host = identical(unname(seg$col[i]), "#B3B3B3")))
   }
-  if (NROW(win)) out$windows <- rows(both[nrow(both) - rev(seq_len(nrow(win))) + 1L, ])
-  out$junctions <- chimera_origin_junctions(junctions, label, channels)
-  out
-}
-
-#' @noRd
-chimera_origin_junctions <- function(junctions, label, channels) {
+  if (NROW(win) && any(!is.na(win$pident))) {
+    id <- rep(NA_real_, len)
+    for (i in which(!is.na(win$pident))) {
+      r <- max(1L, win$start[i]):min(len, win$stop[i])
+      id[r] <- pmax(id[r], win$pident[i], na.rm = TRUE)
+    }
+    out$ident <- id
+  }
   j <- chimera_junction_table(junctions, channels)
-  if (!nrow(j)) return(list())
-  lapply(seq_len(nrow(j)), function(i) list(
+  if (nrow(j)) out$junctions <- lapply(seq_len(nrow(j)), function(i) list(
     pos = as.integer(j$position[i]), severe = identical(label, "severe"), checks = j$checks[i]))
+  out
 }
 
 #' Chimera evidence of one unit's layer; empty before the Annotation Review
@@ -161,7 +143,7 @@ seqview_chimera <- function(con, id, path, scaffold, review, len) {
     params = list(id, path, scaffold))
   ch <- q(paste("SELECT label, junctions, segments, channels FROM", tbl("chimera")))
   if (!nrow(ch)) return(list())
-  win <- q(paste("SELECT start, stop, pident, species, lineage, lineage_taxids FROM", tbl("chimera_windows")))
+  win <- q(paste("SELECT start, stop, pident FROM", tbl("chimera_windows")))
   seg <- if (!is.na(ch$segments[1])) jsonlite::fromJSON(ch$segments[1]) else data.frame()
   samp <- DBI::dbGetQuery(con, "SELECT lineage_taxids FROM samples WHERE ID = ?", params = list(id))
   o <- chimera_origin(seg, win, ch$junctions[1], ch$label[1], ch$channels[1],

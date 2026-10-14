@@ -133,31 +133,26 @@ test_that("each details window sends its own layer to the sequence viewer", {
   expect_false(sent[["seqv_asm-canvas"]])
 })
 
-test_that("chimera_origin splits overlapping segments at the midpoint and keeps the host grey", {
+test_that("chimera_origin de-overlaps segments for drawing and keeps the host grey", {
   seg <- data.frame(start = c(1, 501, 2251), stop = c(750, 2500, 4500),
     taxon = c("nohit", "Actinopterygii", "Eurotiomycetes"), species = c(NA, "Salmo salar", "Penicillium sp."),
     pident = c(NA, 99, 97), n_windows = c(3, 10, 9),
     lineage_taxids = c(NA, "33208;7711;7898", "4751;4890;147545"), stringsAsFactors = FALSE)
-  win <- data.frame(start = c(1, 2251), stop = c(500, 2750), pident = c(NA, 97),
-    species = c(NA, "Penicillium sp."), lineage = c(NA, "Fungi;Ascomycota;Eurotiomycetes"),
-    lineage_taxids = c(NA, "4751;4890;147545"), stringsAsFactors = FALSE)
+  win <- data.frame(start = c(1, 2251), stop = c(500, 2750), pident = c(NA, 97))
   o <- RiboPilot:::chimera_origin(seg, win, "2375", "severe", NA, "33208;7711;7898", 4500L)
-  expect_equal(vapply(o$origin, `[[`, 0, "pos1"), c(1, 626, 2376))
-  expect_equal(vapply(o$origin, `[[`, 0, "pos2"), c(625, 2375, 4500))
+  expect_equal(vapply(o$origin, `[[`, 0, "pos2"), c(500, 2250, 4500))
   expect_true(o$origin[[2]]$host); expect_false(o$origin[[3]]$host)
   expect_equal(o$origin[[2]]$color, "#B3B3B3")
   expect_equal(o$origin[[1]]$color, "#FFFFFF")
   expect_equal(o$origin[[3]]$color, RiboPilot:::CHIMERA_LINEAGE_COLORS[1])
   expect_equal(o$junctions[[1]]$pos, 2375L); expect_true(o$junctions[[1]]$severe)
-  expect_length(o$windows, 2L)
-  expect_equal(o$windows[[1]]$color, "#FFFFFF"); expect_equal(o$windows[[1]]$taxon, "nohit")
-  expect_equal(o$windows[[2]]$pos1, 2251L); expect_equal(o$windows[[2]]$pident, 97)
-  expect_equal(o$windows[[2]]$color, o$origin[[3]]$color)
+  expect_length(o$ident, 4500L)
+  expect_true(is.na(o$ident[1])); expect_equal(o$ident[2300], 97)
 })
 
 test_that("chimera_origin with no segments or junctions sends nothing", {
   o <- RiboPilot:::chimera_origin(data.frame(), data.frame(), NA, "clean", NA, NA_character_, 100L)
-  expect_length(o$origin, 0L); expect_length(o$junctions, 0L); expect_length(o$windows, 0L)
+  expect_length(o$origin, 0L); expect_length(o$junctions, 0L); expect_null(o$ident)
 })
 
 test_that("the lineage palette has three colours", {
@@ -181,13 +176,13 @@ test_that("the viewer gets the chimera evidence of its own layer, and none befor
   session <- list(sendCustomMessage = function(type, msg) sent <<- msg)
 
   RiboPilot:::seqview_send(session, "seqv_asm-canvas", NULL, "S1", 1L, 1L)
-  expect_equal(vapply(sent$origin, `[[`, 0, "pos2"), c(50, 100))
+  expect_equal(vapply(sent$origin, `[[`, 0, "pos2"), c(40, 100))
   expect_equal(sent$junctions[[1]]$pos, 50L)
-  expect_equal(sent$windows[[2]]$pos1, 41L); expect_equal(sent$windows[[2]]$pident, 97)
+  expect_equal(sent$ident[50], 97)
 
   RiboPilot:::review_trim(con, "S1", 1L, 1L, 21, 90)
   RiboPilot:::seqview_send(session, "seqv_ann-canvas", NULL, "S1", 1L, 1L, review = TRUE)
-  expect_null(sent$origin); expect_null(sent$junctions); expect_null(sent$windows)
+  expect_null(sent$origin); expect_null(sent$junctions); expect_null(sent$ident)
 
   DBI::dbExecute(con, "INSERT INTO review_chimera (ID, path, scaffold, label, junctions) VALUES ('S1',1,1,'minor','30')")
   DBI::dbExecute(con, "UPDATE review_units SET check_switch = 2")
@@ -196,11 +191,10 @@ test_that("the viewer gets the chimera evidence of its own layer, and none befor
   expect_null(sent$origin)
 })
 
-test_that("the viewer controls offer the origin and window tracks", {
+test_that("the viewer controls offer the origin and window identity tracks", {
   html <- as.character(RiboPilot:::seqview_ui("x", "s"))
   expect_match(html, 'id="x-show_origin"', fixed = TRUE)
-  expect_match(html, 'id="x-show_win"', fixed = TRUE)
-  expect_match(html, "BLAST windows", fixed = TRUE)
+  expect_match(html, 'id="x-show_ident"', fixed = TRUE)
 })
 
 test_that("chimera_origin copes with stored segments that have no species column", {
