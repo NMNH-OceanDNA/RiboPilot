@@ -15,10 +15,11 @@
 <link href="deps/bootstrap-5.3.8/bootstrap.min.css" rel="stylesheet">
 <script src="deps/bootstrap-5.3.8/bootstrap.bundle.min.js"></script><link href="deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet">
 <link href="deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet">
-<script src="deps/headroom-0.11.0/headroom.min.js"></script><script src="deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="deps/search-1.0.0/fuse.min.js"></script><script src="deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="pkgdown.js"></script><meta property="og:title" content="RiboPilot">
+<script src="deps/headroom-0.11.0/headroom.min.js"></script><script src="deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="deps/search-1.0.0/fuse.min.js"></script><script src="deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="pkgdown.js"></script><link href="extra.css" rel="stylesheet">
+<meta property="og:title" content="RiboPilot">
 <meta name="description" content="Nuclear ribosomal repeat assembly, annotation, and curation">
 <meta property="og:description" content="Nuclear ribosomal repeat assembly, annotation, and curation">
-<meta property="og:image" content="https://dmacguigan.github.io/RiboPilot/logo.png">
+<meta property="og:image" content="https://nmnh-oceandna.github.io/RiboPilot/logo.svg">
 </head>
 <body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
@@ -28,7 +29,7 @@
 
     <a class="navbar-brand me-2" href="index.html">RiboPilot</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9000</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -42,16 +43,47 @@
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
-<li><a class="dropdown-item" href="articles/Reference-Databases.html">Using RiboPilot with your group of organisms</a></li>
-    <li><a class="dropdown-item" href="articles/Curation-Flags.html">Understanding the automatic quality checks</a></li>
+<li><h6 class="dropdown-header" data-toc-skip>Setup</h6></li>
+    <li><a class="dropdown-item" href="articles/Installation.html">Installation</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Test project</h6></li>
+    <li><a class="dropdown-item" href="articles/Test-Project-Taxonomy.html">1. Taxonomy</a></li>
+    <li><a class="dropdown-item" href="articles/Test-Project-Reference.html">2. Reference</a></li>
+    <li><a class="dropdown-item" href="articles/Test-Project-Assemble.html">3. Assemble</a></li>
+    <li><a class="dropdown-item" href="articles/Test-Project-Annotate.html">4. Annotation Review</a></li>
+    <li><a class="dropdown-item" href="articles/Test-Project-Export.html">5. Export</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Usage</h6></li>
+    <li><a class="dropdown-item" href="articles/Your-Own-Project.html">Your own project</a></li>
+    <li><a class="dropdown-item" href="articles/Reference-Databases.html">Reference databases</a></li>
+    <li><a class="dropdown-item" href="articles/Assembly-Methods.html">Choosing an assembly method</a></li>
+    <li><a class="dropdown-item" href="articles/Curation-Flags.html">Quality checks and flags</a></li>
+    <li><a class="dropdown-item" href="articles/GenBank-Submission.html">Preparing a GenBank submission</a></li>
+    <li><a class="dropdown-item" href="articles/Citing.html">Citing RiboPilot</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Metadata</h6></li>
+    <li><a class="dropdown-item" href="articles/Sample-Metadata.html">Sample metadata</a></li>
+    <li><a class="dropdown-item" href="articles/Metadata-Linking.html">Linking records across databases</a></li>
+    <li><a class="dropdown-item" href="articles/NMNH-Vouchers.html">NMNH voucher submissions</a></li>
+    <li><a class="dropdown-item" href="articles/Metadata-Reference.html">Metadata field reference</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Computing environments</h6></li>
+    <li><a class="dropdown-item" href="articles/Clusters.html">Running on a cluster</a></li>
+    <li><a class="dropdown-item" href="articles/NMNH-Hydra.html">Smithsonian Hydra setup</a></li>
+    <li><a class="dropdown-item" href="articles/NOAA-SEDNA.html">NOAA SEDNA setup</a></li>
+    <li><a class="dropdown-item" href="articles/Caches-and-Offline.html">Disk space, caches, and offline use</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Help</h6></li>
+    <li><a class="dropdown-item" href="articles/Troubleshooting.html">Troubleshooting</a></li>
   </ul>
 </li>
+<li class="nav-item"><a class="nav-link" href="news/index.html">Changelog</a></li>
       </ul>
 <ul class="navbar-nav">
 <li class="nav-item"><form class="form-inline" role="search">
  <input class="form-control" type="search" name="search-input" id="search-input" autocomplete="off" aria-label="Search site" placeholder="Search for" data-search-index="search.json">
 </form></li>
-<li class="nav-item"><a class="external-link nav-link" href="https://github.com/dmacguigan/RiboPilot/" aria-label="GitHub"><span class="fa fab fa-github fa-lg"></span></a></li>
+<li class="nav-item"><a class="external-link nav-link" href="https://github.com/NMNH-OceanDNA/RiboPilot/" aria-label="GitHub"><span class="fa fab fa-github fa-lg"></span></a></li>
       </ul>
 </div>
 
@@ -61,90 +93,91 @@
 <div class="row">
   <main id="main" class="col-md-9"><div class="section level1">
 <div class="page-header">
-<img src="logo.png" class="logo" alt=""><h1 id="ribopilot-">RiboPilot 
+<img src="logo.svg" class="logo" alt=""><h1 id="ribopilot-">RiboPilot 
 <a class="anchor" aria-label="anchor" href="#ribopilot-"></a>
 </h1>
 </div>
 <!-- badges: start -->
 
-<p>RiboPilot recovers the <strong>nuclear ribosomal repeat (nrDNA)</strong> from genome skimming data, then helps you check and clean up the result and package it for submission to GenBank. It is a companion to <a href="https://github.com/Smithsonian/MitoPilot" class="external-link">MitoPilot</a>, which does the same thing for the mitochondrial genome. You can run both on the same samples and get both marker sets from one sequencing run.</p>
-<p>You do not need to be a programmer to use RiboPilot. Most of your work happens in a <strong>point-and-click app</strong> that runs in your web browser. The step-by-step <a href="https://dmacguigan.github.io/RiboPilot/articles/RiboPilot.html">Get started guide</a> walks through a complete project from start to finish.</p>
+<p>RiboPilot is a product of the <a href="https://naturalhistory.si.edu/initiatives/oceans/ocean-science-center/ocean-dna" class="external-link">NMNH Ocean DNA initiative</a> and does not represent an official Smithsonian Institution position or product.</p>
+<p>RiboPilot assembles and annotates the <strong>nuclear ribosomal DNA repeat (rDNA)</strong> from genome skimming data, then helps you check and clean up the result and package it for submission to GenBank. If you already have an assembly, RiboPilot can <a href="https://nmnh-oceandna.github.io/RiboPilot/articles/Your-Own-Project.html#already-have-an-assembly">start from that instead of reads</a>. RiboPilot is a companion to <a href="https://github.com/NMNH-OceanDNA/MitoPilot" class="external-link">MitoPilot</a>, which does the same process for the mitochondrial genome. You can run both tools on the same samples and get both marker sets from one sequencing run.</p>
+<p>Most of your work happens in a <strong>point-and-click Shiny app</strong> that runs in your web browser. The step-by-step <a href="https://nmnh-oceandna.github.io/RiboPilot/articles/RiboPilot.html">Get started guide</a> walks through a complete project from start to finish.</p>
 </div>
 <div class="section level1">
-<h1 id="what-ribopilot-recovers">What RiboPilot recovers<a class="anchor" aria-label="anchor" href="#what-ribopilot-recovers"></a>
+<h1 id="the-nuclear-ribosomal-dna-unit">The nuclear ribosomal DNA unit<a class="anchor" aria-label="anchor" href="#the-nuclear-ribosomal-dna-unit"></a>
 </h1>
-<p>Every cell carries the ribosomal RNA genes in a repeated unit that is copied hundreds to thousands of times in a row. Because there are so many copies, even a shallow, inexpensive “genome skim” sequences this region very deeply, essentially for free. RiboPilot reconstructs that repeat unit:</p>
-<pre><code>   ETS   18S    ITS1   5.8S   ITS2    28S     IGS
- --|===|=======|~~~~~|=====|~~~~~|===========|------ (repeated hundreds of times)
-       SSU              LSU</code></pre>
-<p>From it you get the most widely used nuclear markers for phylogenetics and DNA barcoding: <strong>18S</strong>, <strong>28S</strong>, <strong>ITS1</strong>, <strong>ITS2</strong>, and the full <strong>ITS</strong> region.</p>
-<p>The three ribosomal genes (18S, 5.8S, 28S) are highly conserved and act as anchors. The two spacers (ITS1, ITS2) sit between them, evolve quickly, and are the regions that distinguish closely related species.</p>
+<p>Every cell carries the ribosomal RNA genes in a repeated unit that is copied hundreds to thousands of times in a row. Because there are so many copies, even a shallow, inexpensive “genome skim” sequences this region very deeply. From it you get some widely used nuclear markers for phylogenetics and DNA barcoding: <strong>18S</strong>, <strong>28S</strong>, <strong>ITS1</strong>, <strong>ITS2</strong>, and the full <strong>ITS</strong> region.</p>
+<p><img src="reference/figures/rdna_repeat.svg" alt="One copy of the rDNA repeat: 5' ETS, 18S, ITS1, 5.8S, ITS2, 28S, 3' ETS, with the intergenic spacer (IGS) on either side" width="100%" class="plain"></p>
+<p>The core rDNA unit is typically highly conserved, but with hundreds of copies arranged in a tandem repeat. The three ribosomal genes (18S, 5.8S, 28S) are highly conserved and act as anchors. The two spacers (ITS1, ITS2) sit between them, evolve quickly, and are the regions that distinguish closely related species.</p>
+<p>Between the 28S of one copy and the 18S of the next lies the intergenic spacer (IGS): the 3’ external transcribed spacer (ETS), a non-transcribed spacer (NTS), and the 5’ ETS of the next copy (<a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC2733198/" class="external-link">Hwang and Kim 1999</a>).</p>
+<p>However, the structure of the nuclear rDNA repeat varies across the tree of life. The IGS can range from a few hundred base pairs to tens of kilobases and often holds subrepeats. Repeat blocks of the rDNA unit can be located at one or several places in the genome. See (<a href="https://www.nature.com/articles/s41437-023-00634-5" class="external-link">Wang et al. 2023</a> for a review.</p>
 </div>
 <div class="section level1">
 <h1 id="what-ribopilot-does-for-you">What RiboPilot does for you<a class="anchor" aria-label="anchor" href="#what-ribopilot-does-for-you"></a>
 </h1>
-<p>Starting from raw sequencing reads, RiboPilot:</p>
+<p>The app walks each project through five steps, in order:</p>
 <ol style="list-style-type: decimal">
 <li>
-<strong>Confirms each sample’s organism.</strong> RiboPilot resolves the <code>Taxon</code> label you provide to an NCBI taxon (taxid + full lineage) using a local copy of the NCBI taxonomy, then lets you <strong>verify or correct it in the app</strong> before anything else runs. This is a dedicated first stage (the <strong>Taxonomy</strong> tab): samples must be reviewed and locked here before they move on to assembly, so the taxonomy that guides scoring and curation is one you have signed off on.</li>
+<strong>Taxonomy.</strong> RiboPilot matches the <code>Taxon</code> you provide for each sample to the <a href="https://www.ncbi.nlm.nih.gov/datasets/taxonomy/" class="external-link">NCBI taxonomy</a>. Samples must be reviewed and locked here before they move on to assembly, since the taxonomic ID of your samples guides scoring and curation.</li>
 <li>
-<strong>Assembles</strong> the ribosomal repeat for each sample, cleaning up the reads and piecing the region back together, then picking the best reconstruction automatically.</li>
+<strong>Reference.</strong> RiboPilot groups related samples and builds a reference database of known rDNA sequences for each group, from GenBank.</li>
 <li>
-<strong>Annotates</strong> it by locating the boundaries of all five features (18S, ITS1, 5.8S, ITS2, 28S).</li>
+<strong>Assemble.</strong> One run cleans the reads, assembles the ribosomal repeat for each sample, picks the best assembly path, finds the five features (18S, ITS1, 5.8S, ITS2, 28S), and checks each result for problems such as a missing gene, an unusual length, a possible contaminant, or a chimera. You choose which contigs to keep or drop for the next step.</li>
 <li>
-<strong>Checks (curates)</strong> each result against a reference and flags anything that looks off, such as a missing gene, an unusual length, or a possible contaminant, so you can focus your attention where it is needed.</li>
+<strong>Annotation Review.</strong> You check the annotated features and quality flags of each kept contig, adjusting boundaries if needed.</li>
 <li>
-<strong>Exports</strong> a tidy, GenBank-ready submission package.</li>
+<strong>Export.</strong> RiboPilot writes a tidy, GenBank-ready submission package, and warns you about any flagged record first.</li>
 </ol>
-<p>Behind the scenes RiboPilot uses established bioinformatics tools (<a href="https://github.com/OpenGene/fastp" class="external-link">fastp</a>, <a href="https://github.com/Kinggerm/GetOrganelle" class="external-link">GetOrganelle</a>, <a href="https://github.com/tseemann/barrnap" class="external-link">barrnap</a> / <a href="https://github.com/moshi4/pybarrnap" class="external-link">pybarrnap</a>, <a href="https://microbiology.se/software/itsx/" class="external-link">ITSx</a>, <a href="https://blast.ncbi.nlm.nih.gov/Blast.cgi" class="external-link">BLAST</a>, and others) and stitches them together for you. You do not need to learn or run any of them yourself.</p>
+<p>Behind the scenes RiboPilot uses established bioinformatics tools (<a href="https://github.com/OpenGene/fastp" class="external-link">fastp</a>, <a href="https://github.com/Kinggerm/GetOrganelle" class="external-link">GetOrganelle</a>, <a href="https://github.com/tseemann/barrnap" class="external-link">barrnap</a> / <a href="https://github.com/moshi4/pybarrnap" class="external-link">pybarrnap</a>, <a href="https://microbiology.se/software/itsx/" class="external-link">ITSx</a>, <a href="https://blast.ncbi.nlm.nih.gov/Blast.cgi" class="external-link">BLAST</a>, and others) and stitches them together for you. You do not need to learn or run any of them yourself. However, advanced users can adjust the parameters for each tool within RiboPilot.</p>
 </div>
 <div class="section level1">
-<h1 id="which-organisms-it-works-with">Which organisms it works with<a class="anchor" aria-label="anchor" href="#which-organisms-it-works-with"></a>
+<h1 id="taxonomic-scope">Taxonomic Scope<a class="anchor" aria-label="anchor" href="#taxonomic-scope"></a>
 </h1>
-<p>RiboPilot was first built for ray-finned fishes and comes ready to use for them out of the box. For any other group of organisms, it can build the reference data it needs automatically by downloading published sequences from GenBank. This is a one-time setup step per group; see the <a href="https://dmacguigan.github.io/RiboPilot/articles/Reference-Databases.html">reference database guide</a>.</p>
-<p>It also runs automatic quality checks tuned for a taxonomic group. Checks currently ship for a generic metazoan (animal) setting and a fish-specific setting; see the <a href="https://dmacguigan.github.io/RiboPilot/articles/Curation-Flags.html">curation guide</a>.</p>
+<p>Each group of samples needs a reference database of known rDNA sequences. You build it once per group in the app, from GenBank. See the <a href="https://nmnh-oceandna.github.io/RiboPilot/articles/Reference-Databases.html">reference database guide</a>.</p>
+<p>RiboPilot also runs automatic quality checks tuned for a taxonomic group. Five settings ship, picked from each sample’s lineage: a generic animal setting, and settings for ray-finned fishes, sea stars, true jellyfish, and octocorals; see the <a href="https://nmnh-oceandna.github.io/RiboPilot/articles/Curation-Flags.html">curation guide</a>. These settings are still in development and likely need fine tuning.</p>
 </div>
 <div class="section level1">
 <h1 id="installation">Installation<a class="anchor" aria-label="anchor" href="#installation"></a>
 </h1>
-<p>RiboPilot needs three things installed on your computer (or your lab’s server):</p>
-<ol style="list-style-type: decimal">
-<li>
-<strong><a href="https://www.r-project.org/" class="external-link">R</a></strong> (version 4.4.0 or newer), the language RiboPilot is written in. You will type a few short commands into R, but you do not need to know R.</li>
-<li>
-<strong><a href="https://www.nextflow.io/docs/latest/install.html" class="external-link">Nextflow</a></strong>, which runs the heavy analysis steps.</li>
-<li>
-<strong>The bioinformatics tools</strong> the pipeline uses. The easiest way to get all of them at once is <a href="https://docs.conda.io/projects/miniconda/en/latest/" class="external-link">conda</a>, a tool that installs a bundle of programs into a self-contained “environment” without interfering with anything else on your machine. Once conda is installed, one command sets up everything RiboPilot needs:</li>
-</ol>
-<!-- end list --><div class="sourceCode" id="cb2"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a><span class="ex">conda</span> env create <span class="at">-f</span> environment.yml</span>
-<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a><span class="ex">conda</span> activate ribopilot</span></code></pre></div>
-<p>Then, in R, install RiboPilot itself:</p>
-<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="kw">if</span> <span class="op">(</span><span class="op">!</span><span class="fu"><a href="https://rdrr.io/r/base/ns-load.html" class="external-link">requireNamespace</a></span><span class="op">(</span><span class="st">"remotes"</span>, quietly <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span><span class="op">)</span> <span class="op">{</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="st">"remotes"</span><span class="op">)</span></span>
-<span><span class="op">}</span></span>
-<span><span class="fu">remotes</span><span class="fu">::</span><span class="fu">install_github</span><span class="op">(</span><span class="st">"dmacguigan/RiboPilot"</span><span class="op">)</span></span></code></pre></div>
-<p>If any of this is unfamiliar, the <a href="https://dmacguigan.github.io/RiboPilot/articles/RiboPilot.html">Get started guide</a> explains each piece in more detail, and your local bioinformatics support staff can usually help with the one-time setup.</p>
+<p>RiboPilot requires Docker (or Singularity on a cluster), Java, Nextflow, and R. The <a href="https://nmnh-oceandna.github.io/RiboPilot/articles/Installation.html">Installation guide</a> lists versions and checks. Then, in R:</p>
+<div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="st">"remotes"</span><span class="op">)</span></span>
+<span><span class="fu">remotes</span><span class="fu">::</span><span class="fu">install_github</span><span class="op">(</span><span class="st">"NMNH-OceanDNA/RiboPilot"</span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level1">
 <h1 id="getting-started">Getting started<a class="anchor" aria-label="anchor" href="#getting-started"></a>
 </h1>
-<p>The best way to learn RiboPilot is to run the built-in practice project. RiboPilot ships a small set of fish samples and a single command that downloads them and sets everything up:</p>
-<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu">RiboPilot</span><span class="fu">::</span><span class="fu"><a href="reference/new_test_project.html">new_test_project</a></span><span class="op">(</span>path <span class="op">=</span> <span class="st">"~/ribopilot_test"</span>, executor <span class="op">=</span> <span class="st">"conda"</span><span class="op">)</span></span></code></pre></div>
-<p>From there, the <a href="https://dmacguigan.github.io/RiboPilot/articles/RiboPilot.html">Get started guide</a> walks you through assembling the samples, reviewing and cleaning them up in the app, and exporting the results.</p>
+<p>The best way to learn RiboPilot is to run the built-in test project. The first command downloads the test samples and sets everything up; the second opens the app:</p>
+<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu">RiboPilot</span><span class="fu">::</span><span class="fu"><a href="reference/new_test_project.html">new_test_project</a></span><span class="op">(</span>path <span class="op">=</span> <span class="st">"~/ribopilot_test"</span><span class="op">)</span></span>
+<span><span class="fu">RiboPilot</span><span class="fu">::</span><span class="fu"><a href="reference/run_app.html">RiboPilot</a></span><span class="op">(</span><span class="st">"~/ribopilot_test"</span><span class="op">)</span></span></code></pre></div>
+<p>By default this fetches small rDNA-filtered read subsets published with the RiboPilot releases, so setup takes under a minute. Pass <code>full_size = TRUE</code> to download the complete read sets from ENA/SRA instead (several GB). The first run also downloads the container image once (about 2.6 GB).</p>
+<p>Follow the <a href="https://nmnh-oceandna.github.io/RiboPilot/articles/RiboPilot.html">Get started guide</a> to walk through project initialization and the five steps in the app.</p>
+</div>
+<div class="section level1">
+<h1 id="citing-ribopilot">Citing RiboPilot<a class="anchor" aria-label="anchor" href="#citing-ribopilot"></a>
+</h1>
+<p>Run <code>citation("RiboPilot")</code> in R. The <a href="https://nmnh-oceandna.github.io/RiboPilot/articles/Citing.html">Citing RiboPilot</a> page lists the tools RiboPilot runs, with their versions and references, for your methods section.</p>
 </div>
 <div class="section level1">
 <h1 id="getting-help">Getting help<a class="anchor" aria-label="anchor" href="#getting-help"></a>
 </h1>
 <ul>
-<li>Full documentation: <a href="https://dmacguigan.github.io/RiboPilot/" class="uri">https://dmacguigan.github.io/RiboPilot/</a>
+<li>Full documentation: <a href="https://nmnh-oceandna.github.io/RiboPilot/" class="uri">https://nmnh-oceandna.github.io/RiboPilot/</a>
 </li>
-<li>Questions or problems: please open an <a href="https://github.com/dmacguigan/RiboPilot/issues" class="external-link">issue</a>.</li>
+<li>When something goes wrong: the <a href="https://nmnh-oceandna.github.io/RiboPilot/articles/Troubleshooting.html">Troubleshooting guide</a>.</li>
+<li>Questions or problems: please open an <a href="https://github.com/NMNH-OceanDNA/RiboPilot/issues" class="external-link">issue</a>.</li>
 </ul>
 </div>
 
-  </main><aside class="col-md-3"><div class="developers">
+  </main><aside class="col-md-3"><div class="citation">
+<h2 data-toc-skip>Citation</h2>
+<ul class="list-unstyled">
+<li><a href="authors.html#citation">Citing RiboPilot</a></li>
+</ul>
+</div>
+
+<div class="developers">
 <h2 data-toc-skip>Developers</h2>
 <ul class="list-unstyled">
 <li>Dan MacGuigan <br><small class="roles"> Author, maintainer </small>   </li>
@@ -167,7 +200,7 @@
 </div>
 
 <div class="pkgdown-footer-right">
-  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.0.</p>
+  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.1.</p>
 </div>
 
     </footer>

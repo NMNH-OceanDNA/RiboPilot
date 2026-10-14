@@ -1,13 +1,14 @@
-# Load one sample's published assembly fastas into the database
+# Load one sample's assembly fastas into the database
 
-Parses \`out/\<ID\>/assemble/\<ID\>\_assembly\_\*.fasta\` (headers
-\`\>ID.path.scaffold topology\`), writes per-scaffold rows into
-\`assemblies\`, and updates the per-sample \`assemble\` summary.
+Parses `<dir>/<ID>_assembly_*.fasta` (headers
+`>ID.path.scaffold topology`), orients each contig to the sense strand,
+rotates circular units to start in the IGS, writes per-contig rows into
+`assemblies`, and updates the per-sample `assemble` summary.
 
 ## Usage
 
 ``` r
-load_assemblies(con, out_dir, ID)
+load_assemblies(con, dir, ID)
 ```
 
 ## Arguments
@@ -16,9 +17,10 @@ load_assemblies(con, out_dir, ID)
 
   Open DBI connection.
 
-- out_dir:
+- dir:
 
-  The pipeline \`out/\` directory.
+  Folder holding the sample's assembly fastas (the score task's own
+  folder).
 
 - ID:
 
@@ -26,4 +28,4 @@ load_assemblies(con, out_dir, ID)
 
 ## Value
 
-(invisibly) the number of scaffolds loaded.
+(invisibly) the number of contigs loaded.

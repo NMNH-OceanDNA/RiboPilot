@@ -1,51 +1,75 @@
-# Using RiboPilot with your group of organisms
+# Reference databases
 
-To assemble a sample, RiboPilot compares its reads to known ribosomal
-sequences from related organisms. It comes ready to use for **ray-finned
-fishes**. For any other group, you build that reference data once, and
-it is reused for every future project on that group.
+To assemble a sample, RiboPilot compares its reads with known ribosomal
+sequences from a reference database of related organisms. A new project
+has no usable database until you build one in the app’s **Reference**
+step. You do not need to find or format any sequences yourself, and a
+database can be reused by every later project on that group.
 
-You do not need to find or format any sequences yourself. RiboPilot
-downloads them from GenBank for you.
+## The Reference step
 
-## Build reference data for a group
+The Reference step comes between the **Taxonomy** and **Assemble**
+steps. Set up a database for every group before you assemble.
 
-Use
-[`build_reference_db()`](https://dmacguigan.github.io/RiboPilot/reference/build_reference_db.md).
-It takes a standard NCBI search (the same kind of query you would type
-on the [NCBI website](https://www.ncbi.nlm.nih.gov/)) and a short label
-for the group. It then downloads the relevant 18S, 5.8S, 28S, and ITS
-sequences and prepares the reference data.
+After resolving the sample taxonomy, open the Reference step and press
+**Propose groups**. RiboPilot looks at each sample’s lineage and groups
+samples that can share one reference database. RiboPilot picks the
+narrowest group containing your samples that contains at least at least
+1,000 GenBank rDNA records. Samples from very different parts of the
+tree end up in different groups, each with its own reference database.
 
-``` r
+After defining groups, the Reference page automatically switches from a
+samples table to a groups table. Each row is one proposed group. The
+**Status** column says where that group stands (“Needs a database”,
+“Building”, “Ready”, “Build failed”, or “Left on current database”), and
+the rest of the row shows the clade, how many of your samples it covers,
+how many GenBank records matched the clade’s search (**\# GenBank
+Hits**), and, once built, how many sequences the database holds (**\#
+Database Sequences**). The second number is usually much smaller: the
+build keeps one copy of each identical sequence and drops short records.
+RefSeq genome annotations list many identical rDNA copies per genome, so
+a clade with many sequenced genomes can lose most of its hits this way.
+For example, Actinopteri had about 43,900 hits but built to about 12,100
+sequences.
 
-# 1. First, just check how many sequences are available. Nothing is downloaded.
-RiboPilot::build_reference_db(
-  '"Gastropoda"[Organism]', "gastropoda",
-  count_only = TRUE, conda_env = "ribopilot"
-)
+### Setting a group up
 
-# 2. Then build the reference data and save it somewhere you can reuse.
-db <- RiboPilot::build_reference_db(
-  '"Gastropoda"[Organism]', "gastropoda",
-  out_dir = "~/ribopilot_refs", conda_env = "ribopilot"
-)
-```
+The link at the right-hand end of each row says what that group needs:
+**Set up database**, **Try again**, or **Change**. Click it and you are
+offered four choices:
 
-Replace `Gastropoda` with your group. The `"[Organism]"` part tells NCBI
-to search by organism name, so `'"Gastropoda"[Organism]'` means “all
-gastropod sequences”. The second value, `"gastropoda"`, is just a short
-label used in the file names.
+- **Download sequences from GenBank.** The normal choice. Opens a run
+  window, then press **Run from App** to download the database. When the
+  build finishes, RiboPilot points the group’s unlocked samples at the
+  new database. A database that already exists in your reference folder
+  is automatically used, not rebuilt.
+- **Use a database I already have.** Points the group at a database
+  built earlier, in this project or by someone else sharing the
+  reference folder.
+- **Change which clade this group uses.** Lists the group’s lineage from
+  the broadest rank to the narrowest. Pick another rank to widen or
+  narrow the group, or search for another clade. If some samples in the
+  group are not contained in the clade you select, they are split off
+  into a different group. Clicking the group’s **Clade** cell opens the
+  same window.
+- **Leave these samples on their current database.** Nothing is built.
+  Use it only when you have already set a database in these samples’
+  **Assembly Options** yourself.
 
-Running this needs the tools you installed with conda, so start R from a
-terminal where you have run `conda activate ribopilot`, or keep the
-`conda_env = “ribopilot”` setting shown above.
+To handle several groups at once, tick their rows first, then click the
+link on any one of them. The “change clade” option is offered only for a
+single group.
 
-## Use it in a project
+If you press **Update** in the Assemble step while some groups have no
+database, RiboPilot warns you but goes ahead, and those samples fail.
 
-When you set up a project, point it at the reference data you built by
-adding two lines to
-[`new_project()`](https://dmacguigan.github.io/RiboPilot/reference/new_project.md):
+## The reference folder
+
+Built databases live in a **reference folder** that can be shared across
+projects. You can set the location of the reference folder using the
+**Settings** button (which also lets you adjust the minimum and maximum
+record counts the grouping step uses). Or you can set the reference
+folder when you create a project.
 
 ``` r
 
@@ -53,29 +77,16 @@ RiboPilot::new_project(
   path       = "~/my_project",
   mapping_fn = "~/my_samples.csv",
   data_path  = "~/my_reads",
-  executor   = "conda",
-  custom_seeds_db  = db$seeds,
-  custom_labels_db = db$labels
+  ref_dir    = "~/ribopilot_refs"
 )
 ```
 
-## Good to know
+If you do not set a folder, RiboPilot uses a folder in your home
+directory.
+[`RiboPilot::ribopilot_ref_dir()`](https://nmnh-oceandna.github.io/RiboPilot/reference/ribopilot_ref_dir.md)
+prints the folder path.
 
-- **Build once, reuse forever.** If you run
-  [`build_reference_db()`](https://dmacguigan.github.io/RiboPilot/reference/build_reference_db.md)
-  again for the same group and location, it reuses what you already
-  built instead of re-downloading. To force a fresh rebuild, add
-  `overwrite = TRUE`.
-- **Where it is saved.** If you leave out `out_dir`, RiboPilot saves the
-  reference data in a default folder on your computer and finds it
-  automatically next time. Setting `out_dir` to a shared location lets
-  your whole lab reuse the same data.
-- **Groups with few sequences.** Some groups have very little published
-  ribosomal data. If your search returns only a handful of records
-  (check with `count_only = TRUE` first), broaden it to a larger group.
-  For example, search a whole family or order rather than a single
-  genus, so RiboPilot has enough reference sequence to work with.
-- **The 5.8S gene.** GenBank rarely stores 5.8S on its own; it is
-  usually bundled inside ITS records. That is fine: RiboPilot still
-  recovers the 5.8S region from the full repeat, and its quality checks
-  anchor on the 18S and 28S genes.
+On a cluster, we recommend setting the reference folder somowhere other
+than your home directory where disk quotas are lower: see [Disk space,
+caches, and offline
+use](https://nmnh-oceandna.github.io/RiboPilot/articles/Caches-and-Offline.md).

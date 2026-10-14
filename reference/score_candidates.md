@@ -8,6 +8,7 @@ Score and rank candidate paths, auto-selecting the best
 score_candidates(
   candidates,
   sample_lineage = NA_character_,
+  sample_taxids = NA_character_,
   expected_length = c(4000, 12000),
   weights = DEFAULT_SCORE_WEIGHTS
 )
@@ -17,15 +18,21 @@ score_candidates(
 
 - candidates:
 
-  data.frame, one row per candidate path, with columns: \`path\`,
-  \`depth\` (mean graph depth), \`blast_pident\` (0-100),
-  \`blast_lineage\` ("; " ranked lineage of the top hit), \`anchors\`
-  (comma list of distinct anchors found among 18S/5.8S/28S), \`length\`
-  (total bp).
+  data.frame, one row per candidate path, with columns: `path`, `depth`
+  (mean graph depth), `blast_pident` (0-100), `blast_lineage`
+  (rank-aligned lineage of the top hit), `anchors` (comma list of
+  distinct anchors found among 18S/5.8S/28S), `length` (total bp), and
+  optionally `blast_lineage_taxids`.
 
 - sample_lineage:
 
-  The sample's resolved "; " ranked lineage.
+  The sample's resolved rank-aligned lineage.
+
+- sample_taxids:
+
+  The sample's rank-aligned lineage taxids. When both this and
+  `candidates$blast_lineage_taxids` are present the taxonomy term is
+  scored on taxids instead of names.
 
 - expected_length:
 
@@ -34,10 +41,10 @@ score_candidates(
 
 - weights:
 
-  Named weights (see \[DEFAULT_SCORE_WEIGHTS\]).
+  Named weights (see `DEFAULT_SCORE_WEIGHTS`).
 
 ## Value
 
-\`candidates\` with added sub-score columns (\`s_tax\`, \`s_identity\`,
-\`s_anchors\`, \`s_depth\`, \`s_length\`), a \`score\`, a \`rank\` (1 =
-best), and an \`auto_select\` logical flagging the top candidate.
+`candidates` with added sub-score columns (`s_tax`, `s_identity`,
+`s_anchors`, `s_depth`, `s_length`), a `score`, a `rank` (1 = best), and
+an `auto_select` logical flagging the top candidate.

@@ -5,7 +5,7 @@ Score one sample's candidate paths and write path_scores (+ auto_select)
 ## Usage
 
 ``` r
-score_one(con, id, out_dir, taxdump_dir = NULL)
+score_one(con, id, dir, taxdump_dir = NULL)
 ```
 
 ## Arguments
@@ -18,10 +18,10 @@ score_one(con, id, out_dir, taxdump_dir = NULL)
 
   Sample ID.
 
-- out_dir:
+- dir:
 
-  Pipeline output dir (assembly fastas + gfa live under
-  \`\<out_dir\>/\<id\>/assemble\`).
+  Folder holding the sample's `<id>_assembly_*.fasta` files and assembly
+  graph (`.gfa`): the score task's own folder.
 
 - taxdump_dir:
 

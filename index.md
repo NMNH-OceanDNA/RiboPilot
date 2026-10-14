@@ -1,59 +1,78 @@
 # RiboPilot
 
-RiboPilot recovers the **nuclear ribosomal repeat (nrDNA)** from genome
-skimming data, then helps you check and clean up the result and package
-it for submission to GenBank. It is a companion to
-[MitoPilot](https://github.com/Smithsonian/MitoPilot), which does the
-same thing for the mitochondrial genome. You can run both on the same
-samples and get both marker sets from one sequencing run.
+RiboPilot is a product of the [NMNH Ocean DNA
+initiative](https://naturalhistory.si.edu/initiatives/oceans/ocean-science-center/ocean-dna)
+and does not represent an official Smithsonian Institution position or
+product.
 
-You do not need to be a programmer to use RiboPilot. Most of your work
-happens in a **point-and-click app** that runs in your web browser. The
-step-by-step [Get started
-guide](https://dmacguigan.github.io/RiboPilot/articles/RiboPilot.html)
+RiboPilot assembles and annotates the **nuclear ribosomal DNA repeat
+(rDNA)** from genome skimming data, then helps you check and clean up
+the result and package it for submission to GenBank. If you already have
+an assembly, RiboPilot can [start from that instead of
+reads](https://nmnh-oceandna.github.io/RiboPilot/articles/Your-Own-Project.html#already-have-an-assembly).
+RiboPilot is a companion to
+[MitoPilot](https://github.com/NMNH-OceanDNA/MitoPilot), which does the
+same process for the mitochondrial genome. You can run both tools on the
+same samples and get both marker sets from one sequencing run.
+
+Most of your work happens in a **point-and-click Shiny app** that runs
+in your web browser. The step-by-step [Get started
+guide](https://nmnh-oceandna.github.io/RiboPilot/articles/RiboPilot.html)
 walks through a complete project from start to finish.
 
-# What RiboPilot recovers
+# The nuclear ribosomal DNA unit
 
 Every cell carries the ribosomal RNA genes in a repeated unit that is
 copied hundreds to thousands of times in a row. Because there are so
 many copies, even a shallow, inexpensive “genome skim” sequences this
-region very deeply, essentially for free. RiboPilot reconstructs that
-repeat unit:
+region very deeply. From it you get some widely used nuclear markers for
+phylogenetics and DNA barcoding: **18S**, **28S**, **ITS1**, **ITS2**,
+and the full **ITS** region.
 
-       ETS   18S    ITS1   5.8S   ITS2    28S     IGS
-     --|===|=======|~~~~~|=====|~~~~~|===========|------ (repeated hundreds of times)
-           SSU              LSU
+![One copy of the rDNA repeat: 5' ETS, 18S, ITS1, 5.8S, ITS2, 28S, 3'
+ETS, with the intergenic spacer (IGS) on either
+side](reference/figures/rdna_repeat.svg)
 
-From it you get the most widely used nuclear markers for phylogenetics
-and DNA barcoding: **18S**, **28S**, **ITS1**, **ITS2**, and the full
-**ITS** region.
+The core rDNA unit is typically highly conserved, but with hundreds of
+copies arranged in a tandem repeat. The three ribosomal genes (18S,
+5.8S, 28S) are highly conserved and act as anchors. The two spacers
+(ITS1, ITS2) sit between them, evolve quickly, and are the regions that
+distinguish closely related species.
 
-The three ribosomal genes (18S, 5.8S, 28S) are highly conserved and act
-as anchors. The two spacers (ITS1, ITS2) sit between them, evolve
-quickly, and are the regions that distinguish closely related species.
+Between the 28S of one copy and the 18S of the next lies the intergenic
+spacer (IGS): the 3’ external transcribed spacer (ETS), a
+non-transcribed spacer (NTS), and the 5’ ETS of the next copy ([Hwang
+and Kim 1999](https://pmc.ncbi.nlm.nih.gov/articles/PMC2733198/)).
+
+However, the structure of the nuclear rDNA repeat varies across the tree
+of life. The IGS can range from a few hundred base pairs to tens of
+kilobases and often holds subrepeats. Repeat blocks of the rDNA unit can
+be located at one or several places in the genome. See ([Wang et
+al. 2023](https://www.nature.com/articles/s41437-023-00634-5) for a
+review.
 
 # What RiboPilot does for you
 
-Starting from raw sequencing reads, RiboPilot:
+The app walks each project through five steps, in order:
 
-1.  **Confirms each sample’s organism.** RiboPilot resolves the `Taxon`
-    label you provide to an NCBI taxon (taxid + full lineage) using a
-    local copy of the NCBI taxonomy, then lets you **verify or correct
-    it in the app** before anything else runs. This is a dedicated first
-    stage (the **Taxonomy** tab): samples must be reviewed and locked
-    here before they move on to assembly, so the taxonomy that guides
-    scoring and curation is one you have signed off on.
-2.  **Assembles** the ribosomal repeat for each sample, cleaning up the
-    reads and piecing the region back together, then picking the best
-    reconstruction automatically.
-3.  **Annotates** it by locating the boundaries of all five features
-    (18S, ITS1, 5.8S, ITS2, 28S).
-4.  **Checks (curates)** each result against a reference and flags
-    anything that looks off, such as a missing gene, an unusual length,
-    or a possible contaminant, so you can focus your attention where it
-    is needed.
-5.  **Exports** a tidy, GenBank-ready submission package.
+1.  **Taxonomy.** RiboPilot matches the `Taxon` you provide for each
+    sample to the [NCBI
+    taxonomy](https://www.ncbi.nlm.nih.gov/datasets/taxonomy/). Samples
+    must be reviewed and locked here before they move on to assembly,
+    since the taxonomic ID of your samples guides scoring and curation.
+2.  **Reference.** RiboPilot groups related samples and builds a
+    reference database of known rDNA sequences for each group, from
+    GenBank.
+3.  **Assemble.** One run cleans the reads, assembles the ribosomal
+    repeat for each sample, picks the best assembly path, finds the five
+    features (18S, ITS1, 5.8S, ITS2, 28S), and checks each result for
+    problems such as a missing gene, an unusual length, a possible
+    contaminant, or a chimera. You choose which contigs to keep or drop
+    for the next step.
+4.  **Annotation Review.** You check the annotated features and quality
+    flags of each kept contig, adjusting boundaries if needed.
+5.  **Export.** RiboPilot writes a tidy, GenBank-ready submission
+    package, and warns you about any flagged record first.
 
 Behind the scenes RiboPilot uses established bioinformatics tools
 ([fastp](https://github.com/OpenGene/fastp),
@@ -63,78 +82,69 @@ Behind the scenes RiboPilot uses established bioinformatics tools
 [ITSx](https://microbiology.se/software/itsx/),
 [BLAST](https://blast.ncbi.nlm.nih.gov/Blast.cgi), and others) and
 stitches them together for you. You do not need to learn or run any of
-them yourself.
+them yourself. However, advanced users can adjust the parameters for
+each tool within RiboPilot.
 
-# Which organisms it works with
+# Taxonomic Scope
 
-RiboPilot was first built for ray-finned fishes and comes ready to use
-for them out of the box. For any other group of organisms, it can build
-the reference data it needs automatically by downloading published
-sequences from GenBank. This is a one-time setup step per group; see the
+Each group of samples needs a reference database of known rDNA
+sequences. You build it once per group in the app, from GenBank. See the
 [reference database
-guide](https://dmacguigan.github.io/RiboPilot/articles/Reference-Databases.html).
+guide](https://nmnh-oceandna.github.io/RiboPilot/articles/Reference-Databases.html).
 
-It also runs automatic quality checks tuned for a taxonomic group.
-Checks currently ship for a generic metazoan (animal) setting and a
-fish-specific setting; see the [curation
-guide](https://dmacguigan.github.io/RiboPilot/articles/Curation-Flags.html).
+RiboPilot also runs automatic quality checks tuned for a taxonomic
+group. Five settings ship, picked from each sample’s lineage: a generic
+animal setting, and settings for ray-finned fishes, sea stars, true
+jellyfish, and octocorals; see the [curation
+guide](https://nmnh-oceandna.github.io/RiboPilot/articles/Curation-Flags.html).
+These settings are still in development and likely need fine tuning.
 
 # Installation
 
-RiboPilot needs three things installed on your computer (or your lab’s
-server):
-
-1.  **[R](https://www.r-project.org/)** (version 4.4.0 or newer), the
-    language RiboPilot is written in. You will type a few short commands
-    into R, but you do not need to know R.
-2.  **[Nextflow](https://www.nextflow.io/docs/latest/install.html)**,
-    which runs the heavy analysis steps.
-3.  **The bioinformatics tools** the pipeline uses. The easiest way to
-    get all of them at once is
-    [conda](https://docs.conda.io/projects/miniconda/en/latest/), a tool
-    that installs a bundle of programs into a self-contained
-    “environment” without interfering with anything else on your
-    machine. Once conda is installed, one command sets up everything
-    RiboPilot needs:
-
-``` bash
-conda env create -f environment.yml
-conda activate ribopilot
-```
-
-Then, in R, install RiboPilot itself:
+RiboPilot requires Docker (or Singularity on a cluster), Java, Nextflow,
+and R. The [Installation
+guide](https://nmnh-oceandna.github.io/RiboPilot/articles/Installation.html)
+lists versions and checks. Then, in R:
 
 ``` r
 
-if (!requireNamespace("remotes", quietly = TRUE)) {
-  install.packages("remotes")
-}
-remotes::install_github("dmacguigan/RiboPilot")
+install.packages("remotes")
+remotes::install_github("NMNH-OceanDNA/RiboPilot")
 ```
-
-If any of this is unfamiliar, the [Get started
-guide](https://dmacguigan.github.io/RiboPilot/articles/RiboPilot.html)
-explains each piece in more detail, and your local bioinformatics
-support staff can usually help with the one-time setup.
 
 # Getting started
 
-The best way to learn RiboPilot is to run the built-in practice project.
-RiboPilot ships a small set of fish samples and a single command that
-downloads them and sets everything up:
+The best way to learn RiboPilot is to run the built-in test project. The
+first command downloads the test samples and sets everything up; the
+second opens the app:
 
 ``` r
 
-RiboPilot::new_test_project(path = "~/ribopilot_test", executor = "conda")
+RiboPilot::new_test_project(path = "~/ribopilot_test")
+RiboPilot::RiboPilot("~/ribopilot_test")
 ```
 
-From there, the [Get started
-guide](https://dmacguigan.github.io/RiboPilot/articles/RiboPilot.html)
-walks you through assembling the samples, reviewing and cleaning them up
-in the app, and exporting the results.
+By default this fetches small rDNA-filtered read subsets published with
+the RiboPilot releases, so setup takes under a minute. Pass
+`full_size = TRUE` to download the complete read sets from ENA/SRA
+instead (several GB). The first run also downloads the container image
+once (about 2.6 GB).
+
+Follow the [Get started
+guide](https://nmnh-oceandna.github.io/RiboPilot/articles/RiboPilot.html)
+to walk through project initialization and the five steps in the app.
+
+# Citing RiboPilot
+
+Run `citation("RiboPilot")` in R. The [Citing
+RiboPilot](https://nmnh-oceandna.github.io/RiboPilot/articles/Citing.html)
+page lists the tools RiboPilot runs, with their versions and references,
+for your methods section.
 
 # Getting help
 
-- Full documentation: <https://dmacguigan.github.io/RiboPilot/>
+- Full documentation: <https://nmnh-oceandna.github.io/RiboPilot/>
+- When something goes wrong: the [Troubleshooting
+  guide](https://nmnh-oceandna.github.io/RiboPilot/articles/Troubleshooting.html).
 - Questions or problems: please open an
-  [issue](https://github.com/dmacguigan/RiboPilot/issues).
+  [issue](https://github.com/NMNH-OceanDNA/RiboPilot/issues).

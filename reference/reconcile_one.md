@@ -5,7 +5,7 @@ Reconcile barrnap + ITSx outputs for one sample; write annotations
 ## Usage
 
 ``` r
-reconcile_one(con, id, gff = NULL, positions = NULL)
+reconcile_one(con, id, path = 1L, scaffold = 1L, gff = NULL, positions = NULL)
 ```
 
 ## Arguments
@@ -17,6 +17,10 @@ reconcile_one(con, id, gff = NULL, positions = NULL)
 - id:
 
   Sample ID.
+
+- path, scaffold:
+
+  Assembly unit within the sample.
 
 - gff:
 

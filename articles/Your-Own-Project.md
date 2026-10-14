@@ -1,0 +1,172 @@
+# Your own project
+
+A project starts with a mapping file that lists your samples, and one
+command that sets up the project folder. After that, everything happens
+in the app, the same way as in [Get
+started](https://nmnh-oceandna.github.io/RiboPilot/articles/RiboPilot.md).
+
+## The mapping file
+
+The mapping file is a CSV file with one row per sample. For example:
+
+    ID,Taxon,R1,R2,Voucher
+    Fish_01,Brosme brosme,Fish_01_R1.fastq.gz,Fish_01_R2.fastq.gz,USNM 123456
+    Fish_02,Upeneus parvus,SRR22396758/SRR22396758_1.fastq.gz,SRR22396758/SRR22396758_2.fastq.gz,USNM 123457
+    Snail_01,Tritia reticulata,Snail_01_R1.fq.gz,Snail_01_R2.fq.gz,
+
+The rules:
+
+- **Columns.** It needs the columns `ID`, `Taxon`, `R1`, and `R2`. Upper
+  and lower case do not matter in column names.
+- **Taxon.** Give the species name whenever you can (for example
+  `Upeneus parvus`), spelled as NCBI has it; a genus or higher group
+  works when the species is unknown. RiboPilot uses it to pick the
+  reference database and the quality checks, to judge contamination, and
+  as the organism name in your GenBank records.
+- **IDs.** Each ID must be unique, ignoring case, and at most 40
+  characters long. Use only letters, digits, dash (`-`), underscore
+  (`_`), and colon (`:`): no spaces, dots, or slashes.
+- **Commas only.** Save the file with commas between values. From Excel,
+  use File \> Save As \> CSV UTF-8 (Comma delimited).
+- **Paired reads only.** Every sample with Illumina reads needs both an
+  `R1` and an `R2` file. Single-end reads are not currently supported.
+- **Read file names** are relative to the read folder you pass as
+  `data_path`. Subfolders are fine
+  (`SRR22396758/SRR22396758_1.fastq.gz`), but full paths are not.
+- **No spaces or special characters in paths.** File names, folder
+  names, and the project path may use only letters, digits, and `.`,
+  `_`, `-`, and `/`. RiboPilot stops and names each path it cannot pass
+  to Docker, Singularity, or Nextflow, for example one with a space or a
+  quote mark.
+- **Extra columns** are kept, and you can use them in your GenBank
+  headers, for example as `{Voucher}`. A column name with a space or a
+  dash is read with a dot in its place, so `Voucher ID` becomes
+  `{Voucher.ID}`. The **Your mapping columns** chips in the Export
+  window show every name.
+- **Metadata ID columns.** Columns named `GEOME_BCID`, `GBIF_ID`, and
+  `BioSample` hold a sample’s GEOME, GBIF, and NCBI identifiers.
+  RiboPilot fetches those records when it sets up the project. Blank
+  cells are fine. To use other column names, pass `mapping_geome`,
+  `mapping_gbif`, or `mapping_ncbi` to the
+  [`new_project()`](https://nmnh-oceandna.github.io/RiboPilot/reference/new_project.md)
+  function. See [Sample
+  metadata](https://nmnh-oceandna.github.io/RiboPilot/articles/Sample-Metadata.md).
+- **Reserved names.** RiboPilot adds some columns itself, so your file
+  cannot use these names: taxid, sci_name, rank, match_type,
+  tax_alternatives, lineage, lineage_taxids, ref_id, user_group,
+  ref_source, taxonomy_switch, taxonomy_lock, and time_stamp.
+
+The IDs end up in your GenBank records, so choose them with care.
+
+## Create the project
+
+``` r
+
+RiboPilot::new_project(
+  path       = "~/my_project",
+  mapping_fn = "~/my_samples.csv",
+  data_path  = "~/my_reads"
+)
+```
+
+RiboPilot checks the mapping file and the read files before it writes
+anything, and stops with an error message if it encounters any issues.
+
+By default,
+[`new_project()`](https://nmnh-oceandna.github.io/RiboPilot/reference/new_project.md)
+assumes you are running RiboPilot on a local workstation (i.e. a desktop
+or laptop). For projects on a computing cluster, pass your cluster
+profile as `executor`; see [Running on a
+cluster](https://nmnh-oceandna.github.io/RiboPilot/articles/Clusters.md).
+
+An NCBI API key is optional; see
+[Installation](https://nmnh-oceandna.github.io/RiboPilot/articles/Installation.md)
+for where to put it.
+
+Once the project is created, open the app and follow the five steps, as
+in [Get
+started](https://nmnh-oceandna.github.io/RiboPilot/articles/RiboPilot.md).
+
+``` r
+
+RiboPilot::RiboPilot("~/my_project")
+```
+
+Run a handful of samples through every step before you run hundreds:
+settings that are wrong for your group are much cheaper to find on a
+small run. Make sure to do the Reference step before running the
+Assemble workflow.
+
+## Already have an assembly?
+
+If you have a genome assembly for a sample, or just the contig that
+contains the ribosomal repeat, you can use it instead of assembling from
+reads. Add an `Assembly` column to your mapping file naming that
+sample’s FASTA file, and pass the folder that holds them as
+`assembly_path`:
+
+``` r
+
+RiboPilot::new_project(
+  path          = "~/my_project",
+  mapping_fn    = "~/my_samples.csv",
+  data_path     = "~/my_reads",
+  assembly_path = "~/my_assemblies"
+)
+```
+
+The assembly files must be FASTA files, all gzipped (`.gz`) or all
+uncompressed in one project, and named relative to `assembly_path`.
+
+RiboPilot searches each supplied assembly for rRNA genes and carries
+forward the contigs that carry an 18S or 28S anchor. A single ribosomal
+contig passes this search without doing anything special. If you
+supplied a fragment too short to carry an anchor (an ITS-only sequence,
+for example), turn the search off in the app’s **Assembly Options** and
+RiboPilot uses your file exactly as given.
+
+A sample with an assembly does not need reads: leave `R1` and `R2` blank
+in the mapfile. If your file has no reads at all, you can leave out the
+`R1` and `R2` columns and `data_path` entirely. A sample with no reads
+gets no depth profile, since there is nothing to map back.
+
+## Adding samples later
+
+To add samples to a project you have already started, write a mapping
+file that lists only the new samples, and run:
+
+``` r
+
+RiboPilot::add_samples(
+  "~/my_project",
+  mapping_fn = "~/more_samples.csv",
+  data_path  = "~/my_reads"
+)
+```
+
+It runs the same checks as
+[`new_project()`](https://nmnh-oceandna.github.io/RiboPilot/reference/new_project.md),
+and refuses IDs that are already in the project. Put the new read files
+in the same folder as the project’s other reads (the `data_path` you
+gave
+[`new_project()`](https://nmnh-oceandna.github.io/RiboPilot/reference/new_project.md)).
+The new samples then appear in the Taxonomy step, ready to assign.
+
+To fix or add metadata, such as a voucher number, for samples that are
+already in the project, list them in a mapping file with the new values
+and run
+[`RiboPilot::update_sample_metadata()`](https://nmnh-oceandna.github.io/RiboPilot/reference/update_sample_metadata.md)
+the same way. It never changes a sample’s reads, assembly, state, or
+locks.
+
+Do not rerun
+[`new_project()`](https://nmnh-oceandna.github.io/RiboPilot/reference/new_project.md)
+with `force = TRUE` on a project you have worked on: it deletes all
+existing results.
+
+## What is in the project folder
+
+The project folder holds your results database, its settings, and the
+pipeline’s working files. The table in [Disk space, caches, and offline
+use](https://nmnh-oceandna.github.io/RiboPilot/articles/Caches-and-Offline.md)
+says what each item is and when you can safely delete them.

@@ -1,11 +1,31 @@
 pandoc: 3.8.3
-pkgdown: 2.2.0
+pkgdown: 2.2.1
 pkgdown_sha: ~
 articles:
+  Assembly-Methods: Assembly-Methods.html
+  Caches-and-Offline: Caches-and-Offline.html
+  Citing: Citing.html
+  Clusters: Clusters.html
   Curation-Flags: Curation-Flags.html
+  GenBank-Submission: GenBank-Submission.html
+  Installation: Installation.html
+  Metadata-Linking: Metadata-Linking.html
+  Metadata-Reference: Metadata-Reference.html
+  NMNH-Hydra: NMNH-Hydra.html
+  NMNH-Vouchers: NMNH-Vouchers.html
+  NOAA-SEDNA: NOAA-SEDNA.html
   Reference-Databases: Reference-Databases.html
   RiboPilot: RiboPilot.html
-last_built: 2026-07-07T17:58Z
+  Sample-Metadata: Sample-Metadata.html
+  Test-Project-Annotate: Test-Project-Annotate.html
+  Test-Project-Assemble: Test-Project-Assemble.html
+  Test-Project-Export: Test-Project-Export.html
+  Test-Project-Reference: Test-Project-Reference.html
+  Test-Project-Taxonomy: Test-Project-Taxonomy.html
+  Troubleshooting: Troubleshooting.html
+  Without-Containers: Without-Containers.html
+  Your-Own-Project: Your-Own-Project.html
+last_built: 2026-10-14T19:43Z
 urls:
-  reference: https://dmacguigan.github.io/RiboPilot/reference
-  article: https://dmacguigan.github.io/RiboPilot/articles
+  reference: https://nmnh-oceandna.github.io/RiboPilot/reference
+  article: https://nmnh-oceandna.github.io/RiboPilot/articles

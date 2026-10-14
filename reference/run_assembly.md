@@ -1,11 +1,11 @@
-# Run the assembly workflow (WF1) for a project
+# Run the assembly workflow for a project
 
-Launches the self-contained Nextflow pipeline: it reads samples from the
-project database, runs fastp + GetOrganelle, then scores and stitches
-each assembly and computes the assembly-review aids (reference BLAST +
-coverage), writing everything back to the database. Annotation and
-curation are handled by the annotation workflow (\[run_annotate()\],
-WF2) after you review and lock the assemblies in the app.
+Launches the self-contained Nextflow pipeline, the same run as the app's
+Update button. For every taxonomy-locked sample that is Ready to run,
+one run cleans the reads, assembles, scores, BLASTs, maps coverage,
+annotates, curates, screens, checks for chimeras, and triages every
+contig, writing everything back to the database. Run it again (or press
+Update) only after changing a selection, an option set, or a State.
 
 ## Usage
 
@@ -23,19 +23,19 @@ run_assembly(
 
 - path:
 
-  Project directory (contains \`.sqlite\` and \`.config\`).
+  Project directory (contains `.sqlite` and `.config`).
 
 - nextflow:
 
-  Path to the \`nextflow\` binary.
+  Path to the `nextflow` binary.
 
 - work:
 
-  Nextflow work directory (default \`\<path\>/work\`).
+  Nextflow work directory (default `<path>/work`).
 
 - conda_env:
 
-  Optional conda env providing the pipeline tools; its \`bin/\` is
+  Optional conda env providing the pipeline tools; its `bin/` is
   prepended to PATH for the run.
 
 - ribopilot_src:

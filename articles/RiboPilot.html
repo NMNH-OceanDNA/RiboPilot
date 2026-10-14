@@ -5,7 +5,7 @@
 <meta charset="utf-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-<title>Get started: a full RiboPilot walkthrough • RiboPilot</title>
+<title>Get started • RiboPilot</title>
 <!-- favicons --><link rel="icon" type="image/png" sizes="96x96" href="../favicon-96x96.png">
 <link rel="icon" type="”image/svg+xml”" href="../favicon.svg">
 <link rel="apple-touch-icon" sizes="180x180" href="../apple-touch-icon.png">
@@ -15,7 +15,8 @@
 <link href="../deps/bootstrap-5.3.8/bootstrap.min.css" rel="stylesheet">
 <script src="../deps/bootstrap-5.3.8/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet">
 <link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet">
-<script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><meta property="og:title" content="Get started: a full RiboPilot walkthrough">
+<script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><link href="../extra.css" rel="stylesheet">
+<meta property="og:title" content="Get started">
 </head>
 <body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
@@ -25,7 +26,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">RiboPilot</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9000</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,16 +40,47 @@
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
-<li><a class="dropdown-item" href="../articles/Reference-Databases.html">Using RiboPilot with your group of organisms</a></li>
-    <li><a class="dropdown-item" href="../articles/Curation-Flags.html">Understanding the automatic quality checks</a></li>
+<li><h6 class="dropdown-header" data-toc-skip>Setup</h6></li>
+    <li><a class="dropdown-item" href="../articles/Installation.html">Installation</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Test project</h6></li>
+    <li><a class="dropdown-item" href="../articles/Test-Project-Taxonomy.html">1. Taxonomy</a></li>
+    <li><a class="dropdown-item" href="../articles/Test-Project-Reference.html">2. Reference</a></li>
+    <li><a class="dropdown-item" href="../articles/Test-Project-Assemble.html">3. Assemble</a></li>
+    <li><a class="dropdown-item" href="../articles/Test-Project-Annotate.html">4. Annotation Review</a></li>
+    <li><a class="dropdown-item" href="../articles/Test-Project-Export.html">5. Export</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Usage</h6></li>
+    <li><a class="dropdown-item" href="../articles/Your-Own-Project.html">Your own project</a></li>
+    <li><a class="dropdown-item" href="../articles/Reference-Databases.html">Reference databases</a></li>
+    <li><a class="dropdown-item" href="../articles/Assembly-Methods.html">Choosing an assembly method</a></li>
+    <li><a class="dropdown-item" href="../articles/Curation-Flags.html">Quality checks and flags</a></li>
+    <li><a class="dropdown-item" href="../articles/GenBank-Submission.html">Preparing a GenBank submission</a></li>
+    <li><a class="dropdown-item" href="../articles/Citing.html">Citing RiboPilot</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Metadata</h6></li>
+    <li><a class="dropdown-item" href="../articles/Sample-Metadata.html">Sample metadata</a></li>
+    <li><a class="dropdown-item" href="../articles/Metadata-Linking.html">Linking records across databases</a></li>
+    <li><a class="dropdown-item" href="../articles/NMNH-Vouchers.html">NMNH voucher submissions</a></li>
+    <li><a class="dropdown-item" href="../articles/Metadata-Reference.html">Metadata field reference</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Computing environments</h6></li>
+    <li><a class="dropdown-item" href="../articles/Clusters.html">Running on a cluster</a></li>
+    <li><a class="dropdown-item" href="../articles/NMNH-Hydra.html">Smithsonian Hydra setup</a></li>
+    <li><a class="dropdown-item" href="../articles/NOAA-SEDNA.html">NOAA SEDNA setup</a></li>
+    <li><a class="dropdown-item" href="../articles/Caches-and-Offline.html">Disk space, caches, and offline use</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Help</h6></li>
+    <li><a class="dropdown-item" href="../articles/Troubleshooting.html">Troubleshooting</a></li>
   </ul>
 </li>
+<li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul>
 <ul class="navbar-nav">
 <li class="nav-item"><form class="form-inline" role="search">
  <input class="form-control" type="search" name="search-input" id="search-input" autocomplete="off" aria-label="Search site" placeholder="Search for" data-search-index="../search.json">
 </form></li>
-<li class="nav-item"><a class="external-link nav-link" href="https://github.com/dmacguigan/RiboPilot/" aria-label="GitHub"><span class="fa fab fa-github fa-lg"></span></a></li>
+<li class="nav-item"><a class="external-link nav-link" href="https://github.com/NMNH-OceanDNA/RiboPilot/" aria-label="GitHub"><span class="fa fab fa-github fa-lg"></span></a></li>
       </ul>
 </div>
 
@@ -61,304 +93,211 @@
 
 <div class="row">
   <main id="main" class="col-md-9"><div class="page-header">
-      <img src="../logo.png" class="logo" alt=""><h1>Get started: a full RiboPilot walkthrough</h1>
+      <img src="../logo.svg" class="logo" alt=""><h1>Get started</h1>
             
       
-      <small class="dont-index">Source: <a href="https://github.com/dmacguigan/RiboPilot/blob/main/vignettes/RiboPilot.Rmd" class="external-link"><code>vignettes/RiboPilot.Rmd</code></a></small>
+      <small class="dont-index">Source: <a href="https://github.com/NMNH-OceanDNA/RiboPilot/blob/main/vignettes/RiboPilot.Rmd" class="external-link"><code>vignettes/RiboPilot.Rmd</code></a></small>
       <div class="d-none name"><code>RiboPilot.Rmd</code></div>
     </div>
 
     
     
-<style>
-.alert { border-left: 5px solid; padding: 10px; margin: 12px 0; border-radius: 5px; }
-.alert-tip { border-color: #28A745; background-color: #E9F7EF; }
-.alert-note { border-color: #007BFF; background-color: #EBF5FF; }
-.alert-warning { border-color: #FFC107; background-color: #FFF9E6; }
-.alert-danger { border-color: #DC3545; background-color: #F8D7DA; }
-strong { font-weight: bold; }
-</style>
-<p>This guide walks you through a complete RiboPilot project, from raw
-sequencing reads to a finished, GenBank-ready nuclear ribosomal repeat
-(nrDNA). It is written for biologists. You do <strong>not</strong> need
-programming experience: you will type a handful of short commands into R
-(mostly to start things), but the review and clean-up work happens in a
-point-and-click app in your web browser.</p>
-<p>If you already use <a href="https://github.com/Smithsonian/MitoPilot" class="external-link">MitoPilot</a>, this will
-feel familiar. The two tools work the same way, use the same input
-files, and can run on the same samples.</p>
-<div class="section level2">
-<h2 id="how-ribopilot-works-in-brief">How RiboPilot works, in brief<a class="anchor" aria-label="anchor" href="#how-ribopilot-works-in-brief"></a>
-</h2>
-<p>Every cell copies its ribosomal RNA genes in a repeated unit,
-hundreds to thousands of times in a row. Even shallow, inexpensive
-“genome skim” sequencing therefore captures this region very deeply.
-RiboPilot reconstructs the repeat:</p>
-<pre><code>   ETS   18S    ITS1   5.8S   ITS2    28S     IGS
- --|===|=======|~~~~~|=====|~~~~~|===========|------ (repeated hundreds of times)
-       SSU              LSU</code></pre>
-<p>It reports five parts of that repeat for each sample: the three
-conserved ribosomal genes (<strong>18S, 5.8S, 28S</strong>) and the two
-fast-evolving spacers between them (<strong>ITS1, ITS2</strong>). The
-genes are easy to find and act as landmarks; the spacers are simply the
-stretches between those landmarks, and they are the regions most useful
-for telling closely related species apart.</p>
-<p>A project moves through four stages, and RiboPilot keeps track of
-where every sample is:</p>
-<ol style="list-style-type: decimal">
-<li>
-<strong>Assemble</strong> the repeat for each sample.</li>
-<li>
-<strong>Annotate</strong> it (mark the five features).</li>
-<li>
-<strong>Review and curate</strong> the results in the app.</li>
-<li>
-<strong>Export</strong> a submission package.</li>
-</ol>
+<p>RiboPilot takes genome-skim reads and assembles a GenBank-ready
+record of the nuclear ribosomal DNA repeat (rDNA). Starting a project
+requires only a few R commands, everything else happens in a R Shiny
+app.</p>
+<p>If you use <a href="https://github.com/NMNH-OceanDNA/MitoPilot" class="external-link">MitoPilot</a>, this
+will feel familiar. RiboPilot has a similar layout, it takes the same
+mapping file, and it can run on the same samples. However, RiboPilot
+uses the <code>Taxon</code> column in the map file throughout the
+pipeline. Try to provide the species ID whenever possible, although
+higher level taxonomic groups should work too. See <a href="Your-Own-Project.html#the-mapping-file">Your own project</a>.</p>
+<p>This guide walks through the test project, a set of 12 samples that
+ships with RiboPilot: 10 fish genome skims and 2 synthetic samples made
+to test the checks. We recommend trying the test project before you
+start on your own data.</p>
+<div class="alert alert-note">
+<p>This guide assumes that you are working on a local computer rather
+than a cluster. If working on a cluster, please read over <a href="Clusters.html">this page</a> first.</p>
+</div>
+<div class="alert alert-hydra">
+<p><span class="hydra-tag">HYDRA</span> <strong>Are you a Smithsonian
+user?</strong> Boxes like this one flag the places where the Smithsonian
+Hydra cluster differs from a workstation. Before you start, get an R
+session on Hydra and install Nextflow: see <a href="NMNH-Hydra.html">Smithsonian Hydra setup</a>.</p>
 </div>
 <div class="section level2">
-<h2 id="step-0-one-time-setup">Step 0: One-time setup<a class="anchor" aria-label="anchor" href="#step-0-one-time-setup"></a>
+<h2 id="setup">Setup<a class="anchor" aria-label="anchor" href="#setup"></a>
 </h2>
-<p>Before your first project, three things need to be installed. This is
-usually done once, and lab or institutional computing staff can help if
-any of it is unfamiliar.</p>
-<ul>
-<li>
-<strong>R</strong> (version 4.4.0 or newer): the environment you
-will type commands into.</li>
-<li>
-<strong>Nextflow</strong>: the engine that runs the analysis
-steps.</li>
-<li>
-<strong>The analysis tools</strong> RiboPilot relies on. The
-simplest way to get all of them is with <strong>conda</strong>, which
-installs a self-contained bundle of programs (called an “environment”)
-that will not interfere with anything else on your computer. After
-installing conda, run these two lines in a terminal to create the
-RiboPilot environment named <code>ribopilot</code>:</li>
-</ul>
-<div class="sourceCode" id="cb2"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a><span class="ex">conda</span> env create <span class="at">-f</span> environment.yml</span>
-<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a><span class="ex">conda</span> activate ribopilot</span></code></pre></div>
-<p>Then install RiboPilot itself, from within R:</p>
+<p>Before we begin, follow the <a href="Installation.html#before-you-start">installation instructions</a>
+to get RiboPilot set up on your computer or cluster.</p>
+<p>The test project (12 samples) took about 20 minutes on a Linux
+workstation with 16 CPU cores and 61 GB of memory. RiboPilot caps every
+task at your computer’s CPUs and memory, so a small computer runs more
+slowly rather than failing.</p>
+</div>
+<div class="section level2">
+<h2 id="samples-contigs-and-records">Samples, contigs, and records<a class="anchor" aria-label="anchor" href="#samples-contigs-and-records"></a>
+</h2>
+<p>A sample is one row of your mapping file and usually corresponds to
+one specimen. Assembling a sample can produce more than one path
+(alternate ways to join the same reads), and each path can hold one or
+more contigs. Each contig you keep becomes one record in your GenBank
+export. A sample with one record is named by its ID. A sample with more
+than one record gets names like <code>SRR33849683_p1_s2</code> (path 1,
+contig 2). Export files call the contig number
+<code>scaffold</code>.</p>
+</div>
+<div class="section level2">
+<h2 id="create-the-test-project">Create the test project<a class="anchor" aria-label="anchor" href="#create-the-test-project"></a>
+</h2>
+<p>In R, run:</p>
+<div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu">RiboPilot</span><span class="fu">::</span><span class="fu"><a href="../reference/new_test_project.html">new_test_project</a></span><span class="op">(</span>path <span class="op">=</span> <span class="st">"~/ribopilot_test"</span><span class="op">)</span></span></code></pre></div>
+<p>This downloads small read files that hold only each sample’s rDNA
+reads (a few MB per sample) and sets up the project. The first run later
+downloads the RiboPilot container image once (about 2.6 GB).</p>
+<div class="alert alert-hydra">
+<p><span class="hydra-tag">HYDRA</span> <strong>Project setup.</strong>
+Pass <code>executor = "NMNH_Hydra"</code>, so the work goes to compute
+nodes and runs in Singularity instead of Docker:</p>
+<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu">RiboPilot</span><span class="fu">::</span><span class="fu"><a href="../reference/new_test_project.html">new_test_project</a></span><span class="op">(</span></span>
+<span>  path <span class="op">=</span> <span class="st">"/pool/public/genomics/&lt;USER&gt;/RiboPilot/test_project"</span>,</span>
+<span>  executor <span class="op">=</span> <span class="st">"NMNH_Hydra"</span></span>
+<span><span class="op">)</span></span></code></pre></div>
+<p>Put projects under <code>/pool</code> or <code>/scratch</code>. Home
+folders are far too small. By default Singularity’s download cache and
+the reference folder also sit in your home folder; <a href="Caches-and-Offline.html">Disk space, caches, and offline use</a>
+shows how to move them.</p>
+</div>
+<p>While RiboPilot is in private preview, this download needs a GitHub
+token; see <a href="Installation.html">Installation</a>. You may also
+see two warnings that the default fish reference database is not
+reachable. That is expected: RiboPilot does not ship a reference
+database, and the <a href="Test-Project-Reference.html">Reference
+step</a> builds the ones the test project needs.</p>
+<p>The 10 fish are real genome skims from NCBI’s Sequence Read Archive.
+CHIM00 and CHIM01 are synthetic: CHIM00 is a clean copy of one fish’s
+rDNA, and CHIM01 joins that fish’s 18S to the 28S of a
+<em>Penicillium</em> mold. CHIM01 is there so you can see the checks
+catch a mixed-up record.</p>
+</div>
+<div class="section level2">
+<h2 id="open-the-app">Open the app<a class="anchor" aria-label="anchor" href="#open-the-app"></a>
+</h2>
 <div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu">remotes</span><span class="fu">::</span><span class="fu">install_github</span><span class="op">(</span><span class="st">"dmacguigan/RiboPilot"</span><span class="op">)</span></span></code></pre></div>
-<div class="alert alert-note">
-<p><strong>Tip.</strong> Start R from a terminal where you have already
-run <code>conda activate ribopilot</code>. That way RiboPilot can find
-all the tools it needs. Alternatively, tell each command which
-environment to use by adding <code>conda_env = “ribopilot”</code>, as
-shown throughout this guide.</p>
+<code class="sourceCode R"><span><span class="fu">RiboPilot</span><span class="fu">::</span><span class="fu"><a href="../reference/run_app.html">RiboPilot</a></span><span class="op">(</span><span class="st">"~/ribopilot_test"</span><span class="op">)</span></span></code></pre></div>
+<p><span class="hydra-tag">HYDRA</span> Run the same command from
+RStudio Server; see <a href="NMNH-Hydra.html#open-the-app-and-run">Smithsonian Hydra
+setup</a>.</p>
+<p>The app opens in your browser on the Taxonomy step. The toolbar shows
+the five steps in order, and each step has its own table. Click a row to
+select it, or tick the box in the header to select every row still
+shown. Click a sample’s ID or its <strong>details</strong> button see
+additional information. <strong>Download selected rows</strong> and
+<strong>Download all rows</strong> under each table save it as a CSV
+file.</p>
+<div class="float">
+<img src="figures/get-started/app-overview.png" alt="The app as it first opens, on the Taxonomy step"><div class="figcaption">The app as it first opens, on the Taxonomy
+step</div>
 </div>
-<div class="alert alert-note">
-<p>An
-<a href="https://www.ncbi.nlm.nih.gov/datasets/docs/v2/api/api-keys/" class="external-link">NCBI
-API key</a> is optional but recommended. It is a free code from NCBI
-that lets RiboPilot look up reference sequences faster and more
-reliably. You paste it in when you create a project (below).</p>
-</div>
-</div>
-<div class="section level2">
-<h2 id="step-1-try-the-practice-project-first">Step 1: Try the practice project first<a class="anchor" aria-label="anchor" href="#step-1-try-the-practice-project-first"></a>
-</h2>
-<p>RiboPilot ships a small set of fish samples so you can confirm
-everything works before using your own data. One command downloads the
-samples and sets up a ready -to-run project:</p>
-<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu">RiboPilot</span><span class="fu">::</span><span class="fu"><a href="../reference/new_test_project.html">new_test_project</a></span><span class="op">(</span>path <span class="op">=</span> <span class="st">"~/ribopilot_test"</span>, executor <span class="op">=</span> <span class="st">"conda"</span><span class="op">)</span></span></code></pre></div>
-<p>This downloads a few gigabytes of data, so it can take a while. When
-it finishes, you have a working project you can practice on using the
-steps below. We strongly recommend doing this once before starting with
-your own samples.</p>
-</div>
-<div class="section level2">
-<h2 id="step-2-reference-data-for-your-group-of-organisms">Step 2: Reference data for your group of organisms<a class="anchor" aria-label="anchor" href="#step-2-reference-data-for-your-group-of-organisms"></a>
-</h2>
-<p>To assemble a sample, RiboPilot compares the reads to known ribosomal
-sequences from related organisms. It comes ready to use for
-<strong>ray-finned fishes</strong>. If your samples are fish, you can
-skip to Step 3.</p>
-<p>For any other group, RiboPilot can build the reference data it needs
-by downloading published sequences from GenBank. You do this once per
-group, and the result is reused for every future project on that group.
-For example, for gastropods (snails and slugs):</p>
-<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># First, just see how many sequences are available (nothing is downloaded yet):</span></span>
-<span><span class="fu">RiboPilot</span><span class="fu">::</span><span class="fu"><a href="../reference/build_reference_db.html">build_reference_db</a></span><span class="op">(</span></span>
-<span>  <span class="st">'"Gastropoda"[Organism]'</span>, <span class="st">"gastropoda"</span>,</span>
-<span>  count_only <span class="op">=</span> <span class="cn">TRUE</span>, conda_env <span class="op">=</span> <span class="st">"ribopilot"</span></span>
-<span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Then build the reference data and save it somewhere you can reuse it:</span></span>
-<span><span class="va">db</span> <span class="op">&lt;-</span> <span class="fu">RiboPilot</span><span class="fu">::</span><span class="fu"><a href="../reference/build_reference_db.html">build_reference_db</a></span><span class="op">(</span></span>
-<span>  <span class="st">'"Gastropoda"[Organism]'</span>, <span class="st">"gastropoda"</span>,</span>
-<span>  out_dir <span class="op">=</span> <span class="st">"~/ribopilot_refs"</span>, conda_env <span class="op">=</span> <span class="st">"ribopilot"</span></span>
-<span><span class="op">)</span></span></code></pre></div>
-<p>The first value in quotes is a standard NCBI search. Replace
-<code>Gastropoda</code> with your group’s name. The <a href="Reference-Databases.html">reference database guide</a> has more
-detail and tips for groups with few available sequences.</p>
-</div>
-<div class="section level2">
-<h2 id="step-3-set-up-your-project">Step 3: Set up your project<a class="anchor" aria-label="anchor" href="#step-3-set-up-your-project"></a>
-</h2>
-<p>A project starts with a <strong>mapping file</strong> and one
-command. The mapping file is a spreadsheet saved as CSV that lists your
-samples. It needs at least these columns:</p>
+<p>Two buttons appear in every step:</p>
 <ul>
 <li>
-<code>ID</code>: a short, unique name for each sample</li>
-<li>
-<code>Taxon</code>: the species or genus name</li>
-<li>
-<code>R1</code> and <code>R2</code>: the two file names holding that
-sample’s paired sequencing reads</li>
+<strong>State</strong> sets whether a row runs the next time you
+press <strong>Update</strong>. The pipeline sets states itself; use the
+button to override one. There are five states:</li>
 </ul>
-<p>You can add any other columns you like (for example a museum voucher
-or BioSample number). RiboPilot keeps them and can add them to your
-GenBank submission later.</p>
-<p>Create the project with <code><a href="../reference/new_project.html">new_project()</a></code>:</p>
-<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu">RiboPilot</span><span class="fu">::</span><span class="fu"><a href="../reference/new_project.html">new_project</a></span><span class="op">(</span></span>
-<span>  path       <span class="op">=</span> <span class="st">"~/my_project"</span>,       <span class="co"># where to create the project folder</span></span>
-<span>  mapping_fn <span class="op">=</span> <span class="st">"~/my_samples.csv"</span>,   <span class="co"># your mapping file</span></span>
-<span>  data_path  <span class="op">=</span> <span class="st">"~/my_reads"</span>,         <span class="co"># folder containing the read files</span></span>
-<span>  executor   <span class="op">=</span> <span class="st">"conda"</span>,</span>
-<span>  ncbi_api_key <span class="op">=</span> <span class="st">"PASTE_YOUR_KEY_HERE"</span></span>
-<span><span class="op">)</span></span></code></pre></div>
-<p>If you built reference data in Step 2 for a non-fish group, point the
-project at it by adding these two lines inside the parentheses:</p>
-<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a>  custom_seeds_db  <span class="ot">=</span> db<span class="sc">$</span>seeds,</span>
-<span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a>  custom_labels_db <span class="ot">=</span> db<span class="sc">$</span>labels</span></code></pre></div>
-<p>This creates a project folder containing your sample list and
-RiboPilot’s tracking file. From here on, everything refers to that
-folder.</p>
-<div class="alert alert-note">
-<p><code>executor = “conda”</code> tells RiboPilot to run on your own
-computer using the tools you installed with conda. If your lab uses a
-shared computing cluster, there are other options; see the function help
-for <code><a href="../reference/new_project.html">new_project()</a></code> and <code><a href="../reference/generate_config.html">generate_config()</a></code>, or
-ask your computing support staff.</p>
+<table class="table state-table">
+<thead><tr>
+<th>
+State
+</th>
+<th>
+Meaning
+</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>
+<i class="fa fa-hourglass state-icon"></i> On hold
+</td>
+<td>
+Skipped by the next Update until you set it to Ready to run
+</td>
+</tr>
+<tr>
+<td>
+<i class="fa fa-play state-icon"></i> Ready to run
+</td>
+<td>
+Queued: the next Update will process it
+</td>
+</tr>
+<tr>
+<td>
+<i class="fa fa-circle-half-stroke state-icon"></i> In progress
+</td>
+<td>
+Being processed by the running pipeline
+</td>
+</tr>
+<tr>
+<td>
+<i class="fa fa-circle-check state-icon"></i> Success
+</td>
+<td>
+Finished without errors
+</td>
+</tr>
+<tr>
+<td>
+<i class="fa fa-triangle-exclamation state-icon"></i> Failed
+</td>
+<td>
+Open the sample’s details to see why and what to try next
+</td>
+</tr>
+</tbody>
+</table>
+<p>On Annotation Review, <strong>State</strong> offers only Ready to
+run, which queues a contig for that step’s own <strong>Update</strong>,
+and On hold, which keeps it out. A contig the pipeline has not finished
+annotating shows a sixth state there, <strong>Waiting for Assemble
+Update</strong>; see <a href="Test-Project-Annotate.html">Test project:
+Annotation Review</a>.</p>
+<ul>
+<li>
+<strong>Lock</strong> means “I am done with this step for these
+rows”. Locked rows cannot have their analysis options for that step
+changed, the next update does not re-run them, and they move on to the
+next step. You can unlock at any time.</li>
+</ul>
+<p>The lock and state icons at the left of each row are buttons too:
+clicking a row’s lock icon locks or unlocks that row alone, and clicking
+its state icon sets the state of that row alone.</p>
+</div>
+<div class="section level2">
+<h2 id="test-project-walkthrough">Test project walkthrough<a class="anchor" aria-label="anchor" href="#test-project-walkthrough"></a>
+</h2>
+<p>The app has five steps. Each page below walks through one of them
+with the test project. Do them in order:</p>
+<div class="step-nav no-rule">
+<p><a href="Test-Project-Taxonomy.html">1. Taxonomy</a>
+<a href="Test-Project-Reference.html">2. Reference</a>
+<a href="Test-Project-Assemble.html">3. Assemble</a>
+<a href="Test-Project-Annotate.html">4. Annotation Review</a>
+<a href="Test-Project-Export.html">5. Export</a></p>
 </div>
 </div>
 <div class="section level2">
-<h2 id="step-4-assemble-your-samples">Step 4: Assemble your samples<a class="anchor" aria-label="anchor" href="#step-4-assemble-your-samples"></a>
+<h2 id="where-to-go-next">Where to go next<a class="anchor" aria-label="anchor" href="#where-to-go-next"></a>
 </h2>
-<p>One command runs the assembly stage: it cleans the reads, assembles
-the ribosomal repeat for each sample, picks the best reconstruction, and
-prepares the review aids (a closest-match GenBank search and a
-sequencing-depth profile).</p>
-<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu">RiboPilot</span><span class="fu">::</span><span class="fu"><a href="../reference/run_assembly.html">run_assembly</a></span><span class="op">(</span><span class="st">"~/my_project"</span>, conda_env <span class="op">=</span> <span class="st">"ribopilot"</span><span class="op">)</span></span></code></pre></div>
-<p>This is the longest step, because it does real work for every sample.
-You can let it run and come back later. When it finishes, every sample
-has an assembly ready for your review. Annotation happens later, in a
-separate step, only after you have reviewed and approved the assemblies
-(this is deliberate: there is no point annotating a reconstruction you
-have not yet accepted).</p>
-<div class="alert alert-note">
-<p>Part of this step tries to look up the closest published match on
-NCBI to help with quality checking. If NCBI is unreachable or slow,
-RiboPilot simply skips that lookup and carries on; your assemblies and
-annotations are not affected.</p>
-</div>
-</div>
-<div class="section level2">
-<h2 id="step-5-rescue-difficult-samples-optional">Step 5: Rescue difficult samples (optional)<a class="anchor" aria-label="anchor" href="#step-5-rescue-difficult-samples-optional"></a>
-</h2>
-<p>A few samples, especially shallow or unusual ones, may not assemble
-on the first pass. RiboPilot can make a second, more targeted attempt at
-just those samples:</p>
-<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu">RiboPilot</span><span class="fu">::</span><span class="fu"><a href="../reference/run_fallback.html">run_fallback</a></span><span class="op">(</span><span class="st">"~/my_project"</span>, conda_env <span class="op">=</span> <span class="st">"ribopilot"</span><span class="op">)</span></span></code></pre></div>
-<p>You can skip this and come back to it later if you prefer.</p>
-</div>
-<div class="section level2">
-<h2 id="step-6-review-and-lock-the-assemblies">Step 6: Review and lock the assemblies<a class="anchor" aria-label="anchor" href="#step-6-review-and-lock-the-assemblies"></a>
-</h2>
-<p>This is where most of your time is spent, and it is entirely
-point-and-click. Open the app from R:</p>
-<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="../reference/RiboPilot.html">RiboPilot</a></span><span class="op">(</span><span class="st">"~/my_project"</span><span class="op">)</span></span></code></pre></div>
-<p>The app opens in your web browser as a table with one row per sample,
-organized into three tabs that follow the workflow:
-<strong>Assemble</strong>, <strong>Annotate</strong>, and
-<strong>Export</strong>. Each row shows an icon for the sample’s status
-and whether it is <strong>locked</strong>. Locking a sample “signs off”
-on it and moves it to the next stage: a sample must be locked in the
-Assemble tab before it can be annotated, and locked in the Annotate tab
-before it can be exported. You can select several rows and lock them
-together.</p>
-<p>Work in the <strong>Assemble tab</strong>: look at each sample’s
-reconstruction (RiboPilot has already chosen what it thinks is the best
-one), check it against the sequencing depth and the closest GenBank
-match, switch to an alternative reconstruction or adjust the exact
-endpoints if needed, and <strong>lock</strong> each sample you are happy
-with.</p>
-<p>Annotation deliberately does not happen until you have locked an
-assembly, so the Annotate tab is empty until the next step.</p>
-</div>
-<div class="section level2">
-<h2 id="step-7-annotate-the-locked-assemblies">Step 7: Annotate the locked assemblies<a class="anchor" aria-label="anchor" href="#step-7-annotate-the-locked-assemblies"></a>
-</h2>
-<p>Now run the annotation stage on the assemblies you locked. It marks
-the five features (18S, ITS1, 5.8S, ITS2, 28S) and runs the automatic
-quality checks.</p>
-<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu">RiboPilot</span><span class="fu">::</span><span class="fu"><a href="../reference/run_annotate.html">run_annotate</a></span><span class="op">(</span><span class="st">"~/my_project"</span>, conda_env <span class="op">=</span> <span class="st">"ribopilot"</span><span class="op">)</span></span></code></pre></div>
-<p>You can also launch this from inside the app: switch to the Annotate
-tab and use the <strong>Update</strong> button, which shows a live
-progress display. If you later go back and switch a sample to a
-different reconstruction, just run this step again; it re-annotates only
-the samples that changed.</p>
-</div>
-<div class="section level2">
-<h2 id="step-8-review-the-annotations-and-curation-flags">Step 8: Review the annotations and curation flags<a class="anchor" aria-label="anchor" href="#step-8-review-the-annotations-and-curation-flags"></a>
-</h2>
-<p>Back in the app’s <strong>Annotate tab</strong>, open a sample to see
-its five features laid out, a plot of sequencing depth, and a
-<strong>Curation flags</strong> panel. The flags are RiboPilot’s
-automatic quality checks, for example a missing gene, an unusual length,
-a feature on the wrong strand, or a possible contaminant. Each flag
-links to the feature it concerns, so you can jump straight to it and
-adjust the boundaries. The <a href="Curation-Flags.html">curation
-guide</a> explains every flag. Lock each sample once you are happy with
-it.</p>
-</div>
-<div class="section level2">
-<h2 id="step-9-export-for-genbank">Step 9: Export for GenBank<a class="anchor" aria-label="anchor" href="#step-9-export-for-genbank"></a>
-</h2>
-<p>Once your samples are locked in the Annotate tab, export a submission
-package. You can group samples in the app’s Export tab, or export
-everything from R:</p>
-<div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu">RiboPilot</span><span class="fu">::</span><span class="fu"><a href="../reference/export_project.html">export_project</a></span><span class="op">(</span><span class="st">"~/my_project"</span><span class="op">)</span></span></code></pre></div>
-<p>The package contains the files GenBank expects, plus a convenient
-FASTA file for each marker (18S, ITS1, 5.8S, ITS2, 28S, and the full
-repeat), a summary table, and a readable report. Any extra columns from
-your mapping file are carried through onto the submission.</p>
-</div>
-<div class="section level2">
-<h2 id="the-whole-workflow-at-a-glance">The whole workflow at a glance<a class="anchor" aria-label="anchor" href="#the-whole-workflow-at-a-glance"></a>
-</h2>
-<div class="sourceCode" id="cb13"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu">RiboPilot</span><span class="fu">::</span><span class="fu"><a href="../reference/new_project.html">new_project</a></span><span class="op">(</span><span class="va">...</span><span class="op">)</span>          <span class="co"># Step 3: set up</span></span>
-<span><span class="fu">RiboPilot</span><span class="fu">::</span><span class="fu"><a href="../reference/run_assembly.html">run_assembly</a></span><span class="op">(</span><span class="va">project</span><span class="op">)</span>     <span class="co"># Step 4: assemble (+ BLAST, coverage)</span></span>
-<span><span class="fu">RiboPilot</span><span class="fu">::</span><span class="fu"><a href="../reference/run_fallback.html">run_fallback</a></span><span class="op">(</span><span class="va">project</span><span class="op">)</span>     <span class="co"># Step 5: rescue difficult samples (optional)</span></span>
-<span><span class="fu"><a href="../reference/RiboPilot.html">RiboPilot</a></span><span class="op">(</span><span class="va">project</span><span class="op">)</span>                   <span class="co"># Step 6: review + LOCK assemblies (Assemble tab)</span></span>
-<span><span class="fu">RiboPilot</span><span class="fu">::</span><span class="fu"><a href="../reference/run_annotate.html">run_annotate</a></span><span class="op">(</span><span class="va">project</span><span class="op">)</span>     <span class="co"># Step 7: annotate + curate locked assemblies</span></span>
-<span><span class="fu"><a href="../reference/RiboPilot.html">RiboPilot</a></span><span class="op">(</span><span class="va">project</span><span class="op">)</span>                   <span class="co"># Step 8: review annotations + flags, lock (Annotate tab)</span></span>
-<span><span class="fu">RiboPilot</span><span class="fu">::</span><span class="fu"><a href="../reference/export_project.html">export_project</a></span><span class="op">(</span><span class="va">project</span><span class="op">)</span>   <span class="co"># Step 9: export</span></span></code></pre></div>
-<p>That is a complete project. To adapt RiboPilot to a new group of
-organisms, see the <a href="Reference-Databases.html">reference database
-guide</a>. To understand the automatic quality checks in more depth, see
-the <a href="Curation-Flags.html">curation guide</a>.</p>
-<div class="alert alert-warning">
-<p><strong>If assembly reports a BLAST error</strong> mentioning
-“GNUTLS” or “secure session”, the version of the BLAST tool in your
-environment is too old to connect to NCBI. Update it by running
-<code>conda install -n ribopilot ‘blast&gt;=2.12’</code> in a terminal,
-then run the assembly step again. Environments created from the current
-<code>environment.yml</code> already include a new enough version.</p>
-</div>
+<p>After the walkthrough, <a href="Your-Own-Project.html">Your own
+project</a> shows how to write a mapping file and set up a project for
+your samples. If you work on a computing cluster, read <a href="Clusters.html">Running on a cluster</a>; if something goes wrong,
+see <a href="Troubleshooting.html">Troubleshooting</a>.</p>
 </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside>
@@ -371,7 +310,7 @@ then run the assembly step again. Environments created from the current
 </div>
 
 <div class="pkgdown-footer-right">
-  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.0.</p>
+  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.1.</p>
 </div>
 
     </footer>

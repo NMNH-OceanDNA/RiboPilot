@@ -1,0 +1,123 @@
+# Installation
+
+## Before you start
+
+RiboPilot runs its analysis inside a container: Docker on a workstation,
+or Singularity (also called Apptainer) on a computing cluster. The
+container holds every analysis tool, so you do not install them
+yourself.
+
+RiboPilot is developed and tested on Linux. On a Mac it needs Docker
+Desktop. On Windows, use WSL2 and run R inside WSL. On a cluster, use
+Singularity or Apptainer (see [Running on a
+cluster](https://nmnh-oceandna.github.io/RiboPilot/articles/Clusters.md)).
+
+**Disk space.** The container image is about 2.6 GB to download and 7.7
+GB on disk. Each project also needs room for its own files: the test
+project used 1.6 GB, mostly Nextflow’s working files (0.9 GB) and the
+taxonomy copy (0.5 GB). Reference databases are small: the two built for
+the test project took 4 MB and 16 MB. [Disk space, caches, and offline
+use](https://nmnh-oceandna.github.io/RiboPilot/articles/Caches-and-Offline.md)
+says where each of these goes, and how to move it.
+
+## Install the tools
+
+Install each of these once, and check it with the command beside it.
+
+1.  **Docker** (workstation). On Linux, add yourself to the `docker`
+    group so Docker runs without `sudo`. On a Mac, start Docker Desktop.
+    Check: `docker run hello-world`. On a cluster, use **Singularity**
+    or **Apptainer** instead. Check: `singularity --version`.
+
+2.  **Java** 17 or newer. Check: `java -version`.
+
+3.  **[Nextflow](https://www.nextflow.io/docs/latest/install.html)**, a
+    version from 24.10 through 25.10. Check: `nextflow -v`. If you have
+    a newer Nextflow, RiboPilot runs version 25.10.6 instead. To set
+    this yourself, add `export NXF_VER=25.10.6` to your shell profile.
+
+4.  **[R](https://www.r-project.org/)** 4.4.0 or newer. Check:
+    `R --version`.
+
+5.  **RiboPilot**, in R:
+
+    ``` r
+
+    install.packages("remotes")
+    remotes::install_github("NMNH-OceanDNA/RiboPilot")
+    ```
+
+You do not need to download the RiboPilot container image. This will
+happen automatically the first time you run the pipeline.
+
+## Check that it works
+
+Run the test project: see [Get
+started](https://nmnh-oceandna.github.io/RiboPilot/articles/RiboPilot.md).
+
+## Optional: an NCBI API key
+
+An [NCBI API
+key](https://www.ncbi.nlm.nih.gov/datasets/docs/v2/api/api-keys/) lets
+RiboPilot query NCBI faster. It is free to set up. The simplest place
+for it is your `~/.Renviron` file, next to any other keys:
+
+    NCBI_API_KEY=<your key>
+
+Restart R after you edit the file. RiboPilot then passes the key to
+every run and every reference build, without writing it into the
+project’s `.config` file.
+
+Alternatively, you can pass the key to
+[`RiboPilot::new_project()`](https://nmnh-oceandna.github.io/RiboPilot/reference/new_project.md)
+as `ncbi_api_key`; it is then stored in the project’s `.config` file and
+shows in the Nextflow command of the run window.
+
+Never paste your key into a screenshot, an email, or a GitHub issue.
+
+## Upgrading RiboPilot
+
+Run these in R, one step at a time:
+
+``` r
+
+# 1. Remove the installed RiboPilot
+remove.packages("RiboPilot")
+
+# 2. Restart R
+#    RStudio: Session > Restart R, or run rstudioapi::restartSession()
+#    Elsewhere: quit R and start it again
+
+# 3. Install the new version
+remotes::install_github("NMNH-OceanDNA/RiboPilot")
+
+# 4. Update existing projects as needed, once per project
+RiboPilot::backwards_compatibility("~/my_project")
+```
+
+The
+[changelog](https://nmnh-oceandna.github.io/RiboPilot/news/index.html)
+lists what changed.
+
+The `backwards_compatibility` function brings the project’s database up
+to date and points the project at the container image for the RiboPilot
+version you installed. The next run downloads that image by itself, so
+there is nothing to pull by hand. Your samples, results, and settings
+are kept. Before it changes anything, RiboPilot saves a copy of the
+database (`.sqlite.bak.<timestamp>`) and of the project’s `.config`
+(`.config.bak.<timestamp>`) in the project folder. To see what would
+change without changing anything, add `dry_run = TRUE`.
+
+What you see if you skip `backwards_compatibility`:
+
+- **The database is out of date.** The app does not open, and says “This
+  project needs an update. Run backwards_compatibility(…) first.”
+- **Only the container image is out of date.** The app opens and says
+  “Container version does not match RiboPilot”. Runs may still work, but
+  with the code and tools in the older image.
+
+Each image takes about 7.7 GB in Docker, or about 2.5 GB as a
+Singularity file. Once no project uses an old one image, remove it with
+`docker image rm <image>`; with Singularity, delete its file from your
+image cache (see [Disk space, caches, and offline
+use](https://nmnh-oceandna.github.io/RiboPilot/articles/Caches-and-Offline.md)).

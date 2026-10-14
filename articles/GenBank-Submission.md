@@ -1,0 +1,218 @@
+# Preparing a GenBank submission
+
+RiboPilot writes one folder per export group containing everything you
+need to submit your records to GenBank: the sequences (with customized
+FASTA headers), feature tables, and a summary of the checks. This page
+helps you understand the GenBank submission process. The [Export
+walkthrough](https://nmnh-oceandna.github.io/RiboPilot/articles/Test-Project-Export.md)
+shows the Export step itself.
+
+## Which files to upload
+
+For rRNA and ITS sequences, NCBI’s Submission Portal
+(<https://submit.ncbi.nlm.nih.gov>) takes a FASTA file only. Upload
+`<group>.fasta`. The Portal finds the genes itself with ITSx, and writes
+its own annotation, so the `.tbl` feature tables are not used there.
+
+The Portal rewrites definition lines in its own wording (small and large
+subunit ribosomal RNA), so the 18S and 28S wording in your file will not
+survive.
+
+## The FASTA header template
+
+Each record’s FASTA header comes from a template. The default is:
+
+    {seqid} [organism={organism}] [moltype=genomic DNA] {organism} {rrna_definition}
+
+and the default for the per-marker files is:
+
+    {seqid}_{element} [organism={organism}] {organism} {product}
+
+Edit them in the **Export Data** window. Each template is checked as you
+type, and **Save template** keeps it under a name, so a lab can keep one
+per submission style. Words in braces are filled in for each record:
+
+| Token | What it holds |
+|----|----|
+| `{seqid}` | The record’s name: the sample ID, or `<ID>_p<path>_s<contig>` when the sample gives more than one record. Keep it in every template. |
+| `{organism}` | The organism name to submit (see below). |
+| `{rrna_definition}` | The definition phrase, for example “18S ribosomal RNA gene, partial sequence; internal transcribed spacer 1, 5.8S ribosomal RNA gene, and internal transcribed spacer 2, complete sequence; and 28S ribosomal RNA gene, partial sequence.” |
+| `{completeness}` | “complete sequence” or “partial sequence”, for the record as a whole. |
+| `{elements}` | The features in order, for example `18S-ITS1-5.8S-ITS2-28S`. |
+| `{length}`, `{n_features}`, `{missing}` | Record length, number of features, and missing features. |
+| `{sci_name}`, `{taxid}` | The name and NCBI taxon ID set in the Taxonomy step. |
+| `{element}`, `{product}` | Per-marker template only: the marker (18S, ITS1, and so on) and its product name. |
+
+Any column of your mapping file works too, as `{ColumnName}`. The **Your
+mapping columns** chips in the Export Data window show every name you
+can use. You can also use metadata imported from GEOME, GBIF, or NCBI.
+See [Sample
+metadata](https://nmnh-oceandna.github.io/RiboPilot/articles/Sample-Metadata.html#using-metadata-fields-at-export).
+
+## Required source modifiers
+
+For each rDNA sequences, GenBank requires the organism name, one
+identifier for the sample (isolate, strain, clone, or specimen voucher),
+the collection date, and where it was collected. Add them to your
+template as source modifiers: `[specimen_voucher=...]`,
+`[collection_date=...]`, and `[geo_loc_name=...]`. NCBI’s full list is
+[Modifiers for FASTA Definition
+Lines](https://www.ncbi.nlm.nih.gov/genbank/mods_fastadefline/).
+
+For example, with `Voucher`, `Date`, and `Country` columns in your
+mapping file:
+
+    {seqid} [organism={organism}] [specimen_voucher={Voucher}] [collection_date={Date}] [geo_loc_name={Country}] [moltype=genomic DNA] {organism} {rrna_definition}
+
+Instead of including these values as columns in your mapping file, you
+can fetch them from GEOME, GBIF, or NCBI BioSample. The **Export**
+column of the **Metadata** button offers ready-made values such as
+`{geome_lat_lon}` and `{gbif_collection_date}`, which you place in the
+template yourself. Smithsonian NMNH specimens also need a `voucherURI`;
+see [NMNH voucher
+submissions](https://nmnh-oceandna.github.io/RiboPilot/articles/NMNH-Vouchers.md).
+
+If a record would get an empty modifier, such as `[collection_date=]`
+for a sample with no date, the template check warns and names the
+records. NCBI does not accept an empty modifier: fill in the column, or
+use one of NCBI’s accepted missing-value terms, such as `missing` or
+`not collected`. If you continue with export, missing metadata in the
+FASTA header will be removed on a sample-by-sample basis.
+
+## The organism name
+
+`{organism}` is the name confirmed in the Taxonomy step. If the Taxonomy
+step did not result in an exact match, `{organism}` is set to the Taxon
+label from your map file, so an informal name such as “Upeneus sp. A” is
+kept. To always use your own label, put `{Taxon}` in the template
+instead.
+
+When your map file Taxon differs from the name set in the Taxonomy step,
+the record’s `submission_risk` column says `taxon_differs(<name>)`, so
+you can check which one you want.
+
+## Samples with more than one record
+
+When a sample has more than one contig at export, RiboPilot adds
+`[isolate=<ID>_p<path>_s<contig>]` to each FASTA header. This allows
+GenBank to differentiate records that share an organism and a voucher
+number.
+
+For that reason, a template with its own `[isolate=...]` is refused for
+an export group that contains a sample with multiple contigs. It is
+allowed otherwise.
+
+## Complete or partial
+
+Since GenBank performs its own annotation, the following information can
+usually be ignored for the submission process.
+
+The end of a gene is written as partial (`<` for the 5’ end or `>` for
+the 3’ end in the feature table, and “partial sequence” in the
+definition line) when:
+
+- it runs into the end of a contig that has not been trimmed (the gene
+  ran off the assembled contig)
+- the quality check found the gene truncated, meaning less than 90
+  percent of it was recovered. The end that meets no neighboring spacer
+  or gene is marked if both ends meet one, both are marked
+- a trim cut through the gene. A trim that lands on a gene boundary
+  marks nothing
+
+Your own choice always wins: the **5’** and **3’** buttons under
+**Partial** in the contig window (check **Edit**, pick the feature, then
+**Save**) can be used to override RiboPilot. **Mark Partial** on the
+contig only changes `{completeness}` to “partial sequence”; it does not
+mark any gene end.
+
+## Flanking sequence
+
+Contigs often contain sequence beyond the core rDNA region. This is
+intergenic spacer (IGS): 5’ external transcribed spacer (ETS) before the
+18S, and its 3’ ETS after the 28S. RiboPilot does not annotate these
+flanks, and GenBank tends to reject submissions containing sequences
+containing IGS/ETS. We recommend that you trim contigs to gene
+boundaries before export.
+
+## Gaps inside a record
+
+A run of 10 or more N bases counts as a gap. NCBI may remove a record
+with a gap inside the 18S-to-28S region; the `gap_in_rDNA` flag below
+marks these.
+
+## Check before you submit
+
+After export, the summary files note samples that have submission-risk
+flags. However, some warning messages may also appear during the export
+process.
+
+**Flagged records.** Before it writes anything, the Export window lists
+every contig that the BLAST screen or the chimera check flagged, and
+that you have not marked “Reviewed”. You can choose to **Leave them
+out** or **Export anyway**.
+
+**The ITSx check.** NCBI runs a standard ITSx check on every rRNA and
+ITS submission. It may suggest that you remove records judged chimeric,
+gapped, or misassembled by ITSx. RiboPilot runs the same stock ITSx
+check on every contig when it annotates it, and again when **Update** on
+Annotation Review rechecks a contig you trimmed or edited. Export does
+not run ITSx: it reports the stored result in the `itsx_check` column of
+`<group>_summary.csv`, and the Export done window counts the flagged,
+clean, and not checked records and names the flagged ones. The **ITSx
+Warnings** column in the app shows the same flags. It only warns:
+nothing is removed.
+
+RiboPilot checks one contig at a time, while NCBI runs ITSx on your
+whole upload at once. ITSx’s calls can shift a little with the set of
+sequences it is given, so on borderline records NCBI’s check may differ
+from RiboPilot’s.
+
+An `itsx_check` value that starts with `not_run` means ITSx gave no
+answer for that record. The record still counts as checked, so it can be
+locked and exported, and NCBI checks it again when you upload. To check
+it again in RiboPilot, unlock the contig in Annotation Review, set its
+State to Ready to run, press **Update**, and lock it again once its
+checks are finished.
+
+| Value | What it means |
+|----|----|
+| `not_run(ITSx did not finish)` | ITSx crashed or was stopped before it finished this contig. |
+| `not_run(ITSx check failed: <message>)` | Reading the ITSx result failed; the message says why. |
+| `not_run(not checked before upgrade)` | The contig was locked in an older RiboPilot version that stored no ITSx check for it. |
+| `not_run(not checked)` | No ITSx check is stored for the record. |
+| any other `not_run(...)` | Stored by an older RiboPilot version, for example `not_run(no ITSx output)`. |
+
+**The submission_risk column.** Each record’s row in
+`<group>_summary.csv` lists any of these flags:
+
+| Flag | What it means |
+|----|----|
+| `chimeric(...)` | Parts of the sequence match different phyla or kingdoms (a severe chimera call); the reason is in brackets. |
+| `chimeric(ITSx)` | ITSx calls the record chimeric. |
+| `gap_in_rDNA` | A run of N bases falls between the start of the 18S and the end of the 28S. |
+| `misassembly` | Features overlap or are out of order. |
+| `off_target(<taxon>)` | The BLAST screen’s hits agree on a taxon that is not on the sample’s lineage. |
+| `contaminant` | The BLAST screen’s best hit is from a different phylum than the sample. |
+| `taxon_differs(<name>)` | Your Taxon differs from the name set in the Taxonomy step. |
+| `missing_organism` | The record has no organism name. |
+
+Check `off_target` and `contaminant` records before you submit: the
+sequence may be another organism’s rDNA, exported under your sample’s
+name. Weaker chimera evidence is in the separate `chimera_warning`
+column; it is not a submission risk, but it is worth a look in the app.
+
+## What is in the export folder
+
+    out/export/<group>/
+        <group>.fasta           every record, one file (this is what you upload)
+        <group>.tbl             feature tables (for your records; not uploaded)
+        <group>_summary.csv     one row per record, with submission_risk
+        <group>_report.html     review report with feature maps and alignments
+        README.txt              how to submit
+        samples/                one .fasta and .tbl per record
+        markers/                one folder per marker (18S, ITS1, and so on)
+
+The summary CSV also says which records are variants of each other, in
+the `variant_class`, `variant_group`, `variant_identity`, and
+`n_variants` columns; see [Quality checks and
+flags](https://nmnh-oceandna.github.io/RiboPilot/articles/Curation-Flags.md).

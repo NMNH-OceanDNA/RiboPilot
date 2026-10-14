@@ -5,7 +5,7 @@
 <meta charset="utf-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-<title>Understanding the automatic quality checks • RiboPilot</title>
+<title>Quality checks and flags • RiboPilot</title>
 <!-- favicons --><link rel="icon" type="image/png" sizes="96x96" href="../favicon-96x96.png">
 <link rel="icon" type="”image/svg+xml”" href="../favicon.svg">
 <link rel="apple-touch-icon" sizes="180x180" href="../apple-touch-icon.png">
@@ -15,7 +15,8 @@
 <link href="../deps/bootstrap-5.3.8/bootstrap.min.css" rel="stylesheet">
 <script src="../deps/bootstrap-5.3.8/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet">
 <link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet">
-<script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><meta property="og:title" content="Understanding the automatic quality checks">
+<script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><link href="../extra.css" rel="stylesheet">
+<meta property="og:title" content="Quality checks and flags">
 </head>
 <body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
@@ -25,7 +26,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">RiboPilot</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9000</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,16 +40,47 @@
 <li class="active nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
-<li><a class="dropdown-item" href="../articles/Reference-Databases.html">Using RiboPilot with your group of organisms</a></li>
-    <li><a class="dropdown-item" href="../articles/Curation-Flags.html">Understanding the automatic quality checks</a></li>
+<li><h6 class="dropdown-header" data-toc-skip>Setup</h6></li>
+    <li><a class="dropdown-item" href="../articles/Installation.html">Installation</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Test project</h6></li>
+    <li><a class="dropdown-item" href="../articles/Test-Project-Taxonomy.html">1. Taxonomy</a></li>
+    <li><a class="dropdown-item" href="../articles/Test-Project-Reference.html">2. Reference</a></li>
+    <li><a class="dropdown-item" href="../articles/Test-Project-Assemble.html">3. Assemble</a></li>
+    <li><a class="dropdown-item" href="../articles/Test-Project-Annotate.html">4. Annotation Review</a></li>
+    <li><a class="dropdown-item" href="../articles/Test-Project-Export.html">5. Export</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Usage</h6></li>
+    <li><a class="dropdown-item" href="../articles/Your-Own-Project.html">Your own project</a></li>
+    <li><a class="dropdown-item" href="../articles/Reference-Databases.html">Reference databases</a></li>
+    <li><a class="dropdown-item" href="../articles/Assembly-Methods.html">Choosing an assembly method</a></li>
+    <li><a class="dropdown-item" href="../articles/Curation-Flags.html">Quality checks and flags</a></li>
+    <li><a class="dropdown-item" href="../articles/GenBank-Submission.html">Preparing a GenBank submission</a></li>
+    <li><a class="dropdown-item" href="../articles/Citing.html">Citing RiboPilot</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Metadata</h6></li>
+    <li><a class="dropdown-item" href="../articles/Sample-Metadata.html">Sample metadata</a></li>
+    <li><a class="dropdown-item" href="../articles/Metadata-Linking.html">Linking records across databases</a></li>
+    <li><a class="dropdown-item" href="../articles/NMNH-Vouchers.html">NMNH voucher submissions</a></li>
+    <li><a class="dropdown-item" href="../articles/Metadata-Reference.html">Metadata field reference</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Computing environments</h6></li>
+    <li><a class="dropdown-item" href="../articles/Clusters.html">Running on a cluster</a></li>
+    <li><a class="dropdown-item" href="../articles/NMNH-Hydra.html">Smithsonian Hydra setup</a></li>
+    <li><a class="dropdown-item" href="../articles/NOAA-SEDNA.html">NOAA SEDNA setup</a></li>
+    <li><a class="dropdown-item" href="../articles/Caches-and-Offline.html">Disk space, caches, and offline use</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Help</h6></li>
+    <li><a class="dropdown-item" href="../articles/Troubleshooting.html">Troubleshooting</a></li>
   </ul>
 </li>
+<li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul>
 <ul class="navbar-nav">
 <li class="nav-item"><form class="form-inline" role="search">
  <input class="form-control" type="search" name="search-input" id="search-input" autocomplete="off" aria-label="Search site" placeholder="Search for" data-search-index="../search.json">
 </form></li>
-<li class="nav-item"><a class="external-link nav-link" href="https://github.com/dmacguigan/RiboPilot/" aria-label="GitHub"><span class="fa fab fa-github fa-lg"></span></a></li>
+<li class="nav-item"><a class="external-link nav-link" href="https://github.com/NMNH-OceanDNA/RiboPilot/" aria-label="GitHub"><span class="fa fab fa-github fa-lg"></span></a></li>
       </ul>
 </div>
 
@@ -61,33 +93,104 @@
 
 <div class="row">
   <main id="main" class="col-md-9"><div class="page-header">
-      <img src="../logo.png" class="logo" alt=""><h1>Understanding the automatic quality checks</h1>
+      <img src="../logo.svg" class="logo" alt=""><h1>Quality checks and flags</h1>
             
       
-      <small class="dont-index">Source: <a href="https://github.com/dmacguigan/RiboPilot/blob/main/vignettes/Curation-Flags.Rmd" class="external-link"><code>vignettes/Curation-Flags.Rmd</code></a></small>
+      <small class="dont-index">Source: <a href="https://github.com/NMNH-OceanDNA/RiboPilot/blob/main/vignettes/Curation-Flags.Rmd" class="external-link"><code>vignettes/Curation-Flags.Rmd</code></a></small>
       <div class="d-none name"><code>Curation-Flags.Rmd</code></div>
     </div>
 
     
     
-<style>
-.alert { border-left: 5px solid; padding: 10px; margin: 12px 0; border-radius: 5px; }
-.alert-note { border-color: #007BFF; background-color: #EBF5FF; }
-strong { font-weight: bold; }
-</style>
-<p>After it annotates a sample, RiboPilot runs a set of automatic
-quality checks and raises a <strong>flag</strong> for anything that
-looks unusual. Flags are there to guide your attention: they point out
-samples worth a closer look in the app’s Annotate tab. They do not
-change your data, and a flag does not always mean something is wrong. It
-just means “please check this”.</p>
-<p>You will see flags in two places in the app: a small count next to
-each sample in the table, and a detailed <strong>Curation flags</strong>
-panel when you open a sample. Each flag links to the exact feature it
-concerns, so you can jump straight to it.</p>
+<p>After RiboPilot annotates a contig (see <a href="RiboPilot.html#samples-contigs-and-records">Get started</a>), it
+runs a set of automatic quality checks and raises a <strong>curation
+warning</strong> for anything that looks unusual. Warnings never change
+your assemblies or annotations. They flag something that may need your
+attention.</p>
+<p>You can find the results in three places:</p>
+<ul>
+<li>the <strong>Checks</strong> column of the Assemble and Annotation
+Review tables, which summarizes every check</li>
+<li>the <strong>Warnings</strong> column of Annotation Review, which
+counts the warnings on the contig as a whole</li>
+<li>the <strong>Curation warnings</strong> panel in the Annotation
+Review contig details window, lists the contig’s warnings and each
+feature that has a warning</li>
+</ul>
+<p>Below is a list of all the checks and warnings columns you will see
+in the app:</p>
+<table class="table">
+<colgroup>
+<col width="25%">
+<col width="25%">
+<col width="25%">
+<col width="25%">
+</colgroup>
+<thead><tr class="header">
+<th>Column</th>
+<th>Where</th>
+<th>What it holds</th>
+<th>Explained in</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td><strong>Checks</strong></td>
+<td>Assemble table (per sample); Annotation Review table (per
+contig)</td>
+<td>Every check (per sample or per contig) on one line, worst first,
+colored by the worst finding.</td>
+<td><a href="#the-checks-column">The Checks column</a></td>
+</tr>
+<tr class="even">
+<td><strong>Warnings</strong></td>
+<td>Annotation Review table</td>
+<td>How many curation warnings the contig has.</td>
+<td><a href="#curation-warnings">Curation warnings</a></td>
+</tr>
+<tr class="odd">
+<td><strong>Screen</strong></td>
+<td>Assemble details window (contig table); Annotation Review table</td>
+<td>The BLAST screen verdict: on target, off target, or too little
+evidence to say. The <strong>Screen why</strong> column next to it on
+Assemble gives the reason.</td>
+<td><a href="#the-blast-screen-and-auto-triage">The BLAST
+screen</a></td>
+</tr>
+<tr class="even">
+<td><strong>Chimera</strong></td>
+<td>Assemble details window (contig table); Annotation Review table</td>
+<td>The chimera check level: severe, minor, or clean.</td>
+<td><a href="#chimeric-contigs">Chimeric contigs</a></td>
+</tr>
+<tr class="odd">
+<td><strong>ITSx Warnings</strong></td>
+<td>Assemble details window (contig table); Annotation Review table</td>
+<td>What the standard ITSx check finds for the contig, for example
+<code>itsx_chimeric</code>, <code>itsx_no_5.8S</code>, or
+<code>itsx_boundary_shift(...)</code>. Gray “not run” means ITSx gave no
+answer; gray “not checked” means no ITSx check is stored yet. Checks
+lists both as “ITSx not checked”.</td>
+<td><a href="GenBank-Submission.html#check-before-you-submit">GenBank
+submission</a></td>
+</tr>
+<tr class="even">
+<td><strong>Feature BLAST warnings</strong></td>
+<td>Annotation Review table</td>
+<td>Warnings about weak or off-target BLAST hits for each feature.</td>
+<td><a href="#feature-blast-each-feature-searched-on-its-own">Feature
+BLAST</a></td>
+</tr>
+</tbody>
+</table>
+<p>This page explains the Checks column first, then each family of
+checks in turn, and ends with the per-group length and identity
+tables.</p>
 <div class="section level2">
-<h2 id="what-the-flags-mean">What the flags mean<a class="anchor" aria-label="anchor" href="#what-the-flags-mean"></a>
+<h2 id="the-checks-column">The Checks column<a class="anchor" aria-label="anchor" href="#the-checks-column"></a>
 </h2>
+<p>The Checks column puts every check on one line, worst first, in a
+color that matches the worst finding. On the Assemble table it
+summarizes all of the sample’s kept contigs.</p>
 <table class="table">
 <colgroup>
 <col width="33%">
@@ -95,9 +198,60 @@ concerns, so you can jump straight to it.</p>
 <col width="33%">
 </colgroup>
 <thead><tr class="header">
-<th>Flag</th>
-<th>Applies to</th>
+<th>Checks says</th>
+<th>Color</th>
+<th>What happens</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td>off target, contaminant, severe chimera, or ITSx chimeric</td>
+<td>red</td>
+<td>Lock and the Export window ask first, until the contig is marked
+Reviewed.</td>
+</tr>
+<tr class="even">
+<td>minor chimera, uncertain screen, ITSx, ITSx not checked, warnings,
+or feature flags</td>
+<td>amber</td>
+<td>Worth a look, but nothing asks when you Lock or Export.</td>
+</tr>
+<tr class="odd">
+<td>ok</td>
+<td>green</td>
+<td>The best BLAST matches are in your sample’s phylum, and nothing is
+flagged.</td>
+</tr>
+<tr class="even">
+<td>no reference</td>
+<td>gray</td>
+<td>Nothing is flagged, but the BLAST screen had no usable match to
+judge by.</td>
+</tr>
+</tbody>
+</table>
+<p>A red finding does not stop you, but locking or exporting that sample
+will ask you to confirm. Setting a problematic sample as <strong>Mark
+Reviewed</strong> will override those prompts on lock or export (see <a href="Test-Project-Annotate.html">Annotation Review</a>).</p>
+</div>
+<div class="section level2">
+<h2 id="curation-warnings">Curation warnings<a class="anchor" aria-label="anchor" href="#curation-warnings"></a>
+</h2>
+<p>In the Annotation Review module, these are the warning codes counted
+by the <code>Warnings</code> column and reported in the
+<code>Curation warnings</code> panel when you examine a contig in
+detail.</p>
+<table class="table">
+<colgroup>
+<col width="25%">
+<col width="25%">
+<col width="25%">
+<col width="25%">
+</colgroup>
+<thead><tr class="header">
+<th>Warning</th>
+<th>Level</th>
 <th>What it means</th>
+<th>What to do</th>
 </tr></thead>
 <tbody>
 <tr class="odd">
@@ -105,120 +259,553 @@ concerns, so you can jump straight to it.</p>
 <code>missing_18S</code>, <code>missing_5.8S</code>,
 <code>missing_28S</code>
 </td>
-<td>sample</td>
-<td>One of the three ribosomal genes was not found.</td>
+<td>contig</td>
+<td>One of the three rRNA genes was not found.</td>
+<td>Expected when the contig contains only part of the nuclear rDNA
+complex. Otherwise look at <strong>Coverage and windowed BLAST</strong>
+for a break.</td>
 </tr>
 <tr class="even">
 <td>
 <code>missing_ITS1</code>, <code>missing_ITS2</code>
 </td>
-<td>sample</td>
-<td>A spacer was not recovered between its neighboring genes.</td>
+<td>contig</td>
+<td>A spacer was not found between its two genes.</td>
+<td>Usually follows a missing gene. If both genes are there, check the
+boundaries in <strong>Edit active feature boundaries</strong>.</td>
 </tr>
 <tr class="odd">
 <td><code>out_of_order</code></td>
-<td>sample</td>
-<td>The five features are not in the expected order (18S, ITS1, 5.8S,
-ITS2, 28S).</td>
+<td>contig</td>
+<td>The features are not in the order 18S, ITS1, 5.8S, ITS2, 28S.</td>
+<td>Possible assembly error. Export marks it <code>misassembly</code>.
+Check the feature map and read coverage before you submit it.</td>
 </tr>
 <tr class="even">
 <td><code>overlap</code></td>
-<td>feature</td>
-<td>Two features overlap when they should sit side by side.</td>
+<td>both</td>
+<td>A feature overlaps the one before it.</td>
+<td>Move the boundary in <strong>Edit active feature
+boundaries</strong>. Export marks it <code>misassembly</code>.</td>
 </tr>
 <tr class="odd">
-<td><code>wrong_strand</code></td>
-<td>feature</td>
-<td>A feature was found on the opposite strand from what is
-expected.</td>
+<td><code>gap</code></td>
+<td>both</td>
+<td>Unannotated sequence between two features, more than 5 bases
+long.</td>
+<td>Check the boundaries, and extend the gene or spacer if the gap is
+part of it.</td>
 </tr>
 <tr class="even">
+<td><code>wrong_strand</code></td>
+<td>both</td>
+<td>A feature lies on the opposite strand from the rest.</td>
+<td>Likely a misassembly or a wrong call. Check the feature model.</td>
+</tr>
+<tr class="odd">
 <td><code>length</code></td>
 <td>feature</td>
-<td>A feature is shorter or longer than typical for your group.</td>
+<td>The feature is shorter or longer than its group’s expected range
+(see <a href="#how-the-checks-are-tuned-per-group">per-group
+tables</a>).</td>
+<td>Common for the spacers, and often fine. Check that the boundaries
+look right.</td>
+</tr>
+<tr class="even">
+<td><code>truncated</code></td>
+<td>feature</td>
+<td>Less than 90 percent of the gene’s rRNA model was recovered.</td>
+<td>Nothing: the export writes the gene as partial.</td>
 </tr>
 <tr class="odd">
 <td><code>low_identity</code></td>
 <td>feature</td>
-<td>A conserved gene is less similar to reference sequences than
-expected (could signal an assembly problem or a genuinely unusual
-sample).</td>
+<td>The gene falls below its group’s identity floor (see <a href="#how-the-checks-are-tuned-per-group">per-group tables</a>).</td>
+<td>An assembly error, or a group with few other rRNA references. Look
+at the <strong>Reference alignment</strong>.</td>
 </tr>
 <tr class="even">
 <td><code>contaminant</code></td>
-<td>sample</td>
-<td>The closest published match belongs to an unrelated group, which can
-indicate contamination.</td>
+<td>contig</td>
+<td>The contig’s best BLAST hit is from a different phylum than your
+sample.</td>
+<td>Red in Checks. Check the contig before you lock it: it may be
+another organism’s rDNA.</td>
+</tr>
+<tr class="odd">
+<td><code>contaminant_unchecked</code></td>
+<td>contig</td>
+<td>The contamination check could not run: the BLAST screen has no
+usable hit, or your sample’s lineage is unknown.</td>
+<td>If NCBI could not be reached, run the sample again once it can (see
+<a href="Troubleshooting.html">Troubleshooting</a>). If the sample has
+no taxon, set one in the Taxonomy step.</td>
+</tr>
+<tr class="even">
+<td><code>not_nuclear_rdna</code></td>
+<td>contig</td>
+<td>The best BLAST hit is not a nuclear rDNA record, for example a
+mitochondrial or bacterial rRNA.</td>
+<td>The contig may not be nuclear rDNA. Check its features and hits
+before you keep it.</td>
+</tr>
+<tr class="odd">
+<td><code>no_clade_ruleset</code></td>
+<td>contig</td>
+<td>Your sample’s group has no ruleset of its own, so the generic animal
+ranges were used.</td>
+<td>Nothing. See <a href="#how-the-checks-are-tuned-per-group">How the
+checks are tuned per group</a>.</td>
 </tr>
 </tbody>
 </table>
-<p>The last two checks (<code>low_identity</code> and
-<code>contaminant</code>) rely on looking up a reference match on NCBI
-during assembly. If that lookup was unavailable at the time, those two
-checks are simply skipped and the others still apply.</p>
 </div>
 <div class="section level2">
-<h2 id="how-the-checks-are-tuned-per-group">How the checks are tuned per group<a class="anchor" aria-label="anchor" href="#how-the-checks-are-tuned-per-group"></a>
+<h2 id="the-blast-screen-and-auto-triage">The BLAST screen and auto-triage<a class="anchor" aria-label="anchor" href="#the-blast-screen-and-auto-triage"></a>
 </h2>
-<p>Some checks, especially the expected lengths, depend on the group of
-organisms. RiboPilot ships two settings:</p>
+<p>Every contig is run through a BLAST search once it is assembled. The
+result feeds the Screen column, the contamination warnings above, the
+chimera check, and the triage rules below, which propose whether to keep
+or drop the contig.</p>
+<div class="section level3">
+<h3 id="what-the-screen-searches">What the screen searches<a class="anchor" aria-label="anchor" href="#what-the-screen-searches"></a>
+</h3>
+<p>By default each contig is searched against the <strong>bundled rDNA
+database</strong> inside the container: about 600,000 animal nuclear
+rDNA records from GenBank. This database also includes NCBI’s 16S,
+eukaryote small subunit, and eukaryote large subunit rRNA sets so that a
+contaminant bacterial, fungal, or plant contig still finds a match.
+Contigs that match nothing in the bundled database are searched against
+the NCBI nucleotide database (core_nt) over the internet.</p>
+<p>To change how the BLAST search works, open a sample’s <strong>BLAST
+Options</strong> in the Assemble module and pick a
+<strong>Search</strong> choice: “Bundled database only” never goes to
+NCBI, and “NCBI only (core_nt)” skips the bundled database.</p>
+<p>In Annotation Review, the <strong>Hit Source</strong> column says
+which database was used to determine the contig’s best BLAST hit:
+“bundled”, “NCBI”, or “seed file” (the assembly’s own seed database,
+which is only a hint).</p>
+</div>
+<div class="section level3">
+<h3 id="how-contigs-are-kept-or-dropped">How contigs are kept or dropped<a class="anchor" aria-label="anchor" href="#how-contigs-are-kept-or-dropped"></a>
+</h3>
+<p>Once a contig has been screened, RiboPilot checks the eight rules
+below in order and proposes to keep or drop the contig. For rules whose
+action is Flag, the contig status stays undecided and the
+<strong>Why</strong> column in the sample’s contig table gives the
+reason. You can override any call by hand with the <strong>K</strong>
+(keep) and <strong>D</strong> (drop) buttons in the Assemble details
+window.</p>
+<table class="table">
+<colgroup>
+<col width="25%">
+<col width="25%">
+<col width="25%">
+<col width="25%">
+</colgroup>
+<thead><tr class="header">
+<th>#</th>
+<th>Rule</th>
+<th>What it means</th>
+<th>Default action</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td>1</td>
+<td>Annotation has not run</td>
+<td>Neither annotation tool has reported on this contig yet.</td>
+<td>Flag only</td>
+</tr>
+<tr class="even">
+<td>2</td>
+<td>BLAST screen has not run</td>
+<td>No usable BLAST hit is recorded, or the only matches are
+whole-genome assemblies, so the contig cannot be judged. Also raises
+<code>contaminant_unchecked</code>.</td>
+<td>Flag only</td>
+</tr>
+<tr class="odd">
+<td>3</td>
+<td>No annotations, non-rDNA hit</td>
+<td>Annotation found no rRNA or ITS feature, and the best match is not a
+nuclear rDNA record.</td>
+<td>Drop</td>
+</tr>
+<tr class="even">
+<td>4</td>
+<td>No annotations but rDNA hit</td>
+<td>Annotation found no rRNA or ITS feature, but the best match is a
+nuclear rDNA record.</td>
+<td>Flag (can be set to Drop)</td>
+</tr>
+<tr class="odd">
+<td>5</td>
+<td>Has annotations but non-rDNA hit</td>
+<td>The contig has an rRNA or ITS feature, but the best match is not a
+nuclear rDNA record.</td>
+<td>Flag (can be set to Drop)</td>
+</tr>
+<tr class="even">
+<td>6</td>
+<td>GenBank taxonomy disagrees with the sample</td>
+<td>The contig’s BLAST hits agree on a taxon outside your sample’s
+phylum. This is the <code>contaminant</code> warning.</td>
+<td>Flag (can be set to Drop)</td>
+</tr>
+<tr class="odd">
+<td>7</td>
+<td>Disagrees with sibling contigs</td>
+<td>This contig’s top hit disagrees with the majority of this sample’s
+other contigs. A hint, not proof.</td>
+<td>Flag only</td>
+</tr>
+<tr class="even">
+<td>8</td>
+<td>Chimeric assembly (severe)</td>
+<td>Parts of this contig match organisms from different phyla or
+kingdoms.</td>
+<td>Flag only</td>
+</tr>
+</tbody>
+</table>
+<p>Rule 6 compares at phylum rank. It catches a fungal, bacterial, or
+plant contaminant, but cannot separate two organisms in the same
+phylum.</p>
+<p>To change what a rule does to a contig, select samples in the
+Assemble table and click the <strong>Triage</strong> button at the top.
+The Triage window lets you set each rule to Off, Flag, or Drop, shows
+how many contigs each rule would decide, and reruns triage for the
+selected samples when you click <strong>Apply</strong>.</p>
+</div>
+</div>
+<div class="section level2">
+<h2 id="chimeric-contigs">Chimeric contigs<a class="anchor" aria-label="anchor" href="#chimeric-contigs"></a>
+</h2>
+<p>A chimera is one assembled contig containing sequences that do not
+belong together, such as rDNA from two organisms or two different copies
+of the repeat from one genome. Each contig gets a chimera level, shown
+in the <strong>Chimera</strong> column of Annotation Review and in the
+<strong>Checks</strong> column:</p>
+<table class="table">
+<colgroup>
+<col width="25%">
+<col width="25%">
+<col width="25%">
+<col width="25%">
+</colgroup>
+<thead><tr class="header">
+<th>Level</th>
+<th>What it means</th>
+<th>Triage</th>
+<th>Export</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td>severe</td>
+<td>Two parts of the contig match different phyla or kingdoms, each at
+90 percent identity or more.</td>
+<td>Rule 8 flags the contig.</td>
+<td>Red in Checks. The <code>submission_risk</code> column says
+<code>chimeric(...)</code>.</td>
+</tr>
+<tr class="even">
+<td>minor</td>
+<td>Weaker evidence: windows match more than one class, genes agree only
+at a high rank, a ribotyper warning, or read evidence alone.</td>
+<td>No rule fires.</td>
+<td>Amber in Checks. Listed in the <code>chimera_warning</code> column
+of the summary CSV; not a submission risk.</td>
+</tr>
+<tr class="odd">
+<td>clean</td>
+<td>Nothing found.</td>
+<td>No rule fires.</td>
+<td>Nothing.</td>
+</tr>
+</tbody>
+</table>
+<p>In the test project, CHIM01 is severe: the contig is an artificial
+chimera composed of sequence from ray-finned fish and
+<em>Penicillium</em> mold.</p>
+<div class="float">
+<img src="figures/get-started/assemble-chimera-chim01.png" alt="A real chimera in the sequence viewer: the origin track switches lineage at the junction"><div class="figcaption">A real chimera in the sequence viewer: the
+origin track switches lineage at the junction</div>
+</div>
+<div class="section level3">
+<h3 id="how-the-check-works">How the check works<a class="anchor" aria-label="anchor" href="#how-the-check-works"></a>
+</h3>
+<p>RiboPilot looks for chimeras in four ways:</p>
 <ul>
 <li>
-<strong>Generic animal</strong> (the default): deliberately wide
-length ranges that suit a broad range of animals.</li>
+<strong>Gene by gene.</strong> The 18S, 5.8S, and 28S genes each get
+their own best GenBank matches. Ideally these agree on one lineage.</li>
 <li>
-<strong>Fish</strong>: tighter, fish-specific ranges for the
-ribosomal genes, with the spacers kept wide because they vary even
-between close relatives.</li>
+<strong>Along the contig.</strong> The contig is divided into 150 bp
+windows and each is searched against the bundled rDNA database.
+Neighboring windows that match the same taxonomic class are joined into
+segments, and neighboring segments that hit different classes suggest a
+chimeric join. Neighboring segments with different taxonomic assignment
+are only flagged when both segments span at least 450 bp (for class
+mismatches) or 300 bp (for phylum or kingdom mismatches).</li>
+<li>
+<strong>Gene structure.</strong> <a href="https://github.com/ncbi/ribovore" class="external-link">ribotyper</a>, NCBI’s rRNA
+checker, tests that the 18S and 28S each look like one whole gene.
+ITSx’s own chimera call adds a little weight.</li>
+<li>
+<strong>Reads.</strong> Many mapped reads that stop at the same
+point, or a large shift in read depth, can indicate a chimeric
+join.</li>
 </ul>
-<p>For reference, the generic animal length ranges are:</p>
+</div>
+<div class="section level3">
+<h3 id="how-to-judge-a-flag">How to judge a flag<a class="anchor" aria-label="anchor" href="#how-to-judge-a-flag"></a>
+</h3>
+<p>In the <strong>Coverage and windowed BLAST</strong> panel:</p>
+<ul>
+<li>
+<strong>BLAST origin</strong> shows segments with consistent
+taxonomic identity</li>
+<li>
+<strong>BLAST identity</strong> shows the best hit’s percent
+identity</li>
+<li>vertical red dashed lines mark possible chimeric junctions</li>
+</ul>
+<p>The <strong>Windowed BLAST details</strong> panel below provides more
+details about the BLAST results.</p>
+<p>A real chimera shows a clean switch from one lineage to another,
+often accompanied by a shift in read depth. RiboPilot already discounts
+the common false positives: windows in conserved stretches where many
+groups match equally well are shown as “unresolved” and changes in read
+depth at a gene boundary or at the ends of the contig are ignored.
+Below, the first contig of SRR33849683 is “minor” because its genes
+agree only at phylum level, although every window that can be placed
+matches a ray-finned fish:</p>
+<div class="float">
+<img src="figures/curation/chimera-mild.png" alt="Windowed BLAST details for a weaker signal that needs a look"><div class="figcaption">Windowed BLAST details for a weaker signal that
+needs a look</div>
+</div>
+<p>If in doubt, copy the contig with <strong>Copy FASTA</strong> and run
+your own BLAST searches on the NCBI website.</p>
+</div>
+</div>
+<div class="section level2">
+<h2 id="feature-blast-each-feature-searched-on-its-own">Feature BLAST: each feature searched on its own<a class="anchor" aria-label="anchor" href="#feature-blast-each-feature-searched-on-its-own"></a>
+</h2>
+<p>The contig BLAST search can look fine even if one feature is poorly
+assembled or contaminated. So RiboPilot also searches each core feature
+(18S, ITS1, 5.8S, ITS2, 28S) on its own against the bundled rDNA
+database.</p>
+<p>The <strong>Feature BLAST warnings</strong> column in Annotation
+Review lists only the features that need a look:</p>
 <table class="table">
 <colgroup>
 <col width="50%">
 <col width="50%">
 </colgroup>
 <thead><tr class="header">
+<th>Warning</th>
+<th>Meaning</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td>no hit</td>
+<td>Nothing in the database matched the feature.</td>
+</tr>
+<tr class="even">
+<td>non-rDNA hit</td>
+<td>The best match is not a nuclear rDNA record.</td>
+</tr>
+<tr class="odd">
+<td>off-target (group)</td>
+<td>The best match shares nothing with your sample at phylum level or
+below.</td>
+</tr>
+<tr class="even">
+<td>no BLAST, feature too small</td>
+<td>The feature is under 50 bp, too short for a useful search. Features
+of 50 to 99 bp are searched but marked low confidence, because short
+pieces match many organisms equally well.</td>
+</tr>
+<tr class="odd">
+<td>weak hit</td>
+<td>Only the more sensitive dc-megablast retry found a match; megablast
+found nothing.</td>
+</tr>
+</tbody>
+</table>
+<p>In the Annotation Review table, open a contig
+<strong>Details</strong> window to see the full <strong>Feature
+BLAST</strong> panel. This shows each feature’s best match, how closely
+it matches your sample (species, genus, family, and so on), its identity
+and coverage, and the algorithm that found it (megablast, dc-megablast
+in amber, or blastn for short features). Expand a row for the top 10
+matches. “Not run” means the database was not available.</p>
+<p>In the test project, CHIM01’s 28S comes from a <em>Penicillium</em>
+mold, so its best match shares nothing with the fish sample and the
+feature is off target:</p>
+<div class="float">
+<img src="figures/curation/feature-blast-chim01.png" alt="Feature BLAST for CHIM01: the 18S matches the fish, the 28S is off target"><div class="figcaption">Feature BLAST for CHIM01: the 18S matches the
+fish, the 28S is off target</div>
+</div>
+</div>
+<div class="section level2">
+<h2 id="several-contigs-from-one-organism">Several contigs from one organism<a class="anchor" aria-label="anchor" href="#several-contigs-from-one-organism"></a>
+</h2>
+<p>When a sample assembles more than one rDNA contig, RiboPilot compares
+their 18S, 5.8S, and 28S genes. The result is shown in the
+<strong>Variant</strong> column of the Assemble step’s contig table. Too
+little shared gene sequence gives “not comparable”.</p>
+<p>An <strong>isomer</strong> is RiboPilot’s label for contigs whose
+rRNA genes are nearly identical but which differ in the ITS sequence or
+flanking regions.</p>
+<p>A <strong>paralog</strong> means the genes of the contigs differ.
+That can be real variation within one genome (known in octocorals and
+jellyfish), contamination, or a pseudogene.</p>
+<p>A contaminant from the same phylum passes the contig screen, so check
+each variant’s <strong>Feature BLAST warnings</strong> before you lock
+one. Handle isomers and paralogs with care: consult the literature for
+your group, or examine a reference genome, to see whether rDNA variation
+is a known phenomenon.</p>
+</div>
+<div class="section level2">
+<h2 id="how-the-checks-are-tuned-per-group">How the checks are tuned per group<a class="anchor" aria-label="anchor" href="#how-the-checks-are-tuned-per-group"></a>
+</h2>
+<p>The expected lengths and identity floors depend on the group of
+organisms. RiboPilot ships five rulesets, with ranges taken from GenBank
+records:</p>
+<table class="table">
+<colgroup>
+<col width="50%">
+<col width="50%">
+</colgroup>
+<thead><tr class="header">
+<th>Ruleset</th>
+<th>Used for samples in</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td><code>actinopterygii</code></td>
+<td>ray-finned fishes</td>
+</tr>
+<tr class="even">
+<td><code>asteroidea</code></td>
+<td>sea stars</td>
+</tr>
+<tr class="odd">
+<td><code>scyphozoa</code></td>
+<td>true jellyfish</td>
+</tr>
+<tr class="even">
+<td><code>octocorallia</code></td>
+<td>octocorals</td>
+</tr>
+<tr class="odd">
+<td><code>metazoa_generic</code></td>
+<td>any other group; the contig gets the <code>no_clade_ruleset</code>
+note</td>
+</tr>
+</tbody>
+</table>
+<p>To use another one, pick it as <strong>Clade ruleset</strong> in the
+sample’s <strong>Curate Options</strong> (Assemble step). Leaving
+<code>metazoa_generic</code> there lets RiboPilot choose from the
+lineage.</p>
+<p>Expected lengths, in bases. A <code>length</code> warning means a
+feature fell outside its range, which is common and often fine for the
+spacers:</p>
+<table class="table">
+<colgroup>
+<col width="25%">
+<col width="25%">
+<col width="25%">
+<col width="25%">
+</colgroup>
+<thead><tr class="header">
 <th>Feature</th>
-<th>Typical length (bases)</th>
+<th>Generic animal</th>
+<th>Ray-finned fishes</th>
+<th>Sea stars, jellyfish, octocorals</th>
 </tr></thead>
 <tbody>
 <tr class="odd">
 <td>18S</td>
-<td>1600 - 2100</td>
+<td>1600 to 2100</td>
+<td>1750 to 1950</td>
+<td>1700 to 1900</td>
 </tr>
 <tr class="even">
 <td>5.8S</td>
-<td>140 - 180</td>
+<td>140 to 180</td>
+<td>140 to 175</td>
+<td>150 to 170</td>
 </tr>
 <tr class="odd">
 <td>28S</td>
-<td>2000 - 6000 (the recovered portion varies with sequencing
-depth)</td>
+<td>2000 to 6000</td>
+<td>2500 to 5000</td>
+<td>2000 to 6000</td>
 </tr>
 <tr class="even">
 <td>ITS1</td>
-<td>120 - 1600</td>
+<td>120 to 1600</td>
+<td>150 to 1200</td>
+<td>120 to 1200</td>
 </tr>
 <tr class="odd">
 <td>ITS2</td>
-<td>120 - 1600</td>
+<td>120 to 1600</td>
+<td>150 to 1200</td>
+<td>120 to 1200</td>
 </tr>
 </tbody>
 </table>
-<p>A <code>length</code> flag simply means a feature fell outside these
-ranges. That is common and often fine, especially for the fast-evolving
-spacers; it is a prompt to look, not a verdict.</p>
-</div>
-<div class="section level2">
-<h2 id="adding-tuning-for-a-new-group">Adding tuning for a new group<a class="anchor" aria-label="anchor" href="#adding-tuning-for-a-new-group"></a>
-</h2>
-<p>If you work on a group that would benefit from its own length ranges,
-that can be added. This is a small change to RiboPilot’s settings rather
-than new analysis code. If you are comfortable with R you can add it
-yourself (see <code>rrna_params()</code> in the source), but you are
-also very welcome to <a href="https://github.com/dmacguigan/RiboPilot/issues" class="external-link">open an issue</a>
-describing your group, and we can help set it up. In the meantime, the
-generic animal setting works for any group; it is just more lenient.</p>
+<p>Identity floors, in percent. Below these a gene gets
+<code>low_identity</code>:</p>
+<table class="table">
+<colgroup>
+<col width="25%">
+<col width="25%">
+<col width="25%">
+<col width="25%">
+</colgroup>
+<thead><tr class="header">
+<th>Gene</th>
+<th>Generic animal</th>
+<th>Ray-finned fishes</th>
+<th>Sea stars, jellyfish, octocorals</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td>18S</td>
+<td>95</td>
+<td>97</td>
+<td>93</td>
+</tr>
+<tr class="even">
+<td>5.8S</td>
+<td>93</td>
+<td>95</td>
+<td>90</td>
+</tr>
+<tr class="odd">
+<td>28S</td>
+<td>80</td>
+<td>85</td>
+<td>78</td>
+</tr>
+</tbody>
+</table>
+<p>The floors are lower for sea stars, jellyfish, and octocorals because
+GenBank has fewer rDNA records for these groups. All of these are
+working values, not published standards: a <code>length</code> or
+<code>low_identity</code> warning is a prompt to look, not a verdict. In
+every ruleset, a gene is <code>truncated</code> when less than 90
+percent of its rRNA model was recovered, identity is judged only when
+the reference covers at least half of the gene, and annotation gaps of 5
+bases or fewer are closed automatically.</p>
+<p>Want ranges for your own group? <a href="https://github.com/NMNH-OceanDNA/RiboPilot/issues" class="external-link">Open an
+issue</a> describing it. Until then, the generic animal ruleset works
+for any group; it is just more lenient.</p>
 </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside>
@@ -231,7 +818,7 @@ generic animal setting works for any group; it is just more lenient.</p>
 </div>
 
 <div class="pkgdown-footer-right">
-  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.0.</p>
+  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.1.</p>
 </div>
 
     </footer>

@@ -5,7 +5,7 @@
 <meta charset="utf-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-<title>Using RiboPilot with your group of organisms • RiboPilot</title>
+<title>Reference databases • RiboPilot</title>
 <!-- favicons --><link rel="icon" type="image/png" sizes="96x96" href="../favicon-96x96.png">
 <link rel="icon" type="”image/svg+xml”" href="../favicon.svg">
 <link rel="apple-touch-icon" sizes="180x180" href="../apple-touch-icon.png">
@@ -15,7 +15,8 @@
 <link href="../deps/bootstrap-5.3.8/bootstrap.min.css" rel="stylesheet">
 <script src="../deps/bootstrap-5.3.8/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet">
 <link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet">
-<script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><meta property="og:title" content="Using RiboPilot with your group of organisms">
+<script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><link href="../extra.css" rel="stylesheet">
+<meta property="og:title" content="Reference databases">
 </head>
 <body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
@@ -25,7 +26,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">RiboPilot</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9000</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,16 +40,47 @@
 <li class="active nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
-<li><a class="dropdown-item" href="../articles/Reference-Databases.html">Using RiboPilot with your group of organisms</a></li>
-    <li><a class="dropdown-item" href="../articles/Curation-Flags.html">Understanding the automatic quality checks</a></li>
+<li><h6 class="dropdown-header" data-toc-skip>Setup</h6></li>
+    <li><a class="dropdown-item" href="../articles/Installation.html">Installation</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Test project</h6></li>
+    <li><a class="dropdown-item" href="../articles/Test-Project-Taxonomy.html">1. Taxonomy</a></li>
+    <li><a class="dropdown-item" href="../articles/Test-Project-Reference.html">2. Reference</a></li>
+    <li><a class="dropdown-item" href="../articles/Test-Project-Assemble.html">3. Assemble</a></li>
+    <li><a class="dropdown-item" href="../articles/Test-Project-Annotate.html">4. Annotation Review</a></li>
+    <li><a class="dropdown-item" href="../articles/Test-Project-Export.html">5. Export</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Usage</h6></li>
+    <li><a class="dropdown-item" href="../articles/Your-Own-Project.html">Your own project</a></li>
+    <li><a class="dropdown-item" href="../articles/Reference-Databases.html">Reference databases</a></li>
+    <li><a class="dropdown-item" href="../articles/Assembly-Methods.html">Choosing an assembly method</a></li>
+    <li><a class="dropdown-item" href="../articles/Curation-Flags.html">Quality checks and flags</a></li>
+    <li><a class="dropdown-item" href="../articles/GenBank-Submission.html">Preparing a GenBank submission</a></li>
+    <li><a class="dropdown-item" href="../articles/Citing.html">Citing RiboPilot</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Metadata</h6></li>
+    <li><a class="dropdown-item" href="../articles/Sample-Metadata.html">Sample metadata</a></li>
+    <li><a class="dropdown-item" href="../articles/Metadata-Linking.html">Linking records across databases</a></li>
+    <li><a class="dropdown-item" href="../articles/NMNH-Vouchers.html">NMNH voucher submissions</a></li>
+    <li><a class="dropdown-item" href="../articles/Metadata-Reference.html">Metadata field reference</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Computing environments</h6></li>
+    <li><a class="dropdown-item" href="../articles/Clusters.html">Running on a cluster</a></li>
+    <li><a class="dropdown-item" href="../articles/NMNH-Hydra.html">Smithsonian Hydra setup</a></li>
+    <li><a class="dropdown-item" href="../articles/NOAA-SEDNA.html">NOAA SEDNA setup</a></li>
+    <li><a class="dropdown-item" href="../articles/Caches-and-Offline.html">Disk space, caches, and offline use</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Help</h6></li>
+    <li><a class="dropdown-item" href="../articles/Troubleshooting.html">Troubleshooting</a></li>
   </ul>
 </li>
+<li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul>
 <ul class="navbar-nav">
 <li class="nav-item"><form class="form-inline" role="search">
  <input class="form-control" type="search" name="search-input" id="search-input" autocomplete="off" aria-label="Search site" placeholder="Search for" data-search-index="../search.json">
 </form></li>
-<li class="nav-item"><a class="external-link nav-link" href="https://github.com/dmacguigan/RiboPilot/" aria-label="GitHub"><span class="fa fab fa-github fa-lg"></span></a></li>
+<li class="nav-item"><a class="external-link nav-link" href="https://github.com/NMNH-OceanDNA/RiboPilot/" aria-label="GitHub"><span class="fa fab fa-github fa-lg"></span></a></li>
       </ul>
 </div>
 
@@ -61,101 +93,106 @@
 
 <div class="row">
   <main id="main" class="col-md-9"><div class="page-header">
-      <img src="../logo.png" class="logo" alt=""><h1>Using RiboPilot with your group of organisms</h1>
+      <img src="../logo.svg" class="logo" alt=""><h1>Reference databases</h1>
             
       
-      <small class="dont-index">Source: <a href="https://github.com/dmacguigan/RiboPilot/blob/main/vignettes/Reference-Databases.Rmd" class="external-link"><code>vignettes/Reference-Databases.Rmd</code></a></small>
+      <small class="dont-index">Source: <a href="https://github.com/NMNH-OceanDNA/RiboPilot/blob/main/vignettes/Reference-Databases.Rmd" class="external-link"><code>vignettes/Reference-Databases.Rmd</code></a></small>
       <div class="d-none name"><code>Reference-Databases.Rmd</code></div>
     </div>
 
     
     
-<style>
-.alert { border-left: 5px solid; padding: 10px; margin: 12px 0; border-radius: 5px; }
-.alert-note { border-color: #007BFF; background-color: #EBF5FF; }
-strong { font-weight: bold; }
-</style>
-<p>To assemble a sample, RiboPilot compares its reads to known ribosomal
-sequences from related organisms. It comes ready to use for
-<strong>ray-finned fishes</strong>. For any other group, you build that
-reference data once, and it is reused for every future project on that
-group.</p>
-<p>You do not need to find or format any sequences yourself. RiboPilot
-downloads them from GenBank for you.</p>
+<p>To assemble a sample, RiboPilot compares its reads with known
+ribosomal sequences from a reference database of related organisms. A
+new project has no usable database until you build one in the app’s
+<strong>Reference</strong> step. You do not need to find or format any
+sequences yourself, and a database can be reused by every later project
+on that group.</p>
 <div class="section level2">
-<h2 id="build-reference-data-for-a-group">Build reference data for a group<a class="anchor" aria-label="anchor" href="#build-reference-data-for-a-group"></a>
+<h2 id="the-reference-step">The Reference step<a class="anchor" aria-label="anchor" href="#the-reference-step"></a>
 </h2>
-<p>Use <code><a href="../reference/build_reference_db.html">build_reference_db()</a></code>. It takes a standard NCBI
-search (the same kind of query you would type on the <a href="https://www.ncbi.nlm.nih.gov/" class="external-link">NCBI website</a>) and a short label
-for the group. It then downloads the relevant 18S, 5.8S, 28S, and ITS
-sequences and prepares the reference data.</p>
+<p>The Reference step comes between the <strong>Taxonomy</strong> and
+<strong>Assemble</strong> steps. Set up a database for every group
+before you assemble.</p>
+<p>After resolving the sample taxonomy, open the Reference step and
+press <strong>Propose groups</strong>. RiboPilot looks at each sample’s
+lineage and groups samples that can share one reference database.
+RiboPilot picks the narrowest group containing your samples that
+contains at least at least 1,000 GenBank rDNA records. Samples from very
+different parts of the tree end up in different groups, each with its
+own reference database.</p>
+<p>After defining groups, the Reference page automatically switches from
+a samples table to a groups table. Each row is one proposed group. The
+<strong>Status</strong> column says where that group stands (“Needs a
+database”, “Building”, “Ready”, “Build failed”, or “Left on current
+database”), and the rest of the row shows the clade, how many of your
+samples it covers, how many GenBank records matched the clade’s search
+(<strong># GenBank Hits</strong>), and, once built, how many sequences
+the database holds (<strong># Database Sequences</strong>). The second
+number is usually much smaller: the build keeps one copy of each
+identical sequence and drops short records. RefSeq genome annotations
+list many identical rDNA copies per genome, so a clade with many
+sequenced genomes can lose most of its hits this way. For example,
+Actinopteri had about 43,900 hits but built to about 12,100
+sequences.</p>
+<div class="section level3">
+<h3 id="setting-a-group-up">Setting a group up<a class="anchor" aria-label="anchor" href="#setting-a-group-up"></a>
+</h3>
+<p>The link at the right-hand end of each row says what that group
+needs: <strong>Set up database</strong>, <strong>Try again</strong>, or
+<strong>Change</strong>. Click it and you are offered four choices:</p>
+<ul>
+<li>
+<strong>Download sequences from GenBank.</strong> The normal choice.
+Opens a run window, then press <strong>Run from App</strong> to download
+the database. When the build finishes, RiboPilot points the group’s
+unlocked samples at the new database. A database that already exists in
+your reference folder is automatically used, not rebuilt.</li>
+<li>
+<strong>Use a database I already have.</strong> Points the group at
+a database built earlier, in this project or by someone else sharing the
+reference folder.</li>
+<li>
+<strong>Change which clade this group uses.</strong> Lists the
+group’s lineage from the broadest rank to the narrowest. Pick another
+rank to widen or narrow the group, or search for another clade. If some
+samples in the group are not contained in the clade you select, they are
+split off into a different group. Clicking the group’s
+<strong>Clade</strong> cell opens the same window.</li>
+<li>
+<strong>Leave these samples on their current database.</strong>
+Nothing is built. Use it only when you have already set a database in
+these samples’ <strong>Assembly Options</strong> yourself.</li>
+</ul>
+<p>To handle several groups at once, tick their rows first, then click
+the link on any one of them. The “change clade” option is offered only
+for a single group.</p>
+<p>If you press <strong>Update</strong> in the Assemble step while some
+groups have no database, RiboPilot warns you but goes ahead, and those
+samples fail.</p>
+</div>
+</div>
+<div class="section level2">
+<h2 id="the-reference-folder">The reference folder<a class="anchor" aria-label="anchor" href="#the-reference-folder"></a>
+</h2>
+<p>Built databases live in a <strong>reference folder</strong> that can
+be shared across projects. You can set the location of the reference
+folder using the <strong>Settings</strong> button (which also lets you
+adjust the minimum and maximum record counts the grouping step uses). Or
+you can set the reference folder when you create a project.</p>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># 1. First, just check how many sequences are available. Nothing is downloaded.</span></span>
-<span><span class="fu">RiboPilot</span><span class="fu">::</span><span class="fu"><a href="../reference/build_reference_db.html">build_reference_db</a></span><span class="op">(</span></span>
-<span>  <span class="st">'"Gastropoda"[Organism]'</span>, <span class="st">"gastropoda"</span>,</span>
-<span>  count_only <span class="op">=</span> <span class="cn">TRUE</span>, conda_env <span class="op">=</span> <span class="st">"ribopilot"</span></span>
-<span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># 2. Then build the reference data and save it somewhere you can reuse.</span></span>
-<span><span class="va">db</span> <span class="op">&lt;-</span> <span class="fu">RiboPilot</span><span class="fu">::</span><span class="fu"><a href="../reference/build_reference_db.html">build_reference_db</a></span><span class="op">(</span></span>
-<span>  <span class="st">'"Gastropoda"[Organism]'</span>, <span class="st">"gastropoda"</span>,</span>
-<span>  out_dir <span class="op">=</span> <span class="st">"~/ribopilot_refs"</span>, conda_env <span class="op">=</span> <span class="st">"ribopilot"</span></span>
-<span><span class="op">)</span></span></code></pre></div>
-<p>Replace <code>Gastropoda</code> with your group. The
-<code>"[Organism]"</code> part tells NCBI to search by organism name, so
-<code>'"Gastropoda"[Organism]'</code> means “all gastropod sequences”.
-The second value, <code>"gastropoda"</code>, is just a short label used
-in the file names.</p>
-<div class="alert alert-note">
-<p>Running this needs the tools you installed with conda, so start R
-from a terminal where you have run <code>conda activate
-ribopilot</code>, or keep the <code>conda_env = “ribopilot”</code>
-setting shown above.</p>
-</div>
-</div>
-<div class="section level2">
-<h2 id="use-it-in-a-project">Use it in a project<a class="anchor" aria-label="anchor" href="#use-it-in-a-project"></a>
-</h2>
-<p>When you set up a project, point it at the reference data you built
-by adding two lines to <code><a href="../reference/new_project.html">new_project()</a></code>:</p>
-<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu">RiboPilot</span><span class="fu">::</span><span class="fu"><a href="../reference/new_project.html">new_project</a></span><span class="op">(</span></span>
 <span>  path       <span class="op">=</span> <span class="st">"~/my_project"</span>,</span>
 <span>  mapping_fn <span class="op">=</span> <span class="st">"~/my_samples.csv"</span>,</span>
 <span>  data_path  <span class="op">=</span> <span class="st">"~/my_reads"</span>,</span>
-<span>  executor   <span class="op">=</span> <span class="st">"conda"</span>,</span>
-<span>  custom_seeds_db  <span class="op">=</span> <span class="va">db</span><span class="op">$</span><span class="va">seeds</span>,</span>
-<span>  custom_labels_db <span class="op">=</span> <span class="va">db</span><span class="op">$</span><span class="va">labels</span></span>
+<span>  ref_dir    <span class="op">=</span> <span class="st">"~/ribopilot_refs"</span></span>
 <span><span class="op">)</span></span></code></pre></div>
-</div>
-<div class="section level2">
-<h2 id="good-to-know">Good to know<a class="anchor" aria-label="anchor" href="#good-to-know"></a>
-</h2>
-<ul>
-<li>
-<strong>Build once, reuse forever.</strong> If you run
-<code><a href="../reference/build_reference_db.html">build_reference_db()</a></code> again for the same group and location,
-it reuses what you already built instead of re-downloading. To force a
-fresh rebuild, add <code>overwrite = TRUE</code>.</li>
-<li>
-<strong>Where it is saved.</strong> If you leave out
-<code>out_dir</code>, RiboPilot saves the reference data in a default
-folder on your computer and finds it automatically next time. Setting
-<code>out_dir</code> to a shared location lets your whole lab reuse the
-same data.</li>
-<li>
-<strong>Groups with few sequences.</strong> Some groups have very
-little published ribosomal data. If your search returns only a handful
-of records (check with <code>count_only = TRUE</code> first), broaden it
-to a larger group. For example, search a whole family or order rather
-than a single genus, so RiboPilot has enough reference sequence to work
-with.</li>
-<li>
-<strong>The 5.8S gene.</strong> GenBank rarely stores 5.8S on its
-own; it is usually bundled inside ITS records. That is fine: RiboPilot
-still recovers the 5.8S region from the full repeat, and its quality
-checks anchor on the 18S and 28S genes.</li>
-</ul>
+<p>If you do not set a folder, RiboPilot uses a folder in your home
+directory. <code><a href="../reference/ribopilot_ref_dir.html">RiboPilot::ribopilot_ref_dir()</a></code> prints the folder
+path.</p>
+<p>On a cluster, we recommend setting the reference folder somowhere
+other than your home directory where disk quotas are lower: see <a href="Caches-and-Offline.html">Disk space, caches, and offline
+use</a>.</p>
 </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside>
@@ -168,7 +205,7 @@ checks anchor on the 18S and 28S genes.</li>
 </div>
 
 <div class="pkgdown-footer-right">
-  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.0.</p>
+  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.1.</p>
 </div>
 
     </footer>

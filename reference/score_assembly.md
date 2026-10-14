@@ -9,6 +9,7 @@ score_assembly(
   path_fastas,
   gfa_path = NA_character_,
   sample_lineage = NA_character_,
+  sample_taxids = NA_character_,
   blast_db = NULL,
   taxdump_dir = NULL,
   with_staxids = FALSE,
@@ -21,15 +22,21 @@ score_assembly(
 
 - path_fastas:
 
-  Character vector of per-path fasta files.
+  Per-path fasta files, each named with its path number last
+  (`<id>_assembly_<n>.fasta`); `n` becomes the `path` column.
 
 - gfa_path:
 
-  The assembly graph \`.gfa\` (for depth). May be NA.
+  The assembly graph `.gfa` (for depth). May be NA.
 
 - sample_lineage:
 
-  The sample's resolved "; " ranked lineage.
+  The sample's resolved rank-aligned lineage.
+
+- sample_taxids:
+
+  The sample's rank-aligned lineage taxids. Preferred over the names
+  when present: taxids carry no homonyms.
 
 - blast_db:
 
@@ -42,13 +49,15 @@ score_assembly(
 
 - with_staxids:
 
-  TRUE if \`blast_db\` carries taxids; else taxonomy is taken from the
+  TRUE if `blast_db` carries taxids; else taxonomy is taken from the
   seed-DB subject id species.
 
 - expected_length, weights:
 
-  Passed to \[score_candidates()\].
+  Passed to
+  [`score_candidates()`](https://nmnh-oceandna.github.io/RiboPilot/reference/score_candidates.md).
 
 ## Value
 
-Scored candidate data.frame (see \[score_candidates()\]).
+Scored candidate data.frame (see
+[`score_candidates()`](https://nmnh-oceandna.github.io/RiboPilot/reference/score_candidates.md)).

@@ -1,59 +1,78 @@
 # RiboPilot
 
-RiboPilot recovers the **nuclear ribosomal repeat (nrDNA)** from genome
-skimming data, then helps you check and clean up the result and package
-it for submission to GenBank. It is a companion to
-[MitoPilot](https://github.com/Smithsonian/MitoPilot), which does the
-same thing for the mitochondrial genome. You can run both on the same
-samples and get both marker sets from one sequencing run.
+RiboPilot is a product of the [NMNH Ocean DNA
+initiative](https://naturalhistory.si.edu/initiatives/oceans/ocean-science-center/ocean-dna)
+and does not represent an official Smithsonian Institution position or
+product.
 
-You do not need to be a programmer to use RiboPilot. Most of your work
-happens in a **point-and-click app** that runs in your web browser. The
-step-by-step [Get started
-guide](https://dmacguigan.github.io/RiboPilot/articles/RiboPilot.html)
+RiboPilot assembles and annotates the **nuclear ribosomal DNA repeat
+(rDNA)** from genome skimming data, then helps you check and clean up
+the result and package it for submission to GenBank. If you already have
+an assembly, RiboPilot can [start from that instead of
+reads](https://nmnh-oceandna.github.io/RiboPilot/articles/Your-Own-Project.html#already-have-an-assembly).
+RiboPilot is a companion to
+[MitoPilot](https://github.com/NMNH-OceanDNA/MitoPilot), which does the
+same process for the mitochondrial genome. You can run both tools on the
+same samples and get both marker sets from one sequencing run.
+
+Most of your work happens in a **point-and-click Shiny app** that runs
+in your web browser. The step-by-step [Get started
+guide](https://nmnh-oceandna.github.io/RiboPilot/articles/RiboPilot.html)
 walks through a complete project from start to finish.
 
-# What RiboPilot recovers
+# The nuclear ribosomal DNA unit
 
 Every cell carries the ribosomal RNA genes in a repeated unit that is
 copied hundreds to thousands of times in a row. Because there are so
 many copies, even a shallow, inexpensive “genome skim” sequences this
-region very deeply, essentially for free. RiboPilot reconstructs that
-repeat unit:
+region very deeply. From it you get some widely used nuclear markers for
+phylogenetics and DNA barcoding: **18S**, **28S**, **ITS1**, **ITS2**,
+and the full **ITS** region.
 
-       ETS   18S    ITS1   5.8S   ITS2    28S     IGS
-     --|===|=======|~~~~~|=====|~~~~~|===========|------ (repeated hundreds of times)
-           SSU              LSU
+![One copy of the rDNA repeat: 5' ETS, 18S, ITS1, 5.8S, ITS2, 28S, 3'
+ETS, with the intergenic spacer (IGS) on either
+side](reference/figures/rdna_repeat.svg)
 
-From it you get the most widely used nuclear markers for phylogenetics
-and DNA barcoding: **18S**, **28S**, **ITS1**, **ITS2**, and the full
-**ITS** region.
+The core rDNA unit is typically highly conserved, but with hundreds of
+copies arranged in a tandem repeat. The three ribosomal genes (18S,
+5.8S, 28S) are highly conserved and act as anchors. The two spacers
+(ITS1, ITS2) sit between them, evolve quickly, and are the regions that
+distinguish closely related species.
 
-The three ribosomal genes (18S, 5.8S, 28S) are highly conserved and act
-as anchors. The two spacers (ITS1, ITS2) sit between them, evolve
-quickly, and are the regions that distinguish closely related species.
+Between the 28S of one copy and the 18S of the next lies the intergenic
+spacer (IGS): the 3’ external transcribed spacer (ETS), a
+non-transcribed spacer (NTS), and the 5’ ETS of the next copy ([Hwang
+and Kim 1999](https://pmc.ncbi.nlm.nih.gov/articles/PMC2733198/)).
+
+However, the structure of the nuclear rDNA repeat varies across the tree
+of life. The IGS can range from a few hundred base pairs to tens of
+kilobases and often holds subrepeats. Repeat blocks of the rDNA unit can
+be located at one or several places in the genome. See ([Wang et
+al. 2023](https://www.nature.com/articles/s41437-023-00634-5) for a
+review.
 
 # What RiboPilot does for you
 
-Starting from raw sequencing reads, RiboPilot:
+The app walks each project through five steps, in order:
 
-1.  **Confirms each sample’s organism.** RiboPilot resolves the `Taxon`
-    label you provide to an NCBI taxon (taxid + full lineage) using a
-    local copy of the NCBI taxonomy, then lets you **verify or correct
-    it in the app** before anything else runs. This is a dedicated first
-    stage (the **Taxonomy** tab): samples must be reviewed and locked
-    here before they move on to assembly, so the taxonomy that guides
-    scoring and curation is one you have signed off on.
-2.  **Assembles** the ribosomal repeat for each sample, cleaning up the
-    reads and piecing the region back together, then picking the best
-    reconstruction automatically.
-3.  **Annotates** it by locating the boundaries of all five features
-    (18S, ITS1, 5.8S, ITS2, 28S).
-4.  **Checks (curates)** each result against a reference and flags
-    anything that looks off, such as a missing gene, an unusual length,
-    or a possible contaminant, so you can focus your attention where it
-    is needed.
-5.  **Exports** a tidy, GenBank-ready submission package.
+1.  **Taxonomy.** RiboPilot matches the `Taxon` you provide for each
+    sample to the [NCBI
+    taxonomy](https://www.ncbi.nlm.nih.gov/datasets/taxonomy/). Samples
+    must be reviewed and locked here before they move on to assembly,
+    since the taxonomic ID of your samples guides scoring and curation.
+2.  **Reference.** RiboPilot groups related samples and builds a
+    reference database of known rDNA sequences for each group, from
+    GenBank.
+3.  **Assemble.** One run cleans the reads, assembles the ribosomal
+    repeat for each sample, picks the best assembly path, finds the five
+    features (18S, ITS1, 5.8S, ITS2, 28S), and checks each result for
+    problems such as a missing gene, an unusual length, a possible
+    contaminant, or a chimera. You choose which contigs to keep or drop
+    for the next step.
+4.  **Annotation Review.** You check the annotated features and quality
+    flags of each kept contig, adjusting boundaries if needed.
+5.  **Export.** RiboPilot writes a tidy, GenBank-ready submission
+    package, and warns you about any flagged record first.
 
 Behind the scenes RiboPilot uses established bioinformatics tools
 ([fastp](https://github.com/OpenGene/fastp),
@@ -63,207 +82,192 @@ Behind the scenes RiboPilot uses established bioinformatics tools
 [ITSx](https://microbiology.se/software/itsx/),
 [BLAST](https://blast.ncbi.nlm.nih.gov/Blast.cgi), and others) and
 stitches them together for you. You do not need to learn or run any of
-them yourself.
+them yourself. However, advanced users can adjust the parameters for
+each tool within RiboPilot.
 
-# Which organisms it works with
+# Taxonomic Scope
 
-RiboPilot was first built for ray-finned fishes and comes ready to use
-for them out of the box. For any other group of organisms, it can build
-the reference data it needs automatically by downloading published
-sequences from GenBank. This is a one-time setup step per group; see the
+Each group of samples needs a reference database of known rDNA
+sequences. You build it once per group in the app, from GenBank. See the
 [reference database
-guide](https://dmacguigan.github.io/RiboPilot/articles/Reference-Databases.html).
+guide](https://nmnh-oceandna.github.io/RiboPilot/articles/Reference-Databases.html).
 
-It also runs automatic quality checks tuned for a taxonomic group.
-Checks currently ship for a generic metazoan (animal) setting and a
-fish-specific setting; see the [curation
-guide](https://dmacguigan.github.io/RiboPilot/articles/Curation-Flags.html).
+RiboPilot also runs automatic quality checks tuned for a taxonomic
+group. Five settings ship, picked from each sample’s lineage: a generic
+animal setting, and settings for ray-finned fishes, sea stars, true
+jellyfish, and octocorals; see the [curation
+guide](https://nmnh-oceandna.github.io/RiboPilot/articles/Curation-Flags.html).
+These settings are still in development and likely need fine tuning.
 
 # Installation
 
-RiboPilot needs three things installed on your computer (or your lab’s
-server):
-
-1.  **[R](https://www.r-project.org/)** (version 4.4.0 or newer), the
-    language RiboPilot is written in. You will type a few short commands
-    into R, but you do not need to know R.
-2.  **[Nextflow](https://www.nextflow.io/docs/latest/install.html)**,
-    which runs the heavy analysis steps.
-3.  **The bioinformatics tools** the pipeline uses. The easiest way to
-    get all of them at once is
-    [conda](https://docs.conda.io/projects/miniconda/en/latest/), a tool
-    that installs a bundle of programs into a self-contained
-    “environment” without interfering with anything else on your
-    machine. Once conda is installed, one command sets up everything
-    RiboPilot needs:
-
-``` bash
-conda env create -f environment.yml
-conda activate ribopilot
-```
-
-Then, in R, install RiboPilot itself:
+RiboPilot requires Docker (or Singularity on a cluster), Java, Nextflow,
+and R. The [Installation
+guide](https://nmnh-oceandna.github.io/RiboPilot/articles/Installation.html)
+lists versions and checks. Then, in R:
 
 ``` r
 
-if (!requireNamespace("remotes", quietly = TRUE)) {
-  install.packages("remotes")
-}
-remotes::install_github("dmacguigan/RiboPilot")
+install.packages("remotes")
+remotes::install_github("NMNH-OceanDNA/RiboPilot")
 ```
-
-If any of this is unfamiliar, the [Get started
-guide](https://dmacguigan.github.io/RiboPilot/articles/RiboPilot.html)
-explains each piece in more detail, and your local bioinformatics
-support staff can usually help with the one-time setup.
 
 # Getting started
 
-The best way to learn RiboPilot is to run the built-in practice project.
-RiboPilot ships a small set of fish samples and a single command that
-downloads them and sets everything up:
+The best way to learn RiboPilot is to run the built-in test project. The
+first command downloads the test samples and sets everything up; the
+second opens the app:
 
 ``` r
 
-RiboPilot::new_test_project(path = "~/ribopilot_test", executor = "conda")
+RiboPilot::new_test_project(path = "~/ribopilot_test")
+RiboPilot::RiboPilot("~/ribopilot_test")
 ```
 
-From there, the [Get started
-guide](https://dmacguigan.github.io/RiboPilot/articles/RiboPilot.html)
-walks you through assembling the samples, reviewing and cleaning them up
-in the app, and exporting the results.
+By default this fetches small rDNA-filtered read subsets published with
+the RiboPilot releases, so setup takes under a minute. Pass
+`full_size = TRUE` to download the complete read sets from ENA/SRA
+instead (several GB). The first run also downloads the container image
+once (about 2.6 GB).
+
+Follow the [Get started
+guide](https://nmnh-oceandna.github.io/RiboPilot/articles/RiboPilot.html)
+to walk through project initialization and the five steps in the app.
+
+# Citing RiboPilot
+
+Run `citation("RiboPilot")` in R. The [Citing
+RiboPilot](https://nmnh-oceandna.github.io/RiboPilot/articles/Citing.html)
+page lists the tools RiboPilot runs, with their versions and references,
+for your methods section.
 
 # Getting help
 
-- Full documentation: <https://dmacguigan.github.io/RiboPilot/>
+- Full documentation: <https://nmnh-oceandna.github.io/RiboPilot/>
+- When something goes wrong: the [Troubleshooting
+  guide](https://nmnh-oceandna.github.io/RiboPilot/articles/Troubleshooting.html).
 - Questions or problems: please open an
-  [issue](https://github.com/dmacguigan/RiboPilot/issues).
+  [issue](https://github.com/NMNH-OceanDNA/RiboPilot/issues).
 
 # Package index
 
-## All functions
+## Start a project
 
-- [`RiboPilot()`](https://dmacguigan.github.io/RiboPilot/reference/RiboPilot.md)
-  : Open the RiboPilot GUI
-- [`annotate_project()`](https://dmacguigan.github.io/RiboPilot/reference/annotate_project.md)
-  : Annotate assembled samples for a project
-- [`annotate_seq()`](https://dmacguigan.github.io/RiboPilot/reference/annotate_seq.md)
-  : Annotate the nuclear rDNA feature model on a single sequence (all in
-  R)
-- [`apply_project_taxonomy()`](https://dmacguigan.github.io/RiboPilot/reference/apply_project_taxonomy.md)
-  : Freeze confirmed taxids + lineages from the review CSV into
-  \`samples\`
-- [`assign_export_group()`](https://dmacguigan.github.io/RiboPilot/reference/assign_export_group.md)
-  : Assign selected samples to an export group
-- [`build_reference_db()`](https://dmacguigan.github.io/RiboPilot/reference/build_reference_db.md)
+Create a project, open the app, and add or update samples.
+
+- [`new_test_project()`](https://nmnh-oceandna.github.io/RiboPilot/reference/new_test_project.md)
+  : Initialize a RiboPilot test project
+- [`new_project()`](https://nmnh-oceandna.github.io/RiboPilot/reference/new_project.md)
+  : Initialize a new RiboPilot project
+- [`run_app()`](https://nmnh-oceandna.github.io/RiboPilot/reference/run_app.md)
+  [`RiboPilot()`](https://nmnh-oceandna.github.io/RiboPilot/reference/run_app.md)
+  : Open the RiboPilot app
+- [`add_samples()`](https://nmnh-oceandna.github.io/RiboPilot/reference/add_samples.md)
+  : Add samples to an existing project
+- [`update_sample_metadata()`](https://nmnh-oceandna.github.io/RiboPilot/reference/update_sample_metadata.md)
+  : Update metadata for existing samples
+- [`backwards_compatibility()`](https://nmnh-oceandna.github.io/RiboPilot/reference/backwards_compatibility.md)
+  : Update an old project to the installed RiboPilot
+
+## Sample metadata
+
+Fetch specimen records from GEOME, GBIF, and NCBI, and choose what to
+compare.
+
+- [`fetch_geome()`](https://nmnh-oceandna.github.io/RiboPilot/reference/fetch_geome.md)
+  : Fetch GEOME metadata for project samples
+- [`fetch_gbif()`](https://nmnh-oceandna.github.io/RiboPilot/reference/fetch_gbif.md)
+  : Fetch GBIF occurrence metadata for project samples
+- [`fetch_ncbi()`](https://nmnh-oceandna.github.io/RiboPilot/reference/fetch_ncbi.md)
+  : Fetch NCBI BioSample and BioProject metadata for project samples
+- [`remove_metadata()`](https://nmnh-oceandna.github.io/RiboPilot/reference/remove_metadata.md)
+  : Remove fetched GEOME, GBIF, and NCBI metadata
+- [`set_metadata_columns()`](https://nmnh-oceandna.github.io/RiboPilot/reference/set_metadata_columns.md)
+  : Choose which mapping-file columns are compared with GEOME, GBIF, and
+  NCBI
+
+## Reference databases
+
+Build a reference database from R, and find the shared reference folder.
+
+- [`build_reference_db()`](https://nmnh-oceandna.github.io/RiboPilot/reference/build_reference_db.md)
   : Build a clade nuclear-rDNA reference database (GetOrganelle seeds +
   labels)
-- [`clear_export_group()`](https://dmacguigan.github.io/RiboPilot/reference/clear_export_group.md)
-  : Clear the export group of selected samples
-- [`compute_ref_alignment()`](https://dmacguigan.github.io/RiboPilot/reference/compute_ref_alignment.md)
-  : Compute per-feature sample-vs-reference alignments for one sample
-- [`curate_actinopterygii_rrna()`](https://dmacguigan.github.io/RiboPilot/reference/curate_actinopterygii_rrna.md)
-  : Thin actinopterygii curation wrapper.
-- [`curate_one()`](https://dmacguigan.github.io/RiboPilot/reference/curate_one.md)
-  : Curate one sample's annotations and write results back to the DB
-- [`curate_rrna_core()`](https://dmacguigan.github.io/RiboPilot/reference/curate_rrna_core.md)
-  : Curate one reconciled nrDNA feature model against a clade ruleset
-  (pure)
-- [`ensure_curate_schema()`](https://dmacguigan.github.io/RiboPilot/reference/ensure_curate_schema.md)
-  : Ensure the curation columns/tables exist (idempotent)
-- [`ensure_taxdump()`](https://dmacguigan.github.io/RiboPilot/reference/ensure_taxdump.md)
-  : Download a pinned NCBI taxdump tarball into \`dir\` (once per
-  project)
-- [`export_bundle()`](https://dmacguigan.github.io/RiboPilot/reference/export_bundle.md)
-  : Build a GenBank submission bundle for a set of samples (one export
-  group)
-- [`export_project()`](https://dmacguigan.github.io/RiboPilot/reference/export_project.md)
-  : Export every assigned export group in a project
-- [`extract_rdna_contigs()`](https://dmacguigan.github.io/RiboPilot/reference/extract_rdna_contigs.md)
-  : Keep the rDNA contigs (BLAST hit vs the label DB) and write assembly
-  fastas
-- [`fallback_assemble_one()`](https://dmacguigan.github.io/RiboPilot/reference/fallback_assemble_one.md)
-  : Run an assembly fallback for one sample (Option B2 baiting, or
-  Option A)
-- [`generate_config()`](https://dmacguigan.github.io/RiboPilot/reference/generate_config.md)
-  : Generate and save a reusable cluster config profile
-- [`list_configs()`](https://dmacguigan.github.io/RiboPilot/reference/list_configs.md)
-  : List available executor configs
-- [`load_assemblies()`](https://dmacguigan.github.io/RiboPilot/reference/load_assemblies.md)
-  : Load one sample's published assembly fastas into the database
-- [`migrate_db()`](https://dmacguigan.github.io/RiboPilot/reference/migrate_db.md)
-  : Bring a project database up to the current schema (idempotent,
-  additive)
-- [`migrate_project()`](https://dmacguigan.github.io/RiboPilot/reference/migrate_project.md)
-  : Migrate the project database at a path to the current schema
-- [`new_db()`](https://dmacguigan.github.io/RiboPilot/reference/new_db.md)
-  : Initialize a new RiboPilot project database
-- [`new_project()`](https://dmacguigan.github.io/RiboPilot/reference/new_project.md)
-  : Initialize a new RiboPilot project
-- [`new_test_project()`](https://dmacguigan.github.io/RiboPilot/reference/new_test_project.md)
-  : Initialize a RiboPilot test project
-- [`open_project_db()`](https://dmacguigan.github.io/RiboPilot/reference/open_project_db.md)
-  : Open a project DB connection with WAL + busy timeout (safe for
-  concurrent writes from parallel Nextflow processes)
-- [`parse_blast_candidates()`](https://dmacguigan.github.io/RiboPilot/reference/parse_blast_candidates.md)
-  : Parse remote blastn hits into ranked reference candidates
-- [`parse_feature_table()`](https://dmacguigan.github.io/RiboPilot/reference/parse_feature_table.md)
-  : Parse an NCBI feature table (efetch -format ft) into rRNA/ITS
-  features
-- [`reconcile_one()`](https://dmacguigan.github.io/RiboPilot/reference/reconcile_one.md)
-  : Reconcile barrnap + ITSx outputs for one sample; write annotations
-- [`resolve_project_taxonomy()`](https://dmacguigan.github.io/RiboPilot/reference/resolve_project_taxonomy.md)
-  : Resolve all sample Taxon strings and write a review table for
-  confirmation
-- [`resolve_taxonomy()`](https://dmacguigan.github.io/RiboPilot/reference/resolve_taxonomy.md)
-  : Resolve sample Taxon strings to NCBI taxids + lineages (for
-  confirmation)
-- [`ribopilot_config_dir()`](https://dmacguigan.github.io/RiboPilot/reference/ribopilot_config_dir.md)
-  : RiboPilot user config directory
-- [`ribopilot_ref_dir()`](https://dmacguigan.github.io/RiboPilot/reference/ribopilot_ref_dir.md)
+- [`ribopilot_ref_dir()`](https://nmnh-oceandna.github.io/RiboPilot/reference/ribopilot_ref_dir.md)
   : Default directory for user-built reference databases
-- [`run_annotate()`](https://dmacguigan.github.io/RiboPilot/reference/run_annotate.md)
-  : Run the annotation workflow (WF2) for a project
-- [`run_app()`](https://dmacguigan.github.io/RiboPilot/reference/run_app.md)
-  : Run the RiboPilot Shiny application
-- [`run_assembly()`](https://dmacguigan.github.io/RiboPilot/reference/run_assembly.md)
-  : Run the assembly workflow (WF1) for a project
-- [`run_fallback()`](https://dmacguigan.github.io/RiboPilot/reference/run_fallback.md)
-  : Run an assembly fallback (Option B2 baiting / Option A de-novo)
-- [`score_assembly()`](https://dmacguigan.github.io/RiboPilot/reference/score_assembly.md)
-  : Score GetOrganelle candidate paths from real assembly output
-- [`score_candidates()`](https://dmacguigan.github.io/RiboPilot/reference/score_candidates.md)
-  : Score and rank candidate paths, auto-selecting the best
-- [`score_one()`](https://dmacguigan.github.io/RiboPilot/reference/score_one.md)
-  : Score one sample's candidate paths and write path_scores (+
-  auto_select)
-- [`score_project()`](https://dmacguigan.github.io/RiboPilot/reference/score_project.md)
-  : Score assembled candidate paths for a project and write
-  \`path_scores\`
-- [`stitch_one()`](https://dmacguigan.github.io/RiboPilot/reference/stitch_one.md)
-  : Stitch one sample's selected path; write the \`stitched\` table +
-  return fasta
-- [`stitch_scaffolds()`](https://dmacguigan.github.io/RiboPilot/reference/stitch_scaffolds.md)
-  : Order + orient a path's scaffolds along a reference and stitch them
-- [`write_blast_ref()`](https://dmacguigan.github.io/RiboPilot/reference/write_blast_ref.md)
-  : Store one fetched NCBI reference (sequence + features) in the
-  project DB
-- [`write_coverage()`](https://dmacguigan.github.io/RiboPilot/reference/write_coverage.md)
-  : Write per-position read depth for one sample's stitched sequence
-- [`write_path_scores()`](https://dmacguigan.github.io/RiboPilot/reference/write_path_scores.md)
-  : Write scored candidate paths for a sample into the \`path_scores\`
-  table
+
+## Clusters
+
+Set up a profile for your cluster’s scheduler.
+
+- [`generate_config()`](https://nmnh-oceandna.github.io/RiboPilot/reference/generate_config.md)
+  : Generate and save a reusable cluster config profile
+- [`hydra_setup()`](https://nmnh-oceandna.github.io/RiboPilot/reference/hydra_setup.md)
+  : Configure the R session environment for the NMNH Hydra cluster
+
+## Export
+
+Write GenBank submission files without the app.
+
+- [`export_project()`](https://nmnh-oceandna.github.io/RiboPilot/reference/export_project.md)
+  : Export a project's locked units as GenBank bundles
 
 # Articles
 
-### Get started
+### Setup
 
-- [Get started: a full RiboPilot
-  walkthrough](https://dmacguigan.github.io/RiboPilot/articles/RiboPilot.md):
+- [Installation](https://nmnh-oceandna.github.io/RiboPilot/articles/Installation.md):
+
+### Test project walkthrough
+
+- [Test project:
+  Taxonomy](https://nmnh-oceandna.github.io/RiboPilot/articles/Test-Project-Taxonomy.md):
+- [Test project:
+  Reference](https://nmnh-oceandna.github.io/RiboPilot/articles/Test-Project-Reference.md):
+- [Test project:
+  Assemble](https://nmnh-oceandna.github.io/RiboPilot/articles/Test-Project-Assemble.md):
+- [Test project: Annotation
+  Review](https://nmnh-oceandna.github.io/RiboPilot/articles/Test-Project-Annotate.md):
+- [Test project:
+  Export](https://nmnh-oceandna.github.io/RiboPilot/articles/Test-Project-Export.md):
 
 ### Usage
 
-- [Using RiboPilot with your group of
-  organisms](https://dmacguigan.github.io/RiboPilot/articles/Reference-Databases.md):
-- [Understanding the automatic quality
-  checks](https://dmacguigan.github.io/RiboPilot/articles/Curation-Flags.md):
+- [Your own
+  project](https://nmnh-oceandna.github.io/RiboPilot/articles/Your-Own-Project.md):
+- [Reference
+  databases](https://nmnh-oceandna.github.io/RiboPilot/articles/Reference-Databases.md):
+- [Choosing an assembly
+  method](https://nmnh-oceandna.github.io/RiboPilot/articles/Assembly-Methods.md):
+- [Quality checks and
+  flags](https://nmnh-oceandna.github.io/RiboPilot/articles/Curation-Flags.md):
+- [Preparing a GenBank
+  submission](https://nmnh-oceandna.github.io/RiboPilot/articles/GenBank-Submission.md):
+- [Citing
+  RiboPilot](https://nmnh-oceandna.github.io/RiboPilot/articles/Citing.md):
+
+### Metadata
+
+- [Sample metadata: GEOME, GBIF, and
+  NCBI](https://nmnh-oceandna.github.io/RiboPilot/articles/Sample-Metadata.md):
+- [Linking records across
+  databases](https://nmnh-oceandna.github.io/RiboPilot/articles/Metadata-Linking.md):
+- [NMNH voucher
+  submissions](https://nmnh-oceandna.github.io/RiboPilot/articles/NMNH-Vouchers.md):
+- [Metadata field
+  reference](https://nmnh-oceandna.github.io/RiboPilot/articles/Metadata-Reference.md):
+
+### Computing environments
+
+- [Running on a
+  cluster](https://nmnh-oceandna.github.io/RiboPilot/articles/Clusters.md):
+- [Smithsonian Hydra
+  setup](https://nmnh-oceandna.github.io/RiboPilot/articles/NMNH-Hydra.md):
+- [NOAA SEDNA
+  setup](https://nmnh-oceandna.github.io/RiboPilot/articles/NOAA-SEDNA.md):
+- [Disk space, caches, and offline
+  use](https://nmnh-oceandna.github.io/RiboPilot/articles/Caches-and-Offline.md):
+
+### Help
+
+- [Troubleshooting](https://nmnh-oceandna.github.io/RiboPilot/articles/Troubleshooting.md):
