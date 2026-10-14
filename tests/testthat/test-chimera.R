@@ -638,11 +638,23 @@ test_that("clicking a chimera table row zooms the open modal's viewer", {
   expect_match(as.character(RiboPilot:::rt_zoom_row("start", "stop")), "chim_zoom", fixed = TRUE)
 })
 
-test_that("the reason text leaves out the empty match of a no-hit segment", {
-  seg <- data.frame(start = c(1, 501), stop = c(750, 2500), taxon = c("nohit", "Actinopterygii"),
-    species = c(NA, "Salmo salar"), pident = c(NA, 99), stringsAsFactors = FALSE)
-  r <- RiboPilot:::chimera_reason(seg, list(), integer(0))
-  expect_equal(r, "1-750 nohit; 501-2500 Actinopterygii (Salmo salar, 99.0%); no junction")
+test_that("the reason is one clause per check, the raising check first, and splits back into parts", {
+  ch <- list(genes = list(score = 0.6, reason = "18S resolves to Chordata (X, 99.6%) and 5.8S to Pleuronectiformes (X, 82.2%): agree only to phylum"),
+    windows = list(score = 0, reason = "one lineage along the contig: Actinopteri"),
+    ribotyper = list(score = 0, reason = "ribotyper passed"),
+    reads = list(score = 0, reason = "no read-evidence breakpoints"))
+  r <- RiboPilot:::chimera_reason(data.frame(), ch, integer(0))
+  expect_equal(r, paste("genes: 18S resolves to Chordata (X, 99.6%) and 5.8S to Pleuronectiformes (X, 82.2%): agree only to phylum;",
+    "windows: one lineage along the contig: Actinopteri; ribotyper passed; reads: no read-evidence breakpoints; no junction"))
+  expect_length(RiboPilot:::chimera_reason_parts(r), 5L)
+  ch$reads <- list(score = 0.7, junctions = 750L, reason = "depth step at 750; clip pileup at 2500")
+  r <- RiboPilot:::chimera_reason(data.frame(), ch, 750L)
+  expect_match(r, "^reads: depth step at 750; clip pileup at 2500; genes:")
+  expect_equal(RiboPilot:::chimera_reason_parts(r)[1], "reads: depth step at 750; clip pileup at 2500")
+  expect_equal(utils::tail(RiboPilot:::chimera_reason_parts(r), 1), "junction near 750 (reads)")
+  # trimmed contigs rebuild the reason from the stored segments alone
+  seg <- data.frame(start = c(1, 501), stop = c(750, 2500), taxon = c("nohit", "Actinopterygii"))
+  expect_equal(RiboPilot:::chimera_reason(seg, list(), integer(0)), "windows: nohit, Actinopterygii; no junction")
 })
 
 test_that("examining a flagged contig opens its viewer section", {
