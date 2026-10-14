@@ -20,6 +20,11 @@ nf_version_session <- function() {
 }
 
 .onAttach <- function(libname, pkgname) {
+  # Hydra sessions lack Java, qsub, and ~/bin on PATH; fix before probing Nextflow
+  tryCatch(ensure_hydra_setup(), error = function(e) {
+    packageStartupMessage("Hydra setup failed: ", conditionMessage(e),
+      ". Run hydra_setup() by hand.")
+  })
   version <- nf_version_session()
   status <- nf_version_status(version)
   packageStartupMessage("Welcome to RiboPilot!")
