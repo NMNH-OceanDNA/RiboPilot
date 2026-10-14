@@ -1016,8 +1016,12 @@ chimera_result_text <- function(label, reason, state = "done") {
     tags$span(class = "mp-help-text", style = "font-weight:normal;",
       if (identical(state, "waiting")) " (waiting for the Assemble step's Update)" else " (press Update to run the checks)")))
   tone <- switch(label, clean = "success", severe = "danger", "warning")
-  reason <- gsub(" (NA, NA%)", "", reason, fixed = TRUE)
-  tagList(tags$span("Chimera call: ", tags$span(class = paste0("mp-pill mp-pill-", tone), label)),
-    if (!is.na(reason) && nzchar(reason)) tags$div(class = "mp-help-text", style = "font-weight:normal; margin-top:2px;", reason))
+  parts <- if (!is.na(reason) && nzchar(reason)) chimera_reason_parts(gsub(" (NA, NA%)", "", reason, fixed = TRUE)) else character(0)
+  from <- if (!identical(label, "clean") && length(parts)) regmatches(parts[1], regexpr("^(genes|windows|ribotyper|reads)", parts[1]))
+  tagList(tags$span("Chimera call: ", tags$span(class = paste0("mp-pill mp-pill-", tone), label),
+      if (length(from)) tags$span(class = "mp-help-text", style = "font-weight:normal;", sprintf(" from the %s check", from))),
+    if (length(parts)) tags$details(style = "margin-top:2px;",
+      tags$summary(class = "mp-help-text", style = "cursor:pointer;", "Why"),
+      tags$ul(class = "mp-help-text", style = "margin:2px 0 4px 18px; padding:0;", lapply(parts, tags$li))))
 }
 

@@ -403,23 +403,35 @@ chimera_junction_table <- function(junctions, channels) {
   out
 }
 
+#' The call in words: one "check: verdict" clause per check, the check that
+#' raised the call first, the junction last. The segments table carries the
+#' per-segment detail, so it is not repeated here.
 #' @noRd
 chimera_reason <- function(segments, channels, junctions) {
-  segtxt <- if (!is.null(segments) && nrow(segments)) paste(mapply(function(a, b, t, sp, p) {
-    det <- c(if (!is.na(sp) && nzchar(sp)) sp, if (!is.na(p)) sprintf("%.1f%%", p))
-    paste0(a, "-", b, " ", t, if (length(det)) paste0(" (", paste(det, collapse = ", "), ")"))
-  }, segments$start, segments$stop, segments$taxon, segments$species %||% rep(NA_character_, nrow(segments)),
-    segments$pident), collapse = "; ")
-    else "no window segments"
+  checks <- c("genes", "windows", "ribotyper", "reads")
+  txt <- vapply(checks, function(k) {
+    r <- channels[[k]]$reason
+    if (is.null(r) || is.na(r)) {
+      if (k == "windows" && !is.null(segments) && nrow(segments)) r <- paste(unique(segments$taxon), collapse = ", ")
+      else return(NA_character_)
+    }
+    if (startsWith(r, k)) r else paste0(k, ": ", r)
+  }, character(1))
+  score <- vapply(checks, function(k) channels[[k]]$score %||% 0, numeric(1))
+  txt <- txt[order(-score)]
+  txt <- txt[!is.na(txt)]
   jtxt <- if (length(junctions)) {
     who <- vapply(junctions, function(j) paste(names(channels)[vapply(channels, function(x)
       any(abs((x$junctions %||% integer(0)) - j) <= CHIMERA_JUNCTION_TOL), logical(1))], collapse = ","), character(1))
     paste(sprintf("junction near %d (%s)", junctions, who), collapse = "; ")
   } else "no junction"
-  extra <- vapply(channels[c("ribotyper", "reads")], function(x) x$reason %||% NA_character_, character(1))
-  if (isTRUE(channels$genes$score > 0)) extra <- c(channels$genes$reason, extra)
-  extra <- extra[!is.na(extra)]
-  paste(c(segtxt, jtxt, extra), collapse = "; ")
+  paste(c(txt, jtxt), collapse = "; ")
+}
+
+#' Split a stored reason back into its clauses
+#' @noRd
+chimera_reason_parts <- function(reason) {
+  trimws(strsplit(reason, "; (?=(genes|windows|ribotyper|reads|junction near|junctions trimmed|no junction))", perl = TRUE)[[1]])
 }
 
 #' @noRd
