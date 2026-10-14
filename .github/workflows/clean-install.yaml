@@ -32,10 +32,10 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Install Nextflow, sqlite3, and jq
+      - name: Install Nextflow, sqlite3, jq, and libcurl (the curl R package builds from source when RSPM has no binary yet)
         run: |
           sudo apt-get update
-          sudo apt-get install -y sqlite3 jq
+          sudo apt-get install -y sqlite3 jq libcurl4-openssl-dev
           curl -fsSL https://get.nextflow.io | bash
           sudo mv nextflow /usr/local/bin/
           nextflow -version
