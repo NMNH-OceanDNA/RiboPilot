@@ -41,7 +41,7 @@
   'use strict';
   var G = window.rpseq.geom;
   var MAX_PPB = 14, NT_LETTER = 8, NT_BAR = 3;
-  var RULER_H = 22, LANE_H = 22, NT_H = 20, GUTTER = 100, PAD = 4, COV_H = 60, CLIP_H = 36, IDENT_H = 36, ORIGIN_H = 18, GAP = 12;
+  var RULER_H = 22, LANE_H = 22, NT_H = 20, GUTTER = 100, PAD = 4, COV_H = 60, CLIP_H = 36, WIN_ROW = 18, ORIGIN_H = 18, GAP = 12;
   var BASE = { A: '#4faf45', C: '#e0a53f', G: '#e0555a', T: '#4a90d9', N: '#666666' };
   var viewers = {}, last = {};
 
@@ -78,7 +78,7 @@
     this.feats = (p.features || []).map(function (f) { return Object.assign({}, f); });
     this.nLanes = G.lanes(this.feats);
     this.depth = p.depth || null; this.clip = p.clip || null;
-    this.origin = p.origin || null; this.junctions = p.junctions || null; this.ident = p.ident || null;
+    this.origin = p.origin || null; this.junctions = p.junctions || null; this.windows = p.windows || null;
     if (p.cutoff) this.clipFlag = p.cutoff;
     this.depthMax = (this.depth || []).reduce(function (m, d) { return d !== null && d > m ? d : m; }, 1);
     this.selected = (p.selected === undefined || p.selected === null) ? null : p.selected;
@@ -136,7 +136,7 @@
   // ---- drawing ----
   Viewer.prototype.covOn = function () { return this.showCov && !!this.depth; };
   Viewer.prototype.clipOn = function () { return this.showClip && !!this.clip; };
-  Viewer.prototype.identOn = function () { return this.showIdent && !!this.ident; };
+  Viewer.prototype.winOn = function () { return this.showWin && !!this.windows; };
   Viewer.prototype.originOn = function () { return this.showOrigin && !!this.origin; };
   Viewer.prototype.ntOn = function () { return this.showNt && this.ppb >= NT_BAR; };
   Viewer.prototype.topH = function () {
@@ -148,7 +148,7 @@
     return this.topH() + this.nLanes * LANE_H + PAD + (this.ntOn() ? NT_H + PAD : 0) + GAP;
   };
   Viewer.prototype.height = function () {
-    return this.chimY() + (this.identOn() ? IDENT_H + GAP : 0) + (this.originOn() ? ORIGIN_H + GAP : 0);
+    return this.chimY() + (this.originOn() ? ORIGIN_H + GAP : 0) + (this.winOn() ? 2 * WIN_ROW + GAP : 0);
   };
   Viewer.prototype.draw = function () {
     if (!this.len || !this.canvas.offsetParent) return;
@@ -167,9 +167,8 @@
     this.drawLanes(c);
     if (this.ntOn()) this.drawNt(c, this.topH() + this.nLanes * LANE_H + PAD);
     y = this.chimY();
-    var self = this, segColor = function (pos) { var o = self.originAt(pos); return o ? o.color : '#9e9e9e'; };
-    if (this.identOn()) { this.drawTrack(c, W, y, IDENT_H, this.ident, 100, 'BLAST %id', false, { vmin: 70, colorAt: segColor, stroke: cssVar('--rp-ident-stroke', '#4d4d4d') }); y += IDENT_H + GAP; }
     if (this.originOn()) { this.drawOrigin(c, W, y); y += ORIGIN_H + GAP; }
+    if (this.winOn()) { this.drawWindows(c, W, y); y += 2 * WIN_ROW + GAP; }
     this.drawJunctions(c, H);
   };
   Viewer.prototype.drawRuler = function (c) {
@@ -228,8 +227,7 @@
   // blue; clipped-read fraction is grey with bars at or over the chimera
   // check's cutoff in Okabe-Ito orange. Runs of bars are filled as one shape,
   // since separate 1 px bars leave seams on scaled displays.
-  Viewer.prototype.drawTrack = function (c, W, y, h, vals, vmax, label, flag, opt) {
-    opt = opt || {}; var vmin = opt.vmin || 0;
+  Viewer.prototype.drawTrack = function (c, W, y, h, vals, vmax, label, flag) {
     var base = flag ? '#a0a0a0' : cssVar('--mp-primary', '#337ab7'), red = '#e69f00', muted = cssVar('--mp-text-muted', '#6a6a6a');
     var cut = this.clipFlag, cols = [];
     c.fillStyle = cssVar('--mp-surface-alt', '#f5f5f5'); c.fillRect(GUTTER, y, W - GUTTER, h);
@@ -242,26 +240,24 @@
         if (v === null || d > v) v = d;
         if (d === 0) gap = true;
       }
-      cols.push(v === null ? null : { v: v, gap: gap, c: opt.colorAt ? opt.colorAt(a) : base });
+      cols.push(v === null ? null : { v: v, gap: gap });
     }
     // columns holding any uncovered base get a full-height red wash, so gaps
     // survive the per-column max when zoomed out
-    var area = function (fill, keep, full, stroke) {
+    var area = function (fill, keep, full) {
       c.fillStyle = fill; c.beginPath();
       var open = false;
       for (var i = 0; i <= cols.length; i++) {
         var k = i < cols.length && cols[i] && keep(cols[i]);
-        var top = k ? (full ? y : y + h - Math.min(h, Math.max(0, cols[i].v - vmin) / (vmax - vmin) * h)) : 0;
+        var top = k ? (full ? y : y + h - Math.min(h, cols[i].v / vmax * h)) : 0;
         if (k && !open) { c.moveTo(GUTTER + i, y + h); open = true; }
         if (k) { c.lineTo(GUTTER + i, top); c.lineTo(GUTTER + i + 1, top); }
         if (!k && open) { c.lineTo(GUTTER + i, y + h); c.closePath(); open = false; }
       }
       c.fill();
-      if (stroke) { c.strokeStyle = stroke; c.lineWidth = 1; c.stroke(); }
     };
     if (!flag) area('rgba(217, 83, 79, 0.35)', function (o) { return o.gap; }, true);
-    var fills = cols.reduce(function (acc, o) { if (o && acc.indexOf(o.c) < 0) acc.push(o.c); return acc; }, []);
-    fills.forEach(function (f) { area(f, function (o) { return o.v > vmin && o.c === f; }, false, opt.stroke); });
+    area(base, function (o) { return o.v > 0; }, false);
     if (flag) area(red, function (o) { return o.v >= cut; }, false);
     c.strokeStyle = cssVar('--mp-border', '#ccc'); c.beginPath(); c.moveTo(GUTTER, y + h + 0.5); c.lineTo(W, y + h + 0.5); c.stroke();
     if (flag) { c.save(); c.strokeStyle = red; c.setLineDash([2, 3]); var fy = y + h - cut / vmax * h;
@@ -296,6 +292,30 @@
       c.beginPath(); c.moveTo(x, RULER_H); c.lineTo(x, H); c.stroke();
     }, this);
     c.restore();
+  };
+  // Every BLAST window as a bar: height is the best hit's identity from 70 to
+  // 100%, colour its class. Neighbours overlap by half, so odd and even windows
+  // alternate rows like brickwork; a no-hit window is an empty full-height box.
+  Viewer.prototype.drawWindows = function (c, W, y) {
+    var H = 2 * WIN_ROW, muted = cssVar('--mp-text-muted', '#6a6a6a');
+    c.fillStyle = cssVar('--mp-surface-alt', '#f5f5f5'); c.fillRect(GUTTER, y, W - GUTTER, H);
+    c.strokeStyle = cssVar('--rp-ident-stroke', '#4d4d4d'); c.lineWidth = 1;
+    this.windows.forEach(function (w, i) {
+      if (!this.inView(w)) return;
+      var x0 = Math.max(GUTTER, this.x(w.pos1)), x1 = Math.min(W, this.x(w.pos2 + 1));
+      if (x1 - x0 < 1) return;
+      var top = y + (i % 2) * WIN_ROW, h = w.pident === null || w.pident === undefined ? WIN_ROW - 2
+        : Math.max(2, (w.pident - 70) / 30 * (WIN_ROW - 2));
+      c.fillStyle = w.color; c.fillRect(x0, top + WIN_ROW - 1 - h, x1 - x0, h);
+      c.strokeRect(x0 + 0.5, top + WIN_ROW - 1 - h + 0.5, x1 - x0 - 1, h - 1);
+    }, this);
+    c.strokeStyle = cssVar('--mp-border', '#ccc'); c.beginPath(); c.moveTo(GUTTER, y + H + 0.5); c.lineTo(W, y + H + 0.5); c.stroke();
+    c.fillStyle = muted; c.textAlign = 'right';
+    c.textBaseline = 'top'; c.fillText('100%', GUTTER - 6, y);
+    c.textBaseline = 'bottom'; c.fillText('BLAST windows', GUTTER - 6, y + H, GUTTER - 10);
+  };
+  Viewer.prototype.windowsAt = function (pos) {
+    return (this.windows || []).filter(function (w) { return pos >= w.pos1 && pos <= w.pos2; });
   };
   Viewer.prototype.originAt = function (pos) {
     return (this.origin || []).find(function (s) { return pos >= s.pos1 && pos <= s.pos2; }) || null;
@@ -382,9 +402,11 @@
       if (self.covOn() && self.depth[b.pos - 1] !== null) t += ' | depth ' + self.depth[b.pos - 1];
       if (self.clipOn() && self.clip[b.pos - 1] !== null) t += ', clipped ' + (self.clip[b.pos - 1] * 100).toFixed(0) + '%';
       if (h) t += ' | ' + h.f.gene + ' ' + h.f.pos1.toLocaleString() + '-' + h.f.pos2.toLocaleString() + ' (' + h.f.dir + ')';
-      if (self.identOn() && self.ident[b.pos - 1] !== null) t += ' | BLAST id ' + self.ident[b.pos - 1].toFixed(1) + '%';
       var o = self.originOn() && self.originAt(b.pos);
       if (o) t += ' | ' + originText(o);
+      if (self.winOn()) self.windowsAt(b.pos).forEach(function (w) {
+        t += ' | window ' + w.pos1.toLocaleString() + '-' + w.pos2.toLocaleString() + ': ' + originText(w);
+      });
       var j = (self.junctions || []).find(function (q) { return Math.abs(self.x(q.pos) - px) <= 6; });
       if (j) t += ' | junction ' + j.pos.toLocaleString() + (j.checks ? ' (' + j.checks + ')' : '');
       self.tip.textContent = t; self.tip.hidden = false;
@@ -405,7 +427,7 @@
         }
       });
     });
-    [['show_nt', 'showNt'], ['show_cov', 'showCov'], ['show_clip', 'showClip'], ['show_ident', 'showIdent'],
+    [['show_nt', 'showNt'], ['show_cov', 'showCov'], ['show_clip', 'showClip'], ['show_win', 'showWin'],
      ['show_origin', 'showOrigin']].forEach(function (pair) {
       var box = document.getElementById(prefix + '-' + pair[0]);
       if (box) { self[pair[1]] = box.checked; box.addEventListener('change', function () { self[pair[1]] = box.checked; self.draw(); }); }
@@ -449,7 +471,7 @@
   window.rpseq.state = function (id) {
     var v = viewers[id]; if (!v) return null;
     return { len: v.len, viewStart: v.viewStart, ppb: v.ppb, selected: v.selected, height: v.height(), nLanes: v.nLanes,
-             origin: (v.origin || []).length, junctions: (v.junctions || []).length,
+             origin: (v.origin || []).length, windows: (v.windows || []).length, junctions: (v.junctions || []).length,
              features: v.feats.map(function (f) { return { row: f.row, gene: f.gene, pos1: f.pos1, pos2: f.pos2, lane: f.lane }; }) };
   };
   window.rpseq.fasta = function (id) { var v = get(id); return v ? v.visibleFasta() : null; };
