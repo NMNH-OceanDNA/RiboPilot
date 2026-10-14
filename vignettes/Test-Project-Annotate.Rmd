@@ -42,9 +42,9 @@ Click a contig's ID to see more details.
 ![A contig: its five features, read coverage, and gene map](figures/get-started/annotation-details.png)
 
 The window shows a table of annotated features (18S, ITS1,
-5.8S, ITS2, 28S), **Coverage and windowed BLAST**, **Edit active feature boundaries**, 
-the **Reference alignment**, **Curation warnings**, the
-**Windowed BLAST details**, **Feature BLAST**, and **Notes**. Your notes also show in the table's **User
+5.8S, ITS2, 28S), **Coverage and windowed BLAST**, **Windowed BLAST details**,
+**Edit active feature boundaries**, the **Reference alignment**, **Feature BLAST**,
+**Curation warnings**, and **Notes**. Your notes also show in the table's **User
 Notes** column once you close the window. [Quality checks and flags](Curation-Flags.html)
 explains the chimera check and the feature BLAST, with CHIM01 as the example.
 
