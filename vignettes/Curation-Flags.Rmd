@@ -224,12 +224,12 @@ matches a ray-finned fish:
 
 To judge a flag, open **Coverage and windowed BLAST** with **BLAST origin** ticked:
 each stretch is coloured by the class its BLAST windows match (grey is your
-lineage, white is no hit), **BLAST windows** draws every window as a bar in the
-same colours, staggered on two rows because neighbouring windows overlap, with
-the bar height as the best hit's identity, and a dashed line marks a possible
-junction; hover for the match. The origin band changes colour halfway through
-the overlap where the lineage switches; the window bars show the exact windows
-on each side. The **Windowed BLAST
+lineage, white is no hit), **BLAST identity** draws each window as a
+see-through bar in the same colours, as tall as its best hit's identity, and a
+dashed line marks a possible junction; hover for the match. Neighbouring
+windows overlap, so where the lineage switches the origin band is striped in
+both colours across the shared stretch, and the identity bars show the exact
+windows on each side. The **Windowed BLAST
 details** panel below gives the call, the reason, and the segments; click a
 segment, window, or junction row to zoom the viewer to it. A real chimera shows
 a clean switch from one lineage to another at one point, often accompanied by a
