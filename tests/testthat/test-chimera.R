@@ -178,6 +178,41 @@ test_that("segments collapse adjacent windows sharing a class", {
   expect_true(ch$severe)
 })
 
+test_that("duplicate records of one taxon count once in a tie, and a window one taxon fills is unresolved", {
+  fish <- "33208;7711;186623;8256;8257;8258;8259"
+  fake_lin <- function(taxids, dir) data.frame(taxid = c(1L, 2L),
+    lineage = c("Metazoa;Chordata;Chondrichthyes;Orectolobiformes;Hemiscylliidae;Chiloscyllium;Chiloscyllium punctatum",
+                "Metazoa;Chordata;Actinopteri;Gadiformes;Lotidae;Brosme;Brosme brosme"),
+    lineage_taxids = c("33208;7711;7777;30488;30489;30490;137246", fish), stringsAsFactors = FALSE)
+  testthat::local_mocked_bindings(tk_ranked_lineage = fake_lin, .package = "RiboPilot")
+  copies <- function(w, n, taxid, sp) data.frame(qseqid = w, accession = sprintf("XR_%d", seq_len(n)),
+    title = paste(sp, "28S ribosomal RNA"), staxid = taxid, pident = 100, bitscore = 278, stringsAsFactors = FALSE)
+  # 60 shark copies and one Brosme record, all at the same score: a two-taxon tie, not a shark call
+  hits <- rbind(copies("w1_150", 60L, 1L, "Chiloscyllium punctatum"), copies("w1_150", 1L, 2L, "Brosme brosme"))
+  w <- RiboPilot:::chimera_window_hits(hits, data.frame(start = 1L, stop = 150L), cap = 5000L)
+  expect_equal(w$species, "Chordata (2 tied taxa)")
+  expect_equal(RiboPilot:::chimera_rank_name(w$lineage, "class"), NA_character_)
+  # the hit list is full and every hit is one taxon: nothing else could get in, so the window is unresolved
+  w <- RiboPilot:::chimera_window_hits(copies("w1_150", 50L, 1L, "Chiloscyllium punctatum"),
+    data.frame(start = 1L, stop = 150L), cap = 50L)
+  expect_match(w$species, "fills the hit list")
+  expect_equal(RiboPilot:::chimera_segments(w)$taxon, "unresolved")
+  # the same copies under a roomier cap are an honest single-taxon match
+  w <- RiboPilot:::chimera_window_hits(copies("w1_150", 50L, 1L, "Chiloscyllium punctatum"),
+    data.frame(start = 1L, stop = 150L), cap = 5000L)
+  expect_equal(w$species, "Chiloscyllium punctatum")
+})
+
+test_that("window searches ask BLAST for many more hits than the gene searches", {
+  seen <- NULL
+  testthat::local_mocked_bindings(system2 = function(command, args, ...) { seen <<- c(seen, list(args)); 0L }, .package = "base")
+  RiboPilot:::chimera_run_blastn("q.fa", "db", "megablast", "out.txt")
+  RiboPilot:::chimera_run_blastn("q.fa", "db", "megablast", "out.txt", max_targets = RiboPilot:::CHIMERA_WIN_MAX_TARGETS)
+  cap <- function(a) a[which(a == "-max_target_seqs") + 1]
+  expect_equal(cap(seen[[1]]), "50")
+  expect_equal(cap(seen[[2]]), "5000")
+})
+
 test_that("window hits tied at the top bitscore resolve to the rank they share", {
   hits <- data.frame(qseqid = c("w1_500", "w1_500", "w251_750"), accession = c("XR_1", "OP_1", "OP_2"),
     title = c("Canis aureus 28S ribosomal RNA", "Paralichthys sp. 28S ribosomal RNA", "Paralichthys sp. 28S ribosomal RNA"),
@@ -190,7 +225,7 @@ test_that("window hits tied at the top bitscore resolve to the rank they share",
   testthat::local_mocked_bindings(tk_ranked_lineage = fake_lin, .package = "RiboPilot")
   w <- RiboPilot:::chimera_window_hits(hits, data.frame(start = c(1L, 251L), stop = c(500L, 750L)))
   expect_equal(RiboPilot:::chimera_rank_name(w$lineage, "class"), c(NA, "Actinopteri"))
-  expect_equal(w$species, c("Chordata (2 tied hits)", "Paralichthys sp."))
+  expect_equal(w$species, c("Chordata (2 tied taxa)", "Paralichthys sp."))
   expect_equal(RiboPilot:::chimera_segments(w)$taxon, c("unresolved", "Actinopteri"))
   fish <- "33208;7711;186623;8256;8257;8258;8259"
   s <- RiboPilot:::chimera_segments(rbind(

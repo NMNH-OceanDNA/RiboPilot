@@ -73,6 +73,11 @@
   BLAST panel in the details window shows each feature's matches. Its Search
   column names the algorithm that found the hit; a hit found only by the more
   sensitive dc-megablast retry is shown in amber and listed as a weak hit.
+* Window searches in the chimera check keep up to 5000 hits and count one
+  record per taxon, so a genome annotation with hundreds of identical rRNA
+  copies no longer fills the hit list and poses as a confident match to a
+  distant species. A window whose whole hit list is one taxon counts as
+  unresolved. Ties now read "(N tied taxa)".
 * The chimera check now searches 150 bp windows end to end with no overlap
   (was 500 bp windows every 250 bp), so it catches shorter foreign stretches
   and every base belongs to one window. A switch between classes still needs
