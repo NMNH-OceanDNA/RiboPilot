@@ -139,7 +139,7 @@ locked contig.
 Lock checks a few things first:
 
 - Every selected contig's checks must be done. If any show "not run", nothing
-  is locked and a message says to press **Update** first.
+  is locked, and a message lists those contigs with "Press Update first."
 - Only one assembly path can be locked per sample. Paths are alternative
   reconstructions of the same rDNA repeat, so a sample should only export one.
   Several contigs of the same path can be locked together.
