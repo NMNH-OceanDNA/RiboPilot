@@ -15,7 +15,6 @@ home:
   description: Nuclear ribosomal repeat assembly, annotation, and curation
   sidebar:
     structure:
-    - citation
     - authors
     - dev
 
@@ -62,8 +61,6 @@ navbar:
         href: articles/Curation-Flags.html
       - text: "Preparing a GenBank submission"
         href: articles/GenBank-Submission.html
-      - text: "Citing RiboPilot"
-        href: articles/Citing.html
       - text: -------
       - text: Metadata
       - text: "Sample metadata"
@@ -156,7 +153,6 @@ articles:
   - 'Assembly-Methods'
   - 'Curation-Flags'
   - 'GenBank-Submission'
-  - 'Citing'
 
 - title: "Metadata"
   contents:
@@ -179,6 +175,7 @@ articles:
 - title: internal
   contents:
   - 'Without-Containers'
+  - 'Citing'
 
 reference:
 - title: "Start a project"
