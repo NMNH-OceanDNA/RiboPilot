@@ -1,7 +1,7 @@
 
 <!-- README.md is generated from README.Rmd. Please edit that file -->
 
-# RiboPilot <a href="https://dmacguigan.github.io/RiboPilot/"><img src="man/figures/logo.png" align="right" height="138" /></a>
+# RiboPilot <a href="https://nmnh-oceandna.github.io/RiboPilot/"><img src="man/figures/logo.png" align="right" height="138" /></a>
 
 <!-- badges: start -->
 
@@ -13,7 +13,7 @@ RiboPilot assembles and annotates the **nuclear ribosomal DNA repeat
 (rDNA)** from genome skimming data, then helps you check and clean up
 the result and package it for submission to GenBank. If you already have
 an assembly, RiboPilot can [start from that instead of
-reads](https://dmacguigan.github.io/RiboPilot/articles/Your-Own-Project.html#already-have-an-assembly).
+reads](https://nmnh-oceandna.github.io/RiboPilot/articles/Your-Own-Project.html#already-have-an-assembly).
 RiboPilot is a companion to
 [MitoPilot](https://github.com/NMNH-OceanDNA/MitoPilot), which does the
 same process for the mitochondrial genome. You can run both tools on the
@@ -21,7 +21,7 @@ same samples and get both marker sets from one sequencing run.
 
 Most of your work happens in a **point-and-click Shiny app** that runs
 in your web browser. The step-by-step [Get started
-guide](https://dmacguigan.github.io/RiboPilot/articles/RiboPilot.html)
+guide](https://nmnh-oceandna.github.io/RiboPilot/articles/RiboPilot.html)
 walks through a complete project from start to finish.
 
 # The nuclear rDNA unit
@@ -92,25 +92,25 @@ each tool within RiboPilot.
 Each group of samples needs a reference database of known rDNA
 sequences. You build it once per group in the app, from GenBank. See the
 [reference database
-guide](https://dmacguigan.github.io/RiboPilot/articles/Reference-Databases.html).
+guide](https://nmnh-oceandna.github.io/RiboPilot/articles/Reference-Databases.html).
 
 RiboPilot also runs automatic quality checks tuned for a taxonomic
 group. Five settings ship, picked from each sample's lineage: a generic
 animal setting, and settings for ray-finned fishes, sea stars, true
 jellyfish, and octocorals; see the [curation
-guide](https://dmacguigan.github.io/RiboPilot/articles/Curation-Flags.html).
+guide](https://nmnh-oceandna.github.io/RiboPilot/articles/Curation-Flags.html).
 These settings are still in development and likely need fine tuning.
 
 # Installation
 
 RiboPilot requires Docker (or Singularity on a cluster), Java, Nextflow,
 and R. The [Installation
-guide](https://dmacguigan.github.io/RiboPilot/articles/Installation.html)
+guide](https://nmnh-oceandna.github.io/RiboPilot/articles/Installation.html)
 lists versions and checks. Then, in R:
 
 ``` r
 install.packages("remotes")
-remotes::install_github("dmacguigan/RiboPilot")
+remotes::install_github("NMNH-OceanDNA/RiboPilot")
 ```
 
 # Getting started
@@ -131,20 +131,20 @@ GB). The first run also downloads the container image once (about 2.6
 GB).
 
 Follow the [Get started
-guide](https://dmacguigan.github.io/RiboPilot/articles/RiboPilot.html)
+guide](https://nmnh-oceandna.github.io/RiboPilot/articles/RiboPilot.html)
 to walk through project initialization and the five steps in the app.
 
 # Citing RiboPilot
 
 Run `citation("RiboPilot")` in R. The [Citing
-RiboPilot](https://dmacguigan.github.io/RiboPilot/articles/Citing.html)
+RiboPilot](https://nmnh-oceandna.github.io/RiboPilot/articles/Citing.html)
 page lists the tools RiboPilot runs, with their versions and references,
 for your methods section.
 
 # Getting help
 
-  - Full documentation: <https://dmacguigan.github.io/RiboPilot/>
+  - Full documentation: <https://nmnh-oceandna.github.io/RiboPilot/>
   - When something goes wrong: the [Troubleshooting
-    guide](https://dmacguigan.github.io/RiboPilot/articles/Troubleshooting.html).
+    guide](https://nmnh-oceandna.github.io/RiboPilot/articles/Troubleshooting.html).
   - Questions or problems: please open an
-    [issue](https://github.com/dmacguigan/RiboPilot/issues).
+    [issue](https://github.com/NMNH-OceanDNA/RiboPilot/issues).

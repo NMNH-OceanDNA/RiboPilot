@@ -299,6 +299,6 @@ not a verdict. In every ruleset, a gene is `truncated` when
 less than 90 percent of its rRNA model was recovered, and identity is judged only
 when the reference covers at least half of the gene.
 
-Want ranges for your own group? [Open an issue](https://github.com/dmacguigan/RiboPilot/issues)
+Want ranges for your own group? [Open an issue](https://github.com/NMNH-OceanDNA/RiboPilot/issues)
 describing it. Until then, the generic animal ruleset works for any group; it
 is just more lenient.

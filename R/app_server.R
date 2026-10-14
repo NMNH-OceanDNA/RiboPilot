@@ -100,7 +100,7 @@ app_server <- function(input, output, session) {
     span(class = "mp-app-name", "RiboPilot"),
     span(class = "mp-app-ver", paste0("v", utils::packageVersion("RiboPilot"))),
     span(class = "mp-proj", title = app_project(), basename(app_project())),
-    a(class = "mp-help", href = "https://github.com/dmacguigan/RiboPilot",
+    a(class = "mp-help", href = "https://github.com/NMNH-OceanDNA/RiboPilot",
       target = "_blank", rel = "noopener", "Help")))
   # row-count line above the table + CSV export of the table
   output$table_status <- renderUI({

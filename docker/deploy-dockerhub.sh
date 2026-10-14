@@ -85,7 +85,7 @@ fi
 # the image silently, and every user of it would then search a broken database.
 # gh, not curl: the repo is private, so an unauthenticated fetch 404s.
 RP_DB_VERSION=$(awk -F'"' '/^RP_DB_VERSION/{print $2}' R/db_dist.R)
-RP_DB_REPO="dmacguigan/RiboPilot"
+RP_DB_REPO="NMNH-OceanDNA/RiboPilot"
 RP_DB_TAG="db-${RP_DB_VERSION}"
 RP_DB=1
 # An empty version makes every `case` pattern below `*"-.tar.gz"`, which matches
@@ -172,7 +172,7 @@ docker build \
   --build-arg "RP_DB_VERSION=${RP_DB_VERSION}" \
   --label "org.opencontainers.image.revision=${GIT_SHA}" \
   --label "org.opencontainers.image.version=${TAG}" \
-  --label "org.opencontainers.image.source=https://github.com/dmacguigan/RiboPilot" \
+  --label "org.opencontainers.image.source=https://github.com/NMNH-OceanDNA/RiboPilot" \
   -t "${LOCAL}" .
 
 # --- smoke test ------------------------------------------------------------

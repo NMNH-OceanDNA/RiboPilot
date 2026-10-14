@@ -79,8 +79,8 @@ ribopilot_db_dir <- function() {
 
 #' Base URL of the panel release assets
 #' @noRd
-RP_DB_RELEASE_BASE <- "https://github.com/dmacguigan/RiboPilot/releases/download"
-RP_GH_REPO <- "dmacguigan/RiboPilot"
+RP_DB_RELEASE_BASE <- "https://github.com/NMNH-OceanDNA/RiboPilot/releases/download"
+RP_GH_REPO <- "NMNH-OceanDNA/RiboPilot"
 RP_GH_API <- "https://api.github.com"
 
 #' Default panel version

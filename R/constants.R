@@ -25,11 +25,11 @@ BATCH_TRIM_FEATURES <- setdiff(RRNA_ELEMENT_ORDER, c("ETS", "IGS"))
 #' once the RiboPilot repository is public. Non-fish projects should build their
 #' own with [build_reference_db()] rather than rely on these.
 #' @noRd
-DEFAULT_SEEDS_DB <- paste0("https://raw.githubusercontent.com/dmacguigan/RiboPilot/",
+DEFAULT_SEEDS_DB <- paste0("https://raw.githubusercontent.com/NMNH-OceanDNA/RiboPilot/",
   "main/ref_dbs/getOrganelle/seeds/actinopterygii_rrna_seeds.fasta")
 
 #' @noRd
-DEFAULT_LABELS_DB <- paste0("https://raw.githubusercontent.com/dmacguigan/RiboPilot/",
+DEFAULT_LABELS_DB <- paste0("https://raw.githubusercontent.com/NMNH-OceanDNA/RiboPilot/",
   "main/ref_dbs/getOrganelle/labels/actinopterygii_rrna_labels.fasta")
 
 #' Executors that run processes inside a container image.

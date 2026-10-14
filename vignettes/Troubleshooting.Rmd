@@ -175,7 +175,7 @@ sqlite3 .sqlite_corrupted ".recover" | sqlite3 .sqlite
 
 # Asking for help
 
-Open an issue at https://github.com/dmacguigan/RiboPilot/issues. Paste the
+Open an issue at https://github.com/NMNH-OceanDNA/RiboPilot/issues. Paste the
 copied run report, and add your RiboPilot version (`packageVersion("RiboPilot")`
 in R), your Nextflow version (`nextflow -v`), and whether you use Docker,
 Singularity, or a cluster profile. Check that nothing you paste contains your

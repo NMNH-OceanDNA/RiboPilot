@@ -42,7 +42,7 @@ gbif_normalize_id <- function(x) {
 
 .gbif_get <- function(path) {
   req <- httr2::request(paste0(GBIF_API, "/", path)) |>
-    httr2::req_user_agent("RiboPilot (https://github.com/dmacguigan/RiboPilot)") |>
+    httr2::req_user_agent("RiboPilot (https://github.com/NMNH-OceanDNA/RiboPilot)") |>
     httr2::req_timeout(30) |>
     httr2::req_retry(max_tries = 3,
                      is_transient = function(r) httr2::resp_status(r) %in% c(429, 500, 502, 503, 504)) |>

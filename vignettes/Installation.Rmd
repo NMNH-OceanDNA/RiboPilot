@@ -43,7 +43,7 @@ Install each of these once, and check it with the command beside it.
 
    ```r
    install.packages("remotes")
-   remotes::install_github("dmacguigan/RiboPilot")
+   remotes::install_github("NMNH-OceanDNA/RiboPilot")
    ```
 
 You do not need to download the RiboPilot container image. This will happen automatically
@@ -86,13 +86,13 @@ remove.packages("RiboPilot")
 #    Elsewhere: quit R and start it again
 
 # 3. Install the new version
-remotes::install_github("dmacguigan/RiboPilot")
+remotes::install_github("NMNH-OceanDNA/RiboPilot")
 
 # 4. Update existing projects as needed, once per project
 RiboPilot::backwards_compatibility("~/my_project")
 ```
 
-The [changelog](https://dmacguigan.github.io/RiboPilot/news/index.html) lists
+The [changelog](https://nmnh-oceandna.github.io/RiboPilot/news/index.html) lists
 what changed.
 
 The `backwards_compatibility` function brings the project's database up to date and points the project at the
