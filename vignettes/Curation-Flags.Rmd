@@ -211,8 +211,10 @@ composed of sequence from ray-finned fish and *Penicillium* mold.
 
 RiboPilot attempts to handle false alarms. Windows in conserved
 stretches of 18S or 28S, where many groups match equally well, are shown as
-"unresolved" and do not count. Depth changes inside sequence that repeats
-elsewhere on the contig, or right at a gene boundary, are ignored, and so are
+"unresolved" and do not count. So is a window whose whole hit list is copies of
+one record, since nothing else could get in. Depth changes inside sequence that
+repeats elsewhere on the contig, or right at a gene boundary, are ignored, and
+so are
 reads that stop near the ends of the contig. 
 
 A weak signal can still give a

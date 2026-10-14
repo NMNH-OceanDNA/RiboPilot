@@ -14,6 +14,9 @@ CHIMERA_JUNCTION_TOL <- 300L
 CHIMERA_MIN_DEPTH <- 20
 CHIMERA_REPEAT_K <- 50L
 CHIMERA_TIE_FRAC <- 0.02
+# window searches keep many hits: genome annotations list hundreds of identical
+# rRNA copies per species, and a 50-hit list fills with one of them
+CHIMERA_WIN_MAX_TARGETS <- 5000L
 
 #' @noRd
 chimera_tile <- function(seq_len, win = CHIMERA_WIN, step = CHIMERA_WIN_STEP) {
@@ -130,7 +133,7 @@ chimera_channel_genes <- function(gene_taxa, feats = NULL) {
 #' Best hit per tile from a parse_blast_hits_file() frame
 #' @noRd
 chimera_window_hits <- function(hits, tiles, sample_taxids = NA_character_,
-                                taxdump_dir = NULL, db_source = NA_character_) {
+                                taxdump_dir = NULL, db_source = NA_character_, cap = CHIMERA_WIN_MAX_TARGETS) {
   ids <- sprintf("w%d_%d", tiles$start, tiles$stop)
   if (!nrow(hits)) {
     return(data.frame(start = tiles$start, stop = tiles$stop,
@@ -140,11 +143,15 @@ chimera_window_hits <- function(hits, tiles, sample_taxids = NA_character_,
       hit_class = NA_character_, pident = NA_real_, bitscore = NA_real_,
       db_source = db_source, stringsAsFactors = FALSE))
   }
+  # one record per taxon, so a tie counts taxa rather than copies
+  n_raw <- table(hits$qseqid)
+  hits <- hits[order(hits$qseqid, -hits$bitscore), , drop = FALSE]
+  hits <- hits[!duplicated(hits[c("qseqid", "staxid")]), , drop = FALSE]
+  n_taxa <- table(hits$qseqid)
   lin <- tryCatch(tk_ranked_lineage(hits$staxid, taxdump_dir), error = function(e) data.frame())
   li <- if (nrow(lin)) match(hits$staxid, lin$taxid) else rep(NA_integer_, nrow(hits))
   hits$lineage <- if (nrow(lin)) lin$lineage[li] else NA_character_
   hits$lineage_taxids <- if (nrow(lin)) lin$lineage_taxids[li] else NA_character_
-  hits <- hits[order(hits$qseqid, -hits$bitscore), , drop = FALSE]
   best <- hits[!duplicated(hits$qseqid), , drop = FALSE]
   tied <- integer(nrow(best))
   for (k in seq_len(nrow(best))) {
@@ -167,7 +174,14 @@ chimera_window_hits <- function(hits, tiles, sample_taxids = NA_character_,
   clade <- vapply(strsplit(ifelse(is.na(best$lineage[i]), "", best$lineage[i]), ";", fixed = TRUE),
     function(p) utils::tail(c(NA_character_, p[nzchar(p)]), 1), character(1))
   sp <- ifelse(!is.na(tied[i]) & tied[i] > 0L & !is.na(clade),
-    sprintf("%s (%d tied hits)", clade, tied[i] + 1L), sp)
+    sprintf("%s (%d tied taxa)", clade, tied[i] + 1L), sp)
+  # a full hit list of one taxon says nothing about who else matches
+  sat <- !is.na(i) & as.integer(n_raw[best$qseqid[i]]) >= cap & as.integer(n_taxa[best$qseqid[i]]) == 1L
+  if (any(sat)) {
+    sp[sat] <- sprintf("%s fills the hit list", extract_species(best$title[i[sat]]))
+    cut1 <- function(x) vapply(x, chimera_cut_lineage, character(1), rank = RRNA_LINEAGE_RANKS[1], USE.NAMES = FALSE)
+    best$lineage[i[sat]] <- cut1(best$lineage[i[sat]]); lt[sat] <- cut1(lt[sat])
+  }
   data.frame(start = tiles$start, stop = tiles$stop,
     accession = best$accession[i], species = sp,
     staxid = best$staxid[i], lineage = best$lineage[i],
@@ -435,10 +449,10 @@ chimera_reason_parts <- function(reason) {
 }
 
 #' @noRd
-chimera_run_blastn <- function(query, dbarg, task, out, threads = 1L, blastn = "blastn") {
+chimera_run_blastn <- function(query, dbarg, task, out, threads = 1L, blastn = "blastn", max_targets = 50L) {
   system2(blastn, c("-db", shQuote(dbarg), "-query", shQuote(query), "-task", task,
     "-outfmt", shQuote("6 saccver stitle pident qcovs evalue staxids bitscore length qstart qend sstart send slen qseqid"),
-    "-max_target_seqs", "50", "-max_hsps", "1", "-num_threads", threads), stdout = out, stderr = FALSE)
+    "-max_target_seqs", as.character(max_targets), "-max_hsps", "1", "-num_threads", threads), stdout = out, stderr = FALSE)
 }
 
 #' @noRd
@@ -510,14 +524,14 @@ chimera_unit <- function(con, id, path = 1L, scaffold = 1L, dbarg = NULL, taxdum
   windows <- NULL; ch_windows <- chimera_unavailable(); segments <- NULL
   if (!is.null(db_use) && nzchar(db_use)) {
     out1 <- file.path(workdir, "mega.txt")
-    chimera_run_blastn(qf, db_use, "megablast", out1, threads)
+    chimera_run_blastn(qf, db_use, "megablast", out1, threads, max_targets = CHIMERA_WIN_MAX_TARGETS)
     h <- parse_blast_hits_file(out1)
     missing <- setdiff(sprintf("w%d_%d", tiles$start, tiles$stop), unique(h$qseqid))
     if (length(missing)) {
       keep <- tiles[sprintf("w%d_%d", tiles$start, tiles$stop) %in% missing, , drop = FALSE]
       qf2 <- file.path(workdir, "windows2.fa"); chimera_windows_fasta(seq, keep, qf2)
       out2 <- file.path(workdir, "dc.txt")
-      chimera_run_blastn(qf2, db_use, "dc-megablast", out2, threads)
+      chimera_run_blastn(qf2, db_use, "dc-megablast", out2, threads, max_targets = CHIMERA_WIN_MAX_TARGETS)
       h <- rbind(h, parse_blast_hits_file(out2))
     }
     windows <- chimera_window_hits(h, tiles, samp, taxdump_dir, db_source = db_use)
