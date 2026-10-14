@@ -151,7 +151,7 @@ chimera_panel <- function() {
     tags$div(style = "margin:2px 0 6px; font-weight:600;", uiOutput("chimera_result")),
     tags$p(class = "mp-help-text", style = "margin:2px 0 4px;",
       "Looks for pieces of different origin joined in one contig, using the genes' BLAST hits, ",
-      "200 bp BLAST windows against the bundled rDNA database, ribotyper (checks that each gene is one whole gene), ",
+      "150 bp BLAST windows against the bundled rDNA database, ribotyper (checks that each gene is one whole gene), ",
       "and read depth and clipping. Severe (different phyla or kingdoms) is flagged at export; minor is only reported. ",
       "Unresolved windows match several classes equally and do not count. ",
       "The BLAST origin track and the dashed junction lines in the sequence viewer above show where."),

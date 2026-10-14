@@ -48,12 +48,10 @@
 ## Chimera check in the sequence viewer
 
 * The chimera evidence now lives in the sequence viewer of the Assemble and
-  Annotation Review windows: a **BLAST origin** band colours each stretch by the
-  class its BLAST windows match (grey is the sample's own lineage) and stripes
-  the overlap where the class switches, a **BLAST identity** track draws every
-  window as a see-through bar in the same colour with its identity as the
-  height, and dashed lines mark possible junctions. Hover for the match. The
-  static chimera plot is gone.
+  Annotation Review windows: a **BLAST origin** track colours each stretch by the
+  class its BLAST windows match (grey is the sample's own lineage), a **BLAST
+  identity** track shows the hit identity, and dashed lines mark possible
+  junctions. Hover for the match. The static chimera plot is gone.
 * The Windowed BLAST details panel shows the reason under the call instead of on hover,
   says "not run" after a trim, and lists windows under their segment. Clicking
   a segment, window, or junction row zooms the viewer to it. On the Assemble
@@ -75,10 +73,11 @@
   BLAST panel in the details window shows each feature's matches. Its Search
   column names the algorithm that found the hit; a hit found only by the more
   sensitive dc-megablast retry is shown in amber and listed as a weak hit.
-* The chimera check now searches 200 bp windows every 100 bp (was 500 bp every
-  250 bp), so it catches shorter foreign stretches. A switch between classes
-  still needs about 500 bp on each side, which keeps conserved stretches from
-  raising false alarms.
+* The chimera check now searches 150 bp windows end to end with no overlap
+  (was 500 bp windows every 250 bp), so it catches shorter foreign stretches
+  and every base belongs to one window. A switch between classes still needs
+  about 450 bp on each side, which keeps conserved stretches from raising
+  false alarms.
 * Changing a sample's taxon updates its lineage and screens it again. A name
   that matches more than one organism is never picked automatically.
 * Isomer and paralog classes are computed after annotation finishes.

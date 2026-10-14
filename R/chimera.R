@@ -1,10 +1,10 @@
 # Chimera detection: per-gene taxonomy, windowed local BLAST, ribotyper,
 # read evidence. Design: dev/design/21_CHIMERA_DETECTION.md.
 
-CHIMERA_WIN <- 200L
-CHIMERA_WIN_STEP <- 100L
+CHIMERA_WIN <- 150L
+CHIMERA_WIN_STEP <- 150L
 # a class-level switch needs this many windows on each side; phylum or deeper needs 2
-CHIMERA_CLASS_MIN_WINDOWS <- 4L
+CHIMERA_CLASS_MIN_WINDOWS <- 3L
 # read-evidence step (depth medians, clip pileup margin)
 CHIMERA_STEP <- 250L
 CHIMERA_PID_DROP <- 90
@@ -20,8 +20,14 @@ chimera_tile <- function(seq_len, win = CHIMERA_WIN, step = CHIMERA_WIN_STEP) {
   seq_len <- as.integer(seq_len)
   if (seq_len <= win) return(data.frame(start = 1L, stop = seq_len))
   starts <- seq.int(1L, seq_len - win + 1L, by = step)
-  if (utils::tail(starts, 1) + win - 1L < seq_len) starts <- c(starts, seq_len - win + 1L)
-  data.frame(start = as.integer(starts), stop = as.integer(starts + win - 1L))
+  stops <- starts + win - 1L
+  tail <- seq_len - stops[length(stops)]
+  # leftover tail: overlapping tiles get a right-anchored window; end-to-end
+  # tiles get the tail as its own window, or join it to the last when under 50 bp
+  if (tail > 0L && step < win) { starts <- c(starts, seq_len - win + 1L); stops <- c(stops, seq_len) }
+  else if (tail >= 50L) { starts <- c(starts, stops[length(stops)] + 1L); stops <- c(stops, seq_len) }
+  else if (tail > 0L) stops[length(stops)] <- seq_len
+  data.frame(start = as.integer(starts), stop = as.integer(stops))
 }
 
 #' @noRd

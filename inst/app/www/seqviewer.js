@@ -78,7 +78,7 @@
     this.feats = (p.features || []).map(function (f) { return Object.assign({}, f); });
     this.nLanes = G.lanes(this.feats);
     this.depth = p.depth || null; this.clip = p.clip || null;
-    this.origin = p.origin || null; this.junctions = p.junctions || null; this.windows = p.windows || null;
+    this.origin = p.origin || null; this.junctions = p.junctions || null; this.ident = p.ident || null;
     if (p.cutoff) this.clipFlag = p.cutoff;
     this.depthMax = (this.depth || []).reduce(function (m, d) { return d !== null && d > m ? d : m; }, 1);
     this.selected = (p.selected === undefined || p.selected === null) ? null : p.selected;
@@ -136,7 +136,7 @@
   // ---- drawing ----
   Viewer.prototype.covOn = function () { return this.showCov && !!this.depth; };
   Viewer.prototype.clipOn = function () { return this.showClip && !!this.clip; };
-  Viewer.prototype.identOn = function () { return this.showIdent && !!this.windows; };
+  Viewer.prototype.identOn = function () { return this.showIdent && !!this.ident; };
   Viewer.prototype.originOn = function () { return this.showOrigin && !!this.origin; };
   Viewer.prototype.ntOn = function () { return this.showNt && this.ppb >= NT_BAR; };
   Viewer.prototype.topH = function () {
@@ -167,7 +167,8 @@
     this.drawLanes(c);
     if (this.ntOn()) this.drawNt(c, this.topH() + this.nLanes * LANE_H + PAD);
     y = this.chimY();
-    if (this.identOn()) { this.drawIdent(c, W, y); y += IDENT_H + GAP; }
+    var self = this, segColor = function (pos) { var o = self.originAt(pos); return o ? o.color : '#9e9e9e'; };
+    if (this.identOn()) { this.drawTrack(c, W, y, IDENT_H, this.ident, 100, 'BLAST %id', false, { vmin: 70, colorAt: segColor, stroke: cssVar('--rp-ident-stroke', '#4d4d4d') }); y += IDENT_H + GAP; }
     if (this.originOn()) { this.drawOrigin(c, W, y); y += ORIGIN_H + GAP; }
     this.drawJunctions(c, H);
   };
@@ -227,7 +228,8 @@
   // blue; clipped-read fraction is grey with bars at or over the chimera
   // check's cutoff in Okabe-Ito orange. Runs of bars are filled as one shape,
   // since separate 1 px bars leave seams on scaled displays.
-  Viewer.prototype.drawTrack = function (c, W, y, h, vals, vmax, label, flag) {
+  Viewer.prototype.drawTrack = function (c, W, y, h, vals, vmax, label, flag, opt) {
+    opt = opt || {}; var vmin = opt.vmin || 0;
     var base = flag ? '#a0a0a0' : cssVar('--mp-primary', '#337ab7'), red = '#e69f00', muted = cssVar('--mp-text-muted', '#6a6a6a');
     var cut = this.clipFlag, cols = [];
     c.fillStyle = cssVar('--mp-surface-alt', '#f5f5f5'); c.fillRect(GUTTER, y, W - GUTTER, h);
@@ -240,24 +242,26 @@
         if (v === null || d > v) v = d;
         if (d === 0) gap = true;
       }
-      cols.push(v === null ? null : { v: v, gap: gap });
+      cols.push(v === null ? null : { v: v, gap: gap, c: opt.colorAt ? opt.colorAt(a) : base });
     }
     // columns holding any uncovered base get a full-height red wash, so gaps
     // survive the per-column max when zoomed out
-    var area = function (fill, keep, full) {
+    var area = function (fill, keep, full, stroke) {
       c.fillStyle = fill; c.beginPath();
       var open = false;
       for (var i = 0; i <= cols.length; i++) {
         var k = i < cols.length && cols[i] && keep(cols[i]);
-        var top = k ? (full ? y : y + h - Math.min(h, cols[i].v / vmax * h)) : 0;
+        var top = k ? (full ? y : y + h - Math.min(h, Math.max(0, cols[i].v - vmin) / (vmax - vmin) * h)) : 0;
         if (k && !open) { c.moveTo(GUTTER + i, y + h); open = true; }
         if (k) { c.lineTo(GUTTER + i, top); c.lineTo(GUTTER + i + 1, top); }
         if (!k && open) { c.lineTo(GUTTER + i, y + h); c.closePath(); open = false; }
       }
       c.fill();
+      if (stroke) { c.strokeStyle = stroke; c.lineWidth = 1; c.stroke(); }
     };
     if (!flag) area('rgba(217, 83, 79, 0.35)', function (o) { return o.gap; }, true);
-    area(base, function (o) { return o.v > 0; }, false);
+    var fills = cols.reduce(function (acc, o) { if (o && acc.indexOf(o.c) < 0) acc.push(o.c); return acc; }, []);
+    fills.forEach(function (f) { area(f, function (o) { return o.v > vmin && o.c === f; }, false, opt.stroke); });
     if (flag) area(red, function (o) { return o.v >= cut; }, false);
     c.strokeStyle = cssVar('--mp-border', '#ccc'); c.beginPath(); c.moveTo(GUTTER, y + h + 0.5); c.lineTo(W, y + h + 0.5); c.stroke();
     if (flag) { c.save(); c.strokeStyle = red; c.setLineDash([2, 3]); var fy = y + h - cut / vmax * h;
@@ -268,40 +272,17 @@
   };
   // One rect per origin segment in its colour, labelled when the label fits
   // the visible part (same rule as the gene lanes).
-  // Two-colour diagonal stripes for the stretch two segments share
-  function stripes(c, a, b) {
-    var off = document.createElement('canvas'); off.width = off.height = 12;
-    var o = off.getContext('2d');
-    o.fillStyle = a; o.fillRect(0, 0, 12, 12);
-    o.fillStyle = b; o.beginPath();
-    o.moveTo(0, 6); o.lineTo(6, 0); o.lineTo(12, 0); o.lineTo(0, 12); o.closePath(); o.fill();
-    o.beginPath(); o.moveTo(6, 12); o.lineTo(12, 6); o.lineTo(12, 12); o.closePath(); o.fill();
-    return c.createPattern(off, 'repeat');
-  }
   Viewer.prototype.drawOrigin = function (c, W, y) {
     c.textAlign = 'center'; c.textBaseline = 'middle';
-    var segs = this.origin, border = cssVar('--mp-border', '#ccc');
-    segs.forEach(function (s, i) {
+    this.origin.forEach(function (s) {
       if (!this.inView(s)) return;
-      // label the part this segment does not share with its neighbours
-      var prev = segs[i - 1], next = segs[i + 1];
-      var l0 = prev && prev.pos2 >= s.pos1 ? prev.pos2 + 1 : s.pos1, l1 = next && next.pos1 <= s.pos2 ? next.pos1 - 1 : s.pos2;
       var x0 = Math.max(GUTTER, this.x(s.pos1)), x1 = Math.min(W, this.x(s.pos2 + 1));
       if (x1 - x0 < 1) return;
       c.fillStyle = s.color; c.fillRect(x0, y, x1 - x0, ORIGIN_H);
-      c.strokeStyle = border; c.strokeRect(x0 + 0.5, y + 0.5, x1 - x0 - 1, ORIGIN_H - 1);
-      var lx0 = Math.max(GUTTER, this.x(l0)), lx1 = Math.min(W, this.x(l1 + 1));
+      c.strokeStyle = cssVar('--mp-border', '#ccc'); c.strokeRect(x0 + 0.5, y + 0.5, x1 - x0 - 1, ORIGIN_H - 1);
       var full = originText(s), short = s.taxon === 'nohit' ? 'no hit' : s.taxon;
-      var lab = lx1 - lx0 > c.measureText(full).width + 8 ? full : lx1 - lx0 > c.measureText(short).width + 8 ? short : null;
-      if (lab) { c.fillStyle = '#333'; c.fillText(lab, (lx0 + lx1) / 2, y + ORIGIN_H / 2); }
-    }, this);
-    segs.forEach(function (s, i) {
-      var n = segs[i + 1];
-      if (!n || n.pos1 > s.pos2 || n.color === s.color) return;
-      var x0 = Math.max(GUTTER, this.x(n.pos1)), x1 = Math.min(W, this.x(s.pos2 + 1));
-      if (x1 - x0 < 1) return;
-      c.fillStyle = stripes(c, s.color, n.color); c.fillRect(x0, y, x1 - x0, ORIGIN_H);
-      c.strokeStyle = border; c.strokeRect(x0 + 0.5, y + 0.5, x1 - x0 - 1, ORIGIN_H - 1);
+      var lab = x1 - x0 > c.measureText(full).width + 8 ? full : x1 - x0 > c.measureText(short).width + 8 ? short : null;
+      if (lab) { c.fillStyle = '#333'; c.fillText(lab, (x0 + x1) / 2, y + ORIGIN_H / 2); }
     }, this);
     c.fillStyle = cssVar('--mp-text-muted', '#6a6a6a'); c.textAlign = 'right';
     c.fillText('BLAST origin', GUTTER - 6, y + ORIGIN_H / 2, GUTTER - 10);
@@ -316,32 +297,8 @@
     }, this);
     c.restore();
   };
-  // Every BLAST window as a see-through bar at its own coordinates: colour is
-  // its class, height its best hit's identity from 70 to 100%. Overlapping
-  // windows stack and show darker; a no-hit window is an empty box.
-  Viewer.prototype.drawIdent = function (c, W, y) {
-    var muted = cssVar('--mp-text-muted', '#6a6a6a');
-    c.fillStyle = cssVar('--mp-surface-alt', '#f5f5f5'); c.fillRect(GUTTER, y, W - GUTTER, IDENT_H);
-    c.strokeStyle = cssVar('--rp-ident-stroke', '#4d4d4d'); c.lineWidth = 1;
-    this.windows.forEach(function (w) {
-      if (!this.inView(w)) return;
-      var x0 = Math.max(GUTTER, this.x(w.pos1)), x1 = Math.min(W, this.x(w.pos2 + 1));
-      if (x1 - x0 < 1) return;
-      var h = w.pident === null || w.pident === undefined ? IDENT_H - 2 : Math.max(2, (w.pident - 70) / 30 * (IDENT_H - 2));
-      c.globalAlpha = 0.45; c.fillStyle = w.color; c.fillRect(x0, y + IDENT_H - 1 - h, x1 - x0, h);
-      c.globalAlpha = 0.7; c.strokeRect(x0 + 0.5, y + IDENT_H - 1 - h + 0.5, x1 - x0 - 1, h - 1);
-      c.globalAlpha = 1;
-    }, this);
-    c.strokeStyle = cssVar('--mp-border', '#ccc'); c.beginPath(); c.moveTo(GUTTER, y + IDENT_H + 0.5); c.lineTo(W, y + IDENT_H + 0.5); c.stroke();
-    c.fillStyle = muted; c.textAlign = 'right';
-    c.textBaseline = 'top'; c.fillText('100%', GUTTER - 6, y);
-    c.textBaseline = 'bottom'; c.fillText('BLAST %id', GUTTER - 6, y + IDENT_H, GUTTER - 10);
-  };
-  Viewer.prototype.windowsAt = function (pos) {
-    return (this.windows || []).filter(function (w) { return pos >= w.pos1 && pos <= w.pos2; });
-  };
-  Viewer.prototype.originsAt = function (pos) {
-    return (this.origin || []).filter(function (s) { return pos >= s.pos1 && pos <= s.pos2; });
+  Viewer.prototype.originAt = function (pos) {
+    return (this.origin || []).find(function (s) { return pos >= s.pos1 && pos <= s.pos2; }) || null;
   };
   function originText(s) {
     if (s.host) return s.taxon + ' (your lineage)';
@@ -425,10 +382,9 @@
       if (self.covOn() && self.depth[b.pos - 1] !== null) t += ' | depth ' + self.depth[b.pos - 1];
       if (self.clipOn() && self.clip[b.pos - 1] !== null) t += ', clipped ' + (self.clip[b.pos - 1] * 100).toFixed(0) + '%';
       if (h) t += ' | ' + h.f.gene + ' ' + h.f.pos1.toLocaleString() + '-' + h.f.pos2.toLocaleString() + ' (' + h.f.dir + ')';
-      if (self.originOn()) { var os = self.originsAt(b.pos).map(originText); if (os.length) t += ' | ' + os.join(os.length > 1 ? ' or ' : ''); }
-      if (self.identOn()) self.windowsAt(b.pos).forEach(function (w) {
-        t += ' | window ' + w.pos1.toLocaleString() + '-' + w.pos2.toLocaleString() + ': ' + originText(w);
-      });
+      if (self.identOn() && self.ident[b.pos - 1] !== null) t += ' | BLAST id ' + self.ident[b.pos - 1].toFixed(1) + '%';
+      var o = self.originOn() && self.originAt(b.pos);
+      if (o) t += ' | ' + originText(o);
       var j = (self.junctions || []).find(function (q) { return Math.abs(self.x(q.pos) - px) <= 6; });
       if (j) t += ' | junction ' + j.pos.toLocaleString() + (j.checks ? ' (' + j.checks + ')' : '');
       self.tip.textContent = t; self.tip.hidden = false;
@@ -493,7 +449,7 @@
   window.rpseq.state = function (id) {
     var v = viewers[id]; if (!v) return null;
     return { len: v.len, viewStart: v.viewStart, ppb: v.ppb, selected: v.selected, height: v.height(), nLanes: v.nLanes,
-             origin: (v.origin || []).length, windows: (v.windows || []).length, junctions: (v.junctions || []).length,
+             origin: (v.origin || []).length, junctions: (v.junctions || []).length,
              features: v.feats.map(function (f) { return { row: f.row, gene: f.gene, pos1: f.pos1, pos2: f.pos2, lane: f.lane }; }) };
   };
   window.rpseq.fasta = function (id) { var v = get(id); return v ? v.visibleFasta() : null; };

@@ -51,7 +51,7 @@ explains the chimera check and the feature BLAST, with CHIM01 as the example.
 **Coverage and windowed BLAST** draws the contig as an interactive map: read depth,
 the percentage of clipped reads, the features as arrows (dashed ends are
 partial annotations), the base pairs once you zoom in, and the chimera
-check's BLAST identity bars and origin band. Scroll to zoom, drag to pan, or type a
+check's BLAST identity and origin tracks. Scroll to zoom, drag to pan, or type a
 position. Clicking a gene makes it the active feature that will show up in the **Edit
 active feature boundaries** and the **Reference alignment** panels below.
 

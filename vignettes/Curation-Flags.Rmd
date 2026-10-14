@@ -183,11 +183,11 @@ RiboPilot checks for a chimeric contigs in four ways:
 
 - **Gene by gene.** The 18S, 5.8S, and 28S genes each get their own best
   GenBank matches. Ideally these should agree on one lineage.
-- **Along the contig.** Overlapping 200 bp windows, one every 100 bp, are
-  searched against the bundled rDNA database. Neighboring windows that match the
-  same class are joined into segments. Neighboring segments that hit different 
-  taxonomic classes suggest a chimeric join. A switch between classes counts only
-  when each side spans at least four windows (about 500 bp), because short
+- **Along the contig.** The contig is cut into 150 bp windows, end to end, and
+  each is searched against the bundled rDNA database. Neighboring windows that
+  match the same class are joined into segments. Neighboring segments that hit
+  different taxonomic classes suggest a chimeric join. A switch between classes
+  counts only when each side spans at least three windows (450 bp), because short
   conserved stretches often match another class of the same phylum. A switch
   between phyla or kingdoms needs only two windows on each side.
 - **Gene structure.** The ribotyper tool checks that the 18S and 28S each look
@@ -224,12 +224,9 @@ matches a ray-finned fish:
 
 To judge a flag, open **Coverage and windowed BLAST** with **BLAST origin** ticked:
 each stretch is coloured by the class its BLAST windows match (grey is your
-lineage, white is no hit), **BLAST identity** draws each window as a
-see-through bar in the same colours, as tall as its best hit's identity, and a
-dashed line marks a possible junction; hover for the match. Neighbouring
-windows overlap, so where the lineage switches the origin band is striped in
-both colours across the shared stretch, and the identity bars show the exact
-windows on each side. The **Windowed BLAST
+lineage, white is no hit), **BLAST identity** shows the best hit's identity in
+each window in the same colours, and a dashed line marks a possible junction;
+hover for the match. The **Windowed BLAST
 details** panel below gives the call, the reason, and the segments; click a
 segment, window, or junction row to zoom the viewer to it. A real chimera shows
 a clean switch from one lineage to another at one point, often accompanied by a
