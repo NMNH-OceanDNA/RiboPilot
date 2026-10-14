@@ -83,6 +83,10 @@
   and every base belongs to one window. A switch between classes still needs
   about 450 bp on each side, which keeps conserved stretches from raising
   false alarms.
+* Windows with no hit, or an unresolved one, no longer split a lineage in two:
+  stretches of the same class on either side of them count as one side of a
+  possible switch. A chimera whose foreign part sits next to a poorly matched
+  stretch of the host is no longer missed.
 * Changing a sample's taxon updates its lineage and screens it again. A name
   that matches more than one organism is never picked automatically.
 * Isomer and paralog classes are computed after annotation finishes.

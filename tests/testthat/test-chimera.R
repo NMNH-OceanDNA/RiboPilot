@@ -710,3 +710,17 @@ test_that("examining a flagged contig opens its viewer section", {
   })
   expect_true(any(grepl("seqv_asm-canvas", js, fixed = TRUE) & grepl("open = true", js, fixed = TRUE)))
 })
+
+test_that("same-class segments split by no-hit or unresolved windows count as one side", {
+  fish <- "33208;7711;186623;8030;8016;8017;8018"
+  fung <- "4751;4890;147545;5042;5043;5044;5045"
+  s <- data.frame(start = c(1201L, 1501L, 2251L, 2551L, 2701L), stop = c(1500L, 2250L, 2550L, 2700L, 4371L),
+    taxon = c("Actinopteri", "nohit", "Actinopteri", "unresolved", "Eurotiomycetes"), rank = "class",
+    species = "sp", pident = c(90.1, NA, 98.3, 98.1, 100), n_windows = c(2L, 5L, 2L, 1L, 11L),
+    db_source = "panel", lineage_taxids = c(fish, NA, fish, "33208;;;;;;", fung), stringsAsFactors = FALSE)
+  ch <- RiboPilot:::chimera_channel_windows(s)
+  expect_equal(ch$score, 0.5)
+  expect_true(ch$severe)
+  expect_equal(ch$junctions, 2625L)
+  expect_match(ch$reason, "^1201-2550 Actinopteri")
+})
