@@ -9,6 +9,7 @@ vignette: >
 
 <div class="step-nav">
 <span class="step-label">Test project:</span>
+<a href="RiboPilot.html">0. Get started</a>
 <span class="current">1. Taxonomy</span>
 <a href="Test-Project-Reference.html">2. Reference</a>
 <a href="Test-Project-Assemble.html">3. Assemble</a>
@@ -16,14 +17,14 @@ vignette: >
 <a href="Test-Project-Export.html">5. Export</a>
 </div>
 
-This walkthrough picks up where [Get started](RiboPilot.html) leaves off, so start there if you have not yet created the test project and opened the app.
+This walkthrough picks up where [Get started](RiboPilot.html) leaves off.
 
 By clicking **Assign Taxonomy**, RiboPilot matches each Taxon in your mapping file to
 the NCBI taxonomy database. The first time this runs, it downloads about 80 MB
 and builds an index of about 0.5 GB inside the project, which takes a few
 minutes.
 
-The Confidence column says how your values in Taxon matched the NCBI taxonomy database:
+The Confidence column says how well your taxon names matched the NCBI taxonomy database:
 
 | Confidence | What it means | What to do |
 |---|---|---|
@@ -39,7 +40,7 @@ Taxonomy**), search for the name, and press **Assign**.
 
 It's important to carefully review the taxonomy for each of your samples.
 A sample with incorrect taxonomic assignment here will be checked against the 
-wrong taxonomic groups during assembly and annotations.
+wrong taxonomic groups during assembly and annotation.
 
 When finished, tick all rows and press **Lock**. Only samples whose taxonomy is locked go
 on to the Assemble step. If you lock a sample that has no taxon, RiboPilot asks you first.

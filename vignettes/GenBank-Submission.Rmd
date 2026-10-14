@@ -7,7 +7,7 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
-The app's Export step writes one folder per export group containing everything you
+RiboPilot writes one folder per export group containing everything you
 need to submit your records to GenBank: the sequences (with customized FASTA headers),
 feature tables, and a summary of the checks. This page helps you understand the
 GenBank submission process. The
@@ -115,7 +115,7 @@ the feature table, and "partial sequence" in the definition line) when:
 - it runs into the end of a contig that has not been trimmed (the gene ran
   off the assembled contig)
 - the quality check found the gene truncated, meaning less than 90 percent of
-  it was recovered. The end that meets no neighbouring spacer or gene is marked
+  it was recovered. The end that meets no neighboring spacer or gene is marked
   if both ends meet one, both are marked
 - a trim cut through the gene. A trim that lands on a gene boundary marks
   nothing
