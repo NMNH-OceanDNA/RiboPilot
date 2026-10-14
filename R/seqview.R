@@ -60,16 +60,16 @@ seqview_ui <- function(prefix, summary, open = TRUE, pick = TRUE) {
       btn("zoom_out", NULL, icon("magnifying-glass-minus"), "Zoom out"),
       btn("copy", "Copy sequence", title = "Copy the bases in view as FASTA"),
       box("show_cov", "Coverage"), box("show_clip", "Clipped reads"),
-      box("show_origin", "BLAST origin"), box("show_win", "BLAST windows"), box("show_nt", "Nucleotides")),
+      box("show_ident", "BLAST identity"), box("show_origin", "BLAST origin"), box("show_nt", "Nucleotides")),
     tags$p(class = "mp-help-text", style = "margin:2px 0 4px;",
       paste0("Drag or scroll sideways to pan, scroll to zoom", if (pick) "; click a gene to select it",
         ". Letters appear when zoomed in. Copy sequence copies the bases in view. "),
       sprintf("Clipped reads is the share of reads soft-clipped at each base (shown where depth is at least 10); bars turn orange at %d%%, the chimera check's cutoff.",
         round(100 * CHIMERA_CLIP_FRAC)),
-      " BLAST origin colours each stretch by the class its BLAST windows match: grey is your lineage, white is no hit, ",
-      "other colours are foreign; a dashed line marks a possible junction. BLAST windows draws every BLAST window ",
-      "as a bar, staggered on two rows because neighbours overlap, with the bar height as the best hit's identity. ",
-      "Hover for the match."),
+      " BLAST identity draws each BLAST window as a see-through bar, coloured by the class it matches and as tall as ",
+      "its best hit's identity; overlapping windows show darker. BLAST origin colours each stretch by class: grey is ",
+      "your lineage, white is no hit, other colours are foreign. Stripes mark the overlap where the class switches, ",
+      "and a dashed line marks a possible junction. Hover for the match."),
     div(class = "rp-seqview",
       tags$canvas(id = id("canvas"), class = "rp-seqview-canvas"),
       tags$div(id = id("tip"), class = "rp-seqview-tip", hidden = NA)))
@@ -103,8 +103,9 @@ seqview_send <- function(session, canvas, input, id, path, scaffold, selected = 
   session$sendCustomMessage("rpseq", pl)
 }
 
-#' Chimera evidence for the viewer: origin segments split at the midpoint of
-#' their overlap, every BLAST window in its class colour, and junctions. Pure.
+#' Chimera evidence for the viewer: origin segments at their true extents (the
+#' viewer stripes the overlaps), every BLAST window in its class colour, and
+#' junctions. Pure.
 #' @noRd
 chimera_origin <- function(seg, win, junctions, label, channels, sample_lt, len) {
   out <- list(origin = list(), windows = list(), junctions = list())
@@ -131,12 +132,7 @@ chimera_origin <- function(seg, win, junctions, label, channels, sample_lt, len)
     pos1 = as.integer(d$start[i]), pos2 = as.integer(d$stop[i]), color = d$col[i],
     taxon = d$taxon[i], species = d$species[i] %|NA|% "", pident = d$pident[i],
     host = identical(d$col[i], "#B3B3B3")))
-  if (NROW(seg)) {
-    s <- both[seq_len(nrow(seg)), ]; s <- s[order(s$start), ]
-    mid <- (s$stop[-nrow(s)] + s$start[-1]) %/% 2L
-    s$stop <- pmin(s$stop, c(mid, Inf)); s$start <- pmax(s$start, c(-Inf, mid + 1L))
-    out$origin <- rows(s)
-  }
+  if (NROW(seg)) { s <- both[seq_len(nrow(seg)), ]; out$origin <- rows(s[order(s$start), ]) }
   if (NROW(win)) out$windows <- rows(both[nrow(both) - rev(seq_len(nrow(win))) + 1L, ])
   out$junctions <- chimera_origin_junctions(junctions, label, channels)
   out

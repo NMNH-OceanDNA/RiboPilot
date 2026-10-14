@@ -133,7 +133,7 @@ test_that("each details window sends its own layer to the sequence viewer", {
   expect_false(sent[["seqv_asm-canvas"]])
 })
 
-test_that("chimera_origin splits overlapping segments at the midpoint and keeps the host grey", {
+test_that("chimera_origin keeps segment extents and colours windows like segments", {
   seg <- data.frame(start = c(1, 501, 2251), stop = c(750, 2500, 4500),
     taxon = c("nohit", "Actinopterygii", "Eurotiomycetes"), species = c(NA, "Salmo salar", "Penicillium sp."),
     pident = c(NA, 99, 97), n_windows = c(3, 10, 9),
@@ -142,8 +142,8 @@ test_that("chimera_origin splits overlapping segments at the midpoint and keeps 
     species = c(NA, "Penicillium sp."), lineage = c(NA, "Fungi;Ascomycota;Eurotiomycetes"),
     lineage_taxids = c(NA, "4751;4890;147545"), stringsAsFactors = FALSE)
   o <- RiboPilot:::chimera_origin(seg, win, "2375", "severe", NA, "33208;7711;7898", 4500L)
-  expect_equal(vapply(o$origin, `[[`, 0, "pos1"), c(1, 626, 2376))
-  expect_equal(vapply(o$origin, `[[`, 0, "pos2"), c(625, 2375, 4500))
+  expect_equal(vapply(o$origin, `[[`, 0, "pos1"), c(1, 501, 2251))
+  expect_equal(vapply(o$origin, `[[`, 0, "pos2"), c(750, 2500, 4500))
   expect_true(o$origin[[2]]$host); expect_false(o$origin[[3]]$host)
   expect_equal(o$origin[[2]]$color, "#B3B3B3")
   expect_equal(o$origin[[1]]$color, "#FFFFFF")
@@ -181,7 +181,7 @@ test_that("the viewer gets the chimera evidence of its own layer, and none befor
   session <- list(sendCustomMessage = function(type, msg) sent <<- msg)
 
   RiboPilot:::seqview_send(session, "seqv_asm-canvas", NULL, "S1", 1L, 1L)
-  expect_equal(vapply(sent$origin, `[[`, 0, "pos2"), c(50, 100))
+  expect_equal(vapply(sent$origin, `[[`, 0, "pos2"), c(60, 100))
   expect_equal(sent$junctions[[1]]$pos, 50L)
   expect_equal(sent$windows[[2]]$pos1, 41L); expect_equal(sent$windows[[2]]$pident, 97)
 
@@ -196,11 +196,11 @@ test_that("the viewer gets the chimera evidence of its own layer, and none befor
   expect_null(sent$origin)
 })
 
-test_that("the viewer controls offer the origin and window tracks", {
+test_that("the viewer controls offer the origin and identity tracks", {
   html <- as.character(RiboPilot:::seqview_ui("x", "s"))
   expect_match(html, 'id="x-show_origin"', fixed = TRUE)
-  expect_match(html, 'id="x-show_win"', fixed = TRUE)
-  expect_match(html, "BLAST windows", fixed = TRUE)
+  expect_match(html, 'id="x-show_ident"', fixed = TRUE)
+  expect_match(html, "BLAST identity", fixed = TRUE)
 })
 
 test_that("chimera_origin copes with stored segments that have no species column", {
