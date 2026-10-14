@@ -4,5 +4,5 @@ bibentry(
   author = person("Dan", "MacGuigan"),
   year = "2026",
   note = paste("R package version", meta$Version),
-  url = "https://github.com/dmacguigan/RiboPilot"
+  url = "https://github.com/NMNH-OceanDNA/RiboPilot"
 )

@@ -350,7 +350,8 @@ test_that("provenance can be recorded from a discovered panel", {
 })
 
 # rp_searched.R's DB fixture: everything derive_blast_products() and
-# mark_unit_searched() touch, plus reference_config for the provenance write.
+# mark_unit_searched() touch, plus reference_config for the provenance write
+# and review_units for the review-copy check.
 mk_searched_script_db <- function(db_path) {
   con <- DBI::dbConnect(RSQLite::SQLite(), db_path)
   DBI::dbExecute(con, RiboPilot:::REFERENCE_CONFIG_DDL)
@@ -365,6 +366,7 @@ mk_searched_script_db <- function(db_path) {
   DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, blast_accession TEXT,
     blast_species TEXT, blast_pident REAL, blast_qcovs REAL, blast_evalue REAL, blast_source TEXT, ignore INT)")
   DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',1,1,NULL,NULL,NULL,NULL,NULL,NULL,0)")
+  DBI::dbExecute(con, RiboPilot:::REVIEW_UNITS_DDL)
   DBI::dbDisconnect(con)
 }
 

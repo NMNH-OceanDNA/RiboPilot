@@ -154,19 +154,27 @@ test_that("assembly_anchors is empty and quiet when no caller is installed", {
   expect_equal(RiboPilot:::assembly_anchors(mk_fasta(dir)), character(0))
 })
 
-test_that("the barrnap branch of pipeline_r.nf translates the kingdom", {
-  nf <- readLines(system.file("nextflow", "modules", "pipeline_r.nf", package = "RiboPilot"))
-  start <- grep("^process annotate_tools \\{", nf)
-  expect_length(start, 1)
-  end <- start - 1 + which(nf[start:length(nf)] == "}")[1]
-  body <- nf[start:end]
-
-  bar <- grep("barrnap --kingdom", body)
-  expect_length(bar, 1)
-  expect_true(any(grepl("case \"\\\\\\$KINGDOM\" in euk\\|all\\) KINGDOM=fun", body[seq_len(bar)])))
-  py <- grep("pybarrnap -k", body)
-  expect_length(py, 1)
-  expect_true(any(grepl("case \"\\\\\\$KINGDOM\" in fun\\) KINGDOM=euk", body[seq_len(py)])))
+test_that("rp_rrna_tools.sh translates the kingdom as rrna_kingdom_for does", {
+  skip_on_os("windows")
+  sh <- system.file("nextflow", "bin", "rp_rrna_tools.sh", package = "RiboPilot")
+  kingdom_passed <- function(tool, kingdom) {
+    dir <- withr::local_tempdir()
+    mk_fake_tool(dir, tool, out = GFF_18S)
+    mk_fake_tool(dir, "ITSx")
+    withr::local_path(dir)
+    mk_fasta(dir)
+    status <- withr::with_dir(dir, system2("bash",
+      shQuote(c(sh, "unit.fasta", tool, kingdom, "", "", "", "1")), stdout = FALSE, stderr = FALSE))
+    expect_equal(status, 0)
+    args <- strsplit(fake_args(dir, tool), " ", fixed = TRUE)[[1]]
+    args[which(args %in% c("--kingdom", "-k")) + 1]
+  }
+  for (tool in c("barrnap", "pybarrnap")) {
+    for (k in c("euk", "all", "fun", "bac", "arc", "")) {
+      expect_equal(kingdom_passed(tool, k), RiboPilot:::rrna_kingdom_for(k, tool),
+        info = paste(tool, k))
+    }
+  }
 })
 
 test_that("run_itsx warns when ITSx exits non-zero", {

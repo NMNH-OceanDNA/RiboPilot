@@ -9,8 +9,10 @@ opt <- function(i) if (length(a) >= i && nzchar(a[i])) a[i] else NULL
 r <- local({
   con <- open_project_db(a[1])
   on.exit(DBI::dbDisconnect(con))
-  chimera_unit(con, a[2], as.integer(a[3]), as.integer(a[4]), dbarg = opt(5),
+  r <- chimera_unit(con, a[2], as.integer(a[3]), as.integer(a[4]), dbarg = opt(5),
     taxdump_dir = opt(6), label_db = opt(7), threads = as.integer(Sys.getenv("RP_THREADS", "1")),
     workdir = file.path(getwd(), "chimera_work"))
+  if (!is.null(r)) RiboPilot:::review_follow_original(con, a[2], as.integer(a[3]), as.integer(a[4]))
+  r
 })
 cat("chimera:", a[2], a[3], a[4], "-", if (is.null(r)) "skipped" else r$label, "\n")

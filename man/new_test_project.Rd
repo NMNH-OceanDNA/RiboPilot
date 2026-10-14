@@ -14,6 +14,7 @@ new_test_project(
   sra_bin = NULL,
   Rproj = TRUE,
   force = FALSE,
+  fetch_metadata = TRUE,
   ...
 )
 }
@@ -42,13 +43,18 @@ RStudio).}
 
 \item{force}{Recreate an existing project database / config (default FALSE).}
 
+\item{fetch_metadata}{Fetch each sample's NCBI metadata (synthetic samples use
+their source run's) and follow links
+to GBIF and GEOME (default TRUE). Linking is saved as the project setting.
+Set FALSE when offline.}
+
 \item{...}{Passed to \code{\link[=new_project]{new_project()}} (e.g. \code{custom_seeds_db}).}
 }
 \value{
 (invisibly) the project path.
 }
 \description{
-Sets up a ready-to-run practice project from the bundled test set: 10 fish
+Sets up a ready-to-run test project from the bundled test set: 10 fish
 genome skims (USNM, study SRP313821) plus two synthetic samples, CHIM00 (a
 clean control) and CHIM01 (fish rDNA joined to a Penicillium 28S). Downloads
 each fish sample's paired reads, writes the mapping file, and initializes the

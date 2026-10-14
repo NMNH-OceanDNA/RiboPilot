@@ -13,6 +13,7 @@ work/
 testdata_full/
 assembly_out/
 *.fastq.gz
+RiboPilot_test*
 
 dev/*.png
 
@@ -44,3 +45,5 @@ out/
 !inst/test_data/*.fastq.gz
 update-version.log
 tests/testthat/testthat-problems.rds
+tests/testthat/_problems/
+__pycache__/

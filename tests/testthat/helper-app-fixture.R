@@ -3,9 +3,12 @@
 
 fixture_fill_schema <- function(con) {
   for (ddl in list(RiboPilot:::BLAST_HITS_DDL, RiboPilot:::BLAST_SEARCHED_DDL, RiboPilot:::TRIAGE_OPTS_DDL,
-                   RiboPilot:::SCREEN_DDL, RiboPilot:::ASSEMBLY_BACKUP_DDL,
-                   RiboPilot:::REFERENCE_DDL, RiboPilot:::REFERENCE_CONFIG_DDL,
-                   RiboPilot:::CHIMERA_DDL, RiboPilot:::CHIMERA_WINDOWS_DDL)) {
+                   RiboPilot:::SCREEN_DDL, RiboPilot:::REFERENCE_DDL, RiboPilot:::REFERENCE_CONFIG_DDL,
+                   RiboPilot:::CHIMERA_DDL, RiboPilot:::CHIMERA_WINDOWS_DDL,
+                   RiboPilot:::META_RECORDS_DDL, RiboPilot:::META_STATUS_DDL,
+                   RiboPilot:::META_EXPORT_FIELDS_DDL, RiboPilot:::META_CSV_MAP_DDL,
+                   RiboPilot:::META_OPTIONS_DDL, RiboPilot:::META_LINKS_DDL,
+                   RiboPilot:::META_VIEW_FIELDS_DDL)) {
     DBI::dbExecute(con, ddl)
   }
   RiboPilot:::write_triage_opts(con, RiboPilot:::triage_actions_default())
@@ -19,8 +22,9 @@ fixture_fill_schema <- function(con) {
     run_blast INTEGER, entrez_query TEXT, max_target_seqs INTEGER, extra_opts TEXT)")
   DBI::dbExecute(con, "INSERT OR IGNORE INTO blast_opts VALUES ('default',1,NULL,50,'')")
   DBI::dbExecute(con, "CREATE TABLE IF NOT EXISTS annotate_opts (annotate_opts TEXT PRIMARY KEY,
-    cpus INTEGER, memory INTEGER, rrna_tool TEXT, rrna_kingdom TEXT, itsx_taxon TEXT, itsx_opts TEXT)")
-  DBI::dbExecute(con, "INSERT INTO annotate_opts VALUES ('default',4,8,'pybarrnap','euk','all','')")
+    cpus INTEGER, memory INTEGER, rrna_tool TEXT, rrna_kingdom TEXT, itsx_taxon TEXT, itsx_opts TEXT,
+    barrnap_opts TEXT, pybarrnap_opts TEXT)")
+  DBI::dbExecute(con, "INSERT INTO annotate_opts VALUES ('default',4,8,'pybarrnap','euk','all','','','')")
   if (!("assemble_opts" %in% DBI::dbListTables(con))) {
     DBI::dbExecute(con, "CREATE TABLE assemble_opts (assemble_opts TEXT PRIMARY KEY, cpus INTEGER,
       memory INTEGER, getOrganelle TEXT, seeds_db TEXT, labels_db TEXT, target TEXT, max_paths INTEGER,
@@ -43,6 +47,7 @@ fixture_fill_schema <- function(con) {
   add_col("assemble", "triage_opts", "TEXT DEFAULT 'default'")
   add_col("annotate", "chimeric", "INTEGER")
   add_col("annotate", "curate_flags", "TEXT")
+  add_col("annotate", "export_time_stamp", "INTEGER")
   add_col("annotations", "model_coverage", "REAL")
   add_col("annotations", "status", "TEXT")
   add_col("annotations", "partial_start", "INTEGER")
@@ -50,6 +55,51 @@ fixture_fill_schema <- function(con) {
   add_col("coverage", "median_depth", "REAL")
   add_col("samples", "ref_id", "TEXT")
   add_col("samples", "tax_alternatives", "TEXT")
+  for (col in RiboPilot:::META_SAMPLE_COLS) add_col("samples", col, "TEXT")
+  fixture_review_schema(con)
+  invisible()
+}
+
+# The tables the review layer reads, as a fresh new_db() makes them; built once.
+fixture_ref <- new.env()
+fixture_ref_schema <- function() {
+  if (is.null(fixture_ref$sql)) {
+    tbls <- c("assemblies", "annotate", "annotations", "coverage", "screen", "chimera",
+      "chimera_windows", "blast_hits", "blast_screen", "blast_ref_alignment")
+    con <- chimera_test_con()
+    fixture_ref$sql <- stats::setNames(vapply(tbls, function(t) DBI::dbGetQuery(con,
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?", params = list(t))$sql,
+      character(1)), tbls)
+    fixture_ref$cols <- stats::setNames(lapply(tbls, function(t)
+      DBI::dbGetQuery(con, sprintf("PRAGMA table_info(%s)", t))[, c("name", "type")]), tbls)
+    DBI::dbDisconnect(con)
+  }
+  fixture_ref
+}
+
+# Widen a hand-built fixture to those tables (creating missing ones), then add
+# the review tables and views. Idempotent; run it after positional INSERTs.
+fixture_review_schema <- function(con) {
+  ref <- fixture_ref_schema()
+  for (t in names(ref$sql)) {
+    if (!DBI::dbExistsTable(con, t)) {
+      DBI::dbExecute(con, ref$sql[[t]])
+      next
+    }
+    miss <- ref$cols[[t]][!ref$cols[[t]]$name %in% DBI::dbListFields(con, t), ]
+    for (i in seq_len(nrow(miss))) {
+      DBI::dbExecute(con, sprintf("ALTER TABLE %s ADD COLUMN %s %s", t, miss$name[i], miss$type[i]))
+    }
+  }
+  RiboPilot:::review_apply_schema(con)
+  RiboPilot:::feature_blast_apply_schema(con)
+  invisible()
+}
+
+# Every contig annotated with a stored ITSx result, so the review layer reads it as done.
+fixture_mark_done <- function(con) {
+  DBI::dbExecute(con,
+    "UPDATE annotate SET annotate_switch = 2, itsx_warnings = COALESCE(itsx_warnings, '')")
   invisible()
 }
 
@@ -95,4 +145,11 @@ mk_app_project <- function(env = parent.frame()) {
   fixture_fill_schema(con)
   DBI::dbDisconnect(con)
   dir
+}
+
+# An otherwise empty project database that passes run_app()'s version check.
+stamped_sqlite <- function(dir) {
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  on.exit(DBI::dbDisconnect(con))
+  RiboPilot:::record_schema_event(con, "created", RiboPilot:::current_schema_version())
 }

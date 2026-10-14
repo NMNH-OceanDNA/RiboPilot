@@ -71,6 +71,19 @@ test_that("a Ready group whose FASTAs are gone reads as missing, not Ready", {
   expect_false("labels_db" %in% names(RiboPilot:::reference_table(con)))
 })
 
+test_that("a Ready group shows how many sequences its database holds", {
+  skip_if_not_installed("withr")
+  dir <- withr::local_tempdir()
+  p <- tab_db_paths(dir)
+  con <- mk_tab_db(p); on.exit(DBI::dbDisconnect(con))
+  writeLines(c(">a", "ACGT", ">b", "ACGT", ">c", "AC"), p$seeds)
+  d <- RiboPilot:::reference_table(con)
+  expect_equal(d$n_seqs[1], 3L)
+  expect_equal(match("n_seqs", names(d)), match("n_records", names(d)) + 1L)
+  DBI::dbExecute(con, "UPDATE reference SET reference_switch = 1")
+  expect_true(is.na(RiboPilot:::reference_table(con)$n_seqs[1]))
+})
+
 test_that("the ladder modal shows every rung with coverage and counts", {
   ladder <- data.frame(level = 2:5, rank = c("phylum", "class", "order", "family"),
     taxid = c(7586L, 7588L, 41692L, 7607L),
@@ -468,7 +481,7 @@ test_that("headless Build offers a BUILD job script and saves it, running nothin
     while (!later::loop_empty()) later::run_now()
   })
 
-  f <- Sys.glob(file.path(dir, "jobs", "ribopilot_ref_*.sh"))
+  f <- Sys.glob(file.path(dir, ".runs", "jobs", "reference_*.sh"))
   expect_true(file.exists(f))
   script <- paste(readLines(f), collapse = "\n")
   # -log is a top-level option, so it sits between the binary and `run`
@@ -496,7 +509,7 @@ test_that("the saved job script carries the API key and RefSeq settings typed in
   # the stale copy below is built out of band, so it only matches what the
   # handler generated if both get the same submission timestamp
   testthat::local_mocked_bindings(
-    job_basename = function(...) "ribopilot_ref_2026-08-12_09-45-03", .package = "RiboPilot")
+    job_basename = function(...) "reference_2026-08-12_09-45-03", .package = "RiboPilot")
 
   shiny::testServer(function(input, output, session) {
     h <- RiboPilot:::reference_handlers(input, output, session, deps)
@@ -516,7 +529,7 @@ test_that("the saved job script carries the API key and RefSeq settings typed in
     while (!later::loop_empty()) later::run_now()
   })
 
-  script <- paste(readLines(Sys.glob(file.path(dir, "jobs", "ribopilot_ref_*.sh"))), collapse = "\n")
+  script <- paste(readLines(Sys.glob(file.path(dir, ".runs", "jobs", "reference_*.sh"))), collapse = "\n")
   expect_match(script, "'--ncbi_api_key' 'KEY123'", fixed = TRUE)
   expect_match(script, "'--refseq' 'true'", fixed = TRUE)
 })
@@ -541,7 +554,7 @@ test_that("an emptied script textarea falls back to a generated script", {
     while (!later::loop_empty()) later::run_now()
   })
 
-  script <- paste(readLines(Sys.glob(file.path(dir, "jobs", "ribopilot_ref_*.sh"))), collapse = "\n")
+  script <- paste(readLines(Sys.glob(file.path(dir, ".runs", "jobs", "reference_*.sh"))), collapse = "\n")
   expect_match(script, "'-entry' 'BUILD'", fixed = TRUE)
   expect_match(script, paste0("cd ", shQuote(file.path(dir, ".reference")), "\n'nextflow'"), fixed = TRUE)
 })
@@ -651,7 +664,7 @@ test_that("a hand-edited script is written as edited", {
     while (!later::loop_empty()) later::run_now()
   })
 
-  script <- paste(readLines(Sys.glob(file.path(dir, "jobs", "ribopilot_ref_*.sh"))), collapse = "\n")
+  script <- paste(readLines(Sys.glob(file.path(dir, ".runs", "jobs", "reference_*.sh"))), collapse = "\n")
   expect_true(grepl("#SBATCH -p bigmem", script, fixed = TRUE))
 })
 

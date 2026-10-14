@@ -17,7 +17,7 @@ process query_samples {
     # Header is written explicitly (sqlite3 -header emits nothing for 0 rows, and
     # splitCsv(header:true) then fails); an empty result becomes a header-only
     # file so the workflow simply does nothing instead of crashing.
-    printf 'ID\tR1\tR2\tpre_cpus\tpre_mem\tasm_cpus\tasm_mem\tfastp\tgetOrganelle\tseeds_db\tlabels_db\tassembler\tAssembly\tfind_rrna\trrna_tool\trrna_kingdom\tbowtie2\tspades\n' > samplesheet.tsv
+    printf 'ID\tR1\tR2\tpre_cpus\tpre_mem\tasm_cpus\tasm_mem\tfastp\tgetOrganelle\tseeds_db\tlabels_db\tassembler\tAssembly\tfind_rrna\trrna_tool\trrna_kingdom\trrna_opts\tbowtie2\tspades\n' > samplesheet.tsv
     sqlite3 -cmd '.timeout 10000' -separator '\t' '${params.db}' "
       SELECT p.ID, p.R1, p.R2,
              COALESCE(po.cpus,4) AS pre_cpus, COALESCE(po.memory,8) AS pre_mem,
@@ -32,6 +32,8 @@ process query_samples {
                 WHERE annotate_opts = 'default') AS rrna_tool,
              (SELECT COALESCE(rrna_kingdom, 'euk') FROM annotate_opts
                 WHERE annotate_opts = 'default') AS rrna_kingdom,
+             (SELECT COALESCE(CASE WHEN rrna_tool = 'barrnap' THEN barrnap_opts ELSE pybarrnap_opts END, '')
+                FROM annotate_opts WHERE annotate_opts = 'default') AS rrna_opts,
              ao.bowtie2, ao.spades
       FROM assemble a
       JOIN preprocess p     ON a.ID = p.ID
@@ -42,11 +44,12 @@ process query_samples {
     """
 }
 
-// WF2: assembled samples queued for (re-)annotation, with their annotate_opts
+// Assembled units queued for (re-)annotation, with their annotate_opts
 // compute settings.
-// Units queued for annotation ONLY: a trim, an annotate_opts or curate_opts
-// change, a restored scaffold, an edited sequence. WF2 used to own this; there
-// is one workflow now (dev/design/15_WF2_DECOMMISSION.md).
+// Units queued for annotation ONLY: an annotate_opts or curate_opts change, or
+// a scaffold put back. WF2 used to own this; it is an arm of main.nf now
+// (dev/design/15_WF2_DECOMMISSION.md). Trims and boundary edits change review
+// copies, which main_recheck.nf rechecks; they never queue units here.
 //
 // Samples this run is about to assemble are EXCLUDED. Assembly re-seeds a
 // sample's annotate units itself, so without the exclusion a sample queued for
@@ -156,28 +159,15 @@ process annotate_tools {
       FROM annotate an JOIN annotate_opts ao ON an.annotate_opts = ao.annotate_opts
       WHERE an.ID = '${id}' AND an.path = ${upath} AND an.scaffold = ${uscaf};")"
     TOOL="\${TOOL:-pybarrnap}"; KINGDOM="\${KINGDOM:-euk}"; ITSXT="\${ITSXT:-all}"
+    # own query: an empty itsx_opts would otherwise shift the columns under read
+    RRNAO="\$(sqlite3 -cmd '.timeout 10000' '${params.db}' "
+      SELECT COALESCE(CASE WHEN ao.rrna_tool = 'barrnap' THEN ao.barrnap_opts ELSE ao.pybarrnap_opts END, '')
+      FROM annotate an JOIN annotate_opts ao ON an.annotate_opts = ao.annotate_opts
+      WHERE an.ID = '${id}' AND an.path = ${upath} AND an.scaffold = ${uscaf};")"
 
-    # Same kingdom translation as R's rrna_kingdom_for(): the Perl barrnap fork
-    # calls its eukaryote Rfam models "fun" and has no euk/all; pybarrnap has no
-    # "fun". Passing the stored kingdom through untranslated makes the tool exit
-    # non-zero and the unit gets no anchors at all.
-    if [ "\$TOOL" = "barrnap" ]; then
-        case "\$KINGDOM" in euk|all) KINGDOM=fun ;; esac
-        barrnap --kingdom "\$KINGDOM" --quiet unit.fasta > unit.barrnap.gff
-    else
-        case "\$KINGDOM" in fun) KINGDOM=euk ;; esac
-        pybarrnap -k "\$KINGDOM" -t ${task.cpus} -q unit.fasta > unit.barrnap.gff
-    fi
-
-    ITSx -i unit.fasta -o unit.itsx --save_regions none --graphical F \
-        --cpu ${task.cpus} -t "\$ITSXT" --preserve T \$ITSXO || true
-    [ -f unit.itsx.positions.txt ] || : > unit.itsx.positions.txt
-
-    # second, stock run (defaults, no organism group): what NCBI's Submission
-    # Portal will see. Reconcile turns its output into annotate.itsx_warnings.
-    ITSx -i unit.fasta -o unit.itsx_check --preserve T --detailed_results T \
-        --save_regions none --graphical F --cpu ${task.cpus} || true
-    [ -f unit.itsx_check.positions.txt ] || : > unit.itsx_check.positions.txt
+    # barrnap/pybarrnap, tuned ITSx, and the stock ITSx check. Called plainly so a
+    # barrnap failure fails the task and an out-of-memory exit is retried.
+    rp_rrna_tools.sh unit.fasta "\$TOOL" "\$KINGDOM" "\$ITSXT" "\$ITSXO" "\$RRNAO" ${task.cpus}
     """
 }
 
@@ -273,5 +263,27 @@ process chimera {
       WHERE a.ID='${id}' LIMIT 1;" 2>/dev/null || echo "")
     RP_THREADS=${task.cpus} RIBOPILOT_SRC='${params.ribopilot_src}' rp_chimera.R \
       '${params.db}' '${id}' ${upath} ${uscaf} "\$DBARG" '${params.taxdump_dir}' "\$LABELS"
+    """
+}
+
+// Per-feature BLAST of each core feature against the reference panel.
+process feature_blast {
+    cache false
+    tag "${id}.${upath}.${uscaf}"
+    // Retry first: DB lock contention with chimera and curate clears on its own.
+    errorStrategy { task.attempt <= 2 ? 'retry' : 'ignore' }
+    maxRetries 2
+    input:
+    tuple val(id), val(upath), val(uscaf)
+    output:
+    tuple val(id), val(upath), val(uscaf)
+    script:
+    """
+    DBARG=""
+    if [ -z "\${RIBOPILOT_NO_LOCAL_BLAST:-}" ]; then
+        DBARG=\$(RIBOPILOT_SRC='${params.ribopilot_src}' rp_dbarg.R '${params.blastdb}' 2>/dev/null || echo "")
+    fi
+    RP_THREADS=${task.cpus} RIBOPILOT_SRC='${params.ribopilot_src}' rp_feature_blast.R \
+      '${params.db}' '${id}' ${upath} ${uscaf} "\$DBARG" '${params.taxdump_dir}'
     """
 }

@@ -12,7 +12,14 @@ update_sample_metadata(
   data_path = NULL,
   assembly_path = NULL,
   check_reads = TRUE,
-  check_assemblies = TRUE
+  check_assemblies = TRUE,
+  mapping_geome = "GEOME_BCID",
+  fetch_geome = TRUE,
+  mapping_gbif = "GBIF_ID",
+  fetch_gbif = TRUE,
+  mapping_ncbi = "BioSample",
+  fetch_ncbi = TRUE,
+  link_sources = FALSE
 )
 }
 \arguments{
@@ -40,6 +47,33 @@ mapping file exist under \code{data_path} (default TRUE).}
 
 \item{check_assemblies}{(logical) Check that the assembly files named in
 the mapping file exist under \code{assembly_path} (default TRUE).}
+
+\item{mapping_geome}{Name of the mapping-file column holding GEOME BCIDs
+(optional). Stored as \code{GEOME_BCID}. See \code{vignette("Sample-Metadata")}.}
+
+\item{fetch_geome}{Fetch GEOME metadata for samples with a BCID
+when the identifiers change
+(default TRUE). Set FALSE when offline and run \code{\link[=fetch_geome]{fetch_geome()}} later.}
+
+\item{mapping_gbif}{Name of the mapping-file column holding GBIF occurrence
+IDs (optional). Stored as \code{GBIF_ID}. See \code{vignette("Sample-Metadata")}.}
+
+\item{fetch_gbif}{Fetch GBIF metadata for samples with a GBIF ID
+when the identifiers change
+(default TRUE). Set FALSE when offline and run \code{\link[=fetch_gbif]{fetch_gbif()}} later.}
+
+\item{mapping_ncbi}{Name of the mapping-file column holding NCBI
+BioSample or SRA accessions (optional). Must not be the sample ID column.
+Stored as \code{BioSample}. See \code{vignette("Sample-Metadata")}.}
+
+\item{fetch_ncbi}{Fetch NCBI metadata for samples with a BioSample
+value when the identifiers change (default TRUE). Set FALSE when offline and run
+\code{\link[=fetch_ncbi]{fetch_ncbi()}} later.}
+
+\item{link_sources}{Follow links between GEOME, GBIF, and NCBI records for
+these samples (default FALSE). Linking also runs when the project setting
+is on; this argument does not change the setting. See
+\code{vignette("Sample-Metadata")}.}
 }
 \description{
 Updates metadata columns for samples already in a project's database
@@ -48,5 +82,6 @@ pipeline state or lock column, except that a sample whose Taxon changes
 has its resolved taxonomy cleared, unlocked, and queued for the Taxonomy
 step again. Use \code{\link[=add_samples]{add_samples()}} to change what a sample reads or
 assembles from. Runs the same read_mapping()/check_mapping()
-checks as \code{\link[=new_project]{new_project()}}.
+checks as \code{\link[=new_project]{new_project()}}. Backs up the database to
+\verb{.old_sqlite_dbs/} first.
 }

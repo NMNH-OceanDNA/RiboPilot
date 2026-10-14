@@ -28,5 +28,5 @@ hit is as likely to be a degraded pseudogene copy as a real repeat unit.
 }
 \details{
 Only contigs barrnap hit at all are scored, so the evidence returned is the
-handful of rRNA-bearing contigs rather than every scaffold in a draft genome.
+handful of rRNA-bearing contigs rather than every contig in a draft genome.
 }

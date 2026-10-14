@@ -4,7 +4,7 @@
 \alias{curate_one}
 \title{Curate one sample's annotations and write results back to the DB}
 \usage{
-curate_one(con, id, path = 1L, scaffold = 1L, ruleset = NULL)
+curate_one(con, id, path = 1L, scaffold = 1L, ruleset = NULL, review = FALSE)
 }
 \arguments{
 \item{con}{Open DBI connection.}
@@ -14,6 +14,10 @@ curate_one(con, id, path = 1L, scaffold = 1L, ruleset = NULL)
 \item{path, scaffold}{Assembly unit within the sample.}
 
 \item{ruleset}{Optional ruleset override (else read from \code{curate_opts}).}
+
+\item{review}{TRUE curates the contig's review copy: it reads and writes the
+review tables and replaces the copy's partial ends on every run (the user's
+choice is kept in \code{partial_start_user} and \code{partial_stop_user}).}
 }
 \value{
 (invisibly) the curate_rrna_core() result.

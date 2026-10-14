@@ -19,6 +19,8 @@ test_that("feature_table_text_con emits partials, gaps, and ITS notes", {
   DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,1,'18S','rRNA',1,100)")
   DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,1,'ITS1','misc_RNA',121,200)")
   DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,1,'28S','rRNA',201,260)")
+  fixture_review_schema(con)
+  DBI::dbExecute(con, "INSERT INTO annotate (ID, path, scaffold) VALUES ('S1', 1, 1)")
   tbl <- RiboPilot:::feature_table_text_con(con, "S1")
   expect_match(tbl, "<1\t100\trRNA")            # 5' partial
   expect_match(tbl, "201\t>260\trRNA")          # 3' partial
@@ -37,6 +39,8 @@ test_that("partial ends are marked per feature, strand-aware, and minus is writt
   DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',1,1, ?, 500)", params = list(strrep("A", 500)))
   DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,1,'18S','rRNA',100,260,'+',1,0)")
   DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,1,'28S','rRNA',300,460,'+',0,1)")
+  fixture_review_schema(con)
+  DBI::dbExecute(con, "INSERT INTO annotate (ID, path, scaffold) VALUES ('S1', 1, 1)")
   tbl <- RiboPilot:::feature_table_text_con(con, "S1")
   expect_match(tbl, "\n<100\t260\trRNA")
   expect_match(tbl, "\n300\t>460\trRNA")
@@ -54,27 +58,34 @@ test_that("partial ends are marked per feature, strand-aware, and minus is writt
   expect_match(RiboPilot:::feature_table_text_con(con, "S1"), "\n<260\t1\trRNA")
 })
 
-test_that("a scaffold end marks a gene partial only on an untrimmed unit", {
-  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+test_that("unit_trimmed reads the kept window of the review copy", {
+  con <- chimera_test_con()
   on.exit(DBI::dbDisconnect(con))
-  DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT, type TEXT,
-    start INT, stop INT, strand TEXT, partial_start INT, partial_stop INT)")
-  DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, sequence TEXT, length INT)")
-  DBI::dbExecute(con, RiboPilot:::ASSEMBLY_BACKUP_DDL)
-  DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',1,1, ?, 300)", params = list(strrep("A", 300)))
-  DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,1,'18S','rRNA',1,300,'+',NULL,NULL)")
-  expect_match(RiboPilot:::feature_table_text_con(con, "S1"), "\n<1\t>300\trRNA")
-  # trimmed: the snapshot holds a longer sequence, so the ends are cut, not assembly ends
-  DBI::dbExecute(con, "INSERT INTO assembly_backup (ID, path, scaffold, sequence) VALUES ('S1',1,1,?)",
-    params = list(paste0(strrep("C", 50), strrep("A", 300), strrep("G", 50))))
-  expect_match(RiboPilot:::feature_table_text_con(con, "S1"), "\n1\t300\trRNA")
-  # only the 3' tail cut: base 1 is still an assembly end
-  DBI::dbExecute(con, "UPDATE assembly_backup SET sequence = ?",
-    params = list(paste0(strrep("A", 300), strrep("G", 50))))
-  expect_match(RiboPilot:::feature_table_text_con(con, "S1"), "\n<1\t300\trRNA")
-  # restored: snapshot and sequence agree again
-  DBI::dbExecute(con, "UPDATE assembly_backup SET sequence = ?", params = list(strrep("A", 300)))
-  expect_match(RiboPilot:::feature_table_text_con(con, "S1"), "\n<1\t>300\trRNA")
+  DBI::dbExecute(con, "INSERT INTO assemblies (ID, path, scaffold, length, sequence) VALUES ('S1', 1, 1, 400, ?)",
+    params = list(strrep("A", 400)))
+  DBI::dbExecute(con, "INSERT INTO annotations (ID, path, scaffold, element, type, start, stop, strand)
+    VALUES ('S1', 1, 1, '18S', 'rRNA', 1, 400, '+')")
+  tr <- function() RiboPilot:::unit_trimmed(con, "S1", 1L, 1L)
+  # no copy: both ends are assembly ends
+  expect_equal(tr(), c(FALSE, FALSE))
+  expect_match(RiboPilot:::feature_table_text_con(con, "S1"), "\n<1\t>400\trRNA")
+  expect_equal(RiboPilot:::unit_trimmed(con, "S9", 1L, 1L), c(FALSE, FALSE))
+
+  win <- function(a, b) {
+    DBI::dbExecute(con, "DELETE FROM review_units")
+    DBI::dbExecute(con, "INSERT INTO review_units (ID, path, scaffold, sequence, length, trim_start, trim_end, rev)
+      VALUES ('S1', 1, 1, ?, ?, ?, ?, 1)", params = list(strrep("A", b - a + 1L), b - a + 1L, a, b))
+    tr()
+  }
+  expect_equal(win(51L, 350L), c(TRUE, TRUE))
+  expect_equal(win(1L, 350L), c(FALSE, TRUE))
+  expect_equal(win(51L, 400L), c(TRUE, FALSE))
+  expect_equal(win(1L, 400L), c(FALSE, FALSE))
+
+  # a database without the review layer reads as untrimmed
+  mem <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+  on.exit(DBI::dbDisconnect(mem), add = TRUE)
+  expect_equal(RiboPilot:::unit_trimmed(mem, "S1", 1L, 1L), c(FALSE, FALSE))
 })
 
 test_that("a unit marked partial changes only the completeness wording", {
@@ -90,6 +101,7 @@ test_that("a unit marked partial changes only the completeness wording", {
   DBI::dbExecute(con, "INSERT INTO annotate VALUES('S1',1,1,1,'','yes','yes',NULL)")
   DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',1,1, ?, 500, 'linear')", params = list(strrep("A", 500)))
   DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,1,'18S','rRNA',100,260,0,0)")
+  fixture_review_schema(con)
   expect_match(RiboPilot:::feature_table_text_con(con, "S1"), "\n100\t260\trRNA")
   h <- RiboPilot:::export_header_data(con, data.frame(ID = "S1", path = 1L, scaffold = 1L, seqid = "S1"))
   expect_equal(h$completeness, "partial sequence")
@@ -110,6 +122,7 @@ test_that("a partial end is exported partial, in the feature table and the defli
   DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',1,1, ?, 1694, 'linear')", params = list(strrep("A", 1694)))
   # 28S well inside the scaffold, 3' end not recovered
   DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,1,'28S','rRNA',155,1488,'length,truncated',0,1)")
+  fixture_review_schema(con)
   expect_match(RiboPilot:::feature_table_text_con(con, "S1"), "\n155\t>1488\trRNA")
   units <- data.frame(ID = "S1", path = 1L, scaffold = 1L, seqid = "S1")
   h <- RiboPilot:::export_header_data(con, units)
@@ -252,6 +265,7 @@ test_that("feature_map_svg falls back to a note when a unit has no annotations",
   con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
   on.exit(DBI::dbDisconnect(con))
   DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT, start INT, stop INT)")
+  fixture_review_schema(con)
   expect_equal(RiboPilot:::feature_map_svg(con, "S1"), "<em>no annotations</em>")
 })
 
@@ -291,7 +305,8 @@ test_that("unit_checks names every finding, colours the worst, and agrees with t
   for (s in 1:4) {
     DBI::dbExecute(con, "INSERT INTO assemblies (ID, path, scaffold, sequence, length, ignore) VALUES ('S1',1,?,'ACGT',4,0)",
       params = list(s))
-    DBI::dbExecute(con, "INSERT INTO annotate (ID, path, scaffold) VALUES ('S1',1,?)", params = list(s))
+    DBI::dbExecute(con, "INSERT INTO annotate (ID, path, scaffold, itsx_warnings) VALUES ('S1',1,?,'')",
+      params = list(s))
     DBI::dbExecute(con, "INSERT INTO screen (ID, path, scaffold, screen_verdict) VALUES ('S1',1,?,'on_target')",
       params = list(s))
   }
@@ -321,16 +336,42 @@ test_that("unit_checks names every finding, colours the worst, and agrees with t
   DBI::dbExecute(con, "DELETE FROM screen WHERE scaffold = 1")
   expect_equal(RiboPilot:::unit_checks(con, "unit")[1, c("checks", "checks_tone")],
     data.frame(checks = "no reference", checks_tone = "neutral"))
+
+  # never checked, or checked without a verdict: an amber item, never ok
+  DBI::dbExecute(con, "UPDATE annotate SET itsx_warnings = NULL WHERE scaffold = 1")
+  DBI::dbExecute(con, "UPDATE annotate SET itsx_warnings = 'not_run(ITSx did not finish)' WHERE scaffold = 2")
+  u <- RiboPilot:::unit_checks(con, "unit")
+  expect_equal(u$checks, c("ITSx not checked", "minor chimera, ITSx not checked, feature flags",
+    "off target, contaminant"))
+  expect_equal(u$checks_tone, c("warning", "warning", "danger"))
 })
 
-test_that("the export done dialog names flagged records and is green only when nothing is flagged", {
-  smry <- data.frame(seqid = c("A", "B_p1_s1"), itsx_check = c("", ""),
-    submission_risk = c("", "off_target(Actiniaria);contaminant"))
+test_that("the export done dialog counts the stored ITSx check and is green only when all is clean", {
+  smry <- data.frame(seqid = c("A", "B_p1_s1", "C", "D"),
+    itsx_check = c("", "itsx_chimeric", "not_run(ITSx did not finish)", "not_run(not checked)"),
+    submission_risk = c("", "off_target(Actiniaria);contaminant", "", ""))
   html <- as.character(RiboPilot:::export_check_summary_ui(smry))
   expect_match(html, "B_p1_s1 (BLAST hits agree on Actiniaria; the best BLAST hit is from another phylum)",
     fixed = TRUE)
+  expect_match(html, "ITSx check: 1 flagged, 1 clean, 2 not checked. Flagged: B_p1_s1 (itsx_chimeric).",
+    fixed = TRUE)
+  expect_lt(regexpr("Submission-risk", html), regexpr("ITSx check:", html))
   expect_false(grepl("mp-fg-success", html, fixed = TRUE))
-  expect_lt(regexpr("Submission-risk", html), regexpr("Final ITSx", html))
+  expect_false(grepl("left out", html, fixed = TRUE))
+
+  # nothing flagged, but a contig not checked: never green
+  smry$submission_risk <- ""
+  smry$itsx_check <- c("", "", "", "not_run(not checked)")
+  html <- as.character(RiboPilot:::export_check_summary_ui(smry, not_done = 2L))
+  expect_match(html, "ITSx check: 0 flagged, 3 clean, 1 not checked.", fixed = TRUE)
+  expect_false(grepl("mp-fg-success", html, fixed = TRUE))
+  expect_match(html, "2 contigs left out: checks not finished. Press Update on Annotation Review", fixed = TRUE)
+
+  smry$itsx_check <- ""
+  smry$submission_risk <- c("", "off_target(Actiniaria);contaminant", "", "")
+  expect_false(grepl("mp-fg-success", as.character(RiboPilot:::export_check_summary_ui(smry)), fixed = TRUE))
   smry$submission_risk <- ""
   expect_match(as.character(RiboPilot:::export_check_summary_ui(smry)), "mp-fg-success", fixed = TRUE)
+  # the Export window no longer offers its own ITSx run
+  expect_false(grepl("export_itsx_check", as.character(RiboPilot:::export_modal("g1")), fixed = TRUE))
 })

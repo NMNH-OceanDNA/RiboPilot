@@ -157,10 +157,10 @@ assemble_opts_modal <- function(cur, choices, n) {
       shiny::div(style = "flex:1", shinyjs::disabled(shiny::numericInput("ao_maxpaths",
         "Max paths:", value = cur$max_paths %|NA|% 0, min = 0, width = "100%"))),
       shiny::div(style = "flex:1", shinyjs::disabled(shiny::numericInput("ao_maxscaf",
-        "Max scaffolds:", value = cur$max_scaffolds %|NA|% 0, min = 0, width = "100%")))),
-    opts_help("Scaffolds under the minimum length are dropped from the sample but ",
+        "Max contigs:", value = cur$max_scaffolds %|NA|% 0, min = 0, width = "100%")))),
+    opts_help("Contigs under the minimum length are dropped from the sample but ",
       "kept in the database, so lowering the limit brings them back without ",
-      "re-assembling. Max paths and max scaffolds (counted within one path) are ",
+      "re-assembling. Max paths and max contigs (counted within one path) are ",
       "different: exceeding either fails the whole sample. 0 means no limit.",
       id = "help_ao_limits"),
     update_id = "update_ao")
@@ -247,7 +247,7 @@ blast_opts_modal <- function(cur, choices, n) {
       choices = BLAST_SOURCE_CHOICES, selected = source, width = "100%")),
     opts_help("The bundled database answers in milliseconds; NCBI is far slower, ",
       "rate limited, and needs an internet connection from wherever the pipeline ",
-      "runs. Escalating catches contaminants and off-target scaffolds, the things ",
+      "runs. Escalating catches contaminants and off-target contigs, the things ",
       "a metazoan rDNA database has no record of."),
     shiny::div(id = "bo_entrez_group",
       style = if (reaches_ncbi) NULL else "display:none;",
@@ -255,7 +255,7 @@ blast_opts_modal <- function(cur, choices, n) {
         shiny::tagList("Entrez query", tool_help_icon("blastn")),
         value = cur$entrez_query %|NA|% "", width = "100%", height = "90px")),
       opts_help("NCBI filter, applied to any search that goes to NCBI, including ",
-        "an escalated scaffold. The bundled database cannot use it.")),
+        "an escalated contig. The bundled database cannot use it.")),
     shiny::div(style = "display:flex; gap:2em;",
       shiny::div(style = "flex:2", shinyjs::disabled(shiny::textInput("bo_extra",
         "Extra blastn options:", value = cur$extra_opts %|NA|% "", width = "100%"))),
@@ -277,12 +277,20 @@ annotate_opts_modal <- function(cur, choices, n) {
         value = cur$memory %|NA|% 8, min = 1, width = "100%")))),
     shiny::div(style = "display:flex; gap:2em;",
       shiny::div(style = "flex:1", shinyjs::disabled(shiny::selectInput("no_tool",
-        shiny::tagList("rRNA anchor tool", tool_help_icon("pybarrnap"), tool_help_icon("barrnap")),
+        shiny::tagList("rRNA anchor tool",
+          shiny::span(id = "no_help_pybarrnap", tool_help_icon("pybarrnap")),
+          shiny::span(id = "no_help_barrnap", tool_help_icon("barrnap"))),
         choices = c("pybarrnap", "barrnap"), selected = tool, width = "100%"))),
       shiny::div(style = "flex:1", shinyjs::disabled(shiny::selectInput("no_kingdom", "Kingdom:",
         choices = kingdoms, selected = cur$rrna_kingdom %|NA|% "euk", width = "100%")))),
     opts_help("pybarrnap (default) is a euk-capable barrnap reimplementation. ",
       "Kingdom values differ by tool (pybarrnap: bac/arc/euk/all; barrnap: bac/arc/fun)."),
+    shinyjs::disabled(shiny::textInput("no_pybarrnap", "Extra pybarrnap options:",
+      value = cur$pybarrnap_opts %|NA|% "", width = "100%")),
+    shinyjs::disabled(shiny::textInput("no_barrnap", "Extra barrnap options:",
+      value = cur$barrnap_opts %|NA|% "", width = "100%")),
+    opts_help("Flags for the selected tool only; kingdom and threads are set by the pipeline. ",
+      "The two tools take different flags (see the ? icon next to the tool name)."),
     shiny::div(style = "display:flex; gap:2em;",
       shiny::div(style = "flex:1", shinyjs::disabled(shiny::textInput("no_itsxtaxon",
         shiny::tagList("ITSx profile set (-t)", tool_help_icon("ITSx")),
@@ -350,6 +358,15 @@ opts_handlers <- function(input, output, session, deps) {
     toggle_assembler_fields(input$ao_assembler)
   })
 
+  # show only the selected rRNA caller's flag field
+  toggle_rrna_fields <- function(tool) {
+    for (id in c("no_pybarrnap", "no_help_pybarrnap")) shinyjs::toggle(id = id, condition = !identical(tool, "barrnap"))
+    for (id in c("no_barrnap", "no_help_barrnap")) shinyjs::toggle(id = id, condition = identical(tool, "barrnap"))
+  }
+  shiny::observeEvent(input$no_tool, ignoreInit = TRUE, {
+    toggle_rrna_fields(input$no_tool)
+  })
+
   # sample IDs among `ids` that are locked for this step
   locked_ids <- function(ids, lock_col, tbl) {
     if (length(ids) == 0) return(character(0))
@@ -402,6 +419,9 @@ opts_handlers <- function(input, output, session, deps) {
     if (pfx == "ao") {
       toggle_assembler_fields((cur$assembler[1] %||% "getorganelle") %|NA|% "getorganelle")
     }
+    if (pfx == "no") {
+      toggle_rrna_fields((cur$rrna_tool[1] %||% "pybarrnap") %|NA|% "pybarrnap")
+    }
   }
 
   # register open + edit-toggle + update observers for each opts type
@@ -411,7 +431,8 @@ opts_handlers <- function(input, output, session, deps) {
            "ao_assembler", "ao_bt2", "ao_spades", "ao_seeds", "ao_labels",
            "ao_findrrna"),
     bo = c("bo_run", "bo_source", "bo_entrez", "bo_extra", "bo_mts"),
-    no = c("no_cpus", "no_mem", "no_tool", "no_kingdom", "no_itsxtaxon", "no_itsxopts"),
+    no = c("no_cpus", "no_mem", "no_tool", "no_kingdom", "no_itsxtaxon", "no_itsxopts",
+           "no_barrnap", "no_pybarrnap"),
     co = c("co_ruleset")
   )
   for (pfx in names(specs)) local({
@@ -423,7 +444,7 @@ opts_handlers <- function(input, output, session, deps) {
       what <- if (identical(sp$lock, "annotate_lock")) "annotation" else "assembly"
       if (length(locked) == length(ids)) {
         need_unlocked(locked, "sample", how = if (what == "annotation") {
-          paste("Their annotation is locked. Unlock their units in Annotation Review first;",
+          paste("Their annotation is locked. Unlock their contigs in Annotation Review first;",
             "a sample is listed there only while its assembly is locked")
         } else "Their assembly is locked. Select them on this tab and press Unlock first")
         return()
@@ -546,7 +567,8 @@ opts_row <- function(pfx, nm, input, base) {
     no = data.frame(annotate_opts = nm, cpus = as.integer(input$no_cpus),
       memory = as.integer(input$no_mem), rrna_tool = input$no_tool,
       rrna_kingdom = input$no_kingdom, itsx_taxon = input$no_itsxtaxon %||% "all",
-      itsx_opts = input$no_itsxopts %||% "", stringsAsFactors = FALSE),
+      itsx_opts = input$no_itsxopts %||% "", barrnap_opts = input$no_barrnap %||% "",
+      pybarrnap_opts = input$no_pybarrnap %||% "", stringsAsFactors = FALSE),
     co = data.frame(curate_opts = nm, ruleset = input$co_ruleset, stringsAsFactors = FALSE)
   )
 }
@@ -597,6 +619,11 @@ opts_apply <- function(pfx, sp, input, deps, ids, cur) {
         params = list(nm, id))
       DBI::dbExecute(con, sprintf("UPDATE %s SET %s = 1 WHERE ID = ?", sp$queue_tbl, sp$queue),
         params = list(id))
+      if (sp$queue_tbl == "annotate") {
+        cp <- DBI::dbGetQuery(con, "SELECT path, scaffold FROM review_units WHERE ID = ?",
+          params = list(id))
+        for (i in seq_len(nrow(cp))) review_follow_original(con, id, cp$path[i], cp$scaffold[i])
+      }
     }
   })
   if (!saved) return()

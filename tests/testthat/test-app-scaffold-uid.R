@@ -3,9 +3,18 @@
 # number, so any change to the display order acted on the WRONG scaffold -- and
 # the action on the other end DELETEs that unit's annotation and curation.
 
+# keep/drop is refused on a sample locked in Assemble, so these tests unlock it
+mk_unlocked_project <- function(env = parent.frame()) {
+  dir <- mk_app_project(env)
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE assemble SET assemble_lock = 0")
+  DBI::dbDisconnect(con)
+  dir
+}
+
 test_that("triaging by uid acts on that exact scaffold, whatever the row order", {
   skip_if_not_installed("withr")
-  dir <- mk_app_project()
+  dir <- mk_unlocked_project()
   withr::local_dir(dir)
 
   shiny::testServer(RiboPilot:::app_server, {
@@ -32,9 +41,27 @@ test_that("triaging by uid acts on that exact scaffold, whatever the row order",
   })
 })
 
-test_that("a uid for a unit that does not exist is dropped, not misapplied", {
+test_that("keep or drop is refused while the sample is locked in Assemble", {
   skip_if_not_installed("withr")
   dir <- mk_app_project()
+  withr::local_dir(dir)
+  testthat::local_mocked_bindings(sendSweetAlert = function(...) NULL, .package = "shinyWidgets")
+  con <- RiboPilot:::app_con()
+  DBI::dbExecute(con, "UPDATE assemble SET assemble_lock = 1 WHERE ID = 'S1'")
+  DBI::dbDisconnect(con)
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    sel_id("S1")
+    session$flushReact()
+    session$setInputs(scaf_triage = "S1|2|2|drop")
+    session$flushReact()
+    expect_true(all(RiboPilot:::app_query("SELECT ignore FROM assemblies WHERE ID='S1'")$ignore == 0))
+  })
+})
+
+test_that("a uid for a unit that does not exist is dropped, not misapplied", {
+  skip_if_not_installed("withr")
+  dir <- mk_unlocked_project()
   withr::local_dir(dir)
 
   shiny::testServer(RiboPilot:::app_server, {
@@ -124,7 +151,7 @@ test_that("bulk triage previews before it writes, and applying honours the previ
     expect_match(prev, "Apply would change 4 of 4", fixed = TRUE)
     expect_match(prev, "4 newly dropped", fixed = TRUE)
     expect_match(prev, "Resulting state across 1 sample(s): 4 dropped", fixed = TRUE)
-    expect_match(prev, "NO scaffolds kept")  # the outcome that silently loses a sample
+    expect_match(prev, "NO contigs kept")  # the outcome that silently loses a sample
 
     session$setInputs(triage_apply = 1)
     session$flushReact()
@@ -330,7 +357,7 @@ test_that("clicking a row examines that scaffold in the panels below", {
     session$setInputs(scaf_examine = "S1|2|2")
     session$flushReact()
     expect_equal(sel_hit_unit(), list(path = 2L, scaffold = 2L))
-    expect_match(output$unit_screen$html, "Scaffold p2.s2", fixed = TRUE)
+    expect_match(output$unit_screen$html, "Contig p2.s2", fixed = TRUE)
     expect_equal(output$hl_scaf_cov, "p2.s2")
 
     # keyed on the row's own uid, so display order cannot misdirect it
@@ -441,13 +468,16 @@ test_that("the Annotation Review title always names the unit", {
     m <- RiboPilot:::annotate_modal(...)
     paste(as.character(m), collapse = " ")
   }
-  expect_match(ttl("S1", 2L, 3L), "path 2 / scaffold 3")
-  expect_match(ttl("S1", 1L, 1L), "path 1 / scaffold 1")
+  expect_match(ttl("S1", 2L, 3L), "path 2 / contig 3")
+  expect_match(ttl("S1", 1L, 1L), "path 1 / contig 1")
 })
 
 test_that("a second assembly path is refused from the toolbar and from Lock & Close", {
   skip_if_not_installed("withr")
   dir <- mk_app_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  fixture_mark_done(con)
+  DBI::dbDisconnect(con)
   withr::local_dir(dir)
   locks <- function() RiboPilot:::app_query(
     "SELECT COALESCE(annotate_lock,0) AS lock, reviewed FROM annotate WHERE ID='S1'
@@ -505,6 +535,7 @@ test_that("toolbar marks skip locked units, and a mixed selection sets rather th
   dir <- mk_app_project()
   withr::local_dir(dir)
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  fixture_mark_done(con)
   DBI::dbExecute(con, "UPDATE annotate SET problematic = 'yes' WHERE path = 1 AND scaffold = 2")
   DBI::dbExecute(con, "UPDATE annotate SET annotate_lock = 1 WHERE path = 1 AND scaffold = 1")
   DBI::dbDisconnect(con)
@@ -554,7 +585,7 @@ test_that("a cleared script textarea falls back to a generated submit script", {
     session$flushReact()
   })
 
-  script <- readLines(Sys.glob(file.path(dir, "jobs", "ribopilot_*.sh")))
+  script <- readLines(Sys.glob(file.path(dir, ".runs", "jobs", "pipeline_*.sh")))
   expect_true(any(grepl("nextflow", script, fixed = TRUE)))
 })
 
@@ -570,7 +601,7 @@ test_that("a typed script is saved as typed", {
     session$flushReact()
   })
 
-  expect_true(any(grepl("bigmem", readLines(Sys.glob(file.path(dir, "jobs", "ribopilot_*.sh"))), fixed = TRUE)))
+  expect_true(any(grepl("bigmem", readLines(Sys.glob(file.path(dir, ".runs", "jobs", "pipeline_*.sh"))), fixed = TRUE)))
 })
 
 # The reactable selection reaches the server as this input; setting it is how a
@@ -581,7 +612,7 @@ scaf_tick <- function(session, rows) {
 
 test_that("K on a ticked row applies the verdict to every ticked row", {
   skip_if_not_installed("withr")
-  dir <- mk_app_project()
+  dir <- mk_unlocked_project()
   withr::local_dir(dir)
 
   shiny::testServer(RiboPilot:::app_server, {
@@ -610,7 +641,7 @@ test_that("K on a ticked row applies the verdict to every ticked row", {
 
 test_that("K on an UNTICKED row changes only that row, leaving the ticked ones alone", {
   skip_if_not_installed("withr")
-  dir <- mk_app_project()
+  dir <- mk_unlocked_project()
   withr::local_dir(dir)
 
   shiny::testServer(RiboPilot:::app_server, {
@@ -641,7 +672,7 @@ test_that("K on an UNTICKED row changes only that row, leaving the ticked ones a
 
 test_that("a bulk verdict sets rather than toggles, so a mixed selection lands on one state", {
   skip_if_not_installed("withr")
-  dir <- mk_app_project()
+  dir <- mk_unlocked_project()
   withr::local_dir(dir)
 
   shiny::testServer(RiboPilot:::app_server, {
@@ -674,7 +705,7 @@ test_that("a bulk verdict sets rather than toggles, so a mixed selection lands o
 
 test_that("exactly one ticked row leaves the single-row toggle alone", {
   skip_if_not_installed("withr")
-  dir <- mk_app_project()
+  dir <- mk_unlocked_project()
   withr::local_dir(dir)
 
   shiny::testServer(RiboPilot:::app_server, {
@@ -702,7 +733,7 @@ test_that("exactly one ticked row leaves the single-row toggle alone", {
 
 test_that("a bulk drop refuses annotation-locked units and still drops the rest", {
   skip_if_not_installed("withr")
-  dir <- mk_app_project()
+  dir <- mk_unlocked_project()
   withr::local_dir(dir)
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
   DBI::dbExecute(con, "UPDATE annotate SET annotate_lock = 1 WHERE path = 1 AND scaffold = 1")
@@ -729,21 +760,35 @@ test_that("a bulk drop refuses annotation-locked units and still drops the rest"
 })
 
 test_that("ITSx warnings reach the annotate rows, the scaffold view, and the sample roll-up", {
+  skip_if_not_installed("withr")
   dir <- mk_app_project()
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
   DBI::dbExecute(con, "UPDATE annotate SET itsx_warnings = 'itsx_chimeric' WHERE path = 1 AND scaffold = 1")
   DBI::dbExecute(con, "UPDATE annotate SET itsx_warnings = '' WHERE path = 1 AND scaffold = 2")
   DBI::dbDisconnect(con)
-  local_mocked_bindings(app_project = function() dir, .package = "RiboPilot")
+  withr::local_dir(dir)
   ev <- RiboPilot:::unit_evidence("S1")
   expect_equal(ev$itsx_warnings[ev$path == 1 & ev$scaffold == 1], "itsx_chimeric")
-  roll <- RiboPilot:::app_query(
-    "SELECT (SELECT CASE WHEN COUNT(x.itsx_warnings) = 0 THEN NULL ELSE
-        SUM(CASE WHEN COALESCE(x.itsx_warnings,'') <> ''
-                 AND x.itsx_warnings NOT LIKE 'not_run(%' THEN 1 ELSE 0 END)
-        || ' of ' || COUNT(x.itsx_warnings) || ' units' END
-      FROM annotate x WHERE x.ID = s.ID) AS itsx_warnings FROM samples s")
-  expect_equal(roll$itsx_warnings, "1 of 2 units")   # two checked, two not yet
+  set <- function(sql) { c2 <- RiboPilot:::app_con(); DBI::dbExecute(c2, sql); DBI::dbDisconnect(c2) }
+  js <- as.character(RiboPilot:::rt_itsx_badge())
+  clean <- regmatches(js, regexpr("\\^0 of [^/]+\\$", js))
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    roll <- function(k) { session$setInputs(refresh = k); all_rows()$itsx_warnings }
+    expect_equal(roll(1), "1 of 4 contigs, 2 not checked")
+    set("UPDATE annotate SET itsx_warnings = 'not_run(ITSx did not finish)' WHERE path = 2 AND scaffold = 1")
+    set("UPDATE annotate SET itsx_warnings = '' WHERE path = 2 AND scaffold = 2")
+    expect_equal(roll(2), "1 of 4 contigs, 1 not checked")
+    set("UPDATE annotate SET itsx_warnings = '' WHERE path = 1 AND scaffold = 1")
+    expect_equal(roll(3), "0 of 4 contigs, 1 not checked")
+    expect_false(grepl(clean, roll(4)))
+    # a dropped contig does not count
+    set("UPDATE assemblies SET ignore = 1 WHERE path = 2 AND scaffold = 1")
+    expect_equal(roll(5), "0 of 3 contigs")
+    expect_true(grepl(clean, roll(6)))
+    set("UPDATE annotate SET itsx_warnings = NULL")
+    expect_true(is.na(roll(7)))
+  })
 })
 
 test_that("Download selected rows writes only the ticked visible rows", {

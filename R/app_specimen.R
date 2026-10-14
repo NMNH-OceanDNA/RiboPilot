@@ -1,0 +1,551 @@
+#' Specimen metadata state per sample: worst of fetch status and conflicts
+#'
+#' @param con database connection
+#' @return data.frame `ID`, `specimen` ("ok" | "failed" | "conflict" | "none"),
+#'   `specimen_message` (tooltip text, one line per source then conflicts and not-checked items),
+#'   `specimen_icons` (e.g. "GEOME:ok GBIF:failed conflict"; per-source ok | failed | pending)
+#' @noRd
+specimen_status <- function(con) {
+  cols <- vapply(META_SOURCES, function(s) s$col, character(1))
+  s <- DBI::dbGetQuery(con, paste0("SELECT ID, ", paste(cols, collapse = ", "), " FROM samples"))
+  st <- DBI::dbGetQuery(con, "SELECT ID, source, status, message FROM meta_status")
+  ln <- DBI::dbGetQuery(con, "SELECT ID, source, via FROM meta_links WHERE ref IS NOT NULL")
+  cf <- specimen_conflicts(con)
+  state <- msg <- icons <- character(nrow(s))
+  for (i in seq_len(nrow(s))) {
+    id <- s$ID[i]
+    lines <- states <- ic <- character()
+    for (src in names(META_SOURCES)) {
+      ref <- s[[META_SOURCES[[src]]$col]][i]
+      r <- st[st$ID == id & st$source == src, , drop = FALSE]
+      if (nrow(r)) {
+        states <- c(states, r$status[1])
+        ic <- c(ic, paste0(src, ":", r$status[1]))
+        via <- ln$via[ln$ID == id & ln$source == src]
+        lines <- c(lines, paste0(if (r$status[1] == "ok") paste0(src, ": fetched") else
+          paste0(src, ": failed (", r$message[1] %|NA|% "unknown error", ")"),
+          if (length(via)) paste0(" (linked from ", via[1], ")")))
+      } else if (!is.na(ref) && nzchar(ref)) {
+        lines <- c(lines, paste0(src, ": not fetched yet"))
+        ic <- c(ic, paste0(src, ":pending"))
+      }
+    }
+    k <- cf[cf$ID == id, , drop = FALSE]
+    conf <- k$concept[k$status %in% "conflict"]
+    unchecked <- k$concept[k$status %in% "not checked"]
+    if (length(conf)) lines <- c(lines, paste("Conflicts:", paste(conf, collapse = ", ")))
+    if (length(unchecked)) lines <- c(lines, paste("Not checked:", paste(unchecked, collapse = ", ")))
+    state[i] <- if ("failed" %in% states) "failed" else if (length(conf)) "conflict" else
+      if ("ok" %in% states) "ok" else "none"
+    icons[i] <- paste(c(ic, if (length(conf)) "conflict"), collapse = " ")
+    msg[i] <- if (length(lines)) paste(lines, collapse = "\n") else "No GEOME, GBIF, or NCBI ID"
+  }
+  data.frame(ID = s$ID, specimen = state, specimen_message = msg, specimen_icons = icons)
+}
+
+#' Left-join specimen status onto a collected, ID-keyed data frame
+#'
+#' @param df data frame with an `ID` column
+#' @param con database connection
+#' @noRd
+.specimen_status_join <- function(df, con) {
+  df$ID <- as.character(df$ID)
+  out <- dplyr::left_join(df, specimen_status(con), by = "ID")
+  out$specimen[is.na(out$specimen)] <- "none"
+  out
+}
+
+#' reactable cell renderer for the Metadata column
+#'
+#' @param inputId namespaced Shiny input id to receive the clicked row's ID
+#' @noRd
+rt_specimen <- function(inputId) {
+  sprintf(
+    "function(cellInfo) {
+      var row = cellInfo.row || {};
+      var esc = function(s) { return String(s).replace(/&/g, '&amp;').replace(/'/g, '&#39;')
+        .replace(/\"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); };
+      var codes = String(row['specimen_icons'] || '').split(' ').filter(Boolean);
+      var logos = {GEOME: 'www/specimen/geome_g.png', GBIF: 'www/specimen/gbif_leaf.png',
+                   NCBI: 'www/specimen/ncbi_helix.png'};
+      var html = '';
+      codes.forEach(function(c) {
+        if (c === 'conflict') {
+          html += `<i class='fa-solid fa-flag mp-fg-warning mp-spec-icon' aria-hidden='true'></i>`;
+          return;
+        }
+        var p = c.split(':'), src = p[0], st = p[1];
+        if (!logos[src]) return;
+        html += `<span class='mp-spec-logo${st === 'ok' ? '' : ' mp-spec-faded'}'>` +
+          `<img src='${logos[src]}' alt='' class='mp-spec-icon'>` +
+          (st === 'failed' ? `<i class='fa-solid fa-triangle-exclamation mp-fg-warning mp-spec-badge' aria-hidden='true'></i>` : '') +
+          `</span>`;
+      });
+      var none = html === '';
+      if (none) html = `<i class='fa-regular fa-square-plus text-muted' aria-hidden='true'></i>`;
+      var tip = (row['specimen_message'] || 'No GEOME, GBIF, or NCBI ID') +
+        (none ? '. Click to add one.' : '\\nClick to view.');
+      return `<a href='#' class='mp-specimen-cell' data-id='${esc(row['ID'])}' title='${esc(tip)}' aria-label='${esc(tip)}' ` +
+        `onclick=\"event.preventDefault(); event.stopPropagation(); Shiny.setInputValue('%s', this.dataset.id, {priority: 'event'})\">` +
+        html + `</a>`;
+    }",
+    inputId
+  ) |>
+    htmlwidgets::JS()
+}
+
+#' Shared colDef for the Metadata column
+#'
+#' @param inputId namespaced Shiny input id to receive the clicked row's ID
+#' @param sticky "left" pins it as the last left-pinned column, with the edge shadow
+#' @noRd
+specimen_col_def <- function(inputId, sticky = NULL) {
+  edge <- if (identical(sticky, "left")) "mp-sticky-edge-left"
+  reactable::colDef(
+    show = TRUE, name = "Metadata", sticky = sticky, width = 90, align = "center",
+    html = TRUE, filterable = FALSE, sortable = TRUE, class = edge, headerClass = edge,
+    header = rt_header("Metadata", paste(
+      "GEOME, GBIF, and NCBI metadata for this sample. Click an icon to view, add,",
+      "compare, or refresh.")),
+    cell = rt_specimen(inputId)
+  )
+}
+
+#' Render one sample's records from one source as level cards
+#'
+#' GEOME levels run root first; GBIF runs Occurrence, Dataset, Organization;
+#' NCBI runs SRA, BioSample, BioProject.
+#'
+#' @param recs `meta_records` rows for one sample and source (level, depth, ref, field, value)
+#' @param source "GEOME", "GBIF", or "NCBI"
+#' @param box_id DOM id of the scroll box holding the cards
+#' @noRd
+meta_record_view <- function(recs, source, box_id) {
+  if (!nrow(recs)) return(p(class = "text-muted", paste("No", source, "data stored for this sample yet.")))
+  toggle <- function(label, open) {
+    tags$button(
+      type = "button", class = "btn btn-default btn-sm", label,
+      onclick = sprintf("document.querySelectorAll('#%s details').forEach(function(d) { d.open = %s; });",
+                        box_id, tolower(open))
+    )
+  }
+  link <- function(level, ref) {
+    if (is.na(ref)) return(NULL)
+    if (source == "GEOME") return(paste0("https://geome-db.org/record/", ref))
+    if (source == "NCBI") {
+      return(switch(level,
+        SRA = paste0("https://www.ncbi.nlm.nih.gov/sra/", ref),
+        BioSample = paste0("https://www.ncbi.nlm.nih.gov/biosample/", ref),
+        BioProject = paste0("https://www.ncbi.nlm.nih.gov/bioproject/", ref),
+        NULL))
+    }
+    switch(level,
+      Occurrence = paste0("https://www.gbif.org/occurrence/", ref),
+      Dataset = paste0("https://www.gbif.org/dataset/", ref),
+      Organization = paste0("https://www.gbif.org/publisher/", ref),
+      NULL)
+  }
+  cell <- function(field, value) {
+    if (field != "issues") return(value)
+    lapply(strsplit(value, ",", fixed = TRUE)[[1]], function(x) {
+      tagList(span(class = "mp-pill mp-pill-warning", x), " ")
+    })
+  }
+  ord <- if (source == "GEOME") -recs$depth else recs$depth
+  lv <- unique(recs[order(ord), c("level", "depth", "ref")])
+  lv <- lv[!duplicated(lv$depth), ]
+  cards <- lapply(seq_len(nrow(lv)), function(i) {
+    r <- recs[recs$depth == lv$depth[i], ]
+    url <- link(lv$level[i], lv$ref[i])
+    cit <- r$value[r$field == "citation"]
+    tags$details(
+      open = NA, class = "mp-meta-level",
+      tags$summary(
+        strong(lv$level[i]),
+        if (!is.null(url)) tagList(" ", tags$a(href = url, target = "_blank", rel = "noopener", lv$ref[i]))
+      ),
+      if (length(cit)) p(class = "mp-meta-citation", em(cit[1])),
+      tags$table(class = "table table-sm",
+        tags$tbody(lapply(seq_len(nrow(r)), function(j) {
+          tags$tr(tags$th(r$field[j]), tags$td(cell(r$field[j], r$value[j]), meta_copy_btn(r$value[j])))
+        }))
+      )
+    )
+  })
+  tagList(
+    div(style = "margin-bottom: 6px;", toggle("Expand all", TRUE), " ", toggle("Collapse all", FALSE)),
+    div(id = box_id, style = "max-height: 50vh; overflow-y: auto;", cards)
+  )
+}
+
+#' Small button that copies one value to the clipboard
+#' @noRd
+meta_copy_btn <- function(value) {
+  tags$button(
+    type = "button", class = "btn btn-link btn-xs mp-meta-copy", `data-v` = value,
+    title = "Copy value", `aria-label` = "Copy value",
+    onclick = paste0(
+      "navigator.clipboard.writeText(this.dataset.v); var i = this.querySelector('i');",
+      "i.className = 'fa-solid fa-check'; setTimeout(function() { i.className = 'fa-regular fa-copy'; }, 1000);"),
+    icon("copy", class = "fa-regular")
+  )
+}
+
+#' One sample's metadata as long rows: mapping-file columns, then every fetched record
+#' @noRd
+sample_metadata_long <- function(con, id) {
+  s <- DBI::dbGetQuery(con, "SELECT * FROM samples WHERE ID = ?", params = list(id))
+  cols <- c("Taxon", export_metadata_cols(names(s), character()))
+  m <- data.frame(source = "Mapping file", level = NA_character_, ref = NA_character_,
+                  field = cols, value = vapply(cols, function(k) as.character(s[[k]][1]), ""))
+  recs <- DBI::dbGetQuery(con, "SELECT source, level, ref, field, value FROM meta_records
+                                WHERE ID = ? ORDER BY source, depth", params = list(id))
+  cbind(ID = id, rbind(m, recs), row.names = NULL)
+}
+
+#' Compare tab table: one row per concept across the CSV and every source
+#'
+#' @param cf `specimen_conflicts()` rows for one sample
+#' @noRd
+specimen_compare_view <- function(cf) {
+  if (!nrow(cf)) return(p(class = "text-muted", "No sample selected."))
+  dash <- function(x) if (!length(x) || is.na(x)) "-" else x
+  tags$table(
+    class = "table table-sm mp-spec-compare",
+    tags$thead(tags$tr(tags$th("Item"), tags$th("Mapping file (column)"),
+                       lapply(names(META_SOURCES), tags$th), tags$th("Status"))),
+    tags$tbody(lapply(seq_len(nrow(cf)), function(i) {
+      r <- cf[i, ]
+      cls <- if (identical(r$status, "conflict")) "mp-spec-conflict" else
+        if (identical(r$status, "not checked")) "text-muted" else NULL
+      tags$tr(
+        class = cls,
+        tags$td(r$concept),
+        tags$td(dash(r$csv_value),
+                if (!is.na(r$csv_column)) span(class = "text-muted", paste0(" (", r$csv_column, ")"))),
+        lapply(names(META_SOURCES), function(s) tags$td(dash(r[[paste0(tolower(s), "_value")]]))),
+        tags$td(dash(r$status))
+      )
+    }))
+  )
+}
+
+#' "Mapping file columns..." control: pick the mapping-file column per concept
+#'
+#' @param ns module namespace function
+#' @param current `specimen_csv_columns()` result
+#' @param overrides named character vector from `meta_csv_map` (concept -> column(s))
+#' @param choices mapping-file column names
+#' @noRd
+specimen_csv_map_ui <- function(ns, current, overrides, choices) {
+  concepts <- setdiff(SPECIMEN_CONCEPTS, "taxon")
+  tags$details(
+    class = "mp-spec-map",
+    tags$summary("Mapping file columns..."),
+    opts_help(
+      "Pick the mapping-file column RiboPilot compares for each item. Leave a ",
+      "box empty to detect the column automatically, or pick (none) to skip ",
+      "that item. Coordinates take one combined column, or latitude then longitude.",
+      nested = TRUE
+    ),
+    lapply(concepts, function(k) {
+      set <- k %in% names(overrides)
+      sel <- if (!set) character() else if (nzchar(overrides[[k]])) {
+        strsplit(overrides[[k]], ",", fixed = TRUE)[[1]]
+      } else {
+        "__none__"
+      }
+      auto <- if (length(current[[k]])) paste(current[[k]], collapse = " + ") else "none"
+      selectizeInput(
+        ns(paste0("map_", k)),
+        label = if (set) k else paste0(k, " (auto: ", auto, ")"),
+        choices = c("(none)" = "__none__", choices), selected = sel,
+        multiple = TRUE, width = "100%",
+        options = list(maxItems = if (k == "coordinates") 2 else 1,
+                       placeholder = "detect automatically")
+      )
+    }),
+    actionButton(ns("map_save"), "Save columns")
+  )
+}
+
+#' Specimen metadata viewer: GEOME, GBIF, NCBI, and Compare tabs
+#'
+#' @param id module id
+#' @param open reactive yielding the sample ID to open (from a `specimen_open` input)
+#' @param on_change function called after any DB write, so the caller can refresh its table
+#' @param on_back optional function for a footer button that returns to the caller's modal
+#' @param back_label label for that button
+#' @param con function returning a fresh project database connection
+#' @noRd
+specimen_viewer_server <- function(id, open, on_change = function() NULL, con = app_con,
+                                   on_back = NULL, back_label = "Back") {
+  moduleServer(id, function(input, output, session) {
+    ns <- session$ns
+    open_con <- con
+    rv <- reactiveValues(id = NULL, ver = 0L)
+    bump <- function() { rv$ver <- rv$ver + 1L; on_change() }
+    empty_msg <- list(
+      GEOME = paste("This sample has no GEOME BCID. Paste one above and click Fetch, or add a",
+                    "GEOME_BCID column to your mapping file and load it into the project with",
+                    "update_sample_metadata() (see the Sample Metadata article)."),
+      GBIF = paste("This sample has no GBIF ID. Paste a gbifID, a gbif.org/occurrence link, or an NMNH EZID above",
+                   "and click Fetch, or add a GBIF_ID column to your mapping file and load it into",
+                   "the project with update_sample_metadata() (see the Sample Metadata article)."),
+      NCBI = paste("This sample has no BioSample. Paste a BioSample (SAMN...) or SRA accession",
+                   "(SRR..., SRX..., SRS...) above and click Fetch, or add a BioSample column to your",
+                   "mapping file and load it into the project with update_sample_metadata() (see the",
+                   "Sample Metadata article).")
+    )
+
+    samples <- function() {
+      con <- open_con(); on.exit(DBI::dbDisconnect(con))
+      DBI::dbGetQuery(con, paste0("SELECT ID, Taxon, ",
+        paste(vapply(META_SOURCES, function(s) s$col, ""), collapse = ", "), " FROM samples ORDER BY ID"))
+    }
+
+    observeEvent(open(), {
+      con <- open_con(); on.exit(DBI::dbDisconnect(con))
+      rv$id <- open()
+      s <- samples()
+      st <- specimen_status(con)
+      mark <- st$specimen[match(s$ID, st$ID)]
+      lab <- paste0(s$ID, ifelse(mark %in% "failed", " (failed)",
+                                 ifelse(mark %in% "conflict", " (conflict)", "")))
+      modalDialog(
+        title = mp_modal_title(
+          tagList("Sample metadata: ", textOutput(ns("hdr_id"), inline = TRUE)),
+          subtitle = tagList("Taxon: ", textOutput(ns("hdr_taxon"), inline = TRUE)),
+          close = is.null(on_back)
+        ),
+        size = "l", easyClose = is.null(on_back),
+        fluidRow(
+          column(3,
+            selectInput(ns("sample"), "Sample", choices = stats::setNames(s$ID, lab),
+                        selected = rv$id, width = "100%", selectize = FALSE, size = 15),
+            uiOutput(ns("failed")),
+            tags$details(
+              class = "mp-spec-remove",
+              tags$summary("Remove fetched data..."),
+              checkboxGroupInput(ns("remove_sources"), NULL, choices = names(META_SOURCES),
+                                 selected = names(META_SOURCES), inline = TRUE),
+              radioButtons(ns("remove_scope"), NULL, c("This sample" = "sample", "All samples" = "all")),
+              p(class = "text-muted", "Mapping-file columns and the IDs you entered are kept.",
+                "You can fetch again at any time."),
+              actionButton(ns("remove_go"), "Remove", class = "btn-danger btn-sm")
+            )
+          ),
+          column(9, class = "mp-spec-tabs",
+            tags$input(type = "search", id = ns("field_filter"),
+                       class = "form-control input-sm mp-spec-filter",
+                       placeholder = "Filter field names", `aria-label` = "Filter field names",
+                       oninput = "mpSpecFilter(this.value)"),
+            tabsetPanel(id = ns("tab"),
+              tabPanel("GEOME", uiOutput(ns("geome_detail"))),
+              tabPanel("GBIF", uiOutput(ns("gbif_detail"))),
+              tabPanel("NCBI", uiOutput(ns("ncbi_detail"))),
+              tabPanel("Compare", uiOutput(ns("compare")))),
+            tags$script(HTML(sprintf(
+              "window.mpSpecFilter = function(q) {
+                 q = (q || '').trim().toLowerCase();
+                 document.querySelectorAll('.modal .mp-meta-level').forEach(function(d) {
+                   var n = 0;
+                   d.querySelectorAll('tr').forEach(function(tr) {
+                     var th = tr.querySelector('th');
+                     var ok = !q || (th && th.textContent.toLowerCase().indexOf(q) >= 0);
+                     tr.style.display = ok ? '' : 'none';
+                     if (ok) n++;
+                   });
+                   d.style.display = n ? '' : 'none';
+                   if (q && n) d.open = true;
+                 });
+               };
+               $(document).off('shiny:value.mpspec').on('shiny:value.mpspec', function(e) {
+                 if (/_detail$/.test(e.name)) setTimeout(function() {
+                   var el = document.getElementById('%s');
+                   if (el) mpSpecFilter(el.value);
+                 }, 0);
+               });", ns("field_filter"))))
+          )
+        ),
+        footer = mp_footer(
+          extra = tagList(
+            downloadButton(ns("csv"), "Export CSV", class = "btn-default",
+                           title = "Save every metadata field for this sample as a CSV file"),
+            actionButton(ns("refresh_all"), "Refresh all",
+                         title = "Fetch every sample's GEOME, GBIF, and NCBI records again")
+          ),
+          primary = if (!is.null(on_back)) actionButton(ns("back"), back_label, icon = icon("arrow-left")),
+          dismiss = if (is.null(on_back)) "Close"
+        )
+      ) |> showModal()
+    })
+
+    observeEvent(input$sample, rv$id <- input$sample, ignoreInit = TRUE)
+    if (!is.null(on_back)) observeEvent(input$back, on_back())
+    output$csv <- downloadHandler(
+      filename = function() paste0(rv$id, "_metadata.csv"),
+      content = function(file) {
+        con <- open_con(); on.exit(DBI::dbDisconnect(con))
+        utils::write.csv(sample_metadata_long(con, rv$id), file, row.names = FALSE, na = "")
+      }
+    )
+
+    output$hdr_id <- renderText(rv$id)
+    output$hdr_taxon <- renderText({
+      req(rv$id)
+      s <- samples()
+      s$Taxon[s$ID == rv$id] %|NA|% "NA"
+    })
+
+    output$failed <- renderUI({
+      con <- open_con(); on.exit(DBI::dbDisconnect(con))
+      rv$ver
+      st <- specimen_status(con)
+      bad <- st$ID[st$specimen == "failed"]
+      if (!length(bad)) return(NULL)
+      div(class = "mp-fg-warning", icon("triangle-exclamation"), " Failed: ",
+          paste(bad, collapse = ", "))
+    })
+
+    source_detail <- function(source) {
+      con <- open_con(); on.exit(DBI::dbDisconnect(con))
+      rv$ver
+      req(rv$id)
+      src <- META_SOURCES[[source]]
+      key <- tolower(source)
+      ref <- DBI::dbGetQuery(con, paste0("SELECT ", src$col, " AS v FROM samples WHERE ID = ?"),
+                             params = list(rv$id))$v
+      ref <- if (length(ref)) ref[1] else NA_character_
+      st <- DBI::dbGetQuery(con, "SELECT status, message, fetched_at FROM meta_status
+                                  WHERE ID = ? AND source = ?", params = list(rv$id, source))
+      recs <- DBI::dbGetQuery(con, "SELECT level, depth, ref, field, value FROM meta_records
+                                    WHERE ID = ? AND source = ?", params = list(rv$id, source))
+      ln <- DBI::dbGetQuery(con, "SELECT ref, via, note FROM meta_links WHERE ID = ? AND source = ?",
+                            params = list(rv$id, source))
+      tagList(
+        div(class = "mp-meta-ref",
+          textInput(ns(paste0(key, "_ref")), paste(source, src$id_label), value = ref %|NA|% "",
+                    placeholder = switch(source, GEOME = "ark:/21547/...", GBIF = "6186461308",
+                                         NCBI = "SAMN29555051 or SRR21844202"),
+                    width = "420px"),
+          actionButton(ns(paste0(key, "_fetch")), "Fetch", icon = icon("arrows-rotate")),
+          div(class = "mp-spec-link",
+              title = paste("When a fetched record names a record in another database, add and fetch",
+                            "it too (only for samples without an ID there)"),
+              checkboxInput(ns(paste0(key, "_link")), "Follow links between databases",
+                            value = .meta_link_enabled(con)))
+        ),
+        if (nrow(st)) p(class = if (st$status == "failed") "mp-fg-warning" else "text-muted",
+          if (st$status == "failed") paste("Last fetch failed:", st$message) else "Fetched",
+          " ", format(as.POSIXct(st$fetched_at, origin = "1970-01-01"), "%Y-%m-%d %H:%M")),
+        if (nrow(ln) && !is.na(ln$ref[1])) p(class = "text-muted", paste("Found through", ln$via[1])),
+        if (nrow(ln) && !is.na(ln$note[1])) p(class = "mp-fg-warning", ln$note[1]),
+        if (is.na(ref) && !nrow(recs)) p(class = "text-muted", empty_msg[[source]]),
+        meta_record_view(recs, source, box_id = ns(paste0(key, "_records")))
+      )
+    }
+    output$geome_detail <- renderUI(source_detail("GEOME"))
+    output$gbif_detail <- renderUI(source_detail("GBIF"))
+    output$ncbi_detail <- renderUI(source_detail("NCBI"))
+
+    output$compare <- renderUI({
+      con <- open_con(); on.exit(DBI::dbDisconnect(con))
+      rv$ver
+      req(rv$id)
+      m <- DBI::dbGetQuery(con, "SELECT concept, column FROM meta_csv_map")
+      tagList(
+        specimen_compare_view(specimen_conflicts(con, rv$id)),
+        specimen_csv_map_ui(ns, specimen_csv_columns(con), stats::setNames(m$column, m$concept),
+                            export_metadata_cols(DBI::dbListFields(con, "samples"), character()))
+      )
+    })
+
+    fetch_one <- function(source) {
+      con <- open_con(); on.exit(DBI::dbDisconnect(con))
+      req(rv$id)
+      ref <- input[[paste0(tolower(source), "_ref")]]
+      tryCatch({
+        val <- .meta_set_ref(con, source, rv$id, ref)
+        if (!is.na(val)) {
+          withProgress(message = paste("Fetching from", source), {
+            res <- suppressWarnings(.meta_fetch_into(con, source, rv$id, val, link = .meta_link_enabled(con),
+              verbose = FALSE))
+          })
+          if (res$status == "failed") showNotification(res$message, type = "warning")
+        }
+        bump()
+      }, error = function(e) showNotification(conditionMessage(e), type = "error"))
+    }
+    observeEvent(input$geome_fetch, fetch_one("GEOME"))
+    observeEvent(input$gbif_fetch, fetch_one("GBIF"))
+    observeEvent(input$ncbi_fetch, fetch_one("NCBI"))
+
+    link_keys <- tolower(names(META_SOURCES))
+    lapply(link_keys, function(k) observeEvent(input[[paste0(k, "_link")]], {
+      con <- open_con(); on.exit(DBI::dbDisconnect(con))
+      v <- input[[paste0(k, "_link")]]
+      if (identical(v, .meta_link_enabled(con))) return()
+      .meta_set_link_enabled(con, v)
+      for (o in setdiff(link_keys, k)) updateCheckboxInput(session, paste0(o, "_link"), value = v)
+    }))
+
+    observeEvent(input$remove_go, {
+      con <- open_con(); on.exit(DBI::dbDisconnect(con))
+      srcs <- input$remove_sources
+      if (!length(srcs)) return(showNotification("Tick at least one source to remove", type = "message"))
+      one <- identical(input$remove_scope, "sample")
+      req(!one || !is.null(rv$id))
+      tryCatch({
+        .meta_remove(con, srcs, if (one) rv$id)
+        bump()
+        showNotification(paste0("Removed ", paste(srcs, collapse = ", "), " data for ",
+                                if (one) rv$id else "all samples"), type = "message")
+      }, error = function(e) showNotification(conditionMessage(e), type = "error"))
+    })
+
+    observeEvent(input$map_save, {
+      con <- open_con(); on.exit(DBI::dbDisconnect(con))
+      concepts <- setdiff(SPECIMEN_CONCEPTS, "taxon")
+      map <- lapply(stats::setNames(nm = concepts), function(k) {
+        v <- input[[paste0("map_", k)]]
+        if (!length(v)) NA_character_ else if ("__none__" %in% v) "" else v
+      })
+      tryCatch({
+        .spec_set_csv_map(con, map)
+        bump()
+        showNotification("Mapping file columns saved", type = "message")
+      }, error = function(e) showNotification(conditionMessage(e), type = "error"))
+    })
+
+    observeEvent(input$refresh_all, {
+      con <- open_con(); on.exit(DBI::dbDisconnect(con))
+      s <- samples()
+      jobs <- do.call(rbind, lapply(names(META_SOURCES), function(src) {
+        ref <- s[[META_SOURCES[[src]]$col]]
+        keep <- !is.na(ref) & nzchar(ref)
+        data.frame(ID = s$ID[keep], source = rep(src, sum(keep)), ref = ref[keep])
+      }))
+      if (!nrow(jobs)) {
+        return(showNotification("No samples have a GEOME, GBIF, or NCBI ID", type = "message"))
+      }
+      caches <- lapply(META_SOURCES, function(x) new.env())
+      tryCatch({
+        withProgress(message = "Fetching specimen records", value = 0, {
+          for (i in seq_len(nrow(jobs))) {
+            suppressWarnings(.meta_fetch_into(con, jobs$source[i], jobs$ID[i], jobs$ref[i],
+                                              caches[[jobs$source[i]]], verbose = FALSE))
+            incProgress(1 / nrow(jobs), detail = paste(jobs$ID[i], jobs$source[i]))
+          }
+          if (.meta_link_enabled(con)) {
+            for (id in unique(jobs$ID)) {
+              incProgress(0, detail = paste(id, "following links"))
+              tryCatch(.meta_link_sample(con, id, caches), error = function(e) NULL)
+            }
+          }
+        })
+        bump()
+      }, error = function(e) showNotification(conditionMessage(e), type = "error"))
+    })
+  })
+}

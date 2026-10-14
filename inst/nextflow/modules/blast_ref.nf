@@ -14,6 +14,8 @@ process blast_ref_fetch {
     tag "${id}"
     errorStrategy { task.attempt <= 3 ? 'retry' : 'ignore' }
     maxRetries 3
+    // talks to NCBI; unthrottled, the host gets rate-limited
+    maxForks 3
     cpus 4
 
     input:

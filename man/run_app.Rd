@@ -3,7 +3,7 @@
 \name{run_app}
 \alias{run_app}
 \alias{RiboPilot}
-\title{Run the RiboPilot Shiny application}
+\title{Open the RiboPilot app}
 \usage{
 run_app(
   project = getwd(),

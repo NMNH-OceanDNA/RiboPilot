@@ -46,6 +46,46 @@ test_that("re-suggesting keeps a built group's database and state", {
   expect_equal(r$seeds_db[1], "s.fa")
 })
 
+test_that("re-suggesting after a folder change follows the new folder", {
+  con <- mk_ref_db(); on.exit(DBI::dbDisconnect(con))
+  a <- tempfile(); b <- tempfile(); on.exit(unlink(c(a, b), recursive = TRUE), add = TRUE)
+  mk <- function(d) {
+    p <- RiboPilot:::reference_db_paths(d, "asteroidea")
+    for (f in c(p$seeds, p$labels)) {
+      dir.create(dirname(f), recursive = TRUE, showWarnings = FALSE)
+      writeLines(c(">x", "ACGT"), f)
+    }
+    p
+  }
+  pa <- mk(a); pb <- mk(b)
+  RiboPilot:::set_ref_config(con, ref_dir = a)
+  RiboPilot:::write_reference_groups(con, grp, mem)
+  RiboPilot:::wire_reference_db(con, "asteroidea", pa$seeds, pa$labels)
+  RiboPilot:::set_ref_config(con, ref_dir = b)
+  RiboPilot:::write_reference_groups(con, grp, mem)
+  r <- DBI::dbGetQuery(con, "SELECT * FROM reference")
+  expect_equal(r$reference_switch[1], 2L)
+  expect_equal(r$seeds_db[1], pb$seeds)
+  expect_equal(DBI::dbGetQuery(con,
+    "SELECT seeds_db FROM assemble_opts WHERE assemble_opts = 'asteroidea'")$seeds_db, pb$seeds)
+  # a new folder without the clade's database sends the group back to needing one
+  RiboPilot:::set_ref_config(con, ref_dir = tempfile())
+  RiboPilot:::write_reference_groups(con, grp, mem)
+  r <- DBI::dbGetQuery(con, "SELECT * FROM reference")
+  expect_equal(r$reference_switch[1], 1L)
+  expect_true(is.na(r$seeds_db[1]))
+})
+
+test_that("re-suggesting keeps a hand-picked database outside the folder layout", {
+  con <- mk_ref_db(); on.exit(DBI::dbDisconnect(con))
+  RiboPilot:::set_ref_config(con, ref_dir = tempfile())
+  RiboPilot:::write_reference_groups(con, grp, mem)
+  RiboPilot:::wire_reference_db(con, "asteroidea", "/mine/stars.fa", "/mine/stars_l.fa",
+    source = "existing")
+  RiboPilot:::write_reference_groups(con, grp, mem)
+  expect_equal(DBI::dbGetQuery(con, "SELECT seeds_db FROM reference")$seeds_db, "/mine/stars.fa")
+})
+
 test_that("re-suggesting resets a group whose clade changed", {
   con <- mk_ref_db(); on.exit(DBI::dbDisconnect(con))
   RiboPilot:::write_reference_groups(con, grp, mem)

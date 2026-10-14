@@ -28,7 +28,8 @@ local_fake_pipeline_tools <- function(env = parent.frame()) {
     ITSx = c(
       'while [ $# -gt 0 ]; do case "$1" in -i) in=$2; shift;; -o) out=$2; shift;; esac; shift; done',
       paste0('awk -v OFS="\\t" \'/^>/ {print substr($1, 2), "6310 bp.", "SSU: 351-2150", "ITS1: 2151-2650",',
-        ' "5.8S: 2651-2807", "ITS2: 2808-3990", "LSU: 3991-6310", ""}\' "$in" > "$out.positions.txt"')),
+        ' "5.8S: 2651-2807", "ITS2: 2808-3990", "LSU: 3991-6310", ""}\' "$in" > "$out.positions.txt"'),
+      'echo "ITSx run finished at $(date)." > "$out.summary.txt"'),
     blastn = c(
       'case " $* " in',
       paste0('  *" -remote "*) printf "FAKE0001.1\\tUpeneus parvus 18S ribosomal RNA gene, partial sequence;',

@@ -33,7 +33,7 @@ mk_export_project <- function(env = parent.frame()) {
   DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',1,1,'linear',600,?,0,'Danio rerio','A1',99,88,'core_nt')",
     params = list(paste(rep("ACGT", 150), collapse = "")))
   # annotation-locked, so the unit is exportable
-  DBI::dbExecute(con, "INSERT INTO annotate VALUES('S1',1,1,2,1,'default','default','yes','no','no',3,'',0,NULL,NULL,NULL,1)")
+  DBI::dbExecute(con, "INSERT INTO annotate VALUES('S1',1,1,2,1,'default','default','yes','no','no',3,'',0,NULL,'',NULL,1)")
   for (f in list(c("18S", 10, 200), c("ITS1", 201, 260), c("5.8S", 261, 420))) {
     DBI::dbExecute(con, "INSERT INTO annotations (ID, path, scaffold, element, type, start, stop) VALUES('S1',1,1,?,?,?,?)",
       params = list(f[1], RiboPilot:::rrna_element_type(f[1]),
@@ -440,6 +440,23 @@ test_that("Lock asks before locking a flagged unit that is not marked Reviewed",
   })
 })
 
+test_that("unlocking a sample in Assemble unlocks its units in Annotation Review", {
+  skip_if_not_installed("withr")
+  dir <- mk_export_project()
+  withr::local_dir(dir)
+  testthat::local_mocked_bindings(confirmSweetAlert = function(...) NULL, .package = "shinyWidgets")
+  q <- function(sql) RiboPilot:::app_query(sql)[[1]]
+  expect_true(all(q("SELECT annotate_lock FROM annotate WHERE ID = 'S1'") == 1))
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Assemble")
+    session$flushReact()
+    session$setInputs(tbl__reactable__selected = 1L, asmb_lock_btn = 1)
+    session$setInputs(lock_confirm = TRUE)
+    expect_equal(q("SELECT assemble_lock FROM assemble WHERE ID = 'S1'"), 0L)
+    expect_true(all(q("SELECT annotate_lock FROM annotate WHERE ID = 'S1'") == 0))
+  })
+})
+
 test_that("a row's lock icon asks about a flagged unit every time", {
   skip_if_not_installed("withr")
   dir <- mk_export_project()
@@ -542,14 +559,11 @@ test_that("an excluded path does not count against one locked path per sample", 
   expect_false(RiboPilot:::need_one_path(u, session = NULL))
 })
 
-# trim_assembly() writes these; the export fixture was made without them
+# the review layer reads these; fixture_review_schema() adds any the fixture lacks
 add_trim_cols <- function(dir) {
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
   on.exit(DBI::dbDisconnect(con))
-  DBI::dbExecute(con, "ALTER TABLE assemblies ADD COLUMN edited INT")
-  DBI::dbExecute(con, "ALTER TABLE annotations ADD COLUMN length INT")
-  DBI::dbExecute(con, "ALTER TABLE annotations ADD COLUMN edited INT")
-  DBI::dbExecute(con, "ALTER TABLE coverage ADD COLUMN clips TEXT")
+  fixture_review_schema(con)
 }
 
 test_that("a locked unit is read only in the annotation window", {
@@ -559,12 +573,13 @@ test_that("a locked unit is read only in the annotation window", {
   withr::local_dir(dir)
   snap <- function() RiboPilot:::app_query(
     "SELECT asm.length, an.problematic, an.annotate_notes,
-       (SELECT stop FROM annotations WHERE element = '18S') AS stop18
+       (SELECT stop FROM annotations WHERE element = '18S') AS stop18,
+       (SELECT COUNT(*) FROM review_units) AS n_copies
      FROM assemblies asm JOIN annotate an ON an.ID = asm.ID")
 
   # the window says so, and offers Close instead of Lock & Close
   html <- paste(as.character(RiboPilot:::annotate_modal("S1", 1L, 1L)), collapse = " ")
-  expect_match(html, "This unit is locked", fixed = TRUE)
+  expect_match(html, "This contig is locked", fixed = TRUE)
   expect_false(grepl("lock_and_close", html, fixed = TRUE))
 
   shiny::testServer(RiboPilot:::app_server, {
@@ -584,14 +599,19 @@ test_that("a locked unit is read only in the annotation window", {
   })
 })
 
-test_that("a second trim offers the unit's current span, not the first trim's", {
+test_that("a trim writes the review copy, and a second trim offers the copy's span", {
   skip_if_not_installed("withr")
   dir <- mk_export_project()
   add_trim_cols(dir)
   con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
   DBI::dbExecute(con, "UPDATE annotate SET annotate_lock = 0")
+  DBI::dbExecute(con, "UPDATE annotate SET itsx_warnings = NULL")
+  DBI::dbExecute(con, "UPDATE coverage SET depths = ?", params = list(paste(1:600, collapse = ",")))
+  DBI::dbExecute(con, "INSERT INTO chimera (ID, path, scaffold, label, junctions) VALUES ('S1', 1, 1, 'severe', '300')")
   DBI::dbDisconnect(con)
   withr::local_dir(dir)
+  alerts <- character(0)
+  local_mocked_bindings(rp_alert = function(msg, ...) alerts <<- c(alerts, msg))
 
   shiny::testServer(RiboPilot:::app_server, {
     session$setInputs(mode = "Annotate")
@@ -599,18 +619,100 @@ test_that("a second trim offers the unit's current span, not the first trim's", 
     session$setInputs(trim_mode = "annotated")
     session$flushReact()
     expect_equal(unname(trim_span()), c(10, 420, 600))
+    # the junction hint is a check result, shown only once the contig's checks are done
+    expect_error(output$trim_chimera_hint)
+    c2 <- RiboPilot:::app_con(); fixture_mark_done(c2); DBI::dbDisconnect(c2)
+    edit_tick(edit_tick() + 1)
+    session$flushReact()
+    expect_equal(output$trim_chimera_hint, "suggested junctions: 300")
+
+    active_feature("18S")
+    session$setInputs(feat_edit = TRUE)
+    expect_false(is.null(edit_backup()))
     session$setInputs(trim_from = 10, trim_to = 420, trim_apply = 1)
     session$flushReact()
+    expect_equal(utils::tail(alerts, 1), "Contig trimmed. Checks show \"not run\" until you run Update in the Annotation Review step.")
+    # the trim ends the Edit session, so a later Reset cannot write pre-trim coordinates
+    expect_null(edit_backup())
+    expect_false(edit_active())
     expect_equal(unname(trim_span()), c(1, 411, 411))
+    expect_equal(RiboPilot:::app_query("SELECT trim_start, trim_end, check_switch FROM review_units"),
+      data.frame(trim_start = 10L, trim_end = 420L, check_switch = 1L))
 
-    # a 5 bp flank around the trimmed unit keeps every base of 18S
+    # not run on the copy: no hint; once done, the copy's own junctions
+    expect_error(output$trim_chimera_hint)
+    c2 <- RiboPilot:::app_con()
+    DBI::dbExecute(c2, "UPDATE review_units SET check_switch = 2")
+    DBI::dbExecute(c2, "INSERT INTO review_chimera (ID, path, scaffold, label, junctions) VALUES ('S1', 1, 1, 'severe', '291')")
+    DBI::dbDisconnect(c2)
+    edit_tick(edit_tick() + 1)
+    session$flushReact()
+    expect_equal(output$trim_chimera_hint, "suggested junctions: 291")
+
+    # the trim window plots the copy: the coverage cut to the window, genes in copy coordinates
+    g <- RiboPilot:::plot_trim("S1", 1L, 1L, 1, 411)
+    expect_equal(range(g$data$pos), c(1L, 411L))
+    expect_equal(g$data$depth[1], 10)
+    f <- g$layers[[1]]$data
+    expect_equal(c(f$start[f$element == "18S"], f$stop[f$element == "18S"]), c(1L, 191L))
+
+    # a 5 bp flank around the trimmed copy keeps every base of 18S
     session$setInputs(trim_mode = "flank", trim_flank = 5)
     session$flushReact()
     expect_equal(trim_preset(), c(1, 411))
     session$setInputs(trim_from = 1, trim_to = 411, trim_apply = 2)
     session$flushReact()
-    expect_equal(RiboPilot:::app_query("SELECT start, stop FROM annotations WHERE element = '18S'"),
+    expect_equal(RiboPilot:::app_query("SELECT start, stop FROM review_annotations_v WHERE element = '18S'"),
       data.frame(start = 1L, stop = 191L))
+    # the original stays as the pipeline left it, for the Assemble step
+    expect_equal(RiboPilot:::app_query("SELECT start, stop FROM annotations WHERE element = '18S'"),
+      data.frame(start = 10L, stop = 200L))
+    expect_equal(RiboPilot:::app_query("SELECT length FROM assemblies")$length, 600L)
+  })
+})
+
+test_that("Restore deletes the copy and keeps the marks; a contig without a copy has nothing to restore", {
+  skip_if_not_installed("withr")
+  dir <- mk_export_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE annotate SET annotate_lock = 0, annotate_notes = 'keep me', export_group = 'g1'")
+  DBI::dbDisconnect(con)
+  withr::local_dir(dir)
+  alerts <- character(0)
+  local_mocked_bindings(rp_alert = function(msg, ...) alerts <<- c(alerts, msg))
+  asked <- character(0)
+  local_mocked_bindings(mp_confirm = function(id, title, text, ...) asked <<- c(asked, text))
+  copies <- function() RiboPilot:::app_query("SELECT COUNT(*) AS n FROM review_units")$n
+  marks <- function() RiboPilot:::app_query(
+    "SELECT reviewed, problematic, partial, annotate_notes, export_group, annotate_lock FROM annotate")
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Annotate")
+    sel_unit(list(ID = "S1", path = 1L, scaffold = 1L))
+    session$flushReact()
+    session$setInputs(restore_btn = 1)
+    expect_equal(utils::tail(alerts, 1), "This contig has no edits to restore.")
+    expect_length(asked, 0)
+
+    # marks write annotate only and never make a copy
+    session$setInputs(mark_partial = 1)
+    expect_equal(copies(), 0)
+    session$setInputs(trim_from = 10, trim_to = 420, trim_apply = 1)
+    expect_equal(copies(), 1)
+    before <- marks()
+    expect_equal(before$partial, "yes")
+
+    active_feature("18S")
+    session$setInputs(feat_edit = TRUE)
+    session$setInputs(restore_btn = 2)
+    expect_match(asked[1], "411 bp now and 600 bp originally", fixed = TRUE)
+    expect_match(asked[1], "Marks, notes, group, and lock stay.", fixed = TRUE)
+    session$setInputs(restore_confirm = TRUE)
+    expect_equal(copies(), 0)
+    expect_equal(marks(), before)
+    expect_null(edit_backup())
+    expect_equal(utils::tail(alerts, 1), "Contig restored to its original (600 bp).")
+    expect_equal(unname(trim_span()), c(10, 420, 600))
   })
 })
 
@@ -701,8 +803,8 @@ test_that("the 5' and 3' partial toggles keep with Save and undo with Reset", {
   DBI::dbExecute(con, "UPDATE annotate SET annotate_lock = 0")
   DBI::dbDisconnect(con)
   withr::local_dir(dir)
-  p <- function() unname(unlist(RiboPilot:::app_query(
-    "SELECT partial_start, partial_stop FROM annotations WHERE element = '18S'")))
+  p <- function() as.integer(unlist(RiboPilot:::app_query(
+    "SELECT partial_start_user, partial_stop_user FROM review_annotations_v WHERE element = '18S'")))
 
   shiny::testServer(RiboPilot:::app_server, {
     session$setInputs(mode = "Annotate")
@@ -729,7 +831,7 @@ test_that("the 5' and 3' partial toggles keep with Save and undo with Reset", {
     expect_equal(p(), c(0L, 1L))
 
     # a gene at the scaffold end is automatically partial; a click clears it explicitly
-    c2 <- RiboPilot:::app_con(); DBI::dbExecute(c2, "UPDATE annotations SET start = 1, partial_start = NULL WHERE element = '18S'")
+    c2 <- RiboPilot:::app_con(); DBI::dbExecute(c2, "UPDATE review_annotations SET start = 1, partial_start_user = NULL WHERE element = '18S'")
     DBI::dbDisconnect(c2)
     edit_tick(edit_tick() + 1)
     session$flushReact()
@@ -742,4 +844,315 @@ test_that("the 5' and 3' partial toggles keep with Save and undo with Reset", {
     session$setInputs(toggle_partial_stop = 2)
     expect_equal(p(), c(0L, 1L))
   })
+  # the choices live on the review copy; the original feature never changes
+  expect_equal(RiboPilot:::app_query("SELECT start, partial_start, partial_stop FROM annotations WHERE element = '18S'"),
+    data.frame(start = 10L, partial_start = NA_integer_, partial_stop = NA_integer_))
+})
+
+test_that("the Export window offers token chips, and choosing fields returns to the window", {
+  skip_if_not_installed("withr")
+  dir <- mk_export_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE annotate SET export_group = 'g1'")
+  DBI::dbExecute(con, "UPDATE samples SET GEOME_BCID = 'ark:/1/A'")
+  DBI::dbExecute(con, "INSERT INTO meta_export_fields VALUES ('geome:combo:lat_lon')")
+  DBI::dbAppendTable(con, "meta_records", data.frame(
+    ID = "S1", source = "GEOME", level = "Event", depth = 0L, ref = "ark:/1/A",
+    field = c("decimalLatitude", "decimalLongitude"), value = c("17.5", "-149.8")))
+  DBI::dbDisconnect(con)
+  withr::local_dir(dir)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Export")
+    html <- as.character(export_modal_current())
+    expect_match(html, "Available metadata", fixed = TRUE)
+    expect_match(html, "mp-token-list", fixed = TRUE)
+    expect_match(html, "data-target=\"fasta_header\"", fixed = TRUE)
+    expect_match(html, "data-insert=\"{Taxon}\"", fixed = TRUE)
+    expect_match(html, "data-insert=\"[lat_lon={geome_lat_lon}]\"", fixed = TRUE)
+    expect_match(html, "data-totals=\"{&quot;g1&quot;:1}\"", fixed = TRUE)
+    expect_match(html, "id=\"token_fields_geome\"", fixed = TRUE)
+
+    session$setInputs(fasta_header = "{seqid} edited", export_markers = FALSE, export_template = "default",
+      export_group_sel = "g1")
+    session$setInputs(token_fields_geome = 1)
+    expect_equal(export_snap()$fasta_header, "{seqid} edited")
+    back <- as.character(export_modal_current())
+    expect_match(back, "{seqid} edited", fixed = TRUE)
+    expect_null(export_snap())
+    session$setInputs(token_fields_gbif = 1)
+    expect_false(is.null(export_snap()))
+    session$setInputs(meta_view_closed = 1)
+    expect_null(export_snap())
+  })
+})
+
+test_that("a conflicting {geome_lat_lon} asks before exporting, and Export anyway proceeds", {
+  skip_if_not_installed("withr")
+  dir <- mk_export_project()
+  withr::local_dir(dir)
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE annotate SET export_group = 'g1'")
+  DBI::dbExecute(con, "UPDATE samples SET GEOME_BCID = 'ark:/1/A'")
+  DBI::dbExecute(con, "INSERT INTO meta_export_fields VALUES ('geome:combo:lat_lon')")
+  add <- function(source, field, value) DBI::dbAppendTable(con, "meta_records", data.frame(
+    ID = "S1", source = source, level = if (source == "GBIF") "Occurrence" else "Event", depth = 0L, ref = "r", field = field, value = value))
+  add("GEOME", c("decimalLatitude", "decimalLongitude"), c("10.5", "20.5"))
+  add("GBIF", c("decimalLatitude", "decimalLongitude"), c("-33.1", "151.2"))
+  DBI::dbDisconnect(con)
+  asked <- character(0)
+  local_mocked_bindings(mp_confirm = function(id, title, ...) asked <<- c(asked, title))
+  fasta <- file.path(dir, "out", "export", "g1", "g1.fasta")
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Export")
+    session$setInputs(export_group_sel = "g1",
+      fasta_header = "{seqid} [lat_lon={geome_lat_lon}]",
+      fasta_header_marker = RiboPilot:::DEFAULT_FASTA_HEADER_MARKER,
+      export_markers = FALSE, export_report = FALSE)
+    settle(session)
+    session$setInputs(export_go = 1)
+    settle(session)
+    expect_equal(asked, "Sample metadata disagrees")
+    expect_false(file.exists(fasta))
+
+    session$setInputs(specimen_confirm = TRUE)
+    settle(session)
+    settle(session)
+    expect_true(file.exists(fasta))
+  })
+
+  unlink(file.path(dir, "out"), recursive = TRUE)
+  asked <- character(0)
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Export")
+    session$setInputs(export_group_sel = "g1",
+      fasta_header = RiboPilot:::DEFAULT_FASTA_HEADER,
+      fasta_header_marker = RiboPilot:::DEFAULT_FASTA_HEADER_MARKER,
+      export_markers = FALSE, export_report = FALSE)
+    settle(session)
+    session$setInputs(export_go = 1)
+    settle(session)
+    expect_length(asked, 0)
+    expect_true(file.exists(fasta))
+  })
+})
+
+test_that("Cancel on the metadata disagreement window brings the Export window back with the edited header", {
+  skip_if_not_installed("withr")
+  dir <- mk_export_project()
+  withr::local_dir(dir)
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE annotate SET export_group = 'g1'")
+  DBI::dbExecute(con, "UPDATE samples SET GEOME_BCID = 'ark:/1/A'")
+  DBI::dbExecute(con, "INSERT INTO meta_export_fields VALUES ('geome:combo:lat_lon')")
+  add <- function(source, field, value) DBI::dbAppendTable(con, "meta_records", data.frame(
+    ID = "S1", source = source, level = if (source == "GBIF") "Occurrence" else "Event", depth = 0L, ref = "r", field = field, value = value))
+  add("GEOME", c("decimalLatitude", "decimalLongitude"), c("10.5", "20.5"))
+  add("GBIF", c("decimalLatitude", "decimalLongitude"), c("-33.1", "151.2"))
+  DBI::dbDisconnect(con)
+  local_mocked_bindings(mp_confirm = function(...) invisible())
+  shown <- character(0)
+  local_mocked_bindings(showModal = function(ui, ...) shown <<- c(shown, as.character(ui)))
+  hdr <- "{seqid} [lat_lon={geome_lat_lon}]"
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Export")
+    session$setInputs(export_group_sel = "g1", export_template = "default", fasta_header = hdr,
+      fasta_header_marker = RiboPilot:::DEFAULT_FASTA_HEADER_MARKER,
+      export_markers = FALSE, export_report = FALSE)
+    settle(session)
+    session$setInputs(export_go = 1)
+    settle(session)
+    shown <<- character(0)
+    session$setInputs(specimen_confirm = FALSE)
+    settle(session)
+    expect_length(shown, 1)
+    expect_match(shown, "[lat_lon={geome_lat_lon}]", fixed = TRUE)
+    expect_false(file.exists(file.path(dir, "out", "export", "g1", "g1.fasta")))
+  })
+})
+
+test_that("NMNH user: status, cell edit, and Export anyway", {
+  skip_if_not_installed("withr")
+  dir <- mk_export_project()
+  withr::local_dir(dir)
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE annotate SET export_group = 'g1'")
+  # real projects key samples on ID; the CSV upload upserts on it
+  ddl <- DBI::dbGetQuery(con, "SELECT sql FROM sqlite_master WHERE name = 'samples'")$sql
+  DBI::dbExecute(con, "ALTER TABLE samples RENAME TO samples_old")
+  DBI::dbExecute(con, sub("ID TEXT", "ID TEXT PRIMARY KEY", ddl, fixed = TRUE))
+  DBI::dbExecute(con, "INSERT INTO samples SELECT * FROM samples_old")
+  DBI::dbDisconnect(con)
+  local_mocked_bindings(.gbif_get = function(path) stop("offline"))
+  tpl <- RiboPilot:::nmnh_template_add(RiboPilot:::DEFAULT_FASTA_HEADER)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Export")
+    session$setInputs(export_group_sel = "g1", fasta_header = tpl,
+      fasta_header_marker = RiboPilot:::DEFAULT_FASTA_HEADER_MARKER,
+      export_markers = FALSE, export_report = FALSE)
+    settle(session)
+    expect_false(nmnh_res()$ok)
+    expect_match(output$nmnh_status$html, "1 of 1 sample needs attention")
+    expect_true(hdr_rec_chk()$ok)
+    expect_match(output$nmnh_copy$html, "Copy table")
+    session$setInputs(nmnh_report = 1)
+    expect_match(as.character(output$nmnh_table), "nmnh_edit")
+    csv <- utils::read.csv(output$nmnh_csv)
+    expect_equal(names(csv), c("ID", "Taxon", "specimen_voucher", "voucherURI"))
+
+    # Export with problems asks first
+    session$setInputs(export_go = 1)
+    settle(session)
+    expect_false(file.exists(file.path(dir, "out", "export", "g1", "g1.fasta")))
+
+    session$setInputs(nmnh_edit = list(id = "S1", field = "voucher", value = "USNM:FISH:7"))
+    settle(session)
+    expect_equal(nmnh_res()$nmnh_specimen_voucher, "USNM:FISH:7")
+    v <- app_query("SELECT specimen_voucher, specimen_voucher_source FROM nmnh_vouchers WHERE ID = 'S1'")
+    expect_equal(v$specimen_voucher, "USNM:FISH:7")
+    expect_equal(v$specimen_voucher_source, "entered")
+    expect_false("specimen_voucher" %in% names(app_query("SELECT * FROM samples")))
+    # a fixed row stays in the report with its check; an invalid entry stays visible
+    tbl <- as.character(output$nmnh_table)
+    expect_match(tbl, "USNM:FISH:7", fixed = TRUE)
+    expect_match(tbl, "circle-check", fixed = TRUE)
+    session$setInputs(nmnh_edit = list(id = "S1", field = "uri", value = "not-an-ark"))
+    settle(session)
+    tbl <- as.character(output$nmnh_table)
+    expect_match(tbl, "not-an-ark", fixed = TRUE)
+    expect_match(tbl, "circle-xmark", fixed = TRUE)
+
+    f <- file.path(dir, "up.csv")
+    utils::write.csv(data.frame(ID = "S1", Taxon = "Danio rerio", specimen_voucher = "USNM:FISH:8",
+      voucherURI = ""), f, row.names = FALSE)
+    session$setInputs(nmnh_upload = list(datapath = f))
+    settle(session)
+    expect_equal(nmnh_res()$nmnh_specimen_voucher, "USNM:FISH:8")
+    expect_equal(app_query("SELECT specimen_voucher_source FROM nmnh_vouchers WHERE ID = 'S1'")[[1]], "upload")
+
+    session$setInputs(nmnh_confirm = TRUE)
+    settle(session)
+    h <- readLines(file.path(dir, "out", "export", "g1", "g1.fasta"))[1]
+    expect_match(h, "[specimen_voucher=USNM:FISH:8] Danio", fixed = TRUE)
+    expect_false(grepl("voucherURI", h))
+  })
+})
+
+test_that("turning on marker export after NMNH adds the NMNH fields to the marker header", {
+  skip_if_not_installed("withr")
+  dir <- mk_export_project()
+  withr::local_dir(dir)
+  local_mocked_bindings(.gbif_get = function(path) stop("offline"))
+  sent <- list()
+  local_mocked_bindings(updateTextAreaInput = function(session, inputId, value = NULL, ...) {
+    sent[[inputId]] <<- value
+  })
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Export")
+    session$setInputs(nmnh_user = TRUE, export_markers = FALSE,
+      fasta_header = RiboPilot:::nmnh_template_add(RiboPilot:::DEFAULT_FASTA_HEADER),
+      fasta_header_marker = RiboPilot:::DEFAULT_FASTA_HEADER_MARKER)
+    session$setInputs(export_markers = TRUE)
+    expect_true(RiboPilot:::nmnh_template_on(sent$fasta_header_marker))
+  })
+})
+
+test_that("the export fixture answers every review view", {
+  skip_if_not_installed("withr")
+  dir <- mk_export_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  on.exit(DBI::dbDisconnect(con))
+  for (v in names(RiboPilot:::REVIEW_VIEWS_DDL)) {
+    expect_no_error(DBI::dbGetQuery(con, sprintf("SELECT ID, path, scaffold FROM %s LIMIT 1", v)))
+  }
+  # locked, annotated, and checked by ITSx: done
+  expect_equal(DBI::dbGetQuery(con, "SELECT has_copy, length, check_switch FROM review_units_v"),
+    data.frame(has_copy = 0L, length = 600L, check_switch = 2L))
+  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) AS n FROM review_annotations_v")$n, 3L)
+})
+
+# S1 p1.s1 done, with a review copy (length 500, 4 flags); S1 p1.s2 locked in
+# g1 but not checked by ITSx yet, so its checks are not done.
+mk_export_not_done <- function(env = parent.frame()) {
+  dir <- mk_export_project(env)
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "INSERT INTO assemblies (ID, path, scaffold, topology, length, sequence, ignore)
+    VALUES ('S1', 1, 2, 'linear', 400, ?, 0)", params = list(strrep("ACGT", 100)))
+  DBI::dbExecute(con, "INSERT INTO annotate (ID, path, scaffold, annotate_switch, annotate_lock,
+    reviewed, problematic, partial, n_features, n_flags, itsx_warnings, time_stamp)
+    VALUES ('S1', 1, 2, 2, 1, 'no', 'no', 'no', 0, 0, NULL, 1)")
+  DBI::dbExecute(con, "UPDATE annotate SET export_group = 'g1'")
+  RiboPilot:::review_copy(con, "S1", 1L, 1L)
+  DBI::dbExecute(con, "UPDATE review_units SET length = 500, n_flags = 4
+    WHERE ID = 'S1' AND path = 1 AND scaffold = 1")
+  dir
+}
+
+test_that("the Export step reads the review layer and leaves out contigs whose checks are not done", {
+  skip_if_not_installed("withr")
+  dir <- mk_export_not_done()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "DELETE FROM annotations")
+  DBI::dbExecute(con, "DELETE FROM review_annotations WHERE element != '18S'")
+  DBI::dbExecute(con, "UPDATE review_annotations SET element = '28S'")
+  DBI::dbDisconnect(con)
+  withr::local_dir(dir)
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Export", export_group_sel = "g1",
+      fasta_header = RiboPilot:::DEFAULT_FASTA_HEADER,
+      fasta_header_marker = RiboPilot:::DEFAULT_FASTA_HEADER_MARKER,
+      export_markers = TRUE, export_report = FALSE)
+    settle(session)
+    d <- samples_data()
+    d <- d[order(d$scaffold), ]
+    expect_equal(d$scaffold, c(1L, 2L))
+    expect_equal(d$length, c(500L, 400L))
+    expect_equal(d$n_flags, c(4L, 0L))
+    expect_equal(d$exported, c("", "checks not finished, left out"))
+    expect_equal(d$check_state, c(NA, "checks not finished, left out"))
+    j <- jsonlite::fromJSON(as.character(output$tbl), simplifyVector = FALSE)
+    cd <- Filter(function(c) identical(c$id, "exported"), j$x$tag$attribs$columns)[[1]]
+    expect_match(paste(unlist(cd$cell), collapse = " "), "check_state", fixed = TRUE)
+
+    u <- export_units_df("g1")
+    expect_equal(u$scaffold, 1L)
+    expect_equal(nrow(export_units_df()), 1L)
+    expect_equal(output$export_sel_n, "1 contig locked & ready")
+    con <- RiboPilot:::app_con()
+    expect_equal(app_export_seqids(con, u), "S1_p1_s1")
+    DBI::dbDisconnect(con)
+    expect_equal(export_hdr_data()$seqid, "S1_p1_s1")
+    expect_equal(export_hdr_data_marker()$element, "28S")
+    expect_match(output$export_summary$html, "1 contig in group", fixed = TRUE)
+    expect_match(output$export_summary$html, "S1 p1.s2 (checks not finished)", fixed = TRUE)
+  })
+})
+
+test_that("Export writes only the done contig and its done dialog counts the one left out", {
+  skip_if_not_installed("withr")
+  dir <- mk_export_not_done()
+  withr::local_dir(dir)
+  shown <- character(0)
+  local_mocked_bindings(showModal = function(ui, ...) shown <<- c(shown, as.character(ui)))
+
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Export", export_group_sel = "g1",
+      fasta_header = RiboPilot:::DEFAULT_FASTA_HEADER,
+      fasta_header_marker = RiboPilot:::DEFAULT_FASTA_HEADER_MARKER,
+      export_markers = FALSE, export_report = FALSE)
+    settle(session)
+    session$setInputs(export_go = 1)
+    settle(session)
+  })
+  fa <- readLines(file.path(dir, "out", "export", "g1", "g1.fasta"))
+  expect_equal(grep("^>", fa, value = TRUE), grep("^>S1_p1_s1", fa, value = TRUE))
+  expect_length(grep("^>", fa), 1)
+  done <- grep("Export complete", shown, value = TRUE)
+  expect_length(done, 1)
+  expect_match(done, "1 contig left out: checks not finished.", fixed = TRUE)
 })

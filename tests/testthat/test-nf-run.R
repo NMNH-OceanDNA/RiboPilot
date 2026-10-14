@@ -66,7 +66,7 @@ test_that("a task that failed before it started, or wrote bad bytes, still gets 
   f <- RiboPilot:::nf_log_facts(log)
   expect_equal(f$tasks$exit[f$tasks$item == "S9"], "-")
   expect_match(f$tasks$stderr[f$tasks$item == "S1"], "^err")
-  expect_equal(RiboPilot:::nf_run_report(d, log, 1L, "pipeline", 0)$type, "error")
+  expect_equal(RiboPilot:::nf_run_report(d, log, 1L)$type, "error")
 })
 
 test_that("exit codes map to a likely cause", {
@@ -87,19 +87,20 @@ test_that("only a clean run is reported green, and every failure carries a copya
   clean <- file.path(d, "clean.log")
   writeLines(nf_log_lines(file.path(d, "work"))[1:2], clean)
 
-  ok <- RiboPilot:::nf_run_report(d, clean, 0L, "pipeline", 0)
+  ok <- RiboPilot:::nf_run_report(d, clean, 0L)
   expect_equal(ok$type, "message")
-  expect_equal(ok$text, "")
+  expect_equal(ok$meta$result, "finished")
+  expect_equal(RiboPilot:::run_report_ui(ok), ok$lead)
 
-  bad <- RiboPilot:::nf_run_report(d, log, 0L, "pipeline", 0)
+  bad <- RiboPilot:::nf_run_report(d, log, 0L)
   expect_equal(bad$type, "warning")
   expect_match(bad$text, "RiboPilot:", fixed = TRUE)
   expect_match(bad$text, "Nextflow:  25.10.6", fixed = TRUE)
   expect_match(bad$text, paste("Log:      ", log), fixed = TRUE)
   expect_match(bad$text, "S1 | assemble | 137 | killed", fixed = TRUE)
 
-  expect_equal(RiboPilot:::nf_run_report(d, log, 1L, "pipeline", 0)$type, "error")
-  stopped <- RiboPilot:::nf_run_report(d, clean, 1L, "pipeline", 0, how = "stopped")
+  expect_equal(RiboPilot:::nf_run_report(d, log, 1L)$type, "error")
+  stopped <- RiboPilot:::nf_run_report(d, clean, 1L, how = "stopped")
   expect_equal(stopped$title, "Run stopped")
   expect_match(stopped$lead, "Resume")
 })
@@ -113,9 +114,12 @@ test_that("the report lists the samples this run left Failed, with their notes",
     ('NEW', 3, 'below min_depth: 812 reads after trimming, both mates counted (minimum 2000)', NULL, 200),
     ('OLD', 3, 'failed assembly', NULL, 50), ('OK', 2, NULL, NULL, 200)")
   DBI::dbDisconnect(con)
-  bad <- RiboPilot:::run_failed_samples(d, 100)
-  expect_equal(bad$ID, "NEW")
-  r <- RiboPilot:::nf_run_report(d, file.path(d, "none.log"), 0L, "pipeline", 100)
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(d, ".sqlite"))
+  expect_equal(RiboPilot:::run_failed_samples(con, 100)$ID, "NEW")
+  expect_length(RiboPilot:::run_failed_samples(con, 100, until = 150)$ID, 0)
+  DBI::dbDisconnect(con)
+  base <- RiboPilot:::job_basename("pipeline", as.POSIXct(100, origin = "1970-01-01"))
+  r <- RiboPilot:::nf_run_report(d, file.path(d, paste0(base, ".nextflow.log")), 0L)
   expect_equal(r$type, "warning")
   expect_match(r$lead, "Run finished, but 1 sample(s) failed.", fixed = TRUE)
   expect_match(r$text, "NEW | below min_depth: 812", fixed = TRUE)
@@ -127,15 +131,15 @@ test_that("each pipeline note gets a plain cause and a next step", {
   expect_match(h("below min_depth: 812 reads after trimming")$why, "Too few reads")
   expect_match(h("3 or more paths exceed max_paths (2)")$next_step, "Max paths")
   expect_match(h("failed assembly")$next_step, "type a new name in Parameter set name", fixed = TRUE)
-  expect_match(h("5 scaffolds in a path exceeds max_scaffolds (4)")$next_step, "Max scaffolds")
-  expect_match(h("2 scaffold(s) under min_assembly_length (500 bp)")$next_step, "SPAdes, baited")
+  expect_match(h("5 contigs in a path exceeds max_scaffolds (4)")$next_step, "Max contigs")
+  expect_match(h("2 contig(s) under min_assembly_length (500 bp)")$next_step, "SPAdes, baited")
   expect_match(h("no rRNA genes found in the supplied assembly")$why, "assembly you supplied")
   expect_match(h("rRNA search incomplete: 1 of 3 part(s) of the supplied assembly could not be scanned")$next_step,
     "Ready to run")
   expect_match(h("failed assembly: SPAdes exit 247: finished abnormally, OS return value: -9")$why,
     "memory")
   expect_match(h("failed assembly")$next_step, "SPAdes, baited")
-  expect_match(h(NA_character_)$why, "no rDNA scaffolds")
+  expect_match(h(NA_character_)$why, "no rDNA contigs")
   expect_match(h("failed assembly: no usable seed database to bait reads with")$next_step,
     "Seed database and Label database", fixed = TRUE)
   expect_match(h("failed assembly: no usable label database to pick out rDNA contigs")$why,
@@ -206,4 +210,33 @@ test_that("runs pin Nextflow and switch off its update check", {
   expect_equal(env[["NXF_VER"]], "25.10.6")
   expect_equal(env[["NXF_DISABLE_CHECK_LATEST"]], "true")
   expect_equal(unname(env[1]), "current")
+})
+
+
+test_that("a recheck report lists the contigs the run left failed or running", {
+  d <- withr::local_tempdir()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(d, ".sqlite"))
+  DBI::dbExecute(con, RiboPilot:::REVIEW_UNITS_DDL)
+  DBI::dbExecute(con, "INSERT INTO review_units (ID, path, scaffold, rev, check_switch,
+    check_note, time_stamp) VALUES
+    ('S1', 1, 10, 1, 4, NULL, 200), ('S1', 1, 2, 1, 3, 'chimera check: no hits', 200),
+    ('OLD', 1, 1, 1, 3, 'an earlier run', 50), ('DONE', 1, 1, 1, 2, NULL, 200),
+    ('QUEUED', 1, 1, 1, 1, NULL, 200)")
+  f <- RiboPilot:::run_failed_rechecks(con, 100)
+  expect_equal(f$ID, c("S1.1.2", "S1.1.10"))
+  expect_equal(f$note, c("chimera check: no hits", "recheck did not finish"))
+  expect_length(RiboPilot:::run_failed_rechecks(con, 100, until = 150)$ID, 0)
+  DBI::dbDisconnect(con)
+  base <- RiboPilot:::job_basename("recheck", as.POSIXct(100, origin = "1970-01-01"))
+  log <- file.path(d, paste0(base, ".nextflow.log"))
+  r <- RiboPilot:::nf_run_report(d, log, 0L)
+  expect_equal(r$type, "warning")
+  expect_match(r$lead, "Run finished, but 2 contig(s) failed.", fixed = TRUE)
+  expect_match(r$text, "Failed contigs (contig | note):", fixed = TRUE)
+  expect_match(r$text, "S1.1.10 | recheck did not finish", fixed = TRUE)
+  expect_false(grepl("Failed samples", r$text, fixed = TRUE))
+  expect_false(grepl("assembler", r$text, fixed = TRUE))
+  stopped <- RiboPilot:::nf_run_report(d, log, 1L, how = "stopped")
+  expect_equal(stopped$lead,
+    "Run stopped. Nextflow stopped its tasks. Press Update on Annotation Review.")
 })

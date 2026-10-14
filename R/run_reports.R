@@ -1,0 +1,518 @@
+# What one Nextflow run did, read from its log, and the project's saved run
+# reports under .runs/.
+
+#' Run result labels, keyed by the `result` field of a run report
+#' @noRd
+RUN_RESULTS <- c(
+  finished   = "Finished",
+  failures   = "Finished with failures",
+  failed     = "Failed",
+  stopped    = "Stopped",
+  unfinished = "Running / no finish recorded"
+)
+
+#' Fields of a run report's metadata (`.dcf`), in order
+#' @noRd
+RUN_META_FIELDS <- c("base", "workflow", "run_name", "started", "finished", "duration",
+  "result", "exit_status", "n_samples", "n_failed_samples", "n_failed_tasks", "succeeded",
+  "cached", "retried", "launch", "log", "ribopilot_version", "nextflow_version")
+
+#' A project's run folder, or one of its subfolders
+#'
+#' @param sub "jobs", "logs", "nextflow", "reports", or NULL for `.runs/` itself.
+#' @noRd
+run_dir <- function(project, sub = NULL) {
+  if (is.null(sub)) file.path(project, ".runs") else file.path(project, ".runs", sub)
+}
+
+#' Run base name from its Nextflow log path
+#' @noRd
+run_log_base <- function(log) sub("\\.nextflow\\.log$", "", basename(log))
+
+#' Workflow named in a run base name ("pipeline", "reference")
+#' @noRd
+run_workflow <- function(base) sub("_\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2}$", "", base)
+
+#' Start time encoded in a run base name
+#' @noRd
+run_base_time <- function(base) {
+  as.POSIXct(sub("^.*_(\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2})$", "\\1", base),
+    format = "%Y-%m-%d_%H-%M-%S")
+}
+
+#' Parse Nextflow log time stamps ("Sep-03 17:45:37.478"), which carry no year
+#'
+#' The year is taken from `ref` (the log's modification time), minus one when
+#' that would put the stamp in the future.
+#' @noRd
+nf_log_time <- function(stamp, ref = Sys.time()) {
+  if (length(stamp) == 0) return(as.POSIXct(character(0)))
+  mon <- match(substr(stamp, 1, 3), month.abb)
+  yr <- as.integer(format(ref, "%Y"))
+  mk <- function(y) as.POSIXct(sprintf("%d-%02d-%s", y, mon, substr(stamp, 5, 15)),
+    format = "%Y-%m-%d %H:%M:%S")
+  t <- mk(yr)
+  late <- !is.na(t) & t > ref + 86400
+  t[late] <- mk(yr - 1L)[late]
+  t
+}
+
+#' Likely cause of a task exit status
+#' @noRd
+nf_exit_cause <- function(code) {
+  vapply(as.character(code), function(x) switch(x,
+    "104" = , "247" = "likely out of memory",
+    "125" = "the container could not start (image missing, or a folder could not be mounted)",
+    "126" = "a command could not be run (permission denied)",
+    "127" = "a command was not found (a tool is missing from the container or PATH)",
+    "130" = "interrupted",
+    "134" = "the tool aborted, often out of memory",
+    "137" = "killed: out of memory, or stopped by the system",
+    "139" = "the tool crashed (segmentation fault), often out of memory",
+    "140" = "killed by the scheduler: usually over its time or memory limit",
+    "143" = "terminated by the scheduler or the system, often over its time or memory limit",
+    "-" = , "NA" = "no exit status: the task was stopped before it finished",
+    "the tool stopped with an error"), "", USE.NAMES = FALSE)
+}
+
+#' Last non-empty lines of a task's stderr
+#' @noRd
+task_err_tail <- function(dir, n = 1L) {
+  f <- file.path(dir, ".command.err")
+  if (!file.exists(f)) return("")
+  y <- tryCatch(readLines(f, warn = FALSE), error = function(e) character(0))
+  y <- trimws(cli::ansi_strip(iconv(y, "UTF-8", "UTF-8", sub = "byte")))
+  y <- y[nzchar(y)]
+  if (length(y) == 0) "" else paste(utils::tail(y, n), collapse = " ")
+}
+
+#' Sample ID a task tag belongs to
+#'
+#' Tags are `<ID>`, `<ID>.<n>`, or `<ID>.<path>.<scaffold>`. With `ids`, the
+#' longest known ID the tag starts with wins; otherwise numeric suffixes are
+#' stripped.
+#' @noRd
+tag_sample <- function(tag, ids = NULL) {
+  out <- sub("(\\.\\d+){1,2}(\\.[A-Za-z].*)?$", "", tag)
+  if (length(ids)) {
+    ids <- ids[order(-nchar(ids))]
+    hit <- vapply(tag, function(t) {
+      m <- ids[t == ids | startsWith(t, paste0(ids, "."))]
+      if (length(m)) m[1] else NA_character_
+    }, "", USE.NAMES = FALSE)
+    out <- ifelse(is.na(hit), out, hit)
+  }
+  out
+}
+
+#' What one Nextflow run did, read from its log
+#'
+#' @param log The run's own Nextflow log (`-log`).
+#' @param ids Known sample IDs, to map task tags to samples.
+#' @return list(run, version, error, fatal, finished, started, ended, stats,
+#'   tasks, samples, readable). `tasks` has one row per task whose last attempt
+#'   failed: process, step, item (the task tag), sample, exit, tries, workdir,
+#'   cause, stderr. `finished` is TRUE when the log records an end.
+#' @noRd
+nf_log_facts <- function(log, ids = NULL) {
+  x <- tryCatch(if (!is.null(log) && file.exists(log)) readLines(log, warn = FALSE) else character(0),
+    error = function(e) character(0))
+  x <- iconv(x, "UTF-8", "UTF-8", sub = "byte")
+  x[is.na(x)] <- ""
+  has <- function(k) x[grepl(k, x, fixed = TRUE)]
+  grab <- function(rx, s = x) {
+    m <- regmatches(s, regexec(rx, s, perl = TRUE))
+    vapply(m, function(v) if (length(v) > 1) v[2] else NA_character_, "")
+  }
+  first <- function(v) if (any(!is.na(v))) v[!is.na(v)][1] else NA_character_
+  last <- function(v) if (any(!is.na(v))) utils::tail(v[!is.na(v)], 1) else NA_character_
+
+  aborted <- first(grab("Session aborted -- Cause: (.*)$", has("Session aborted")))
+  errs <- stats::na.omit(grab("\\] ERROR +\\S+ - (.*)$", has("] ERROR")))
+  errs <- errs[errs != "@unknown"]
+  err <- if (!is.na(aborted)) aborted else if (length(errs)) errs[1] else NA_character_
+  fatal <- !is.na(aborted) || any(grepl("\\] ERROR +nextflow\\.cli\\.Launcher - ", has("] ERROR")))
+
+  st <- last(grab("WorkflowStats\\[(.*?)\\]", has("WorkflowStats[")))
+  stats <- if (is.na(st)) integer(0) else {
+    kv <- regmatches(st, gregexpr("(\\w+)Count=(\\d+)", st, perl = TRUE))[[1]]
+    stats::setNames(as.integer(sub(".*=", "", kv)), sub("Count=.*", "", kv))
+  }
+
+  th <- grep("Task completed > \\w*TaskHandler\\[", has("Task completed > "), value = TRUE)
+  att <- data.frame(name = grab("name: (.*?); status:", th), exit = trimws(grab("exit: (.*?);", th)),
+    workdir = trimws(grab("workDir: ([^\\]\\s]+)", th)), stringsAsFactors = FALSE)
+  note <- stats::na.omit(grab("NOTE: (.*) -- Error is ignored$", has("-- Error is ignored")))
+  killed <- stats::na.omit(grab("Error executing process > '(.*)'$", has("Error executing process")))
+  name <- c(grab("[Pp]rocess `([^`]+)`", note), killed)
+  msg <- c(note, rep("stopped the run", length(killed)))
+  keep <- !is.na(name) & !duplicated(name, fromLast = TRUE)
+  name <- name[keep]; msg <- msg[keep]
+  lst <- att[vapply(name, function(n) utils::tail(c(NA_integer_, which(att$name == n)), 1L),
+    0L, USE.NAMES = FALSE), , drop = FALSE]
+  process <- sub(" \\(.*$", "", name)
+  item <- ifelse(grepl("\\(", name), sub("^.*\\((.*)\\)$", "\\1", name), "-")
+  tasks <- data.frame(process = process, step = sub("^.*:", "", process), item = item,
+    sample = ifelse(item == "-", "-", tag_sample(item, ids)),
+    exit = ifelse(is.na(lst$exit), "-", lst$exit),
+    tries = vapply(name, function(n) sum(att$name == n), 0L, USE.NAMES = FALSE),
+    workdir = ifelse(is.na(lst$workdir), "-", lst$workdir),
+    cause = ifelse(is.na(lst$exit) | lst$exit %in% c("0", "-"), msg, nf_exit_cause(lst$exit)),
+    stringsAsFactors = FALSE)
+  tasks$stderr <- vapply(tasks$workdir, task_err_tail, "", USE.NAMES = FALSE)
+
+  names_all <- c(grab("(?:Submitted|Cached) process > (.*)$", has("process > ")), att$name)
+  tags <- unique(stats::na.omit(grab("\\(([^()]+)\\)$", names_all)))
+  tags <- tags[!grepl("^\\d+$", tags)]
+
+  stamp <- substr(x, 1, 15)
+  stamp <- stamp[grepl("^[A-Z][a-z]{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$", stamp)]
+  ref <- if (!is.null(log) && file.exists(log)) file.mtime(log) else Sys.time()
+  tm <- nf_log_time(stamp, ref)
+  tm <- tm[!is.na(tm)]
+
+  list(run = first(grab("Run name: (\\S+)", has("Run name: "))),
+    version = first(grab("N E X T F L O W\\s+~\\s+version (\\S+)", has("N E X T F L O W"))),
+    error = err, fatal = fatal,
+    finished = fatal || any(grepl("Execution complete -- Goodbye", x, fixed = TRUE)),
+    started = if (length(tm)) min(tm) else as.POSIXct(NA),
+    ended = if (length(tm)) max(tm) else as.POSIXct(NA),
+    stats = stats, tasks = tasks,
+    samples = sort(unique(tag_sample(tags, ids))),
+    readable = length(tm) > 0)
+}
+
+#' Exit status a job script echoed into its scheduler log, or NA
+#' @noRd
+read_exit_trailer <- function(project, base) {
+  logs <- list.files(run_dir(project, "logs"), pattern = paste0("^", base), full.names = TRUE)
+  x <- unlist(lapply(logs, function(f) tryCatch(readLines(f, warn = FALSE),
+    error = function(e) character(0))))
+  s <- regmatches(x, regexec("\\[RiboPilot\\] nextflow exited with status (-?\\d+)", x))
+  s <- stats::na.omit(unlist(lapply(s, `[`, 2)))
+  if (length(s)) as.integer(utils::tail(s, 1)) else NA_integer_
+}
+
+#' Samples a run left Failed, with their notes
+#'
+#' `time_stamp` is when the pipeline wrote the row, so rows written between
+#' the run's start and end belong to it.
+#' @param since,until Epoch seconds (or POSIXct) bounding the run.
+#' @return data.frame(ID, note)
+#' @noRd
+run_failed_samples <- function(con, since, until = NA) {
+  empty <- data.frame(ID = character(0), note = character(0), stringsAsFactors = FALSE)
+  if (is.null(con) || length(since) == 0 || is.na(since)) return(empty)
+  until <- if (is.na(until)) 4e9 else as.numeric(until) + 1
+  tryCatch(DBI::dbGetQuery(con,
+    "SELECT ID, TRIM(COALESCE(assemble_notes, '') || ' ' || COALESCE(find_rrna_notes, '')) AS note
+       FROM assemble WHERE assemble_switch = 3 AND time_stamp >= ? AND time_stamp <= ? ORDER BY ID",
+    params = list(floor(as.numeric(since)), until)), error = function(e) empty)
+}
+
+#' Contigs a recheck run left failed or still running, with their notes
+#'
+#' A contig still running has no note yet: the app writes "recheck did not
+#' finish" only after the report.
+#' @param since,until Epoch seconds (or POSIXct) bounding the run.
+#' @return data.frame(ID, note); ID is `<ID>.<path>.<scaffold>`.
+#' @noRd
+run_failed_rechecks <- function(con, since, until = NA) {
+  empty <- data.frame(ID = character(0), note = character(0), stringsAsFactors = FALSE)
+  if (is.null(con) || length(since) == 0 || is.na(since)) return(empty)
+  until <- if (is.na(until)) 4e9 else as.numeric(until) + 1
+  tryCatch(DBI::dbGetQuery(con,
+    "SELECT r.ID || '.' || r.path || '.' || r.scaffold AS ID,
+            COALESCE(r.check_note, 'recheck did not finish') AS note
+       FROM review_units r
+      WHERE r.check_switch IN (3, 4) AND r.time_stamp >= ? AND r.time_stamp <= ?
+      ORDER BY r.ID, r.path, r.scaffold",
+    params = list(floor(as.numeric(since)), until)), error = function(e) empty)
+}
+
+#' Duration as "1h 2m 3s"
+#' @noRd
+fmt_duration <- function(secs) {
+  if (length(secs) == 0 || is.na(secs)) return(NA_character_)
+  s <- round(as.numeric(secs))
+  h <- s %/% 3600; m <- (s %% 3600) %/% 60; s <- s %% 60
+  paste(c(if (h) paste0(h, "h"), if (h || m) paste0(m, "m"), paste0(s, "s")), collapse = " ")
+}
+
+#' Report on one Nextflow run
+#'
+#' @param log The run's Nextflow log, `.runs/nextflow/<base>.nextflow.log`.
+#' @param status Nextflow's exit status; NULL reads the job log trailer, else
+#'   infers it from the log (fatal error = 1, finish marker = 0).
+#' @param how "done", "stopped" (Stop or window closed), or "killed" (did not
+#'   stop within NF_STOP_WAIT).
+#' @param con Project DB connection; NULL opens the project `.sqlite`.
+#' @return list(type, title, lead, text, meta); `meta` holds RUN_META_FIELDS.
+#' @noRd
+nf_run_report <- function(project, log, status = NULL, how = "done", con = NULL) {
+  base <- run_log_base(log)
+  workflow <- run_workflow(base)
+  db <- file.path(project, ".sqlite")
+  if (is.null(con) && file.exists(db)) {
+    con <- tryCatch(open_sqlite_ro(db), error = function(e) NULL)
+    if (!is.null(con)) on.exit(DBI::dbDisconnect(con), add = TRUE)
+  }
+  ids <- if (!is.null(con)) tryCatch(DBI::dbGetQuery(con, "SELECT ID FROM samples")$ID,
+    error = function(e) NULL)
+  f <- nf_log_facts(log, ids)
+
+  status <- status %||% read_exit_trailer(project, base)
+  if (is.na(status) && f$finished) status <- if (f$fatal) 1L else 0L
+  status <- as.integer(status)
+  since <- run_base_time(base)
+  if (is.na(since)) since <- f$started
+  recheck <- workflow == "recheck"
+  bad <- if (recheck) run_failed_rechecks(con, since, f$ended) else
+    if (workflow != "reference") run_failed_samples(con, since, f$ended) else
+    run_failed_samples(NULL, NA)
+  n_t <- nrow(f$tasks); n_s <- nrow(bad)
+  failed <- (!is.na(status) && status != 0L) || f$fatal
+  result <- if (how %in% c("stopped", "killed")) "stopped" else if (failed) "failed" else
+    if (n_t + n_s > 0) "failures" else "finished"
+
+  out <- switch(result,
+    stopped = if (how == "killed") list(type = "error", title = "Run stopped",
+      lead = paste("Nextflow did not stop within", NF_STOP_WAIT, "seconds and was killed,",
+        "and the task containers it left were removed.")) else
+      list(type = "warning", title = "Run stopped",
+        lead = paste("Run stopped. Nextflow stopped its tasks.", switch(workflow,
+          reference = "Press Build again to restart it.",
+          recheck = "Press Update on Annotation Review.",
+          "Press Update with Resume ticked to continue where it left off."))),
+    failed = list(type = "error", title = "Run failed",
+      lead = paste0("The run stopped with an error: ", f$error %|NA|% "see the log", ".")),
+    failures = list(type = "warning", title = "Run finished with failures",
+      lead = sprintf("Run finished, but %s failed. Copy the report below to send it to the developers.",
+        paste(c(if (n_t) sprintf("%d task(s)", n_t),
+          if (n_s) sprintf(if (recheck) "%d contig(s)" else "%d sample(s)", n_s)),
+          collapse = " and "))),
+    finished = list(type = "message", title = "Run finished", lead = "Run finished with no failures."))
+
+  fmt <- function(t) if (is.na(t)) NA_character_ else format(t, "%Y-%m-%d %H:%M:%S")
+  started <- if (is.na(f$started)) since else f$started
+  cnt <- function(k) sum(f$stats[k], na.rm = TRUE)
+  rp_ver <- tryCatch(as.character(utils::packageVersion("RiboPilot")), error = function(e) NA_character_)
+  meta <- list(base = base, workflow = workflow, run_name = f$run,
+    started = fmt(started), finished = fmt(f$ended),
+    duration = fmt_duration(difftime(f$ended, started, units = "secs")),
+    result = result, exit_status = status,
+    n_samples = length(f$samples), n_failed_samples = n_s, n_failed_tasks = n_t,
+    succeeded = cnt("succeeded"), cached = cnt("cached"), retried = cnt("retries"),
+    launch = if (file.exists(file.path(run_dir(project, "jobs"), paste0(base, ".sh")))) "job" else "app",
+    log = log, ribopilot_version = rp_ver, nextflow_version = f$version)
+
+  tasks <- if (n_t == 0) character(0) else c("",
+    "Failed tasks (sample | step | exit | likely cause | last error | work dir):",
+    sprintf("%s | %s | %s | %s%s | %s | %s", f$tasks$sample, f$tasks$step, f$tasks$exit,
+      f$tasks$cause, ifelse(f$tasks$tries > 1, sprintf("; tried %d times", f$tasks$tries), ""),
+      ifelse(nzchar(f$tasks$stderr), f$tasks$stderr, "-"), f$tasks$workdir))
+  samples <- if (n_s == 0) character(0) else if (recheck) c("",
+    "Failed contigs (contig | note):", sprintf("%s | %s", bad$ID, bad$note)) else c("",
+    "Failed samples (sample | note | likely cause):",
+    sprintf("%s | %s | %s", bad$ID, bad$note,
+      vapply(bad$note, function(n) failure_hint(n)$why, "", USE.NAMES = FALSE)))
+  text <- c("RiboPilot run report",
+    paste("Project:  ", project),
+    sprintf("Workflow:  %s, run %s", workflow, f$run %|NA|% "unnamed"),
+    paste("Started:  ", meta$started %|NA|% "unknown"),
+    sprintf("Finished:  %s%s", meta$finished %|NA|% "unknown",
+      if (is.na(meta$duration)) "" else sprintf(" (%s)", meta$duration)),
+    sprintf("Result:    %s, exit status %s", RUN_RESULTS[[result]], status %|NA|% "unknown"),
+    paste("Launched: ", if (meta$launch == "job") "as a job (saved script)" else "from the app"),
+    paste("RiboPilot:", rp_ver %|NA|% "unknown"),
+    paste("Nextflow: ", f$version %|NA|% "unknown"),
+    paste0("Log:       ", log, if (!f$readable) " (could not be read)"),
+    if (length(f$stats)) sprintf(
+      "Tasks:     %d succeeded, %d cached, %d failed and skipped, %d retried, %d aborted",
+      cnt("succeeded"), cnt("cached"), cnt("ignored"), cnt("retries"), cnt("aborted")),
+    paste("Samples:  ", length(f$samples)),
+    if (!is.na(f$error)) paste("Error:    ", f$error),
+    tasks, samples)
+  c(out, list(text = paste(text, collapse = "\n"), meta = meta))
+}
+
+#' Paths of a run's report files
+#' @noRd
+run_report_paths <- function(project, base) {
+  d <- run_dir(project, "reports")
+  c(txt = file.path(d, paste0(base, "_report.txt")), dcf = file.path(d, paste0(base, "_report.dcf")))
+}
+
+#' Write a run report's text and metadata files
+#' @return The report paths, invisibly.
+#' @noRd
+write_run_report <- function(project, rep) {
+  p <- run_report_paths(project, rep$meta$base)
+  dir.create(dirname(p[["txt"]]), recursive = TRUE, showWarnings = FALSE)
+  writeLines(rep$text, p[["txt"]])
+  meta <- lapply(rep$meta, function(v) if (length(v) == 0) NA else v)
+  write.dcf(as.data.frame(meta, stringsAsFactors = FALSE), p[["dcf"]], width = 10000)
+  invisible(p)
+}
+
+#' TRUE when a report metadata file exists and parses
+#' @noRd
+dcf_ok <- function(path) {
+  file.exists(path) && isTRUE(tryCatch(nrow(read.dcf(path)) > 0, error = function(e) FALSE))
+}
+
+#' Last `bytes` of a file as lines
+#' @noRd
+read_tail <- function(path, bytes = 20000) {
+  con <- file(path, "rb")
+  on.exit(close(con))
+  seek(con, max(0, file.size(path) - bytes))
+  readLines(con, warn = FALSE)
+}
+
+#' Has a run recorded its end?
+#'
+#' Job scripts with the exit trailer count only once the trailer is logged, so
+#' the real exit status is known. Otherwise the Nextflow log end is used.
+#' @noRd
+run_is_finished <- function(project, base, log) {
+  if (!is.na(read_exit_trailer(project, base))) return(TRUE)
+  job <- file.path(run_dir(project, "jobs"), paste0(base, ".sh"))
+  if (file.exists(job) && any(grepl("nextflow exited with status", readLines(job, warn = FALSE), fixed = TRUE))) {
+    return(FALSE)
+  }
+  x <- read_tail(log)
+  any(grepl("Execution complete -- Goodbye|Session aborted -- Cause:|\\] ERROR +nextflow\\.cli\\.Launcher - ", x))
+}
+
+#' Write reports for finished runs that have none yet
+#'
+#' Covers runs the app did not follow: submitted jobs, saved scripts, and
+#' console runs.
+#' @param skip Bases to leave alone (the run going in this app).
+#' @return Bases written (character(0) when none, or no `.runs/`).
+#' @noRd
+sync_run_reports <- function(project, skip = NULL) {
+  logs <- list.files(run_dir(project, "nextflow"), pattern = "\\.nextflow\\.log$", full.names = TRUE)
+  out <- character(0)
+  for (log in logs) {
+    base <- run_log_base(log)
+    if (base %in% skip || dcf_ok(run_report_paths(project, base)[["dcf"]])) next
+    ok <- tryCatch({
+      if (!run_is_finished(project, base, log)) FALSE else {
+        write_run_report(project, nf_run_report(project, log))
+        TRUE
+      }
+    }, error = function(e) FALSE)
+    if (ok) out <- c(out, base)
+  }
+  out
+}
+
+#' A project's runs, newest first
+#'
+#' From report metadata plus Nextflow logs that have no report yet (result
+#' "unfinished").
+#' @return data.frame with RUN_META_FIELDS plus `report` (path of the text
+#'   report, NA when unfinished). Counts and exit_status are integers.
+#' @noRd
+list_run_reports <- function(project) {
+  dcf <- list.files(run_dir(project, "reports"), pattern = "_report\\.dcf$", full.names = TRUE)
+  rows <- lapply(dcf, function(f) tryCatch({
+    r <- as.data.frame(read.dcf(f, fields = RUN_META_FIELDS), stringsAsFactors = FALSE)
+    r$report <- sub("\\.dcf$", ".txt", f)
+    r
+  }, error = function(e) NULL))
+  rows <- Filter(Negate(is.null), rows)
+  logs <- list.files(run_dir(project, "nextflow"), pattern = "\\.nextflow\\.log$", full.names = TRUE)
+  logs <- logs[!run_log_base(logs) %in% vapply(rows, `[[`, "", "base")]
+  open <- lapply(logs, function(log) {
+    base <- run_log_base(log)
+    r <- as.data.frame(stats::setNames(as.list(rep(NA_character_, length(RUN_META_FIELDS))),
+      RUN_META_FIELDS), stringsAsFactors = FALSE)
+    t <- run_base_time(base)
+    r$base <- base; r$workflow <- run_workflow(base); r$result <- "unfinished"
+    r$started <- if (is.na(t)) NA_character_ else format(t, "%Y-%m-%d %H:%M:%S")
+    r$launch <- if (file.exists(file.path(run_dir(project, "jobs"), paste0(base, ".sh")))) "job" else "app"
+    r$log <- log; r$report <- NA_character_
+    r
+  })
+  out <- do.call(rbind, c(rows, open))
+  if (is.null(out)) {
+    out <- as.data.frame(stats::setNames(rep(list(character(0)), length(RUN_META_FIELDS) + 1),
+      c(RUN_META_FIELDS, "report")), stringsAsFactors = FALSE)
+  }
+  num <- c("exit_status", "n_samples", "n_failed_samples", "n_failed_tasks", "succeeded", "cached", "retried")
+  out[num] <- lapply(out[num], function(v) suppressWarnings(as.integer(v)))
+  out <- out[order(sub("^.*_(\\d{4}-)", "\\1", out$base), decreasing = TRUE), , drop = FALSE]
+  rownames(out) <- NULL
+  out
+}
+
+#' Progress of a run, rebuilt from its Nextflow log
+#'
+#' One row per process in the order Nextflow started them, with task counts
+#' like the progress block Nextflow prints. Works for app and job runs alike.
+#' @return data.frame (process, submitted, done, failed, cached, running) with
+#'   attributes `updated` (log modification time) and `ended` (the log records
+#'   Nextflow's end), or NULL when unreadable.
+#' @noRd
+run_progress <- function(log) {
+  x <- tryCatch(suppressWarnings(readLines(log, warn = FALSE)), error = function(e) NULL)
+  if (is.null(x)) return(NULL)
+  grab <- function(re) {
+    m <- regmatches(x, regexec(re, x))
+    vapply(m[lengths(m) > 0], `[`, "", 2)
+  }
+  untag <- function(n) sub(" \\(.*\\)$", "", n)
+  procs <- unique(grab("Starting process > (\\S+)"))
+  sub_n <- untag(grab("(?:Submitted|Re-submitted) process > (.+)$"))
+  cached <- untag(grab("Cached process > (.+)$"))
+  m <- regmatches(x, regexec("Task completed > TaskHandler\\[.*?name: (.+?); status: \\w+; exit: ([^;]+);", x))
+  m <- m[lengths(m) > 0]
+  done_n <- untag(vapply(m, `[`, "", 2))
+  ok <- vapply(m, `[`, "", 3) == "0"
+  procs <- unique(c(procs, sub_n, cached, done_n))
+  cnt <- function(v) vapply(procs, function(p) sum(v == p), integer(1), USE.NAMES = FALSE)
+  out <- data.frame(process = procs, submitted = cnt(sub_n), done = cnt(done_n[ok]),
+                    failed = cnt(done_n[!ok]), cached = cnt(cached))
+  out$running <- pmax(out$submitted - out$done - out$failed, 0L)
+  attr(out, "updated") <- file.mtime(log)
+  attr(out, "ended") <- any(grepl(
+    "Execution complete -- Goodbye|Session aborted -- Cause:|\\] ERROR +nextflow\\.cli\\.Launcher - ", x))
+  out
+}
+
+#' Plain-text progress block for a run, in the style of Nextflow's own
+#' @noRd
+run_progress_text <- function(log, now = Sys.time(), stale = 3600) {
+  p <- run_progress(log)
+  if (is.null(p)) return("The Nextflow log could not be read.")
+  upd <- attr(p, "updated")
+  idle <- as.numeric(difftime(now, upd, units = "secs"))
+  state <- if (isTRUE(attr(p, "ended"))) {
+    paste("Nextflow has finished, but the run report is not written yet. It is written",
+          "once the run's exit status is logged, and shows here within 15 seconds.")
+  } else if (idle > stale) {
+    paste("No log update for", fmt_duration(idle), "and no finish recorded:",
+          "Nextflow may have stopped (killed, out of time, or the job was cancelled).")
+  } else if (!nrow(p) || sum(p$submitted + p$cached) == 0) {
+    "Nextflow is running, but no samples have started processing yet."
+  } else {
+    sprintf("Running. Tasks in progress: %d.", sum(p$running))
+  }
+  head <- c(state, sprintf("Last log update: %s (%s ago)", format(upd, "%Y-%m-%d %H:%M:%S"),
+                           fmt_duration(idle)), "")
+  if (!nrow(p)) return(paste(head, collapse = "\n"))
+  total <- p$submitted + p$cached
+  fin <- p$done + p$failed + p$cached
+  pct <- ifelse(total > 0, floor(100 * fin / total), NA)
+  stat <- ifelse(total == 0, "-", paste0(
+    sprintf("%d of %d", fin, total),
+    ifelse(p$cached > 0, sprintf(", cached: %d", p$cached), ""),
+    ifelse(p$failed > 0, sprintf(", failed: %d", p$failed), ""),
+    ifelse(p$running > 0, sprintf(", running: %d", p$running), "")))
+  w <- max(nchar(p$process))
+  rows <- sprintf("[%s] %-*s | %s", ifelse(is.na(pct), "    ", sprintf("%3d%%", pct)), w, p$process, stat)
+  paste(c(head, rows), collapse = "\n")
+}

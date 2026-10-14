@@ -9,7 +9,7 @@
 #' hit is as likely to be a degraded pseudogene copy as a real repeat unit.
 #'
 #' Only contigs barrnap hit at all are scored, so the evidence returned is the
-#' handful of rRNA-bearing contigs rather than every scaffold in a draft genome.
+#' handful of rRNA-bearing contigs rather than every contig in a draft genome.
 #'
 #' @param gff_lines Character vector, the merged barrnap GFF.
 #' @param lengths Optional named numeric of contig lengths, names = contig ids.

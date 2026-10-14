@@ -26,14 +26,18 @@ The rules:
 
 - **Columns.** It needs the columns `ID`, `Taxon`, `R1`, and `R2`. Upper and
   lower case do not matter in column names.
-- **IDs.** Each ID must be unique, ignoring case, and at most 18 characters
+- **Taxon.** Give the species name whenever you can (for example
+  `Upeneus parvus`), spelled as NCBI has it; a genus or higher group works when
+  the species is unknown. RiboPilot uses it to pick the reference database and
+  the quality checks, to judge contamination, and as the organism name in your
+  GenBank records.
+- **IDs.** Each ID must be unique, ignoring case, and at most 40 characters
   long. Use only letters, digits, dash (`-`), underscore (`_`), and colon
-  (`:`): no spaces, dots, or slashes. IDs are kept exactly as you typed them,
-  leading zeros included.
+  (`:`): no spaces, dots, or slashes.
 - **Commas only.** Save the file with commas between values. From Excel, use
   File > Save As > CSV UTF-8 (Comma delimited).
-- **Paired reads only.** Every sample with reads needs both an `R1` and an `R2`
-  file. Single-end reads are not supported.
+- **Paired reads only.** Every sample with Illumina reads needs both an `R1` and an `R2`
+  file. Single-end reads are not currently supported.
 - **Read file names** are relative to the read folder you pass as `data_path`.
   Subfolders are fine (`SRR22396758/SRR22396758_1.fastq.gz`), but full paths
   are not.
@@ -43,8 +47,13 @@ The rules:
   Nextflow, for example one with a space or a quote mark.
 - **Extra columns** are kept, and you can use them in your GenBank headers, for
   example as `{Voucher}`. A column name with a space or a dash is read with a
-  dot in its place, so `Voucher ID` becomes `{Voucher.ID}`. The **Available
-  columns** list in the Export window shows every name.
+  dot in its place, so `Voucher ID` becomes `{Voucher.ID}`. The
+  **Your mapping columns** chips in the Export window show every name.
+- **Metadata ID columns.** Columns named `GEOME_BCID`, `GBIF_ID`, and
+  `BioSample` hold a sample's GEOME, GBIF, and NCBI identifiers. RiboPilot
+  fetches those records when it sets up the project. Blank cells are fine. To
+  use other column names, pass `mapping_geome`, `mapping_gbif`, or
+  `mapping_ncbi` to the `new_project()` function. See [Sample metadata](Sample-Metadata.html).
 - **Reserved names.** RiboPilot adds some columns itself, so your file cannot
   use these names: taxid, sci_name, rank, match_type, tax_alternatives,
   lineage, lineage_taxids, ref_id, user_group, ref_source, taxonomy_switch,
@@ -63,25 +72,30 @@ RiboPilot::new_project(
 ```
 
 RiboPilot checks the mapping file and the read files before it writes
-anything, and stops with a message that names each problem. The analysis runs in
-Docker by default. On a computing cluster, pass your cluster profile as
+anything, and stops with an error message if it encounters any issues. 
+
+By default, `new_project()` assumes you are running RiboPilot on a local workstation (i.e. a desktop or laptop).
+For projects on a computing cluster, pass your cluster profile as
 `executor`; see [Running on a cluster](Clusters.html).
 
 An NCBI API key is optional; see [Installation](Installation.html) for where to
 put it.
 
-Then open the app and follow the five steps, as in
-[Get started](RiboPilot.html):
+Once the project is created, open the app and follow the five steps, as in
+[Get started](RiboPilot.html).
 
 ```r
 RiboPilot::RiboPilot("~/my_project")
 ```
 
-Do the Reference step before you assemble.
+Run a handful of samples through every step
+before you run hundreds: settings that are wrong for your group are much
+cheaper to find on a small run. Make sure to do the Reference step before 
+running the Assemble workflow.
 
 # Already have an assembly?
 
-If you have a genome assembly for a sample, or just the contig that holds its
+If you have a genome assembly for a sample, or just the contig that contains the
 ribosomal repeat, you can use it instead of assembling from reads. Add an
 `Assembly` column to your mapping file naming that sample's FASTA file, and pass
 the folder that holds them as `assembly_path`:
@@ -95,22 +109,20 @@ RiboPilot::new_project(
 )
 ```
 
+The assembly files must be FASTA files, all gzipped (`.gz`) or all
+uncompressed in one project, and named relative to `assembly_path`.
+
 RiboPilot searches each supplied assembly for rRNA genes and carries forward the
-contigs that carry an 18S or 28S anchor; the rest are recorded and left behind.
+contigs that carry an 18S or 28S anchor.
 A single ribosomal contig passes this search without doing anything special. If
 you supplied a fragment too short to carry an anchor (an ITS-only sequence, for
 example), turn the search off in the app's **Assembly Options** and RiboPilot
 uses your file exactly as given.
 
-A sample with an assembly does not need reads: leave its `R1` and `R2` blank.
+A sample with an assembly does not need reads: leave `R1` and `R2` blank in the mapfile.
 If your file has no reads at all, you can leave out the `R1` and `R2` columns
-and `data_path`. The assembly files must be FASTA, all gzipped (`.gz`) or all
-plain in one project, and named relative to `assembly_path`.
-
-A sample with no reads gets no depth profile, since there is nothing to map
-back; every other step runs the same. If you do have its reads, name them
-anyway, and RiboPilot uses them for depth while still starting from your
-assembly.
+and `data_path` entirely. A sample with no reads gets no depth profile, since there is nothing to map
+back.
 
 # Adding samples later
 
@@ -127,7 +139,7 @@ RiboPilot::add_samples(
 
 It runs the same checks as `new_project()`, and refuses IDs that are already in
 the project. Put the new read files in the same folder as the project's other
-reads (the `data_path` you gave `new_project()`): runs look for reads there.
+reads (the `data_path` you gave `new_project()`).
 The new samples then appear in the Taxonomy step, ready to assign.
 
 To fix or add metadata, such as a voucher number, for samples that are already
@@ -136,11 +148,11 @@ in the project, list them in a mapping file with the new values and run
 reads, assembly, state, or locks.
 
 Do not rerun `new_project()` with `force = TRUE` on a project you have worked
-on: it deletes all its results.
+on: it deletes all existing results.
 
 # What is in the project folder
 
 The project folder holds your results database, its settings, and the
 pipeline's working files. The table in
 [Disk space, caches, and offline use](Caches-and-Offline.html) says what each
-item is, and which you can delete.
+item is and when you can safely delete them.

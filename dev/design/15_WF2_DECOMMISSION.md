@@ -2,6 +2,18 @@
 
 Written 2026-07-31. Branch `wf2-decommission`, cut from `main`.
 
+## Status: a second workflow is back, with a different job
+
+The contig recheck (`dev/specs/2026-10-08-contig-recheck-design.md`) adds
+`inst/nextflow/main_recheck.nf` and an Update button on Annotation Review, so
+decision 4 below ("One Update button") no longer holds. Re-annotation still
+has one entry point, the annotate-only arm of main.nf. The recheck never
+re-annotates: it reruns the offline checks on the review copies of contigs the
+user trimmed or edited, through the same R check functions and the same
+`bin/rp_rrna_tools.sh` as main.nf, so there is no second copy to drift. A trim
+never queued re-annotation, although comments in main.nf and pipeline_r.nf
+said so; they now point to main_recheck.nf.
+
 ## What this changes
 
 WF1 already absorbed the first annotation pass: it annotates every scaffold as

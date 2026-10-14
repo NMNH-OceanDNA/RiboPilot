@@ -35,8 +35,11 @@ mk_hdr_project <- function() {
   }
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S1','Genus speciesA',NULL,NULL,'Reef A')")
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S2','Genus speciesB',NULL,NULL,'Reef B')")
+  DBI::dbExecute(con, "ALTER TABLE annotate ADD COLUMN export_time_stamp INTEGER")
   DBI::dbExecute(con, "CREATE TABLE assemble(ID TEXT, assemble_lock INT)")
   DBI::dbExecute(con, "INSERT INTO assemble VALUES('S1',1),('S2',1)")
+  fixture_review_schema(con)
+  fixture_mark_done(con)
   dir
 }
 
@@ -129,10 +132,15 @@ test_that("the bundle uses the samples/ layout and README.txt", {
   expect_false(file.exists(file.path(g, "README_SUBMISSION.txt")))
   expect_true(file.exists(file.path(g, "layout.fasta")))
   expect_true(file.exists(file.path(g, "layout_summary.csv")))
-  readme <- paste(readLines(file.path(g, "README.txt")), collapse = "\n")
-  expect_match(readme, "samples/")
-  expect_match(readme, "asks whether to leave them out")
-  expect_no_match(readme, "warn-only")
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  on.exit(DBI::dbDisconnect(con))
+  expect_false(anyNA(DBI::dbGetQuery(con, "SELECT export_time_stamp FROM annotate")[[1]]))
+  # S1 keeps two contigs, S2 one; a dropped contig stops counting
+  n <- function() DBI::dbGetQuery(con, paste("SELECT an.ID,", RiboPilot:::UNIT_MULTI_SQL,
+    "FROM annotate an ORDER BY an.ID, an.scaffold"))$scaffold_n
+  expect_equal(n(), c(2, 2, 1))
+  DBI::dbExecute(con, "UPDATE assemblies SET ignore = 1 WHERE ID = 'S1' AND scaffold = 2")
+  expect_equal(n(), c(1, 1, 1))
 })
 
 test_that("a saved configuration is used when named", {
@@ -178,10 +186,31 @@ test_that("an empty source modifier on any record is a warning, not only on the 
   DBI::dbExecute(con, "UPDATE samples SET voucher = 'USNM:1' WHERE ID = 'S1'")
   DBI::dbDisconnect(con)
   expect_warning(suppressMessages(export_bundle(dir, out_dir = file.path(dir, "out"), report = FALSE,
-    zip = FALSE, itsx_check = FALSE, label = "vou", fasta_header = "{seqid} [specimen-voucher={voucher}]")),
+    zip = FALSE, label = "vou", fasta_header = "{seqid} [specimen-voucher={voucher}]")),
     "Empty \\[specimen-voucher=\\] on 1 of 3 record\\(s\\) \\(S2\\)")
   d <- data.frame(ID = "S1", seqid = "S1", t = NA)
   expect_equal(validate_fasta_header("{seqid} [note={t}]", d)$level, "warn")
+})
+
+test_that("a source modifier used twice is a warning, not an error", {
+  expect_equal(duplicate_modifiers(c("[BioSample=a] [biosample=b]", "[lat_lon=1] [lat-lon=2]",
+                                     "[BioSample=a] [BioProject=b]")),
+               list("biosample", "lat_lon", character(0)))
+  d <- data.frame(ID = "S1", seqid = "S1", a = "SAMN1", b = "SAMN2")
+  v <- validate_fasta_header("{seqid} [BioSample={a}] [biosample={b}]", d)
+  expect_equal(v$level, "warn")
+  expect_true(v$ok)
+  expect_match(v$message, "Duplicate [biosample=]. NCBI", fixed = TRUE)
+  expect_equal(validate_fasta_header("{seqid} [BioSample={a}] [BioProject={b}]", d)$level, "ok")
+})
+
+test_that("header columns some samples leave empty are flagged", {
+  d <- data.frame(ID = c("S1", "S2", "S2", "S3"), seqid = c("S1", "a", "b", "S3"),
+                  v = c("x", NA, NA, ""), k = "ok")
+  v <- validate_fasta_header("{seqid} {k} {v}", d)
+  expect_equal(v$level, "warn")
+  expect_match(v$message, "Missing data in {v} for 2 of 3 sample(s) (S2, S3)", fixed = TRUE)
+  expect_equal(validate_fasta_header("{seqid} {k}", d)$level, "ok")
 })
 
 test_that("a header template is filled by lookup and never runs code", {
@@ -200,4 +229,38 @@ test_that("a header template is filled by lookup and never runs code", {
   expect_false(file.exists(f))
   expect_equal(RiboPilot:::render_fasta_headers("{seqid} [organism={Taxon}] site={collection_site}", d),
     "S2 [organism=Genus speciesB] site=Reef B")
+})
+
+test_that("a ticked metadata column is a header token; an unticked one errors", {
+  dir <- mk_hdr_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  on.exit(DBI::dbDisconnect(con))
+  RiboPilot:::.meta_ensure_tables(con)
+  DBI::dbAppendTable(con, "meta_records", data.frame(ID = c("S1", "S1", "S2", "S2"),
+    source = "GEOME", level = "Event", depth = 2L,
+    field = c("decimalLatitude", "decimalLongitude", "decimalLatitude", "decimalLongitude"),
+    value = c("10.5", "20.5", "-1", "-2")))
+  u <- data.frame(ID = c("S1", "S2"), path = 1L, scaffold = 1L, seqid = c("S1_p1_s1", "S2"))
+  d0 <- RiboPilot:::export_header_data(con, u)
+  expect_error(RiboPilot:::render_fasta_headers("{seqid} {geome_lat_lon}", d0), "is not in the database")
+  RiboPilot:::.meta_save_fields(con, "geome:combo:lat_lon")
+  d <- RiboPilot:::export_header_data(con, u)
+  expect_equal(d$geome_lat_lon, c("10.5 N 20.5 E", "1 S 2 W"))
+  out <- RiboPilot:::render_fasta_headers("{seqid} {geome_lat_lon}", d)
+  expect_match(out[1], "10.5 N 20.5 E", fixed = TRUE)
+})
+
+test_that("ticked metadata columns are appended to the summary CSV", {
+  dir <- mk_hdr_project()
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  RiboPilot:::.meta_ensure_tables(con)
+  DBI::dbAppendTable(con, "meta_records", data.frame(ID = "S1", source = "GEOME", level = "Event",
+    depth = 2L, field = "country", value = "Peru"))
+  RiboPilot:::.meta_save_fields(con, "geome:raw:Event:country")
+  DBI::dbDisconnect(con)
+  g <- hdr_bundle(dir, label = "sm")
+  s <- utils::read.csv(file.path(g, "sm_summary.csv"), na.strings = NULL)
+  expect_equal(names(s)[ncol(s)], "geome_Event_country")
+  expect_equal(s$geome_Event_country[s$ID == "S1"], c("Peru", "Peru"))
+  expect_equal(s$geome_Event_country[s$ID == "S2"], "")
 })

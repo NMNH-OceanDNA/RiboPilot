@@ -42,8 +42,10 @@ the PATH for you with `conda_env`:
 
 ```r
 RiboPilot::run_assembly("~/my_project", conda_env = "ribopilot")
-RiboPilot::build_reference_db('"Littorinimorpha"[Organism]', "littorinimorpha",
-  conda_env = "ribopilot")
+RiboPilot::build_reference_db(
+  '"Littorinimorpha"[Organism]', "littorinimorpha",
+  conda_env = "ribopilot"
+)
 ```
 
 # Known gaps

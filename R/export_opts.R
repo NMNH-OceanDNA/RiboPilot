@@ -81,7 +81,7 @@ set_export_opts <- function(con, fasta_header, fasta_header_marker, name = "defa
 #' sequence." Consecutive elements sharing a completeness are phrased as one run,
 #' which is what makes the sentence read as GenBank's does.
 #'
-#' @param elements Element names in the order they sit on the scaffold.
+#' @param elements Element names in the order they sit on the contig.
 #' @param partial Logical of the same length: is that element partial?
 #' @noRd
 rrna_definition_text <- function(elements, partial) {
@@ -137,14 +137,14 @@ export_header_data <- function(con, units) {
     if (nrow(smp) == 0) smp <- data.frame(ID = id, stringsAsFactors = FALSE)
     smp <- smp[, !(names(smp) %in% c("R1", "R2")), drop = FALSE]
     asm <- DBI::dbGetQuery(con,
-      "SELECT length, topology, sequence FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
+      "SELECT length, topology, n_features, missing FROM review_units_v WHERE ID = ? AND path = ? AND scaffold = ?",
       params = list(id, p, s))
     ann <- DBI::dbGetQuery(con,
-      "SELECT n_features, missing, partial, reviewed, export_group
+      "SELECT partial, reviewed, export_group
          FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?",
       params = list(id, p, s))
-    feat <- DBI::dbGetQuery(con,
-      "SELECT * FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
+    feat <- DBI::dbGetQuery(con, paste("SELECT element, start, stop, strand,", REVIEW_EFF_PARTIALS,
+      "FROM review_annotations_v WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start"),
       params = list(id, p, s))
     seq_len_bp <- if (nrow(asm)) asm$length[1] else NA_integer_
     unit_partial <- isTRUE(nrow(ann) > 0 && identical(ann$partial[1], "yes"))
@@ -155,8 +155,8 @@ export_header_data <- function(con, units) {
       path = p, scaffold = s,
       length = seq_len_bp,
       topology = if (nrow(asm)) asm$topology[1] else NA_character_,
-      n_features = if (nrow(ann)) ann$n_features[1] else NA_integer_,
-      missing = if (nrow(ann)) ann$missing[1] else NA_character_,
+      n_features = if (nrow(asm)) asm$n_features[1] else NA_integer_,
+      missing = if (nrow(asm)) asm$missing[1] else NA_character_,
       partial = if (nrow(ann)) ann$partial[1] else NA_character_,
       reviewed = if (nrow(ann)) ann$reviewed[1] else NA_character_,
       export_group = if (nrow(ann)) ann$export_group[1] else NA_character_,
@@ -171,6 +171,7 @@ export_header_data <- function(con, units) {
   })
   cols <- Reduce(intersect, lapply(rows, names))
   out <- do.call(rbind, lapply(rows, function(r) r[, cols, drop = FALSE]))
+  out <- .meta_join(out, con)
   # glue renders an NA field as the four characters "NA", so a sample with no
   # Taxon would ship "[organism=NA]", which reads like a real organism name.
   # Blank them instead; export_summary_df flags the unit as missing_organism.
@@ -233,7 +234,7 @@ validate_fasta_header <- function(template, data = NULL, require_seqid = TRUE) {
       any(!is.na(data$seqid) & data$seqid != data$ID)) {
     return(err(paste("Take [isolate=...] out of the template for this group. RiboPilot sets",
       "[isolate=<ID>_p<path>_s<scaffold>] on each record of a sample that exports more than",
-      "one scaffold, so all of them can go into one GenBank submission.")))
+      "one contig, so all of them can go into one GenBank submission.")))
   }
   if (require_seqid && !grepl("{seqid}", template, fixed = TRUE)) {
     multi <- !is.null(data) && any(duplicated(data$ID))
@@ -242,18 +243,53 @@ validate_fasta_header <- function(template, data = NULL, require_seqid = TRUE) {
     return(if (multi) err(msg) else warn(msg))
   }
   if (!is.null(data) && nrow(data) > 0) {
-    em <- empty_modifiers(vapply(seq_len(nrow(data)), function(i) {
+    hdr <- vapply(seq_len(nrow(data)), function(i) {
       fill_header(template, data[i, , drop = FALSE])
-    }, character(1)))
+    }, character(1))
+    nm <- unique(unlist(duplicate_modifiers(hdr)))
+    nm <- nm[gsub("_", "", nm) %in% c("specimenvoucher", "voucheruri")]
+    if (length(nm)) {
+      return(err(sprintf("Duplicate %s. NMNH records need each exactly once: take the other out.",
+        paste0("[", nm, "=]", collapse = ", "))))
+    }
+    em <- lapply(empty_modifiers(hdr), function(x) x[!x %in% c("specimen_voucher", "voucherURI")])
     hit <- lengths(em) > 0
     if (any(hit)) {
-      return(warn(sprintf(paste("Empty %s on %d of %d record(s) (%s). NCBI does not accept an",
-        "empty modifier: fill in the column or take the modifier out."),
+      return(warn(sprintf(paste("Empty %s on %d of %d record(s) (%s). A modifier with no",
+        "value is left out of that record's header."),
         paste0("[", unique(unlist(em)), "=]", collapse = ", "), sum(hit), length(hit),
         paste(utils::head((data$seqid %||% data$ID)[hit], 3), collapse = ", "))))
     }
+    dm <- unique(unlist(duplicate_modifiers(hdr)))
+    if (length(dm)) {
+      return(warn(sprintf(paste("Duplicate %s. NCBI accepts each modifier once: keep one",
+        "and take the other out."), paste0("[", dm, "=]", collapse = ", "))))
+    }
+    mf <- missing_fields(template, data)
+    if (!is.null(mf)) return(warn(mf))
   }
   ok()
+}
+
+#' Message naming header columns that some samples leave empty, or NULL
+#' @noRd
+missing_fields <- function(template, data) {
+  tok <- regmatches(template, gregexpr("\\{[^{}]*\\}", template))[[1]]
+  nm <- intersect(unique(substr(tok, 2L, nchar(tok) - 1L)), names(data))
+  nm <- nm[!startsWith(nm, "nmnh_")]
+  ids <- unique(data$ID)
+  out <- vapply(nm, function(n) {
+    v <- trimws(as.character(data[[n]]))
+    miss <- unique(data$ID[is.na(v) | !nzchar(v) | v == "NA"])
+    if (!length(miss)) return(NA_character_)
+    sprintf("{%s} for %d of %d sample(s) (%s)", n, length(miss), length(ids),
+      paste(utils::head(miss, 3), collapse = ", "))
+  }, character(1))
+  out <- out[!is.na(out)]
+  if (length(out)) {
+    paste0("Missing data in ", paste(out, collapse = "; "),
+      ". Fill in the column or take it out of the header.")
+  }
 }
 
 #' Names of the source modifiers left empty (or "NA") in each header
@@ -261,6 +297,16 @@ validate_fasta_header <- function(template, data = NULL, require_seqid = TRUE) {
 empty_modifiers <- function(headers) {
   m <- regmatches(headers, gregexpr("\\[([^]=[]+)=\\s*(NA)?\\s*\\]", headers))
   lapply(m, function(x) unique(sub("^\\[([^=]+)=.*$", "\\1", x)))
+}
+
+#' Names of the source modifiers used more than once in each header
+#' @noRd
+duplicate_modifiers <- function(headers) {
+  m <- regmatches(headers, gregexpr("\\[[^]=[]+=", headers))
+  lapply(m, function(x) {
+    nm <- gsub("[- ]", "_", tolower(trimws(substr(x, 2L, nchar(x) - 1L))))
+    unique(nm[duplicated(nm)])
+  })
 }
 
 #' Fill a template's {column} tokens from one row of token data
@@ -275,7 +321,7 @@ fill_header <- function(template, row) {
   nm <- substr(p[tok], 2L, nchar(p[tok]) - 1L)
   miss <- setdiff(nm, names(row))
   if (length(miss)) {
-    stop(sprintf("Column \"%s\" is not in the database. Use one of the available columns listed below.",
+    stop(sprintf("Column \"%s\" is not in the database. Use one of the available metadata columns listed below.",
       miss[1]), call. = FALSE)
   }
   p[tok] <- vapply(nm, function(n) as.character(row[[n]][1]), character(1))
@@ -292,9 +338,9 @@ fill_header <- function(template, row) {
 #' @return character vector of headers, one per row, without the leading ">".
 #' @noRd
 render_fasta_headers <- function(template, data) {
-  h <- vapply(seq_len(nrow(data)), function(i) {
+  h <- header_strip_empty(vapply(seq_len(nrow(data)), function(i) {
     fill_header(template, data[i, , drop = FALSE])
-  }, character(1))
+  }, character(1)))
   multi <- !is.na(data$seqid) & data$seqid != data$ID
   h[multi] <- paste0(h[multi], " [isolate=", data$seqid[multi], "]")
   h

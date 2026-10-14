@@ -17,17 +17,19 @@
 // decision is worse than useless, since "nothing found" and "not looked at yet"
 // render identically.
 //
-// Re-annotation lives here too. There is no second workflow: units queued after
-// review (a trim, an options change, a restored scaffold, an edited sequence)
-// enter through query_annotate_units and skip straight to the annotation chain,
-// paying for neither assembly nor a second remote BLAST. See
-// dev/design/15_WF2_DECOMMISSION.md.
+// Re-annotation lives here too: units queued for annotation alone (an
+// annotation or curation options change, a scaffold put back) enter through
+// query_annotate_units and skip straight to the annotation chain, paying for
+// neither assembly nor a second remote BLAST. See
+// dev/design/15_WF2_DECOMMISSION.md. A trim or a boundary edit on Annotation
+// Review queues nothing here: it changes the contig's review copy, and
+// main_recheck.nf reruns the checks on that copy without re-annotating it.
 
 include { preprocess; below_min_depth } from './modules/preprocess.nf'
 include { assemble } from './modules/assemble.nf'
 include { fallback_assemble } from './modules/fallback.nf'
 include { find_rrna; stage_assembly } from './modules/find_rrna.nf'
-include { query_samples; query_annotate_units; query_sample_units; score; annotate_tools; reconcile; curate; triage; screen; chimera } from './modules/pipeline_r.nf'
+include { query_samples; query_annotate_units; query_sample_units; score; annotate_tools; reconcile; curate; triage; screen; chimera; feature_blast } from './modules/pipeline_r.nf'
 include { blast_genbank } from './modules/blast.nf'
 include { blast_ref_fetch; blast_ref_align } from './modules/blast_ref.nf'
 include { coverage } from './modules/coverage.nf'
@@ -81,7 +83,7 @@ workflow {
     // the sample has the search switched off (an ITS-only fragment carries no
     // barrnap anchor and would otherwise be dropped).
     find_rrna(sample_rows.user.map { r ->
-        tuple(r.ID, file(params.asmbDir + '/' + r.Assembly), r.asm_cpus, r.asm_mem, r.rrna_tool, r.rrna_kingdom) })
+        tuple(r.ID, file(params.asmbDir + '/' + r.Assembly), r.asm_cpus, r.asm_mem, r.rrna_tool, r.rrna_kingdom, r.rrna_opts) })
     stage_assembly(sample_rows.asis.map { r -> tuple(r.ID, file(params.asmbDir + '/' + r.Assembly)) })
 
     // Seeds / labels stay strings here. sqlite3 renders a SQL NULL as '', and
@@ -190,6 +192,9 @@ workflow {
         .combine(blast_genbank.out.collect().map { 'ready' }.ifEmpty('ready'))
         .map { 'ready' }
     chimera(reconcile.out.combine(chim_done).map { id, upath, uscaf, _r -> tuple(id, upath, uscaf) })
+
+    // Per-feature BLAST of each annotated contig; advisory, not joined into triage.
+    feature_blast(reconcile.out)
 
     // Propose keep/drop/undecided once ALL of a sample's units are curated AND
     // chimera-checked, so sibling concordance and the within-sample depth ratio

@@ -31,7 +31,7 @@ test_that("every module state table is complete and unambiguous", {
   expect_equal(unname(mp_state_labels("assemble")[["1"]]), "Ready to run")
   expect_equal(unname(mp_state_labels("annotate")[["1"]]), "Ready to run")
   expect_equal(names(mp_state_choices("annotate")),
-               c("On hold", "Ready to run", "In progress", "Success", "Failed"))
+               c("Waiting for Assemble Update", "On hold", "Ready to run", "In progress", "Success", "Failed"))
   expect_error(mp_state_choices("export"))
 })
 
@@ -97,7 +97,7 @@ test_that("mp_alert refuses to render without a type", {
 
 test_that("lock vocabulary and flag toggle", {
   expect_match(MP_LOCK_DEF("assemble"), "^Locked samples .* move on to Annotation Review")
-  expect_match(MP_LOCK_DEF("annotate"), "^Locked units .* move on to Export")
+  expect_match(MP_LOCK_DEF("annotate"), "^Locked contigs .* move on to Export")
   expect_error(MP_LOCK_DEF("export"))
   expect_equal(mp_flag_next(c("no", "yes")), "yes")   # a mixed selection sets
   expect_equal(mp_flag_next(c("yes", "yes")), "no")    # clears only when all are set
@@ -145,4 +145,21 @@ test_that("mp_state_modal and group_modal footers follow the shared shape", {
   expect_match(html, "On hold")
   expect_match(html, "Failed")
   expect_match(as.character(RiboPilot:::group_modal()), ">Cancel<.*>Assign<")
+})
+
+test_that("only Annotation Review offers Waiting for Assemble Update, and nobody can set it", {
+  expect_match(as.character(filter_pickers("Annotate")), 'value="5"', fixed = TRUE)
+  expect_false(grepl('value="5"', as.character(filter_pickers("Assemble")), fixed = TRUE))
+  expect_equal(unname(mp_state_icon_classes("annotate")[["5"]]), "fa fa-clock mp-fg-neutral")
+  expect_match(mp_state_titles("annotate")[["5"]], "Update on the Assemble step", fixed = TRUE)
+  expect_equal(MP_STATE_CODES$assemble, c("0", "1", "4", "2", "3"))
+  expect_equal(MP_STATE_SETTABLE, c("0", "1", "4", "2", "3"))
+})
+
+test_that("the State window on Annotation Review offers only Ready to run and On hold", {
+  html <- as.character(RiboPilot:::mp_state_modal(c("S1 p1.s1", "S1 p1.s2"), mode = "annotate"))
+  expect_match(html, "Set state for 2 contigs")
+  expect_match(html, "Ready to run.*On hold")
+  expect_false(grepl("In progress|Success|Failed", html))
+  expect_match(html, "Checked again by the next Update on Annotation Review", fixed = TRUE)
 })

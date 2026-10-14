@@ -11,7 +11,7 @@ report_elements <- function(con, units) {
   if (is.null(units) || nrow(units) == 0) return(character(0))
   els <- unlist(lapply(seq_len(nrow(units)), function(i) {
     DBI::dbGetQuery(con,
-      "SELECT DISTINCT element FROM annotations WHERE ID = ? AND path = ? AND scaffold = ?",
+      "SELECT DISTINCT element FROM review_annotations_v WHERE ID = ? AND path = ? AND scaffold = ?",
       params = list(units$ID[i], as.integer(units$path[i]),
         as.integer(units$scaffold[i])))$element
   }), use.names = FALSE)
@@ -38,13 +38,13 @@ gather_feature_seqs <- function(con, units, element) {
     p <- as.integer(units$path[i])
     s <- as.integer(units$scaffold[i])
     ann <- DBI::dbGetQuery(con,
-      "SELECT start, stop FROM annotations
+      "SELECT start, stop FROM review_annotations_v
          WHERE ID = ? AND path = ? AND scaffold = ? AND element = ? ORDER BY start",
       params = list(id, p, s, element))
     if (nrow(ann) == 0 || is.na(ann$start[1]) || is.na(ann$stop[1])) next
     if (ann$stop[1] < ann$start[1]) next
     seq <- DBI::dbGetQuery(con,
-      "SELECT sequence FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
+      "SELECT sequence FROM review_units_v WHERE ID = ? AND path = ? AND scaffold = ?",
       params = list(id, p, s))$sequence
     if (length(seq) == 0 || is.na(seq[1]) || !nzchar(seq[1])) next
     sub <- substr(seq[1], ann$start[1], ann$stop[1])

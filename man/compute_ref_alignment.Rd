@@ -4,7 +4,7 @@
 \alias{compute_ref_alignment}
 \title{Compute per-feature sample-vs-reference alignments for one sample}
 \usage{
-compute_ref_alignment(con, id, path = 1L, scaffold = 1L)
+compute_ref_alignment(con, id, path = 1L, scaffold = 1L, review = FALSE)
 }
 \arguments{
 \item{con}{Open project DB connection.}
@@ -12,6 +12,9 @@ compute_ref_alignment(con, id, path = 1L, scaffold = 1L)
 \item{id}{Sample ID.}
 
 \item{path, scaffold}{Assembly unit within the sample.}
+
+\item{review}{TRUE aligns the contig's review copy (its sequence and
+features) and writes \code{review_ref_alignment}; the reference tables are shared.}
 }
 \value{
 (invisibly) number of element alignments written.

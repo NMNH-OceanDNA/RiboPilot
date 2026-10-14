@@ -18,4 +18,6 @@ export_project(path = ".", out_dir = file.path(path, "out"))
 Writes one bundle per export group made in the app's Export step, using the
 default header template. When no group was made, writes every unit with
 both its assembly and its annotation locked into one bundle named "export".
+Only contigs whose checks are done are written; a group with none is
+skipped with a message.
 }

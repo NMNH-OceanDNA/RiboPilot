@@ -17,14 +17,15 @@ add_external_resources <- function() {
     shiny::tags$link(rel = "stylesheet", href = www_url("custom.css")),
     shiny::tags$script(src = www_url("custom.js")),
     shiny::tags$script(src = www_url("seqviewer.js")),
+    shiny::tags$script(src = www_url("metaview.js")),
     shinyjs::useShinyjs()
   )
 }
 
 #' Enumerate Nextflow task work directories for one sample
 #'
-#' Parses the project's .nextflow.log* files (runs started from the app) and
-#' nextflow_logs/*.nextflow.log (submitted jobs) for completed-task records,
+#' Parses the project's run logs (.runs/nextflow/, plus the older root
+#' .nextflow.log* and nextflow_logs/) for completed-task records,
 #' which Nextflow writes for every attempt (success or failure), each with its
 #' own work dir. Mirrors MitoPilot's work-dir browser.
 #' @noRd
@@ -35,11 +36,11 @@ find_workdirs <- function(project_dir, sample_id) {
   if (is.null(project_dir) || is.null(sample_id) || !nzchar(sample_id)) return(empty)
   logs <- c(
     list.files(project_dir, pattern = "^\\.nextflow\\.log", full.names = TRUE, all.files = TRUE),
-    list.files(file.path(project_dir, JOB_DIRS$nextflow), pattern = "\\.nextflow\\.log",
-      full.names = TRUE))
+    list.files(file.path(project_dir, c(JOB_DIRS$nextflow, "nextflow_logs")),
+      pattern = "\\.nextflow\\.log", full.names = TRUE))
   if (length(logs) == 0) return(empty)
   lines <- unlist(lapply(logs, function(f) tryCatch(readLines(f, warn = FALSE), error = function(e) character(0))))
-  th <- grep("Task completed > TaskHandler\\[", lines, value = TRUE)
+  th <- grep("Task completed > \\w*TaskHandler\\[", lines, value = TRUE)
   if (length(th) == 0) return(empty)
 
   # perl = TRUE: TRE reads \s inside a bracket expression as a literal backslash
@@ -51,7 +52,7 @@ find_workdirs <- function(project_dir, sample_id) {
   workdir <- grab1(th, "workDir:\\s*([^\\]\\s]+)")
   pt <- regmatches(name, regexec("([^:[:space:]]+)\\s*\\(([^)]+)\\)\\s*$", name))
   process <- vapply(pt, function(v) if (length(v) >= 3) v[2] else NA_character_, character(1))
-  sample <- sub("\\.[0-9]+$", "", vapply(pt, function(v) if (length(v) >= 3) v[3] else NA_character_, character(1)))
+  sample <- tag_sample(vapply(pt, function(v) if (length(v) >= 3) v[3] else NA_character_, character(1)))
 
   keep <- !is.na(workdir) & !is.na(process) & sample == sample_id
   if (!any(keep)) return(empty)
@@ -254,19 +255,19 @@ unit_evidence <- function(id) {
   cbind(d, unit_concordance(d))
 }
 
-#' Sibling concordance: is this scaffold the odd one out among its own siblings?
+#' Sibling concordance: is this contig the odd one out among its own siblings?
 #'
 #' The check that fires exactly where the shipped `lineages_conflict()`
 #' structurally cannot: a copepod, epibiont or gut-content contaminant on a
 #' metazoan sample shares "Metazoa" with the host, so a shared-token test reports
-#' it clean. Comparing a sample's scaffolds to EACH OTHER needs no absolute
+#' it clean. Comparing a sample's contigs to EACH OTHER needs no absolute
 #' threshold at all.
 #'
 #' Concordance is taken at the DEEPEST RANK AT WHICH A STRICT MAJORITY EXISTS,
 #' not at a fixed rank. That keeps the copepod-on-fish catch (a majority resolves
 #' at phylum: many Chordata vs one Arthropoda) while going silent on the sparse
 #' clades the tool exists for, where a genus-level test would flag every unit
-#' because each scaffold's best hit is a different genus.
+#' because each contig's best hit is a different genus.
 #'
 #' @param d Unit rows carrying `screen_taxids` (rank-aligned hit taxid paths).
 #' @return data.frame(sib_rank, sib_taxon, odd_one_out) with `nrow(d)` rows.
@@ -347,7 +348,7 @@ sample_has_user_assembly <- function(id) {
 
 #' Contigs the rDNA search found but did not carry forward
 #'
-#' The kept contigs become assembly units and are shown in the scaffold table;
+#' The kept contigs become assembly units and are shown in the contig table;
 #' these are the ones that never got there, which is the only place a user can
 #' see that they existed at all.
 #'

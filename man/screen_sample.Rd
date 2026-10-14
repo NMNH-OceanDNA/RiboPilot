@@ -16,7 +16,9 @@ screen_sample(con, id, force = FALSE, variants = TRUE)
 \item{variants}{Also classify on-target units as isomers or paralogs. The pipeline's screen step passes FALSE; its triage step runs that check once annotation is done.}
 }
 \value{
-(invisibly) the number of units screened.
+(invisibly) the number of units screened, with attribute "written":
+data.frame(path, scaffold) of the units whose screen row was rewritten
+rather than skipped as current.
 }
 \description{
 Screen every unit of one sample

@@ -104,7 +104,7 @@ mp_checkbox <- function(inputId, label, value = FALSE, ...) {
   x <- shinyWidgets::prettyCheckbox(
     inputId, label = label, value = value, status = "primary", icon = icon("check"), ...
   )
-  lab <- if (is.character(label)) label else paste(htmltools::doRenderTags(label), collapse = " ")
+  lab <- if (is.character(label)) label else trimws(gsub("<[^>]+>", "", paste(htmltools::doRenderTags(label), collapse = " ")))
   htmltools::tagQuery(x)$find("input")$addAttrs(`aria-label` = lab)$allTags()
 }
 
@@ -164,7 +164,7 @@ mp_opts_saved_toast <- function(n, set, noun = "sample",
 #' @noRd
 mp_state_icon_classes <- function(module) {
   codes <- MP_STATE_CODES[[module]]
-  tone <- c(`0` = "mp-fg-neutral", `1` = "mp-fg-neutral", `4` = "mp-fg-neutral",
+  tone <- c(`5` = "mp-fg-neutral", `0` = "mp-fg-neutral", `1` = "mp-fg-neutral", `4` = "mp-fg-neutral",
             `2` = "mp-fg-success", `3` = "mp-fg-danger")
   stats::setNames(paste(mp_state_icons(module), tone[codes]), codes)
 }
@@ -191,7 +191,8 @@ mp_icon <- function(name) {
 #' Modal that sets the pipeline state of the selected rows
 #' @noRd
 mp_state_modal <- function(ids, current = character(0), mode = "assemble") {
-  codes <- MP_STATE_SETTABLE
+  annot <- identical(mode, "annotate")
+  codes <- if (annot) c("1", "0") else MP_STATE_SETTABLE
   effect <- c(
     `0` = "Skipped by the next Update.",
     `1` = "Processed by the next Update; results this module already stored are replaced.",
@@ -199,6 +200,9 @@ mp_state_modal <- function(ids, current = character(0), mode = "assemble") {
     `2` = "Treated as finished; the next Update skips it.",
     `3` = "Treated as finished with an error; the next Update skips it."
   )
+  if (annot) effect[c("1", "0")] <- c(
+    "Checked again by the next Update on Annotation Review; its check results are cleared now.",
+    "Skipped by the Update on Annotation Review until set to Ready to run.")
   choice_names <- lapply(codes, function(k) {
     tagList(
       tags$strong(MP_STATE_META[[k]]$label),

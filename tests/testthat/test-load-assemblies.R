@@ -15,9 +15,9 @@ mk_asm_db <- function(dir) {
   DBI::dbExecute(con, "CREATE TABLE annotate(ID TEXT, path INT, scaffold INT, annotate_switch INT,
                        annotate_lock INT, annotate_opts TEXT, curate_opts TEXT, reviewed TEXT,
                        partial TEXT, problematic TEXT, export_group TEXT, n_features INT,
-                       PRIMARY KEY (ID, path, scaffold))")
+                       chimeric INT, n_flags INT, curate_flags TEXT, itsx_warnings TEXT,
+                       itsx_origin TEXT, itsx_scores TEXT, PRIMARY KEY (ID, path, scaffold))")
   DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT)")
-  DBI::dbExecute(con, "CREATE TABLE assembly_backup(ID TEXT, path INT, scaffold INT)")
   DBI::dbExecute(con, "CREATE TABLE coverage(ID TEXT, path INT, scaffold INT, mean_depth REAL)")
   DBI::dbExecute(con, "INSERT INTO assemble_opts VALUES('default', 10, 10, NULL)")
   DBI::dbExecute(con, "INSERT INTO assemble VALUES('S1',NULL,NULL,NULL,NULL,1,NULL,'default',NULL)")
@@ -269,7 +269,7 @@ test_that("scaffolds under min_assembly_length are parked, not dropped", {
   expect_match(ig$triage_reason[1], "min_assembly_length")
   st <- gate_state(con)
   expect_equal(st$assemble_switch, 4L)
-  expect_match(st$assemble_notes, "min_assembly_length")
+  expect_match(st$assemble_notes, "3 of 5 contigs shorter than Min assembly length")
   # the dropped units keep a held annotate row rather than a queued one, so they
   # are not pending work and the sample can settle
   sw <- DBI::dbGetQuery(con, "SELECT scaffold, annotate_switch FROM annotate ORDER BY scaffold")
@@ -279,6 +279,26 @@ test_that("scaffolds under min_assembly_length are parked, not dropped", {
   expect_equal(st$scaffolds, 2L)
   expect_equal(DBI::dbGetQuery(con, "SELECT length FROM assemble WHERE ID='S1'")$length,
     "420;416")
+})
+
+test_that("a rescued sample keeps a note that an earlier run failed", {
+  dir <- withr::local_tempdir()
+  con <- mk_asm_db(dir); on.exit(DBI::dbDisconnect(con))
+  write_many_scaffolds(dir, 5)
+  DBI::dbExecute(con, "UPDATE assemble_opts SET min_assembly_length = 1000")
+  RiboPilot:::load_assemblies(con, dir, "S1")
+  st <- gate_state(con)
+  expect_equal(st$assemble_switch, 3L)
+  expect_equal(st$assemble_notes, "5 contig(s) under min_assembly_length (1000 bp)")
+
+  DBI::dbExecute(con, "UPDATE assemble_opts SET min_assembly_length = 415")
+  for (i in 1:2) RiboPilot:::load_assemblies(con, dir, "S1")   # carried once, not stacked
+  st <- gate_state(con)
+  expect_equal(st$assemble_switch, 4L)
+  expect_match(st$assemble_notes, "3 of 5 contigs shorter than Min assembly length \\(415 bp\\) were dropped")
+  expect_match(st$assemble_notes,
+    "; earlier run failed: 5 contig\\(s\\) under min_assembly_length \\(1000 bp\\)$")
+  expect_length(gregexpr("earlier run failed", st$assemble_notes)[[1]], 1)
 })
 
 test_that("short scaffolds do not count towards max_scaffolds", {
@@ -415,7 +435,8 @@ test_that("a re-assembly that changes a unit's sequence clears its old evidence 
       params = list(s))
   }
   DBI::dbExecute(con, "UPDATE annotate SET annotate_switch = 2, annotate_lock = 1, reviewed = 'yes',
-    partial = 'yes', export_group = 'g1'")
+    partial = 'yes', export_group = 'g1', chimeric = 1, n_flags = 2, curate_flags = 'short_18S',
+    itsx_warnings = 'itsx_chimeric', itsx_origin = 'F', itsx_scores = 'F: 1 1e-10 40'")
 
   # scaffold 1 comes back as a different contig; scaffold 2 is unchanged
   fa <- file.path(dir, "S1_assembly_1.fasta")
@@ -432,6 +453,10 @@ test_that("a re-assembly that changes a unit's sequence clears its old evidence 
   expect_equal(an$annotate_switch, c(1L, 2L))
   expect_equal(an$reviewed, c("no", "yes"))
   expect_equal(an$export_group, c(NA, "g1"))
+  for (col in c("chimeric", "n_flags", "curate_flags", "itsx_warnings", "itsx_origin", "itsx_scores")) {
+    expect_true(is.na(an[[col]][1]), info = col)
+    expect_false(is.na(an[[col]][2]), info = col)
+  }
   # the unchanged unit keeps everything
   expect_equal(ev("annotations", 2), 1)
   expect_equal(ev("screen", 2), 1)

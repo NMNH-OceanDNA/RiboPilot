@@ -74,7 +74,7 @@ test_that("the Hydra head job goes to the workflow-manager queue", {
   expect_match(s, "mres=24G,h_data=24G,h_vmem=64G", fixed = TRUE)
   expect_match(s, "#\\$ -S /bin/sh")
   # absolute log path: the submitting session's cwd is not the project dir
-  expect_match(s, "#\\$ -o /scratch/me/proj/logs/ribopilot\\.\\$JOB_ID\\.log")
+  expect_match(s, "#\\$ -o /scratch/me/proj/\\.runs/logs/ribopilot\\.\\$JOB_ID\\.log")
   expect_match(s, "nextflow run x", fixed = TRUE)
 })
 
@@ -114,7 +114,7 @@ test_that("generic job scripts write their log inside the project", {
   for (s in list(list(cmd = "qsub"), list(cmd = "sbatch"), list(cmd = "bsub"))) {
     txt <- RiboPilot:::job_script("/tmp/proj", "nextflow run x", s, "ribopilot")
     # logs go to the project's logs/ dir, not its root
-    expect_match(txt, "-o /tmp/proj/logs/ribopilot", fixed = TRUE)
+    expect_match(txt, "-o /tmp/proj/.runs/logs/ribopilot", fixed = TRUE)
     expect_match(txt, "nextflow exited with status", fixed = TRUE)
   }
   expect_false(grepl("-cwd",
@@ -130,18 +130,18 @@ test_that("one submission's script and both its logs share a timestamped name", 
     nf_pin_version = function(...) NA_character_,
     nf_command = function(...) c("run", "main.nf"),
     .package = "RiboPilot")
-  base <- RiboPilot:::job_basename("ribopilot", as.POSIXct("2026-08-12 09:45:03", tz = "UTC"))
-  expect_equal(base, "ribopilot_2026-08-12_09-45-03")
+  base <- RiboPilot:::job_basename("pipeline", as.POSIXct("2026-08-12 09:45:03", tz = "UTC"))
+  expect_equal(base, "pipeline_2026-08-12_09-45-03")
 
   txt <- RiboPilot:::build_submit_script(dir, sched = list(cmd = "qsub"), base = base)
   # the scheduler log, the Nextflow log, and the job name all carry the one base
-  expect_match(txt, file.path(dir, "logs", paste0(base, ".$JOB_ID.log")), fixed = TRUE)
-  expect_match(txt, file.path(dir, "nextflow_logs", paste0(base, ".nextflow.log")), fixed = TRUE)
+  expect_match(txt, file.path(dir, ".runs", "logs", paste0(base, ".$JOB_ID.log")), fixed = TRUE)
+  expect_match(txt, file.path(dir, ".runs", "nextflow", paste0(base, ".nextflow.log")), fixed = TRUE)
   expect_match(txt, paste0("#$ -N ", base), fixed = TRUE)
   # the directories exist by the time the job runs: a scheduler will not create a
   # missing -o directory, it fails the job before anything can say why
-  expect_true(dir.exists(file.path(dir, "logs")))
-  expect_true(dir.exists(file.path(dir, "nextflow_logs")))
+  expect_true(dir.exists(file.path(dir, ".runs", "logs")))
+  expect_true(dir.exists(file.path(dir, ".runs", "nextflow")))
 })
 
 test_that("a second submission does not overwrite the first one's log paths", {
@@ -154,9 +154,9 @@ test_that("a second submission does not overwrite the first one's log paths", {
     .package = "RiboPilot")
   t1 <- as.POSIXct("2026-08-12 09:45:03", tz = "UTC")
   a <- RiboPilot:::build_submit_script(dir, sched = list(cmd = "qsub"),
-    base = RiboPilot:::job_basename("ribopilot", t1))
+    base = RiboPilot:::job_basename("pipeline", t1))
   b <- RiboPilot:::build_submit_script(dir, sched = list(cmd = "qsub"),
-    base = RiboPilot:::job_basename("ribopilot", t1 + 60))
+    base = RiboPilot:::job_basename("pipeline", t1 + 60))
   expect_false(identical(a, b))
 })
 
@@ -255,4 +255,23 @@ test_that("the Hydra profile never asks SGE for h_rss", {
   expect_false(any(grepl("h_rss|mem_free", hdr)))
   expect_true(any(grepl("mres=12G,h_data=3G", hdr, fixed = TRUE)))
   expect_equal(sum(grepl("mres=4G,h_data=4G", hdr, fixed = TRUE)), 2L)
+})
+
+
+test_that("a recheck submission's script and logs share one base name", {
+  skip_if_not_installed("withr")
+  dir <- withr::local_tempdir()
+  testthat::local_mocked_bindings(
+    is_hydra_cluster = function() FALSE,
+    nf_pin_version = function(...) NA_character_,
+    nf_recheck_command = function(path) c("run", "main_recheck.nf"),
+    .package = "RiboPilot")
+  base <- RiboPilot:::job_basename("recheck", as.POSIXct("2026-10-08 09:45:03", tz = "UTC"))
+  expect_equal(base, "recheck_2026-10-08_09-45-03")
+  txt <- RiboPilot:::build_recheck_submit_script(dir, sched = list(cmd = "qsub"), base = base)
+  expect_match(txt, file.path(dir, ".runs", "logs", paste0(base, ".$JOB_ID.log")), fixed = TRUE)
+  expect_match(txt, file.path(dir, ".runs", "nextflow", paste0(base, ".nextflow.log")), fixed = TRUE)
+  expect_match(txt, paste0("#$ -N ", base), fixed = TRUE)
+  expect_true(dir.exists(file.path(dir, ".runs", "logs")))
+  expect_true(dir.exists(file.path(dir, ".runs", "nextflow")))
 })

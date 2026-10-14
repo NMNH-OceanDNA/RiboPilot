@@ -57,7 +57,7 @@ scaffold_depth <- function(header, gfa_depth) {
   ids <- ids[nzchar(ids)]
   i <- match(ids, gfa_depth$segment)
   if (anyNA(i)) {
-    warning("scaffold header names segments missing from the GFA: ",
+    warning("contig header names segments missing from the GFA: ",
       paste(unique(ids[is.na(i)]), collapse = ", "), call. = FALSE)
   }
   d <- gfa_depth[i[!is.na(i)], , drop = FALSE]

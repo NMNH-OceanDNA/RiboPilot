@@ -13,5 +13,6 @@ local({
   taxdump_dir <- if (length(a) >= 6 && nzchar(a[6])) a[6] else NULL
   parse_blast_candidates(con, a[2], path = as.integer(a[3]), scaffold = as.integer(a[4]),
     hits_file = a[5], taxdump_dir = taxdump_dir)
+  RiboPilot:::review_follow_original(con, a[2], as.integer(a[3]), as.integer(a[4]))
 })
 cat("blast candidates written:", a[2], a[3], a[4], "\n")

@@ -2,7 +2,7 @@
 % Please edit documentation in R/run_assembly.R
 \name{run_assembly}
 \alias{run_assembly}
-\title{Run the assembly workflow (WF1) for a project}
+\title{Run the assembly workflow for a project}
 \usage{
 run_assembly(
   path = ".",
@@ -33,7 +33,7 @@ loaded package location).}
 Launches the self-contained Nextflow pipeline, the same run as the app's
 Update button. For every taxonomy-locked sample that is Ready to run, one run
 cleans the reads, assembles, scores, BLASTs, maps coverage, annotates,
-curates, screens, checks for chimeras, and triages every scaffold, writing
+curates, screens, checks for chimeras, and triages every contig, writing
 everything back to the database. Run it again (or press Update) only after
 changing a selection, an option set, or a State.
 }

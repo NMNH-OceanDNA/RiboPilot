@@ -11,7 +11,8 @@ parse_blast_candidates(
   path = 1L,
   scaffold = 1L,
   hits_file,
-  taxdump_dir = NULL
+  taxdump_dir = NULL,
+  review = FALSE
 )
 }
 \arguments{
@@ -26,6 +27,10 @@ parse_blast_candidates(
 \item{taxdump_dir}{Optional pinned taxdump for resolving the screen hit's
 lineage. Without it the lineage is left NA, which curation flags rather
 than treats as clean.}
+
+\item{review}{TRUE stores the hits of the contig's review copy in
+\code{review_blast_hits} and calls derive_blast_products() in review mode. The
+sample's lineage taxids are never filled in.}
 }
 \value{
 (invisibly) the ranked candidate data.frame.

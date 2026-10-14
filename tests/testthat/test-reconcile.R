@@ -133,3 +133,71 @@ test_that("with no ITS region the longest copy of a gene is used", {
   rec <- RiboPilot:::reconcile_features(bar, data.frame())
   expect_equal(rec$start, 5001L)
 })
+
+# barrnap GFF and tuned-ITSx positions for unit S1.1.1, as annotate_tools writes them
+reconcile_inputs <- function(dir) {
+  gff <- file.path(dir, "unit.barrnap.gff")
+  writeLines(c(
+    "S1.1.1\tbarrnap:0.9\trRNA\t351\t2150\t0\t+\t.\tName=18S_rRNA;product=18S ribosomal RNA",
+    "S1.1.1\tbarrnap:0.9\trRNA\t2651\t2807\t0\t+\t.\tName=5_8S_rRNA;product=5.8S ribosomal RNA",
+    "S1.1.1\tbarrnap:0.9\trRNA\t3991\t6310\t0\t+\t.\tName=28S_rRNA;product=28S ribosomal RNA"), gff)
+  pos <- file.path(dir, "unit.itsx.positions.txt")
+  writeLines(paste0("S1.1.1\t6310 bp.\tSSU: 351-2150\tITS1: 2151-2650\t5.8S: 2651-2807\t",
+    "ITS2: 2808-3990\tLSU: 3991-6310\tChimeric! "), pos)
+  list(gff = gff, pos = pos)
+}
+
+test_that("reconcile_one writes chimeric and clears the stored ITSx check", {
+  con <- chimera_test_con()
+  withr::defer(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "UPDATE annotate SET chimeric = 0, itsx_warnings = 'itsx_no_5.8S', itsx_origin = 'M',
+    itsx_scores = 'M: 1 1e-10 40'")
+  DBI::dbExecute(con, "INSERT INTO annotate (ID, path, scaffold, itsx_warnings, itsx_origin, itsx_scores)
+    VALUES ('S1', 1, 2, '', 'M', 'M: 1 1e-10 40')")
+  f <- reconcile_inputs(withr::local_tempdir())
+  RiboPilot::reconcile_one(con, "S1", 1L, 1L, gff = f$gff, positions = f$pos)
+  an <- DBI::dbGetQuery(con, "SELECT annotate_switch, n_features, missing, chimeric, itsx_warnings,
+    itsx_origin, itsx_scores FROM annotate WHERE ID = 'S1' ORDER BY path, scaffold")
+  expect_equal(an$annotate_switch[1], 2L)
+  expect_equal(an$n_features[1], 5L)
+  expect_equal(an$missing[1], "")
+  expect_equal(an$chimeric[1], 1L)
+  expect_true(is.na(an$itsx_warnings[1]) && is.na(an$itsx_origin[1]) && is.na(an$itsx_scores[1]))
+  expect_equal(an$itsx_origin[2], "M")
+})
+
+test_that("reconcile_one keeps the old features when the annotate update fails", {
+  con <- chimera_test_con()
+  withr::defer(DBI::dbDisconnect(con))
+  f <- reconcile_inputs(withr::local_tempdir())
+  RiboPilot::reconcile_one(con, "S1", 1L, 1L, gff = f$gff, positions = f$pos)
+  DBI::dbExecute(con,
+    "CREATE TRIGGER block_annotate BEFORE UPDATE ON annotate BEGIN SELECT RAISE(ABORT, 'blocked'); END")
+  expect_error(RiboPilot::reconcile_one(con, "S1", 1L, 1L), "blocked")
+  expect_equal(DBI::dbGetQuery(con, "SELECT COUNT(*) AS n FROM annotations WHERE ID = 'S1'")$n, 5L)
+})
+
+test_that("rp_reconcile.R stores not_run when the ITSx check throws", {
+  skip_on_cran()
+  skip_on_os("windows")
+  skip_if_not_installed("pkgload")
+  src <- RiboPilot:::ribopilot_src_default()
+  skip_if(!nzchar(src), "not a source checkout")
+  con <- chimera_test_con()
+  withr::defer(DBI::dbDisconnect(con))
+  d <- withr::local_tempdir()
+  f <- reconcile_inputs(d)
+  pre <- file.path(d, "unit.itsx_check")
+  writeLines("ITSx run finished at Thu Oct  8 12:00:00 2026.", paste0(pre, ".summary.txt"))
+  dir.create(paste0(pre, ".positions.txt"))   # unreadable: the check itself throws
+  res <- processx::run("Rscript",
+    c(file.path(system.file("nextflow", "bin", package = "RiboPilot"), "rp_reconcile.R"),
+      DBI::dbGetInfo(con)$dbname, "S1", "1", "1", f$gff, f$pos, pre),
+    env = c("current", RIBOPILOT_SRC = src), error_on_status = FALSE)
+  expect_equal(res$status, 0L, info = res$stderr)
+  an <- DBI::dbGetQuery(con, "SELECT n_features, itsx_warnings, itsx_origin FROM annotate
+    WHERE ID = 'S1' AND path = 1 AND scaffold = 1")
+  expect_equal(an$n_features, 5L)
+  expect_match(an$itsx_warnings, "^not_run\\(ITSx check failed: .+\\)$")
+  expect_true(is.na(an$itsx_origin))
+})

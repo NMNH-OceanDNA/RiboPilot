@@ -4,7 +4,7 @@
 \alias{screen_one}
 \title{Score and store one unit's screen verdict}
 \usage{
-screen_one(con, id, path = 1L, scaffold = 1L, force = FALSE)
+screen_one(con, id, path = 1L, scaffold = 1L, force = FALSE, review = FALSE)
 }
 \arguments{
 \item{con}{Open project DB connection.}
@@ -12,6 +12,11 @@ screen_one(con, id, path = 1L, scaffold = 1L, force = FALSE)
 \item{id, path, scaffold}{Assembly unit.}
 
 \item{force}{Recompute even when the stored row is current.}
+
+\item{review}{TRUE scores the contig's review copy: hits from
+\code{review_blast_hits}, verdict to \code{review_screen}. The variant columns are
+carried over from the original \code{screen} row, because variant grouping
+compares every contig of a sample and is not rechecked.}
 }
 \value{
 (invisibly) the verdict written, or the stored one when skipped.

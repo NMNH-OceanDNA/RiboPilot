@@ -132,7 +132,7 @@ RP_TEST_READS_TAG <- "test-reads-2026.09.02"
 
 #' Initialize a RiboPilot test project
 #'
-#' Sets up a ready-to-run practice project from the bundled test set: 10 fish
+#' Sets up a ready-to-run test project from the bundled test set: 10 fish
 #' genome skims (USNM, study SRP313821) plus two synthetic samples, CHIM00 (a
 #' clean control) and CHIM01 (fish rDNA joined to a Penicillium 28S). Downloads
 #' each fish sample's paired reads, writes the mapping file, and initializes the
@@ -162,12 +162,17 @@ RP_TEST_READS_TAG <- "test-reads-2026.09.02"
 #' @param Rproj Initialize an RStudio project (default TRUE; no effect outside
 #'   RStudio).
 #' @param force Recreate an existing project database / config (default FALSE).
+#' @param fetch_metadata Fetch each sample's NCBI metadata (synthetic samples use
+#'   their source run's) and follow links
+#'   to GBIF and GEOME (default TRUE). Linking is saved as the project setting.
+#'   Set FALSE when offline.
 #' @param ... Passed to [new_project()] (e.g. `custom_seeds_db`).
 #' @return (invisibly) the project path.
 #' @export
 new_test_project <- function(path = ".", n = Inf, full_size = FALSE, executor = "docker",
                              container = paste0("macguigand/ribopilot:", utils::packageVersion("RiboPilot")),
-                             min_depth = 500, sra_bin = NULL, Rproj = TRUE, force = FALSE, ...) {
+                             min_depth = 500, sra_bin = NULL, Rproj = TRUE, force = FALSE,
+                             fetch_metadata = TRUE, ...) {
   path <- check_project_path(path, force)
   if (!dir.exists(path)) {
     message("Creating project directory: ", path)
@@ -205,6 +210,8 @@ new_test_project <- function(path = ".", n = Inf, full_size = FALSE, executor = 
     executor = executor,
     Rproj = Rproj,
     force = force,
+    fetch_ncbi = fetch_metadata,
+    link_sources = TRUE,
     ...
   )
   invisible(path)

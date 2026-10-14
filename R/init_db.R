@@ -31,10 +31,27 @@
 #'   the Reference step replaces it.
 #' @param getOrganelle Default GetOrganelle command-line options.
 #' @param max_paths Max assembly paths for a sample to continue (default 10).
-#' @param max_scaffolds Max scaffolds within a path to continue (default 10).
+#' @param max_scaffolds Max contigs within a path to continue (default 10).
 #' @param min_assembly_length Minimum contig length (bp) to retain (default 500).
 #' @param ref_dir Folder for built reference databases (default: the
 #'   `RIBOPILOT_REF_DIR` environment variable, else [ribopilot_ref_dir()]).
+#' @param mapping_geome Name of the mapping-file column holding GEOME BCIDs
+#'   (optional). Stored as `GEOME_BCID`. See `vignette("Sample-Metadata")`.
+#' @param fetch_geome Fetch GEOME metadata for samples with a BCID during setup
+#'   (default TRUE). Set FALSE when offline and run [fetch_geome()] later.
+#' @param mapping_gbif Name of the mapping-file column holding GBIF occurrence
+#'   IDs (optional). Stored as `GBIF_ID`. See `vignette("Sample-Metadata")`.
+#' @param fetch_gbif Fetch GBIF metadata for samples with a GBIF ID during setup
+#'   (default TRUE). Set FALSE when offline and run [fetch_gbif()] later.
+#' @param mapping_ncbi Name of the mapping-file column holding NCBI
+#'   BioSample or SRA accessions (optional). Must not be the sample ID column.
+#'   Stored as `BioSample`. See `vignette("Sample-Metadata")`.
+#' @param fetch_ncbi Fetch NCBI metadata for samples with a BioSample
+#'   value during setup (default TRUE). Set FALSE when offline and run
+#'   [fetch_ncbi()] later.
+#' @param link_sources Follow links between GEOME, GBIF, and NCBI records to
+#'   fill in IDs a sample does not have yet (default FALSE). Saved as the project
+#'   setting. See `vignette("Sample-Metadata")`.
 #'
 #' @export
 new_db <- function(
@@ -58,11 +75,19 @@ new_db <- function(
     max_paths = 10,
     max_scaffolds = 10,
     min_assembly_length = 500,
-    ref_dir = NULL) {
+    ref_dir = NULL,
+    mapping_geome = "GEOME_BCID",
+    fetch_geome = TRUE,
+    mapping_gbif = "GBIF_ID",
+    fetch_gbif = TRUE,
+    mapping_ncbi = "BioSample",
+    fetch_ncbi = TRUE,
+    link_sources = FALSE) {
   # Read and check the mapping file ----
   # Fail here, not per-task inside a work/ directory as an opaque tool error.
   mapping <- read_mapping(mapping_fn %||% "./mapping.csv", mapping_id, mapping_taxon) |>
-    check_mapping(mapping_id, data_path, assembly_path, check_reads, check_assemblies)
+    check_mapping(mapping_id, data_path, assembly_path, check_reads, check_assemblies,
+      mapping_geome, mapping_gbif, mapping_ncbi)
 
   # Default GetOrganelle nr databases (broad Actinopterygii) when unset ----
   seeds_db <- seeds_db %||% DEFAULT_SEEDS_DB
@@ -102,6 +127,9 @@ new_db <- function(
       taxonomy_lock = 0L,
       time_stamp = NA_integer_
     )
+  mapping <- .meta_take_cols(mapping,
+    c(GEOME = mapping_geome, GBIF = mapping_gbif, NCBI = mapping_ncbi),
+    keep = c(mapping_id, mapping_taxon))
   glue::glue_sql(
     "CREATE TABLE samples ({cols*}, PRIMARY KEY (ID))",
     cols = colnames(mapping),
@@ -361,28 +389,7 @@ new_db <- function(
   # row is the unfiltered best hit and is what the contaminant check reads: it
   # is the only place that can say "this is not the host, and not even nuclear
   # rDNA".
-  DBI::dbExecute(
-    con,
-    "CREATE TABLE blast_screen (
-      ID TEXT NOT NULL,
-      path INTEGER NOT NULL DEFAULT 1,
-      scaffold INTEGER NOT NULL DEFAULT 1,
-      accession TEXT,
-      title TEXT,
-      species TEXT,
-      staxid INTEGER,
-      lineage TEXT,
-      lineage_taxids TEXT,
-      rank_distance INTEGER,
-      pident REAL,
-      qcovs REAL,
-      evalue REAL,
-      bitscore REAL,
-      is_nuclear_rrna INTEGER,
-      time_stamp INTEGER,
-      PRIMARY KEY (ID, path, scaffold)
-    );"
-  )
+  DBI::dbExecute(con, BLAST_SCREEN_DDL)
 
   # blast_ref_sequences (fetched NCBI reference records, deduped by accession) ----
   DBI::dbExecute(
@@ -416,21 +423,7 @@ new_db <- function(
   )
 
   # blast_ref_alignment (per-feature sample-vs-reference nucleotide alignment) ----
-  DBI::dbExecute(
-    con,
-    "CREATE TABLE blast_ref_alignment (
-      ID TEXT NOT NULL,
-      path INTEGER NOT NULL DEFAULT 1,
-      scaffold INTEGER NOT NULL DEFAULT 1,
-      accession TEXT NOT NULL,
-      element TEXT NOT NULL,
-      pid REAL,
-      aln_cov REAL,
-      aln_len INTEGER,
-      time_stamp INTEGER,
-      PRIMARY KEY (ID, path, scaffold, accession, element)
-    );"
-  )
+  DBI::dbExecute(con, BLAST_REF_ALIGNMENT_DDL)
 
   # coverage (per-position read depth per assembly unit) ----
   DBI::dbExecute(
@@ -450,36 +443,8 @@ new_db <- function(
     );"
   )
 
-  # assembly_backup (original pre-trim state so a trim can be undone) ----
-  DBI::dbExecute(con, ASSEMBLY_BACKUP_DDL)
-
-  # annotations (nrDNA feature model per assembly unit) ----
-  # status/flags are filled by curation (curate_one); tool/edited by annotation.
-  # partial_start/partial_stop: 5'/3' end partial in the feature's own orientation.
-  DBI::dbExecute(
-    con,
-    "CREATE TABLE annotations (
-      ID TEXT NOT NULL,
-      path INTEGER NOT NULL DEFAULT 1,
-      scaffold INTEGER NOT NULL DEFAULT 1,
-      element TEXT NOT NULL,
-      type TEXT,
-      start INTEGER,
-      stop INTEGER,
-      length INTEGER,
-      strand TEXT,
-      model_coverage REAL,
-      partial_start INTEGER,
-      partial_stop INTEGER,
-      tool TEXT,
-      status TEXT,
-      flags TEXT,
-      edited INTEGER,
-      notes TEXT,
-      time_stamp INTEGER,
-      PRIMARY KEY (ID, path, scaffold, element)
-    );"
-  )
+  # annotations (nrDNA feature model per assembly unit; see ANNOTATIONS_DDL) ----
+  DBI::dbExecute(con, ANNOTATIONS_DDL)
 
   # annotate (per-unit annotation + curation summary) ----
   # One row per assembly unit (ID, path, scaffold); seeded per unit by
@@ -507,6 +472,9 @@ new_db <- function(
       partial TEXT DEFAULT 'no',
       export_group TEXT,
       time_stamp INTEGER,
+      export_time_stamp INTEGER,
+      itsx_origin TEXT,
+      itsx_scores TEXT,
       PRIMARY KEY (ID, path, scaffold)
     );"
   )
@@ -531,17 +499,19 @@ new_db <- function(
       rrna_kingdom TEXT,
       itsx_taxon TEXT,
       itsx_opts TEXT,
+      barrnap_opts TEXT,
+      pybarrnap_opts TEXT,
       PRIMARY KEY (annotate_opts)
     );"
   )
   # rrna_tool: 'pybarrnap' (default; euk-capable Python reimplementation) or
   # 'barrnap'. rrna_kingdom values differ by tool (pybarrnap: bac/arc/euk/all;
-  # barrnap: bac/arc/fun).
+  # barrnap: bac/arc/fun). *_opts: extra CLI flags for that tool only.
   dplyr::tbl(con, "annotate_opts") |>
     dplyr::rows_upsert(
       data.frame(annotate_opts = "default", cpus = 4L, memory = 8L,
         rrna_tool = "pybarrnap", rrna_kingdom = "euk",
-        itsx_taxon = "all", itsx_opts = ""),
+        itsx_taxon = "all", itsx_opts = "", barrnap_opts = "", pybarrnap_opts = ""),
       in_place = TRUE, copy = TRUE, by = "annotate_opts"
     )
 
@@ -571,6 +541,10 @@ new_db <- function(
   DBI::dbExecute(con, SCREEN_DDL)
   DBI::dbExecute(con, CHIMERA_DDL)
   DBI::dbExecute(con, CHIMERA_WINDOWS_DDL)
+
+  # review copies of edited contigs and the views over them (see REVIEW_VIEWS_DDL) ----
+  review_apply_schema(con)
+  feature_blast_apply_schema(con)
 
   # path_scores (taxonomy-aware candidate scoring + auto-select) ----
   DBI::dbExecute(
@@ -609,6 +583,13 @@ new_db <- function(
 
   # export_opts (named FASTA-header configurations) ----
   ensure_export_opts(con)
+  meta_apply_schema(con)
+
+  if (isTRUE(link_sources)) .meta_set_link_enabled(con, TRUE)
+  .meta_fetch_new(con, mapping,
+    list(GEOME = fetch_geome, GBIF = fetch_gbif, NCBI = fetch_ncbi),
+    link = isTRUE(link_sources))
+  record_schema_event(con, "created", current_schema_version())
 
   invisible(return())
 }
@@ -625,7 +606,8 @@ SAMPLE_BUILTIN_COLS <- c("taxid", "sci_name", "rank", "match_type", "tax_alterna
 #'
 #' Every column is read as text, so IDs like 001 stay as typed. Values are
 #' trimmed, blank cells become NA, and fully blank rows are dropped. Column
-#' names are matched to ID, Taxon, R1, R2, and Assembly ignoring case.
+#' names are matched to ID, Taxon, R1, R2, Assembly, GEOME_BCID, GBIF_ID, and
+#' BioSample ignoring case.
 #'
 #' @param mapping_fn Path to the mapping CSV.
 #' @param mapping_id,mapping_taxon ID and taxon column names.
@@ -657,7 +639,7 @@ read_mapping <- function(mapping_fn, mapping_id = "ID", mapping_taxon = "Taxon")
     x
   })
 
-  for (w in setdiff(c(mapping_id, mapping_taxon, "R1", "R2", "Assembly"), names(mapping))) {
+  for (w in setdiff(c(mapping_id, mapping_taxon, "R1", "R2", "Assembly", META_SAMPLE_COLS), names(mapping))) {
     i <- which(tolower(names(mapping)) == tolower(w))
     if (length(i) == 1) {
       message("Using mapping column '", names(mapping)[i], "' as '", w, "'.")
@@ -716,9 +698,11 @@ read_mapping <- function(mapping_fn, mapping_id = "ID", mapping_taxon = "Taxon")
       "no spaces, dots, or slashes. Change: ",
       paste(truncate_ids(sQuote(bad, FALSE)), collapse = ", "), call. = FALSE)
   }
-  long <- ids[nchar(ids) > 18]
+  # NCBI rejects SeqIDs over 50 characters; export appends up to
+  # "_p<path>_s<scaffold>" to an ID, so 40 leaves room.
+  long <- ids[nchar(ids) > 40]
   if (length(long)) {
-    stop("IDs must be 18 characters or fewer. Shorten: ",
+    stop("IDs must be 40 characters or fewer. Shorten: ",
       paste(truncate_ids(long), collapse = ", "), call. = FALSE)
   }
   mapping
@@ -729,8 +713,39 @@ read_mapping <- function(mapping_fn, mapping_id = "ID", mapping_taxon = "Taxon")
 #' @return the mapping, with a normalized `Assembly` column.
 #' @noRd
 check_mapping <- function(mapping, mapping_id = "ID", data_path = NULL, assembly_path = NULL,
-                          check_reads = TRUE, check_assemblies = TRUE) {
+                          check_reads = TRUE, check_assemblies = TRUE,
+                          mapping_geome = "GEOME_BCID", mapping_gbif = "GBIF_ID",
+                          mapping_ncbi = "BioSample") {
   ids <- mapping[[mapping_id]]
+  src_cols <- c(GEOME = mapping_geome, GBIF = mapping_gbif, NCBI = mapping_ncbi)
+  for (src in names(src_cols)[src_cols == mapping_id]) {
+    stop("The sample ID column '", mapping_id, "' can't also be the ", src,
+      " ID column; copy the IDs into their own column.", call. = FALSE)
+  }
+  for (src in names(src_cols)) {
+    col <- src_cols[[src]]
+    std <- META_SOURCES[[src]]$col
+    if (col != std && std %in% names(mapping)) {
+      stop("The mapping file has both a ", col, " column and a ", std,
+        " column for the same source. Keep one of them.", call. = FALSE)
+    }
+    if (!col %in% names(mapping)) {
+      if (col != std) {
+        stop("The ", META_SOURCES[[src]]$label, " column '", col, "' was not found in the mapping file.",
+          call. = FALSE)
+      }
+      next
+    }
+    raw <- trimws(.meta_chr(mapping[[col]]))
+    raw[is.na(raw)] <- ""
+    bad <- nzchar(raw) & is.na(META_SOURCES[[src]]$normalize(raw))
+    if (any(bad)) {
+      warning(structure(class = c("ribopilot_meta_id_warning", "warning", "condition"),
+        list(message = paste0("mapping ", META_SOURCES[[src]]$label, " ", META_SOURCES[[src]]$id_label,
+          ": not a valid ID for ", .lst(ids[bad]), "; these samples will show a failed ",
+          META_SOURCES[[src]]$label, " fetch"), call = NULL)))
+    }
+  }
   stop_unsafe_paths(c(
     stats::setNames(mapping$R1, paste(ids, "R1")),
     stats::setNames(mapping$R2, paste(ids, "R2")),

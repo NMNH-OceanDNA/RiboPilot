@@ -96,3 +96,27 @@ test_that("mp_col_header names columns and carries tips from the registry", {
   expect_identical(RiboPilot:::mp_col_header("ID"), "ID")
   expect_equal(names(RiboPilot:::mp_state_icon_classes("assemble")), c("0", "1", "4", "2", "3"))
 })
+
+test_that("rt_gated shows the state of unfinished checks, else the wrapped cell", {
+  js <- as.character(rt_gated(rt_flag_badge()))
+  expect_match(js, "row['check_state']", fixed = TRUE)
+  expect_match(js, "row['check_note']", fixed = TRUE)
+  expect_match(js, "mp-pill mp-pill-info", fixed = TRUE)
+  expect_match(js, as.character(rt_flag_badge()), fixed = TRUE)
+  expect_match(as.character(rt_gated()), "String(v)", fixed = TRUE)
+})
+
+test_that("the ITSx badge shows a missing result as not checked and ticks only a clean roll-up", {
+  js <- as.character(rt_itsx_badge())
+  expect_match(js, "not checked", fixed = TRUE)
+  re <- regmatches(js, regexpr("\\^0 of [^/]+\\$", js))
+  expect_length(re, 1)
+  expect_true(grepl(re, "0 of 4 contigs"))
+  expect_false(any(grepl(re, c("0 of 4 contigs, 1 not checked", "1 of 4 contigs", "10 of 40 contigs"))))
+})
+
+test_that("the State glyph names the recheck's note only when asked to", {
+  js <- as.character(rt_dynamicIcon(c(`3` = "fa fa-x"), labels = c(`3` = "Failed"), note_col = "check_note"))
+  expect_match(js, "(cellInfo.row || {})['check_note']", fixed = TRUE)
+  expect_false(grepl("note", as.character(rt_lock_icon("lock_row")), fixed = TRUE))
+})

@@ -174,7 +174,7 @@ test_that("the no_screen reason covers an unclassifiable hit, not just a missing
   # and every hit was assembly-level, so the reason must not assert the former
   d <- RiboPilot:::triage_rules(us(list(feats = 5, nuc = NA)))
   expect_equal(d$new_rule, "no_screen")
-  expect_false(grepl("has not run for this scaffold", d$new_reason, fixed = TRUE))
+  expect_false(grepl("has not run for this contig", d$new_reason, fixed = TRUE))
   expect_match(d$new_reason, "no BLAST hit says")
 })
 

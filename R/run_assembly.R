@@ -37,12 +37,12 @@ config_param <- function(config_lines, key) {
   trimws(gsub("['\"]", "", val))
 }
 
-#' Run the assembly workflow (WF1) for a project
+#' Run the assembly workflow for a project
 #'
 #' Launches the self-contained Nextflow pipeline, the same run as the app's
 #' Update button. For every taxonomy-locked sample that is Ready to run, one run
 #' cleans the reads, assembles, scores, BLASTs, maps coverage, annotates,
-#' curates, screens, checks for chimeras, and triages every scaffold, writing
+#' curates, screens, checks for chimeras, and triages every contig, writing
 #' everything back to the database. Run it again (or press Update) only after
 #' changing a selection, an option set, or a State.
 #'
@@ -73,7 +73,8 @@ run_assembly <- function(path = ".", nextflow = "nextflow", work = file.path(pat
   on.exit(run_lock_release(path, marker), add = TRUE)
 
   message("Running Nextflow assembly (WF1) - self-contained DB I/O...")
-  args <- nf_command(path, resume = TRUE, work = work, ribopilot_src = ribopilot_src)
+  args <- c(nf_log_opt(path, job_basename("pipeline")),
+    nf_command(path, resume = TRUE, work = work, ribopilot_src = ribopilot_src))
   nf_record_blastdb_launch(path)
   nf_cmd <- paste0(nxf_ver_prefix(nextflow), paste(c(shQuote(nextflow), shQuote(args)), collapse = " "))
   status <- system2("bash", c("-c", shQuote(paste0("cd ", shQuote(path), " && ", nf_cmd))), wait = TRUE)
@@ -81,8 +82,8 @@ run_assembly <- function(path = ".", nextflow = "nextflow", work = file.path(pat
     warning("Nextflow exited with status ", status)
   } else {
     message("WF1 complete (assemble -> score -> BLAST + coverage -> annotate + curate) ",
-      "written to the database. Every scaffold is annotated as it is assembled; ",
-      "review and lock assemblies in the app, then curate per unit in Annotation Review.")
+      "written to the database. Every contig is annotated as it is assembled; ",
+      "review and lock assemblies in the app, then curate per contig in Annotation Review.")
   }
   invisible(status)
 }

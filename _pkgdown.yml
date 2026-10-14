@@ -1,4 +1,4 @@
-url: https://dmacguigan.github.io/RiboPilot/
+url: https://nmnh-oceandna.github.io/RiboPilot/
 
 template:
   bootstrap: 5
@@ -31,70 +31,199 @@ navbar:
     right:
     - search
     - github
+  components:
+    articles:
+      text: Articles
+      menu:
+      - text: Setup
+      - text: "Installation"
+        href: articles/Installation.html
+      - text: -------
+      - text: Test project
+      - text: "1. Taxonomy"
+        href: articles/Test-Project-Taxonomy.html
+      - text: "2. Reference"
+        href: articles/Test-Project-Reference.html
+      - text: "3. Assemble"
+        href: articles/Test-Project-Assemble.html
+      - text: "4. Annotation Review"
+        href: articles/Test-Project-Annotate.html
+      - text: "5. Export"
+        href: articles/Test-Project-Export.html
+      - text: -------
+      - text: Usage
+      - text: "Your own project"
+        href: articles/Your-Own-Project.html
+      - text: "Reference databases"
+        href: articles/Reference-Databases.html
+      - text: "Choosing an assembly method"
+        href: articles/Assembly-Methods.html
+      - text: "Quality checks and flags"
+        href: articles/Curation-Flags.html
+      - text: "Preparing a GenBank submission"
+        href: articles/GenBank-Submission.html
+      - text: "Citing RiboPilot"
+        href: articles/Citing.html
+      - text: -------
+      - text: Metadata
+      - text: "Sample metadata"
+        href: articles/Sample-Metadata.html
+      - text: "Linking records across databases"
+        href: articles/Metadata-Linking.html
+      - text: "NMNH voucher submissions"
+        href: articles/NMNH-Vouchers.html
+      - text: "Metadata field reference"
+        href: articles/Metadata-Reference.html
+      - text: -------
+      - text: Computing environments
+      - text: "Running on a cluster"
+        href: articles/Clusters.html
+      - text: "Smithsonian Hydra setup"
+        href: articles/NMNH-Hydra.html
+      - text: "NOAA SEDNA setup"
+        href: articles/NOAA-SEDNA.html
+      - text: "Disk space, caches, and offline use"
+        href: articles/Caches-and-Offline.html
+      - text: -------
+      - text: Help
+      - text: "Troubleshooting"
+        href: articles/Troubleshooting.html
+
+search:
+  exclude:
+  - articles/Without-Containers.html
+  - reference/run_assembly.html
+  - reference/export_bundle.html
+  - reference/annotate_records.html
+  - reference/auto_triage_sample.html
+  - reference/bitscore_weighted_lca.html
+  - reference/chimera_unit.html
+  - reference/feature_blast_unit.html
+  - reference/compute_ref_alignment.html
+  - reference/curate_one.html
+  - reference/curate_rrna_core.html
+  - reference/derive_blast_products.html
+  - reference/fallback_assemble_one.html
+  - reference/gbif_normalize_id.html
+  - reference/geome_normalize_bcid.html
+  - reference/itsx_check_one.html
+  - reference/load_assemblies.html
+  - reference/mark_unit_searched.html
+  - reference/ncbi_normalize_id.html
+  - reference/new_db.html
+  - reference/open_project_db.html
+  - reference/parse_blast_candidates.html
+  - reference/prime_from_ref_store.html
+  - reference/push_to_ref_store.html
+  - reference/rank_at_least.html
+  - reference/rank_distance.html
+  - reference/rank_distance_label.html
+  - reference/reconcile_one.html
+  - reference/rederive_blast_products.html
+  - reference/resolve_taxonomy.html
+  - reference/score_assembly.html
+  - reference/score_candidates.html
+  - reference/score_one.html
+  - reference/screen_one.html
+  - reference/screen_sample.html
+  - reference/select_rrna_contigs.html
+  - reference/set_unit_triage.html
+  - reference/stop_if_nothing_stored.html
+  - reference/tk_ranked_lineage.html
+  - reference/triage_preview.html
+  - reference/write_blast_refs.html
+  - reference/write_coverage_units.html
+  - reference/write_path_scores.html
+  - reference/write_rrna_candidates.html
 
 articles:
 - title: "Setup"
-  navbar: Setup
   contents:
   - 'Installation'
 
-- title: "Walkthrough"
-  navbar: ~
+- title: "Test project walkthrough"
   contents:
-  - 'RiboPilot'
+  - 'Test-Project-Taxonomy'
+  - 'Test-Project-Reference'
+  - 'Test-Project-Assemble'
+  - 'Test-Project-Annotate'
+  - 'Test-Project-Export'
 
 - title: "Usage"
-  navbar: Usage
   contents:
   - 'Your-Own-Project'
   - 'Reference-Databases'
+  - 'Assembly-Methods'
   - 'Curation-Flags'
   - 'GenBank-Submission'
-  - 'Scripting'
   - 'Citing'
 
+- title: "Metadata"
+  contents:
+  - 'Sample-Metadata'
+  - 'Metadata-Linking'
+  - 'NMNH-Vouchers'
+  - 'Metadata-Reference'
+
 - title: "Computing environments"
-  navbar: Computing environments
   contents:
   - 'Clusters'
+  - 'NMNH-Hydra'
+  - 'NOAA-SEDNA'
   - 'Caches-and-Offline'
-  - 'Without-Containers'
 
 - title: "Help"
-  navbar: Help
   contents:
   - 'Troubleshooting'
 
+- title: internal
+  contents:
+  - 'Without-Containers'
+
 reference:
 - title: "Start a project"
+  desc: Create a project, open the app, and add or update samples.
   contents:
   - new_test_project
   - new_project
-  - RiboPilot
   - run_app
   - add_samples
   - update_sample_metadata
+  - backwards_compatibility
+- title: "Sample metadata"
+  desc: Fetch specimen records from GEOME, GBIF, and NCBI, and choose what to compare.
+  contents:
+  - fetch_geome
+  - fetch_gbif
+  - fetch_ncbi
+  - remove_metadata
+  - set_metadata_columns
 - title: "Reference databases"
+  desc: Build a reference database from R, and find the shared reference folder.
   contents:
   - build_reference_db
   - ribopilot_ref_dir
 - title: "Clusters"
+  desc: Set up a profile for your cluster's scheduler.
   contents:
   - generate_config
   - hydra_setup
 - title: "Export"
+  desc: Write GenBank submission files without the app.
   contents:
   - export_project
-  - export_bundle
-- title: "Advanced scripting"
-  contents:
-  - run_assembly
 - title: internal
   contents:
+  - run_assembly
+  - export_bundle
+  - gbif_normalize_id
+  - geome_normalize_bcid
+  - ncbi_normalize_id
   - annotate_records
   - auto_triage_sample
   - bitscore_weighted_lca
   - chimera_unit
+  - feature_blast_unit
   - compute_ref_alignment
   - curate_one
   - curate_rrna_core

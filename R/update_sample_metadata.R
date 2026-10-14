@@ -6,7 +6,8 @@
 #' has its resolved taxonomy cleared, unlocked, and queued for the Taxonomy
 #' step again. Use [add_samples()] to change what a sample reads or
 #' assembles from. Runs the same read_mapping()/check_mapping()
-#' checks as [new_project()].
+#' checks as [new_project()]. Backs up the database to
+#' `.old_sqlite_dbs/` first.
 #'
 #' @param project Path to the project directory (default = current working
 #'   directory).
@@ -25,6 +26,26 @@
 #'   mapping file exist under `data_path` (default TRUE).
 #' @param check_assemblies (logical) Check that the assembly files named in
 #'   the mapping file exist under `assembly_path` (default TRUE).
+#' @param mapping_geome Name of the mapping-file column holding GEOME BCIDs
+#'   (optional). Stored as `GEOME_BCID`. See `vignette("Sample-Metadata")`.
+#' @param fetch_geome Fetch GEOME metadata for samples with a BCID
+#'   when the identifiers change
+#'   (default TRUE). Set FALSE when offline and run [fetch_geome()] later.
+#' @param mapping_gbif Name of the mapping-file column holding GBIF occurrence
+#'   IDs (optional). Stored as `GBIF_ID`. See `vignette("Sample-Metadata")`.
+#' @param fetch_gbif Fetch GBIF metadata for samples with a GBIF ID
+#'   when the identifiers change
+#'   (default TRUE). Set FALSE when offline and run [fetch_gbif()] later.
+#' @param mapping_ncbi Name of the mapping-file column holding NCBI
+#'   BioSample or SRA accessions (optional). Must not be the sample ID column.
+#'   Stored as `BioSample`. See `vignette("Sample-Metadata")`.
+#' @param fetch_ncbi Fetch NCBI metadata for samples with a BioSample
+#'   value when the identifiers change (default TRUE). Set FALSE when offline and run
+#'   [fetch_ncbi()] later.
+#' @param link_sources Follow links between GEOME, GBIF, and NCBI records for
+#'   these samples (default FALSE). Linking also runs when the project setting
+#'   is on; this argument does not change the setting. See
+#'   `vignette("Sample-Metadata")`.
 #'
 #' @export
 update_sample_metadata <- function(
@@ -35,7 +56,14 @@ update_sample_metadata <- function(
     data_path = NULL,
     assembly_path = NULL,
     check_reads = TRUE,
-    check_assemblies = TRUE) {
+    check_assemblies = TRUE,
+    mapping_geome = "GEOME_BCID",
+    fetch_geome = TRUE,
+    mapping_gbif = "GBIF_ID",
+    fetch_gbif = TRUE,
+    mapping_ncbi = "BioSample",
+    fetch_ncbi = TRUE,
+    link_sources = FALSE) {
   project <- normalizePath(project, mustWork = FALSE)
   db_path <- file.path(project, ".sqlite")
   if (!file.exists(db_path)) {
@@ -46,7 +74,8 @@ update_sample_metadata <- function(
   stop_unsafe_paths(c(data_path = data_path %||% NA, assembly_path = assembly_path %||% NA))
 
   mapping <- read_mapping(mapping_fn, mapping_id, mapping_taxon) |>
-    check_mapping(mapping_id, data_path, assembly_path, check_reads, check_assemblies)
+    check_mapping(mapping_id, data_path, assembly_path, check_reads, check_assemblies,
+      mapping_geome, mapping_gbif, mapping_ncbi)
 
   con <- open_project_db(db_path)
   on.exit(DBI::dbDisconnect(con))
@@ -58,11 +87,20 @@ update_sample_metadata <- function(
       paste(truncate_ids(missing), collapse = ", "), call. = FALSE)
   }
 
+  backup_dir <- file.path(project, ".old_sqlite_dbs")
+  dir.create(backup_dir, showWarnings = FALSE)
+  backup <- file.path(backup_dir, paste0(".sqlite.", length(list.files(backup_dir, all.files = TRUE, no.. = TRUE)) + 1))
+  RSQLite::sqliteCopyDatabase(con, backup)
+  message("Backed up old SQLite database to: ", backup)
+
   mapping <- mapping |>
     dplyr::mutate(ID = .data[[mapping_id]], Taxon = .data[[mapping_taxon]]) |>
     dplyr::select(-dplyr::any_of(c("R1", "R2", "Assembly")))
+  mapping <- .meta_take_cols(mapping,
+    c(GEOME = mapping_geome, GBIF = mapping_gbif, NCBI = mapping_ncbi),
+    keep = c(mapping_id, mapping_taxon))
   mapping$ID <- existing[match(tolower(mapping$ID), tolower(existing))]
-  old <- DBI::dbGetQuery(con, "SELECT ID, Taxon FROM samples")
+  old <- DBI::dbGetQuery(con, "SELECT * FROM samples")
   retax <- mapping$ID[!paste(mapping$ID, mapping$Taxon) %in% paste(old$ID, old$Taxon)]
 
   new_cols <- setdiff(colnames(mapping), DBI::dbListFields(con, "samples"))
@@ -81,6 +119,10 @@ update_sample_metadata <- function(
     message("Taxon changed for ", paste(truncate_ids(retax), collapse = ", "),
       ": their taxonomy was cleared and unlocked. Run the Taxonomy step again for them.")
   }
+
+  .meta_sync_changed(con, mapping, old,
+    list(GEOME = fetch_geome, GBIF = fetch_gbif, NCBI = fetch_ncbi),
+    link = isTRUE(link_sources) || .meta_link_enabled(con))
 
   message("Updated metadata for ", nrow(mapping), " sample(s) in ", project, ": ",
     paste(mapping$ID, collapse = ", "))

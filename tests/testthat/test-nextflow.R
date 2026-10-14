@@ -90,7 +90,7 @@ test_that("query_samples selects the assembler and declares it in the header", {
   # rows, so it and the select list must agree on column count or splitCsv
   # misreads every field.
   n_hdr <- length(strsplit(sub(".*printf '", "", sub("\\\\n' > .*", "", hdr)), "\\\\t")[[1]])
-  expect_equal(n_hdr, 18L)
+  expect_equal(n_hdr, 19L)
 })
 
 test_that("main.nf branches on the assembler and merges both arms into score", {
@@ -123,9 +123,10 @@ test_that("main.nf includes fallback_assemble and still passes seeds to GetOrgan
 
 test_that("there is ONE workflow: no second file left to drift", {
   nf_dir <- system.file("nextflow", package = "RiboPilot")
-  # main_reference.nf is the reference-database workflow, not a second WF1
+  # main_reference.nf builds reference databases and main_recheck.nf rechecks
+  # review copies; neither is a second WF1
   wf <- setdiff(list.files(nf_dir, pattern = "\\.nf$"),
-    c("nextflow.config", "main_reference.nf"))
+    c("nextflow.config", "main_reference.nf", "main_recheck.nf"))
   expect_setequal(wf, "main.nf")
   expect_false(file.exists(file.path(nf_dir, "main_fallback.nf")))
   expect_false(file.exists(file.path(nf_dir, "main_annotate.nf")))
@@ -417,8 +418,12 @@ test_that("the shipped config sets pipefail and throttles the NCBI processes", {
   txt <- paste(cfg, collapse = " ")
   # without pipefail, `bowtie2 | samtools sort` reports samtools' exit status
   expect_match(txt, "pipefail")
-  expect_match(txt, "blast_genbank\\|blast_ref_fetch")
-  expect_match(txt, "maxForks")
+  # throttle lives on the processes: a config selector warns in workflows without them
+  expect_false(grepl("blast_genbank|blast_ref_fetch", txt, fixed = TRUE))
+  for (f in c("blast.nf", "blast_ref.nf")) {
+    nf <- paste(readLines(system.file("nextflow", "modules", f, package = "RiboPilot")), collapse = " ")
+    expect_match(nf, "maxForks 3")
+  }
 })
 
 test_that("an out-of-memory kill retries with more memory instead of dropping", {
@@ -765,6 +770,7 @@ test_that("blast.nf falls back to remote when a configured local panel fails ins
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S1',7955,NULL,NULL)")
   DBI::dbExecute(con, RiboPilot:::BLAST_HITS_DDL)
   DBI::dbExecute(con, RiboPilot:::BLAST_SEARCHED_DDL)
+  DBI::dbExecute(con, RiboPilot:::REVIEW_UNITS_DDL)
   DBI::dbExecute(con, "CREATE TABLE blast_ref_candidates(ID TEXT, path INT, scaffold INT, rank INT,
     accession TEXT, species TEXT, title TEXT, pident REAL, qcovs REAL, evalue REAL, bitscore REAL, time_stamp INT)")
   DBI::dbExecute(con, "CREATE TABLE blast_screen(ID TEXT, path INT, scaffold INT, accession TEXT, title TEXT,
@@ -855,6 +861,7 @@ mk_dbarg_project <- function(root, blastdb) {
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S1',7955,NULL,NULL)")
   DBI::dbExecute(con, RiboPilot:::BLAST_HITS_DDL)
   DBI::dbExecute(con, RiboPilot:::BLAST_SEARCHED_DDL)
+  DBI::dbExecute(con, RiboPilot:::REVIEW_UNITS_DDL)
   DBI::dbExecute(con, "CREATE TABLE blast_ref_candidates(ID TEXT, path INT, scaffold INT, rank INT,
     accession TEXT, species TEXT, title TEXT, pident REAL, qcovs REAL, evalue REAL, bitscore REAL, time_stamp INT)")
   DBI::dbExecute(con, "CREATE TABLE blast_screen(ID TEXT, path INT, scaffold INT, accession TEXT, title TEXT,
@@ -1080,6 +1087,7 @@ test_that("blast_genbank records provenance for a discovered, unconfigured panel
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S1',7955,NULL,NULL)")
   DBI::dbExecute(con, RiboPilot:::BLAST_HITS_DDL)
   DBI::dbExecute(con, RiboPilot:::BLAST_SEARCHED_DDL)
+  DBI::dbExecute(con, RiboPilot:::REVIEW_UNITS_DDL)
   DBI::dbExecute(con, "CREATE TABLE blast_ref_candidates(ID TEXT, path INT, scaffold INT, rank INT,
     accession TEXT, species TEXT, title TEXT, pident REAL, qcovs REAL, evalue REAL, bitscore REAL, time_stamp INT)")
   DBI::dbExecute(con, "CREATE TABLE blast_screen(ID TEXT, path INT, scaffold INT, accession TEXT, title TEXT,
@@ -1166,6 +1174,7 @@ test_that("blast.nf warns when extra_opts sets -evalue for a local search", {
     # no assemblies rows: UNITS resolves empty, so the per-unit loop never runs
     DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, sequence TEXT, ignore INT)")
     DBI::dbExecute(con, RiboPilot:::BLAST_SEARCHED_DDL)
+    DBI::dbExecute(con, RiboPilot:::REVIEW_UNITS_DDL)
     DBI::dbDisconnect(con)
 
     writeLines(c(
@@ -1286,6 +1295,7 @@ test_that("a local failure on one unit does not disable local search for the res
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S1',7955,NULL,NULL)")
   DBI::dbExecute(con, RiboPilot:::BLAST_HITS_DDL)
   DBI::dbExecute(con, RiboPilot:::BLAST_SEARCHED_DDL)
+  DBI::dbExecute(con, RiboPilot:::REVIEW_UNITS_DDL)
   DBI::dbExecute(con, "CREATE TABLE blast_ref_candidates(ID TEXT, path INT, scaffold INT, rank INT,
     accession TEXT, species TEXT, title TEXT, pident REAL, qcovs REAL, evalue REAL, bitscore REAL, time_stamp INT)")
   DBI::dbExecute(con, "CREATE TABLE blast_screen(ID TEXT, path INT, scaffold INT, accession TEXT, title TEXT,
@@ -1369,10 +1379,11 @@ test_that("query_samples skips samples whose taxonomy is not locked", {
   DBI::dbExecute(con, "CREATE TABLE assemble_opts(assemble_opts TEXT, cpus INT, memory INT,
     getOrganelle TEXT, max_paths INT, seeds_db TEXT, labels_db TEXT, assembler TEXT, find_rrna INT,
     bowtie2 TEXT, spades TEXT)")
-  DBI::dbExecute(con, "CREATE TABLE annotate_opts(annotate_opts TEXT, rrna_tool TEXT, rrna_kingdom TEXT)")
+  DBI::dbExecute(con, "CREATE TABLE annotate_opts(annotate_opts TEXT, rrna_tool TEXT, rrna_kingdom TEXT,
+    barrnap_opts TEXT, pybarrnap_opts TEXT)")
   DBI::dbExecute(con, "INSERT INTO pre_opts VALUES('default',4,8,'')")
   DBI::dbExecute(con, "INSERT INTO assemble_opts VALUES('default',4,16,'--flag',10,NULL,NULL,'getorganelle',1,NULL,NULL)")
-  DBI::dbExecute(con, "INSERT INTO annotate_opts VALUES('default','pybarrnap','euk')")
+  DBI::dbExecute(con, "INSERT INTO annotate_opts VALUES('default','pybarrnap','euk','','')")
   for (id in c("LOCKED", "UNLOCKED")) {
     DBI::dbExecute(con, "INSERT INTO samples VALUES(?,NULL,?)",
       params = list(id, if (id == "LOCKED") 1L else 0L))
@@ -1572,6 +1583,207 @@ test_that("the pick step runs even when every scan part failed, and scan parts r
   expect_match(txt, "${params.find_rrna_chunk_size} ${gffs}", fixed = TRUE)
   cfg <- paste(readLines(system.file("nextflow", "nextflow.config", package = "RiboPilot")),
     collapse = " ")
-  expect_match(cfg, "withName: 'assemble|fallback_assemble|preprocess|annotate_tools|find_rrna_scan'",
+  expect_match(cfg, "withName: 'assemble|fallback_assemble|preprocess|annotate_tools|find_rrna_scan|recheck_tools'",
     fixed = TRUE)
+})
+
+test_that("user rRNA caller flags reach both the per-unit and the scan commands", {
+  nf <- readLines(system.file("nextflow", "modules", "pipeline_r.nf", package = "RiboPilot"))
+  expect_true(any(grepl("barrnap_opts ELSE ao.pybarrnap_opts", nf, fixed = TRUE)))
+  expect_true(any(grepl('"\\$RRNAO" ${task.cpus}', nf, fixed = TRUE)))
+  expect_true(any(grepl("AS rrna_opts", nf, fixed = TRUE)))
+  scan <- readLines(system.file("nextflow", "modules", "find_rrna.nf", package = "RiboPilot"))
+  expect_true(any(grepl("--quiet ${opts} ${chunk}", scan, fixed = TRUE)))
+  expect_true(any(grepl("-q ${opts} ${chunk}", scan, fixed = TRUE)))
+  main <- readLines(system.file("nextflow", "main.nf", package = "RiboPilot"))
+  expect_true(any(grepl("r.rrna_kingdom, r.rrna_opts)", main, fixed = TRUE)))
+})
+
+# ---- the recheck workflow: main_recheck.nf and modules/recheck.nf ----
+
+recheck_nf <- readLines(system.file("nextflow", "modules", "recheck.nf", package = "RiboPilot"))
+main_recheck_nf <- readLines(system.file("nextflow", "main_recheck.nf", package = "RiboPilot"))
+
+recheck_body <- function(lines, proc) {
+  start <- grep(paste0("^process ", proc, " \\{"), lines)
+  expect_length(start, 1)
+  lines[start:(start - 1 + which(lines[start:length(lines)] == "}")[1])]
+}
+
+test_that("main_recheck.nf feeds query_recheck through recheck_tools into recheck", {
+  expect_true(any(main_recheck_nf ==
+    "include { query_recheck; recheck_tools; recheck } from './modules/recheck.nf'"))
+  code <- paste(main_recheck_nf[!grepl("^\\s*//", main_recheck_nf)], collapse = "\n")
+  expect_match(code, "query_recheck().splitCsv(header: true, sep: '\\t')", fixed = TRUE)
+  expect_match(code, "tuple(r.ID, r.path, r.scaffold, r.rev, r.cpus, r.mem, r.mode)", fixed = TRUE)
+  expect_match(code, "recheck_tools(units)", fixed = TRUE)
+  expect_match(code, "recheck(recheck_tools.out)", fixed = TRUE)
+  # every field the workflow reads is a column query_recheck writes
+  hdr <- grep("printf 'ID", recheck_body(recheck_nf, "query_recheck"), value = TRUE)
+  expect_length(hdr, 1)
+  cols <- strsplit(sub(".*printf '", "", sub("\\\\n' > .*", "", hdr)), "\\\\t")[[1]]
+  expect_equal(cols, c("ID", "path", "scaffold", "rev", "cpus", "mem", "mode"))
+  used <- sub("^r\\.", "", regmatches(code, gregexpr("\\br\\.[A-Za-z_]+", code))[[1]])
+  expect_true(all(used %in% cols))
+  # uncached, and the per-contig processes are tagged by contig
+  for (p in c("query_recheck", "recheck_tools", "recheck")) {
+    expect_true(any(grepl("^\\s*cache false$", recheck_body(recheck_nf, p))), info = p)
+  }
+  for (p in c("recheck_tools", "recheck")) {
+    body <- recheck_body(recheck_nf, p)
+    expect_true(any(grepl('tag "${id}.${upath}.${uscaf}"', body, fixed = TRUE)), info = p)
+    expect_true(any(grepl("errorStrategy 'ignore'", body, fixed = TRUE)), info = p)
+  }
+  expect_true(any(grepl("executor 'local'", recheck_body(recheck_nf, "query_recheck"), fixed = TRUE)))
+  expect_true(all(c("params.blastdb = ''", "params.taxdump_dir = ''") %in% recheck_nf))
+})
+
+test_that("query_recheck selects RECHECK_QUEUE_SQL word for word and marks it running", {
+  body <- paste(recheck_body(recheck_nf, "query_recheck"), collapse = "\n")
+  sql <- regmatches(body, regexpr("CREATE TEMP TABLE q AS\\s*\\K[^;]*", body, perl = TRUE))
+  norm <- function(x) gsub("\\s+", " ", trimws(x))
+  expect_equal(norm(sql), norm(RiboPilot:::RECHECK_QUEUE_SQL))
+  # it travels inside a Nextflow string and a double-quoted shell argument
+  expect_false(any(strsplit(RiboPilot:::RECHECK_QUEUE_SQL, "")[[1]] %in% c("$", "\"", "\\", ";")))
+  expect_match(body, "BEGIN IMMEDIATE;", fixed = TRUE)
+  expect_match(body, "UPDATE review_units SET check_switch = 4", fixed = TRUE)
+  expect_match(body, "COMMIT;\" >> recheck_units.tsv", fixed = TRUE)
+})
+
+test_that("recheck_tools reads the tool options exactly as annotate_tools does", {
+  opts <- function(lines, proc) {
+    body <- recheck_body(lines, proc)
+    from <- grep("read TOOL KINGDOM ITSXT ITSXO <<<", body, fixed = TRUE)
+    to <- grep("RRNAO=\"", body, fixed = TRUE)
+    expect_length(from, 1)
+    expect_length(to, 1)
+    body[from:(to - 1 + grep("\")\"$", body[to:length(body)])[1])]
+  }
+  got <- opts(recheck_nf, "recheck_tools")
+  expect_gt(length(got), 5)
+  expect_identical(got, opts(pipeline_r_nf, "annotate_tools"))
+})
+
+test_that("recheck_tools runs the tools only on the queued rev and fails only on out-of-memory exits", {
+  body <- recheck_body(recheck_nf, "recheck_tools")
+  txt <- paste(body, collapse = "\n")
+  expect_match(txt, "'>'||ID||'.'||path||'.'||scaffold||char(10)||sequence FROM review_units", fixed = TRUE)
+  expect_match(txt, "AND rev=${rev}", fixed = TRUE)
+  expect_match(txt, "check_switch IN (1,4) AND sequence IS NOT NULL", fixed = TRUE)
+  expect_match(txt, "if [ -s unit.fasta ]; then", fixed = TRUE)
+  call <- grep("rp_rrna_tools.sh ", body, value = TRUE, fixed = TRUE)
+  expect_length(call, 1)
+  expect_equal(trimws(call), paste('rp_rrna_tools.sh unit.fasta "\\$TOOL" "\\$KINGDOM" "\\$ITSXT"',
+    '"\\$ITSXO" "\\$RRNAO" ${task.cpus} || rc=\\$?'))
+  codes <- grep('case "\\$rc" in', body, value = TRUE, fixed = TRUE)
+  expect_length(codes, 1)
+  codes <- as.integer(strsplit(sub(".* in ([0-9|]+)\\).*", "\\1", codes), "|", fixed = TRUE)[[1]])
+  expect_setequal(codes, RiboPilot:::NF_RETRY_CODES)
+  expect_match(txt, "path('unit.itsx_check*'), val(nthreads), optional: true", fixed = TRUE)
+})
+
+test_that("recheck takes its cpus from the nthreads recheck_tools passes on", {
+  body <- recheck_body(recheck_nf, "recheck")
+  expect_true(any(trimws(body) == "cpus { nthreads as int }"))
+  expect_true(any(grepl("path(chk), val(nthreads)", body, fixed = TRUE)))
+})
+
+test_that("the recheck process resolves the panel and labels as the chimera process does", {
+  block <- function(lines, proc) {
+    body <- recheck_body(lines, proc)
+    from <- grep('DBARG=""', body, fixed = TRUE)
+    to <- grep("2>/dev/null || echo \"\")", body, fixed = TRUE)
+    expect_length(from, 1)
+    body[from:to[length(to)]]
+  }
+  expect_identical(block(recheck_nf, "recheck"), block(pipeline_r_nf, "chimera"))
+  call <- gsub("\\s+", " ", paste(recheck_body(recheck_nf, "recheck"), collapse = " "))
+  expect_match(call, paste("RP_THREADS=${task.cpus} RIBOPILOT_SRC='${params.ribopilot_src}' rp_recheck.R \\",
+    "'${params.db}' '${id}' ${upath} ${uscaf} ${rev} ${mode} . \"\\$DBARG\" '${params.taxdump_dir}' \"\\$LABELS\""),
+    fixed = TRUE)
+})
+
+test_that("nf_recheck_command runs main_recheck.nf in work_recheck, without -resume", {
+  skip_if_not_installed("withr")
+  withr::local_envvar(RIBOPILOT_REF_DIR = tempfile("no-ref-dir-"))
+  proj <- withr::local_tempdir()
+  refs <- withr::local_tempdir()
+  mk_ref_config_project(proj, refs, blastdb = "/opt/rp/ribopilot_rrna")
+  writeLines(c("params {", "  rawDir = '/data/raw'", "  minDepth = 5",
+    "  ncbi_api_key = 'abc123'", "}"), file.path(proj, ".config"))
+  a <- RiboPilot:::nf_recheck_command(proj)
+  val <- function(flag) a[which(a == flag) + 1]
+  expect_equal(a[1:2], c("run", system.file("nextflow", "main_recheck.nf", package = "RiboPilot")))
+  expect_true(file.exists(a[2]))
+  expect_equal(val("-c"), file.path(proj, ".config"))
+  expect_equal(val("-work-dir"), file.path(proj, "work_recheck"))
+  expect_equal(val("--db"), file.path(proj, ".sqlite"))
+  expect_equal(val("--projectDir"), proj)
+  expect_equal(val("--rawDir"), "/data/raw")
+  expect_equal(val("--taxdump_dir"), file.path(proj, ".taxonomy"))
+  expect_equal(val("--blastdb"), "/opt/rp/ribopilot_rrna")
+  expect_equal(val("--ribopilot_version"), as.character(utils::packageVersion("RiboPilot")))
+  for (f in c("-resume", "--minDepth", "--ref_dir", "--ncbi_api_key")) expect_false(f %in% a, info = f)
+  expect_true(all(nzchar(a)))
+  # the main pipeline's command for the same project does carry them
+  expect_true(all(c("--minDepth", "--ref_dir", "--ncbi_api_key") %in%
+    RiboPilot:::nf_command(proj, resume = FALSE)))
+})
+
+test_that("nf_recheck_command leaves out a blank rawDir and blastdb instead of refusing", {
+  skip_if_not_installed("withr")
+  proj <- withr::local_tempdir()
+  # reads but no rawDir: the main pipeline refuses, the recheck reads no reads
+  mk_rawdir_project(proj, raw = "NA", r1 = "a.fq")
+  expect_error(RiboPilot:::nf_command(proj, resume = FALSE), "No rawDir set")
+  a <- RiboPilot:::nf_recheck_command(proj)
+  expect_false("--rawDir" %in% a)
+  expect_false("--blastdb" %in% a)
+  expect_true(all(nzchar(a)))
+})
+
+test_that("nf_recheck_command mounts the reference folders as nf_command does", {
+  skip_if_not_installed("withr")
+  withr::local_envvar(RIBOPILOT_REF_DIR = tempfile("no-ref-dir-"))
+  proj <- withr::local_tempdir(); refs <- withr::local_tempdir()
+  dir.create(file.path(refs, "seeds")); dir.create(file.path(refs, "labels"))
+  s <- file.path(refs, "seeds", "x_seeds.fasta"); l <- file.path(refs, "labels", "x_labels.fasta")
+  writeLines(">18S", s); writeLines(">18S", l)
+  mk_mount_project(proj, s, l)
+  a <- RiboPilot:::nf_recheck_command(proj)
+  b <- RiboPilot:::nf_command(proj, resume = FALSE)
+  opt <- "-process.containerOptions"
+  expect_length(which(a == opt), 1L)
+  expect_equal(a[which(a == opt) + 1], b[which(b == opt) + 1])
+  expect_true(grepl(file.path(refs, "seeds"), a[which(a == opt) + 1], fixed = TRUE))
+})
+
+test_that("building the recheck command records no panel provenance", {
+  skip_if_not_installed("withr")
+  d <- withr::local_tempdir()
+  writeLines(c("params {", "  rawDir = '/data/raw'", "}"), file.path(d, ".config"))
+  panel_dir <- withr::local_tempdir()
+  writeLines('{"db_name":"ribopilot_rrna","db_version":"2026.08.1"}',
+    file.path(panel_dir, "manifest.json"))
+  prefix <- file.path(panel_dir, "ribopilot_rrna")
+  file.create(paste0(prefix, ".nin"))
+  mk_ref_config_project(d, NA_character_, blastdb = prefix)
+  expect_true("--blastdb" %in% RiboPilot:::nf_recheck_command(d))
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(d, ".sqlite"))
+  on.exit(DBI::dbDisconnect(con))
+  expect_equal(RiboPilot:::blastdb_provenance(con), "")
+})
+
+test_that("feature_blast runs on reconcile.out and stays out of triage", {
+  include_line <- grep("^include \\{.*\\} from './modules/pipeline_r.nf'$", main_nf, value = TRUE)
+  expect_match(include_line, "\\bfeature_blast\\b")
+  expect_length(grep("^\\s*feature_blast\\(reconcile\\.out\\)\\s*$", main_nf), 1)
+  expect_false(any(grepl("feature_blast\\.out", main_nf)))
+  start <- grep("^process feature_blast \\{", pipeline_r_nf)
+  expect_length(start, 1)
+  end <- start - 1 + which(pipeline_r_nf[start:length(pipeline_r_nf)] == "}")[1]
+  body <- pipeline_r_nf[start:end]
+  expect_true(any(grepl("errorStrategy { task.attempt <= 2 ? 'retry' : 'ignore' }", body, fixed = TRUE)))
+  expect_true(any(grepl("cache false", body)))
+  expect_true(any(grepl("rp_feature_blast.R", body, fixed = TRUE)))
 })

@@ -237,8 +237,8 @@ reconcile_features <- function(bar, its) {
 #' bac/arc/euk/all, while the bioconda Perl barrnap fork takes bac/arc/fun,
 #' where "fun" selects its eukaryote Rfam covariance models and is NOT a
 #' fungi-only mode (dev/design/03_ANNOTATION_CURATION.md). This is the single
-#' place that mapping lives on the R side; the shell branch of
-#' inst/nextflow/modules/pipeline_r.nf mirrors the same rule.
+#' place that mapping lives on the R side; inst/nextflow/bin/rp_rrna_tools.sh
+#' mirrors the same rule.
 #' @param kingdom Stored kingdom (annotate_opts.rrna_kingdom), e.g. "euk".
 #' @param tool "barrnap" or "pybarrnap".
 #' @return The kingdom string to pass to `tool`.
