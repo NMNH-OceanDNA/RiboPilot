@@ -50,6 +50,18 @@ test_that("the app fixes PATH when a Hydra session has no scheduler on it", {
     strsplit(Sys.getenv("PATH"), .Platform$path.sep, fixed = TRUE)[[1]])
 })
 
+test_that("library() applies the Hydra PATH fix before probing Nextflow", {
+  calls <- character(0)
+  testthat::local_mocked_bindings(
+    ensure_hydra_setup = function() { calls <<- c(calls, "hydra"); invisible(TRUE) },
+    nf_installed_version = function(...) { calls <<- c(calls, "probe"); "25.04.0" },
+    .package = "RiboPilot")
+  rm(list = ls(RiboPilot:::.nf_probe_cache), envir = RiboPilot:::.nf_probe_cache)
+  withr::defer(rm(list = ls(RiboPilot:::.nf_probe_cache), envir = RiboPilot:::.nf_probe_cache))
+  suppressPackageStartupMessages(RiboPilot:::.onAttach("lib", "RiboPilot"))
+  expect_equal(calls, c("hydra", "probe"))
+})
+
 test_that("nothing happens once the scheduler is visible", {
   testthat::local_mocked_bindings(
     is_hydra_cluster = function() TRUE,
