@@ -223,3 +223,11 @@ test_that("the summary line counts rows, columns, and differences", {
   big <- list(len = 7812L, rows = rows$rows)
   expect_match(RiboPilot:::paths_summary_text(big), "7,812 columns", fixed = TRUE)
 })
+
+test_that("the align-mode viewer box is height-capped and scrolls", {
+  html <- paste(as.character(RiboPilot:::seqview_ui("seqv_paths", NULL, mode = "align")), collapse = " ")
+  expect_match(html, 'class="rp-seqview rp-seqview-align"', fixed = TRUE)
+  unit <- paste(as.character(RiboPilot:::seqview_ui("seqv_asm", "Cov")), collapse = " ")
+  expect_false(grepl("rp-seqview-align", unit, fixed = TRUE))
+  expect_equal(RiboPilot:::PATHS_WARN_N, 20L)
+})

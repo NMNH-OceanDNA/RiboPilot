@@ -81,7 +81,7 @@ seqview_ui <- function(prefix, summary, open = TRUE, pick = TRUE, mode = c("unit
       "other colours are foreign; a dashed line marks a possible junction. BLAST identity is the best hit's identity in each window, coloured like the origin band. ",
       "Hover for the match.")
   body <- tagList(controls, help,
-    div(class = "rp-seqview",
+    div(class = if (mode == "align") "rp-seqview rp-seqview-align" else "rp-seqview",
       tags$canvas(id = id("canvas"), class = "rp-seqview-canvas"),
       tags$div(id = id("tip"), class = "rp-seqview-tip", hidden = NA)))
   if (is.null(summary)) div(body) else rp_details(summary, open = open, body)

@@ -18,8 +18,8 @@ new_db(
   seeds_db = NULL,
   labels_db = NULL,
   getOrganelle = paste("-F anonym", "-R 10 -k 21,45,65,85,105,115", "--larger-auto-ws"),
-  max_paths = 10,
-  max_scaffolds = 10,
+  max_paths = 20,
+  max_scaffolds = 20,
   min_assembly_length = 500,
   ref_dir = NULL,
   mapping_geome = "GEOME_BCID",
@@ -70,9 +70,9 @@ the Reference step replaces it.}
 
 \item{getOrganelle}{Default GetOrganelle command-line options.}
 
-\item{max_paths}{Max assembly paths for a sample to continue (default 10).}
+\item{max_paths}{Max assembly paths for a sample to continue (default 20).}
 
-\item{max_scaffolds}{Max contigs within a path to continue (default 10).}
+\item{max_scaffolds}{Max contigs within a path to continue (default 20).}
 
 \item{min_assembly_length}{Minimum contig length (bp) to retain (default 500).}
 

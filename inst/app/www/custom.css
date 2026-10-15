@@ -790,6 +790,8 @@ details.rp-subsection > div { margin-left: 18px; }
   position: relative; border: 1px solid var(--mp-border);
   border-radius: var(--mp-radius); background: var(--mp-surface); overflow: hidden;
 }
+/* about ten aligned contigs; scroll for the rest */
+.rp-seqview-align { max-height: 580px; overflow-y: auto; }
 .rp-seqview-canvas { display: block; width: 100%; cursor: grab; }
 .rp-seqview-canvas:active { cursor: grabbing; }
 .rp-seqview-tip {

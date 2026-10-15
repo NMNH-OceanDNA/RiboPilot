@@ -2392,7 +2392,13 @@ app_server <- function(input, output, session) {
     if (is.na(k) || k > length(sets)) k <- 1L
     if (!length(sets)) { paths_result(NULL); return() }
     key <- paste("set", k)
+    paths_cache$k <- k
+    n_units <- nrow(sets[[k]]$units)
     if (!exists(key, envir = paths_cache, inherits = FALSE)) {
+      # a big set waits for Align anyway
+      if (n_units > PATHS_WARN_N && !isTRUE(paths_cache[[paste("ok", k)]])) {
+        empty(); paths_result(list(id = id, pl = NULL, big = n_units)); return()
+      }
       assign(key, try(paths_send(session, id, sets[[k]]), silent = TRUE), envir = paths_cache)
     }
     r <- get(key, envir = paths_cache)
@@ -2406,8 +2412,17 @@ app_server <- function(input, output, session) {
     }
     paths_result(list(id = id, pl = r))
   })
+  observeEvent(input$paths_align_now, {
+    k <- paths_cache$k; req(k)
+    paths_cache[[paste("ok", k)]] <- TRUE
+    refresh(refresh() + 1)
+  })
   output$paths_summary <- renderUI({
     r <- paths_result()
+    if (!is.null(r$big)) return(div(style = "margin-bottom:4px;",
+      span(sprintf("%d contigs in this set. Aligning this many can take minutes and the app waits meanwhile.", r$big),
+        style = "color:#8a6d3b; margin-right:8px;"),
+      actionButton("paths_align_now", "Align anyway", class = "btn-sm")))
     txt <- if (is.null(r)) "Aligning contigs..." else paths_summary_text(r$pl)
     span(txt, style = "color:#555; display:block; margin-bottom:4px;")
   })

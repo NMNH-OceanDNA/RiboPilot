@@ -30,8 +30,8 @@
 #'   (default) names an Actinopterygii database that RiboPilot does not ship;
 #'   the Reference step replaces it.
 #' @param getOrganelle Default GetOrganelle command-line options.
-#' @param max_paths Max assembly paths for a sample to continue (default 10).
-#' @param max_scaffolds Max contigs within a path to continue (default 10).
+#' @param max_paths Max assembly paths for a sample to continue (default 20).
+#' @param max_scaffolds Max contigs within a path to continue (default 20).
 #' @param min_assembly_length Minimum contig length (bp) to retain (default 500).
 #' @param ref_dir Folder for built reference databases (default: the
 #'   `RIBOPILOT_REF_DIR` environment variable, else [ribopilot_ref_dir()]).
@@ -72,8 +72,8 @@ new_db <- function(
       "-R 10 -k 21,45,65,85,105,115",
       "--larger-auto-ws"
     ),
-    max_paths = 10,
-    max_scaffolds = 10,
+    max_paths = 20,
+    max_scaffolds = 20,
     min_assembly_length = 500,
     ref_dir = NULL,
     mapping_geome = "GEOME_BCID",

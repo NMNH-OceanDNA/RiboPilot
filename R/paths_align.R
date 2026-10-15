@@ -164,6 +164,11 @@ paths_send <- function(session, id, set) {
   pl
 }
 
+#' Sets larger than this are not aligned until the user asks: DECIPHER on a
+#' few dozen contigs blocks the app for minutes.
+#' @noRd
+PATHS_WARN_N <- 20L
+
 #' Summary line above the paths viewer
 #' @noRd
 paths_summary_text <- function(pl) {
