@@ -1,0 +1,7 @@
+accession,organism,reason,evidence,date_added
+XR_013375787.1,Canis aureus,contaminated genome annotation,PREDICTED 18S from the C. aureus assembly is 100% identical over full length to Platichthys flesus XR_009920271.1 and Pleuronectes platessa XR_008337950.1; same LOC block as XR_013375788/90,2026-10-15
+XR_013375788.1,Canis aureus,contaminated genome annotation,PREDICTED 28S scores 100% in test sample SRR33849683 (Ancylopsetta cycloidea) 28S window 601-750 while every flatfish reference scores 99.3%; nearest non-canid panel hit is Atheresthes stomias OP088621.1; caused a false PREDICTED: Canis chimera flag,2026-10-15
+XR_013375790.1,Canis aureus,contaminated genome annotation,Duplicate 28S locus of XR_013375788.1 (99.4% identical to it); same flatfish evidence,2026-10-15
+XR_013375791.1,Canis aureus,contaminated genome annotation,Byte-identical same-taxid copy of XR_013375790.1 (dropped as its duplicate in panel 2026.08.18); listed so the record is explicit,2026-10-15
+XR_013375794.1,Canis aureus,contaminated genome annotation,Byte-identical same-taxid copy of XR_013375787.1 (dropped as its duplicate in panel 2026.08.18),2026-10-15
+XR_013375795.1,Canis aureus,contaminated genome annotation,Byte-identical same-taxid copy of XR_013375787.1 (dropped as its duplicate in panel 2026.08.18),2026-10-15

@@ -2246,7 +2246,7 @@ make_panel_build <- function(records = panel_fixture_records(),
 # OUT_DIR empty, and a chunk size other than the production 5000 is only
 # reachable this way.
 run_build_sourced <- function(build, chunk_size = 20L, ver = "9.9.9", path_prefix = NULL,
-                              query = NULL) {
+                              query = NULL, exclusions = NULL) {
   skip_if_not(file.exists(refdb_sh))
   skip_without_blast_tools()
   driver <- file.path(build, "drive_build.sh")
@@ -2267,6 +2267,7 @@ run_build_sourced <- function(build, chunk_size = 20L, ver = "9.9.9", path_prefi
     sprintf("CHUNK_SIZE=%d", chunk_size),
     # a panel-definition change, applied the way the maintainer would apply one
     if (!is.null(query)) sprintf("QUERY=%s", shQuote(query)),
+    if (!is.null(exclusions)) sprintf("RP_EXCLUSIONS=%s", shQuote(exclusions)),
     "stage_build",
     'echo "RC=$?"'
   ), driver)
@@ -2551,6 +2552,43 @@ test_that("records the taxonomy stage already recorded as unresolved are exclude
   m <- jsonlite::fromJSON(file.path(r$out_dir, "manifest.json"))
   expect_equal(m$source$requested_accessions,
     m$counts$records_after_dedup + m$counts$records_dropped)
+})
+
+test_that("accessions in the curated exclusion list are dropped before dedup, with their own ledger reason", {
+  build <- make_panel_build()
+  csv <- file.path(build, "exclusions.csv")
+  # DUP0002.1 is a byte-identical same-taxid copy of DUP0001.1: the same
+  # sequence from the same genome, so it leaves with it, ledgered against it
+  writeLines(c("accession,organism,reason,evidence,date_added",
+    "DUP0001.1,Genus species,contaminated genome annotation,test,2026-10-15",
+    "ZZ999999.1,Nobody,never fetched,test,2026-10-15"), csv)
+  r <- run_build_sourced(build, exclusions = csv)
+  expect_equal(r$status, 0L, label = paste(r$out, collapse = "\n"))
+
+  ids <- panel_ids(r)
+  expect_false(any(c("DUP0001.1", "DUP0002.1") %in% ids))
+  rows <- readLines(file.path(r$out_dir, "ribopilot_rrna.dropped.tsv"), warn = FALSE)
+  ex <- rows[tsv_field(rows, 2) == "curated_exclusion"]
+  expect_setequal(tsv_field(ex, 1), c("DUP0001.1", "DUP0002.1"))
+  expect_equal(tsv_field(ex, 3)[tsv_field(ex, 1) == "DUP0002.1"], "DUP0001.1")
+  expect_false(any(tsv_field(rows, 2) == "byte_identical_to_kept_record_same_taxid"
+    & tsv_field(rows, 1) == "DUP0002.1"))
+  # an excluded accession the harvest never held is not a ledger row
+  expect_false("ZZ999999.1" %in% tsv_field(rows, 1))
+  m <- jsonlite::fromJSON(file.path(r$out_dir, "manifest.json"))
+  expect_equal(m$pipeline$curated_exclusions, 2L)
+  expect_equal(m$source$requested_accessions,
+    m$counts$records_after_dedup + m$counts$records_dropped)
+})
+
+test_that("the shipped exclusion list parses and every row names a versioned accession", {
+  csv <- file.path(refdb_dir, "exclusions.csv")
+  skip_if_not(file.exists(csv))
+  x <- read.csv(csv, stringsAsFactors = FALSE)
+  expect_equal(names(x), c("accession", "organism", "reason", "evidence", "date_added"))
+  expect_true(all(grepl("^[A-Z]{1,2}_?[0-9]+[.][0-9]+$", x$accession)))
+  expect_false(any(duplicated(x$accession)))
+  expect_true(all(nzchar(x$reason)))
 })
 
 # The per-stage ledgers overlap rather than partition, and are positively

@@ -92,7 +92,7 @@ RP_GH_API <- "https://api.github.com"
 #' hand-bumped counter just gets forgotten, which is how two different panels
 #' both came to be called 2026.08.1.
 #' @noRd
-RP_DB_VERSION <- "2026.08.18"
+RP_DB_VERSION <- "2026.08.18.1"
 
 #' Fetch one URL, or stop naming the asset and the reason
 #'
