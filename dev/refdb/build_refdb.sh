@@ -795,7 +795,14 @@ RP_PANEL_FILES="manifest.json ribopilot_rrna.ndb ribopilot_rrna.nhr ribopilot_rr
 # accession2taxid dump and efetch's live lookup, so it lands in
 # dropped.taxidmap.tsv and dropped.fetch.tsv alike. The order is how far the
 # record got, earliest failure winning, so the reason names where it stopped.
-RP_DROP_PRECEDENCE="wgs_master_unavailable efetch_unavailable taxid_unresolved pdb_structure_record_nonstandard_defline byte_identical_to_kept_record_same_taxid"
+RP_DROP_PRECEDENCE="wgs_master_unavailable efetch_unavailable taxid_unresolved curated_exclusion pdb_structure_record_nonstandard_defline byte_identical_to_kept_record_same_taxid"
+
+# Curated exclusions: GenBank records known to be wrong (contaminated genome
+# annotations, misidentified vouchers). One row per accession, first column the
+# versioned accession; the rest is the evidence trail. Applied after the dedup:
+# a byte-identical same-taxid duplicate of an excluded record is the same
+# sequence from the same genome, so it goes too, naming the listed record.
+RP_EXCLUSIONS="${RP_EXCLUSIONS:-$SCRIPT_DIR/exclusions.csv}"
 
 # rp_shipped_bytes DIR
 # Total size of the shipped files present in DIR.
@@ -1205,7 +1212,7 @@ stage_build() {
   local stats n_kept sum_len n_taxids n_dropped n_unavailable n_downloaded
   local mean_defline reasons njs n_sample n_resolved has_taxids
   local built_utc blast_ver seqkit_ver pkg_ver git_sha mkcmd_json unpacked total
-  local round settled
+  local round settled n_excluded
   local -a mkcmd chunk_files
 
   # A stage reached by sourcing has none of these, and must refuse rather than
@@ -1260,11 +1267,19 @@ stage_build() {
   grep -h '^>pdb|' "${chunk_files[@]}" > "$tmp/pdb.deflines" || true
   rp_fasta_accessions "$tmp/pdb.deflines" > "$tmp/pdb.acc"
 
+  # Accessions only; CR and blank lines tolerated, header skipped by name.
+  : > "$tmp/exclude.acc"
+  if [ -f "$RP_EXCLUSIONS" ]; then
+    awk -F',' 'NR > 1 { gsub(/[ \r]/, "", $1); if ($1 != "" && $1 !~ /^#/) print $1 }' \
+      "$RP_EXCLUSIONS" | sort -u > "$tmp/exclude.acc"
+  fi
+
   rp_log "build: dereplicating $n_chunks chunk(s) on (taxid, uppercased sequence)"
   cat "${chunk_files[@]}" \
     | seqkit fx2tab -i \
     | awk -F'\t' -v OFS='\t' -v MAP="$BUILD_DIR/taxidmap.tsv" \
-        -v GONE="$BUILD_DIR/dropped.taxidmap.tsv" -v BAD="$tmp/unusable.acc" '
+        -v GONE="$BUILD_DIR/dropped.taxidmap.tsv" -v BAD="$tmp/unusable.acc" \
+        '
         BEGIN {
           while ((getline line < MAP) > 0) { split(line, a, "\t"); tax[a[1]] = a[2] }
           while ((getline line < GONE) > 0) { split(line, a, "\t"); gone[a[1]] = 1 }
@@ -1290,7 +1305,19 @@ stage_build() {
         { key = $1 FS $2
           if (key != prev) { prev = key; keeper = $3; print $3 }
           else { print $3, keeper > DUP } }' \
-    > "$tmp/keep.acc"
+    > "$tmp/keep.all.acc"
+
+  # keeper first, then its duplicates by the keeper column; both leave the
+  # panel, the duplicates ledgered against the listed accession
+  awk -F'\t' -v OFS='\t' -v EXCL="$tmp/exclude.acc" '
+      BEGIN { while ((getline line < EXCL) > 0) excl[line] = 1 }
+      ($1 in excl) { print $1, $1 } !($1 in excl) { print $1 > "/dev/stderr" }' \
+    "$tmp/keep.all.acc" 2> "$tmp/keep.acc" > "$tmp/excluded.acc"
+  awk -F'\t' -v OFS='\t' -v EXCL="$tmp/exclude.acc" '
+      BEGIN { while ((getline line < EXCL) > 0) excl[line] = 1 }
+      ($2 in excl) { print $1, $2 } !($2 in excl) { print $1, $2 > "/dev/stderr" }' \
+    "$tmp/dup.acc" 2> "$tmp/dup.kept.acc" >> "$tmp/excluded.acc"
+  mv "$tmp/dup.kept.acc" "$tmp/dup.acc"
 
   # Never a shared "NA" taxid for an unmapped record: that key collapses
   # unrelated species with byte-identical rRNA and mislabels them as duplicates
@@ -1327,6 +1354,11 @@ stage_build() {
     "$tmp/pdb.acc" >> "$tmp/dropped.all.tsv"
   awk -F'\t' -v OFS='\t' '{print $1, "byte_identical_to_kept_record_same_taxid", $2}' \
     "$tmp/dup.acc" >> "$tmp/dropped.all.tsv"
+  # Only records the fetch actually held: a listed accession the harvest never
+  # returned has no place in a ledger that must reconcile against the request.
+  n_excluded="$(rp_line_count "$tmp/excluded.acc")"
+  awk -F'\t' -v OFS='\t' '{print $1, "curated_exclusion", $2}' "$tmp/excluded.acc" >> "$tmp/dropped.all.tsv"
+  rp_log "build: $n_excluded of $(rp_line_count "$tmp/exclude.acc") curated exclusion(s) found in the fetched records and dropped"
   # One row per accession, RP_DROP_PRECEDENCE deciding which reason survives.
   # The stage ledgers overlap, so concatenating them records the same record
   # twice -- the historical bug's exact class, and a build that aborts on
@@ -1447,6 +1479,7 @@ stage_build() {
       --argjson unpacked "$unpacked" \
       --argjson has_taxids "$has_taxids" \
       --argjson makeblastdb_cmd "$mkcmd_json" \
+      --argjson excluded "$n_excluded" \
       '{
         manifest_schema: 1,
         db_name: "ribopilot_rrna",
@@ -1471,7 +1504,8 @@ stage_build() {
           dedup: { mode: "byte_exact", key: ["taxid", "uppercased_sequence"] },
           annotated: false,
           species_selection: false,
-          misid_screen: false
+          misid_screen: false,
+          curated_exclusions: $excluded
         },
         counts: {
           records_after_dedup: $kept,

@@ -1,3 +1,13 @@
+# RiboPilot (development version)
+
+## Reference database
+
+* The rDNA BLAST panel is now 2026.08.18.1. It leaves out three Canis aureus
+  PREDICTED rRNA records (XR_013375787, XR_013375788, XR_013375790) whose
+  sequences are flatfish contamination; they produced a false "PREDICTED: Canis"
+  chimera flag on a flounder sample. Known-bad GenBank records are listed in
+  `dev/refdb/exclusions.csv` and dropped at build time.
+
 # RiboPilot 0.1.0
 
 ## Before you upgrade
