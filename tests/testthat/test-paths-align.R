@@ -147,3 +147,11 @@ test_that("the Assemble window shows the paths section only for a multi-path sam
   DBI::dbDisconnect(con)
   expect_false(grepl("seqv_paths-canvas", html(), fixed = TRUE))   # one path left
 })
+
+test_that("the summary line counts rows, columns, and differences", {
+  rows <- RiboPilot:::paths_payload(aln_fixture(), no_feats(), c(p1.s1 = "a", p2.s1 = "b"))
+  expect_equal(RiboPilot:::paths_summary_text(rows), "2 contigs, 10 columns, 2 differ")
+  expect_equal(RiboPilot:::paths_summary_text(NULL), "Could not align these contigs.")
+  big <- list(len = 7812L, rows = rows$rows)
+  expect_match(RiboPilot:::paths_summary_text(big), "7,812 columns", fixed = TRUE)
+})

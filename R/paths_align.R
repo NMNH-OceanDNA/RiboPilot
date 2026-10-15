@@ -101,3 +101,11 @@ paths_send <- function(session, id, set) {
   session$sendCustomMessage("rpseq", pl)
   pl
 }
+
+#' Summary line above the paths viewer
+#' @noRd
+paths_summary_text <- function(pl) {
+  if (is.null(pl)) return("Could not align these contigs.")
+  sprintf("%d contigs, %s columns, %s differ", length(pl$rows),
+    format(pl$len, big.mark = ","), format(paths_diff_count(pl$rows), big.mark = ","))
+}

@@ -2370,6 +2370,33 @@ app_server <- function(input, output, session) {
     h <- sel_hit_unit(); id <- sel_id(); req(!is.null(h), id)
     try(seqview_send(session, "seqv_asm-canvas", NULL, id, h$path, h$scaffold), silent = TRUE)
   })
+  # ---- paths alignment: homologous contigs across paths, aligned once per set ----
+  paths_cache <- new.env(parent = emptyenv())
+  paths_result <- reactiveVal(NULL)
+  observe({
+    refresh()
+    id <- sel_id(); req(id)
+    # one sample's alignments at a time; the dropdown value can be stale from
+    # the previous sample, so it only counts when this sample has a dropdown
+    if (!identical(paths_cache$id, id)) { rm(list = ls(paths_cache), envir = paths_cache); paths_cache$id <- id; paths_result(NULL) }
+    sets <- paths_sets_for(id)
+    k <- if (length(sets) > 1) suppressWarnings(as.integer(input$paths_set %||% 1L)) else 1L
+    if (is.na(k) || k > length(sets)) k <- 1L
+    if (!length(sets)) { paths_result(NULL); return() }
+    key <- paste("set", k)
+    if (!exists(key, envir = paths_cache, inherits = FALSE)) {
+      assign(key, try(paths_send(session, id, sets[[k]]), silent = TRUE), envir = paths_cache)
+    }
+    r <- get(key, envir = paths_cache)
+    if (inherits(r, "try-error")) r <- NULL
+    if (!is.null(r)) session$sendCustomMessage("rpseq", c(r, list(id = "seqv_paths-canvas", unit = id)))
+    paths_result(list(id = id, pl = r))
+  })
+  output$paths_summary <- renderUI({
+    r <- paths_result()
+    txt <- if (is.null(r)) "Aligning contigs..." else paths_summary_text(r$pl)
+    span(txt, style = "color:#555; display:block; margin-bottom:4px;")
+  })
   # Triage one scaffold: keep / drop / undecided. `assemblies.ignore` is derived
   # from the verdict by set_unit_triage(), so nothing downstream changes.
   # Dropping is no longer destructive (the annotate row is held, not deleted),
