@@ -499,11 +499,15 @@
       if (pan) { self.isWhole = false; self.viewStart += pan / self.ppb; self.clamp(); self.draw(); return; }
       self.zoom(Math.pow(1.15, -e.deltaY / 100), self.viewStart + (px - GUTTER) / self.ppb);
     }, { passive: false });
-    cv.addEventListener('mousedown', function (e) { dragging = { x: e.clientX, start: self.viewStart, moved: false }; });
+    cv.addEventListener('mousedown', function (e) { dragging = { x: e.clientX, y: e.clientY, start: self.viewStart, top: self.wrap.scrollTop, moved: false }; });
     window.addEventListener('mousemove', function (e) {
       if (!dragging) return;
-      var dx = e.clientX - dragging.x; if (Math.abs(dx) > 2) { dragging.moved = true; self.isWhole = false; }
-      self.viewStart = dragging.start - dx / self.ppb; self.clamp(); self.draw();
+      var dx = e.clientX - dragging.x, dy = e.clientY - dragging.y;
+      if (Math.abs(dx) > 2 || Math.abs(dy) > 2) { dragging.moved = true; self.isWhole = false; }
+      self.viewStart = dragging.start - dx / self.ppb; self.clamp();
+      // the alignment box scrolls; dragging up and down moves through the rows
+      if (self.rows) self.wrap.scrollTop = dragging.top - dy;
+      self.draw();
     });
     window.addEventListener('mouseup', function (e) {
       if (!dragging) return;
