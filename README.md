@@ -9,6 +9,9 @@
 experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
 <!-- badges: end -->
 
+Please see the [documentation
+website](https://nmnh-oceandna.github.io/RiboPilot/) for more details.
+
 RiboPilot is a product of the [NMNH Ocean DNA
 initiative](https://naturalhistory.si.edu/initiatives/oceans/ocean-science-center/ocean-dna)
 and does not represent an official Smithsonian Institution position or
