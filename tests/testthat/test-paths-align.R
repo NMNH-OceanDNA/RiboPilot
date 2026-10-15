@@ -135,6 +135,36 @@ test_that("paths_send aligns the set's contigs and sends rows to the paths canva
   expect_identical(p$rows, sent$rows)
 })
 
+test_that("paths_labels adds triage to the key and leaves it bare when unset", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project(); withr::local_dir(dir)
+  con <- RiboPilot:::app_con()
+  DBI::dbExecute(con, "UPDATE assemblies SET triage = 'keep' WHERE path = 1 AND scaffold = 1")
+  DBI::dbExecute(con, "UPDATE assemblies SET triage = NULL WHERE path = 2 AND scaffold = 1")
+  lab <- RiboPilot:::paths_labels(con, "S1", data.frame(path = c(1L, 2L), scaffold = c(1L, 1L)))
+  DBI::dbDisconnect(con)
+  expect_equal(lab, c(p1.s1 = "p1.s1 keep", p2.s1 = "p2.s1"))
+})
+
+test_that("paths_send marks a feature that touches the contig end as partial", {
+  skip_if_not_installed("withr"); skip_if_not_installed("DECIPHER")
+  dir <- mk_app_project(); withr::local_dir(dir)
+  set.seed(7)
+  a <- paste(sample(c("A", "C", "G", "T"), 300, TRUE), collapse = "")
+  con <- RiboPilot:::app_con()
+  DBI::dbExecute(con, "UPDATE assemblies SET sequence = ? WHERE scaffold = 1 AND path IN (1, 2)", params = list(a))
+  DBI::dbExecute(con, "INSERT INTO annotations (ID, path, scaffold, element, start, stop, strand)
+    VALUES ('S1',1,1,'28S',101,300,'+'), ('S1',2,1,'28S',101,300,'+')")
+  DBI::dbDisconnect(con)
+  sent <- NULL
+  session <- list(sendCustomMessage = function(type, msg) sent <<- msg)
+  set <- list(label = "28S (2 contigs)", units = data.frame(path = c(1L, 2L), scaffold = c(1L, 1L)))
+  RiboPilot:::paths_send(session, "S1", set)
+  f <- sent$rows[[1]]$features[[1]]
+  expect_true(f$partial3)
+  expect_false(f$partial5)
+})
+
 test_that("paths_send returns NULL when fewer than two contigs have a sequence", {
   skip_if_not_installed("withr")
   dir <- mk_app_project(); withr::local_dir(dir)

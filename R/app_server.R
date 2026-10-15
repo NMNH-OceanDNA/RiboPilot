@@ -2374,13 +2374,16 @@ app_server <- function(input, output, session) {
   paths_cache <- new.env(parent = emptyenv())
   paths_result <- reactiveVal(NULL)
   observe({
+    req(identical(input$mode %||% "Assemble", "Assemble"))
     refresh()
     id <- sel_id(); req(id)
+    empty <- function() session$sendCustomMessage("rpseq",
+      list(id = "seqv_paths-canvas", unit = id, len = 0L, rows = list()))
     # one sample's alignments at a time; the dropdown value can be stale from
     # the previous sample, so it is ignored on a sample's first run
     picked <- input$paths_set
     fresh <- !identical(paths_cache$id, id)
-    if (fresh) { rm(list = ls(paths_cache), envir = paths_cache); paths_cache$id <- id; paths_result(NULL) }
+    if (fresh) { rm(list = ls(paths_cache), envir = paths_cache); paths_cache$id <- id; paths_result(NULL); empty() }
     n_paths <- app_query("SELECT COUNT(DISTINCT path) AS n FROM assemblies WHERE ID = ?", params = list(id))$n[1]
     if (n_paths < 2) { paths_result(NULL); return() }
     if (!exists("sets", envir = paths_cache, inherits = FALSE)) assign("sets", paths_sets_for(id), envir = paths_cache)
@@ -2394,7 +2397,11 @@ app_server <- function(input, output, session) {
     }
     r <- get(key, envir = paths_cache)
     if (inherits(r, "try-error")) r <- NULL
-    if (!is.null(r)) session$sendCustomMessage("rpseq", r)
+    if (is.null(r)) empty() else {
+      con <- app_con(); lab <- paths_labels(con, id, sets[[k]]$units); DBI::dbDisconnect(con)
+      for (i in seq_along(r$rows)) r$rows[[i]]$label <- unname(lab[r$rows[[i]]$unit])
+      session$sendCustomMessage("rpseq", r)
+    }
     paths_result(list(id = id, pl = r))
   })
   output$paths_summary <- renderUI({

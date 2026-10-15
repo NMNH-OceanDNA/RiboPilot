@@ -119,6 +119,16 @@ paths_diff_count <- function(rows) {
   }, TRUE))
 }
 
+#' Row labels for a set's contigs: "p<path>.s<scaffold>" plus triage when set
+#' @return Named character vector keyed by "p<path>.s<scaffold>".
+#' @noRd
+paths_labels <- function(con, id, units) {
+  keys <- sprintf("p%d.s%d", units$path, units$scaffold)
+  a <- DBI::dbGetQuery(con, "SELECT path, scaffold, triage FROM assemblies WHERE ID = ?", params = list(id))
+  tr <- a$triage[match(paste(units$path, units$scaffold), paste(a$path, a$scaffold))]
+  stats::setNames(trimws(paste(keys, ifelse(is.na(tr), "", tr))), keys)
+}
+
 #' Align one homologous set and send it to the paths viewer
 #' @return The payload, or NULL when the set could not be aligned.
 #' @noRd
@@ -126,18 +136,22 @@ paths_send <- function(session, id, set) {
   con <- app_con(); on.exit(DBI::dbDisconnect(con))
   u <- set$units
   keys <- sprintf("p%d.s%d", u$path, u$scaffold)
-  seqs <- labels <- stats::setNames(rep(NA_character_, nrow(u)), keys)
+  seqs <- stats::setNames(rep(NA_character_, nrow(u)), keys)
+  labels <- paths_labels(con, id, u)
   feats <- list()
   for (i in seq_len(nrow(u))) {
-    a <- DBI::dbGetQuery(con, "SELECT sequence, triage FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
+    a <- DBI::dbGetQuery(con, "SELECT sequence FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
       params = list(id, u$path[i], u$scaffold[i]))
     if (!nrow(a)) next
     seqs[i] <- a$sequence[1]
-    labels[i] <- trimws(paste(keys[i], a$triage[1] %|NA|% ""))
     f <- DBI::dbGetQuery(con, "SELECT element, start, stop, strand, partial_start, partial_stop
       FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
       params = list(id, u$path[i], u$scaffold[i]))
-    if (nrow(f)) feats[[keys[i]]] <- cbind(unit = keys[i], f, stringsAsFactors = FALSE)
+    if (nrow(f)) {
+      e <- partial_ends(f, nchar(a$sequence[1]), c(FALSE, FALSE))
+      f$partial_start <- as.integer(e$p5); f$partial_stop <- as.integer(e$p3)
+      feats[[keys[i]]] <- cbind(unit = keys[i], f, stringsAsFactors = FALSE)
+    }
   }
   aln <- paths_align(seqs)
   if (is.null(aln)) return(NULL)
