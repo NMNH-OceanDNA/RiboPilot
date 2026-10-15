@@ -21,10 +21,15 @@ paths_homology_sets <- function(feats, link = NULL) {
       next
     }
     if (length(members) < 2) next
+    # a contig that fails against one member of a set is not retried against
+    # the rest of that set: members are near-identical by construction
+    failed <- character(0)
     for (pr in utils::combn(members, 2, simplify = FALSE)) {
-      if (comp[pr[1]] != comp[pr[2]] && isTRUE(link(pr[1], pr[2], el))) {
-        comp[comp %in% comp[pr]] <- min(comp[pr])
-      }
+      if (comp[pr[1]] == comp[pr[2]]) next
+      keys <- c(paste(pr[1], comp[pr[2]]), paste(pr[2], comp[pr[1]]))
+      if (any(keys %in% failed)) next
+      lk <- link(pr[1], pr[2], el)
+      if (isTRUE(lk)) comp[comp %in% comp[pr]] <- min(comp[pr]) else if (isFALSE(lk)) failed <- c(failed, keys)
     }
   }
   sets <- split(names(comp), comp)
@@ -63,8 +68,9 @@ paths_overlap_link <- function(con, id) {
     key <- paste(c(sort(c(ua, ub)), element), collapse = " ")
     if (!is.null(memo[[key]])) return(memo[[key]])
     a <- piece(ua, element); b <- piece(ub, element)
-    ok <- !is.na(a) && !is.na(b) && min(nchar(a), nchar(b)) >= REF_ALN_MIN_BP &&
-      tryCatch({
+    if (is.na(a) || is.na(b) || min(nchar(a), nchar(b)) < REF_ALN_MIN_BP) return(NA)
+    # copies of about the same length are the same element: no alignment needed
+    ok <- min(nchar(a), nchar(b)) >= 0.9 * max(nchar(a), nchar(b)) || tryCatch({
         aln <- pairwise_nt(a, b, "overlap")
         s <- if (nchar(a) <= nchar(b)) as.character(pwalign::pattern(aln)) else as.character(pwalign::subject(aln))
         isTRUE(alignment_coverage(s, min(nchar(a), nchar(b))) >= REF_ALN_MIN_COV &&

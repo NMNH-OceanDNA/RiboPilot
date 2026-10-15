@@ -20,7 +20,10 @@ annotated features on every row and the disagreeing columns made obvious.
   the shorter copy and at least `REF_ALN_MIN_BP` bases (constants from
   `R/blast_ref_align.R`). Sharing the element name alone is not enough: a
   28S-only fragment that holds a different part of 28S than the full contig
-  has no shared sequence and gets smeared across the alignment. A homologous
+  has no shared sequence and gets smeared across the alignment. Copies whose
+  lengths are within 10 percent of each other link without aligning; a contig
+  that fails against one member of a set is not retried against the rest of
+  that set; a missing or too-short copy is not a failure. A homologous
   set is a
   connected component under that relation. Sets of one contig are dropped.
   Contigs with no anchor element are never in a set.
@@ -150,6 +153,7 @@ database) and unit-tested.
   at least one lane so the label has a home) and a nucleotide strip (`NT_H`),
   then a row gap. `height()` is the sum. The gutter shows the row label,
   right-aligned, next to the nucleotide strip.
+- Ruler and Differences track stay pinned at the top of the scrolling box.
 - Differences track: a pale background across the width, one red
   (`#c0392b`) 1 px tick per differing column in view (`Math.max(1, ppb)`
   wide). Label "Differences" in the gutter.

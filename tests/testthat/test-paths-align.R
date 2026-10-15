@@ -43,9 +43,14 @@ test_that("a link function vetoes a shared anchor, but a third contig still join
   expect_equal(RiboPilot:::paths_homology_sets(f, link = veto), list())
   f <- feats_df(list(1, 1, "28S"), list(2, 1, "28S"), list(1, 1, "18S"), list(2, 1, "18S"),
     list(3, 1, "18S"))
-  s <- RiboPilot:::paths_homology_sets(f, link = function(ua, ub, el)
-    veto(ua, ub, el) && !(el == "18S" && setequal(c(ua, ub), c("1 1", "2 1"))))
+  both <- function(ua, ub, el) veto(ua, ub, el) && !(el == "18S" && setequal(c(ua, ub), c("1 1", "2 1")))
+  s <- RiboPilot:::paths_homology_sets(f, link = both)
+  # a FALSE against p1 is not retried against p1's set, so p2 stays out
   expect_length(s, 1L)
+  expect_equal(s[[1]]$units$path, c(1L, 3L))
+  # NA (nothing to compare) is not a failure: p2 still joins through p3
+  na_link <- function(ua, ub, el) if (setequal(c(ua, ub), c("1 1", "2 1"))) NA else TRUE
+  s <- RiboPilot:::paths_homology_sets(f, link = na_link)
   expect_equal(s[[1]]$units$path, c(1L, 2L, 3L))
 })
 
@@ -59,15 +64,15 @@ test_that("the overlap link joins copies that align and rejects ones that do not
   DBI::dbExecute(con, "UPDATE assemblies SET sequence = ? WHERE path = 1", params = list(a))
   DBI::dbExecute(con, "UPDATE assemblies SET sequence = ? WHERE path = 2 AND scaffold = 1", params = list(b))
   DBI::dbExecute(con, "INSERT INTO annotations (ID, path, scaffold, element, start, stop, strand)
-    VALUES ('S1',1,1,'28S',1,300,'+'), ('S1',1,2,'28S',1,300,'+'), ('S1',2,1,'28S',1,300,'+'),
+    VALUES ('S1',1,1,'28S',1,300,'+'), ('S1',1,2,'28S',1,300,'+'), ('S1',2,1,'28S',1,200,'+'),
     ('S1',2,2,'28S',1,30,'+')")
   link <- RiboPilot:::paths_overlap_link(con, "S1")
   DBI::dbDisconnect(con)
   expect_true(link("1 1", "1 2", "28S"))
   expect_true(link("1 2", "1 1", "28S"))
-  expect_false(link("1 1", "2 1", "28S"))
-  expect_false(link("1 1", "2 2", "28S"))   # piece shorter than REF_ALN_MIN_BP
-  expect_false(link("1 1", "1 2", "18S"))   # no such element
+  expect_false(link("1 1", "2 1", "28S"))   # unrelated copy, different length: aligned, no overlap
+  expect_true(is.na(link("1 1", "2 2", "28S")))   # piece shorter than REF_ALN_MIN_BP
+  expect_true(is.na(link("1 1", "1 2", "18S")))   # no such element
 })
 
 aln_fixture <- function() {

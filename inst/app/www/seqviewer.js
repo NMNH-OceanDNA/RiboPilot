@@ -96,6 +96,7 @@
     var self = this;
     if (window.ResizeObserver) new ResizeObserver(function () { self.draw(); }).observe(this.wrap);
     if (this.section) this.section.addEventListener('toggle', function () { self.draw(); });
+    this.wrap.addEventListener('scroll', function () { if (self.rows) self.draw(); });
   }
 
   Viewer.prototype.load = function (p) {
@@ -221,8 +222,8 @@
     c.clearRect(0, 0, W, H);
     c.font = '12px ' + cssVar('--mp-font-mono', 'monospace');
     this.hits = [];
-    this.drawRuler(c);
     if (this.rows) { this.drawAlign(c, W); return; }
+    this.drawRuler(c);
     var y = RULER_H + PAD;
     if (this.covOn()) { this.drawTrack(c, W, y, COV_H, this.depth, this.depthMax, 'depth', false); y += COV_H + GAP; }
     if (this.clipOn()) { this.drawTrack(c, W, y, CLIP_H, this.clip, 1, 'clipped', true); y += CLIP_H + GAP; }
@@ -289,7 +290,6 @@
   };
   Viewer.prototype.drawAlign = function (c, W) {
     var y = RULER_H + PAD;
-    this.drawDiffTrack(c, W, y);
     var self = this, H = this.alignHeight();
     // red wash over every differing column in view, behind all rows
     if (this.ppb >= NT_LETTER) {
@@ -314,6 +314,14 @@
       c.fillStyle = cssVar('--mp-text', '#333');
       c.fillText(parts[0], vx - vw - (verdict ? 5 : 0), ly, GUTTER - 10 - vw);
     });
+    // ruler and Differences track stay pinned while the box scrolls
+    var hdr = Math.max(0, Math.min(this.wrap.scrollTop, H - (y + DIFF_H + GAP)));
+    c.save(); c.translate(0, hdr);
+    c.fillStyle = cssVar('--mp-surface', '#ffffff'); c.fillRect(0, 0, W, y + DIFF_H + GAP / 2);
+    this.drawRuler(c);
+    this.drawDiffTrack(c, W, y);
+    c.restore();
+    this.diffTrack.y0 += hdr; this.diffTrack.y1 += hdr;
   };
   Viewer.prototype.drawDiffTrack = function (c, W, y) {
     c.fillStyle = cssVar('--mp-surface-alt', '#f5f5f5'); c.fillRect(GUTTER, y, W - GUTTER, DIFF_H);
