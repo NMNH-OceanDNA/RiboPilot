@@ -1,3 +1,10 @@
+# RiboPilot (development version)
+
+## Assemble
+
+* The Assemble details window aligns a sample's assembly paths and shows the
+  alignment in the sequence viewer, with differing columns marked.
+
 # RiboPilot 0.1.0
 
 ## Before you upgrade
