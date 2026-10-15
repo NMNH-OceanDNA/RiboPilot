@@ -67,8 +67,13 @@ paths_payload <- function(aln, feats, labels) {
 #' @noRd
 paths_diff_count <- function(rows) {
   if (length(rows) < 2) return(0L)
-  m <- do.call(rbind, lapply(rows, function(r) strsplit(r$seq, "", fixed = TRUE)[[1]]))
-  sum(apply(m, 2, function(col) length(unique(col)) > 1))
+  s <- vapply(rows, `[[`, "", "seq")
+  f <- regexpr("[^-]", s); l <- nchar(sub("-+$", "", s))
+  m <- do.call(rbind, strsplit(s, "", fixed = TRUE))
+  sum(vapply(seq_len(ncol(m)), function(j) {
+    x <- m[f <= j & j <= l, j]
+    length(x) > 1 && length(unique(x)) > 1
+  }, TRUE))
 }
 
 #' Align one homologous set and send it to the paths viewer

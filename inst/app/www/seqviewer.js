@@ -32,12 +32,19 @@
   // Whether a feature shows its own pos1 / pos2 edge, vs. being cut off by the
   // visible range [vs, ve).
   function segOwns(f, vs, ve) { return { start: f.pos1 >= vs, end: f.pos2 <= ve }; }
-  // Columns where the rows disagree; a gap is a symbol like any other.
+  // Columns where the rows covering them disagree; internal gaps count,
+  // terminal gaps mean the row does not cover the column.
   function diffColumns(seqs) {
     var out = [], n = seqs.length ? seqs[0].length : 0;
+    var sp = seqs.map(function (s) { return [s.search(/[^-]/), s.replace(/-+$/, '').length - 1]; });
     for (var c = 0; c < n; c++) {
-      var ch = seqs[0].charAt(c);
-      for (var r = 1; r < seqs.length; r++) if (seqs[r].charAt(c) !== ch) { out.push(c + 1); break; }
+      var ch = null, d = false;
+      for (var r = 0; r < seqs.length; r++) {
+        if (c < sp[r][0] || c > sp[r][1]) continue;
+        var x = seqs[r].charAt(c);
+        if (ch === null) ch = x; else if (x !== ch) d = true;
+      }
+      if (d) out.push(c + 1);
     }
     return out;
   }
@@ -100,6 +107,7 @@
       this.rows.forEach(function (r) {
         r.feats = (r.features || []).map(function (f) { return Object.assign({}, f); });
         r.nLanes = Math.max(1, G.lanes(r.feats));
+        r.first = r.seq.search(/[^-]/) + 1; r.last = r.seq.replace(/-+$/, '').length;
       });
       this.feats = [];
       this.diff = G.diffColumns(this.rows.map(function (r) { return r.seq; }));
@@ -323,7 +331,7 @@
       var x = this.x(col); if (x < GUTTER) continue;
       var b = r.seq.charAt(col - 1) || 'N', same = letter && !this.diffSet[col];
       if (b === '-') {
-        c.fillStyle = MATCH_INK; c.fillRect(x + w * 0.2, y + NT_H / 2 - 1, w * 0.6, 2);
+        if (col >= r.first && col <= r.last) { c.fillStyle = MATCH_INK; c.fillRect(x + w * 0.2, y + NT_H / 2 - 1, w * 0.6, 2); }
         continue;
       }
       c.fillStyle = same ? MATCH_FILL : (BASE[b] || BASE.N) + (letter ? '99' : 'cc');

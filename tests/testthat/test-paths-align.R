@@ -65,7 +65,9 @@ test_that("the difference count includes gap columns and is zero for identical r
   rows_of <- function(x) RiboPilot:::paths_payload(x, no_feats(), lab)$rows
   expect_equal(RiboPilot:::paths_diff_count(rows_of(aln_fixture())), 2L)
   expect_equal(RiboPilot:::paths_diff_count(rows_of(Biostrings::DNAStringSet(c(a = "ACGT", b = "ACGT")))), 0L)
-  expect_equal(RiboPilot:::paths_diff_count(rows_of(Biostrings::DNAStringSet(c(a = "ACGTAC", b = "--GTAC")))), 2L)
+  expect_equal(RiboPilot:::paths_diff_count(rows_of(Biostrings::DNAStringSet(c(a = "ACGTAC", b = "--GTAC")))), 0L)
+  expect_equal(RiboPilot:::paths_diff_count(rows_of(Biostrings::DNAStringSet(c(a = "ACGTAC", b = "AC-TAC")))), 1L)
+  expect_equal(RiboPilot:::paths_diff_count(rows_of(Biostrings::DNAStringSet(c(a = "ACGTACGT", b = "--GTTC--")))), 1L)
 })
 
 test_that("paths_align aligns two near-identical sequences to equal width", {
