@@ -270,7 +270,7 @@ paths_section <- function(id) {
     tags$p(class = "mp-help-text", style = "margin-bottom:4px;",
       "Rows are contigs from each path aligned together. Red ticks on the Differences track mark ",
       "columns where the paths disagree; use the arrows to step through them. Letters appear when ",
-      "zoomed in; bases that match in every row are greyed."),
+      "zoomed in; a red column marks a difference."),
     picker,
     uiOutput("paths_summary"),
     seqview_ui("seqv_paths", NULL, pick = FALSE, mode = "align"))

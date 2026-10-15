@@ -100,8 +100,8 @@ database) and unit-tested.
 - Contents, top to bottom:
   - Help text: "Rows are contigs from each path aligned together. Red ticks on
     the Differences track mark columns where the paths disagree; use the
-    arrows to step through them. Letters appear when zoomed in; bases that
-    match in every row are greyed."
+    arrows to step through them. Letters appear when zoomed in; a red column
+    marks a difference."
   - `selectInput("paths_set", NULL, choices = <set labels>)` only when there
     are two or more sets (inline, narrow).
   - `uiOutput("paths_summary")`: "4 contigs, 7,812 columns, 23 differ", or
@@ -154,11 +154,10 @@ database) and unit-tested.
   (`#c0392b`) 1 px tick per differing column in view (`Math.max(1, ppb)`
   wide). Label "Differences" in the gutter.
 - Nucleotide strip per row: as `drawNt` today, with two changes. Terminal gaps draw
-  nothing; an internal gap is a short grey dash centred in the cell. When letters are visible
-  (`ppb >= NT_LETTER`), a column that is not in `diff` is drawn in pale grey
-  (`#d9d9d9` fill, `#888` letter); a differing column keeps the base colours
-  and gets a light red wash (`rgba(192, 57, 43, 0.12)`) spanning all rows.
-  Below the letter threshold every column keeps the base colours so the
+  nothing; an internal gap is a short grey dash centred in the cell. Bases keep their colours at every zoom (the user asked for no greying). When letters are visible
+  (`ppb >= NT_LETTER`), a differing column gets a light red wash
+  (`rgba(192, 57, 43, 0.12)`) spanning all rows.
+  Below the letter threshold there is no wash, so the
   zoomed-out strip still reads as sequence.
 - Feature lanes per row: `drawLanes` unchanged in shape, offset by the row's
   y. Partial-end dashing and labels as today.

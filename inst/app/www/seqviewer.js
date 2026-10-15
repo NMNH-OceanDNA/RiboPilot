@@ -67,7 +67,7 @@
   var G = window.rpseq.geom;
   var MAX_PPB = 14, NT_LETTER = 8, NT_BAR = 3;
   var RULER_H = 22, LANE_H = 22, NT_H = 20, GUTTER = 100, PAD = 4, COV_H = 60, CLIP_H = 36, IDENT_H = 36, ORIGIN_H = 18, GAP = 12;
-  var DIFF_H = 14, ROW_GAP = 10, DIFF_RED = '#c0392b', MATCH_FILL = '#d9d9d9', MATCH_INK = '#888888';
+  var DIFF_H = 14, ROW_GAP = 10, DIFF_RED = '#c0392b', GAP_INK = '#888888';
   var BASE = { A: '#4faf45', C: '#e0a53f', G: '#e0555a', T: '#4a90d9', N: '#666666' };
   var viewers = {}, last = {};
 
@@ -330,14 +330,14 @@
     for (var col = vs; col <= ve; col++) {
       if (col < 1 || col > this.len) continue;
       var x = this.x(col); if (x < GUTTER) continue;
-      var b = r.seq.charAt(col - 1) || 'N', same = letter && !this.diffSet[col];
+      var b = r.seq.charAt(col - 1) || 'N';
       if (b === '-') {
-        if (col >= r.first && col <= r.last) { c.fillStyle = MATCH_INK; c.fillRect(x + w * 0.2, y + NT_H / 2 - 1, w * 0.6, 2); }
+        if (col >= r.first && col <= r.last) { c.fillStyle = GAP_INK; c.fillRect(x + w * 0.2, y + NT_H / 2 - 1, w * 0.6, 2); }
         continue;
       }
-      c.fillStyle = same ? MATCH_FILL : (BASE[b] || BASE.N) + (letter ? '99' : 'cc');
+      c.fillStyle = (BASE[b] || BASE.N) + (letter ? '99' : 'cc');
       c.fillRect(x, y + 2, w, NT_H - 4);
-      if (letter) { c.fillStyle = same ? MATCH_INK : '#000000'; c.fillText(b, x + this.ppb / 2, y + NT_H / 2); }
+      if (letter) { c.fillStyle = '#000000'; c.fillText(b, x + this.ppb / 2, y + NT_H / 2); }
     }
   };
   // One bar per pixel column, the max of the positions under it. Depth is
