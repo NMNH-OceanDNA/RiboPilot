@@ -36,3 +36,45 @@ test_that("no anchors or empty input gives an empty list", {
   expect_equal(RiboPilot:::paths_homology_sets(data.frame(path = integer(), scaffold = integer(),
     element = character())), list())
 })
+
+aln_fixture <- function() {
+  Biostrings::DNAStringSet(c(`p1.s1` = "ACGTACGTAC", `p2.s1` = "ACG--CGTAC"))
+}
+no_feats <- function() data.frame(unit = character(), element = character(), start = numeric(),
+  stop = numeric(), strand = character(), partial_start = numeric(), partial_stop = numeric())
+
+test_that("the payload maps features from contig to alignment columns across gaps", {
+  f <- data.frame(unit = c("p1.s1", "p2.s1", "p2.s1"), element = c("18S", "18S", "ITS1"),
+    start = c(2, 2, NA), stop = c(5, 5, 7), strand = "+", partial_start = c(0, 1, 0),
+    partial_stop = c(0, 0, 0), stringsAsFactors = FALSE)
+  p <- RiboPilot:::paths_payload(aln_fixture(), f, c(p1.s1 = "p1.s1 keep", p2.s1 = "p2.s1 drop"))
+  expect_equal(p$len, 10L)
+  expect_length(p$rows, 2L)
+  expect_equal(p$rows[[2]]$label, "p2.s1 drop")
+  expect_equal(p$rows[[2]]$seq, "ACG--CGTAC")
+  r1 <- p$rows[[1]]$features[[1]]; r2 <- p$rows[[2]]$features[[1]]
+  expect_equal(c(r1$pos1, r1$pos2), c(2L, 5L))
+  expect_equal(c(r2$pos1, r2$pos2), c(2L, 7L))   # bases 2..5 of p2.s1 sit at columns 2,3,6,7
+  expect_true(r2$partial5); expect_false(r1$partial5)
+  expect_equal(r1$color, unname(RiboPilot:::RRNA_ELEMENT_COLORS["18S"]))
+  expect_length(p$rows[[2]]$features, 1L)        # NA start is skipped
+})
+
+test_that("the difference count includes gap columns and is zero for identical rows", {
+  lab <- c(a = "a", b = "b", p1.s1 = "a", p2.s1 = "b")
+  rows_of <- function(x) RiboPilot:::paths_payload(x, no_feats(), lab)$rows
+  expect_equal(RiboPilot:::paths_diff_count(rows_of(aln_fixture())), 2L)
+  expect_equal(RiboPilot:::paths_diff_count(rows_of(Biostrings::DNAStringSet(c(a = "ACGT", b = "ACGT")))), 0L)
+  expect_equal(RiboPilot:::paths_diff_count(rows_of(Biostrings::DNAStringSet(c(a = "ACGTAC", b = "--GTAC")))), 2L)
+})
+
+test_that("paths_align aligns two near-identical sequences to equal width", {
+  skip_if_not_installed("DECIPHER")
+  a <- strrep("ACGTTGCAAC", 8)
+  b <- paste0(substr(a, 1, 40), substr(a, 44, 80))
+  m <- RiboPilot:::paths_align(c(`p1.s1` = a, `p2.s1` = b))
+  expect_s4_class(m, "DNAStringSet")
+  expect_equal(names(m), c("p1.s1", "p2.s1"))
+  expect_equal(length(unique(Biostrings::width(m))), 1L)
+  expect_null(RiboPilot:::paths_align(c(`p1.s1` = a)))
+})
