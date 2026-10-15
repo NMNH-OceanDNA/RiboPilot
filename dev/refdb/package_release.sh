@@ -17,7 +17,7 @@ PUBLISH="${3:-}"
 command -v jq >/dev/null || { echo "jq not on PATH" >&2; exit 1; }
 # Absolute, because the script cd's into SRC before writing anything
 OUT="$(cd "${SRC%/}/.." && pwd)/release-${VER}"
-REPO="dmacguigan/RiboPilot"
+REPO="NMNH-OceanDNA/RiboPilot"
 
 cd "$SRC"
 
