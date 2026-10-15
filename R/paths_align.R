@@ -70,3 +70,34 @@ paths_diff_count <- function(rows) {
   m <- do.call(rbind, lapply(rows, function(r) strsplit(r$seq, "", fixed = TRUE)[[1]]))
   sum(apply(m, 2, function(col) length(unique(col)) > 1))
 }
+
+#' Align one homologous set and send it to the paths viewer
+#' @return The payload, or NULL when the set could not be aligned.
+#' @noRd
+paths_send <- function(session, id, set) {
+  con <- app_con(); on.exit(DBI::dbDisconnect(con))
+  u <- set$units
+  keys <- sprintf("p%d.s%d", u$path, u$scaffold)
+  seqs <- labels <- stats::setNames(rep(NA_character_, nrow(u)), keys)
+  feats <- list()
+  for (i in seq_len(nrow(u))) {
+    a <- DBI::dbGetQuery(con, "SELECT sequence, triage FROM assemblies WHERE ID = ? AND path = ? AND scaffold = ?",
+      params = list(id, u$path[i], u$scaffold[i]))
+    if (!nrow(a)) next
+    seqs[i] <- a$sequence[1]
+    labels[i] <- trimws(paste(keys[i], a$triage[1] %|NA|% ""))
+    f <- DBI::dbGetQuery(con, "SELECT element, start, stop, strand, partial_start, partial_stop
+      FROM annotations WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start",
+      params = list(id, u$path[i], u$scaffold[i]))
+    if (nrow(f)) feats[[keys[i]]] <- cbind(unit = keys[i], f, stringsAsFactors = FALSE)
+  }
+  aln <- paths_align(seqs)
+  if (is.null(aln)) return(NULL)
+  feats <- if (length(feats)) do.call(rbind, feats) else
+    data.frame(unit = character(), element = character(), start = numeric(), stop = numeric(),
+      strand = character(), partial_start = numeric(), partial_stop = numeric())
+  pl <- paths_payload(aln, feats, labels)
+  pl$id <- "seqv_paths-canvas"; pl$unit <- id
+  session$sendCustomMessage("rpseq", pl)
+  pl
+}

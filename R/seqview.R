@@ -40,19 +40,30 @@ seqview_payload <- function(seq, feats, depths = NULL, clips = NULL, selected = 
 #' @param prefix Id prefix: the canvas is `<prefix>-canvas`.
 #' @param summary Section heading. @param open Start expanded?
 #' @param pick Does clicking a gene select it?
+#' @param mode "unit", or "align" for the paths alignment (summary NULL: no details wrapper).
 #' @noRd
-seqview_ui <- function(prefix, summary, open = TRUE, pick = TRUE) {
+seqview_ui <- function(prefix, summary, open = TRUE, pick = TRUE, mode = c("unit", "align")) {
+  mode <- match.arg(mode)
   id <- function(x) paste0(prefix, "-", x)
   btn <- function(action, label, icon = NULL, title = NULL) {
     tags$button(type = "button", class = "btn btn-default btn-sm", `data-rpseq` = action,
       title = title, `aria-label` = title %||% label, icon, label)
   }
   goto <- tags$input(id = id("goto"), type = "number", min = 1, step = 1, class = "form-control input-sm",
-    style = "width:130px;", placeholder = "Go to position", `aria-label` = "Go to position")
+    style = "width:130px;", placeholder = if (mode == "align") "Go to column" else "Go to position",
+    `aria-label` = "Go to position")
   box <- function(x, label) tags$label(class = "rp-seqview-check",
     tags$input(type = "checkbox", id = id(x), checked = NA), label)
-  rp_details(summary, open = open,
-    div(class = "rp-seqview-controls",
+  controls <- if (mode == "align") div(class = "rp-seqview-controls",
+      goto,
+      btn("whole", "Whole alignment"),
+      btn("zoom_in", NULL, icon("magnifying-glass-plus"), "Zoom in"),
+      btn("zoom_out", NULL, icon("magnifying-glass-minus"), "Zoom out"),
+      btn("prev_diff", NULL, icon("backward-step"), "Previous difference"),
+      btn("next_diff", NULL, icon("forward-step"), "Next difference"),
+      btn("copy", "Copy sequence", title = "Copy the rows in view as gapped FASTA"),
+      box("show_nt", "Nucleotides"))
+    else div(class = "rp-seqview-controls",
       goto,
       btn("fit", "Fit gene", title = "Zoom to the selected gene"),
       btn("whole", "Whole sequence"),
@@ -60,18 +71,20 @@ seqview_ui <- function(prefix, summary, open = TRUE, pick = TRUE) {
       btn("zoom_out", NULL, icon("magnifying-glass-minus"), "Zoom out"),
       btn("copy", "Copy sequence", title = "Copy the bases in view as FASTA"),
       box("show_cov", "Coverage"), box("show_clip", "Clipped reads"),
-      box("show_ident", "BLAST identity"), box("show_origin", "BLAST origin"), box("show_nt", "Nucleotides")),
-    tags$p(class = "mp-help-text", style = "margin:2px 0 4px;",
+      box("show_ident", "BLAST identity"), box("show_origin", "BLAST origin"), box("show_nt", "Nucleotides"))
+  help <- if (mode == "unit") tags$p(class = "mp-help-text", style = "margin:2px 0 4px;",
       paste0("Drag or scroll sideways to pan, scroll to zoom", if (pick) "; click a gene to select it",
         ". Letters appear when zoomed in. Copy sequence copies the bases in view. "),
       sprintf("Clipped reads is the share of reads soft-clipped at each base (shown where depth is at least 10); bars turn orange at %d%%, the chimera check's cutoff.",
         round(100 * CHIMERA_CLIP_FRAC)),
       " BLAST origin colours each stretch by the class its BLAST windows match: grey is your lineage, white is no hit, ",
       "other colours are foreign; a dashed line marks a possible junction. BLAST identity is the best hit's identity in each window, coloured like the origin band. ",
-      "Hover for the match."),
+      "Hover for the match.")
+  body <- tagList(controls, help,
     div(class = "rp-seqview",
       tags$canvas(id = id("canvas"), class = "rp-seqview-canvas"),
       tags$div(id = id("tip"), class = "rp-seqview-tip", hidden = NA)))
+  if (is.null(summary)) div(body) else rp_details(summary, open = open, body)
 }
 
 #' Send one unit to a viewer
