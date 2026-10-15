@@ -32,9 +32,27 @@
   // Whether a feature shows its own pos1 / pos2 edge, vs. being cut off by the
   // visible range [vs, ve).
   function segOwns(f, vs, ve) { return { start: f.pos1 >= vs, end: f.pos2 <= ve }; }
+  // Columns where the rows disagree; a gap is a symbol like any other.
+  function diffColumns(seqs) {
+    var out = [], n = seqs.length ? seqs[0].length : 0;
+    for (var c = 0; c < n; c++) {
+      var ch = seqs[0].charAt(c);
+      for (var r = 1; r < seqs.length; r++) if (seqs[r].charAt(c) !== ch) { out.push(c + 1); break; }
+    }
+    return out;
+  }
+  // Native position of column `col` in a gapped string: count of non-gap
+  // characters up to and including it, or null when the column is a gap.
+  function nativePos(seq, col) {
+    if (seq.charAt(col - 1) === '-') return null;
+    var n = 0;
+    for (var i = 0; i < col; i++) if (seq.charAt(i) !== '-') n++;
+    return n;
+  }
 
   window.rpseq = window.rpseq || {};
-  window.rpseq.geom = { span: span, lanes: lanes, partialEdge: partialEdge, segOwns: segOwns };
+  window.rpseq.geom = { span: span, lanes: lanes, partialEdge: partialEdge, segOwns: segOwns,
+                        diffColumns: diffColumns, nativePos: nativePos };
 })();
 
 (function () {
@@ -42,6 +60,7 @@
   var G = window.rpseq.geom;
   var MAX_PPB = 14, NT_LETTER = 8, NT_BAR = 3;
   var RULER_H = 22, LANE_H = 22, NT_H = 20, GUTTER = 100, PAD = 4, COV_H = 60, CLIP_H = 36, IDENT_H = 36, ORIGIN_H = 18, GAP = 12;
+  var DIFF_H = 14, ROW_GAP = 10, DIFF_RED = '#c0392b', MATCH_FILL = '#d9d9d9', MATCH_INK = '#888888';
   var BASE = { A: '#4faf45', C: '#e0a53f', G: '#e0555a', T: '#4a90d9', N: '#666666' };
   var viewers = {}, last = {};
 
@@ -73,12 +92,26 @@
   }
 
   Viewer.prototype.load = function (p) {
-    var sameSeq = this.seq === (p.seq || '');
-    this.len = p.len; this.seq = p.seq || ''; this.input = p.input; this.unit = p.unit || 'unit';
-    this.feats = (p.features || []).map(function (f) { return Object.assign({}, f); });
-    this.nLanes = G.lanes(this.feats);
-    this.depth = p.depth || null; this.clip = p.clip || null;
-    this.origin = p.origin || null; this.junctions = p.junctions || null; this.ident = p.ident || null;
+    var seq = p.rows ? (p.rows[0] ? p.rows[0].seq : '') : (p.seq || '');
+    var sameSeq = this.seq === seq && !!this.rows === !!p.rows;
+    this.len = p.len; this.seq = seq; this.input = p.input; this.unit = p.unit || 'unit';
+    this.rows = p.rows || null;
+    if (this.rows) {
+      this.rows.forEach(function (r) {
+        r.feats = (r.features || []).map(function (f) { return Object.assign({}, f); });
+        r.nLanes = Math.max(1, G.lanes(r.feats));
+      });
+      this.feats = [];
+      this.diff = G.diffColumns(this.rows.map(function (r) { return r.seq; }));
+      this.diffSet = {}; this.diff.forEach(function (c) { this.diffSet[c] = true; }, this);
+      this.nLanes = 0; this.depth = null; this.clip = null; this.origin = null; this.junctions = null; this.ident = null;
+    } else {
+      this.feats = (p.features || []).map(function (f) { return Object.assign({}, f); });
+      this.nLanes = G.lanes(this.feats);
+      this.depth = p.depth || null; this.clip = p.clip || null;
+      this.origin = p.origin || null; this.junctions = p.junctions || null; this.ident = p.ident || null;
+      this.diff = null; this.diffSet = null;
+    }
     if (p.cutoff) this.clipFlag = p.cutoff;
     this.depthMax = (this.depth || []).reduce(function (m, d) { return d !== null && d > m ? d : m; }, 1);
     this.selected = (p.selected === undefined || p.selected === null) ? null : p.selected;
@@ -123,6 +156,14 @@
     this.viewStart = (pos1 + pos2) / 2 - this.viewLen() / 2; this.clamp();
     this.draw();
   };
+  // nearest differing column outside the view on the given side; wraps
+  Viewer.prototype.stepDiff = function (dir) {
+    if (!this.diff || !this.diff.length) return;
+    var vs = Math.ceil(this.viewStart), ve = Math.floor(this.viewStart + this.viewLen()), col = null;
+    if (dir > 0) { for (var i = 0; i < this.diff.length; i++) if (this.diff[i] > ve) { col = this.diff[i]; break; } if (col === null) col = this.diff[0]; }
+    else { for (var j = this.diff.length - 1; j >= 0; j--) if (this.diff[j] < vs) { col = this.diff[j]; break; } if (col === null) col = this.diff[this.diff.length - 1]; }
+    this.goto(col);
+  };
 
   // ---- coordinate helpers ----
   Viewer.prototype.x = function (pos) { return GUTTER + (pos - this.viewStart) * this.ppb; };
@@ -148,7 +189,18 @@
     return this.topH() + this.nLanes * LANE_H + PAD + (this.ntOn() ? NT_H + PAD : 0) + GAP;
   };
   Viewer.prototype.height = function () {
+    if (this.rows) return this.alignHeight();
     return this.chimY() + (this.identOn() ? IDENT_H + GAP : 0) + (this.originOn() ? ORIGIN_H + GAP : 0);
+  };
+  // align mode: y of each row's first lane; the nt strip sits under its lanes
+  Viewer.prototype.rowTop = function (i) {
+    var y = RULER_H + PAD + DIFF_H + GAP;
+    for (var k = 0; k < i; k++) y += this.rows[k].nLanes * LANE_H + (this.ntOn() ? NT_H : 0) + ROW_GAP;
+    return y;
+  };
+  Viewer.prototype.rowNtY = function (i) { return this.rowTop(i) + this.rows[i].nLanes * LANE_H; };
+  Viewer.prototype.alignHeight = function () {
+    return this.rowTop(this.rows.length) - ROW_GAP + PAD;
   };
   Viewer.prototype.draw = function () {
     if (!this.len || !this.canvas.offsetParent) return;
@@ -161,6 +213,7 @@
     c.font = '12px ' + cssVar('--mp-font-mono', 'monospace');
     this.hits = [];
     this.drawRuler(c);
+    if (this.rows) { this.drawAlign(c, W); return; }
     var y = RULER_H + PAD;
     if (this.covOn()) { this.drawTrack(c, W, y, COV_H, this.depth, this.depthMax, 'depth', false); y += COV_H + GAP; }
     if (this.clipOn()) { this.drawTrack(c, W, y, CLIP_H, this.clip, 1, 'clipped', true); y += CLIP_H + GAP; }
@@ -183,12 +236,13 @@
       c.fillText(String(pos), x, 2);
     }
   };
-  Viewer.prototype.drawLanes = function (c) {
+  Viewer.prototype.drawLanes = function (c) { this.drawLanesAt(c, this.feats, this.topH()); };
+  Viewer.prototype.drawLanesAt = function (c, feats, top) {
     var vs = this.viewStart, ve = this.viewStart + this.viewLen();
     c.textAlign = 'center'; c.textBaseline = 'middle';
-    this.feats.forEach(function (f) {
+    feats.forEach(function (f) {
       if (!this.inView(f)) return;
-      var col = f.color || '#888888', y = this.laneY(f.lane), h = LANE_H - 6, edge = G.partialEdge(f);
+      var col = f.color || '#888888', y = top + f.lane * LANE_H, h = LANE_H - 6, edge = G.partialEdge(f);
       var x0 = Math.max(GUTTER, this.x(f.pos1)), x1 = Math.min(this.wrap.clientWidth, this.x(f.pos2 + 1));
       if (x1 - x0 < 1) return;
       var fwd = f.dir !== '-', head = Math.min(8, x1 - x0);
@@ -223,6 +277,59 @@
       if (x1 - x0 > c.measureText(f.gene).width + 8) { c.fillStyle = cssVar('--mp-text', '#333'); c.fillText(f.gene, (x0 + x1) / 2, y + h / 2); }
       this.hits.push({ x0: x0, x1: x1, y0: y, y1: y + h, f: f, row: f.row });
     }, this);
+  };
+  Viewer.prototype.drawAlign = function (c, W) {
+    var y = RULER_H + PAD;
+    this.drawDiffTrack(c, W, y);
+    var self = this, H = this.alignHeight();
+    // red wash over every differing column in view, behind all rows
+    if (this.ppb >= NT_LETTER) {
+      c.fillStyle = 'rgba(192, 57, 43, 0.12)';
+      var vs = Math.floor(this.viewStart), ve = Math.ceil(this.viewStart + this.viewLen());
+      for (var col = vs; col <= ve; col++) {
+        if (!this.diffSet[col]) continue;
+        var x = this.x(col); if (x < GUTTER) continue;
+        c.fillRect(x, y + DIFF_H + GAP, Math.max(1, this.ppb), H - (y + DIFF_H + GAP));
+      }
+    }
+    this.rows.forEach(function (r, i) {
+      var top = self.rowTop(i);
+      self.drawLanesAt(c, r.feats, top);
+      if (self.ntOn()) self.drawRowNt(c, r, self.rowNtY(i));
+      c.fillStyle = cssVar('--mp-text', '#333'); c.textAlign = 'right'; c.textBaseline = 'middle';
+      c.fillText(r.label, GUTTER - 6, (self.ntOn() ? self.rowNtY(i) + NT_H / 2 : top + LANE_H / 2), GUTTER - 10);
+    });
+  };
+  Viewer.prototype.drawDiffTrack = function (c, W, y) {
+    c.fillStyle = cssVar('--mp-surface-alt', '#f5f5f5'); c.fillRect(GUTTER, y, W - GUTTER, DIFF_H);
+    c.fillStyle = DIFF_RED;
+    var w = Math.max(1, this.ppb), vs = this.viewStart, ve = vs + this.viewLen();
+    for (var i = 0; i < this.diff.length; i++) {
+      var col = this.diff[i]; if (col < vs - 1 || col > ve + 1) continue;
+      var x = this.x(col); if (x < GUTTER || x > W) continue;
+      c.fillRect(x, y, w, DIFF_H);
+    }
+    c.strokeStyle = cssVar('--mp-border', '#ccc'); c.beginPath(); c.moveTo(GUTTER, y + DIFF_H + 0.5); c.lineTo(W, y + DIFF_H + 0.5); c.stroke();
+    c.fillStyle = cssVar('--mp-text-muted', '#6a6a6a'); c.textAlign = 'right'; c.textBaseline = 'middle';
+    c.fillText('Differences', GUTTER - 6, y + DIFF_H / 2, GUTTER - 10);
+    this.diffTrack = { y0: y, y1: y + DIFF_H };
+  };
+  Viewer.prototype.drawRowNt = function (c, r, y) {
+    var vs = Math.floor(this.viewStart), ve = Math.ceil(this.viewStart + this.viewLen());
+    var letter = this.ppb >= NT_LETTER, w = Math.max(1, this.ppb - (letter ? 1 : 0));
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    for (var col = vs; col <= ve; col++) {
+      if (col < 1 || col > this.len) continue;
+      var x = this.x(col); if (x < GUTTER) continue;
+      var b = r.seq.charAt(col - 1) || 'N', same = letter && !this.diffSet[col];
+      if (b === '-') {
+        c.fillStyle = MATCH_INK; c.fillRect(x + w * 0.2, y + NT_H / 2 - 1, w * 0.6, 2);
+        continue;
+      }
+      c.fillStyle = same ? MATCH_FILL : (BASE[b] || BASE.N) + (letter ? '99' : 'cc');
+      c.fillRect(x, y + 2, w, NT_H - 4);
+      if (letter) { c.fillStyle = same ? MATCH_INK : '#000000'; c.fillText(b, x + this.ppb / 2, y + NT_H / 2); }
+    }
   };
   // One bar per pixel column, the max of the positions under it. Depth is
   // blue; clipped-read fraction is grey with bars at or over the chimera
@@ -323,8 +430,13 @@
   // The bases in view as FASTA, header ">unit:start-end", 60 per line.
   Viewer.prototype.visibleFasta = function () {
     var a = Math.max(1, Math.ceil(this.viewStart)), b = Math.min(this.len, Math.floor(this.viewStart + this.viewLen()));
+    var fa = function (name, s) { return '>' + name + ':' + a + '-' + b + '\n' + (s.match(/.{1,60}/g) || []).join('\n') + '\n'; };
+    if (this.rows) {
+      var n = 0, text = this.rows.map(function (r) { var s = r.seq.substring(a - 1, b); n += s.length; return fa(r.label.replace(/\s+/g, '_'), s); }).join('');
+      return { n: n, text: text };
+    }
     var s = this.seq.substring(a - 1, b);
-    return { n: s.length, text: '>' + this.unit + ':' + a + '-' + b + '\n' + (s.match(/.{1,60}/g) || []).join('\n') + '\n' };
+    return { n: s.length, text: fa(this.unit, s) };
   };
   // Plain http off localhost has no Clipboard API, so fall back to a textarea.
   function copyText(t) {
@@ -343,6 +455,9 @@
     return null;
   };
   Viewer.prototype.click = function (px, py) {
+    if (this.rows && this.diffTrack && py >= this.diffTrack.y0 && py <= this.diffTrack.y1 && px >= GUTTER) {
+      this.goto(Math.floor(this.viewStart + (px - GUTTER) / this.ppb)); return;
+    }
     var h = this.hitTest(px, py);
     if (!h) return;
     this.selected = h.f.row;
@@ -378,6 +493,19 @@
       var h = self.hitTest(px, py), b = self.baseAt(self.viewStart + (px - GUTTER) / self.ppb);
       if (!self.tip) return;
       if (!b || px < GUTTER) { self.tip.hidden = true; return; }
+      if (self.rows) {
+        var t2 = 'Column ' + b.pos.toLocaleString();
+        self.rows.forEach(function (r) {
+          var np = G.nativePos(r.seq, b.pos), ch = r.seq.charAt(b.pos - 1);
+          t2 += ' | ' + r.label.split(' ')[0] + ' ' + (np === null ? 'gap' : np.toLocaleString() + ' ' + ch);
+        });
+        if (h) t2 += ' | ' + h.f.gene + ' ' + h.f.pos1.toLocaleString() + '-' + h.f.pos2.toLocaleString() + ' (' + h.f.dir + ')';
+        self.tip.textContent = t2; self.tip.hidden = false;
+        var tw2 = self.tip.offsetWidth, th2 = self.tip.offsetHeight;
+        self.tip.style.left = Math.max(0, Math.min(px + 12, cv.clientWidth - tw2)) + 'px';
+        self.tip.style.top = (py + 12 + th2 > cv.clientHeight ? py - th2 - 8 : py + 12) + 'px';
+        return;
+      }
       var t = 'Position ' + b.pos.toLocaleString() + ', ' + b.base;
       if (self.covOn() && self.depth[b.pos - 1] !== null) t += ' | depth ' + self.depth[b.pos - 1];
       if (self.clipOn() && self.clip[b.pos - 1] !== null) t += ', clipped ' + (self.clip[b.pos - 1] * 100).toFixed(0) + '%';
@@ -398,6 +526,7 @@
         var a = btn.getAttribute('data-rpseq');
         if (a === 'zoom_in') self.zoom(2); else if (a === 'zoom_out') self.zoom(0.5);
         else if (a === 'whole') self.whole(); else if (a === 'fit' && self.selected !== null) self.fit(self.selected);
+        else if (a === 'prev_diff') self.stepDiff(-1); else if (a === 'next_diff') self.stepDiff(1);
         else if (a === 'copy') {
           var f = self.visibleFasta(); copyText(f.text);
           var old = btn.textContent; btn.textContent = 'Copied ' + f.n.toLocaleString() + ' bp';
@@ -450,8 +579,10 @@
     var v = viewers[id]; if (!v) return null;
     return { len: v.len, viewStart: v.viewStart, ppb: v.ppb, selected: v.selected, height: v.height(), nLanes: v.nLanes,
              origin: (v.origin || []).length, junctions: (v.junctions || []).length,
+             rows: (v.rows || []).length, diff: (v.diff || []).length,
              features: v.feats.map(function (f) { return { row: f.row, gene: f.gene, pos1: f.pos1, pos2: f.pos2, lane: f.lane }; }) };
   };
+  window.rpseq.diffAt = function (id, col) { var v = viewers[id]; return !!(v && v.diffSet && v.diffSet[col]); };
   window.rpseq.fasta = function (id) { var v = get(id); return v ? v.visibleFasta() : null; };
   window.rpseq.hitTest = function (id, px, py) { var v = get(id); return v ? v.hitTest(px, py) : null; };
   window.rpseq.click = function (id, px, py) { var v = get(id); if (v) v.click(px, py); };
