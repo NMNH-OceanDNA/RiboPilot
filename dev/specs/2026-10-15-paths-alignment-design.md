@@ -15,7 +15,13 @@ annotated features on every row and the disagreeing columns made obvious.
 - Shown only in the Assemble details window, and only for a sample that has
   two or more paths and at least one homologous set of two or more contigs.
 - Homology rule: two contigs are homologous when they share at least one
-  anchor element (18S, 5.8S, 28S) in `annotations`. A homologous set is a
+  anchor element (18S, 5.8S, 28S) in `annotations` and the two element copies
+  overlap: an ends-free pairwise alignment covers at least `REF_ALN_MIN_COV` of
+  the shorter copy and at least `REF_ALN_MIN_BP` bases (constants from
+  `R/blast_ref_align.R`). Sharing the element name alone is not enough: a
+  28S-only fragment that holds a different part of 28S than the full contig
+  has no shared sequence and gets smeared across the alignment. A homologous
+  set is a
   connected component under that relation. Sets of one contig are dropped.
   Contigs with no anchor element are never in a set.
 - When a sample has two or more sets, a dropdown picks the set. Otherwise no
@@ -41,7 +47,7 @@ database) and unit-tested.
   of the sample (all contigs, all paths).
 - Only anchors count: `SCREEN_ANCHOR_ELEMENTS` (`18S`, `5.8S`, `28S`).
 - Union-find or repeated merging over contigs: two contigs join when they share
-  an anchor. Sets are the components with two or more contigs.
+  an anchor whose copies overlap. Sets are the components with two or more contigs.
 - Output: list of sets. Each set is `list(label, units)` where `units` is a
   data frame `(path, scaffold)` ordered by path then scaffold, and `label` is
   the anchors present in the set in transcription order joined by `-` plus the
@@ -122,8 +128,10 @@ database) and unit-tested.
   `seqview_send` call.
 - `output$paths_summary` renders the summary string from that `reactiveVal`.
   The count of differing columns comes from R (`paths_diff_count(rows)`: a
-  column differs when the rows hold more than one distinct character, gaps
-  included) so the summary and the viewer agree.
+  row's leading and trailing gaps mean "not covered"; a column differs only
+  when, among the rows that cover it, the characters (internal gaps included)
+  are not all equal; fewer than two covering rows is never a difference) so
+  the summary and the viewer agree.
 
 ## JS: alignment mode (`inst/app/www/seqviewer.js`)
 
@@ -133,8 +141,10 @@ database) and unit-tested.
   concatenation of every row's features with a `rowIdx` added. Lanes are
   packed per row, not globally.
 - `this.diff`: an array of differing column numbers computed on load (a
-  column differs when the set of characters across rows, gap included, has
-  more than one member). Exposed in `rpseq.state(id)` as `diff` (count).
+  row's leading and trailing gaps mean "not covered"; a column differs only
+  when, among the rows that cover it, the characters, internal gaps included,
+  are not all equal; fewer than two covering rows is never a difference).
+  Exposed in `rpseq.state(id)` as `diff` (count).
 - Layout in align mode, top to bottom: ruler (`RULER_H`), Differences track
   (`DIFF_H = 14`), gap, then for each row: its feature lanes (`LANE_H` each,
   at least one lane so the label has a home) and a nucleotide strip (`NT_H`),
@@ -143,8 +153,8 @@ database) and unit-tested.
 - Differences track: a pale background across the width, one red
   (`#c0392b`) 1 px tick per differing column in view (`Math.max(1, ppb)`
   wide). Label "Differences" in the gutter.
-- Nucleotide strip per row: as `drawNt` today, with two changes. A gap is a
-  short grey dash centred in the cell. When letters are visible
+- Nucleotide strip per row: as `drawNt` today, with two changes. Terminal gaps draw
+  nothing; an internal gap is a short grey dash centred in the cell. When letters are visible
   (`ppb >= NT_LETTER`), a column that is not in `diff` is drawn in pale grey
   (`#d9d9d9` fill, `#888` letter); a differing column keeps the base colours
   and gets a light red wash (`rgba(192, 57, 43, 0.12)`) spanning all rows.
@@ -171,7 +181,8 @@ database) and unit-tested.
 
 ## Edge cases
 
-- One path, or no two contigs (counted across all paths) sharing an anchor:
+- One path, or no two contigs (counted across all paths) sharing an anchor
+  with overlapping copies:
   no section. Three paths of one contig each form one set of three.
 - `paths_align()` returns `NULL`: summary says "Could not align these
   contigs."; the canvas stays empty.
@@ -191,7 +202,8 @@ database) and unit-tested.
 - `paths_payload()`: a hand-built two-row alignment with gaps maps a feature
   that spans a gap to the right columns; a feature with NA start is skipped;
   row labels and `len` come through.
-- `paths_diff_count()`: counts mismatch and gap columns, zero for identical rows.
+- `paths_diff_count()`: counts mismatch and internal gap columns, ignores
+  terminal gaps, zero for identical rows.
 - `assemble_modal()` on the fixture project renders no `seqv_paths-canvas`
   with one path, and renders it (and no dropdown) once a second path with a
   shared 18S annotation is inserted; a second disjoint set renders the
