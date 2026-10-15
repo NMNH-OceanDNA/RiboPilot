@@ -8,6 +8,7 @@ RUN_RESULTS <- c(
   failures   = "Finished with failures",
   failed     = "Failed",
   stopped    = "Stopped",
+  killed     = "Killed / ended without finishing",
   unfinished = "Running / no finish recorded"
 )
 
@@ -272,7 +273,8 @@ nf_run_report <- function(project, log, status = NULL, how = "done", con = NULL)
     run_failed_samples(NULL, NA)
   n_t <- nrow(f$tasks); n_s <- nrow(bad)
   failed <- (!is.na(status) && status != 0L) || f$fatal
-  result <- if (how %in% c("stopped", "killed")) "stopped" else if (failed) "failed" else
+  result <- if (how %in% c("stopped", "killed")) "stopped" else
+    if (is.na(status) && !f$finished) "killed" else if (failed) "failed" else
     if (n_t + n_s > 0) "failures" else "finished"
 
   out <- switch(result,
@@ -286,6 +288,10 @@ nf_run_report <- function(project, log, status = NULL, how = "done", con = NULL)
           "Press Update with Resume ticked to continue where it left off."))),
     failed = list(type = "error", title = "Run failed",
       lead = paste0("The run stopped with an error: ", f$error %|NA|% "see the log", ".")),
+    killed = list(type = "error", title = "Run killed",
+      lead = paste("The run ended without Nextflow reporting an exit status. The scheduler",
+        "probably killed the job (out of time or memory, or it was cancelled). Check the",
+        "job log in .runs/logs/.")),
     failures = list(type = "warning", title = "Run finished with failures",
       lead = sprintf("Run finished, but %s failed. Copy the report below to send it to the developers.",
         paste(c(if (n_t) sprintf("%d task(s)", n_t),
@@ -370,16 +376,66 @@ read_tail <- function(path, bytes = 20000) {
   readLines(con, warn = FALSE)
 }
 
+#' Scheduler job id of a job run, from its scheduler log name
+#'
+#' Job headers name the log `<base>.<id>.log` (SGE, LSF) or `<base>_<id>.log`
+#' (Slurm). NA when no such log exists yet (PBS logs carry no id).
+#' @noRd
+run_job_id <- function(project, base) {
+  f <- list.files(run_dir(project, "logs"), pattern = paste0("^", base, "[._][0-9]+\\.log$"))
+  if (!length(f)) return(NA_character_)
+  sub(".*[._]([0-9]+)\\.log$", "\\1", utils::tail(sort(f), 1))
+}
+
+#' Is a scheduler job still queued or running?
+#'
+#' Asks whichever of squeue, qstat, or bjobs is on PATH.
+#' @return TRUE, FALSE, or NA when it cannot be told (no id, no scheduler
+#'   command, or an unexpected reply).
+#' @noRd
+job_alive <- function(id) {
+  if (is.na(id)) return(NA)
+  cmd <- c("squeue", "qstat", "bjobs")
+  cmd <- cmd[nzchar(Sys.which(cmd))][1]
+  if (is.na(cmd)) return(NA)
+  args <- switch(cmd, squeue = c("-h", "-j", id), qstat = c("-j", id), bjobs = c("-noheader", id))
+  out <- tryCatch(suppressWarnings(system2(cmd, args, stdout = TRUE, stderr = TRUE)),
+    error = function(e) NULL)
+  if (is.null(out)) return(NA)
+  job_alive_from(cmd, out, attr(out, "status") %||% 0L)
+}
+
+#' Classify a scheduler reply about one job (pure)
+#' @noRd
+job_alive_from <- function(cmd, out, status = 0L) {
+  if (any(grepl("do not exist|not exist|Invalid job id|not found|Unknown Job", out, ignore.case = TRUE))) {
+    return(FALSE)
+  }
+  switch(cmd,
+    squeue = if (status == 0L) any(nzchar(trimws(out))) else NA,
+    qstat = if (status == 0L) TRUE else NA,
+    bjobs = if (any(grepl("PEND|RUN|SUSP", out))) TRUE else if (any(grepl("DONE|EXIT", out))) FALSE else NA)
+}
+
+#' Job runs with no finish recorded, newest first
+#' @noRd
+open_job_runs <- function(project) {
+  sync_run_reports(project)
+  r <- list_run_reports(project)
+  r$base[r$launch %in% "job" & r$result %in% "unfinished"]
+}
+
 #' Has a run recorded its end?
 #'
 #' Job scripts with the exit trailer count only once the trailer is logged, so
-#' the real exit status is known. Otherwise the Nextflow log end is used.
+#' the real exit status is known, or once the scheduler no longer has the job
+#' (killed). Otherwise the Nextflow log end is used.
 #' @noRd
 run_is_finished <- function(project, base, log) {
   if (!is.na(read_exit_trailer(project, base))) return(TRUE)
   job <- file.path(run_dir(project, "jobs"), paste0(base, ".sh"))
   if (file.exists(job) && any(grepl("nextflow exited with status", readLines(job, warn = FALSE), fixed = TRUE))) {
-    return(FALSE)
+    return(isFALSE(job_alive(run_job_id(project, base))))
   }
   x <- read_tail(log)
   any(grepl("Execution complete -- Goodbye|Session aborted -- Cause:|\\] ERROR +nextflow\\.cli\\.Launcher - ", x))

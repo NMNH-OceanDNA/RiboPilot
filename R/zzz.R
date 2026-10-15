@@ -29,7 +29,10 @@ nf_version_session <- function() {
   status <- nf_version_status(version)
   packageStartupMessage("Welcome to RiboPilot!")
   switch(status,
-    missing = {
+    missing = if (nf_on_path()) {
+      packageStartupMessage("A 'nextflow' executable was found but 'nextflow -version' did not report a version.")
+      packageStartupMessage("Ensure Java 17+ is on PATH in this R session (or set NXF_JAVA_HOME).")
+    } else {
       packageStartupMessage("A Nextflow installation is needed to run the RiboPilot pipeline.")
       packageStartupMessage("Please install Nextflow (>= ", NF_MIN_SUPPORTED, ") from https://www.nextflow.io/")
     },

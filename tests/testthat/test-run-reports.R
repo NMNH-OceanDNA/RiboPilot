@@ -171,3 +171,59 @@ test_that("an open Run Reports window lists new runs every 15 seconds", {
     expect_equal(h$runs()$result, c("unfinished", "finished"))
   })
 })
+
+test_that("a job's id is read from its scheduler log name", {
+  d <- withr::local_tempdir()
+  dir.create(RiboPilot:::run_dir(d, "logs"), recursive = TRUE)
+  expect_true(is.na(RiboPilot:::run_job_id(d, "pipeline_2026-09-08_12-51-00")))
+  file.create(file.path(RiboPilot:::run_dir(d, "logs"), "pipeline_2026-09-08_12-51-00.77.log"))
+  expect_equal(RiboPilot:::run_job_id(d, "pipeline_2026-09-08_12-51-00"), "77")
+  file.create(file.path(RiboPilot:::run_dir(d, "logs"), "reference_2026-09-08_12-51-00_78.log"))
+  expect_equal(RiboPilot:::run_job_id(d, "reference_2026-09-08_12-51-00"), "78")
+  file.create(file.path(RiboPilot:::run_dir(d, "logs"), "recheck_2026-09-08_12-51-00.log"))
+  expect_true(is.na(RiboPilot:::run_job_id(d, "recheck_2026-09-08_12-51-00")))
+})
+
+test_that("scheduler replies classify a job as alive, gone, or unknown", {
+  f <- RiboPilot:::job_alive_from
+  expect_true(f("squeue", "123 main  job  R", 0L))
+  expect_false(f("squeue", character(0), 0L))
+  expect_false(f("squeue", "slurm_load_jobs error: Invalid job id specified", 1L))
+  expect_true(f("qstat", c("job_number: 123", "sge_o_home: /home/x"), 0L))
+  expect_false(f("qstat", "Following jobs do not exist:", 1L))
+  expect_true(is.na(f("qstat", "error: commlib error", 1L)))
+  expect_true(f("bjobs", "123 me RUN normal", 0L))
+  expect_false(f("bjobs", "Job <123> is not found", 255L))
+  expect_false(f("bjobs", "123 me EXIT normal", 0L))
+  expect_true(is.na(RiboPilot:::job_alive(NA_character_)))
+})
+
+test_that("a job the scheduler no longer has gets a killed report", {
+  d <- withr::local_tempdir()
+  base <- "pipeline_2026-09-08_12-51-00"
+  put_log(d, base, rr_log(end = NULL))
+  job <- file.path(RiboPilot:::run_dir(d, "jobs"), paste0(base, ".sh"))
+  dir.create(dirname(job), recursive = TRUE)
+  writeLines(RiboPilot:::NF_EXIT_TRAILER, job)
+  dir.create(RiboPilot:::run_dir(d, "logs"))
+  writeLines("job started", file.path(RiboPilot:::run_dir(d, "logs"), paste0(base, ".77.log")))
+
+  testthat::local_mocked_bindings(job_alive = function(id) TRUE, .package = "RiboPilot")
+  expect_equal(RiboPilot:::sync_run_reports(d), character(0))
+  expect_equal(RiboPilot:::open_job_runs(d), base)
+
+  testthat::local_mocked_bindings(job_alive = function(id) NA, .package = "RiboPilot")
+  expect_equal(RiboPilot:::sync_run_reports(d), character(0))
+
+  testthat::local_mocked_bindings(job_alive = function(id) { expect_equal(id, "77"); FALSE },
+    .package = "RiboPilot")
+  expect_equal(RiboPilot:::sync_run_reports(d), base)
+  r <- RiboPilot:::list_run_reports(d)
+  expect_equal(r$result, "killed")
+  expect_true(is.na(r$exit_status))
+  expect_equal(r$launch, "job")
+  txt <- readLines(RiboPilot:::run_report_paths(d, base)[["txt"]])
+  expect_true(any(grepl("Result:    Killed", txt, fixed = TRUE)))
+  expect_equal(RiboPilot:::open_job_runs(d), character(0))
+  expect_match(RiboPilot:::run_result_html("killed"), "mp-pill-danger")
+})
