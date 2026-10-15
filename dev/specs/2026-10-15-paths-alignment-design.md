@@ -171,10 +171,8 @@ database) and unit-tested.
   Wraps around at either end. Does nothing when `diff` is empty.
 - Clicking in the Differences track zooms to the column under the pointer via
   `goto()`.
-- Tooltip in align mode: `Column 1,234 | p1.s1 1,204 A | p2.s1 1,201 G`, each
-  row's native position being the count of non-gap characters up to that
-  column (a `-` prints as `gap`), then ` | <gene> pos1-pos2 (dir)` when a
-  feature is under the pointer.
+- No tooltip in align mode: with many rows the per-row text grew too large,
+  so hover shows nothing (user decision 2026-10-15).
 - Copy alignment: every row in view as gapped FASTA, header `><label>:<a>-<b>`
   with the column range.
 - The existing per-unit mode is unchanged: every new branch is behind

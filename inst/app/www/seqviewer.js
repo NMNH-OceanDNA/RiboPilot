@@ -520,19 +520,7 @@
       var h = self.hitTest(px, py), b = self.baseAt(self.viewStart + (px - GUTTER) / self.ppb);
       if (!self.tip) return;
       if (!b || px < GUTTER) { self.tip.hidden = true; return; }
-      if (self.rows) {
-        var t2 = 'Column ' + b.pos.toLocaleString();
-        self.rows.forEach(function (r) {
-          var np = G.nativePos(r.seq, b.pos), ch = r.seq.charAt(b.pos - 1);
-          t2 += ' | ' + r.label.split(' ')[0] + ' ' + (np === null ? 'gap' : np.toLocaleString() + ' ' + ch);
-        });
-        if (h) t2 += ' | ' + h.f.gene + ' ' + h.f.pos1.toLocaleString() + '-' + h.f.pos2.toLocaleString() + ' (' + h.f.dir + ')';
-        self.tip.textContent = t2; self.tip.hidden = false;
-        var tw2 = self.tip.offsetWidth, th2 = self.tip.offsetHeight;
-        self.tip.style.left = Math.max(0, Math.min(px + 12, cv.clientWidth - tw2)) + 'px';
-        self.tip.style.top = (py + 12 + th2 > cv.clientHeight ? py - th2 - 8 : py + 12) + 'px';
-        return;
-      }
+      if (self.rows) { self.tip.hidden = true; return; }   // no hover text in align mode
       var t = 'Position ' + b.pos.toLocaleString() + ', ' + b.base;
       if (self.covOn() && self.depth[b.pos - 1] !== null) t += ' | depth ' + self.depth[b.pos - 1];
       if (self.clipOn() && self.clip[b.pos - 1] !== null) t += ', clipped ' + (self.clip[b.pos - 1] * 100).toFixed(0) + '%';
