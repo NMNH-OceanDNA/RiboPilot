@@ -158,7 +158,7 @@ database) and unit-tested.
   (`#c0392b`) 1 px tick per differing column in view (`Math.max(1, ppb)`
   wide). Label "Differences" in the gutter.
 - Nucleotide strip per row: as `drawNt` today, with two changes. Terminal gaps draw
-  nothing; an internal gap is a short grey dash centred in the cell. Bases keep their colours at every zoom (the user asked for no greying). When letters are visible
+  nothing; an internal gap is a short grey dash centred in the cell. Bases keep their hue at every zoom, but matching columns are washed out (low alpha, grey letters) and differing columns are drawn strong (user decision 2026-10-15). When letters are visible
   (`ppb >= NT_LETTER`), a differing column gets a light red wash
   (`rgba(192, 57, 43, 0.12)`) spanning all rows.
   Below the letter threshold there is no wash, so the

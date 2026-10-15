@@ -349,9 +349,11 @@
         if (col >= r.first && col <= r.last) { c.fillStyle = GAP_INK; c.fillRect(x + w * 0.2, y + NT_H / 2 - 1, w * 0.6, 2); }
         continue;
       }
-      c.fillStyle = (BASE[b] || BASE.N) + (letter ? '99' : 'cc');
+      // matching columns are washed out so the differing ones stand out
+      var diff = !!this.diffSet[col];
+      c.fillStyle = (BASE[b] || BASE.N) + (diff ? 'dd' : '2e');
       c.fillRect(x, y + 2, w, NT_H - 4);
-      if (letter) { c.fillStyle = '#000000'; c.fillText(b, x + this.ppb / 2, y + NT_H / 2); }
+      if (letter) { c.fillStyle = diff ? '#000000' : '#777777'; c.fillText(b, x + this.ppb / 2, y + NT_H / 2); }
     }
   };
   // One bar per pixel column, the max of the positions under it. Depth is
