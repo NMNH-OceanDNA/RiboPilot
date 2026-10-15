@@ -1149,15 +1149,16 @@ app_server <- function(input, output, session) {
     f <- write_submit_script()
     rp_alert(paste0("Saved job script to ", f), type = "message")
   })
-  job_sent <- reactiveVal(FALSE)
   resubmit_ok <- reactiveVal(FALSE)
   observeEvent(input$submit_job, {
     held <- run_lock_holder(app_project())
     if (!is.null(held)) { rp_alert(run_lock_message(held, app_project()), type = "warning"); return() }
-    if (isTRUE(job_sent()) && !isTRUE(resubmit_ok())) {
+    open <- open_job_runs(app_project())
+    if (length(open) && !isTRUE(resubmit_ok())) {
       resubmit_ok(TRUE)
-      rp_alert(paste("A job for this project was already submitted from this window and may",
-        "still be queued or running. Press Submit as job again to submit another."), type = "warning")
+      rp_alert(paste0("A job for this project (", open[1], ") has no finish recorded and may ",
+        "still be queued or running. Press Submit as job again to submit another anyway."),
+        type = "warning")
       return()
     }
     resubmit_ok(FALSE)
@@ -1179,7 +1180,6 @@ app_server <- function(input, output, session) {
       shiny::withReactiveDomain(session, {
         out <- tryCatch(submit_job(sched$cmd, f),
           error = function(e) conditionMessage(e))
-        job_sent(TRUE)
         rp_alert(paste0("Submitted via ", sched$cmd, ": ", paste(out, collapse = " ")),
           type = "message")
         removeModal()
@@ -1287,15 +1287,15 @@ app_server <- function(input, output, session) {
     f <- write_recheck_script()
     rp_alert(paste0("Saved job script to ", f), type = "message")
   })
-  rc_job_sent <- reactiveVal(FALSE)
   rc_resubmit_ok <- reactiveVal(FALSE)
   observeEvent(input$rc_submit_job, {
     held <- run_lock_holder(app_project())
     if (!is.null(held)) { rp_alert(run_lock_message(held, app_project()), type = "warning"); return() }
-    if (isTRUE(rc_job_sent()) && !isTRUE(rc_resubmit_ok())) {
+    open <- open_job_runs(app_project())
+    if (length(open) && !isTRUE(rc_resubmit_ok())) {
       rc_resubmit_ok(TRUE)
-      rp_alert(paste("A recheck job for this project was already submitted from this window and",
-        "may still be queued or running. Press Submit as job again to submit another."),
+      rp_alert(paste0("A job for this project (", open[1], ") has no finish recorded and may ",
+        "still be queued or running. Press Submit as job again to submit another anyway."),
         type = "warning")
       return()
     }
@@ -1312,7 +1312,6 @@ app_server <- function(input, output, session) {
     later::later(function() {
       shiny::withReactiveDomain(session, {
         out <- tryCatch(submit_job(sched$cmd, f), error = function(e) conditionMessage(e))
-        rc_job_sent(TRUE)
         rp_alert(paste0("Submitted via ", sched$cmd, ": ", paste(out, collapse = " ")),
           type = "message")
         removeModal()
