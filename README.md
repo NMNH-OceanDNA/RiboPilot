@@ -57,7 +57,7 @@ and Kim 1999](https://pmc.ncbi.nlm.nih.gov/articles/PMC2733198/)).
 However, the structure of the nuclear rDNA repeat varies across the tree
 of life. The IGS can range from a few hundred base pairs to tens of
 kilobases and often holds subrepeats. Repeat blocks of the rDNA unit can
-be located at one or several places in the genome. See ([Wang et
+be located at one or several places in the genome. See [Wang et
 al. 2023](https://www.nature.com/articles/s41437-023-00634-5) for a
 review.
 
