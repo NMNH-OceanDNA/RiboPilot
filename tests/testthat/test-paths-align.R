@@ -126,3 +126,24 @@ test_that("the viewer's align mode has difference buttons and no coverage boxes"
   expect_match(unit, "show_cov", fixed = TRUE)
   expect_false(grepl("prev_diff", unit, fixed = TRUE))
 })
+
+test_that("the Assemble window shows the paths section only for a multi-path sample with a set", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project(); withr::local_dir(dir)
+  html <- function() paste(as.character(RiboPilot:::assemble_modal("S1")), collapse = " ")
+  expect_false(grepl("seqv_paths-canvas", html(), fixed = TRUE))   # no annotations yet
+  con <- RiboPilot:::app_con()
+  DBI::dbExecute(con, "INSERT INTO annotations (ID, path, scaffold, element, start, stop, strand)
+    VALUES ('S1',1,1,'18S',1,30,'+'), ('S1',2,1,'18S',1,30,'+')")
+  h <- html()
+  expect_match(h, "seqv_paths-canvas", fixed = TRUE)
+  expect_match(h, "Compare assembly paths", fixed = TRUE)
+  expect_false(grepl("paths_set", h, fixed = TRUE))                 # one set: no dropdown
+  DBI::dbExecute(con, "INSERT INTO annotations (ID, path, scaffold, element, start, stop, strand)
+    VALUES ('S1',1,2,'28S',1,30,'+'), ('S1',2,2,'28S',1,30,'+')")
+  expect_match(html(), 'id="paths_set"', fixed = TRUE)
+  DBI::dbExecute(con, "DELETE FROM assemblies WHERE path = 2")
+  DBI::dbExecute(con, "DELETE FROM annotations WHERE path = 2")
+  DBI::dbDisconnect(con)
+  expect_false(grepl("seqv_paths-canvas", html(), fixed = TRUE))   # one path left
+})
