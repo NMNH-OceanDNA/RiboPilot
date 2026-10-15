@@ -2377,10 +2377,14 @@ app_server <- function(input, output, session) {
     refresh()
     id <- sel_id(); req(id)
     # one sample's alignments at a time; the dropdown value can be stale from
-    # the previous sample, so it only counts when this sample has a dropdown
-    if (!identical(paths_cache$id, id)) { rm(list = ls(paths_cache), envir = paths_cache); paths_cache$id <- id; paths_result(NULL) }
+    # the previous sample, so it is ignored on a sample's first run
+    picked <- input$paths_set
+    fresh <- !identical(paths_cache$id, id)
+    if (fresh) { rm(list = ls(paths_cache), envir = paths_cache); paths_cache$id <- id; paths_result(NULL) }
+    n_paths <- app_query("SELECT COUNT(DISTINCT path) AS n FROM assemblies WHERE ID = ?", params = list(id))$n[1]
+    if (n_paths < 2) { paths_result(NULL); return() }
     sets <- paths_sets_for(id)
-    k <- if (length(sets) > 1) suppressWarnings(as.integer(input$paths_set %||% 1L)) else 1L
+    k <- if (!fresh && length(sets) > 1) suppressWarnings(as.integer(picked %||% 1L)) else 1L
     if (is.na(k) || k > length(sets)) k <- 1L
     if (!length(sets)) { paths_result(NULL); return() }
     key <- paste("set", k)
@@ -2389,7 +2393,7 @@ app_server <- function(input, output, session) {
     }
     r <- get(key, envir = paths_cache)
     if (inherits(r, "try-error")) r <- NULL
-    if (!is.null(r)) session$sendCustomMessage("rpseq", c(r, list(id = "seqv_paths-canvas", unit = id)))
+    if (!is.null(r)) session$sendCustomMessage("rpseq", r)
     paths_result(list(id = id, pl = r))
   })
   output$paths_summary <- renderUI({
