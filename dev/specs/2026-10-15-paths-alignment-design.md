@@ -111,7 +111,7 @@ database) and unit-tested.
     (see below).
 - `seqview_ui()` gains `mode = c("unit", "align")`. In `align` mode the
   controls are: Go to column, Whole alignment, Zoom in, Zoom out, Previous
-  difference, Next difference, Copy sequence, and the Nucleotides box. The
+  difference, Next difference, Copy alignment, and the Nucleotides box. The
   coverage, clipped, BLAST identity, BLAST origin boxes and the Fit gene
   button are not rendered. The help paragraph is omitted (the section supplies
   its own). When `summary` is `NULL`, no `<details>` wrapper is emitted: the
@@ -172,7 +172,7 @@ database) and unit-tested.
   row's native position being the count of non-gap characters up to that
   column (a `-` prints as `gap`), then ` | <gene> pos1-pos2 (dir)` when a
   feature is under the pointer.
-- Copy sequence: every row in view as gapped FASTA, header `><label>:<a>-<b>`
+- Copy alignment: every row in view as gapped FASTA, header `><label>:<a>-<b>`
   with the column range.
 - The existing per-unit mode is unchanged: every new branch is behind
   `if (this.rows)`.

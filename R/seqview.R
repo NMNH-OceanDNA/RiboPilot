@@ -61,7 +61,7 @@ seqview_ui <- function(prefix, summary, open = TRUE, pick = TRUE, mode = c("unit
       btn("zoom_out", NULL, icon("magnifying-glass-minus"), "Zoom out"),
       btn("prev_diff", NULL, icon("backward-step"), "Previous difference"),
       btn("next_diff", NULL, icon("forward-step"), "Next difference"),
-      btn("copy", "Copy sequence", title = "Copy the rows in view as gapped FASTA"),
+      btn("copy", "Copy alignment", title = "Copy the rows in view as gapped FASTA"),
       box("show_nt", "Nucleotides"))
     else div(class = "rp-seqview-controls",
       goto,
