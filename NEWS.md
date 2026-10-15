@@ -17,3 +17,8 @@
   sequences are flatfish contamination; they produced a false "PREDICTED: Canis"
   chimera flag on a flounder sample. Known-bad GenBank records are listed in
   `dev/refdb/exclusions.csv` and dropped at build time.
+
+## Assemble
+
+* The Assemble details window aligns a sample's assembly paths and shows the
+  alignment in the sequence viewer, with differing columns marked.
