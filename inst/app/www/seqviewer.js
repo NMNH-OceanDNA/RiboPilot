@@ -211,7 +211,8 @@
     return this.rowTop(this.rows.length) - ROW_GAP + PAD;
   };
   Viewer.prototype.draw = function () {
-    if (!this.len || !this.canvas.offsetParent) return;
+    if (!this.len) { this.hits = []; this.canvas.width = 0; this.canvas.style.height = '0px'; return; }
+    if (!this.canvas.offsetParent) return;
     this.clamp();
     var dpr = window.devicePixelRatio || 1, W = this.wrap.clientWidth, H = this.height();
     this.canvas.width = W * dpr; this.canvas.height = H * dpr;

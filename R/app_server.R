@@ -2398,8 +2398,10 @@ app_server <- function(input, output, session) {
     r <- get(key, envir = paths_cache)
     if (inherits(r, "try-error")) r <- NULL
     if (is.null(r)) empty() else {
-      con <- app_con(); lab <- paths_labels(con, id, sets[[k]]$units); DBI::dbDisconnect(con)
-      for (i in seq_along(r$rows)) r$rows[[i]]$label <- unname(lab[r$rows[[i]]$unit])
+      lab <- try(local({
+        con <- app_con(); on.exit(DBI::dbDisconnect(con)); paths_labels(con, id, sets[[k]]$units)
+      }), silent = TRUE)
+      if (!inherits(lab, "try-error")) for (i in seq_along(r$rows)) r$rows[[i]]$label <- unname(lab[r$rows[[i]]$unit])
       session$sendCustomMessage("rpseq", r)
     }
     paths_result(list(id = id, pl = r))
