@@ -305,8 +305,14 @@
       var top = self.rowTop(i);
       self.drawLanesAt(c, r.feats, top);
       if (self.ntOn()) self.drawRowNt(c, r, self.rowNtY(i));
-      c.fillStyle = cssVar('--mp-text', '#333'); c.textAlign = 'right'; c.textBaseline = 'middle';
-      c.fillText(r.label, GUTTER - 6, (self.ntOn() ? self.rowNtY(i) + NT_H / 2 : top + LANE_H / 2), GUTTER - 10);
+      // "p1.s1 keep": the verdict takes the K/D badge colour of the contig table
+      var ly = self.ntOn() ? self.rowNtY(i) + NT_H / 2 : top + LANE_H / 2, parts = r.label.split(' ');
+      var verdict = parts.length > 1 ? parts[1] : '', vcol = verdict === 'keep' ? '#2d6a4f' : verdict === 'drop' ? '#c0392b' : null;
+      c.textAlign = 'right'; c.textBaseline = 'middle';
+      var vx = GUTTER - 6, vw = verdict ? c.measureText(verdict).width : 0;
+      if (verdict) { c.fillStyle = vcol || cssVar('--mp-text', '#333'); c.fillText(verdict, vx, ly); }
+      c.fillStyle = cssVar('--mp-text', '#333');
+      c.fillText(parts[0], vx - vw - (verdict ? 5 : 0), ly, GUTTER - 10 - vw);
     });
   };
   Viewer.prototype.drawDiffTrack = function (c, W, y) {
