@@ -37,6 +37,39 @@ test_that("no anchors or empty input gives an empty list", {
     element = character())), list())
 })
 
+test_that("a link function vetoes a shared anchor, but a third contig still joins both", {
+  f <- feats_df(list(1, 1, "28S"), list(2, 1, "28S"), list(3, 1, "5.8S"))
+  veto <- function(ua, ub, el) !(el == "28S" && setequal(c(ua, ub), c("1 1", "2 1")))
+  expect_equal(RiboPilot:::paths_homology_sets(f, link = veto), list())
+  f <- feats_df(list(1, 1, "28S"), list(2, 1, "28S"), list(1, 1, "18S"), list(2, 1, "18S"),
+    list(3, 1, "18S"))
+  s <- RiboPilot:::paths_homology_sets(f, link = function(ua, ub, el)
+    veto(ua, ub, el) && !(el == "18S" && setequal(c(ua, ub), c("1 1", "2 1"))))
+  expect_length(s, 1L)
+  expect_equal(s[[1]]$units$path, c(1L, 2L, 3L))
+})
+
+test_that("the overlap link joins copies that align and rejects ones that do not", {
+  skip_if_not_installed("withr")
+  dir <- mk_app_project(); withr::local_dir(dir)
+  set.seed(7)
+  a <- paste(sample(c("A", "C", "G", "T"), 300, TRUE), collapse = "")
+  b <- paste(sample(c("A", "C", "G", "T"), 300, TRUE), collapse = "")
+  con <- RiboPilot:::app_con()
+  DBI::dbExecute(con, "UPDATE assemblies SET sequence = ? WHERE path = 1", params = list(a))
+  DBI::dbExecute(con, "UPDATE assemblies SET sequence = ? WHERE path = 2 AND scaffold = 1", params = list(b))
+  DBI::dbExecute(con, "INSERT INTO annotations (ID, path, scaffold, element, start, stop, strand)
+    VALUES ('S1',1,1,'28S',1,300,'+'), ('S1',1,2,'28S',1,300,'+'), ('S1',2,1,'28S',1,300,'+'),
+    ('S1',2,2,'28S',1,30,'+')")
+  link <- RiboPilot:::paths_overlap_link(con, "S1")
+  DBI::dbDisconnect(con)
+  expect_true(link("1 1", "1 2", "28S"))
+  expect_true(link("1 2", "1 1", "28S"))
+  expect_false(link("1 1", "2 1", "28S"))
+  expect_false(link("1 1", "2 2", "28S"))   # piece shorter than REF_ALN_MIN_BP
+  expect_false(link("1 1", "1 2", "18S"))   # no such element
+})
+
 aln_fixture <- function() {
   Biostrings::DNAStringSet(c(`p1.s1` = "ACGTACGTAC", `p2.s1` = "ACG--CGTAC"))
 }
@@ -135,14 +168,17 @@ test_that("the Assemble window shows the paths section only for a multi-path sam
   html <- function() paste(as.character(RiboPilot:::assemble_modal("S1")), collapse = " ")
   expect_false(grepl("seqv_paths-canvas", html(), fixed = TRUE))   # no annotations yet
   con <- RiboPilot:::app_con()
+  set.seed(3)
+  DBI::dbExecute(con, "UPDATE assemblies SET sequence = ?",
+    params = list(paste(sample(c("A", "C", "G", "T"), 200, TRUE), collapse = "")))
   DBI::dbExecute(con, "INSERT INTO annotations (ID, path, scaffold, element, start, stop, strand)
-    VALUES ('S1',1,1,'18S',1,30,'+'), ('S1',2,1,'18S',1,30,'+')")
+    VALUES ('S1',1,1,'18S',1,120,'+'), ('S1',2,1,'18S',1,120,'+')")
   h <- html()
   expect_match(h, "seqv_paths-canvas", fixed = TRUE)
   expect_match(h, "Compare assembly paths", fixed = TRUE)
   expect_false(grepl("paths_set", h, fixed = TRUE))                 # one set: no dropdown
   DBI::dbExecute(con, "INSERT INTO annotations (ID, path, scaffold, element, start, stop, strand)
-    VALUES ('S1',1,2,'28S',1,30,'+'), ('S1',2,2,'28S',1,30,'+')")
+    VALUES ('S1',1,2,'28S',121,200,'+'), ('S1',2,2,'28S',121,200,'+')")
   expect_match(html(), 'id="paths_set"', fixed = TRUE)
   DBI::dbExecute(con, "DELETE FROM assemblies WHERE path = 2")
   DBI::dbExecute(con, "DELETE FROM annotations WHERE path = 2")

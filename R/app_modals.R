@@ -250,8 +250,9 @@ rejected_contigs_section <- function(id) {
 #' The sample's homologous contig sets, from its annotations
 #' @noRd
 paths_sets_for <- function(id) {
-  f <- app_query("SELECT path, scaffold, element FROM annotations WHERE ID = ?", params = list(id))
-  paths_homology_sets(f)
+  con <- app_con(); on.exit(DBI::dbDisconnect(con))
+  f <- DBI::dbGetQuery(con, "SELECT path, scaffold, element FROM annotations WHERE ID = ?", params = list(id))
+  paths_homology_sets(f, link = paths_overlap_link(con, id))
 }
 
 #' Paths alignment section of the Assemble window, or nothing for a

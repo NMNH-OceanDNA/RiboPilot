@@ -3,10 +3,12 @@
 
 #' Homologous sets of contigs: connected components of "shares an anchor"
 #' @param feats data.frame(path, scaffold, element), one row per annotation.
+#' @param link NULL (any shared anchor links) or function(ua, ub, element)
+#'   giving TRUE when that pair's copies of the element are homologous.
 #' @return list of list(label, units = data.frame(path, scaffold)); only sets
 #'   of two or more contigs, largest first.
 #' @noRd
-paths_homology_sets <- function(feats) {
+paths_homology_sets <- function(feats, link = NULL) {
   f <- feats[feats$element %in% SCREEN_ANCHOR_ELEMENTS, , drop = FALSE]
   if (!nrow(f)) return(list())
   f$unit <- paste(f$path, f$scaffold)
@@ -14,7 +16,16 @@ paths_homology_sets <- function(feats) {
   comp <- stats::setNames(seq_along(units), units)
   for (el in unique(f$element)) {
     members <- unique(f$unit[f$element == el])
-    comp[comp %in% comp[members]] <- min(comp[members])
+    if (is.null(link)) {
+      comp[comp %in% comp[members]] <- min(comp[members])
+      next
+    }
+    if (length(members) < 2) next
+    for (pr in utils::combn(members, 2, simplify = FALSE)) {
+      if (comp[pr[1]] != comp[pr[2]] && isTRUE(link(pr[1], pr[2], el))) {
+        comp[comp %in% comp[pr]] <- min(comp[pr])
+      }
+    }
   }
   sets <- split(names(comp), comp)
   sets <- Filter(function(u) length(u) >= 2, sets)
@@ -30,6 +41,38 @@ paths_homology_sets <- function(feats) {
   n <- vapply(out, function(s) nrow(s$units), 1L)
   first <- vapply(out, function(s) s$units$path[1] * 1e6 + s$units$scaffold[1], 1)
   unname(out[order(-n, first)])
+}
+
+#' Link function for paths_homology_sets(): two copies of an element link when
+#' their ends-free alignment covers REF_ALN_MIN_COV of the shorter copy over at
+#' least REF_ALN_MIN_BP bases
+#' @noRd
+paths_overlap_link <- function(con, id) {
+  asm <- DBI::dbGetQuery(con, "SELECT path, scaffold, sequence FROM assemblies WHERE ID = ?", params = list(id))
+  n <- DBI::dbGetQuery(con, "SELECT path, scaffold, element, start, stop FROM annotations WHERE ID = ?",
+    params = list(id))
+  seqs <- stats::setNames(asm$sequence, paste(asm$path, asm$scaffold))
+  n$unit <- paste(n$path, n$scaffold)
+  memo <- list()
+  piece <- function(u, el) {
+    r <- n[n$unit == u & n$element == el, , drop = FALSE]
+    if (!nrow(r) || is.na(seqs[u])) return(NA_character_)
+    substr(seqs[[u]], r$start[1], r$stop[1])
+  }
+  function(ua, ub, element) {
+    key <- paste(c(sort(c(ua, ub)), element), collapse = " ")
+    if (!is.null(memo[[key]])) return(memo[[key]])
+    a <- piece(ua, element); b <- piece(ub, element)
+    ok <- !is.na(a) && !is.na(b) && min(nchar(a), nchar(b)) >= REF_ALN_MIN_BP &&
+      tryCatch({
+        aln <- pairwise_nt(a, b, "overlap")
+        s <- if (nchar(a) <= nchar(b)) as.character(pwalign::pattern(aln)) else as.character(pwalign::subject(aln))
+        isTRUE(alignment_coverage(s, min(nchar(a), nchar(b))) >= REF_ALN_MIN_COV &&
+          nchar(gsub("-", "", s)) >= REF_ALN_MIN_BP)
+      }, error = function(e) FALSE)
+    memo[[key]] <<- ok
+    ok
+  }
 }
 
 #' Align the contigs of one set

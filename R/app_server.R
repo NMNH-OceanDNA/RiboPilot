@@ -2383,7 +2383,8 @@ app_server <- function(input, output, session) {
     if (fresh) { rm(list = ls(paths_cache), envir = paths_cache); paths_cache$id <- id; paths_result(NULL) }
     n_paths <- app_query("SELECT COUNT(DISTINCT path) AS n FROM assemblies WHERE ID = ?", params = list(id))$n[1]
     if (n_paths < 2) { paths_result(NULL); return() }
-    sets <- paths_sets_for(id)
+    if (!exists("sets", envir = paths_cache, inherits = FALSE)) assign("sets", paths_sets_for(id), envir = paths_cache)
+    sets <- get("sets", envir = paths_cache)
     k <- if (!fresh && length(sets) > 1) suppressWarnings(as.integer(picked %||% 1L)) else 1L
     if (is.na(k) || k > length(sets)) k <- 1L
     if (!length(sets)) { paths_result(NULL); return() }
