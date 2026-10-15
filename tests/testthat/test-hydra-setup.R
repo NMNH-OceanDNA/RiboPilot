@@ -62,15 +62,31 @@ test_that("library() applies the Hydra PATH fix before probing Nextflow", {
   expect_equal(calls, c("hydra", "probe"))
 })
 
-test_that("nothing happens once the scheduler is visible", {
+test_that("nothing happens once the scheduler and nextflow are visible", {
   testthat::local_mocked_bindings(
     is_hydra_cluster = function() TRUE,
     detect_scheduler = function() list(cmd = "qsub", name = "SGE/PBS"),
+    nf_on_path = function(...) TRUE,
     .package = "RiboPilot")
   before <- Sys.getenv("PATH")
   expect_silent(res <- RiboPilot:::ensure_hydra_setup())
   expect_false(res)
   expect_equal(Sys.getenv("PATH"), before)
+})
+
+test_that("the PATH fix still runs when qsub is visible but nextflow is not", {
+  testthat::local_mocked_bindings(
+    is_hydra_cluster = function() TRUE,
+    detect_scheduler = function() list(cmd = "qsub", name = "SGE/PBS"),
+    nf_on_path = function(...) FALSE,
+    check_nextflow_version = function(...) invisible("supported"),
+    nf_pin_version = function(...) NA_character_,
+    .package = "RiboPilot")
+  withr::local_envvar(c(PATH = "/usr/bin:/bin", HOME = "/home/someone"))
+  expect_message(res <- RiboPilot:::ensure_hydra_setup(), "Hydra environment applied")
+  expect_true(res)
+  expect_true("/home/someone/bin" %in%
+    strsplit(Sys.getenv("PATH"), .Platform$path.sep, fixed = TRUE)[[1]])
 })
 
 test_that("the Hydra head job goes to the workflow-manager queue", {

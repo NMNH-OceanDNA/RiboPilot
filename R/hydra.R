@@ -69,7 +69,7 @@ hydra_setup <- function() {
 #' app reports an empty result instead of a missing `qsub`.
 #' @noRd
 ensure_hydra_setup <- function() {
-  if (!is_hydra_cluster() || !is.null(detect_scheduler())) {
+  if (!is_hydra_cluster() || (!is.null(detect_scheduler()) && nf_on_path())) {
     return(invisible(FALSE))
   }
   hydra_setup()
