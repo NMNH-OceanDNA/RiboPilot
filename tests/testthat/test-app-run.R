@@ -433,7 +433,7 @@ test_that("a headless recheck saves its job script under the name of its logs", 
   expect_match(seen$alert$msg, "Saved job script to", fixed = TRUE)
 })
 
-test_that("Submit as job hands the recheck script to the scheduler once", {
+test_that("Submit as job warns once about an open recheck job, then submits again", {
   skip_if_not_installed("withr")
   skip_on_os("windows")
   d <- mk_recheck_project()
@@ -447,16 +447,25 @@ test_that("Submit as job hands the recheck script to the scheduler once", {
   withr::local_path(bin, action = "prefix")
   skip_if(!identical(RiboPilot:::detect_scheduler()$cmd, "qsub"), "another scheduler on PATH")
   seen <- new.env(); mock_run(seen)
+  testthat::local_mocked_bindings(job_alive = function(id) TRUE, .package = "RiboPilot")
   shiny::testServer(RiboPilot:::app_server, {
     session$setInputs(mode = "Annotate")
     session$setInputs(annot_run_btn = 1)
     session$setInputs(rc_submit_job = 1)
     while (!later::loop_empty()) later::run_now()
     expect_match(seen$alert$msg, "Submitted via qsub", fixed = TRUE)
+    # the job starts: its Nextflow log appears with no end recorded
+    base <- sub("\\.sh$", "", basename(Sys.glob(file.path(d, ".runs", "jobs", "recheck_*.sh"))))
+    log <- file.path(d, ".runs", "nextflow", paste0(base, ".nextflow.log"))
+    dir.create(dirname(log), recursive = TRUE, showWarnings = FALSE)
+    writeLines("Sep-08 12:51:07.607 [main] INFO  nextflow.cli.CmdRun - N E X T F L O W  ~  version 25.10.6", log)
     session$setInputs(rc_submit_job = 2)
     while (!later::loop_empty()) later::run_now()
-    expect_match(seen$alert$msg, "already submitted", fixed = TRUE)
+    expect_match(seen$alert$msg, "no finish recorded", fixed = TRUE)
+    session$setInputs(rc_submit_job = 3)
+    while (!later::loop_empty()) later::run_now()
+    expect_match(seen$alert$msg, "Submitted via qsub", fixed = TRUE)
   })
-  expect_length(readLines(calls), 1L)
+  expect_length(readLines(calls), 2L)
   expect_match(readLines(calls), "/\\.runs/jobs/recheck_[0-9_-]+\\.sh")
 })
