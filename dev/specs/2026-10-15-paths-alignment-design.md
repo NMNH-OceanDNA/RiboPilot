@@ -171,7 +171,8 @@ database) and unit-tested.
 
 ## Edge cases
 
-- One path, or no set with two or more contigs: no section.
+- One path, or no two contigs (counted across all paths) sharing an anchor:
+  no section. Three paths of one contig each form one set of three.
 - `paths_align()` returns `NULL`: summary says "Could not align these
   contigs."; the canvas stays empty.
 - A contig whose sequence is NA is skipped from the set before aligning; if
