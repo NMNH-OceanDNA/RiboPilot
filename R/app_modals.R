@@ -183,6 +183,7 @@ assemble_modal <- function(id) {
       actionButton("copy_fasta", "Copy FASTA", icon = icon("clipboard"), class = "btn-sm"),
       tags$span(class = "text-muted", style = "margin-left:8px; font-size:0.82em;",
         "Copies the ticked contigs as FASTA, headed by sample, taxon and contig.")),
+    paths_section(id),
     tags$hr(style = "margin:10px 0;"),
 
     # The evidence that settles the keep/drop call, at the point it is made.
@@ -244,6 +245,35 @@ rejected_contigs_section <- function(id) {
         Length = reactable::colDef(width = 90),
         `rRNA found` = reactable::colDef(width = 110),
         `Why it was left out` = reactable::colDef(minWidth = 200))))
+}
+
+#' The sample's homologous contig sets, from its annotations
+#' @noRd
+paths_sets_for <- function(id) {
+  con <- app_con(); on.exit(DBI::dbDisconnect(con))
+  f <- DBI::dbGetQuery(con, "SELECT path, scaffold, element FROM annotations WHERE ID = ?", params = list(id))
+  paths_homology_sets(f, link = paths_overlap_link(con, id))
+}
+
+#' Paths alignment section of the Assemble window, or nothing for a
+#' single-path sample
+#' @noRd
+paths_section <- function(id) {
+  n_paths <- app_query("SELECT COUNT(DISTINCT path) AS n FROM assemblies WHERE ID = ?", params = list(id))$n[1]
+  if (is.na(n_paths) || n_paths < 2) return(NULL)
+  sets <- paths_sets_for(id)
+  if (!length(sets)) return(NULL)
+  labels <- vapply(sets, `[[`, "", "label")
+  picker <- if (length(sets) > 1) div(style = "max-width:320px; margin-bottom:4px;",
+    selectInput("paths_set", NULL, choices = stats::setNames(seq_along(sets), labels), width = "100%"))
+  rp_details("Compare assembly paths", open = TRUE,
+    tags$p(class = "mp-help-text", style = "margin-bottom:4px;",
+      "Rows are contigs from each path aligned together. Red ticks on the Differences track mark ",
+      "columns where the paths disagree; use the arrows to step through them. Letters appear when ",
+      "zoomed in; a red column marks a difference."),
+    picker,
+    uiOutput("paths_summary"),
+    seqview_ui("seqv_paths", NULL, pick = FALSE, mode = "align"))
 }
 
 #' Warn that exporting will replace an export folder that already exists

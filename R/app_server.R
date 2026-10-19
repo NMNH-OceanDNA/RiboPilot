@@ -2370,6 +2370,62 @@ app_server <- function(input, output, session) {
     h <- sel_hit_unit(); id <- sel_id(); req(!is.null(h), id)
     try(seqview_send(session, "seqv_asm-canvas", NULL, id, h$path, h$scaffold), silent = TRUE)
   })
+  # ---- paths alignment: homologous contigs across paths, aligned once per set ----
+  paths_cache <- new.env(parent = emptyenv())
+  paths_result <- reactiveVal(NULL)
+  observe({
+    req(identical(input$mode %||% "Assemble", "Assemble"))
+    refresh()
+    id <- sel_id(); req(id)
+    empty <- function() session$sendCustomMessage("rpseq",
+      list(id = "seqv_paths-canvas", unit = id, len = 0L, rows = list()))
+    # one sample's alignments at a time; the dropdown value can be stale from
+    # the previous sample, so it is ignored on a sample's first run
+    picked <- input$paths_set
+    fresh <- !identical(paths_cache$id, id)
+    if (fresh) { rm(list = ls(paths_cache), envir = paths_cache); paths_cache$id <- id; paths_result(NULL); empty() }
+    n_paths <- app_query("SELECT COUNT(DISTINCT path) AS n FROM assemblies WHERE ID = ?", params = list(id))$n[1]
+    if (n_paths < 2) { paths_result(NULL); return() }
+    if (!exists("sets", envir = paths_cache, inherits = FALSE)) assign("sets", paths_sets_for(id), envir = paths_cache)
+    sets <- get("sets", envir = paths_cache)
+    k <- if (!fresh && length(sets) > 1) suppressWarnings(as.integer(picked %||% 1L)) else 1L
+    if (is.na(k) || k > length(sets)) k <- 1L
+    if (!length(sets)) { paths_result(NULL); return() }
+    key <- paste("set", k)
+    paths_cache$k <- k
+    n_units <- nrow(sets[[k]]$units)
+    if (!exists(key, envir = paths_cache, inherits = FALSE)) {
+      # a big set waits for Align anyway
+      if (n_units > PATHS_WARN_N && !isTRUE(paths_cache[[paste("ok", k)]])) {
+        empty(); paths_result(list(id = id, pl = NULL, big = n_units)); return()
+      }
+      assign(key, try(paths_send(session, id, sets[[k]]), silent = TRUE), envir = paths_cache)
+    }
+    r <- get(key, envir = paths_cache)
+    if (inherits(r, "try-error")) r <- NULL
+    if (is.null(r)) empty() else {
+      lab <- try(local({
+        con <- app_con(); on.exit(DBI::dbDisconnect(con)); paths_labels(con, id, sets[[k]]$units)
+      }), silent = TRUE)
+      if (!inherits(lab, "try-error")) for (i in seq_along(r$rows)) r$rows[[i]]$label <- unname(lab[r$rows[[i]]$unit])
+      session$sendCustomMessage("rpseq", r)
+    }
+    paths_result(list(id = id, pl = r))
+  })
+  observeEvent(input$paths_align_now, {
+    k <- paths_cache$k; req(k)
+    paths_cache[[paste("ok", k)]] <- TRUE
+    refresh(refresh() + 1)
+  })
+  output$paths_summary <- renderUI({
+    r <- paths_result()
+    if (!is.null(r$big)) return(div(style = "margin-bottom:4px;",
+      span(sprintf("%d contigs in this set. Aligning this many can take minutes and the app waits meanwhile.", r$big),
+        style = "color:#8a6d3b; margin-right:8px;"),
+      actionButton("paths_align_now", "Align anyway", class = "btn-sm")))
+    txt <- if (is.null(r)) "Aligning contigs..." else paths_summary_text(r$pl)
+    span(txt, style = "color:#555; display:block; margin-bottom:4px;")
+  })
   # Triage one scaffold: keep / drop / undecided. `assemblies.ignore` is derived
   # from the verdict by set_unit_triage(), so nothing downstream changes.
   # Dropping is no longer destructive (the annotate row is held, not deleted),
