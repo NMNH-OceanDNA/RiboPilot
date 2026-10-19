@@ -1,9 +1,11 @@
-# RiboPilot (development version)
+# RiboPilot 0.1.1
 
 ## Assemble
 
 * The Assemble details window aligns a sample's assembly paths and shows the
   alignment in the sequence viewer, with differing columns marked.
+* New projects default to a maximum of 20 assembly paths and 20 contigs per
+  path (was 10). Existing projects keep their settings.
 
 # RiboPilot 0.1.0
 
