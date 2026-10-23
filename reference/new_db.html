@@ -13,7 +13,7 @@ curation, and export tables are added in later build increments."><meta property
 
     <a class="navbar-brand me-2" href="../index.html">RiboPilot</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.1</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -96,8 +96,8 @@ curation, and export tables are added in later build increments.</p>
 <span>  seeds_db <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  labels_db <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  getOrganelle <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste</a></span><span class="op">(</span><span class="st">"-F anonym"</span>, <span class="st">"-R 10 -k 21,45,65,85,105,115"</span>, <span class="st">"--larger-auto-ws"</span><span class="op">)</span>,</span>
-<span>  max_paths <span class="op">=</span> <span class="fl">10</span>,</span>
-<span>  max_scaffolds <span class="op">=</span> <span class="fl">10</span>,</span>
+<span>  max_paths <span class="op">=</span> <span class="fl">20</span>,</span>
+<span>  max_scaffolds <span class="op">=</span> <span class="fl">20</span>,</span>
 <span>  min_assembly_length <span class="op">=</span> <span class="fl">500</span>,</span>
 <span>  ref_dir <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  mapping_geome <span class="op">=</span> <span class="st">"GEOME_BCID"</span>,</span>
@@ -179,11 +179,11 @@ the Reference step replaces it.</p></dd>
 
 
 <dt id="arg-max-paths">max_paths<a class="anchor" aria-label="anchor" href="#arg-max-paths"></a></dt>
-<dd><p>Max assembly paths for a sample to continue (default 10).</p></dd>
+<dd><p>Max assembly paths for a sample to continue (default 20).</p></dd>
 
 
 <dt id="arg-max-scaffolds">max_scaffolds<a class="anchor" aria-label="anchor" href="#arg-max-scaffolds"></a></dt>
-<dd><p>Max contigs within a path to continue (default 10).</p></dd>
+<dd><p>Max contigs within a path to continue (default 20).</p></dd>
 
 
 <dt id="arg-min-assembly-length">min_assembly_length<a class="anchor" aria-label="anchor" href="#arg-min-assembly-length"></a></dt>

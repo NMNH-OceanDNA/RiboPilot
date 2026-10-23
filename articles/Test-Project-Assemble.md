@@ -115,6 +115,15 @@ Clicking a contig row in the table highlights that row in blue. The
 **BLAST evidence**, **Coverage and windowed BLAST**, and **Windowed
 BLAST details** panels all show information for the highlighted contig.
 
+When a sample has more than one assembly path, the details window also
+shows **Compare assembly paths**: the contigs that cover the same part
+of the rDNA repeat, aligned together. Contigs that do not overlap the
+others, such as a fragment covering a different part of 28S, are left
+out. Red ticks on the Differences track mark the columns where the paths
+disagree; use the arrow buttons to step through them. Zoom in to see the
+bases; a red column marks a difference. Each row shows its own annotated
+features, so you can see whether a difference falls inside a gene.
+
 CHIM01 is an artificial chimeric contig, crated by joining sequence data
 from *Penicillium* mold and the fish species *Upeneus parvus*. The BLAST
 evidence shows that the best overall match is a *Penicillium* mold:

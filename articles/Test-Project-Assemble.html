@@ -26,7 +26,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">RiboPilot</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.1</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -213,6 +213,15 @@ coverage, features annotated, and the verdict from the BLAST screen.</p>
 <strong>BLAST evidence</strong>, <strong>Coverage and windowed
 BLAST</strong>, and <strong>Windowed BLAST details</strong> panels all
 show information for the highlighted contig.</p>
+<p>When a sample has more than one assembly path, the details window
+also shows <strong>Compare assembly paths</strong>: the contigs that
+cover the same part of the rDNA repeat, aligned together. Contigs that
+do not overlap the others, such as a fragment covering a different part
+of 28S, are left out. Red ticks on the Differences track mark the
+columns where the paths disagree; use the arrow buttons to step through
+them. Zoom in to see the bases; a red column marks a difference. Each
+row shows its own annotated features, so you can see whether a
+difference falls inside a gene.</p>
 <p>CHIM01 is an artificial chimeric contig, crated by joining sequence
 data from <em>Penicillium</em> mold and the fish species <em>Upeneus
 parvus</em>. The BLAST evidence shows that the best overall match is a
