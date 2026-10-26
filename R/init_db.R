@@ -475,6 +475,7 @@ new_db <- function(
       export_time_stamp INTEGER,
       itsx_origin TEXT,
       itsx_scores TEXT,
+      genbank_check TEXT,
       PRIMARY KEY (ID, path, scaffold)
     );"
   )
