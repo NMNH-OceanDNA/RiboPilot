@@ -12,7 +12,7 @@ DEST="${1:?usage: fetch_decoys.sh <panel_dir>}"
 # taxdb LAST: every decoy tarball bundles its own 2024 taxdb, so fetching taxdb
 # first would have it overwritten by the next decoy and the panel would ship a
 # two-year-old taxonomy.
-SEARCHABLE_DBS="16S_ribosomal_RNA SSU_eukaryote_rRNA LSU_eukaryote_rRNA"
+SEARCHABLE_DBS="16S_ribosomal_RNA SSU_eukaryote_rRNA LSU_eukaryote_rRNA ITS_eukaryote_sequences"
 DBS="$SEARCHABLE_DBS taxdb"
 # PANEL_REQUIRED_EXT in R/blast_local.R. A decoy the installer would reject must
 # not pass this stage either.

@@ -235,7 +235,8 @@ sweep_stale_installs <- function(dest, version, max_age_days = 1) {
 #'
 #' @param version Panel version, matching release tag `db-<version>`.
 #' @param dest Parent directory; the panel lands in `<dest>/<version>`.
-#' @param decoys Also fetch the NCBI decoy databases (adds roughly 110 MB).
+#' @param decoys Also fetch the NCBI decoy databases and the GenBank check's
+#'   ITS set (adds roughly 150 MB).
 #' @param base_url Release download base; overridable for testing.
 #' @param force Re-download even when the panel is already present.
 #' @return (invisibly) the panel prefix.
