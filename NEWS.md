@@ -1,3 +1,30 @@
+# RiboPilot (development version)
+
+## GenBank BLAST check
+
+* A new check predicts the two BLAST flags GenBank's rRNA/ITS curation raises
+  before it assigns accessions: top-hit query coverage under 75% ("Query
+  coverage is less than 75%") and a top hit aligned in more than one piece
+  ("HSP_problem"). RiboPilot runs NCBI's own searches (default megablast
+  against `ITS_eukaryote_sequences` and the SSU/LSU eukaryote rRNA sets) on
+  each contig in the annotation step and again on the recheck, and stores the
+  result as `genbank_check`. It reproduces NCBI's reply exactly on the ten
+  records of SUB16547976.
+* The result shows in the Checks column (amber, never a gate), in a **GenBank
+  BLAST** column on the scaffold and Annotation Review tables, and at export:
+  a `genbank_check` column in `<group>_summary.csv` and the HTML report, a
+  count of flagged records in the Export done window, and a README section
+  with NCBI's wording and the reply to send gb-admin. See "The GenBank BLAST
+  check" in the GenBank Submission guide.
+* Most fish records trip both flags because the ITS database holds few fishes;
+  the flags predict GenBank's reply, not a bad assembly.
+* The check needs `ITS_eukaryote_sequences` beside the panel. It ships with the
+  next panel release; until then every contig stores
+  `not_run(no ITS_eukaryote_sequences database)`.
+* Project database version 7: `genbank_check` columns on `annotate` and
+  `review_units`. Contigs already locked keep `not_run(not checked)` until
+  they are unlocked and rechecked.
+
 # RiboPilot 0.1.1
 
 ## Assemble
