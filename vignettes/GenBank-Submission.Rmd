@@ -174,6 +174,33 @@ are finished.
 | `not_run(not checked)` | No ITSx check is stored for the record. |
 | any other `not_run(...)` | Stored by an older RiboPilot version, for example `not_run(no ITSx output)`. |
 
+**The GenBank BLAST check.** Before GenBank assigns accessions, its rRNA/ITS curation runs a
+default megablast of each record against NCBI's `ITS_eukaryote_sequences` database and its
+eukaryote SSU/LSU rRNA database, and sends the submission back for review when the top hit
+covers under 75% of a record ("Query coverage is less than 75%") or aligns to it in more than
+one piece ("HSP_problem", a potential misassembly). RiboPilot runs the same two searches on each
+contig when it annotates it, and again when **Update** rechecks a trimmed or edited contig, and
+reports the result in the `genbank_check` column of `<group>_summary.csv`, in the Export done
+window (which names the flagged records), in README.txt (with the reply to send gb-admin), and
+in the **GenBank BLAST** column of the app. It only warns: nothing is removed, and nothing is
+gated on it.
+
+Expect these flags on most fish records, and on other groups the ITS database covers thinly. The
+database holds a few hundred fish records among 77,000 plant and fungal ones, so the top hit is a
+distant relative, the ITS spacers do not align to it, and the record splits into an 18S piece and
+a 5.8S piece. That is not evidence of a bad assembly. When GenBank sends such a submission back,
+reply to gb-admin that the records were reviewed with RiboPilot's checks and are believed
+correct; NCBI then runs further verification and proceeds. NCBI's copy of the database is newer
+than the one RiboPilot ships, so a record near 75% can be called differently.
+
+| Value | What it means |
+|---|---|
+| `genbank_low_coverage(ITS <n>%)` | The top hit in the ITS database covers under 75% of the record. |
+| `genbank_multi_hsp(<db> <n> HSPs: ...)` | The top hit in that database aligns in more than one piece; the positions on the record follow. |
+| `genbank_no_hit(<db>)` | No hit at all in that database. |
+| `not_run(no ITS_eukaryote_sequences database)` | The installed panel predates the release that ships the ITS database. Install a newer panel with `install_ribopilot_db()` (or pull a newer image), then run the contig's checks again. |
+| any other `not_run(...)` | blastn failed or the contig has no sequence; run its checks again as described for the ITSx check. |
+
 **The submission_risk column.** Each record's row in `<group>_summary.csv` lists
 any of these flags:
 

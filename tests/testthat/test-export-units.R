@@ -172,9 +172,9 @@ test_that("bundle file contents are exactly as specified", {
     c(paste0("\"seqid\",\"ID\",\"path\",\"scaffold\",\"organism\",\"length\",\"n_features\",",
         "\"missing\",\"reviewed\",\"partial\",\"problematic\",\"variant_class\",",
         "\"variant_group\",\"variant_identity\",\"n_variants\",\"submission_risk\",\"chimera_warning\",",
-        "\"itsx_check\""),
+        "\"itsx_check\",\"genbank_check\""),
       paste0("\"S2\",\"S2\",1,1,\"Genus speciesB\",400,2,\"\",\"yes\",\"no\",\"no\",NA,NA,NA,NA,\"\",\"\",",
-        "\"\"")))
+        "\"\",\"not_run(not checked)\"")))
 })
 
 test_that("an empty Taxon is flagged, and never rendered as the word NA", {

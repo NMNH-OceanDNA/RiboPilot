@@ -891,6 +891,20 @@ export_check_summary_ui <- function(smry, not_done = 0L) {
   } else {
     tags$p(class = if (!any(risky)) "mp-fg-success", if (!any(risky)) HTML("&#10003; "), counts)
   }
+  gb <- smry$genbank_check %||% rep("not_run(not checked)", n)
+  gb_unchecked <- startsWith(gb, "not_run(")
+  gb_flagged <- nzchar(gb) & !gb_unchecked
+  gb_counts <- sprintf("GenBank BLAST check: %d flagged, %d clean, %d not checked.",
+    sum(gb_flagged), sum(!gb_flagged & !gb_unchecked), sum(gb_unchecked))
+  lines[[length(lines) + 1]] <- if (any(gb_flagged)) {
+    tags$p(class = "mp-fg-warning", style = "font-weight:bold;",
+      sprintf("%s Flagged: %s. See the genbank_check column in the summary CSV and README.txt.", gb_counts,
+        mp_id_list(sprintf("%s (%s)", smry$seqid[gb_flagged], genbank_check_display(gb[gb_flagged])), max = 10)))
+  } else if (any(gb_unchecked)) {
+    tags$p(class = "mp-fg-warning", gb_counts)
+  } else {
+    tags$p(gb_counts)
+  }
   if (not_done > 0) {
     lines[[length(lines) + 1]] <- tags$p(class = "mp-fg-warning",
       sprintf("%s left out: checks not finished. Press Update on Annotation Review, then export again.",

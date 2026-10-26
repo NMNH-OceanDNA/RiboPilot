@@ -173,6 +173,10 @@ recheck_unit <- function(con, id, path, scaffold, rev, mode, tools_dir, dbarg = 
     tryCatch(feature_blast_unit(con, id, path, scaffold, dbarg = dbarg, taxdump_dir = taxdump_dir,
       threads = threads, workdir = file.path(workdir, "feature_blast"), review = TRUE),
       error = function(e) message("feature BLAST failed: ", conditionMessage(e)))
+    tryCatch(genbank_check_unit(con, id, path, scaffold, db_dir = genbank_check_db_dir(dbarg),
+      threads = threads, workdir = file.path(workdir, "genbank_check"), review = TRUE),
+      error = function(e) genbank_store(con, id, path, scaffold,
+        paste0("not_run(GenBank check failed: ", conditionMessage(e), ")"), review = TRUE))
     NULL
   }, error = function(e) conditionMessage(e))
   ts <- as.integer(Sys.time())

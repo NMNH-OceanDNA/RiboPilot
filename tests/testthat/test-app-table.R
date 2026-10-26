@@ -270,7 +270,7 @@ test_that("Annotation Review reads the review layer and shows the state of unfin
     names(cols) <- vapply(cols, function(c) c$id %||% "", "")
     expect_false(cols$check_state$show)
     expect_false(cols$check_note$show)
-    for (k in c("n_flags", "itsx_warnings", "screen_verdict", "chimera_label", "feature_blast_warnings", "blast_species",
+    for (k in c("n_flags", "itsx_warnings", "genbank_check", "screen_verdict", "chimera_label", "feature_blast_warnings", "blast_species",
                 "blast_accession", "blast_pident", "blast_qcovs", "blast_source")) {
       expect_match(cols[[k]]$cell, "row['check_state']", fixed = TRUE, info = k)
       expect_true(isTRUE(cols[[k]]$html), info = k)
@@ -301,4 +301,12 @@ test_that("the Feature BLAST panel lists one row per feature once checks are don
     expect_equal(unlist(j$x$tag$attribs$data$status), c("No hit", "OK"))
     expect_match(j$x$tag$attribs$data$note[[2]], "Low confidence")
   })
+})
+
+test_that("the GenBank BLAST column has help text and renders like the ITSx one", {
+  expect_match(RiboPilot:::SCAFFOLD_COL_HELP$genbank_check, "GenBank", fixed = TRUE)
+  expect_true(grepl("'not checked'", RiboPilot:::SCAFFOLD_COL_HELP$genbank_check, fixed = TRUE))
+  srv <- paste(deparse(RiboPilot:::app_server), collapse = " ")
+  expect_true(grepl('genbank_check = cd("genbank_check"', srv, fixed = TRUE))
+  expect_true(grepl('name = "GenBank BLAST"', srv, fixed = TRUE))
 })

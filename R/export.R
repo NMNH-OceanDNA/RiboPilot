@@ -265,7 +265,7 @@ unit_checks <- function(con, by = c("unit", "sample"), review = FALSE) {
   }
   u <- DBI::dbGetQuery(con, sprintf(
     "SELECT an.ID, an.path, an.scaffold, sc.screen_verdict, ch.label AS chimera_label,
-       an.chimeric, an.curate_flags, an.itsx_warnings,
+       an.chimeric, an.curate_flags, an.itsx_warnings, an.genbank_check,
        (SELECT COUNT(*) FROM %4$s f WHERE f.ID = an.ID AND f.path = an.path
           AND f.scaffold = an.scaffold AND f.status = 'flag') AS n_feat_flags
      FROM %1$s an
@@ -277,6 +277,7 @@ unit_checks <- function(con, by = c("unit", "sample"), review = FALSE) {
   txt <- function(x) { x <- as.character(x); x[is.na(x)] <- ""; x }
   fl <- strsplit(txt(u$curate_flags), "; ", fixed = TRUE)
   itsx <- txt(u$itsx_warnings)
+  gb <- txt(u$genbank_check)
   hit <- cbind(
     "off target" = u$screen_verdict %in% "off_target",
     "contaminant" = vapply(fl, function(x) "contaminant" %in% x, logical(1)),
@@ -286,6 +287,7 @@ unit_checks <- function(con, by = c("unit", "sample"), review = FALSE) {
     "uncertain screen" = u$screen_verdict %in% "uncertain",
     "ITSx" = nzchar(itsx) & !startsWith(itsx, "not_run("),
     "ITSx not checked" = is.na(u$itsx_warnings) | startsWith(itsx, "not_run("),
+    "GenBank BLAST" = nzchar(gb) & !startsWith(gb, "not_run("),
     "warnings" = vapply(fl, function(x) any(x != "contaminant"), logical(1)),
     "feature flags" = u$n_feat_flags > 0)
   cols <- if (by == "unit") c("ID", "path", "scaffold") else "ID"
@@ -313,7 +315,7 @@ unit_checks <- function(con, by = c("unit", "sample"), review = FALSE) {
 
 #' README text explaining how to submit the bundle to NCBI
 #' @noRd
-submission_readme <- function(label) {
+submission_readme <- function(label, flagged = character(0)) {
   paste(c(
     paste0("RiboPilot GenBank submission bundle: ", label),
     paste0("Generated ", format(Sys.time(), "%Y-%m-%d %H:%M")),
@@ -405,6 +407,46 @@ submission_readme <- function(label) {
     "ITSx calls can shift with batch size. RiboPilot checks one contig at a time,",
     "while the Portal checks the whole upload together, so the Portal may call a",
     "borderline contig differently.",
+    "",
+    "GENBANK BLAST CHECK",
+    "-------------------",
+    paste0("The genbank_check column in ", label, "_summary.csv predicts the two BLAST flags"),
+    "GenBank's rRNA/ITS curation raises before it assigns accessions. NCBI runs a",
+    "default megablast of each record against its ITS_eukaryote_sequences database",
+    "and its eukaryote SSU/LSU rRNA database. Its reply names a record as",
+    "  \"Query coverage is less than 75%.\"   when the top hit covers under 75% of it",
+    "  \"HSP_problem\"                        when the top hit aligns in more than one",
+    "                                       piece (a \"potential misassembly\")",
+    "RiboPilot runs the same two searches on each contig in the annotation step, and",
+    "again when Update on Annotation Review rechecks an edited contig, and stores:",
+    "  genbank_low_coverage(ITS <n>%)       NCBI's first flag, from the ITS search",
+    "  genbank_multi_hsp(ITS <n> HSPs: ...) NCBI's second flag, with the aligned",
+    "                                       pieces as positions on the record",
+    "  genbank_multi_hsp(rRNA ...)          the same from the SSU/LSU search",
+    "  genbank_no_hit(ITS) / (rRNA)         no hit at all in that database",
+    "  top hits: ...                        the top hit and its coverage per search",
+    "Empty means clean. not_run(...) means the check could not run:",
+    "  not_run(no ITS_eukaryote_sequences database)  the panel on this machine or",
+    "                                       image predates the release that ships",
+    "                                       it; install_ribopilot_db() a newer",
+    "                                       panel (or pull a newer image), then",
+    "                                       run the contig's checks again",
+    "  any other not_run(...)               run the contig's checks again as the",
+    "                                       ITSx section above describes",
+    "",
+    "Expect these flags on most fish records, and on other groups the ITS database",
+    "covers thinly: it holds a few hundred fish records among 77,000 plant and",
+    "fungal ones, so the top hit is a distant relative, the ITS spacers do not",
+    "align to it, and the record splits into an 18S piece and a 5.8S piece. That",
+    "is not evidence of a bad assembly. NCBI's copy of the database is newer than",
+    "RiboPilot's, so a record near 75% can be called differently.",
+    "",
+    "When GenBank sends the submission back for \"low similarity and/or possible",
+    "misassembly\", reply to gb-admin that the records below were reviewed with",
+    "RiboPilot's screen, chimera, per-feature BLAST and ITSx checks and are believed",
+    "correct; NCBI then runs further verification and proceeds. Records flagged in",
+    "this export:",
+    if (length(flagged)) flagged else "  none",
     ""), collapse = "\n")
 }
 
@@ -458,6 +500,7 @@ export_summary_df <- function(con, units, review = FALSE) {
   sv <- fetch(paste("SELECT ID, path, scaffold, screen_verdict, lca_taxon FROM", tb[["scr"]], "WHERE ID IN (%s)"))
   nts <- fetch(paste("SELECT ID, path, scaffold, curate_flags FROM", tb[["res"]], "WHERE ID IN (%s)"))
   itx <- fetch(paste("SELECT ID, path, scaffold, itsx_warnings FROM", tb[["res"]], "WHERE ID IN (%s)"))
+  gbx <- fetch(paste("SELECT ID, path, scaffold, genbank_check FROM", tb[["res"]], "WHERE ID IN (%s)"))
   smp <- fetch("SELECT * FROM samples WHERE ID IN (%s)")
 
   ukey <- unit_key(units$ID, units$path, units$scaffold)
@@ -476,6 +519,8 @@ export_summary_df <- function(con, units, review = FALSE) {
   nti <- if (nrow(nts)) match(ukey, unit_key(nts$ID, nts$path, nts$scaffold)) else rep(NA_integer_, n)
   itsx <- if (nrow(itx)) itx$itsx_warnings[match(ukey, unit_key(itx$ID, itx$path, itx$scaffold))] else rep(NA_character_, n)
   itsx[is.na(itsx)] <- "not_run(not checked)"
+  genbank <- if (nrow(gbx)) gbx$genbank_check[match(ukey, unit_key(gbx$ID, gbx$path, gbx$scaffold))] else rep(NA_character_, n)
+  genbank[is.na(genbank)] <- "not_run(not checked)"
 
   si <- match(units$ID, smp$ID)
   taxon <- (smp$Taxon %||% NA)[si]
@@ -511,6 +556,7 @@ export_summary_df <- function(con, units, review = FALSE) {
     submission_risk = risk,
     chimera_warning = ifelse(chm_label %in% "minor", chm_reason, ""),
     itsx_check = itsx,
+    genbank_check = genbank,
     stringsAsFactors = FALSE)
 }
 
@@ -709,7 +755,7 @@ feature_map_svg_text <- function(d, width = 900, height = 110) {
 #' @noRd
 export_report_html <- function(con, units, out_html, label, smry = export_summary_df(con, units, review = TRUE)) {
   hdr <- c("seqid", "ID", "organism", "length", "n_features", "missing", "reviewed", "submission_risk",
-    "chimera_warning", "itsx_check")
+    "chimera_warning", "itsx_check", "genbank_check")
   rows <- apply(smry[, intersect(hdr, names(smry)), drop = FALSE], 1, function(r) {
     paste0("<tr>", paste0("<td>", ifelse(is.na(r), "", r), "</td>", collapse = ""), "</tr>")
   })
@@ -933,7 +979,9 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
   }
   smry <- .meta_join(smry, con)
   utils::write.csv(smry, file.path(gdir, paste0(label, "_summary.csv")), row.names = FALSE)
-  writeLines(submission_readme(label), file.path(gdir, "README.txt"))
+  gbf <- which(nzchar(smry$genbank_check) & !startsWith(smry$genbank_check, "not_run("))
+  writeLines(submission_readme(label, sprintf("  %s  %s", smry$seqid[gbf], genbank_check_display(smry$genbank_check[gbf]))),
+    file.path(gdir, "README.txt"))
   # HTML report
   if (isTRUE(report)) {
     tryCatch(export_report(con, units,

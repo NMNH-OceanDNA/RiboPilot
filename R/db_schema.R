@@ -397,6 +397,7 @@ REVIEW_UNITS_DDL <- "CREATE TABLE IF NOT EXISTS review_units (
   blast_evalue REAL,
   blast_source TEXT,
   time_stamp INTEGER,
+  genbank_check TEXT,
   PRIMARY KEY (ID, path, scaffold)
 );"
 
@@ -460,7 +461,7 @@ SELECT x.ID, x.path, x.scaffold, 1 AS has_copy, a.topology, a.length AS orig_len
   x.sequence, x.length, x.trim_start, x.trim_end, x.edited, x.check_switch, x.check_note,
   x.rev, x.checked_at, x.n_features, x.missing, x.chimeric, x.n_flags, x.curate_flags,
   x.itsx_warnings, x.itsx_origin, x.itsx_scores, x.blast_accession, x.blast_species,
-  x.blast_pident, x.blast_qcovs, x.blast_evalue, x.blast_source, x.time_stamp
+  x.blast_pident, x.blast_qcovs, x.blast_evalue, x.blast_source, x.time_stamp, x.genbank_check
 FROM review_units x
 JOIN assemblies a ON a.ID = x.ID AND a.path = x.path AND a.scaffold = x.scaffold
 UNION ALL
@@ -469,7 +470,7 @@ SELECT x.ID, x.path, x.scaffold, 0, x.topology, x.length,
   CASE WHEN an.annotate_switch = 2 AND an.itsx_warnings IS NULL THEN 1 ELSE an.annotate_switch END,
   NULL, NULL, NULL, an.n_features, an.missing, an.chimeric, an.n_flags, an.curate_flags,
   an.itsx_warnings, an.itsx_origin, an.itsx_scores, x.blast_accession, x.blast_species,
-  x.blast_pident, x.blast_qcovs, x.blast_evalue, x.blast_source, an.time_stamp
+  x.blast_pident, x.blast_qcovs, x.blast_evalue, x.blast_source, an.time_stamp, an.genbank_check
 FROM assemblies x
 JOIN annotate an ON an.ID = x.ID AND an.path = x.path AND an.scaffold = x.scaffold
 WHERE NOT ", REVIEW_COPY_SQL),
@@ -484,9 +485,14 @@ WHERE NOT ", REVIEW_COPY_SQL),
 #' Create the review tables, then the views over them (idempotent)
 #' @noRd
 review_apply_schema <- function(con) {
+  views <- REVIEW_VIEWS_DDL
+  # released step 4 runs this before step 6 adds genbank_check; step 6 rebuilds the view
+  if (!"genbank_check" %in% DBI::dbListFields(con, "annotate")) {
+    views[["review_units_v"]] <- gsub("(x|an)\\.genbank_check", "NULL AS genbank_check", views[["review_units_v"]])
+  }
   for (ddl in c(REVIEW_UNITS_DDL, REVIEW_ANNOTATIONS_DDL, REVIEW_BLAST_HITS_DDL,
                 REVIEW_BLAST_SCREEN_DDL, REVIEW_SCREEN_DDL, REVIEW_CHIMERA_DDL,
-                REVIEW_CHIMERA_WINDOWS_DDL, REVIEW_REF_ALIGNMENT_DDL, REVIEW_VIEWS_DDL)) {
+                REVIEW_CHIMERA_WINDOWS_DDL, REVIEW_REF_ALIGNMENT_DDL, views)) {
     DBI::dbExecute(con, ddl)
   }
   invisible()

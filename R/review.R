@@ -114,7 +114,7 @@ review_invalidate <- function(con, id, path, scaffold) {
     n <- DBI::dbExecute(con,
       "UPDATE review_units SET check_switch = 1, rev = rev + 1, check_note = NULL, checked_at = NULL,
          n_features = ?, missing = ?, n_flags = NULL, curate_flags = NULL, itsx_warnings = NULL,
-         itsx_origin = NULL, itsx_scores = NULL, time_stamp = ?
+         itsx_origin = NULL, itsx_scores = NULL, genbank_check = NULL, time_stamp = ?
        WHERE ID = ? AND path = ? AND scaffold = ?",
       params = c(list(cnt$n_features, cnt$missing, as.integer(Sys.time())), p))
     if (n == 0) stop(sprintf("No review copy for contig %s.%d.%d.", id, path, scaffold), call. = FALSE)
