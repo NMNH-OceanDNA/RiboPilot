@@ -76,3 +76,25 @@ test_that("genbank_check_unit stores text, not_run reasons, and the review copy"
   expect_match(DBI::dbGetQuery(con, "SELECT genbank_check FROM review_units")$genbank_check, "^genbank_low_coverage")
   expect_equal(gc(), "not_run(no sequence)")
 })
+
+test_that("genbank_check_unit reproduces NCBI on SUB16547976 with real blastn", {
+  d <- Sys.getenv("RIBOPILOT_GENBANK_CHECK_DBDIR", "")
+  skip_if(!nzchar(d), "RIBOPILOT_GENBANK_CHECK_DBDIR not set")
+  skip_if(!nzchar(Sys.which("blastn")), "blastn not on PATH")
+  con <- chimera_test_con(); on.exit(DBI::dbDisconnect(con))
+  fa <- readLines(gc_fix("SUB16547976.fasta"))
+  ids <- sub("^>(\\S+).*", "\\1", fa[startsWith(fa, ">")]); seqs <- fa[!startsWith(fa, ">")]
+  want <- read.delim(gc_fix("SUB16547976_ncbi_flags.tsv"), stringsAsFactors = FALSE)
+  for (i in seq_along(ids)) {
+    DBI::dbExecute(con, "INSERT INTO assemblies (ID, path, scaffold, sequence, length) VALUES (?,1,1,?,?)",
+      params = list(ids[i], seqs[i], nchar(seqs[i])))
+    DBI::dbExecute(con, "INSERT INTO annotate (ID, path, scaffold) VALUES (?,1,1)", params = list(ids[i]))
+    RiboPilot:::genbank_check_unit(con, ids[i], 1L, 1L, db_dir = d)
+  }
+  got <- DBI::dbGetQuery(con, "SELECT ID, genbank_check FROM annotate")
+  got <- got$genbank_check[match(want$seqid, got$ID)]
+  info <- system2("blastdbcmd", c("-db", shQuote(file.path(d, "ITS_eukaryote_sequences")), "-info"), stdout = TRUE)
+  message("ITS db build: ", grep("^Date:", info, value = TRUE)[1])
+  expect_equal(grepl("genbank_low_coverage(ITS", got, fixed = TRUE), want$low_coverage == 1)
+  expect_equal(grepl("genbank_multi_hsp(ITS", got, fixed = TRUE), want$hsp_problem == 1)
+})
