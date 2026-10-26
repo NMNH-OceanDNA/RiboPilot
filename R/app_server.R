@@ -225,7 +225,7 @@ app_server <- function(input, output, session) {
            -- and its column was already defined but never selected.
            v.blast_species, v.blast_accession, v.blast_pident, v.blast_qcovs,
            v.blast_source,
-           v.n_flags, v.curate_flags, v.itsx_warnings, sc.screen_verdict,
+           v.n_flags, v.curate_flags, v.itsx_warnings, v.genbank_check, sc.screen_verdict,
            ch.label AS chimera_label, ch.reason AS chimera_reason, an.reviewed,
            an.problematic, an.partial, an.annotate_notes,
            an.export_group,", UNIT_EXPORTED_SQL, ", an.time_stamp,
@@ -344,6 +344,7 @@ app_server <- function(input, output, session) {
       annotate_notes = cd("annotate_notes", minWidth = 160, html = TRUE, class = "mp-note-cell", cell = rt_longtext()),
       curate_flags = reactable::colDef(show = FALSE),
       itsx_warnings = cd("itsx_warnings", minWidth = 130, html = TRUE, cell = rt_gated(rt_itsx_badge())),
+      genbank_check = cd("genbank_check", minWidth = 130, html = TRUE, cell = rt_gated(rt_itsx_badge())),
       screen_verdict = cd("screen_verdict", width = 110, html = TRUE, align = "center",
         cell = rt_gated(rt_screen_badge())),
       chimera_label = cd("chimera_label", width = 100, html = TRUE, align = "center",
@@ -466,7 +467,7 @@ app_server <- function(input, output, session) {
         Options = c("pre_opts", "assemble_opts", "blast_opts", "annotate_opts", "curate_opts")),
       Annotate = list(
         BLAST = c("blast_species", "blast_accession", "blast_pident", "blast_qcovs", "blast_source"),
-        `Check details` = c("n_flags", "itsx_warnings", "screen_verdict", "chimera_label",
+        `Check details` = c("n_flags", "itsx_warnings", "genbank_check", "screen_verdict", "chimera_label",
           "feature_blast_warnings")),
       NULL)
     keep_cols <- cols[intersect(names(cols), names(d))]
@@ -2191,6 +2192,8 @@ app_server <- function(input, output, session) {
         chimera_reason = reactable::colDef(show = FALSE),
         itsx_warnings = reactable::colDef(name = "ITSx Warnings", minWidth = 130, show = TRUE, html = TRUE,
           header = rt_help_header("ITSx Warnings", SCAFFOLD_COL_HELP$itsx_warnings), cell = rt_itsx_badge()),
+        genbank_check = reactable::colDef(name = "GenBank BLAST", minWidth = 130, show = TRUE, html = TRUE,
+          header = rt_help_header("GenBank BLAST", SCAFFOLD_COL_HELP$genbank_check), cell = rt_itsx_badge()),
         screen_species = reactable::colDef(name = "Top BLAST hit", minWidth = 160, show = TRUE,
           html = TRUE, header = rt_help_header("Top BLAST hit", SCAFFOLD_COL_HELP$screen_species),
           cell = rt_longtext()),

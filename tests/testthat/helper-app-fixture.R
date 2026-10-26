@@ -117,7 +117,7 @@ mk_app_project <- function(env = parent.frame()) {
     blast_qcovs REAL, blast_source TEXT, source_contig TEXT)")
   DBI::dbExecute(con, "CREATE TABLE annotate(ID TEXT, path INT, scaffold INT, annotate_switch INT,
     annotate_lock INT, annotate_opts TEXT, curate_opts TEXT, reviewed TEXT, problematic TEXT,
-    partial TEXT, n_features INT, missing TEXT, n_flags INT, annotate_notes TEXT, itsx_warnings TEXT, export_group TEXT, time_stamp INT)")
+    partial TEXT, n_features INT, missing TEXT, n_flags INT, annotate_notes TEXT, itsx_warnings TEXT, export_group TEXT, time_stamp INT, genbank_check TEXT)")
   DBI::dbExecute(con, "CREATE TABLE annotations(ID TEXT, path INT, scaffold INT, element TEXT, start INT, stop INT, strand TEXT, status TEXT, flags TEXT)")
   DBI::dbExecute(con, "CREATE TABLE coverage(ID TEXT, path INT, scaffold INT, mean_depth REAL,
     min_depth INT, max_depth INT, depths TEXT)")
@@ -137,7 +137,7 @@ mk_app_project <- function(env = parent.frame()) {
   for (u in list(c(1,1,6120), c(1,2,1442), c(2,1,5980), c(2,2,890))) {
     DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',?,?,'linear',?,'ACGT',0,'Danio rerio','A1',99,88,'core_nt',NULL)",
       params = list(u[1], u[2], u[3]))
-    DBI::dbExecute(con, "INSERT INTO annotate VALUES('S1',?,?,1,0,'default','default','no','no','no',3,'',0,NULL,NULL,NULL,1)",
+    DBI::dbExecute(con, "INSERT INTO annotate VALUES('S1',?,?,1,0,'default','default','no','no','no',3,'',0,NULL,NULL,NULL,1,NULL)",
       params = list(u[1], u[2]))
     DBI::dbExecute(con, "INSERT INTO coverage (ID,path,scaffold,mean_depth) VALUES('S1',?,?,100)",
       params = list(u[1], u[2]))
