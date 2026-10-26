@@ -379,6 +379,25 @@ test_that("an ITSx check that throws is stored as not_run and the contig still f
   expect_true(is.na(u$itsx_scores))
 })
 
+test_that("recheck_unit stores the GenBank check on the copy and survives its failure", {
+  con <- rc_project()
+  RiboPilot:::review_trim(con, "S1", 1L, 1L, 1L, 6000L)
+  gc <- function() DBI::dbGetQuery(con, paste("SELECT genbank_check FROM review_units WHERE", RC_UNIT))$genbank_check
+  seen <- NULL
+  local_mocked_bindings(genbank_check_unit = function(con, id, path, scaffold, db_dir = NULL, ..., review = FALSE) {
+    seen <<- list(db_dir = db_dir, review = review)
+    RiboPilot:::genbank_store(con, id, path, scaffold, "genbank_no_hit(ITS); genbank_no_hit(rRNA)", review = review)
+  }, .package = "RiboPilot")
+  expect_equal(RiboPilot:::recheck_unit(con, "S1", 1L, 1L, rc_rev(con), "map", rc_tools(),
+    dbarg = "/p/v1/ribopilot_rrna /p/v1/16S_ribosomal_RNA"), "done")
+  expect_equal(seen, list(db_dir = "/p/v1", review = TRUE))
+  expect_equal(gc(), "genbank_no_hit(ITS); genbank_no_hit(rRNA)")
+  DBI::dbExecute(con, paste("UPDATE review_units SET check_switch = 1 WHERE", RC_UNIT))
+  local_mocked_bindings(genbank_check_unit = function(...) stop("boom"), .package = "RiboPilot")
+  expect_equal(RiboPilot:::recheck_unit(con, "S1", 1L, 1L, rc_rev(con), "map", rc_tools()), "done")
+  expect_equal(gc(), "not_run(GenBank check failed: boom)")
+})
+
 test_that("an error in a step marks the copy failed, under the rev guard", {
   con <- rc_project()
   RiboPilot:::review_trim(con, "S1", 1L, 1L, 1L, 6000L)
