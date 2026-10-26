@@ -399,6 +399,8 @@ test_that("the GenBank BLAST check is amber in unit_checks and present in the su
   expect_match(rd, "HSP_problem", fixed = TRUE)
   expect_match(rd, "\n  a  low coverage ITS 70%\n", fixed = TRUE)
   expect_match(RiboPilot:::submission_readme("g"), "this export:\n  none\n", fixed = TRUE)
+  expect_match(rd, "not_run(no ITS_eukaryote_sequences database)", fixed = TRUE)
+  expect_match(rd, "install_ribopilot_db", fixed = TRUE)
 })
 
 test_that("the export done dialog counts and names GenBank BLAST flags", {

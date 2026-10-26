@@ -198,7 +198,8 @@ than the one RiboPilot ships, so a record near 75% can be called differently.
 | `genbank_low_coverage(ITS <n>%)` | The top hit in the ITS database covers under 75% of the record. |
 | `genbank_multi_hsp(<db> <n> HSPs: ...)` | The top hit in that database aligns in more than one piece; the positions on the record follow. |
 | `genbank_no_hit(<db>)` | No hit at all in that database. |
-| `not_run(...)` | The check could not run (no ITS database installed, blastn failed, no sequence). |
+| `not_run(no ITS_eukaryote_sequences database)` | The installed panel predates the release that ships the ITS database. Install a newer panel with `install_ribopilot_db()` (or pull a newer image), then run the contig's checks again. |
+| any other `not_run(...)` | blastn failed or the contig has no sequence; run its checks again as described for the ITSx check. |
 
 **The submission_risk column.** Each record's row in `<group>_summary.csv` lists
 any of these flags:
