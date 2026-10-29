@@ -1,3 +1,12 @@
+# RiboPilot (development version)
+
+## Fixes
+
+* Tables in the Run reports, Assemble, and other detail windows showed only
+  a sliver of their rows in Safari: the horizontal scrollbar covered the
+  last row and a vertical scrollbar appeared. Tables that size to their rows
+  now include the bar.
+
 # RiboPilot 0.1.1
 
 ## Assemble
