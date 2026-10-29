@@ -672,6 +672,17 @@ a.mp-link:focus-visible {
   overflow: auto;
 }
 
+/* WebKit lays out an auto-height table's scroll box as a flex item without
+   its horizontal scrollbar, so the bar covers the last row and a vertical
+   scrollbar appears. As a block the box includes the bar. Fixed-height
+   tables keep the flex layout so they still scroll inside the box. */
+.reactable[style*="height: auto"] .Reactable {
+  display: block;
+}
+.reactable[style*="height: auto"] .rt-search {
+  margin-left: auto;
+}
+
 /* A locked row's options cell is text, not a link (T01). */
 .mp-locked-cell {
   color: var(--mp-text-muted);
