@@ -6,6 +6,7 @@
   a sliver of their rows in Safari: the horizontal scrollbar covered the
   last row and a vertical scrollbar appeared. Tables that size to their rows
   now include the bar.
+
 ## GenBank BLAST check
 
 * A new check predicts the two BLAST flags GenBank's rRNA/ITS curation raises
