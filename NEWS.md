@@ -1,5 +1,11 @@
 # RiboPilot (development version)
 
+## Browser support
+
+* Opening the app in Safari now shows a warning on every launch that
+  Safari has known display and interaction issues and suggests Chrome or
+  Firefox.
+
 ## Fixes
 
 * Tables in the Run reports, Assemble, and other detail windows showed only
