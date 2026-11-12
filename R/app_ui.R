@@ -1,6 +1,15 @@
 # Filter choices, shared by the pickers and the server-side visible-row mask so
 # the two cannot drift (that drift is what made "Hold" a no-op).
 LOCK_CHOICES <- c("Unlocked" = "0", "Locked" = "1")
+LOCK_CHOICES_ANNOTATE <- c(LOCK_CHOICES, "Locked, excluded" = "2")
+
+#' Annotation lock category: 0 unlocked, 1 locked, 2 locked and excluded
+#' @noRd
+lock_cat <- function(d) {
+  lk <- d$annotate_lock
+  if (is.null(lk) || is.null(d$problematic)) return(lk)
+  lk + (lk %in% 1 & d$problematic %in% "yes")
+}
 
 #' Lock + state status filter pickers (mirrors MitoPilot); values match the
 #' assemble/annotate lock (0/1) and switch (0/1/2/3/4) codes, plus 5 (waiting for
@@ -11,7 +20,8 @@ LOCK_CHOICES <- c("Unlocked" = "0", "Locked" = "1")
 filter_pickers <- function(mode) {
   states <- if (mode == "Annotate") mp_state_choices("annotate") else STATE_CHOICES
   shiny::tagList(
-    mp_filter_picker(paste0(mode, "_lock_filter"), "Lock:", LOCK_CHOICES, width = "140px"),
+    mp_filter_picker(paste0(mode, "_lock_filter"), "Lock:",
+      if (mode == "Annotate") LOCK_CHOICES_ANNOTATE else LOCK_CHOICES, width = "140px"),
     mp_filter_picker(paste0(mode, "_state_filter"), "State:", states, width = "140px")
   )
 }
