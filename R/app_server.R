@@ -293,6 +293,7 @@ app_server <- function(input, output, session) {
     if (mode == "Reference" && ref_view() == "Groups") refresh()
     d <- isolate(samples_data())
     tbl_keys <<- row_keys(d)
+    d$annotate_lock <- lock_cat(d)
     st <- isolate(reactable::getReactableState("tbl"))
     tbl_stale <<- length(st$selected) > 0 || !(st$page %||% 1) %in% 1
     mm <- mode_meta(mode)
@@ -515,6 +516,7 @@ app_server <- function(input, output, session) {
   # still re-render via output$tbl above.
   push_tbl <- function(page = NULL) {
     d <- samples_data(); k <- row_keys(d)
+    d$annotate_lock <- lock_cat(d)
     sel <- if (!tbl_stale) reactable::getReactableState("tbl", "selected")
     reactable::updateReactable("tbl", data = d, selected = which(k %in% tbl_keys[sel]),
       page = if (!tbl_stale) page)
@@ -663,7 +665,7 @@ app_server <- function(input, output, session) {
     mm <- mode_meta(input$mode %||% "Assemble")
     lc <- paste0(mm$pfx, "_lock")
     sc <- paste0(mm$pfx, "_switch")
-    if (!is.null(f$lock) && lc %in% names(d)) keep <- keep & as.character(d[[lc]]) %in% f$lock
+    if (!is.null(f$lock) && lc %in% names(d)) keep <- keep & as.character(if (lc == "annotate_lock") lock_cat(d) else d[[lc]]) %in% f$lock
     if (!is.null(f$state) && sc %in% names(d)) keep <- keep & as.character(d[[sc]]) %in% f$state
     keep
   })

@@ -22,6 +22,14 @@ test_that("rt_dynamicIcon with an inputId sends its row to that input", {
   expect_true(grepl("cellInfo.index + 1", js, fixed = TRUE))
 })
 
+test_that("locked and excluded is its own lock category", {
+  d <- data.frame(annotate_lock = c(0L, 1L, 1L, 0L), problematic = c("no", "no", "yes", "yes"))
+  expect_equal(lock_cat(d), c(0, 1, 2, 0))
+  expect_equal(lock_cat(d["annotate_lock"]), d$annotate_lock)
+  expect_null(lock_cat(data.frame(assemble_lock = 1L)))
+  expect_match(as.character(rt_lock_icon()), "'2': 'fa fa-lock mp-fg-danger'", fixed = TRUE)
+})
+
 test_that("a skippable confirm stops asking once its box is ticked", {
   shown <- 0L
   local_mocked_bindings(confirmSweetAlert = function(...) shown <<- shown + 1L,
