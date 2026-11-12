@@ -47,3 +47,9 @@ update-version.log
 tests/testthat/testthat-problems.rds
 tests/testthat/_problems/
 __pycache__/
+
+# internal design docs, plans, specs, and reviews (local only)
+dev/design/
+dev/review/
+dev/plans/
+dev/specs/
