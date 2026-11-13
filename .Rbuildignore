@@ -28,3 +28,4 @@
 ^work$
 ^tests/testthat/\.sqlite$
 ^HANDOFF_.*\.MD$
+^website$

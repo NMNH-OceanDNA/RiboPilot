@@ -1,0 +1,102 @@
+# Whole site built by Quarto. Build with: Rscript website/build.R
+# Only _quarto.yml, index.qmd, build.R, and theme.scss are tracked; the rest is generated.
+project:
+  type: website
+  resources:
+    - articles/figures/**
+    - man/figures/**
+
+metadata-files:
+  - reference/_sidebar.yml
+
+execute:
+  eval: false
+
+website:
+  title: RiboPilot
+  site-url: https://nmnh-oceandna.github.io/RiboPilot/
+  repo-url: https://github.com/NMNH-OceanDNA/RiboPilot
+  favicon: favicon.ico
+  search: true
+  page-navigation: true
+  navbar:
+    background: light
+    logo: man/figures/logo.png
+    left:
+      - text: Installation
+        href: articles/Installation.Rmd
+      - text: Tutorial
+        href: articles/RiboPilot.Rmd
+      - text: User Guide
+        href: articles/Your-Own-Project.Rmd
+      - text: Metadata
+        href: articles/Sample-Metadata.Rmd
+      - text: HPC
+        href: articles/Clusters.Rmd
+      - text: Help
+        href: articles/Troubleshooting.Rmd
+    right:
+      - text: Reference
+        href: reference/index.qmd
+      - text: News
+        href: news/index.qmd
+      - icon: github
+        href: https://github.com/NMNH-OceanDNA/RiboPilot
+  sidebar:
+    - id: start
+      title: Installation
+      style: docked
+      contents:
+        - articles/Installation.Rmd
+    - id: tutorial
+      title: Tutorial
+      contents:
+        - section: Test project walkthrough
+          contents:
+            - text: 0. Get started
+              href: articles/RiboPilot.Rmd
+            - text: 1. Taxonomy
+              href: articles/Test-Project-Taxonomy.Rmd
+            - text: 2. Reference
+              href: articles/Test-Project-Reference.Rmd
+            - text: 3. Assemble
+              href: articles/Test-Project-Assemble.Rmd
+            - text: 4. Annotation Review
+              href: articles/Test-Project-Annotate.Rmd
+            - text: 5. Export
+              href: articles/Test-Project-Export.Rmd
+    - id: guide
+      title: User Guide
+      contents:
+        - articles/Your-Own-Project.Rmd
+        - articles/Reference-Databases.Rmd
+        - articles/Assembly-Methods.Rmd
+        - articles/Curation-Flags.Rmd
+        - articles/GenBank-Submission.Rmd
+    - id: metadata
+      title: Metadata
+      contents:
+        - articles/Sample-Metadata.Rmd
+        - articles/Metadata-Linking.Rmd
+        - articles/NMNH-Vouchers.Rmd
+        - articles/Metadata-Reference.Rmd
+    - id: hpc
+      title: HPC
+      contents:
+        - articles/Clusters.Rmd
+        - articles/Caches-and-Offline.Rmd
+        - section: Site-specific setup
+          contents:
+            - articles/NMNH-Hydra.Rmd
+            - articles/NOAA-SEDNA.Rmd
+    - id: help
+      title: Help
+      contents:
+        - articles/Troubleshooting.Rmd
+
+format:
+  html:
+    theme: [lux, theme.scss]
+    css: extra.css
+    toc: true
+    toc-depth: 3

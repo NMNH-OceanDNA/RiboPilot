@@ -23,7 +23,6 @@ navbar:
   type: default
   structure:
     left:
-    - intro
     - reference
     - articles
     - news
@@ -39,6 +38,8 @@ navbar:
         href: articles/Installation.html
       - text: -------
       - text: Test project
+      - text: "0. Get started"
+        href: articles/RiboPilot.html
       - text: "1. Taxonomy"
         href: articles/Test-Project-Taxonomy.html
       - text: "2. Reference"
@@ -140,6 +141,7 @@ articles:
 
 - title: "Test project walkthrough"
   contents:
+  - 'RiboPilot'
   - 'Test-Project-Taxonomy'
   - 'Test-Project-Reference'
   - 'Test-Project-Assemble'
