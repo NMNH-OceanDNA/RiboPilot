@@ -1,0 +1,6 @@
+---
+pagetitle: RiboPilot
+toc: false
+---
+
+{{< include ../README.md >}}
