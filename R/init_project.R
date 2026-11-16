@@ -252,8 +252,8 @@ new_project <- function(
   )), ribopilot_meta_id_warning = function(w) invokeRestart("muffleWarning"))
   config_out <- file.path(path, ".config")
   writeLines(out_lines, config_out)
-  # the config carries the NCBI API key, so keep it owner-only
-  Sys.chmod(config_out, "0600")
+  # the config carries the NCBI API key, so keep it out of reach of other users
+  Sys.chmod(config_out, "0640")
   done <- TRUE
 
   message("Project initialized successfully.")

@@ -66,7 +66,7 @@
   'use strict';
   var G = window.rpseq.geom;
   var MAX_PPB = 14, NT_LETTER = 8, NT_BAR = 3;
-  var RULER_H = 22, LANE_H = 22, NT_H = 20, GUTTER = 100, PAD = 4, COV_H = 60, CLIP_H = 36, IDENT_H = 36, ORIGIN_H = 18, GAP = 12;
+  var RULER_H = 22, LANE_H = 22, NT_H = 20, GUTTER = 100, PAD = 4, COV_H = 60, CLIP_H = 36, IDENT_H = 36, ORIGIN_H = 18, GAP = 12, FB_GAP = 24;
   var DIFF_H = 14, ROW_GAP = 10, DIFF_RED = '#c0392b', GAP_INK = '#888888';
   var BASE = { A: '#4faf45', C: '#e0a53f', G: '#e0555a', T: '#4a90d9', N: '#666666' };
   var viewers = {}, last = {};
@@ -113,12 +113,13 @@
       this.feats = [];
       this.diff = G.diffColumns(this.rows.map(function (r) { return r.seq; }));
       this.diffSet = {}; this.diff.forEach(function (c) { this.diffSet[c] = true; }, this);
-      this.nLanes = 0; this.depth = null; this.clip = null; this.origin = null; this.junctions = null; this.ident = null;
+      this.nLanes = 0; this.depth = null; this.clip = null; this.origin = null; this.junctions = null; this.ident = null; this.fblast = null;
     } else {
       this.feats = (p.features || []).map(function (f) { return Object.assign({}, f); });
       this.nLanes = G.lanes(this.feats);
       this.depth = p.depth || null; this.clip = p.clip || null;
       this.origin = p.origin || null; this.junctions = p.junctions || null; this.ident = p.ident || null;
+      this.fblast = p.fblast || null;
       this.diff = null; this.diffSet = null;
     }
     if (p.cutoff) this.clipFlag = p.cutoff;
@@ -188,6 +189,7 @@
   Viewer.prototype.clipOn = function () { return this.showClip && !!this.clip; };
   Viewer.prototype.identOn = function () { return this.showIdent && !!this.ident; };
   Viewer.prototype.originOn = function () { return this.showOrigin && !!this.origin; };
+  Viewer.prototype.fblastOn = function () { return this.showFblast && !!this.fblast; };
   Viewer.prototype.ntOn = function () { return this.showNt && this.ppb >= NT_BAR; };
   Viewer.prototype.topH = function () {
     return RULER_H + PAD + (this.covOn() ? COV_H + GAP : 0) + (this.clipOn() ? CLIP_H + GAP : 0);
@@ -199,7 +201,8 @@
   };
   Viewer.prototype.height = function () {
     if (this.rows) return this.alignHeight();
-    return this.chimY() + (this.identOn() ? IDENT_H + GAP : 0) + (this.originOn() ? ORIGIN_H + GAP : 0);
+    return this.chimY() + (this.identOn() ? IDENT_H + GAP : 0) + (this.originOn() ? ORIGIN_H + GAP : 0) +
+      (this.fblastOn() ? ORIGIN_H + FB_GAP : 0);
   };
   // align mode: y of each row's first lane; the nt strip sits under its lanes
   Viewer.prototype.rowTop = function (i) {
@@ -231,8 +234,11 @@
     if (this.ntOn()) this.drawNt(c, this.topH() + this.nLanes * LANE_H + PAD);
     y = this.chimY();
     var self = this, segColor = function (pos) { var o = self.originAt(pos); return o ? o.color : '#9e9e9e'; };
-    if (this.identOn()) { this.drawTrack(c, W, y, IDENT_H, this.ident, 100, 'BLAST %id', false, { vmin: 70, colorAt: segColor, stroke: cssVar('--rp-ident-stroke', '#4d4d4d') }); y += IDENT_H + GAP; }
+    if (this.fblastOn()) { this.drawFblast(c, W, y); y += ORIGIN_H + FB_GAP; }
+    var g0 = y;
+    if (this.identOn()) { this.drawTrack(c, W, y, IDENT_H, this.ident, 100, '%id', false, { vmin: 70, colorAt: segColor, stroke: cssVar('--rp-ident-stroke', '#4d4d4d') }); y += IDENT_H + GAP; }
     if (this.originOn()) { this.drawOrigin(c, W, y); y += ORIGIN_H + GAP; }
+    if (y > g0) this.drawWindowGroup(c, g0, y - GAP);
     this.drawJunctions(c, H);
   };
   Viewer.prototype.drawRuler = function (c) {
@@ -417,7 +423,48 @@
       if (lab) { c.fillStyle = '#333'; c.fillText(lab, (x0 + x1) / 2, y + ORIGIN_H / 2); }
     }, this);
     c.fillStyle = cssVar('--mp-text-muted', '#6a6a6a'); c.textAlign = 'right';
-    c.fillText('BLAST origin', GUTTER - 6, y + ORIGIN_H / 2, GUTTER - 10);
+    c.fillText('taxon', GUTTER - 6, y + ORIGIN_H / 2, GUTTER - 10);
+  };
+  // One rect per feature in the tone of its own BLAST result
+  var TONES = { success: ['#e3f3e6', '#2e7d32'], warning: ['#fdf0d9', '#b9770e'], danger: ['#fbe3e0', '#c0392b'], neutral: ['#ededed', '#6a6a6a'] };
+  Viewer.prototype.drawFblast = function (c, W, y) {
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    this.fblast.forEach(function (s) {
+      if (!this.inView(s)) return;
+      var x0 = Math.max(GUTTER, this.x(s.pos1)), x1 = Math.min(W, this.x(s.pos2 + 1));
+      if (x1 - x0 < 1) return;
+      var t = TONES[s.tone] || TONES.neutral, fg = cssVar('--mp-' + s.tone, t[1]);
+      c.fillStyle = cssVar('--mp-' + s.tone + '-soft', t[0]); c.fillRect(x0, y, x1 - x0, ORIGIN_H);
+      c.strokeStyle = fg; c.strokeRect(x0 + 0.5, y + 0.5, x1 - x0 - 1, ORIGIN_H - 1);
+      if (x1 - x0 > c.measureText(s.row).width + 8) { c.fillStyle = fg; c.fillText(s.row, (x0 + x1) / 2, y + ORIGIN_H / 2); }
+    }, this);
+    c.fillStyle = cssVar('--mp-text-muted', '#6a6a6a'); c.textAlign = 'right';
+    c.fillText('feature BLAST', GUTTER - 6, y + ORIGIN_H / 2, GUTTER - 10);
+  };
+  // Which track is at this height; a track owns the gap above it
+  Viewer.prototype.trackAt = function (py) {
+    var y = RULER_H + PAD, bands = [];
+    if (this.covOn()) { bands.push(['cov', y]); y += COV_H + GAP; }
+    if (this.clipOn()) { bands.push(['clip', y]); y += CLIP_H + GAP; }
+    bands.push(['genes', y]);
+    y = this.chimY();
+    if (this.fblastOn()) { bands.push(['fblast', y]); y += ORIGIN_H + FB_GAP; }
+    if (this.identOn()) { bands.push(['ident', y]); y += IDENT_H + GAP; }
+    if (this.originOn()) bands.push(['origin', y]);
+    for (var i = bands.length - 1; i >= 0; i--) if (py >= bands[i][1] - GAP / 2) return bands[i][0];
+    return null;
+  };
+  Viewer.prototype.fblastAt = function (pos) {
+    return (this.fblast || []).find(function (s) { return pos >= s.pos1 && pos <= s.pos2; }) || null;
+  };
+  // The sliding-window BLAST tracks share one name, on a bracket to their left
+  Viewer.prototype.drawWindowGroup = function (c, y0, y1) {
+    var x = GUTTER - 50, mid = (y0 + y1) / 2, col = cssVar('--mp-text-muted', '#6a6a6a');
+    c.save(); c.strokeStyle = col; c.lineWidth = 1;
+    c.beginPath(); c.moveTo(x + 4, y0 + 0.5); c.lineTo(x + 0.5, y0 + 0.5); c.lineTo(x + 0.5, y1 - 0.5); c.lineTo(x + 4, y1 - 0.5); c.stroke();
+    c.fillStyle = col; c.textAlign = 'right'; c.textBaseline = 'middle';
+    c.fillText('window', x - 5, mid - 7); c.fillText('BLAST', x - 5, mid + 7);
+    c.restore();
   };
   Viewer.prototype.drawJunctions = function (c, H) {
     if (!this.junctions) return;
@@ -483,6 +530,12 @@
     if (this.rows && this.diffTrack && py >= this.diffTrack.y0 && py <= this.diffTrack.y1 && px >= GUTTER) {
       this.goto(Math.floor(this.viewStart + (px - GUTTER) / this.ppb)); return;
     }
+    // a Feature BLAST block opens the table of the window that has one
+    if (this.trackAt(py) === 'fblast' && px >= GUTTER && this.fblastAt(Math.floor(this.viewStart + (px - GUTTER) / this.ppb))) {
+      var tbl = document.getElementById('feature_blast_tbl'), sec = tbl && tbl.closest('details');
+      if (sec) { sec.open = true; sec.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+      return;
+    }
     var h = this.hitTest(px, py);
     if (!h) return;
     this.selected = h.f.row;
@@ -521,15 +574,23 @@
       var rect = cv.getBoundingClientRect(), px = e.clientX - rect.left, py = e.clientY - rect.top;
       var h = self.hitTest(px, py), b = self.baseAt(self.viewStart + (px - GUTTER) / self.ppb);
       if (!self.tip) return;
-      if (!b || px < GUTTER) { self.tip.hidden = true; return; }
+      if (!b || px < GUTTER) { self.tip.hidden = true; cv.style.cursor = ''; return; }
       if (self.rows) { self.tip.hidden = true; return; }   // no hover text in align mode
       var t = 'Position ' + b.pos.toLocaleString() + ', ' + b.base;
-      if (self.covOn() && self.depth[b.pos - 1] !== null) t += ' | depth ' + self.depth[b.pos - 1];
-      if (self.clipOn() && self.clip[b.pos - 1] !== null) t += ', clipped ' + (self.clip[b.pos - 1] * 100).toFixed(0) + '%';
-      if (h) t += ' | ' + h.f.gene + ' ' + h.f.pos1.toLocaleString() + '-' + h.f.pos2.toLocaleString() + ' (' + h.f.dir + ')';
-      if (self.identOn() && self.ident[b.pos - 1] !== null) t += ' | BLAST id ' + self.ident[b.pos - 1].toFixed(1) + '%';
-      var o = self.originOn() && self.originAt(b.pos);
-      if (o) t += ' | ' + originText(o);
+      // only the track under the pointer adds its value
+      var tr = self.trackAt(py), o = self.originAt(b.pos), fb = self.fblastAt(b.pos);
+      if (tr === 'cov' && self.depth[b.pos - 1] !== null) t += ' | depth ' + self.depth[b.pos - 1];
+      else if (tr === 'clip' && self.clip[b.pos - 1] !== null) t += ' | clipped ' + (self.clip[b.pos - 1] * 100).toFixed(0) + '%';
+      else if (tr === 'genes' && h) t += ' | ' + h.f.gene + ' ' + h.f.pos1.toLocaleString() + '-' + h.f.pos2.toLocaleString() + ' (' + h.f.dir + ')';
+      else if (tr === 'ident' && self.ident[b.pos - 1] !== null) t += ' | window BLAST id ' + self.ident[b.pos - 1].toFixed(1) + '%';
+      else if (tr === 'origin' && o) t += ' | window BLAST taxon: ' + originText(o);
+      else if (tr === 'fblast' && fb) t += ' | ' + fb.text;
+      // a block is a link where its table is on the page
+      var link = tr === 'fblast' && fb && !!document.getElementById('feature_blast_tbl');
+      var pick = tr === 'genes' && h && !!self.input;
+      if (link) t += ' (click for table)';
+      if (pick) t += ' (click to select)';
+      cv.style.cursor = link || pick ? 'pointer' : '';
       var j = (self.junctions || []).find(function (q) { return Math.abs(self.x(q.pos) - px) <= 6; });
       if (j) t += ' | junction ' + j.pos.toLocaleString() + (j.checks ? ' (' + j.checks + ')' : '');
       self.tip.textContent = t; self.tip.hidden = false;
@@ -552,7 +613,7 @@
       });
     });
     [['show_nt', 'showNt'], ['show_cov', 'showCov'], ['show_clip', 'showClip'], ['show_ident', 'showIdent'],
-     ['show_origin', 'showOrigin']].forEach(function (pair) {
+     ['show_origin', 'showOrigin'], ['show_fblast', 'showFblast']].forEach(function (pair) {
       var box = document.getElementById(prefix + '-' + pair[0]);
       if (box) { self[pair[1]] = box.checked; box.addEventListener('change', function () { self[pair[1]] = box.checked; self.draw(); }); }
     });
@@ -595,7 +656,7 @@
   window.rpseq.state = function (id) {
     var v = viewers[id]; if (!v) return null;
     return { len: v.len, viewStart: v.viewStart, ppb: v.ppb, selected: v.selected, height: v.height(), nLanes: v.nLanes,
-             origin: (v.origin || []).length, junctions: (v.junctions || []).length,
+             origin: (v.origin || []).length, fblast: (v.fblast || []).length, junctions: (v.junctions || []).length,
              rows: (v.rows || []).length, diff: (v.diff || []).length,
              features: v.feats.map(function (f) { return { row: f.row, gene: f.gene, pos1: f.pos1, pos2: f.pos2, lane: f.lane }; }) };
   };

@@ -146,23 +146,25 @@ rp_sample_nav <- function() {
 #' Only one modal is open at a time, so both can render the same output ids;
 #' the server picks the unit from whichever modal is open.
 #' @noRd
+chimera_help <- function() {
+  mp_help_tip(label = "the chimera check", mp_help_bullets(
+    "Looks for pieces of different origin joined in one contig.",
+    "Four checks: feature BLAST hits, 150 bp BLAST windows, feature structure (ribotyper), and read depth and clipping.",
+    "Feature structure: flags an 18S or 28S whose parts are duplicated, out of order, on both strands, or match more than one rRNA type.",
+    "Severe (different phyla or kingdoms): flagged at export. Minor: reported only.",
+    "Unresolved windows match several classes equally and do not count."))
+}
+
 chimera_panel <- function() {
   tagList(
     tags$div(style = "margin:2px 0 6px; font-weight:600;", uiOutput("chimera_result")),
-    tags$p(class = "mp-help-text", style = "margin:2px 0 4px;",
-      "Looks for pieces of different origin joined in one contig, using the genes' BLAST hits, ",
-      "150 bp BLAST windows against the bundled rDNA database, ribotyper (checks that each gene is one whole gene), ",
-      "and read depth and clipping. Severe (different phyla or kingdoms) is flagged at export; minor is only reported. ",
-      "Unresolved windows match several classes equally and do not count. ",
-      "The BLAST origin track and the dashed junction lines in the sequence viewer above show where."),
     tags$p(class = "mp-help-text", style = "margin:2px 0 4px;",
       "Click a row to zoom the viewer to it; expand a row for its windows."),
     reactable::reactableOutput("chimera_segments"),
     div(class = "rp-sub-list",
       htmltools::tagAppendAttributes(class = "rp-subsection", rp_details("Possible junctions",
         tags$p(class = "mp-help-text", style = "margin:2px 0 4px;",
-          "Where the checks think two pieces may be joined, which checks point there, and why. ",
-          "Click a row to zoom the viewer to it."),
+          "Where two pieces may be joined, and which checks point there. Click a row to zoom."),
         uiOutput("chimera_junctions")))))
 }
 
@@ -202,7 +204,7 @@ assemble_modal <- function(id) {
       seqview_ui("seqv_asm", tagList("Coverage and windowed BLAST for ", textOutput("hl_scaf_cov", inline = TRUE)),
         open = FALSE, pick = FALSE),
 
-      rp_details(tagList("Windowed BLAST details for ", textOutput("hl_scaf_chim", inline = TRUE)), open = FALSE,
+      rp_details(tagList("Windowed BLAST details for ", textOutput("hl_scaf_chim", inline = TRUE), chimera_help()), open = FALSE,
         chimera_panel())),
 
     # Only a supplied assembly has these: the contigs the rDNA search found but
@@ -214,7 +216,7 @@ assemble_modal <- function(id) {
       textAreaInput("assemble_user_notes", label = NULL, width = "100%",
         value = app_query("SELECT user_notes FROM assemble WHERE ID = ?", params = list(id))$user_notes[1] %|NA|% "",
         placeholder = "Notes for this sample"),
-      tags$p(class = "mp-help-text", "Saved as you type. Deleting the text does not clear the stored note; use Clear notes."),
+      tags$p(class = "mp-help-text", "Saved as you type. Use Clear notes to delete."),
       actionButton("assemble_user_notes_clear", "Clear notes", class = "btn-sm"))
   )
 }
@@ -232,12 +234,11 @@ rejected_contigs_section <- function(id) {
     return(NULL)
   }
   names(d) <- c("Contig", "Length", "rRNA found", "Why it was left out")
-  rp_details(sprintf("Contigs not carried forward (%d)", nrow(d)), open = FALSE,
-    tags$p(class = "mp-help-text", style = "margin-bottom:6px;",
-      paste("These contigs in the assembly you supplied had rRNA hits but did",
-        "not go on through the pipeline. A contig needs an 18S or 28S anchor to",
-        "be carried forward; 5.8S on its own is not enough. Contigs with no rRNA",
-        "hit at all are not listed.")),
+  rp_details(tagList(sprintf("Contigs not carried forward (%d)", nrow(d)),
+      mp_help_tip(label = "contigs not carried forward", mp_help_bullets(
+        "Contigs from your assembly with rRNA hits that were not carried forward.",
+        "A contig needs an 18S or 28S anchor; 5.8S alone is not enough.",
+        "Contigs with no rRNA hit are not listed."))), open = FALSE,
     reactable::reactable(d, compact = TRUE, sortable = TRUE, wrap = FALSE,
       defaultPageSize = 10,
       columns = list(
@@ -266,11 +267,10 @@ paths_section <- function(id) {
   labels <- vapply(sets, `[[`, "", "label")
   picker <- if (length(sets) > 1) div(style = "max-width:320px; margin-bottom:4px;",
     selectInput("paths_set", NULL, choices = stats::setNames(seq_along(sets), labels), width = "100%"))
-  rp_details("Compare assembly paths", open = TRUE,
-    tags$p(class = "mp-help-text", style = "margin-bottom:4px;",
-      "Rows are contigs from each path aligned together. Red ticks on the Differences track mark ",
-      "columns where the paths disagree; use the arrows to step through them. Letters appear when ",
-      "zoomed in; a red column marks a difference."),
+  rp_details(tagList("Compare assembly paths", mp_help_tip(label = "the alignment viewer", mp_help_bullets(
+      "Each row is a contig from one path, aligned.",
+      "Red ticks and red columns mark where paths disagree.",
+      "The Previous difference and Next difference buttons jump between them."))), open = TRUE,
     picker,
     uiOutput("paths_summary"),
     seqview_ui("seqv_paths", NULL, pick = FALSE, mode = "align"))
@@ -381,25 +381,21 @@ triage_modal <- function(n_samples, actions = triage_actions_default()) {
         uiOutput(paste0("triage_n_", def$key), inline = TRUE)))
   })
   modalDialog(
-    title = paste("Triage contigs for", mp_n(n_samples, "sample")),
+    title = tagList(paste("Triage contigs for", mp_n(n_samples, "sample")),
+      mp_help_tip(label = "triage", mp_help_bullets(
+        "Proposes keep, drop, or undecided per contig from evidence already in the database.",
+        "Read depth never decides: high depth is often collapsed repeats, low depth often a repeat where reads map twice."))),
     size = "l", easyClose = TRUE,
-    tags$p(class = "mp-help-text",
-      paste("Proposes keep / drop / undecided per contig from the evidence already",
-        "in the database. Depth is shown in the contig table but never decides:",
-        "high depth is often k-mer collapse across the conserved core or IGS",
-        "subrepeats, and low depth is often a repeat inside the contig, where reads",
-        "map to two places and are left out.")),
     tags$table(style = "width:100%; font-size:0.9em;",
       tags$thead(tags$tr(
         tags$th(style = "text-align:left;", "Rule"),
         tags$th(style = "text-align:left;", "Action"),
-        tags$th(style = "text-align:right;", "Decided / Matching"))),
+        tags$th(style = "text-align:right;", "Decided / Matching",
+          mp_help_tip(label = "Decided and Matching", mp_help_bullets(
+            "Rules run top to bottom; the first match decides.",
+            "Decided: contigs this rule will drop or flag.",
+            "Matching: all contigs that meet the rule, even if an earlier rule acts first."))))),
       tags$tbody(rows)),
-    tags$p(class = "mp-help-text", style = "margin-top:6px;",
-      paste("Rules are applied top to bottom and the first one that matches decides",
-        "whether to drop or flag the contig. \"Decided\" counts contigs this rule",
-        "will drop or flag. \"Matching\" counts every contig that meets the rule,",
-        "even if a higher-priority rule acts on it first.")),
     div(style = "margin:0.4em 0;",
       shinyWidgets::prettyCheckbox("triage_overwrite_user",
         "Also re-decide contigs I set by hand", value = FALSE, status = "danger")),
@@ -476,7 +472,7 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
     # are per-scaffold evidence the reviewer picks through.
     seqview_ui("seqv_ann", "Coverage and windowed BLAST"),
 
-    rp_details("Windowed BLAST details", open = FALSE, chimera_panel()),
+    rp_details(tagList("Windowed BLAST details", chimera_help()), open = FALSE, chimera_panel()),
 
     rp_details("Edit active feature boundaries", open = FALSE,
       # normalize control heights so the step box, +/- buttons, and Save/Reset
@@ -491,7 +487,10 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
           textOutput("feat_edit_active", inline = TRUE)),
         div(style = "align-self:flex-end; padding-bottom:6px;",
           off(shinyWidgets::prettyCheckbox("feat_edit", "Edit", value = FALSE,
-            status = "primary", inline = TRUE))),
+            status = "primary", inline = TRUE)),
+          mp_help_tip(label = "boundary editing", mp_help_bullets(
+            "+ extends a boundary outward, - trims inward.",
+            "5' and 3' mark an end as partial by hand."))),
         shinyjs::hidden(div(id = "feat_edit_ctrls",
           style = "display:flex; flex-flow:row wrap; gap:1.2em; align-items:flex-end;",
           div(class = "rp-step-box", style = "width:70px;",
@@ -507,9 +506,6 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
             actionButton("feat_save", "Save", icon = icon("floppy-disk"), class = "btn-sm btn-success"),
             actionButton("feat_reset", "Reset", icon = icon("rotate-left"), class = "btn-sm"))))
       ),
-      tags$p(class = "mp-help-text", style = "margin-top:4px;",
-        paste("Check Edit to adjust boundaries; + extends outward, - trims inward.",
-          "Partial 5' and 3' show whether an end is partial and set it by hand. Save to keep, Reset to discard.")),
       div(class = "code-block", style = "margin-top:6px; white-space:normal; word-break:break-all;",
         uiOutput("nudge_seq"))),
 
@@ -517,11 +513,11 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
       uiOutput("msa_header"),
       uiOutput("feat_align_ui")),
 
-    rp_details("Feature BLAST", open = FALSE,
-      tags$p(class = "mp-help-text", style = "margin:2px 0 4px;",
-        "Each core feature (18S, ITS1, 5.8S, ITS2, 28S) is searched on its own against the bundled",
-        "rDNA database. A feature under 50 bp is not searched; 50 to 99 bp is low confidence.",
-        "Near-tied hits are named by the clade they share. Off-target means no match at phylum or below."),
+    rp_details(tagList("Feature BLAST", mp_help_tip(label = "Feature BLAST", mp_help_bullets(
+        "Each feature is searched separately against the bundled rDNA database.",
+        "Under 50 bp: not searched. 50 to 99 bp: low confidence.",
+        "Near-tied hits are named by their shared clade.",
+        "Off-target: no match at phylum or below."))), open = FALSE,
       reactable::reactableOutput("feature_blast_tbl")),
 
     rp_details("Curation warnings", open = FALSE,
@@ -532,7 +528,7 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
       off(textAreaInput("annotate_notes", label = NULL, width = "100%",
         value = (notes %||% NA_character_) %|NA|% "",
         placeholder = "Notes for this contig")),
-      tags$p(class = "mp-help-text", "Saved as you type. Deleting the text does not clear the stored note; use Clear notes."),
+      tags$p(class = "mp-help-text", "Saved as you type. Use Clear notes to delete."),
       off(actionButton("annotate_notes_clear", "Clear notes", class = "btn-sm")))
   )
 }
@@ -543,6 +539,22 @@ run_modal_title <- function(text, gears_id) {
   div(class = "mp-sticky-head",
     style = "display:flex; justify-content:space-between; align-items:center; height:38px;",
     span(text), span(id = gears_id, class = "gears paused"))
+}
+
+#' "Submit to cluster" heading with its help, and whether a scheduler was found
+#' @noRd
+cluster_help <- function(sched) {
+  tagList(
+    h5(style = "margin:6px 0 4px;", "Submit to cluster", mp_help_tip(label = "submitting to a cluster", mp_help_bullets(
+      "Check queue or partition, account, and walltime before submitting.",
+      "Logs: .runs/logs/ (job) and .runs/nextflow/ (Nextflow) in the project folder.",
+      "This window does not follow the job. Reload the table for new results; Run Reports shows how the job went."))),
+    tags$p(class = "mp-help-text", style = "margin-bottom:4px;",
+      if (is.null(sched)) {
+        "No scheduler found. Save the script and submit it elsewhere, or reopen with headless = FALSE."
+      } else {
+        sprintf("%s found.", sched$name)
+      }))
 }
 
 #' Update / run modal: launch the Nextflow workflow with live progress
@@ -563,13 +575,7 @@ run_modal <- function(n, headless = FALSE, sched = NULL, script = "", pfx = "",
   cluster_section <- if (headless) {
     tagList(
       hr(style = "margin:10px 0;"),
-      h5("Submit to cluster", style = "margin:6px 0 4px;"),
-      tags$p(class = "mp-help-text", style = "margin-bottom:4px;",
-        if (is.null(sched)) {
-          "No scheduler (sbatch, qsub, or bsub) found on PATH. Save the script and submit it from a machine that has one, or reopen the app with headless = FALSE to run here."
-        } else {
-          sprintf("%s found. Check the queue or partition, account, and walltime in the script, then Submit as job (or Save script). The job log goes to .runs/logs/ and the Nextflow log to .runs/nextflow/ in the project folder. This window does not follow the job: use the reload button above the table to see new results, and Run Reports to see how the job went.", sched$name)
-        }),
+      cluster_help(sched),
       tags$textarea(id = id("submit_script_text"), rows = 11,
         style = "width:100%; font-family:monospace; font-size:0.78em;", script))
   }
@@ -619,13 +625,7 @@ reference_run_modal <- function(n, ref_dir, headless = FALSE, sched = NULL, scri
   cluster_section <- if (headless) {
     tagList(
       hr(style = "margin:10px 0;"),
-      h5("Submit to cluster", style = "margin:6px 0 4px;"),
-      tags$p(class = "mp-help-text", style = "margin-bottom:4px;",
-        if (is.null(sched)) {
-          "No scheduler (sbatch, qsub, or bsub) found on PATH. Save the script and submit it from a machine that has one, or reopen the app with headless = FALSE to run here."
-        } else {
-          sprintf("%s found. Check the queue or partition, account, and walltime in the script, then Submit as job (or Save script). The job log goes to .runs/logs/ and the Nextflow log to .runs/nextflow/ in the project folder. This window does not follow the job: use the reload button above the table to see new results, and Run Reports to see how the job went.", sched$name)
-        }),
+      cluster_help(sched),
       tags$textarea(id = "ref_submit_script_text", rows = 11,
         style = "width:100%; font-family:monospace; font-size:0.78em;", script))
   }
@@ -674,15 +674,17 @@ reference_run_modal <- function(n, ref_dir, headless = FALSE, sched = NULL, scri
 #' @noRd
 trim_modal <- function(n, a_from, a_to) {
   modalDialog(
-    title = "Trim assembly", size = "l",
+    title = tagList("Trim assembly", mp_help_tip(label = "trimming", mp_help_bullets(
+      "Trims this contig's review copy; features and coverage shift to match.",
+      "Features entirely outside the kept range are removed.",
+      "The Assemble step keeps the original."))), size = "l",
     tags$p(class = "mp-help-text",
       sprintf("Current assembly length: %d bp. Annotated span: %d..%d bp.", n, a_from, a_to)),
     shinyWidgets::prettyRadioButtons("trim_mode", "Trim to:",
       choices = c("Annotated feature boundaries" = "annotated", "Annotated + flank" = "flank", "Custom range" = "custom"),
       selected = "annotated", status = "primary", inline = TRUE),
     tags$p(class = "mp-help-text", style = "margin:2px 0;",
-      "Drag across the plot to set the kept window (grey = trimmed); drag the box ",
-      "edges to adjust. From/To always show the window that will be kept; choose Custom range to edit them."),
+      "Drag across the plot to set the kept window (grey = trimmed)."),
     plotOutput("trim_plot", height = "230px",
       brush = brushOpts(id = "trim_brush", direction = "x", resetOnNew = FALSE,
         fill = "#4C9BE8", opacity = 0.15)),
@@ -693,11 +695,7 @@ trim_modal <- function(n, a_from, a_to) {
       shinyjs::disabled(numericInput("trim_to", "To (bp)", value = a_to, min = 1, max = n))),
     div(style = "color:#c0392b; font-weight:bold; margin:6px 0 14px;", textOutput("trim_flank_hint")),
     textOutput("trim_chimera_hint"),
-    opts_help("Trimming cuts the flanks off this contig's review copy and shifts its ",
-      "feature coordinates and coverage track to match. Features that fall entirely ",
-      "outside the kept range are removed. The original stays as it is for the Assemble step. ",
-      "Checks show \"not run\" until you run Update in the Annotation Review step. Use \"Restore assembly\" to ",
-      "undo every edit."),
+    opts_help("Checks reset until you run Update. Restore assembly undoes every edit.", nested = TRUE),
     footer = mp_footer(
       danger = actionButton("trim_apply", "Trim", icon = icon("scissors")), dismiss = NULL,
       # actionButton (not modalButton) so Cancel reopens the annotate details
@@ -742,11 +740,16 @@ batch_trim_summary <- function(p, restore = FALSE) {
 
 #' Assign-export-group modal: name the group for the selected samples
 #' @noRd
-group_modal <- function() {
+group_modal <- function(groups = character(0), already = character(0), n = 1) {
   modalDialog(
     title = "Assign export group", size = "s", easyClose = TRUE,
-    textInput("group_name", "Group name",
-      placeholder = "letters, digits, dot, dash, underscore; e.g. batch_2026_01"),
+    selectizeInput("group_name", "Group name", choices = c("", groups), selected = character(0),
+      options = list(create = TRUE, maxItems = 1,
+        placeholder = "pick a group or type a new name")),
+    if (length(already)) tags$p(class = "mp-fg-warning", icon("triangle-exclamation"), " ",
+      sprintf("%s already in %s. A new group does not remove %s from export files already written.",
+        if (n == 1) "This contig is" else "Some of these are",
+        paste0("\"", already, "\"", collapse = ", "), if (n == 1) "it" else "them")),
     footer = mp_footer(primary = actionButton("assign_group_go", "Assign"))
   )
 }
@@ -779,35 +782,26 @@ export_modal <- function(groups, templates = "default", template = "default",
         "one for the count.")),
       if (!is.null(token_groups)) {
         export_token_ui(token_groups, target_id = "fasta_header", ns = shiny::NS(NULL), totals = totals)
-      },
-      opts_help(tags$code("{organism}"), " is the name set in the Taxonomy step when ",
-        "your Taxon matched it exactly or you picked a species there; otherwise it is ",
-        "your Taxon, so a label like \"Upeneus sp. A\" is kept. ", tags$code("{Taxon}"),
-        " and ", tags$code("{sci_name}"), " give either name on its own.", nested = TRUE),
-      opts_help(tags$b("isolate"), ": each record of a sample that exports more than one ",
-        "contig gets ", tags$code("[isolate=ID_p<path>_s<contig>]"), " added, so all of ",
-        "them can go into one GenBank submission. Your own ", tags$code("[isolate=...]"),
-        " works only in a group where every sample exports one record.", nested = TRUE))
+      })
   modalDialog(
     title = mp_modal_title("Export data"), size = "xl", class = "mp-modal-form mp-export-body",
     # options and headers on the left, Available metadata pinned on the right
     div(class = "mp-export-split", div(class = "mp-export-main",
     div(style = "display:flex; flex-flow:row nowrap; gap:1em;",
       div(style = "flex:1; min-width:0;",
-        shinyWidgets::pickerInput("export_group_sel", "Export group:",
+        shinyWidgets::pickerInput("export_group_sel",
+          mp_help_label("Export group:", "Contigs exported together as one set."),
           choices = groups, selected = if (isTRUE(snap$export_group_sel %in% groups)) snap$export_group_sel,
           width = "100%")),
       div(style = "flex:1; min-width:0;",
-        selectizeInput("export_template", "Header template:", width = "100%",
+        selectizeInput("export_template", mp_help_label("Header template:", paste("A named, reusable set of header patterns.",
+          "Export uses the text on screen; Save template keeps it for next time.")), width = "100%",
           choices = templates, selected = template,
           options = list(create = TRUE, maxItems = 1,
             placeholder = "select or type a new template name"))),
       div(class = "mp-opts-checkbox",
         actionButton("save_template", "Save template",
           title = "Store the header text below under this template name"))),
-    opts_help("Export group bundles contigs into one output set. Header template is ",
-      "a reusable, named set of the FASTA header patterns below: export uses the ",
-      "text on screen, and Save template keeps it for next time."),
     uiOutput("export_summary"),
     div(class = "mp-card mp-card-nmnh",
     div(class = "mp-nmnh-toggle mp-card-title",
@@ -823,9 +817,8 @@ export_modal <- function(groups, templates = "default", template = "default",
         uiOutput("nmnh_sources"),
         tags$details(class = "mp-nmnh-cols",
           tags$summary("Optional: take these from mapping file columns"),
-          opts_help("Not required. Samples with GBIF, NCBI, or GEOME IDs get their catalog ",
-            "number and specimen link looked up there. A column picked here is ",
-            "used first, and the databases fill any gaps.", nested = TRUE),
+          opts_help("Catalog number and specimen link are looked up from GBIF, NCBI, or GEOME IDs. ",
+            "A column picked here is used first.", nested = TRUE),
           div(style = "display:flex; flex-flow:row nowrap; gap:1em;",
             div(style = "flex:1; min-width:0;",
               selectInput("nmnh_voucher_col", "Catalog number column (e.g. USNM:FISH:12345)",
@@ -837,7 +830,14 @@ export_modal <- function(groups, templates = "default", template = "default",
                 selectize = FALSE)))),
         uiOutput("nmnh_status")))),
     div(class = "mp-card mp-card-plain",
-      hdr_box("fasta_header", "Record FASTA header", fasta_header, "export_hdr_status")),
+      hdr_box("fasta_header", mp_help_label("Record FASTA header", as.character(tags$ul(class = "mp-help-list",
+          tags$li(tags$code("{organism}"), ": the Taxonomy step name when your Taxon matched exactly or you picked a ",
+            "species; otherwise your Taxon (keeps labels like \"Upeneus sp. A\")."),
+          tags$li(tags$code("{Taxon}"), ", ", tags$code("{sci_name}"), ": either name alone."),
+          tags$li(tags$code("[isolate=ID_p<path>_s<contig>]"), " is added when a sample exports more than one ",
+            "contig, so all fit in one GenBank submission."),
+          tags$li("Your own ", tags$code("[isolate=...]"), " works only when every sample in the group exports one record.")))),
+        fasta_header, "export_hdr_status")),
     div(class = "mp-card mp-card-plain",
       div(class = "mp-card-title",
         mp_checkbox("export_markers", "Per-marker FASTA files", value = flag("export_markers", TRUE))),
@@ -890,6 +890,20 @@ export_check_summary_ui <- function(smry, not_done = 0L) {
     tags$p(class = "mp-fg-warning", sprintf("%s README.txt says how to check them again.", counts))
   } else {
     tags$p(class = if (!any(risky)) "mp-fg-success", if (!any(risky)) HTML("&#10003; "), counts)
+  }
+  gb <- smry$genbank_check %||% rep("not_run(not checked)", n)
+  gb_unchecked <- startsWith(gb, "not_run(")
+  gb_flagged <- nzchar(gb) & !gb_unchecked
+  gb_counts <- sprintf("GenBank BLAST check: %d flagged, %d clean, %d not checked.",
+    sum(gb_flagged), sum(!gb_flagged & !gb_unchecked), sum(gb_unchecked))
+  lines[[length(lines) + 1]] <- if (any(gb_flagged)) {
+    tags$p(class = "mp-fg-warning", style = "font-weight:bold;",
+      sprintf("%s Flagged: %s. See the genbank_check column in the summary CSV and README.txt.", gb_counts,
+        mp_id_list(sprintf("%s (%s)", smry$seqid[gb_flagged], genbank_check_display(gb[gb_flagged])), max = 10)))
+  } else if (any(gb_unchecked)) {
+    tags$p(class = "mp-fg-warning", gb_counts)
+  } else {
+    tags$p(gb_counts)
   }
   if (not_done > 0) {
     lines[[length(lines) + 1]] <- tags$p(class = "mp-fg-warning",
@@ -1048,6 +1062,9 @@ chimera_result_text <- function(label, reason, state = "done") {
   tone <- switch(label, clean = "success", severe = "danger", "warning")
   parts <- if (!is.na(reason) && nzchar(reason)) chimera_reason_parts(gsub(" (NA, NA%)", "", reason, fixed = TRUE)) else character(0)
   from <- if (!identical(label, "clean") && length(parts)) regmatches(parts[1], regexpr("^(genes|windows|ribotyper|reads)", parts[1]))
+  # stored reasons name the check "genes"; the app says "features"
+  from <- sub("^genes$", "features", from)
+  parts <- sub("^genes:", "features:", parts)
   tagList(tags$span("Chimera call: ", tags$span(class = paste0("mp-pill mp-pill-", tone), label),
       if (length(from)) tags$span(class = "mp-help-text", style = "font-weight:normal;", sprintf(" from the %s check", from))),
     if (length(parts)) tags$details(style = "margin-top:2px;",

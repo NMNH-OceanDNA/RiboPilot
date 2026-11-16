@@ -59,7 +59,7 @@ DECOYS=""
 # cache key for its next run. Shipping that marker would plant a stale key in
 # every user's decoy directory, and this task's whole premise is that the marker
 # is never evidence.
-for n in 16S_ribosomal_RNA SSU_eukaryote_rRNA LSU_eukaryote_rRNA; do
+for n in 16S_ribosomal_RNA SSU_eukaryote_rRNA LSU_eukaryote_rRNA ITS_eukaryote_sequences; do
   for f in "$n".n*; do
     if [ -e "$f" ]; then DECOYS="$DECOYS $f"; fi
   done

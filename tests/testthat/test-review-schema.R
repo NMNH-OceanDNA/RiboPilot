@@ -131,13 +131,14 @@ test_that("new_db() makes each review table like its original, and annotate gain
   expect_equal(ru$name, c("ID", "path", "scaffold", "sequence", "length", "trim_start", "trim_end",
     "edited", "check_switch", "check_note", "rev", "checked_at", "n_features", "missing", "chimeric",
     "n_flags", "curate_flags", "itsx_warnings", "itsx_origin", "itsx_scores", "blast_accession",
-    "blast_species", "blast_pident", "blast_qcovs", "blast_evalue", "blast_source", "time_stamp"))
-  expect_equal(ru$pk, c(1:3, rep(0L, 24)))
+    "blast_species", "blast_pident", "blast_qcovs", "blast_evalue", "blast_source", "time_stamp",
+    "genbank_check"))
+  expect_equal(ru$pk, c(1:3, rep(0L, 25)))
   expect_equal(ru$notnull[ru$name %in% c("ID", "path", "scaffold", "edited", "rev")], rep(1L, 5))
   expect_equal(ru$dflt_value[ru$name == "edited"], "0")
 
-  expect_equal(utils::tail(DBI::dbListFields(con, "annotate"), 3),
-    c("export_time_stamp", "itsx_origin", "itsx_scores"))
+  expect_equal(utils::tail(DBI::dbListFields(con, "annotate"), 4),
+    c("export_time_stamp", "itsx_origin", "itsx_scores", "genbank_check"))
 
   views <- DBI::dbGetQuery(con, "SELECT name FROM sqlite_master WHERE type = 'view'")$name
   expect_setequal(views, c(names(RiboPilot:::REVIEW_VIEWS_DDL), names(RiboPilot:::FEATURE_BLAST_VIEWS_DDL)))
@@ -145,7 +146,7 @@ test_that("new_db() makes each review table like its original, and annotate gain
     "topology", "orig_length", "sequence", "length", "trim_start", "trim_end", "edited",
     "check_switch", "check_note", "rev", "checked_at", "n_features", "missing", "chimeric", "n_flags",
     "curate_flags", "itsx_warnings", "itsx_origin", "itsx_scores", "blast_accession", "blast_species",
-    "blast_pident", "blast_qcovs", "blast_evalue", "blast_source", "time_stamp"))
+    "blast_pident", "blast_qcovs", "blast_evalue", "blast_source", "time_stamp", "genbank_check"))
   expect_equal(DBI::dbListFields(con, "review_annotations_v"), ra$name)
   for (t in c("screen", "chimera", "chimera_windows")) {
     expect_equal(DBI::dbListFields(con, paste0("review_", t, "_v")), DBI::dbListFields(con, t), info = t)
@@ -198,8 +199,8 @@ test_that("a version 1 database holding data upgrades through step 4 and its vie
   on.exit(DBI::dbDisconnect(con))
   h <- DBI::dbGetQuery(con, "SELECT schema_version, note FROM schema_history ORDER BY rowid")
   expect_equal(h$schema_version[h$note %in% "review copies for edited contigs; ITSx origin and scores"], 5L)
-  expect_equal(utils::tail(DBI::dbListFields(con, "annotate"), 3),
-    c("export_time_stamp", "itsx_origin", "itsx_scores"))
+  expect_equal(utils::tail(DBI::dbListFields(con, "annotate"), 4),
+    c("export_time_stamp", "itsx_origin", "itsx_scores", "genbank_check"))
   rs_copy(con)
   rs_check_views(con)
 })
@@ -233,4 +234,16 @@ test_that("the app fixture has every column the review layer reads, and its view
   before <- DBI::dbGetQuery(con, "SELECT type, name, sql FROM sqlite_master ORDER BY name")
   fixture_review_schema(con)
   expect_equal(DBI::dbGetQuery(con, "SELECT type, name, sql FROM sqlite_master ORDER BY name"), before)
+})
+
+test_that("genbank_check follows itsx_warnings through copy, view and invalidate", {
+  con <- chimera_test_con(); on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "INSERT OR REPLACE INTO assemblies (ID, path, scaffold, sequence, length) VALUES ('S1',1,1,'ACGT',4)")
+  DBI::dbExecute(con, "INSERT OR REPLACE INTO annotate (ID, path, scaffold, genbank_check) VALUES ('S1',1,1,'genbank_low_coverage(ITS 70%)')")
+  expect_equal(DBI::dbGetQuery(con, "SELECT genbank_check FROM review_units_v")$genbank_check, "genbank_low_coverage(ITS 70%)")
+  RiboPilot:::review_copy(con, "S1", 1L, 1L)
+  expect_equal(DBI::dbGetQuery(con, "SELECT genbank_check FROM review_units")$genbank_check, "genbank_low_coverage(ITS 70%)")
+  RiboPilot:::review_invalidate(con, "S1", 1L, 1L)
+  expect_true(is.na(DBI::dbGetQuery(con, "SELECT genbank_check FROM review_units_v")$genbank_check))
+  expect_equal(RiboPilot:::current_schema_version(), 7L)
 })

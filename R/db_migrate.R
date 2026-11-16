@@ -30,7 +30,18 @@ db_migrations <- function() {
         DBI::dbExecute(con, "DROP TABLE assembly_backup")
       }),
     list(note = "per-feature BLAST (feature_blast, feature_blast_hits) and review copies",
-      fn = feature_blast_apply_schema)
+      fn = feature_blast_apply_schema),
+    list(note = "GenBank BLAST check (annotate.genbank_check, review_units.genbank_check)",
+      fn = function(con) {
+        DBI::dbExecute(con, "DROP VIEW IF EXISTS review_units_v")
+        # step 4 makes review_units from the current DDL, so it may have the column already
+        for (t in c("annotate", "review_units")) {
+          if (!"genbank_check" %in% DBI::dbListFields(con, t)) {
+            DBI::dbExecute(con, sprintf("ALTER TABLE %s ADD COLUMN genbank_check TEXT", t))
+          }
+        }
+        DBI::dbExecute(con, REVIEW_VIEWS_DDL[["review_units_v"]])
+      })
   )
 }
 

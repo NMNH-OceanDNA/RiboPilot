@@ -36,8 +36,8 @@ test_that("a nudge edits the review copy and queues its checks; marks and Save m
     session$setInputs(mode = "Annotate")
     sel_unit(list(ID = "S1", path = 1L, scaffold = 1L))
     session$flushReact()
-    session$setInputs(mark_reviewed = 1, mark_partial = 1, annotate_notes = "check the 18S start")
-    session$setInputs(tbl__reactable__selected = 1:4, reviewed_btn = 1, partial_btn = 1)
+    session$setInputs(mark_reviewed = 1, annotate_notes = "check the 18S start")
+    session$setInputs(tbl__reactable__selected = 1:4, reviewed_btn = 1)
     session$setInputs(modal_hidden = 1)
     expect_equal(copies(), 0)
 

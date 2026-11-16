@@ -47,3 +47,16 @@ update-version.log
 tests/testthat/testthat-problems.rds
 tests/testthat/_problems/
 __pycache__/
+
+# internal design docs, plans, specs, and reviews (local only)
+dev/design/
+dev/review/
+dev/plans/
+dev/specs/
+
+# Quarto site: only sources tracked, the rest is generated
+website/*
+!website/_quarto.yml
+!website/index.qmd
+!website/build.R
+!website/theme.scss

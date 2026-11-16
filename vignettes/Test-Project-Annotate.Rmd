@@ -44,8 +44,8 @@ Click a contig's ID to see more details.
 
 ![A contig: its five features, read coverage, and gene map](figures/get-started/annotation-details.png)
 
-At the top of this window, three buttons record what you decided about a contig: **Mark Reviewed**, **Exclude
-& Lock**, and **Mark Partial**.
+At the top of this window, two buttons record what you decided about a contig: **Mark Reviewed** and **Exclude
+& Lock**. A badge beside them shows whether the contig is complete or partial.
 
 **Lock** locks the contig and keeps the window open; **Lock & Close** locks it and
 closes the window. Neither marks it Reviewed. If the contig failed some of the checks
@@ -65,7 +65,7 @@ Next is the **Coverage and windowed BLAST** panel, which draws the contig as an 
 The plot contains several tracks: read depth,
 the percentage of clipped reads, the features (arrows indicate orientation, dashed ends are
 partial annotations), the base pairs (once you zoom in), and the chimera
-check's BLAST identity and origin tracks. Scroll to zoom, drag to pan, or type a
+check's window BLAST identity and taxon tracks. Scroll to zoom, drag to pan, or type a
 position. Clicking a gene makes it the active feature that will show up in the **Edit
 active feature boundaries** and the **Reference alignment** panels below.
 
@@ -91,7 +91,7 @@ RiboPilot always saves the original contig, so you can use the **Restore** butto
 (or **Restore assembly** in a contig details window) 
 to undo a trim. Restore returns the contig to its original sequence, features, and
 check results: it undoes every trim, gene boundary edit, and 5'/3' choice on the
-contig. Your Reviewed, Exclude, and Partial marks, notes, and export group stay
+contig. Your Reviewed and Exclude marks, notes, and export group stay
 as they are.
 
 # Editing feature boundaries

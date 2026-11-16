@@ -23,7 +23,6 @@ navbar:
   type: default
   structure:
     left:
-    - intro
     - reference
     - articles
     - news
@@ -39,6 +38,8 @@ navbar:
         href: articles/Installation.html
       - text: -------
       - text: Test project
+      - text: "0. Get started"
+        href: articles/RiboPilot.html
       - text: "1. Taxonomy"
         href: articles/Test-Project-Taxonomy.html
       - text: "2. Reference"
@@ -140,6 +141,7 @@ articles:
 
 - title: "Test project walkthrough"
   contents:
+  - 'RiboPilot'
   - 'Test-Project-Taxonomy'
   - 'Test-Project-Reference'
   - 'Test-Project-Assemble'
@@ -196,10 +198,11 @@ reference:
   - remove_metadata
   - set_metadata_columns
 - title: "Reference databases"
-  desc: Build a reference database from R, and find the shared reference folder.
+  desc: Build a reference database from R, and find or clear the shared reference folder.
   contents:
   - build_reference_db
   - ribopilot_ref_dir
+  - clear_ref_cache
 - title: "Clusters"
   desc: Set up a profile for your cluster's scheduler.
   contents:

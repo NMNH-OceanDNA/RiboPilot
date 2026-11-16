@@ -10,6 +10,11 @@
 #' @noRd
 RP_DECOY_DBS <- c("16S_ribosomal_RNA", "SSU_eukaryote_rRNA", "LSU_eukaryote_rRNA")
 
+#' NCBI databases shipped beside the panel for the GenBank BLAST check only.
+#' Never composed into the screen's -db list.
+#' @noRd
+RP_CHECK_DBS <- "ITS_eukaryote_sequences"
+
 #' TRUE when a BLAST database prefix has its volume files on disk
 #' @noRd
 blast_db_exists <- function(prefix) {

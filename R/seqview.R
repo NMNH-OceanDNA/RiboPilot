@@ -54,6 +54,16 @@ seqview_ui <- function(prefix, summary, open = TRUE, pick = TRUE, mode = c("unit
     `aria-label` = "Go to position")
   box <- function(x, label) tags$label(class = "rp-seqview-check",
     tags$input(type = "checkbox", id = id(x), checked = NA), label)
+  help <- if (mode == "unit") mp_help_tip(label = "the sequence viewer", mp_help_bullets(
+      paste0("Drag to pan, scroll to zoom", if (pick) ", click a gene to select it",
+        ". Hover a track for its value."),
+      sprintf("Clipped reads: share of reads soft-clipped (depth 10 or more); orange at %d%%, the chimera cutoff.",
+        round(100 * CHIMERA_CLIP_FRAC)),
+      paste("Feature BLAST: each feature searched whole. Green OK, orange weak or low confidence, red off-target",
+        "or non-rDNA, grey no hit or not searched. In Annotation Review, click a block for its table."),
+      "Window BLAST: the contig searched in 150 bp sliding windows, for the chimera check.",
+      "Window BLAST taxon: grey is your lineage, white no hit, other colours foreign. Dashed line: possible junction.",
+      "Window BLAST %id: best hit per window, coloured like the taxon track."))
   controls <- if (mode == "align") div(class = "rp-seqview-controls",
       goto,
       btn("whole", "Whole alignment"),
@@ -71,20 +81,13 @@ seqview_ui <- function(prefix, summary, open = TRUE, pick = TRUE, mode = c("unit
       btn("zoom_out", NULL, icon("magnifying-glass-minus"), "Zoom out"),
       btn("copy", "Copy sequence", title = "Copy the bases in view as FASTA"),
       box("show_cov", "Coverage"), box("show_clip", "Clipped reads"),
-      box("show_ident", "BLAST identity"), box("show_origin", "BLAST origin"), box("show_nt", "Nucleotides"))
-  help <- if (mode == "unit") tags$p(class = "mp-help-text", style = "margin:2px 0 4px;",
-      paste0("Drag or scroll sideways to pan, scroll to zoom", if (pick) "; click a gene to select it",
-        ". Letters appear when zoomed in. Copy sequence copies the bases in view. "),
-      sprintf("Clipped reads is the share of reads soft-clipped at each base (shown where depth is at least 10); bars turn orange at %d%%, the chimera check's cutoff.",
-        round(100 * CHIMERA_CLIP_FRAC)),
-      " BLAST origin colours each stretch by the class its BLAST windows match: grey is your lineage, white is no hit, ",
-      "other colours are foreign; a dashed line marks a possible junction. BLAST identity is the best hit's identity in each window, coloured like the origin band. ",
-      "Hover for the match.")
-  body <- tagList(controls, help,
+      box("show_fblast", "Feature BLAST"),
+      box("show_ident", "Window BLAST identity"), box("show_origin", "Window BLAST taxon"), box("show_nt", "Nucleotides"))
+  body <- tagList(controls,
     div(class = if (mode == "align") "rp-seqview rp-seqview-align" else "rp-seqview",
       tags$canvas(id = id("canvas"), class = "rp-seqview-canvas"),
       tags$div(id = id("tip"), class = "rp-seqview-tip", hidden = NA)))
-  if (is.null(summary)) div(body) else rp_details(summary, open = open, body)
+  if (is.null(summary)) div(body) else rp_details(tagList(summary, help), open = open, body)
 }
 
 #' Send one unit to a viewer
@@ -111,8 +114,43 @@ seqview_send <- function(session, canvas, input, id, path, scaffold, selected = 
   }
   chim <- seqview_chimera(con, id, path, scaffold, review, nchar(s$sequence[1]))
   pl <- seqview_payload(s$sequence[1], f, tr$depths, tr$clips, selected, chim)
+  # like the chimera tracks, shown in Annotation Review only once the checks are done
+  if (!review || identical(review_unit_state(con,
+    data.frame(ID = id, path = as.integer(path), scaffold = as.integer(scaffold)))$state, "done")) {
+    fb <- tryCatch(q(paste("SELECT element, status, task, low_conf, species, lineage, pident, qcovs FROM",
+      if (review) "review_feature_blast_v" else "feature_blast")), error = function(e) NULL)
+    pl$fblast <- seqview_feature_blast(fb, f)
+  }
   pl$id <- canvas; pl$input <- input; pl$unit <- sprintf("%s_p%s_s%s", id, path, scaffold)
   session$sendCustomMessage("rpseq", pl)
+}
+
+#' Feature BLAST blocks for the viewer: one per searched feature. Pure.
+#'
+#' Tone and wording follow the Feature BLAST warnings column.
+#' @param fb feature_blast rows. @param feats Annotations (element, start, stop).
+#' @noRd
+seqview_feature_blast <- function(fb, feats) {
+  if (!NROW(fb)) return(NULL)
+  fb <- fb[fb$element %in% feats$element[!is.na(feats$start) & !is.na(feats$stop)], , drop = FALSE]
+  if (!NROW(fb)) return(NULL)
+  fb <- fb[order(match(fb$element, FEATURE_BLAST_ELEMENTS)), , drop = FALSE]
+  weak <- fb$status %in% "ok" & fb$task %in% "dc-megablast"
+  low <- fb$low_conf %in% 1
+  tone <- ifelse(fb$status %in% c("off_target", "non_rdna"), "danger",
+    ifelse(!fb$status %in% "ok", "neutral", ifelse(weak | low, "warning", "success")))
+  lab <- c(ok = "OK", no_hit = "no hit", non_rdna = "non-rDNA hit", off_target = "off-target",
+    too_small = "no BLAST, feature too small", not_run = "not run")
+  status <- ifelse(weak, "weak hit", ifelse(fb$status %in% names(lab), lab[fb$status], fb$status))
+  taxon <- chimera_rank_name(fb$lineage, "phylum")
+  status <- paste0(status, ifelse(fb$status %in% "off_target" & !is.na(taxon), paste0(" (", taxon, ")"), ""))
+  hit <- ifelse(is.na(fb$species), "", paste0(", ", fb$species,
+    ifelse(is.na(fb$pident), "", sprintf(" %.1f%% id", fb$pident)),
+    ifelse(is.na(fb$qcovs), "", sprintf(", %.0f%% cov", fb$qcovs))))
+  text <- paste0(fb$element, " feature BLAST: ", status, hit, ifelse(low, ", low confidence (under 100 bp)", ""))
+  i <- match(fb$element, feats$element)
+  lapply(seq_len(nrow(fb)), function(k) list(row = fb$element[k], pos1 = as.integer(feats$start[i[k]]),
+    pos2 = as.integer(feats$stop[i[k]]), tone = unname(tone[k]), text = text[k]))
 }
 
 #' Chimera evidence for the viewer: de-overlapped origin segments, junctions,

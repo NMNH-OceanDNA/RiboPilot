@@ -131,6 +131,8 @@ RUN blastdbcmd -db /opt/ribopilot/blastdb/${RP_DB_VERSION}/ribopilot_rrna -info 
     blastdbcmd -db /opt/ribopilot/blastdb/${RP_DB_VERSION}/16S_ribosomal_RNA -info > /dev/null && \
     blastdbcmd -db /opt/ribopilot/blastdb/${RP_DB_VERSION}/SSU_eukaryote_rRNA -info > /dev/null && \
     blastdbcmd -db /opt/ribopilot/blastdb/${RP_DB_VERSION}/LSU_eukaryote_rRNA -info > /dev/null
+# enable with the first panel release that ships ITS_eukaryote_sequences (GenBank BLAST check):
+#   && blastdbcmd -db /opt/ribopilot/blastdb/${RP_DB_VERSION}/ITS_eukaryote_sequences -info > /dev/null
 ENV RIBOPILOT_DB_DIR=/opt/ribopilot/blastdb
 # BLAST resolves taxonomy4blast.sqlite3 through $BLASTDB or the WORKING
 # DIRECTORY, never through the -db path. Without this, -taxids fails from every

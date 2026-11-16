@@ -163,7 +163,7 @@ test_that("export_summary_df carries the stored ITSx check, and NA as not checke
   smry <- RiboPilot:::export_summary_df(con, units)
   expect_equal(smry$itsx_check, c("not_run(not checked)", "not_run(ITSx did not finish)",
     "itsx_no_5.8S;itsx_origin(Fungi)", ""))
-  expect_equal(utils::tail(names(smry), 1), "itsx_check")
+  expect_equal(utils::tail(names(smry), 2), c("itsx_check", "genbank_check"))
 })
 
 test_that("export reports the stored ITSx check and never runs ITSx", {

@@ -35,7 +35,8 @@ Group **`r params$label`** &middot; `r nrow(units)` unit(s) &middot; generated
 
 ```{r summary-table}
 cols <- intersect(c("seqid", "ID", "organism", "length", "n_features", "missing",
-  "reviewed", "partial", "variant_class", "submission_risk", "chimera_warning"), names(smry))
+  "reviewed", "partial", "variant_class", "submission_risk", "chimera_warning", "itsx_check",
+  "genbank_check"), names(smry))
 knitr::kable(smry[, cols, drop = FALSE], row.names = FALSE)
 ```
 

@@ -47,8 +47,7 @@ app_server <- function(input, output, session) {
     showModal(modalDialog(
       title = "Sample output / work directories", size = "l", easyClose = TRUE,
       tags$p(class = "text-muted", style = "font-size:12px; margin-bottom:0.75em;",
-        "Nextflow task work directories for the chosen sample (failed attempts included). ",
-        "Use these to inspect intermediate + output files or troubleshoot a failed process."),
+        "Nextflow work folders for this sample, failed attempts included."),
       shinyWidgets::pickerInput("wd_sample", "Sample", choices = ids, selected = presel,
         options = list(`live-search` = TRUE)),
       div(style = "max-height:60vh; overflow:auto;", reactable::reactableOutput("wd_tbl")),
@@ -174,6 +173,8 @@ app_server <- function(input, output, session) {
               ORDER BY an.path, an.scaffold LIMIT 1) AS annotate_opts,
            (SELECT an.curate_opts FROM annotate an WHERE an.ID = s.ID
               ORDER BY an.path, an.scaffold LIMIT 1) AS curate_opts,
+           -- any locked contig locks the sample's annotation options (app_opts.R)
+           (SELECT MAX(an.annotate_lock) FROM annotate an WHERE an.ID = s.ID) AS ann_locked,
            a.paths, a.length,
            -- unit counts come from `assemblies` so they stay live as scaffolds
            -- are kept/dropped. a.blast_* is not selected: nothing writes it (the
@@ -208,7 +209,10 @@ app_server <- function(input, output, session) {
            LEFT JOIN preprocess pp ON s.ID = pp.ID
          WHERE s.taxonomy_lock = 1") |> with_checks("sample")
     } else if (mode == "Export") {
-      app_query(EXPORT_STEP_SQL)
+      d <- app_query(EXPORT_STEP_SQL)
+      con <- app_con(); on.exit(DBI::dbDisconnect(con))
+      d$partial <- c("complete", "partial")[unit_is_partial(con, d) + 1L]
+      d
     } else {
       # annotate shows one row per non-ignored assembly UNIT of an assembly-locked
       # sample (one (ID, path, scaffold) each, annotated independently). Contig
@@ -225,9 +229,9 @@ app_server <- function(input, output, session) {
            -- and its column was already defined but never selected.
            v.blast_species, v.blast_accession, v.blast_pident, v.blast_qcovs,
            v.blast_source,
-           v.n_flags, v.curate_flags, v.itsx_warnings, sc.screen_verdict,
+           v.n_flags, v.curate_flags, v.itsx_warnings, v.genbank_check, sc.screen_verdict,
            ch.label AS chimera_label, ch.reason AS chimera_reason, an.reviewed,
-           an.problematic, an.partial, an.annotate_notes,
+           an.problematic, NULL AS partial, an.annotate_notes,
            an.export_group,", UNIT_EXPORTED_SQL, ", an.time_stamp,
            'details' AS details, 'output' AS output
          FROM annotate an
@@ -255,6 +259,7 @@ app_server <- function(input, output, session) {
       d$annotate_switch[st$state %in% "not run" & st$has_copy %in% 0] <- 0L
       d$check_state <- ifelse(st$state %in% "done", NA_character_, review_state_text(st$state))
       d$check_note <- st$check_note
+      d$partial <- c("complete", "partial")[unit_is_partial(con, d) + 1L]
       d
     }
   })
@@ -293,6 +298,7 @@ app_server <- function(input, output, session) {
     if (mode == "Reference" && ref_view() == "Groups") refresh()
     d <- isolate(samples_data())
     tbl_keys <<- row_keys(d)
+    d$annotate_lock <- lock_cat(d)
     st <- isolate(reactable::getReactableState("tbl"))
     tbl_stale <<- length(st$selected) > 0 || !(st$page %||% 1) %in% 1
     mm <- mode_meta(mode)
@@ -311,6 +317,7 @@ app_server <- function(input, output, session) {
       nrow(unique(a[, c("ID", "path", "scaffold")])) > length(unique(a$ID))
 
     cd <- function(f, ...) reactable::colDef(name = mp_col_name(f), header = mp_col_header(f), ...)
+    ANN_LOCK_HOW <- "Unlock the contigs in Annotation Review to change them."
     cols <- list(
       ID = cd("ID", width = mp_fit_width(a$ID), sticky = "left", html = TRUE, cell = rt_link("open_detail")),
       path = cd("path", width = 70, align = "center", show = multi_unit, html = TRUE,
@@ -337,13 +344,14 @@ app_server <- function(input, output, session) {
       reviewed = cd("reviewed", html = TRUE, align = "center", cell = rt_bool_badge(hide_no = TRUE)),
       problematic = cd("problematic", width = 110, html = TRUE, align = "center",
         cell = rt_bool_badge(hide_no = TRUE, yes_tone = "warning")),
-      partial = cd("partial", width = 80, html = TRUE, align = "center",
-        cell = rt_bool_badge(yes_tone = "warning", no_tone = "success")),
+      partial = cd("partial", width = 130, html = TRUE, align = "center",
+        cell = rt_pill(c(complete = "success", partial = "warning"), empty = "")),
       n_flags = cd("n_flags", width = 100, html = TRUE, filterable = FALSE, align = "center",
         cell = rt_gated(rt_flag_badge())),
       annotate_notes = cd("annotate_notes", minWidth = 160, html = TRUE, class = "mp-note-cell", cell = rt_longtext()),
       curate_flags = reactable::colDef(show = FALSE),
       itsx_warnings = cd("itsx_warnings", minWidth = 130, html = TRUE, cell = rt_gated(rt_itsx_badge())),
+      genbank_check = cd("genbank_check", minWidth = 130, html = TRUE, cell = rt_gated(rt_itsx_badge())),
       screen_verdict = cd("screen_verdict", width = 110, html = TRUE, align = "center",
         cell = rt_gated(rt_screen_badge())),
       chimera_label = cd("chimera_label", width = 100, html = TRUE, align = "center",
@@ -380,11 +388,12 @@ app_server <- function(input, output, session) {
         cell = rt_link("set_assemble_opts", lock_col = "assemble_lock")),
       blast_opts = cd("blast_opts", minWidth = 100, html = TRUE, filterable = FALSE,
         cell = rt_link("set_blast_opts", lock_col = "assemble_lock")),
-      # guarded by the annotation lock on click (app_opts.R), not the assembly lock
+      # locked by the annotation lock (app_opts.R), not the assembly lock
       annotate_opts = cd("annotate_opts", minWidth = 120, html = TRUE, filterable = FALSE,
-        cell = rt_link("set_annotate_opts")),
+        cell = rt_link("set_annotate_opts", lock_col = "ann_locked", lock_how = ANN_LOCK_HOW)),
       curate_opts = cd("curate_opts", minWidth = 100, html = TRUE, filterable = FALSE,
-        cell = rt_link("set_curate_opts")),
+        cell = rt_link("set_curate_opts", lock_col = "ann_locked", lock_how = ANN_LOCK_HOW)),
+      ann_locked = reactable::colDef(show = FALSE),
       annotate_lock = cd("annotate_lock", width = 34, align = "center", filterable = FALSE,
         html = TRUE, cell = rt_lock_icon()),
       notes = cd("notes", minWidth = 160, html = TRUE, class = "mp-note-cell", cell = rt_longtext()),
@@ -466,7 +475,7 @@ app_server <- function(input, output, session) {
         Options = c("pre_opts", "assemble_opts", "blast_opts", "annotate_opts", "curate_opts")),
       Annotate = list(
         BLAST = c("blast_species", "blast_accession", "blast_pident", "blast_qcovs", "blast_source"),
-        `Check details` = c("n_flags", "itsx_warnings", "screen_verdict", "chimera_label",
+        `Check details` = c("n_flags", "itsx_warnings", "genbank_check", "screen_verdict", "chimera_label",
           "feature_blast_warnings")),
       NULL)
     keep_cols <- cols[intersect(names(cols), names(d))]
@@ -514,6 +523,7 @@ app_server <- function(input, output, session) {
   # still re-render via output$tbl above.
   push_tbl <- function(page = NULL) {
     d <- samples_data(); k <- row_keys(d)
+    d$annotate_lock <- lock_cat(d)
     sel <- if (!tbl_stale) reactable::getReactableState("tbl", "selected")
     reactable::updateReactable("tbl", data = d, selected = which(k %in% tbl_keys[sel]),
       page = if (!tbl_stale) page)
@@ -524,7 +534,8 @@ app_server <- function(input, output, session) {
     reactable::getReactableState("tbl", "page")), tbl_stale <<- FALSE, ignoreInit = TRUE)
   observeEvent(refresh(), push_tbl(reactable::getReactableState("tbl", "page")), ignoreInit = TRUE)
   observeEvent(list(input$Assemble_lock_filter, input$Assemble_state_filter,
-    input$Annotate_lock_filter, input$Annotate_state_filter), push_tbl(), ignoreInit = TRUE)
+    input$Annotate_lock_filter, input$Annotate_state_filter, input$Export_exported_filter),
+    push_tbl(), ignoreInit = TRUE)
 
   # ---- open the details modal when an ID cell is clicked ----
   observeEvent(input$open_detail, {
@@ -655,6 +666,10 @@ app_server <- function(input, output, session) {
   visible_mask <- reactive({
     d <- all_rows()
     keep <- rep(TRUE, nrow(d))
+    ef <- input$Export_exported_filter
+    if (identical(input$mode, "Export") && !is.null(ef) && "exported" %in% names(d)) {
+      return(as.character(as.integer(grepl("^exported ", d$exported))) %in% ef)
+    }
     f <- active_filters()
     if (is.null(f) || nrow(d) == 0) {
       return(keep)
@@ -662,7 +677,7 @@ app_server <- function(input, output, session) {
     mm <- mode_meta(input$mode %||% "Assemble")
     lc <- paste0(mm$pfx, "_lock")
     sc <- paste0(mm$pfx, "_switch")
-    if (!is.null(f$lock) && lc %in% names(d)) keep <- keep & as.character(d[[lc]]) %in% f$lock
+    if (!is.null(f$lock) && lc %in% names(d)) keep <- keep & as.character(if (lc == "annotate_lock") lock_cat(d) else d[[lc]]) %in% f$lock
     if (!is.null(f$state) && sc %in% names(d)) keep <- keep & as.character(d[[sc]]) %in% f$state
     keep
   })
@@ -959,7 +974,6 @@ app_server <- function(input, output, session) {
     if (any(lk)) mp_toast(sprintf("Left %s unchanged: unlock before changing marks.",
       mp_n(sum(lk), "locked contig")), type = "warning")
   })
-  observeEvent(input$partial_btn, toolbar_flag("partial"))
 
   # ---- batch Trim / Restore on ticked units ----
   # A trim or restore rewrites the unit's review copy, so it ends any
@@ -1016,8 +1030,14 @@ app_server <- function(input, output, session) {
   # ---- Export group actions ----
   observeEvent(input$assign_group_btn, {
     if (!need_selection(length(selected_ids()))) return()
-    showModal(group_modal())
+    show_group_modal()
   })
+  show_group_modal <- function() {
+    grp <- function(x) sort(unique(x[!is.na(x) & nzchar(x)]))
+    sel <- selected_rows()
+    showModal(group_modal(grp(all_rows()$export_group),
+      grp(samples_data()$export_group[sel]), length(sel)))
+  }
   pending_group <- reactiveVal(NULL)
   do_assign_group <- function(u, groups) {
     if (!app_write(assign_export_group(app_project(), u, groups))) return()
@@ -1069,11 +1089,25 @@ app_server <- function(input, output, session) {
   })
   observeEvent(input$group_back, {
     pending_group(NULL)
-    showModal(group_modal())
+    show_group_modal()
   })
   observeEvent(input$clear_group_btn, {
     u <- selected_units()
     if (!need_selection(NROW(u))) return()
+    g <- samples_data()$export_group[selected_rows()]
+    if (!any(!is.na(g) & nzchar(g))) {
+      return(mp_toast("None of the selected contigs are in an export group.", type = "warning"))
+    }
+    clear_pending(u)
+    mp_confirm("clear_group_confirm", title = "Clear export group",
+      text = paste0(mp_n(nrow(u), "contig"), if (nrow(u) == 1) " leaves its" else " leave their",
+        " export group. Files already written for that group are not removed."),
+      action_label = "Clear group")
+  })
+  clear_pending <- reactiveVal(NULL)
+  observeEvent(input$clear_group_confirm, {
+    u <- clear_pending(); clear_pending(NULL)
+    if (!isTRUE(input$clear_group_confirm) || is.null(u)) return()
     if (!app_write(clear_export_group(app_project(), u))) return()
     refresh(refresh() + 1)
     mp_toast(paste0("Group cleared for ", mp_n(nrow(u), "contig"), "."))
@@ -1650,16 +1684,15 @@ app_server <- function(input, output, session) {
     nmnh_ready_ids(r$ID[r$ok & !r$not_nmnh])
     nmnh_typed(list())
     showModal(modalDialog(
-      title = mp_modal_title("NMNH voucher report", close = FALSE), size = "xl",
+      title = mp_modal_title(tagList("NMNH voucher report", mp_help_tip(label = "the NMNH voucher report", mp_help_bullets(
+        "Type in a cell to fix a value. Saved with this project; your mapping file is not changed.",
+        "Clear a cell to restore the automatic value.",
+        "Pick a field under a cell to use another metadata field.",
+        "Not NMNH: values are used as found, without checks.",
+        "A missing value leaves its modifier out of the header."))), close = FALSE), size = "xl",
       p(class = "mp-fg-warning", icon("triangle-exclamation"),
         " NMNH records should not be submitted to GenBank without both a ",
         tags$code("specimen_voucher"), " and a ", tags$code("voucherURI"), "."),
-      opts_help("Type a value into a cell to fix it. It is checked when you leave the ",
-        "cell and saved with this project's NMNH values; your mapping file is not ",
-        "changed. Clear a cell to go back to the automatic value. Pick a field under a ",
-        "cell to take that value from another metadata field. Tick Not NMNH for samples ",
-        "that are not NMNH specimens: their values are used as found, without checks. ",
-        "A missing value leaves its modifier out of the header."),
       div(class = "mp-nmnh-fields", "Fields to pick from: mapping-file columns and the metadata ",
         "fields ticked for export. ", actionLink("nmnh_choose_fields", "Choose fields"),
         tags$br(), "Not NMNH: ", actionLink("nmnh_flag_all", "Select all"), " | ",
@@ -2191,6 +2224,8 @@ app_server <- function(input, output, session) {
         chimera_reason = reactable::colDef(show = FALSE),
         itsx_warnings = reactable::colDef(name = "ITSx Warnings", minWidth = 130, show = TRUE, html = TRUE,
           header = rt_help_header("ITSx Warnings", SCAFFOLD_COL_HELP$itsx_warnings), cell = rt_itsx_badge()),
+        genbank_check = reactable::colDef(name = "GenBank BLAST", minWidth = 130, show = TRUE, html = TRUE,
+          header = rt_help_header("GenBank BLAST", SCAFFOLD_COL_HELP$genbank_check), cell = rt_itsx_badge()),
         screen_species = reactable::colDef(name = "Top BLAST hit", minWidth = 160, show = TRUE,
           html = TRUE, header = rt_help_header("Top BLAST hit", SCAFFOLD_COL_HELP$screen_species),
           cell = rt_longtext()),
@@ -2895,9 +2930,12 @@ app_server <- function(input, output, session) {
   modal_flags <- reactive({
     refresh()
     u <- sel_unit(); req(u)
-    a <- app_query("SELECT reviewed, problematic, partial, annotate_lock FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?",
+    edit_tick()
+    a <- app_query("SELECT reviewed, problematic, annotate_lock FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?",
       params = uargs())
     req(nrow(a) == 1)
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    a$partial <- unit_is_partial(con, as.data.frame(u[c("ID", "path", "scaffold")]))
     a
   })
   output$modal_status_badges <- renderUI({
@@ -2910,7 +2948,8 @@ app_server <- function(input, output, session) {
     tagList(
       pill("Reviewed", a$reviewed[1]),
       pill("Excluded", a$problematic[1], yes_tone = "warning"),
-      pill("Partial", a$partial[1], yes_tone = "warning"))
+      if (!is.na(a$partial[1])) span(class = paste0("mp-pill mp-pill-", if (a$partial[1]) "warning" else "success"),
+        if (a$partial[1]) "Partial" else "Complete"))
   })
   output$modal_status_toggles <- renderUI({
     a <- modal_flags()
@@ -2926,8 +2965,7 @@ app_server <- function(input, output, session) {
     }
     tagList(
       toggle_btn("reviewed"),
-      toggle_btn("problematic", tone = "warning"),
-      toggle_btn("partial", tone = "warning"))
+      toggle_btn("problematic", tone = "warning"))
   })
 
   # active feature's unit-sequence coords + context
@@ -3390,7 +3428,6 @@ app_server <- function(input, output, session) {
     rp_toast(paste0("1 contig ", MP_FLAG_WORDS$problematic[["did_set"]], "."), type = "message")
     showModal(annotate_modal(u$ID, u$path, u$scaffold))
   })
-  observeEvent(input$mark_partial, modal_flag_toggle("partial"))
   # A locked unit is read only in this window (MitoPilot's lock_blocked()).
   lock_blocked <- function() {
     lk <- app_query("SELECT annotate_lock FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?",

@@ -18,6 +18,9 @@ skip_without_packager <- function() {
 }
 
 RP_TAXONOMY_FILES <- c("taxdb.btd", "taxdb.bti", "taxonomy4blast.sqlite3")
+# every NCBI database that ships beside the panel: the searched decoys plus the
+# GenBank check's ITS set, which rp_dbarg never composes into the -db list
+RP_SHIPPED <- c(RiboPilot:::RP_DECOY_DBS, RiboPilot:::RP_CHECK_DBS)
 RP_PANEL_EXT <- c("ndb", "nhr", "nin", "njs", "nog", "nos", "not", "nsq", "ntf", "nto")
 # Exactly the volume sets in the read-only fixture at ~/.cache/ribopilot-blastdb:
 # 16S carries .nnd/.nni, the two eukaryote sets do not. A mock with four
@@ -26,7 +29,8 @@ RP_DECOY_EXT <- list(
   "16S_ribosomal_RNA" = c("ndb", "nhr", "nin", "nnd", "nni", "nog", "nos", "not",
     "nsq", "ntf", "nto"),
   "SSU_eukaryote_rRNA" = c("ndb", "nhr", "nin", "nog", "nos", "not", "nsq", "ntf", "nto"),
-  "LSU_eukaryote_rRNA" = c("ndb", "nhr", "nin", "nog", "nos", "not", "nsq", "ntf", "nto"))
+  "LSU_eukaryote_rRNA" = c("ndb", "nhr", "nin", "nog", "nos", "not", "nsq", "ntf", "nto"),
+  "ITS_eukaryote_sequences" = c("ndb", "nhr", "nin", "nog", "nos", "not", "nsq", "ntf", "nto"))
 RP_DECOY_VOLUMES <- unlist(mapply(function(n, e) paste0(n, ".", e),
   names(RP_DECOY_EXT), RP_DECOY_EXT, USE.NAMES = FALSE))
 # update_blastdb.pl preserves these deliberately, as the cache key for its next
@@ -232,7 +236,7 @@ test_that("the checksum sidecars are in the shape sha256sum -c and the installer
   }
 })
 
-test_that("the shell decoy lists are RP_DECOY_DBS plus exactly taxdb", {
+test_that("the shell decoy lists are the shipped databases plus exactly taxdb", {
   skip_on_cran()
   skip_if_not(file.exists(refdb_sh),
     "dev/ is Rbuildignored; this runs from the source tree only")
@@ -243,11 +247,11 @@ test_that("the shell decoy lists are RP_DECOY_DBS plus exactly taxdb", {
     strsplit(trimws(gsub('"', "", sub(paste0("^", name, "="), "", line))), " +")[[1]]
   }
   expect_setequal(shell_list(refdb_sh, "DECOY_DBS"),
-    c(RiboPilot:::RP_DECOY_DBS, "taxdb"))
-  expect_setequal(shell_list(decoys_sh, "SEARCHABLE_DBS"), RiboPilot:::RP_DECOY_DBS)
+    c(RP_SHIPPED, "taxdb"))
+  expect_setequal(shell_list(decoys_sh, "SEARCHABLE_DBS"), RP_SHIPPED)
   expect_setequal(shell_list(decoys_sh, "TAXONOMY_FILES"), RP_TAXONOMY_FILES)
   expect_setequal(shell_list(decoys_sh, "REQUIRED_EXT"), RiboPilot:::PANEL_REQUIRED_EXT)
-  expect_setequal(names(RP_DECOY_EXT), RiboPilot:::RP_DECOY_DBS)
+  expect_setequal(names(RP_DECOY_EXT), RP_SHIPPED)
 })
 
 # --- fetch_decoys.sh ---------------------------------------------------------
@@ -257,7 +261,7 @@ test_that("the shell decoy lists are RP_DECOY_DBS plus exactly taxdb", {
 # is "does blastdbcmd accept what landed", which a stubbed blastdbcmd cannot
 # answer. RP_STUB_BREAK damages exactly one thing so one guard is under test.
 RP_DECOY_SEQS <- c(`16S_ribosomal_RNA` = 27644L, SSU_eukaryote_rRNA = 8784L,
-  LSU_eukaryote_rRNA = 6575L)
+  LSU_eukaryote_rRNA = 6575L, ITS_eukaryote_sequences = 77582L)
 
 decoy_stub_bin <- function(meta_null = character(0), .envir = parent.frame()) {
   bindir <- withr::local_tempdir(.local_envir = .envir)
@@ -291,18 +295,18 @@ decoy_stub_bin <- function(meta_null = character(0), .envir = parent.frame()) {
     file.path(bindir, "counts.txt"))
 
   meta <- data.frame(
-    dbname = c(RiboPilot:::RP_DECOY_DBS, "taxdb"),
+    dbname = c(RP_SHIPPED, "taxdb"),
     `last-updated` = c("2026-08-15T00:00:00", "2022-12-05T00:00:00",
-      "2022-12-05T00:00:00", "2026-08-13T16:23:29.394961"),
-    `number-of-sequences` = c(unname(RP_DECOY_SEQS[RiboPilot:::RP_DECOY_DBS]), 0L),
+      "2022-12-05T00:00:00", "2026-10-12T00:00:00", "2026-08-13T16:23:29.394961"),
+    `number-of-sequences` = c(unname(RP_DECOY_SEQS[RP_SHIPPED]), 0L),
     check.names = FALSE, stringsAsFactors = FALSE)
   # a present entry with a null field, which jq -r renders as the string "null"
   meta$`last-updated`[meta$dbname %in% meta_null] <- NA_character_
   writeLines(jsonlite::toJSON(meta, auto_unbox = FALSE, na = "null"),
     file.path(bindir, "meta.json"))
   md5 <- c("8ea926b50cb87831abd58e97758b37ff", "f47c1bad5051bda9c5c00a236087c62b",
-    "4f8310a6e3e344017594928ce0b05b9a", "5fc70fa3d152fee1608f134ca4cb1507")
-  writeLines(sprintf("%s  %s.tar.gz", md5, c(RiboPilot:::RP_DECOY_DBS, "taxdb")),
+    "4f8310a6e3e344017594928ce0b05b9a", "a1d3d3cc1f6c1b0a5c1b4e6f0d2e9a77", "5fc70fa3d152fee1608f134ca4cb1507")
+  writeLines(sprintf("%s  %s.tar.gz", md5, c(RP_SHIPPED, "taxdb")),
     file.path(bindir, "md5.txt"))
 
   writeLines(c(
@@ -361,11 +365,11 @@ test_that("fetch_decoys.sh verifies what landed and records the source's own ver
 
   v <- readLines(file.path(dest, "DECOY_VERSION.txt"), warn = FALSE)
   expect_equal(sub("\t.*", "", v),
-    c("# database", RiboPilot:::RP_DECOY_DBS, "taxdb"))
+    c("# database", RP_SHIPPED, "taxdb"))
   # every field comes from the source, none from the marker left on disk
   expect_equal(v[2], paste("16S_ribosomal_RNA", "8ea926b50cb87831abd58e97758b37ff",
     "Sat, 15 Aug 2026 09:36:25 GMT", "2026-08-15T00:00:00", "27644", sep = "\t"))
-  expect_equal(v[5], paste("taxdb", "5fc70fa3d152fee1608f134ca4cb1507",
+  expect_equal(v[6], paste("taxdb", "5fc70fa3d152fee1608f134ca4cb1507",
     "Sat, 15 Aug 2026 09:36:25 GMT", "2026-08-13T16:23:29.394961", "0", sep = "\t"))
 })
 

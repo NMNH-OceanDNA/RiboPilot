@@ -118,7 +118,7 @@ QUERY="(txid33208[Organism:exp]) AND (${RRNA_TERMS}) NOT mitochondrion[Filter] N
 # rRNA", PDB) are IN the panel by definition; excluding them is a new panel
 # version, not a bugfix.
 CHUNK_SIZE=5000
-DECOY_DBS="16S_ribosomal_RNA SSU_eukaryote_rRNA LSU_eukaryote_rRNA taxdb"
+DECOY_DBS="16S_ribosomal_RNA SSU_eukaryote_rRNA LSU_eukaryote_rRNA ITS_eukaryote_sequences taxdb"
 MAKEBLASTDB_FLAGS=(-dbtype nucl -parse_seqids -blastdb_version 5)
 
 # accession->taxid source (dev/design/18_REFDB_REBUILD.md section 1). ~9.4 GB
@@ -1525,8 +1525,8 @@ stage_build() {
         },
         decoy_panel: {
           mode: "ncbi_prebuilt",
-          databases: ["SSU_eukaryote_rRNA", "LSU_eukaryote_rRNA", "16S_ribosomal_RNA"],
-          note: "composed at query time via a space-separated -db list; not merged into this build"
+          databases: ["SSU_eukaryote_rRNA", "LSU_eukaryote_rRNA", "16S_ribosomal_RNA", "ITS_eukaryote_sequences"],
+          note: "composed at query time via a space-separated -db list; not merged into this build. ITS_eukaryote_sequences serves the GenBank BLAST check only and is never searched by the screen"
         }
       }' > "$tmp/manifest.json"
     total="$(rp_shipped_bytes "$tmp")"

@@ -207,18 +207,43 @@ risk_flags <- function(chimeric, ann, seq, chimera_label = NA_character_, chimer
 #' untrimmed unit, read in the row's own strand.
 #' @param d Annotation rows. @param seqlen Sequence length (NA: no end check).
 #' @param trimmed Is the unit's left / right end trimmed ([unit_trimmed()])? A
-#'   trimmed end is not an assembly end. One value covers both ends.
+#'   trimmed end is not an assembly end. One value covers both ends; a list of
+#'   two vectors gives each row its own.
 #' @return list(p5, p3) of logical vectors.
 #' @noRd
 partial_ends <- function(d, seqlen, trimmed = FALSE) {
   flag <- function(col) if (is.null(d[[col]])) rep(NA, nrow(d)) else d[[col]]
   trimmed <- rep_len(trimmed, 2)
-  left <- !trimmed[1] & d$start <= 1
-  right <- !trimmed[2] & !is.na(seqlen) & d$stop >= seqlen
+  left <- !trimmed[[1]] & d$start <= 1
+  right <- !trimmed[[2]] & !is.na(seqlen) & d$stop >= seqlen
   minus <- (d$strand %||% rep(NA, nrow(d))) %in% "-"
   eff <- function(f, auto) ifelse(is.na(f), auto, f %in% 1L)
   list(p5 = eff(flag("partial_start"), ifelse(minus, right, left)),
     p3 = eff(flag("partial_stop"), ifelse(minus, left, right)))
+}
+
+#' Is each contig partial? Read live from the review layer
+#'
+#' Partial: one of the five elements is missing, or any feature end is partial.
+#' @param units Rows with ID, path, scaffold.
+#' @return Logical, one per row of `units`; NA for a contig with no annotation.
+#' @noRd
+unit_is_partial <- function(con, units) {
+  if (nrow(units) == 0) return(logical(0))
+  q <- function(sql) tryCatch(DBI::dbGetQuery(con, sql), error = function(e) NULL)
+  u <- q("SELECT ID, path, scaffold, length, n_features, missing,
+    trim_start > 1 AS tl, trim_end < orig_length AS tr FROM review_units_v")
+  f <- q(paste("SELECT ID, path, scaffold, start, stop, strand,", REVIEW_EFF_PARTIALS,
+    "FROM review_annotations_v"))
+  if (is.null(u) || is.null(f)) return(rep(NA, nrow(units)))
+  ukey <- unit_key(u$ID, u$path, u$scaffold)
+  i <- match(unit_key(f$ID, f$path, f$scaffold), ukey)
+  e <- partial_ends(f, u$length[i], list(u$tl[i] %in% 1, u$tr[i] %in% 1))
+  cut_end <- seq_along(ukey) %in% i[which(e$p5 | e$p3)]
+  n_el <- length(c(RRNA_GENES, RRNA_SPACERS))
+  out <- ifelse(is.na(u$n_features), NA, 
+    u$n_features < n_el | !(u$missing %in% c("", NA)) | cut_end)
+  out[match(unit_key(units$ID, units$path, units$scaffold), ukey)]
 }
 
 #' Is each end of a unit trimmed? Read from the kept window of its review copy
@@ -265,7 +290,7 @@ unit_checks <- function(con, by = c("unit", "sample"), review = FALSE) {
   }
   u <- DBI::dbGetQuery(con, sprintf(
     "SELECT an.ID, an.path, an.scaffold, sc.screen_verdict, ch.label AS chimera_label,
-       an.chimeric, an.curate_flags, an.itsx_warnings,
+       an.chimeric, an.curate_flags, an.itsx_warnings, an.genbank_check,
        (SELECT COUNT(*) FROM %4$s f WHERE f.ID = an.ID AND f.path = an.path
           AND f.scaffold = an.scaffold AND f.status = 'flag') AS n_feat_flags
      FROM %1$s an
@@ -277,6 +302,7 @@ unit_checks <- function(con, by = c("unit", "sample"), review = FALSE) {
   txt <- function(x) { x <- as.character(x); x[is.na(x)] <- ""; x }
   fl <- strsplit(txt(u$curate_flags), "; ", fixed = TRUE)
   itsx <- txt(u$itsx_warnings)
+  gb <- txt(u$genbank_check)
   hit <- cbind(
     "off target" = u$screen_verdict %in% "off_target",
     "contaminant" = vapply(fl, function(x) "contaminant" %in% x, logical(1)),
@@ -286,6 +312,7 @@ unit_checks <- function(con, by = c("unit", "sample"), review = FALSE) {
     "uncertain screen" = u$screen_verdict %in% "uncertain",
     "ITSx" = nzchar(itsx) & !startsWith(itsx, "not_run("),
     "ITSx not checked" = is.na(u$itsx_warnings) | startsWith(itsx, "not_run("),
+    "GenBank BLAST" = nzchar(gb) & !startsWith(gb, "not_run("),
     "warnings" = vapply(fl, function(x) any(x != "contaminant"), logical(1)),
     "feature flags" = u$n_feat_flags > 0)
   cols <- if (by == "unit") c("ID", "path", "scaffold") else "ID"
@@ -313,7 +340,7 @@ unit_checks <- function(con, by = c("unit", "sample"), review = FALSE) {
 
 #' README text explaining how to submit the bundle to NCBI
 #' @noRd
-submission_readme <- function(label) {
+submission_readme <- function(label, flagged = character(0)) {
   paste(c(
     paste0("RiboPilot GenBank submission bundle: ", label),
     paste0("Generated ", format(Sys.time(), "%Y-%m-%d %H:%M")),
@@ -405,6 +432,46 @@ submission_readme <- function(label) {
     "ITSx calls can shift with batch size. RiboPilot checks one contig at a time,",
     "while the Portal checks the whole upload together, so the Portal may call a",
     "borderline contig differently.",
+    "",
+    "GENBANK BLAST CHECK",
+    "-------------------",
+    paste0("The genbank_check column in ", label, "_summary.csv predicts the two BLAST flags"),
+    "GenBank's rRNA/ITS curation raises before it assigns accessions. NCBI runs a",
+    "default megablast of each record against its ITS_eukaryote_sequences database",
+    "and its eukaryote SSU/LSU rRNA database. Its reply names a record as",
+    "  \"Query coverage is less than 75%.\"   when the top hit covers under 75% of it",
+    "  \"HSP_problem\"                        when the top hit aligns in more than one",
+    "                                       piece (a \"potential misassembly\")",
+    "RiboPilot runs the same two searches on each contig in the annotation step, and",
+    "again when Update on Annotation Review rechecks an edited contig, and stores:",
+    "  genbank_low_coverage(ITS <n>%)       NCBI's first flag, from the ITS search",
+    "  genbank_multi_hsp(ITS <n> HSPs: ...) NCBI's second flag, with the aligned",
+    "                                       pieces as positions on the record",
+    "  genbank_multi_hsp(rRNA ...)          the same from the SSU/LSU search",
+    "  genbank_no_hit(ITS) / (rRNA)         no hit at all in that database",
+    "  top hits: ...                        the top hit and its coverage per search",
+    "Empty means clean. not_run(...) means the check could not run:",
+    "  not_run(no ITS_eukaryote_sequences database)  the panel on this machine or",
+    "                                       image predates the release that ships",
+    "                                       it; install_ribopilot_db() a newer",
+    "                                       panel (or pull a newer image), then",
+    "                                       run the contig's checks again",
+    "  any other not_run(...)               run the contig's checks again as the",
+    "                                       ITSx section above describes",
+    "",
+    "Expect these flags on most fish records, and on other groups the ITS database",
+    "covers thinly: it holds a few hundred fish records among 77,000 plant and",
+    "fungal ones, so the top hit is a distant relative, the ITS spacers do not",
+    "align to it, and the record splits into an 18S piece and a 5.8S piece. That",
+    "is not evidence of a bad assembly. NCBI's copy of the database is newer than",
+    "RiboPilot's, so a record near 75% can be called differently.",
+    "",
+    "When GenBank sends the submission back for \"low similarity and/or possible",
+    "misassembly\", reply to gb-admin that the records below were reviewed with",
+    "RiboPilot's screen, chimera, per-feature BLAST and ITSx checks and are believed",
+    "correct; NCBI then runs further verification and proceeds. Records flagged in",
+    "this export:",
+    if (length(flagged)) flagged else "  none",
     ""), collapse = "\n")
 }
 
@@ -435,14 +502,14 @@ export_summary_df <- function(con, units, review = FALSE) {
   }
   m <- fetch(if (review) {
     "SELECT s.ID, an.path, an.scaffold, v.length, v.n_features,
-       v.missing, an.reviewed, an.partial, an.problematic
+       v.missing, an.reviewed, an.problematic
      FROM samples s
      JOIN annotate an ON an.ID = s.ID
      JOIN review_units_v v ON v.ID = an.ID AND v.path = an.path AND v.scaffold = an.scaffold
      WHERE s.ID IN (%s)"
   } else {
     "SELECT s.ID, an.path, an.scaffold, asm.length, an.n_features,
-       an.missing, an.reviewed, an.partial, an.problematic
+       an.missing, an.reviewed, an.problematic
      FROM samples s
      JOIN annotate an ON an.ID = s.ID
      JOIN assemblies asm ON asm.ID = s.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
@@ -458,6 +525,7 @@ export_summary_df <- function(con, units, review = FALSE) {
   sv <- fetch(paste("SELECT ID, path, scaffold, screen_verdict, lca_taxon FROM", tb[["scr"]], "WHERE ID IN (%s)"))
   nts <- fetch(paste("SELECT ID, path, scaffold, curate_flags FROM", tb[["res"]], "WHERE ID IN (%s)"))
   itx <- fetch(paste("SELECT ID, path, scaffold, itsx_warnings FROM", tb[["res"]], "WHERE ID IN (%s)"))
+  gbx <- fetch(paste("SELECT ID, path, scaffold, genbank_check FROM", tb[["res"]], "WHERE ID IN (%s)"))
   smp <- fetch("SELECT * FROM samples WHERE ID IN (%s)")
 
   ukey <- unit_key(units$ID, units$path, units$scaffold)
@@ -476,6 +544,8 @@ export_summary_df <- function(con, units, review = FALSE) {
   nti <- if (nrow(nts)) match(ukey, unit_key(nts$ID, nts$path, nts$scaffold)) else rep(NA_integer_, n)
   itsx <- if (nrow(itx)) itx$itsx_warnings[match(ukey, unit_key(itx$ID, itx$path, itx$scaffold))] else rep(NA_character_, n)
   itsx[is.na(itsx)] <- "not_run(not checked)"
+  genbank <- if (nrow(gbx)) gbx$genbank_check[match(ukey, unit_key(gbx$ID, gbx$path, gbx$scaffold))] else rep(NA_character_, n)
+  genbank[is.na(genbank)] <- "not_run(not checked)"
 
   si <- match(units$ID, smp$ID)
   taxon <- (smp$Taxon %||% NA)[si]
@@ -504,13 +574,14 @@ export_summary_df <- function(con, units, review = FALSE) {
     n_features = pick(m, "n_features", NA_integer_),
     missing = pick(m, "missing", NA_character_),
     reviewed = pick(m, "reviewed", NA_character_),
-    partial = pick(m, "partial", NA_character_),
+    partial = c("no", "yes")[unit_is_partial(con, units) + 1L],
     problematic = pick(m, "problematic", NA_character_),
     variant_class = v$variant_class, variant_group = v$variant_group,
     variant_identity = v$variant_identity, n_variants = v$n_variants,
     submission_risk = risk,
     chimera_warning = ifelse(chm_label %in% "minor", chm_reason, ""),
     itsx_check = itsx,
+    genbank_check = genbank,
     stringsAsFactors = FALSE)
 }
 
@@ -548,7 +619,7 @@ EXPORT_STEP_SQL <- paste(
      v.n_features, v.missing,
      v.n_flags, v.curate_flags, an.annotate_notes, v.itsx_warnings, sc.screen_verdict,
      ch.label AS chimera_label, ch.reason AS chimera_reason,
-     an.reviewed, an.partial, an.export_group,
+     an.reviewed, NULL AS partial, an.export_group,
      CASE WHEN COALESCE(v.check_switch, 1) != 2 THEN 'checks not finished, left out'
           WHEN an.export_time_stamp IS NULL THEN ''
           ELSE 'exported ' || date(an.export_time_stamp, 'unixepoch', 'localtime') END AS exported,
@@ -709,7 +780,7 @@ feature_map_svg_text <- function(d, width = 900, height = 110) {
 #' @noRd
 export_report_html <- function(con, units, out_html, label, smry = export_summary_df(con, units, review = TRUE)) {
   hdr <- c("seqid", "ID", "organism", "length", "n_features", "missing", "reviewed", "submission_risk",
-    "chimera_warning", "itsx_check")
+    "chimera_warning", "itsx_check", "genbank_check")
   rows <- apply(smry[, intersect(hdr, names(smry)), drop = FALSE], 1, function(r) {
     paste0("<tr>", paste0("<td>", ifelse(is.na(r), "", r), "</td>", collapse = ""), "</tr>")
   })
@@ -933,7 +1004,9 @@ export_bundle <- function(path = ".", ids = NULL, units = NULL, group = NULL,
   }
   smry <- .meta_join(smry, con)
   utils::write.csv(smry, file.path(gdir, paste0(label, "_summary.csv")), row.names = FALSE)
-  writeLines(submission_readme(label), file.path(gdir, "README.txt"))
+  gbf <- which(nzchar(smry$genbank_check) & !startsWith(smry$genbank_check, "not_run("))
+  writeLines(submission_readme(label, sprintf("  %s  %s", smry$seqid[gbf], genbank_check_display(smry$genbank_check[gbf]))),
+    file.path(gdir, "README.txt"))
   # HTML report
   if (isTRUE(report)) {
     tryCatch(export_report(con, units,
