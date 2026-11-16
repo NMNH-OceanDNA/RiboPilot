@@ -38,6 +38,14 @@
   `review_units`. Contigs already locked keep `not_run(not checked)` until
   they are unlocked and rechecked.
 
+## Reference folder
+
+* `clear_ref_cache()` deletes the cached reference data in the shared
+  reference folder (clade databases, record counts, and stored reference
+  sequences). It affects every project that uses the folder, so it lists what
+  it found, asks you to type `clear`, and refuses to run from a script. The
+  BLAST panel and container images are left alone.
+
 # RiboPilot 0.1.1
 
 ## Assemble
