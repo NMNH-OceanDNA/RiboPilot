@@ -70,16 +70,24 @@
   BLAST** column on the scaffold and Annotation Review tables, and at export:
   a `genbank_check` column in `<group>_summary.csv` and the HTML report, a
   count of flagged records in the Export done window, and a README section
-  with NCBI's wording and the reply to send gb-admin. See "The GenBank BLAST
+  with NCBI's wording. See "The GenBank BLAST
   check" in the GenBank Submission guide.
 * Most fish records trip both flags because the ITS database holds few fishes;
   the flags predict GenBank's reply, not a bad assembly.
-* The check needs `ITS_eukaryote_sequences` beside the panel. It ships with the
-  next panel release; until then every contig stores
+* The check needs `ITS_eukaryote_sequences` beside the panel. rDNA panel
+  2026.08.18.2 ships it and is included in the 0.1.2 container image. With an
+  older panel every contig stores
   `not_run(no ITS_eukaryote_sequences database)`.
 * Project database version 7: `genbank_check` columns on `annotate` and
   `review_units`. Contigs already locked keep `not_run(not checked)` until
   they are unlocked and rechecked.
+
+## Reference database
+
+* The rDNA BLAST panel is 2026.08.18.2. The rDNA sequences are the same as in
+  2026.08.18.1; this release adds NCBI's `ITS_eukaryote_sequences` database
+  for the GenBank BLAST check and refreshes the NCBI 16S and taxonomy
+  databases shipped beside the panel.
 
 ## Reference folder
 

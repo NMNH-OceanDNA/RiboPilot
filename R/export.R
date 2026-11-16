@@ -466,11 +466,7 @@ submission_readme <- function(label, flagged = character(0)) {
     "is not evidence of a bad assembly. NCBI's copy of the database is newer than",
     "RiboPilot's, so a record near 75% can be called differently.",
     "",
-    "When GenBank sends the submission back for \"low similarity and/or possible",
-    "misassembly\", reply to gb-admin that the records below were reviewed with",
-    "RiboPilot's screen, chimera, per-feature BLAST and ITSx checks and are believed",
-    "correct; NCBI then runs further verification and proceeds. Records flagged in",
-    "this export:",
+    "Records flagged in this export:",
     if (length(flagged)) flagged else "  none",
     ""), collapse = "\n")
 }

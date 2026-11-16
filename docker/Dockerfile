@@ -115,7 +115,7 @@ RUN mamba install -y \
 FROM base AS db-0
 
 FROM base AS db-1
-ARG RP_DB_VERSION=2026.08.18.1
+ARG RP_DB_VERSION=2026.08.18.2
 ADD docker/ribopilot_rrna-${RP_DB_VERSION}.tar.gz /opt/ribopilot/blastdb/${RP_DB_VERSION}/
 ADD docker/decoys-${RP_DB_VERSION}.tar.gz         /opt/ribopilot/blastdb/${RP_DB_VERSION}/
 # ADD does not fail on a corrupt-but-gzip-shaped archive; it falls back to a
@@ -130,9 +130,8 @@ RUN blastdbcmd -db /opt/ribopilot/blastdb/${RP_DB_VERSION}/ribopilot_rrna -info 
     test -s /opt/ribopilot/blastdb/${RP_DB_VERSION}/manifest.json && \
     blastdbcmd -db /opt/ribopilot/blastdb/${RP_DB_VERSION}/16S_ribosomal_RNA -info > /dev/null && \
     blastdbcmd -db /opt/ribopilot/blastdb/${RP_DB_VERSION}/SSU_eukaryote_rRNA -info > /dev/null && \
-    blastdbcmd -db /opt/ribopilot/blastdb/${RP_DB_VERSION}/LSU_eukaryote_rRNA -info > /dev/null
-# enable with the first panel release that ships ITS_eukaryote_sequences (GenBank BLAST check):
-#   && blastdbcmd -db /opt/ribopilot/blastdb/${RP_DB_VERSION}/ITS_eukaryote_sequences -info > /dev/null
+    blastdbcmd -db /opt/ribopilot/blastdb/${RP_DB_VERSION}/LSU_eukaryote_rRNA -info > /dev/null && \
+    blastdbcmd -db /opt/ribopilot/blastdb/${RP_DB_VERSION}/ITS_eukaryote_sequences -info > /dev/null
 ENV RIBOPILOT_DB_DIR=/opt/ribopilot/blastdb
 # BLAST resolves taxonomy4blast.sqlite3 through $BLASTDB or the WORKING
 # DIRECTORY, never through the -db path. Without this, -taxids fails from every
