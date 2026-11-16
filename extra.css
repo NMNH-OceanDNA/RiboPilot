@@ -136,6 +136,7 @@ main img:not(.logo) {
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
 }
 main img.plain,
+main img[src$="logo.png"],
 main a > img[src*="shields.io"] {
   border: 0;
   box-shadow: none;
