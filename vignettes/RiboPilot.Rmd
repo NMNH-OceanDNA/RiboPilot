@@ -7,6 +7,16 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
+<div class="step-nav">
+<span class="step-label">Test project:</span>
+<span class="current">0. Get started</span>
+<a href="Test-Project-Taxonomy.html">1. Taxonomy</a>
+<a href="Test-Project-Reference.html">2. Reference</a>
+<a href="Test-Project-Assemble.html">3. Assemble</a>
+<a href="Test-Project-Annotate.html">4. Annotation Review</a>
+<a href="Test-Project-Export.html">5. Export</a>
+</div>
+
 RiboPilot takes genome-skim reads and assembles a GenBank-ready record of the nuclear
 ribosomal DNA repeat (rDNA). Starting a project requires only a few R commands, everything
 else happens in a R Shiny app.
@@ -124,11 +134,11 @@ Two buttons appear in every step:
 <tr><th>State</th><th>Meaning</th></tr>
 </thead>
 <tbody>
-<tr><td><i class="fa fa-hourglass state-icon"></i> On hold</td><td>Skipped by the next Update until you set it to Ready to run</td></tr>
-<tr><td><i class="fa fa-play state-icon"></i> Ready to run</td><td>Queued: the next Update will process it</td></tr>
-<tr><td><i class="fa fa-circle-half-stroke state-icon"></i> In progress</td><td>Being processed by the running pipeline</td></tr>
-<tr><td><i class="fa fa-circle-check state-icon"></i> Success</td><td>Finished without errors</td></tr>
-<tr><td><i class="fa fa-triangle-exclamation state-icon"></i> Failed</td><td>Open the sample's details to see why and what to try next</td></tr>
+<tr><td><i class="bi bi-hourglass-split state-icon"></i> On hold</td><td>Skipped by the next Update until you set it to Ready to run</td></tr>
+<tr><td><i class="bi bi-play-fill state-icon"></i> Ready to run</td><td>Queued: the next Update will process it</td></tr>
+<tr><td><i class="bi bi-circle-half state-icon"></i> In progress</td><td>Being processed by the running pipeline</td></tr>
+<tr><td><i class="bi bi-check-circle-fill state-icon"></i> Success</td><td>Finished without errors</td></tr>
+<tr><td><i class="bi bi-exclamation-triangle-fill state-icon"></i> Failed</td><td>Open the sample's details to see why and what to try next</td></tr>
 </tbody>
 </table>
 

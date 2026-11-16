@@ -89,7 +89,6 @@ navbar:
 
 search:
   exclude:
-  - articles/Without-Containers.html
   - reference/run_assembly.html
   - reference/export_bundle.html
   - reference/annotate_records.html
@@ -173,11 +172,6 @@ articles:
 - title: "Help"
   contents:
   - 'Troubleshooting'
-
-- title: internal
-  contents:
-  - 'Without-Containers'
-  - 'Citing'
 
 reference:
 - title: "Start a project"
