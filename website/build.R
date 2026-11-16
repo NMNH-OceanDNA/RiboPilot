@@ -81,3 +81,5 @@ yaml::write_yaml(
 )
 
 stopifnot(system2("quarto", c("render", w)) == 0)
+# GitHub Pages: serve the files as they are, no Jekyll pass
+file.create(file.path(w, "_site", ".nojekyll"))

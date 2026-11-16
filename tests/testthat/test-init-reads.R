@@ -101,7 +101,7 @@ test_that("new_project checks the reads and writes a private .config", {
 
   cfg <- file.path(proj, ".config")
   expect_true(file.exists(cfg))
-  expect_equal(as.character(file.info(cfg)$mode), "600")
+  expect_equal(as.character(file.info(cfg)$mode), "640")
   # capped at this machine, so an oversized request cannot end the run
   lim <- grep("resourceLimits", readLines(cfg), value = TRUE)
   expect_match(lim, sprintf("cpus: %d, memory: %d.GB", ps::ps_cpu_count(),

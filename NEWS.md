@@ -1,4 +1,4 @@
-# RiboPilot (development version)
+# RiboPilot 0.1.2
 
 ## Browser support
 
@@ -31,7 +31,14 @@
   match, red for off-target or non-rDNA, grey for no hit or not searched. In
   the contig window, clicking a block opens the Feature BLAST table.
 * Hovering the sequence viewer now shows only the value of the track under
-  the pointer, and its help moved behind a "?" icon in the controls row.
+  the pointer, and its help moved behind a "?" icon beside the viewer title.
+* Contigs that are both locked and excluded have their own red lock icon, sort
+  position, and Lock filter option.
+
+## Assemble
+
+* The annotate and curate option links grey out when the sample's annotation
+  is locked, like the other option links do for a locked assembly.
 
 ## Export
 
@@ -46,6 +53,8 @@
   a sliver of their rows in Safari: the horizontal scrollbar covered the
   last row and a vertical scrollbar appeared. Tables that size to their rows
   now include the bar.
+* A new project's `.config` file is readable by your group (mode 0640, was
+  0600), so others in the group can work with a shared project.
 
 ## GenBank BLAST check
 
