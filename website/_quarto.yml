@@ -25,14 +25,41 @@ website:
     left:
       - text: Installation
         href: articles/Installation.Rmd
+      # one entry per page of the matching sidebar below; keep the two in step
       - text: Tutorial
-        href: articles/RiboPilot.Rmd
+        menu:
+          - text: 0. Get started
+            href: articles/RiboPilot.Rmd
+          - text: 1. Taxonomy
+            href: articles/Test-Project-Taxonomy.Rmd
+          - text: 2. Reference
+            href: articles/Test-Project-Reference.Rmd
+          - text: 3. Assemble
+            href: articles/Test-Project-Assemble.Rmd
+          - text: 4. Annotation Review
+            href: articles/Test-Project-Annotate.Rmd
+          - text: 5. Export
+            href: articles/Test-Project-Export.Rmd
       - text: User Guide
-        href: articles/Your-Own-Project.Rmd
+        menu:
+          - articles/Your-Own-Project.Rmd
+          - articles/Reference-Databases.Rmd
+          - articles/Assembly-Methods.Rmd
+          - articles/Curation-Flags.Rmd
+          - articles/GenBank-Submission.Rmd
       - text: Metadata
-        href: articles/Sample-Metadata.Rmd
+        menu:
+          - articles/Sample-Metadata.Rmd
+          - articles/Metadata-Linking.Rmd
+          - articles/NMNH-Vouchers.Rmd
+          - articles/Metadata-Reference.Rmd
       - text: HPC
-        href: articles/Clusters.Rmd
+        menu:
+          - articles/Clusters.Rmd
+          - articles/Caches-and-Offline.Rmd
+          - text: "---"
+          - articles/NMNH-Hydra.Rmd
+          - articles/NOAA-SEDNA.Rmd
       - text: Help
         href: articles/Troubleshooting.Rmd
     right:
