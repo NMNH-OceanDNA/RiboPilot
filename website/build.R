@@ -20,7 +20,7 @@ for (f in list.files(file.path(w, "articles"), "\\.Rmd$", full.names = TRUE)) {
 }
 file.copy("man/figures", file.path(w, "man"), recursive = TRUE)
 file.copy(c("pkgdown/extra.css", "pkgdown/favicon/favicon.ico"), w, overwrite = TRUE)
-writeLines(c("---", "title: News", "---", "", "{{< include ../../NEWS.md >}}"),
+writeLines(c("---", "title: News", "shift-heading-level-by: 1", "---", "", "{{< include ../../NEWS.md >}}"),
            file.path(w, "news", "index.qmd"))
 
 # function reference: pkgdown renders, we keep only the page content
