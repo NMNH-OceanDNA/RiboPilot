@@ -208,7 +208,10 @@ app_server <- function(input, output, session) {
            LEFT JOIN preprocess pp ON s.ID = pp.ID
          WHERE s.taxonomy_lock = 1") |> with_checks("sample")
     } else if (mode == "Export") {
-      app_query(EXPORT_STEP_SQL)
+      d <- app_query(EXPORT_STEP_SQL)
+      con <- app_con(); on.exit(DBI::dbDisconnect(con))
+      d$partial <- c("complete", "partial")[unit_is_partial(con, d) + 1L]
+      d
     } else {
       # annotate shows one row per non-ignored assembly UNIT of an assembly-locked
       # sample (one (ID, path, scaffold) each, annotated independently). Contig
@@ -227,7 +230,7 @@ app_server <- function(input, output, session) {
            v.blast_source,
            v.n_flags, v.curate_flags, v.itsx_warnings, v.genbank_check, sc.screen_verdict,
            ch.label AS chimera_label, ch.reason AS chimera_reason, an.reviewed,
-           an.problematic, an.partial, an.annotate_notes,
+           an.problematic, NULL AS partial, an.annotate_notes,
            an.export_group,", UNIT_EXPORTED_SQL, ", an.time_stamp,
            'details' AS details, 'output' AS output
          FROM annotate an
@@ -255,6 +258,7 @@ app_server <- function(input, output, session) {
       d$annotate_switch[st$state %in% "not run" & st$has_copy %in% 0] <- 0L
       d$check_state <- ifelse(st$state %in% "done", NA_character_, review_state_text(st$state))
       d$check_note <- st$check_note
+      d$partial <- c("complete", "partial")[unit_is_partial(con, d) + 1L]
       d
     }
   })
@@ -338,8 +342,8 @@ app_server <- function(input, output, session) {
       reviewed = cd("reviewed", html = TRUE, align = "center", cell = rt_bool_badge(hide_no = TRUE)),
       problematic = cd("problematic", width = 110, html = TRUE, align = "center",
         cell = rt_bool_badge(hide_no = TRUE, yes_tone = "warning")),
-      partial = cd("partial", width = 80, html = TRUE, align = "center",
-        cell = rt_bool_badge(yes_tone = "warning", no_tone = "success")),
+      partial = cd("partial", width = 130, html = TRUE, align = "center",
+        cell = rt_pill(c(complete = "success", partial = "warning"), empty = "")),
       n_flags = cd("n_flags", width = 100, html = TRUE, filterable = FALSE, align = "center",
         cell = rt_gated(rt_flag_badge())),
       annotate_notes = cd("annotate_notes", minWidth = 160, html = TRUE, class = "mp-note-cell", cell = rt_longtext()),
@@ -967,7 +971,6 @@ app_server <- function(input, output, session) {
     if (any(lk)) mp_toast(sprintf("Left %s unchanged: unlock before changing marks.",
       mp_n(sum(lk), "locked contig")), type = "warning")
   })
-  observeEvent(input$partial_btn, toolbar_flag("partial"))
 
   # ---- batch Trim / Restore on ticked units ----
   # A trim or restore rewrites the unit's review copy, so it ends any
@@ -2925,9 +2928,12 @@ app_server <- function(input, output, session) {
   modal_flags <- reactive({
     refresh()
     u <- sel_unit(); req(u)
-    a <- app_query("SELECT reviewed, problematic, partial, annotate_lock FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?",
+    edit_tick()
+    a <- app_query("SELECT reviewed, problematic, annotate_lock FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?",
       params = uargs())
     req(nrow(a) == 1)
+    con <- app_con(); on.exit(DBI::dbDisconnect(con))
+    a$partial <- unit_is_partial(con, as.data.frame(u[c("ID", "path", "scaffold")]))
     a
   })
   output$modal_status_badges <- renderUI({
@@ -2940,7 +2946,8 @@ app_server <- function(input, output, session) {
     tagList(
       pill("Reviewed", a$reviewed[1]),
       pill("Excluded", a$problematic[1], yes_tone = "warning"),
-      pill("Partial", a$partial[1], yes_tone = "warning"))
+      if (!is.na(a$partial[1])) span(class = paste0("mp-pill mp-pill-", if (a$partial[1]) "warning" else "success"),
+        if (a$partial[1]) "Partial" else "Complete"))
   })
   output$modal_status_toggles <- renderUI({
     a <- modal_flags()
@@ -2956,8 +2963,7 @@ app_server <- function(input, output, session) {
     }
     tagList(
       toggle_btn("reviewed"),
-      toggle_btn("problematic", tone = "warning"),
-      toggle_btn("partial", tone = "warning"))
+      toggle_btn("problematic", tone = "warning"))
   })
 
   # active feature's unit-sequence coords + context
@@ -3420,7 +3426,6 @@ app_server <- function(input, output, session) {
     rp_toast(paste0("1 contig ", MP_FLAG_WORDS$problematic[["did_set"]], "."), type = "message")
     showModal(annotate_modal(u$ID, u$path, u$scaffold))
   })
-  observeEvent(input$mark_partial, modal_flag_toggle("partial"))
   # A locked unit is read only in this window (MitoPilot's lock_blocked()).
   lock_blocked <- function() {
     lk <- app_query("SELECT annotate_lock FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?",

@@ -173,7 +173,7 @@ test_that("bundle file contents are exactly as specified", {
         "\"missing\",\"reviewed\",\"partial\",\"problematic\",\"variant_class\",",
         "\"variant_group\",\"variant_identity\",\"n_variants\",\"submission_risk\",\"chimera_warning\",",
         "\"itsx_check\",\"genbank_check\""),
-      paste0("\"S2\",\"S2\",1,1,\"Genus speciesB\",400,2,\"\",\"yes\",\"no\",\"no\",NA,NA,NA,NA,\"\",\"\",",
+      paste0("\"S2\",\"S2\",1,1,\"Genus speciesB\",400,2,\"\",\"yes\",\"yes\",\"no\",NA,NA,NA,NA,\"\",\"\",",
         "\"\",\"not_run(not checked)\"")))
 })
 

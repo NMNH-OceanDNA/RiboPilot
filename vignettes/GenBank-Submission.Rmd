@@ -122,8 +122,8 @@ the feature table, and "partial sequence" in the definition line) when:
 
 Your own choice always wins: the **5'** and **3'** buttons under **Partial** in
 the contig window (check **Edit**, pick the feature, then **Save**) can be used 
-to override RiboPilot. **Mark Partial** on the contig only changes `{completeness}` to "partial
-sequence"; it does not mark any gene end.
+to override RiboPilot. The **Completeness** column in the Annotate table reads
+"complete" only when all five features are present and no gene end is partial.
 
 # Flanking sequence
 

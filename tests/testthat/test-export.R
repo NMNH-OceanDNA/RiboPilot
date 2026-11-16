@@ -88,7 +88,7 @@ test_that("unit_trimmed reads the kept window of the review copy", {
   expect_equal(RiboPilot:::unit_trimmed(mem, "S1", 1L, 1L), c(FALSE, FALSE))
 })
 
-test_that("a unit marked partial changes only the completeness wording", {
+test_that("a contig is complete only with all five features and no partial end", {
   con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
   on.exit(DBI::dbDisconnect(con))
   DBI::dbExecute(con, "CREATE TABLE samples(ID TEXT, Taxon TEXT)")
@@ -98,14 +98,22 @@ test_that("a unit marked partial changes only the completeness wording", {
     start INT, stop INT, partial_start INT, partial_stop INT)")
   DBI::dbExecute(con, "CREATE TABLE assemblies(ID TEXT, path INT, scaffold INT, sequence TEXT, length INT, topology TEXT)")
   DBI::dbExecute(con, "INSERT INTO samples VALUES('S1','Genus species')")
-  DBI::dbExecute(con, "INSERT INTO annotate VALUES('S1',1,1,1,'','yes','yes',NULL)")
-  DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',1,1, ?, 500, 'linear')", params = list(strrep("A", 500)))
-  DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,1,'18S','rRNA',100,260,0,0)")
+  # full: all five inside; cut: 28S runs to the contig end; short: 18S only; raw: not annotated
+  DBI::dbExecute(con, "INSERT INTO annotate VALUES('S1',1,1,5,'','yes','yes',NULL), ('S1',1,2,5,'','no','yes',NULL),
+    ('S1',1,3,1,'ITS1,5.8S,ITS2,28S','no','yes',NULL), ('S1',1,4,NULL,NULL,'no','no',NULL)")
+  el <- c("18S", "ITS1", "5.8S", "ITS2", "28S")
+  for (sc in 1:4) DBI::dbExecute(con, "INSERT INTO assemblies VALUES('S1',1,?, ?, 600, 'linear')",
+    params = list(sc, strrep("A", 600)))
+  for (sc in 1:2) for (k in 1:5) DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,?,?,'rRNA',?,?,NULL,NULL)",
+    params = list(sc, el[k], k * 100L + 1L, k * 100L + 100L - (sc == 1 && k == 5)))
+  DBI::dbExecute(con, "INSERT INTO annotations VALUES('S1',1,3,'18S','rRNA',100,260,0,0)")
   fixture_review_schema(con)
-  expect_match(RiboPilot:::feature_table_text_con(con, "S1"), "\n100\t260\trRNA")
-  h <- RiboPilot:::export_header_data(con, data.frame(ID = "S1", path = 1L, scaffold = 1L, seqid = "S1"))
-  expect_equal(h$completeness, "partial sequence")
-  expect_equal(h$rrna_definition, "18S ribosomal RNA gene, complete sequence.")
+  u <- data.frame(ID = "S1", path = 1L, scaffold = c(3L, 1L, 4L, 2L))
+  expect_equal(RiboPilot:::unit_is_partial(con, u), c(TRUE, FALSE, NA, TRUE))
+  # the old hand mark no longer changes the wording
+  h <- RiboPilot:::export_header_data(con, cbind(u[1:2, ], seqid = c("a", "b")))
+  expect_equal(h$completeness, rep("complete sequence", 2))
+  expect_equal(h$partial, c("yes", "no"))
 })
 
 test_that("a partial end is exported partial, in the feature table and the defline", {

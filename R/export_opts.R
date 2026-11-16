@@ -140,15 +140,13 @@ export_header_data <- function(con, units) {
       "SELECT length, topology, n_features, missing FROM review_units_v WHERE ID = ? AND path = ? AND scaffold = ?",
       params = list(id, p, s))
     ann <- DBI::dbGetQuery(con,
-      "SELECT partial, reviewed, export_group
+      "SELECT reviewed, export_group
          FROM annotate WHERE ID = ? AND path = ? AND scaffold = ?",
       params = list(id, p, s))
     feat <- DBI::dbGetQuery(con, paste("SELECT element, start, stop, strand,", REVIEW_EFF_PARTIALS,
       "FROM review_annotations_v WHERE ID = ? AND path = ? AND scaffold = ? ORDER BY start"),
       params = list(id, p, s))
     seq_len_bp <- if (nrow(asm)) asm$length[1] else NA_integer_
-    unit_partial <- isTRUE(nrow(ann) > 0 && identical(ann$partial[1], "yes"))
-    # A unit marked partial changes only the completeness wording.
     ends <- partial_ends(feat, seq_len_bp, unit_trimmed(con, id, p, s))
     part <- ends$p5 | ends$p3
     extra <- data.frame(
@@ -157,13 +155,13 @@ export_header_data <- function(con, units) {
       topology = if (nrow(asm)) asm$topology[1] else NA_character_,
       n_features = if (nrow(asm)) asm$n_features[1] else NA_integer_,
       missing = if (nrow(asm)) asm$missing[1] else NA_character_,
-      partial = if (nrow(ann)) ann$partial[1] else NA_character_,
+      partial = c("no", "yes")[unit_is_partial(con, data.frame(ID = id, path = p, scaffold = s)) + 1L],
       reviewed = if (nrow(ann)) ann$reviewed[1] else NA_character_,
       export_group = if (nrow(ann)) ann$export_group[1] else NA_character_,
       seqid = units$seqid[i],
       organism = export_organism(smp$Taxon %||% NA, smp$sci_name %||% NA,
         smp$match_type %||% NA, smp$rank %||% NA),
-      completeness = if (unit_partial || any(part)) "partial sequence" else "complete sequence",
+      completeness = if (any(part)) "partial sequence" else "complete sequence",
       elements = paste(feat$element, collapse = "-"),
       rrna_definition = rrna_definition_text(feat$element, part),
       stringsAsFactors = FALSE)

@@ -102,7 +102,7 @@ app_ui <- function(request) {
               btn("annot_state_btn", "State", title = "Set the pipeline state of the selected contigs",
                 needs_selection = TRUE),
               btn("annot_lock_btn", "Lock", title = MP_LOCK_DEF("annotate"), needs_selection = TRUE),
-              mark("reviewed"), mark("problematic"), mark("partial"),
+              mark("reviewed"), mark("problematic"),
               btn("annot_trim_btn", "Trim", icon = mp_icon("scissors"),
                 title = MP_TRIM_TIP()[["trim"]], needs_selection = TRUE),
               btn("annot_restore_btn", "Restore", icon = mp_icon("rotate-left"),

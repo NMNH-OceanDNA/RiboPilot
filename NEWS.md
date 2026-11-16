@@ -6,6 +6,14 @@
   Safari has known display and interaction issues and suggests Chrome or
   Firefox.
 
+## Annotate
+
+* The Partial column is now Completeness and is worked out automatically: a
+  contig is "complete" when all five features are present and no gene end is
+  partial, otherwise "partial". It can be sorted and filtered. The Mark
+  Partial buttons are gone; set a gene end with the 5' and 3' buttons in the
+  contig window instead. The `{partial}` export token follows the same rule.
+
 ## Export
 
 * Assign Group now offers the groups that already exist, and warns when a

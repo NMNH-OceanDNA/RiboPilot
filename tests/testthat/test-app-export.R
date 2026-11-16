@@ -695,12 +695,12 @@ test_that("Restore deletes the copy and keeps the marks; a contig without a copy
     expect_length(asked, 0)
 
     # marks write annotate only and never make a copy
-    session$setInputs(mark_partial = 1)
+    session$setInputs(mark_reviewed = 1)
     expect_equal(copies(), 0)
     session$setInputs(trim_from = 10, trim_to = 420, trim_apply = 1)
     expect_equal(copies(), 1)
     before <- marks()
-    expect_equal(before$partial, "yes")
+    expect_equal(before$reviewed, "no")
 
     active_feature("18S")
     session$setInputs(feat_edit = TRUE)
