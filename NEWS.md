@@ -6,6 +6,13 @@
   Safari has known display and interaction issues and suggests Chrome or
   Firefox.
 
+## Export
+
+* Assign Group now offers the groups that already exist, and warns when a
+  selected contig is already in another group.
+* Clear Group asks for confirmation first.
+* The Export table has an Exported filter (Yes / No).
+
 ## Fixes
 
 * Tables in the Run reports, Assemble, and other detail windows showed only

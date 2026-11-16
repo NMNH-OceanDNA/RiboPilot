@@ -527,7 +527,8 @@ app_server <- function(input, output, session) {
     reactable::getReactableState("tbl", "page")), tbl_stale <<- FALSE, ignoreInit = TRUE)
   observeEvent(refresh(), push_tbl(reactable::getReactableState("tbl", "page")), ignoreInit = TRUE)
   observeEvent(list(input$Assemble_lock_filter, input$Assemble_state_filter,
-    input$Annotate_lock_filter, input$Annotate_state_filter), push_tbl(), ignoreInit = TRUE)
+    input$Annotate_lock_filter, input$Annotate_state_filter, input$Export_exported_filter),
+    push_tbl(), ignoreInit = TRUE)
 
   # ---- open the details modal when an ID cell is clicked ----
   observeEvent(input$open_detail, {
@@ -658,6 +659,10 @@ app_server <- function(input, output, session) {
   visible_mask <- reactive({
     d <- all_rows()
     keep <- rep(TRUE, nrow(d))
+    ef <- input$Export_exported_filter
+    if (identical(input$mode, "Export") && !is.null(ef) && "exported" %in% names(d)) {
+      return(as.character(as.integer(grepl("^exported ", d$exported))) %in% ef)
+    }
     f <- active_filters()
     if (is.null(f) || nrow(d) == 0) {
       return(keep)
@@ -1019,8 +1024,14 @@ app_server <- function(input, output, session) {
   # ---- Export group actions ----
   observeEvent(input$assign_group_btn, {
     if (!need_selection(length(selected_ids()))) return()
-    showModal(group_modal())
+    show_group_modal()
   })
+  show_group_modal <- function() {
+    grp <- function(x) sort(unique(x[!is.na(x) & nzchar(x)]))
+    sel <- selected_rows()
+    showModal(group_modal(grp(all_rows()$export_group),
+      grp(samples_data()$export_group[sel]), length(sel)))
+  }
   pending_group <- reactiveVal(NULL)
   do_assign_group <- function(u, groups) {
     if (!app_write(assign_export_group(app_project(), u, groups))) return()
@@ -1072,11 +1083,25 @@ app_server <- function(input, output, session) {
   })
   observeEvent(input$group_back, {
     pending_group(NULL)
-    showModal(group_modal())
+    show_group_modal()
   })
   observeEvent(input$clear_group_btn, {
     u <- selected_units()
     if (!need_selection(NROW(u))) return()
+    g <- samples_data()$export_group[selected_rows()]
+    if (!any(!is.na(g) & nzchar(g))) {
+      return(mp_toast("None of the selected contigs are in an export group.", type = "warning"))
+    }
+    clear_pending(u)
+    mp_confirm("clear_group_confirm", title = "Clear export group",
+      text = paste0(mp_n(nrow(u), "contig"), if (nrow(u) == 1) " leaves its" else " leave their",
+        " export group. Files already written for that group are not removed."),
+      action_label = "Clear group")
+  })
+  clear_pending <- reactiveVal(NULL)
+  observeEvent(input$clear_group_confirm, {
+    u <- clear_pending(); clear_pending(NULL)
+    if (!isTRUE(input$clear_group_confirm) || is.null(u)) return()
     if (!app_write(clear_export_group(app_project(), u))) return()
     refresh(refresh() + 1)
     mp_toast(paste0("Group cleared for ", mp_n(nrow(u), "contig"), "."))

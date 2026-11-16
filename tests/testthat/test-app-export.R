@@ -1156,3 +1156,29 @@ test_that("Export writes only the done contig and its done dialog counts the one
   expect_length(done, 1)
   expect_match(done, "1 contig left out: checks not finished.", fixed = TRUE)
 })
+
+test_that("Clear Group asks first, and the Exported filter narrows the table", {
+  skip_if_not_installed("withr")
+  dir <- mk_export_project()
+  withr::local_dir(dir)
+  con <- DBI::dbConnect(RSQLite::SQLite(), file.path(dir, ".sqlite"))
+  DBI::dbExecute(con, "UPDATE annotate SET export_group = 'g1', export_time_stamp = 1")
+  DBI::dbDisconnect(con)
+  grp <- function() RiboPilot:::app_query("SELECT export_group FROM annotate")$export_group
+  shiny::testServer(RiboPilot:::app_server, {
+    session$setInputs(mode = "Export")
+    session$flushReact()
+    expect_equal(nrow(samples_data()), 1)
+    session$setInputs(Export_exported_filter = "0")
+    expect_equal(nrow(samples_data()), 0)
+    session$setInputs(Export_exported_filter = c("1", "0"))
+
+    session$setInputs(tbl__reactable__selected = 1)
+    session$setInputs(clear_group_btn = 1)
+    session$flushReact()
+    expect_equal(grp(), "g1")
+    session$setInputs(clear_group_confirm = TRUE)
+    session$flushReact()
+    expect_true(is.na(grp()))
+  })
+})
