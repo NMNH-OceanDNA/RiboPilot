@@ -326,16 +326,17 @@ rt_ncbi_link <- function() {
 #' @param title optional tooltip naming the action. Without it the tooltip
 #'   echoes the cell value, which is noise.
 #' @noRd
-rt_link <- function(InputId, title = NULL, lock_col = NULL) {
+rt_link <- function(InputId, title = NULL, lock_col = NULL,
+                    lock_how = "Select the row and press Unlock to change them.") {
   tip <- if (is.null(title)) "${cellInfo.value}" else mp_js_attr(title)
   # On a locked row the cell is plain text: the click falls through to row
   # selection instead of silently doing nothing (theme T01).
   locked <- if (is.null(lock_col)) "" else sprintf(
     "var lk = (cellInfo.row || {})['%s'];
                 if (lk == 1) {
-                  return `<span class='mp-locked-cell' title='Locked - options are set to ${cellInfo.value}. Select the row and press Unlock to change them.'>${cellInfo.value}</span>`;
+                  return `<span class='mp-locked-cell' title='Locked - options are set to ${cellInfo.value}. %s'>${cellInfo.value}</span>`;
                 }",
-    lock_col
+    lock_col, mp_js_attr(lock_how)
   )
   sprintf(
     "function(cellInfo) {

@@ -66,7 +66,7 @@
   'use strict';
   var G = window.rpseq.geom;
   var MAX_PPB = 14, NT_LETTER = 8, NT_BAR = 3;
-  var RULER_H = 22, LANE_H = 22, NT_H = 20, GUTTER = 100, PAD = 4, COV_H = 60, CLIP_H = 36, IDENT_H = 36, ORIGIN_H = 18, GAP = 12;
+  var RULER_H = 22, LANE_H = 22, NT_H = 20, GUTTER = 100, PAD = 4, COV_H = 60, CLIP_H = 36, IDENT_H = 36, ORIGIN_H = 18, GAP = 12, FB_GAP = 24;
   var DIFF_H = 14, ROW_GAP = 10, DIFF_RED = '#c0392b', GAP_INK = '#888888';
   var BASE = { A: '#4faf45', C: '#e0a53f', G: '#e0555a', T: '#4a90d9', N: '#666666' };
   var viewers = {}, last = {};
@@ -202,7 +202,7 @@
   Viewer.prototype.height = function () {
     if (this.rows) return this.alignHeight();
     return this.chimY() + (this.identOn() ? IDENT_H + GAP : 0) + (this.originOn() ? ORIGIN_H + GAP : 0) +
-      (this.fblastOn() ? ORIGIN_H + GAP : 0);
+      (this.fblastOn() ? ORIGIN_H + FB_GAP : 0);
   };
   // align mode: y of each row's first lane; the nt strip sits under its lanes
   Viewer.prototype.rowTop = function (i) {
@@ -234,9 +234,11 @@
     if (this.ntOn()) this.drawNt(c, this.topH() + this.nLanes * LANE_H + PAD);
     y = this.chimY();
     var self = this, segColor = function (pos) { var o = self.originAt(pos); return o ? o.color : '#9e9e9e'; };
-    if (this.identOn()) { this.drawTrack(c, W, y, IDENT_H, this.ident, 100, 'BLAST %id', false, { vmin: 70, colorAt: segColor, stroke: cssVar('--rp-ident-stroke', '#4d4d4d') }); y += IDENT_H + GAP; }
+    if (this.fblastOn()) { this.drawFblast(c, W, y); y += ORIGIN_H + FB_GAP; }
+    var g0 = y;
+    if (this.identOn()) { this.drawTrack(c, W, y, IDENT_H, this.ident, 100, '%id', false, { vmin: 70, colorAt: segColor, stroke: cssVar('--rp-ident-stroke', '#4d4d4d') }); y += IDENT_H + GAP; }
     if (this.originOn()) { this.drawOrigin(c, W, y); y += ORIGIN_H + GAP; }
-    if (this.fblastOn()) { this.drawFblast(c, W, y); y += ORIGIN_H + GAP; }
+    if (y > g0) this.drawWindowGroup(c, g0, y - GAP);
     this.drawJunctions(c, H);
   };
   Viewer.prototype.drawRuler = function (c) {
@@ -421,7 +423,7 @@
       if (lab) { c.fillStyle = '#333'; c.fillText(lab, (x0 + x1) / 2, y + ORIGIN_H / 2); }
     }, this);
     c.fillStyle = cssVar('--mp-text-muted', '#6a6a6a'); c.textAlign = 'right';
-    c.fillText('BLAST origin', GUTTER - 6, y + ORIGIN_H / 2, GUTTER - 10);
+    c.fillText('taxon', GUTTER - 6, y + ORIGIN_H / 2, GUTTER - 10);
   };
   // One rect per feature in the tone of its own BLAST result
   var TONES = { success: ['#e3f3e6', '#2e7d32'], warning: ['#fdf0d9', '#b9770e'], danger: ['#fbe3e0', '#c0392b'], neutral: ['#ededed', '#6a6a6a'] };
@@ -437,7 +439,7 @@
       if (x1 - x0 > c.measureText(s.row).width + 8) { c.fillStyle = fg; c.fillText(s.row, (x0 + x1) / 2, y + ORIGIN_H / 2); }
     }, this);
     c.fillStyle = cssVar('--mp-text-muted', '#6a6a6a'); c.textAlign = 'right';
-    c.fillText('Feature BLAST', GUTTER - 6, y + ORIGIN_H / 2, GUTTER - 10);
+    c.fillText('feature BLAST', GUTTER - 6, y + ORIGIN_H / 2, GUTTER - 10);
   };
   // Which track is at this height; a track owns the gap above it
   Viewer.prototype.trackAt = function (py) {
@@ -446,14 +448,23 @@
     if (this.clipOn()) { bands.push(['clip', y]); y += CLIP_H + GAP; }
     bands.push(['genes', y]);
     y = this.chimY();
+    if (this.fblastOn()) { bands.push(['fblast', y]); y += ORIGIN_H + FB_GAP; }
     if (this.identOn()) { bands.push(['ident', y]); y += IDENT_H + GAP; }
-    if (this.originOn()) { bands.push(['origin', y]); y += ORIGIN_H + GAP; }
-    if (this.fblastOn()) bands.push(['fblast', y]);
+    if (this.originOn()) bands.push(['origin', y]);
     for (var i = bands.length - 1; i >= 0; i--) if (py >= bands[i][1] - GAP / 2) return bands[i][0];
     return null;
   };
   Viewer.prototype.fblastAt = function (pos) {
     return (this.fblast || []).find(function (s) { return pos >= s.pos1 && pos <= s.pos2; }) || null;
+  };
+  // The sliding-window BLAST tracks share one name, on a bracket to their left
+  Viewer.prototype.drawWindowGroup = function (c, y0, y1) {
+    var x = GUTTER - 50, mid = (y0 + y1) / 2, col = cssVar('--mp-text-muted', '#6a6a6a');
+    c.save(); c.strokeStyle = col; c.lineWidth = 1;
+    c.beginPath(); c.moveTo(x + 4, y0 + 0.5); c.lineTo(x + 0.5, y0 + 0.5); c.lineTo(x + 0.5, y1 - 0.5); c.lineTo(x + 4, y1 - 0.5); c.stroke();
+    c.fillStyle = col; c.textAlign = 'right'; c.textBaseline = 'middle';
+    c.fillText('window', x - 5, mid - 7); c.fillText('BLAST', x - 5, mid + 7);
+    c.restore();
   };
   Viewer.prototype.drawJunctions = function (c, H) {
     if (!this.junctions) return;
@@ -571,8 +582,8 @@
       if (tr === 'cov' && self.depth[b.pos - 1] !== null) t += ' | depth ' + self.depth[b.pos - 1];
       else if (tr === 'clip' && self.clip[b.pos - 1] !== null) t += ' | clipped ' + (self.clip[b.pos - 1] * 100).toFixed(0) + '%';
       else if (tr === 'genes' && h) t += ' | ' + h.f.gene + ' ' + h.f.pos1.toLocaleString() + '-' + h.f.pos2.toLocaleString() + ' (' + h.f.dir + ')';
-      else if (tr === 'ident' && self.ident[b.pos - 1] !== null) t += ' | BLAST id ' + self.ident[b.pos - 1].toFixed(1) + '%';
-      else if (tr === 'origin' && o) t += ' | ' + originText(o);
+      else if (tr === 'ident' && self.ident[b.pos - 1] !== null) t += ' | window BLAST id ' + self.ident[b.pos - 1].toFixed(1) + '%';
+      else if (tr === 'origin' && o) t += ' | window BLAST taxon: ' + originText(o);
       else if (tr === 'fblast' && fb) t += ' | ' + fb.text;
       // a block is a link where its table is on the page
       var link = tr === 'fblast' && fb && !!document.getElementById('feature_blast_tbl');

@@ -1,7 +1,8 @@
 # CLI help + inline option help for the opts modals. Mirrors MitoPilot's
 # help_utils.R: a muted one-line hint under a field (opts_help), and a "?" icon
 # that toggles an in-place popover with a tool's bundled `--help` text
-# (tool_help_icon + register_tool_help), read from inst/tool_help/<tool>.txt.
+# (tool_help_icon), read from inst/tool_help/<tool>.txt. Both "?" kinds share
+# the .mp-help-icon look and are opened and closed in custom.js.
 
 #' Brief inline help text shown directly under an options-modal field
 #' @noRd
@@ -49,10 +50,12 @@ tool_help_icon <- function(tool,
   panel_id <- paste0("help_panel_", tool)
   shiny::tags$span(
     style = "position: relative; display: inline-block;",
-    shiny::actionLink(
-      ns(input_id), label = NULL, icon = shiny::icon("circle-question"),
-      title = paste("Show", label, "documentation"),
-      style = "color: #888; margin-left: 4px;"
+    # a span, not a button: shinyjs::disabled() on a field would switch a button off
+    shiny::tags$span(
+      role = "button", tabindex = "0", id = ns(input_id), class = "mp-help-icon",
+      `data-toggle` = "mp-tool-help", `aria-expanded` = "false",
+      `aria-label` = paste("Show", label, "documentation"),
+      shiny::tags$i(class = "fa-solid fa-circle-question", `aria-hidden` = "true")
     ),
     shiny::tags$div(
       id = ns(panel_id), class = "rp-tool-help-popover",
@@ -72,18 +75,6 @@ tool_help_icon <- function(tool,
   )
 }
 
-#' Register an observer that toggles a tool-help popover when its icon is
-#' clicked. Call once per tool_help_icon() in the server.
-#' @noRd
-register_tool_help <- function(tool, input,
-                               session = shiny::getDefaultReactiveDomain()) {
-  input_id <- paste0("help_", tool)
-  panel_id <- paste0("help_panel_", tool)
-  shiny::observeEvent(input[[input_id]], ignoreInit = TRUE, {
-    shinyjs::toggle(id = session$ns(panel_id))
-  })
-}
-
 #' Small "?" icon that opens a help popover on click or keyboard focus
 #'
 #' The one help affordance: a grey `circle-question` always means "click for
@@ -94,18 +85,26 @@ register_tool_help <- function(tool, input,
 #' @param text help text, one or two sentences (HTML allowed).
 #' @param label optional name of the thing being explained, used in the
 #'   accessible name.
-#' @return a focusable button carrying the popover content.
+#' @return a focusable element carrying the popover content.
 #' @noRd
 mp_help_tip <- function(text, label = NULL) {
   name <- if (is.null(label)) "Show help" else paste("Show help for", label)
-  shiny::tags$button(
-    type = "button",
+  # a span, not a button: shinyjs::disabled() on a field would switch a button off
+  shiny::tags$span(
+    role = "button", tabindex = "0",
     class = "mp-help-icon",
     `data-toggle` = "mp-popover",
     `data-content` = as.character(text),
     `aria-label` = name,
     shiny::tags$i(class = "fa-solid fa-circle-question", `aria-hidden` = "true")
   )
+}
+
+#' Help popover content as a short bullet list
+#' @param ... one string (or tag) per bullet.
+#' @noRd
+mp_help_bullets <- function(...) {
+  as.character(shiny::tags$ul(class = "mp-help-list", lapply(list(...), shiny::tags$li)))
 }
 
 #' A field or column label with a help popover beside it

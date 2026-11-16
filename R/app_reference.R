@@ -263,12 +263,14 @@ SETTINGS_HEAD <- "font-weight:600; margin:2px 0 6px;"
 reference_settings_modal <- function(cfg, blastdb_version = "") {
   shiny::modalDialog(
     title = "Reference settings", size = "l",
-    shiny::h5("Reference database folder", style = SETTINGS_HEAD),
+    shiny::h5(style = SETTINGS_HEAD, "Reference database folder", mp_help_tip(label = "the reference folder", mp_help_bullets(
+      "Shared by every project that points here.",
+      "Changing it does not move existing databases; existing groups keep working."))),
     shiny::textInput("ref_dir_path", NULL, width = "100%", value = cfg$ref_dir),
-    opts_help("Databases built here are reused by every project pointed at this ",
-      "folder, including a shared drive. Changing it does not move databases ",
-      "already built, and groups already wired keep working."),
-    shiny::h5("GenBank records per suggested clade", style = paste0(SETTINGS_HEAD, " margin-top:18px;")),
+    shiny::h5(style = paste0(SETTINGS_HEAD, " margin-top:18px;"), "GenBank records per suggested clade",
+      mp_help_tip(label = "records per clade", mp_help_bullets(
+        "Propose groups climbs each sample's lineage to the first clade with at least the minimum.",
+        "Under the minimum: too few records for good seeds. Over the maximum: seeds too broad for your organism."))),
     # these two are read as a pair, so they sit side by side; naming the measure
     # once in the heading is what lets the labels be one word each
     shiny::div(style = "display:flex; gap:1.25em;",
@@ -276,19 +278,11 @@ reference_settings_modal <- function(cfg, blastdb_version = "") {
         min = 1, step = 100, width = "150px"),
       shiny::numericInput("ref_max", "Maximum", value = cfg$max_records,
         min = 1, step = 1000, width = "150px")),
-    opts_help("Propose groups climbs each sample's lineage and stops at the first ",
-      "clade holding at least the minimum. Below that there is too little published ",
-      "sequence to seed an assembly; past the maximum a clade is so broad that its ",
-      "seeds stop being specific to your organism."),
-    shiny::h5("Local rDNA database for the BLAST screen", style = SETTINGS_HEAD),
-    shiny::div(
-      style = "font-size:0.85em; color:#666; margin-bottom:0.4em;",
-      "Path prefix of a downloaded rDNA database, without a file extension. ",
-      "Leave empty and RiboPilot uses the bundled rDNA database in the container, ",
-      "or one installed on this computer; with neither, it searches NCBI. ",
-      "To search NCBI instead, choose NCBI only (core_nt) under Search in BLAST Options; the ",
-      "environment variable RIBOPILOT_NO_LOCAL_BLAST=1 does the same for every ",
-      "project when set before launching the app."),
+    shiny::h5(style = paste0(SETTINGS_HEAD, " margin-top:18px;"), "Local rDNA database for the BLAST screen",
+      mp_help_tip(label = "the local rDNA database", mp_help_bullets(
+        "Path prefix of a downloaded rDNA database, no file extension.",
+        "Empty: uses the bundled database, else one installed here, else NCBI.",
+        "To force NCBI: choose NCBI only (core_nt) in BLAST Options, or set RIBOPILOT_NO_LOCAL_BLAST=1 before launching."))),
     shiny::textInput("ref_blastdb_path", NULL, width = "100%",
       value = cfg$blastdb %||% "",
       placeholder = "/data/blastdb/2026.08.18/ribopilot_rrna"),

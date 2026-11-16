@@ -54,16 +54,16 @@ seqview_ui <- function(prefix, summary, open = TRUE, pick = TRUE, mode = c("unit
     `aria-label` = "Go to position")
   box <- function(x, label) tags$label(class = "rp-seqview-check",
     tags$input(type = "checkbox", id = id(x), checked = NA), label)
-  help <- if (mode == "unit") mp_help_tip(label = "the sequence viewer", as.character(
-    tags$ul(style = "margin:0; padding-left:18px;",
-      tags$li(paste0("Drag to pan, scroll to zoom", if (pick) ", click a gene to select it",
-        ". Hover a track for its value.")),
-      tags$li(sprintf("Clipped reads: share of reads soft-clipped (depth 10 or more); orange at %d%%, the chimera cutoff.",
-        round(100 * CHIMERA_CLIP_FRAC))),
-      tags$li("BLAST origin: grey is your lineage, white no hit, other colours foreign. Dashed line: possible junction."),
-      tags$li("BLAST identity: best hit per window, coloured like the origin."),
-      tags$li("Feature BLAST: green OK, orange weak or low confidence, red off-target or non-rDNA, ",
-        "grey no hit or not searched. In Annotation Review, click a block for its table."))))
+  help <- if (mode == "unit") mp_help_tip(label = "the sequence viewer", mp_help_bullets(
+      paste0("Drag to pan, scroll to zoom", if (pick) ", click a gene to select it",
+        ". Hover a track for its value."),
+      sprintf("Clipped reads: share of reads soft-clipped (depth 10 or more); orange at %d%%, the chimera cutoff.",
+        round(100 * CHIMERA_CLIP_FRAC)),
+      paste("Feature BLAST: each feature searched whole. Green OK, orange weak or low confidence, red off-target",
+        "or non-rDNA, grey no hit or not searched. In Annotation Review, click a block for its table."),
+      "Window BLAST: the contig searched in 150 bp sliding windows, for the chimera check.",
+      "Window BLAST taxon: grey is your lineage, white no hit, other colours foreign. Dashed line: possible junction.",
+      "Window BLAST %id: best hit per window, coloured like the taxon track."))
   controls <- if (mode == "align") div(class = "rp-seqview-controls",
       goto,
       btn("whole", "Whole alignment"),
@@ -81,13 +81,13 @@ seqview_ui <- function(prefix, summary, open = TRUE, pick = TRUE, mode = c("unit
       btn("zoom_out", NULL, icon("magnifying-glass-minus"), "Zoom out"),
       btn("copy", "Copy sequence", title = "Copy the bases in view as FASTA"),
       box("show_cov", "Coverage"), box("show_clip", "Clipped reads"),
-      box("show_ident", "BLAST identity"), box("show_origin", "BLAST origin"),
-      box("show_fblast", "Feature BLAST"), box("show_nt", "Nucleotides"), help)
+      box("show_fblast", "Feature BLAST"),
+      box("show_ident", "Window BLAST identity"), box("show_origin", "Window BLAST taxon"), box("show_nt", "Nucleotides"))
   body <- tagList(controls,
     div(class = if (mode == "align") "rp-seqview rp-seqview-align" else "rp-seqview",
       tags$canvas(id = id("canvas"), class = "rp-seqview-canvas"),
       tags$div(id = id("tip"), class = "rp-seqview-tip", hidden = NA)))
-  if (is.null(summary)) div(body) else rp_details(summary, open = open, body)
+  if (is.null(summary)) div(body) else rp_details(tagList(summary, help), open = open, body)
 }
 
 #' Send one unit to a viewer

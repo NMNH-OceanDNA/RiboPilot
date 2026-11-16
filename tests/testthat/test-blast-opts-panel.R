@@ -276,7 +276,7 @@ test_that("Entrez shows whenever a search can reach NCBI, and says so", {
   # neither: no search reaches NCBI, so the filter is irrelevant
   expect_match(sub("(?s).*id=\"bo_entrez_group\"", "", mk(0L, 0L), perl = TRUE),
     hidden, fixed = TRUE)
-  expect_match(mk(0L, 1L), "any search that goes to NCBI")
+  expect_match(mk(0L, 1L), "Applies to NCBI searches only")
   expect_false(grepl("remote BLAST only", mk(0L, 1L), fixed = TRUE))
 })
 

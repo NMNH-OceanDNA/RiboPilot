@@ -243,9 +243,8 @@ specimen_csv_map_ui <- function(ns, current, overrides, choices) {
     class = "mp-spec-map",
     tags$summary("Mapping file columns..."),
     opts_help(
-      "Pick the mapping-file column RiboPilot compares for each item. Leave a ",
-      "box empty to detect the column automatically, or pick (none) to skip ",
-      "that item. Coordinates take one combined column, or latitude then longitude.",
+      "Empty: column detected automatically. (none): skip the item. ",
+      "Coordinates: one combined column, or latitude then longitude.",
       nested = TRUE
     ),
     lapply(concepts, function(k) {
