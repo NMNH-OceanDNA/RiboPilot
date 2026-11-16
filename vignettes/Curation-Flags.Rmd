@@ -162,8 +162,8 @@ RiboPilot looks for chimeras in four ways:
 
 In the **Coverage and windowed BLAST** panel:
 
-- **BLAST origin** shows segments with consistent taxonomic identity
-- **BLAST identity** shows the best hit's percent identity
+- **Window BLAST taxon** shows segments with consistent taxonomic identity
+- **Window BLAST identity** shows the best hit's percent identity
 - vertical red dashed lines mark possible chimeric junctions
 
 The **Windowed BLAST details** panel below provides more details about the

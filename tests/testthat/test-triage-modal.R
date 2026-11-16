@@ -34,8 +34,8 @@ test_that("drop is offered only on the combination rules", {
 
 test_that("the legend explains both counts without jargon", {
   html <- as.character(RiboPilot:::triage_modal(1, RiboPilot:::triage_actions_default()))
-  expect_match(html, "first one that matches decides whether to drop or flag", fixed = TRUE)
-  expect_match(html, "even if a higher-priority rule acts on it first", fixed = TRUE)
+  expect_match(html, "the first match decides", fixed = TRUE)
+  expect_match(html, "even if an earlier rule acts first", fixed = TRUE)
 })
 
 test_that("the modal no longer offers a depth control", {

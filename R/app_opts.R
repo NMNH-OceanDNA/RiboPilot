@@ -39,9 +39,8 @@ opts_modal_shell <- function(title, n, name_row, ..., update_id) {
   shiny::modalDialog(
     title = mp_modal_title(paste(title, "for", mp_n(n, "sample"))), size = "m",
     name_row,
-    opts_help("Reusable named set applied to the selected samples; check Edit to ",
-      "change values, or type a new name to create a set.",
-      " Saving queues the selected samples for the next Update."),
+    opts_help("Reusable named set; type a new name to create one. ",
+      "Saving queues the selected samples for the next Update."),
     ...,
     footer = mp_footer(primary = shiny::actionButton(update_id, "Save")))
 }
@@ -93,16 +92,15 @@ assemble_opts_modal <- function(cur, choices, n) {
     # help line is appended INSIDE its input's container, so hiding the input
     # takes its help with it; a standalone help paragraph would be left behind.
     shiny::div(class = "mp-opts-section",
-      shiny::div(style = "font-weight:bold; margin-bottom:8px;", "Assembler"),
+      shiny::div(style = "font-weight:bold; margin-bottom:8px;", mp_help_label("Assembler", mp_help_bullets(
+        "GetOrganelle: primary assembler.",
+        "SPAdes baited: fallback; assembles only reads that map to the seed database.",
+        "SPAdes de-novo: fallback; assembles every read.",
+        "Both fallbacks keep contigs that match the label database."))),
       shinyjs::disabled(shiny::selectInput("ao_assembler", label = NULL,
         choices = ASSEMBLER_CHOICES,
         selected = (cur$assembler %||% "getorganelle") %|NA|% "getorganelle",
         width = "100%")),
-      opts_help("GetOrganelle is the primary assembler. The SPAdes fallbacks are ",
-        "for samples it cannot assemble: 'baited' maps reads to the seed database ",
-        "and assembles only what maps, 'de-novo' assembles every read. Both keep ",
-        "the contigs that match the label database. The options below belong to ",
-        "the selected assembler."),
       shiny::tagAppendChild(
         shinyjs::disabled(shiny::textInput("ao_getorg",
           shiny::tagList("GetOrganelle options", tool_help_icon("getOrganelle")),
@@ -132,14 +130,11 @@ assemble_opts_modal <- function(cur, choices, n) {
     shiny::div(class = "mp-opts-section",
       shiny::div(style = "font-weight:bold; margin-bottom:8px;", "Supplied assemblies"),
       shinyjs::disabled(shiny::checkboxInput("ao_findrrna",
-        "Search the supplied assembly for nuclear rDNA contigs",
-        value = ((cur$find_rrna %||% 1) %|NA|% 1) == 1)),
-      opts_help("Applies only to samples with an assembly in the mapping file. ",
-        "The assembly is scanned for rRNA genes and the contigs carrying an 18S ",
-        "or 28S anchor go on through the pipeline; the rest are recorded and ",
-        "left behind. Turn this off to use the file exactly as supplied, which ",
-        "is what a single ITS-only fragment needs, since it carries no anchor ",
-        "to find.", id = "help_ao_findrrna")),
+        mp_help_label("Search the supplied assembly for nuclear rDNA contigs", mp_help_bullets(
+          "Only for samples with an assembly in the mapping file.",
+          "On: contigs with an 18S or 28S anchor go through; the rest are recorded and left behind.",
+          "Off: the file is used as supplied. Needed for a single ITS-only fragment.")),
+        value = ((cur$find_rrna %||% 1) %|NA|% 1) == 1))),
     # the Reference tab writes these two paths when it wires a clade database;
     # showing them here is the only place a preset's database is visible
     shiny::div(class = "mp-opts-section",
@@ -153,16 +148,13 @@ assemble_opts_modal <- function(cur, choices, n) {
         "builds or reuses one for this group.", id = "help_ao_refdb")),
     shiny::div(style = "display:flex; gap:2em;",
       shiny::div(style = "flex:1", shinyjs::disabled(shiny::numericInput("ao_minlen",
-        "Min assembly length (bp):", value = cur$min_assembly_length %|NA|% 0, min = 0, width = "100%"))),
+        mp_help_label("Min assembly length (bp):", paste("Shorter contigs are dropped from the sample but kept in",
+          "the database. Lower the value to bring them back without re-assembling.")), value = cur$min_assembly_length %|NA|% 0, min = 0, width = "100%"))),
       shiny::div(style = "flex:1", shinyjs::disabled(shiny::numericInput("ao_maxpaths",
-        "Max paths:", value = cur$max_paths %|NA|% 0, min = 0, width = "100%"))),
+        mp_help_label("Max paths:", "A sample with more assembly paths than this fails. 0 = no limit."), value = cur$max_paths %|NA|% 0, min = 0, width = "100%"))),
       shiny::div(style = "flex:1", shinyjs::disabled(shiny::numericInput("ao_maxscaf",
-        "Max contigs:", value = cur$max_scaffolds %|NA|% 0, min = 0, width = "100%")))),
-    opts_help("Contigs under the minimum length are dropped from the sample but ",
-      "kept in the database, so lowering the limit brings them back without ",
-      "re-assembling. Max paths and max contigs (counted within one path) are ",
-      "different: exceeding either fails the whole sample. 0 means no limit.",
-      id = "help_ao_limits"),
+        mp_help_label("Max contigs:", "A sample with more contigs in one path than this fails. 0 = no limit."),
+        value = cur$max_scaffolds %|NA|% 0, min = 0, width = "100%")))),
     update_id = "update_ao")
 }
 
@@ -243,19 +235,17 @@ blast_opts_modal <- function(cur, choices, n) {
       value = (cur$run_blast %|NA|% 1) == 1, status = "primary")),
     panel_note_box(list(known = cur$panel_known %|NA|% FALSE,
       text = cur$panel_note %|NA|% "")),
-    shinyjs::disabled(shiny::radioButtons("bo_source", "Search:",
+    shinyjs::disabled(shiny::radioButtons("bo_source", mp_help_label("Search:", mp_help_bullets(
+        "Bundled database: very fast, works offline.",
+        "NCBI: slow, rate limited, needs internet where the pipeline runs.",
+        "Escalating to NCBI catches contaminants and off-target contigs the bundled database cannot name.")),
       choices = BLAST_SOURCE_CHOICES, selected = source, width = "100%")),
-    opts_help("The bundled database answers in milliseconds; NCBI is far slower, ",
-      "rate limited, and needs an internet connection from wherever the pipeline ",
-      "runs. Escalating catches contaminants and off-target contigs, the things ",
-      "a metazoan rDNA database has no record of."),
     shiny::div(id = "bo_entrez_group",
       style = if (reaches_ncbi) NULL else "display:none;",
       shinyjs::disabled(shiny::textAreaInput("bo_entrez",
         shiny::tagList("Entrez query", tool_help_icon("blastn")),
         value = cur$entrez_query %|NA|% "", width = "100%", height = "90px")),
-      opts_help("NCBI filter, applied to any search that goes to NCBI, including ",
-        "an escalated contig. The bundled database cannot use it.")),
+      opts_help("Applies to NCBI searches only.")),
     shiny::div(style = "display:flex; gap:2em;",
       shiny::div(style = "flex:2", shinyjs::disabled(shiny::textInput("bo_extra",
         "Extra blastn options:", value = cur$extra_opts %|NA|% "", width = "100%"))),
@@ -281,16 +271,15 @@ annotate_opts_modal <- function(cur, choices, n) {
           shiny::span(id = "no_help_pybarrnap", tool_help_icon("pybarrnap")),
           shiny::span(id = "no_help_barrnap", tool_help_icon("barrnap"))),
         choices = c("pybarrnap", "barrnap"), selected = tool, width = "100%"))),
-      shiny::div(style = "flex:1", shinyjs::disabled(shiny::selectInput("no_kingdom", "Kingdom:",
+      shiny::div(style = "flex:1", shinyjs::disabled(shiny::selectInput("no_kingdom",
+        mp_help_label("Kingdom:", "Values differ by tool. pybarrnap: bac, arc, euk, all. barrnap: bac, arc, fun."),
         choices = kingdoms, selected = cur$rrna_kingdom %|NA|% "euk", width = "100%")))),
-    opts_help("pybarrnap (default) is a euk-capable barrnap reimplementation. ",
-      "Kingdom values differ by tool (pybarrnap: bac/arc/euk/all; barrnap: bac/arc/fun)."),
+    opts_help("pybarrnap handles eukaryotes; barrnap does not."),
     shinyjs::disabled(shiny::textInput("no_pybarrnap", "Extra pybarrnap options:",
       value = cur$pybarrnap_opts %|NA|% "", width = "100%")),
     shinyjs::disabled(shiny::textInput("no_barrnap", "Extra barrnap options:",
       value = cur$barrnap_opts %|NA|% "", width = "100%")),
-    opts_help("Flags for the selected tool only; kingdom and threads are set by the pipeline. ",
-      "The two tools take different flags (see the ? icon next to the tool name)."),
+    opts_help("For the selected tool only. Kingdom and threads are set by the pipeline."),
     shiny::div(style = "display:flex; gap:2em;",
       shiny::div(style = "flex:1", shinyjs::disabled(shiny::textInput("no_itsxtaxon",
         shiny::tagList("ITSx profile set (-t)", tool_help_icon("ITSx")),
@@ -341,12 +330,6 @@ opts_handlers <- function(input, output, session, deps) {
   )
   targets <- shiny::reactiveVal(character(0))   # sample IDs the open modal applies to
   cur_row <- shiny::reactiveVal(NULL)           # base opts row (full, for new-set copy)
-
-  # CLI-help popovers
-  for (tl in c("fastp", "getOrganelle", "bowtie2", "spades", "blastn", "pybarrnap",
-               "barrnap", "ITSx")) {
-    register_tool_help(tl, input, session = session)
-  }
 
   # show only the selected assembler's tool options
   toggle_assembler_fields <- function(assembler) {

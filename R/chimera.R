@@ -413,7 +413,7 @@ chimera_junction_table <- function(junctions, channels) {
     p <- j[i]
     who <- names(ch)[vapply(ch, function(x) near(x$junctions, p), logical(1))]
     why <- character(0)
-    if ("genes" %in% who) why <- c(why, paste0("The genes' own BLAST hits disagree: ", ch$genes$reason, "."))
+    if ("genes" %in% who) why <- c(why, paste0("The features' own BLAST hits disagree: ", ch$genes$reason, "."))
     if ("windows" %in% who) why <- c(why, paste0("BLAST windows switch lineage here: ", ch$windows$reason, "."))
     if ("reads" %in% who) {
       r <- ch$reads$reason %||% ""
@@ -426,7 +426,7 @@ chimera_junction_table <- function(junctions, channels) {
     }
     if (identical(who, "reads")) why <- c(why,
       "Only read evidence points here; read evidence alone gives a minor call at most.")
-    out$checks[i] <- paste(who, collapse = ", ")
+    out$checks[i] <- paste(sub("^genes$", "features", who), collapse = ", ")
     out$why[i] <- paste(why, collapse = " ")
   }
   out

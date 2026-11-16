@@ -6,6 +6,16 @@
   Safari has known display and interaction issues and suggests Chrome or
   Firefox.
 
+## Help
+
+* Longer help text across the app moved behind "?" icons and was shortened:
+  options windows, export window, NMNH voucher report, details windows, triage,
+  trim, reference settings, and the cluster job script.
+* Every "?" icon now looks and behaves the same: click to open, one open at a
+  time, closes on click away or Escape. Tool documentation keeps its wide
+  scrolling panel.
+* The Chimera check panel says "features" where it said "genes".
+
 ## Annotate
 
 * The Partial column is now Completeness and is worked out automatically: a
@@ -13,7 +23,10 @@
   partial, otherwise "partial". It can be sorted and filtered. The Mark
   Partial buttons are gone; set a gene end with the 5' and 3' buttons in the
   contig window instead. The `{partial}` export token follows the same rule.
-* The sequence viewer has a Feature BLAST track under the BLAST origin band:
+* The two sliding-window BLAST tracks in the sequence viewer are now labeled
+  "window" (Window BLAST identity, Window BLAST taxon), grouped by a bracket, to tell them apart
+  from Feature BLAST.
+* The sequence viewer has a Feature BLAST track above the window BLAST tracks:
   one block per feature, green for OK, orange for a weak or low-confidence
   match, red for off-target or non-rDNA, grey for no hit or not searched. In
   the contig window, clicking a block opens the Feature BLAST table.

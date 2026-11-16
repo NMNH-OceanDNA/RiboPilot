@@ -47,8 +47,7 @@ app_server <- function(input, output, session) {
     showModal(modalDialog(
       title = "Sample output / work directories", size = "l", easyClose = TRUE,
       tags$p(class = "text-muted", style = "font-size:12px; margin-bottom:0.75em;",
-        "Nextflow task work directories for the chosen sample (failed attempts included). ",
-        "Use these to inspect intermediate + output files or troubleshoot a failed process."),
+        "Nextflow work folders for this sample, failed attempts included."),
       shinyWidgets::pickerInput("wd_sample", "Sample", choices = ids, selected = presel,
         options = list(`live-search` = TRUE)),
       div(style = "max-height:60vh; overflow:auto;", reactable::reactableOutput("wd_tbl")),
@@ -174,6 +173,8 @@ app_server <- function(input, output, session) {
               ORDER BY an.path, an.scaffold LIMIT 1) AS annotate_opts,
            (SELECT an.curate_opts FROM annotate an WHERE an.ID = s.ID
               ORDER BY an.path, an.scaffold LIMIT 1) AS curate_opts,
+           -- any locked contig locks the sample's annotation options (app_opts.R)
+           (SELECT MAX(an.annotate_lock) FROM annotate an WHERE an.ID = s.ID) AS ann_locked,
            a.paths, a.length,
            -- unit counts come from `assemblies` so they stay live as scaffolds
            -- are kept/dropped. a.blast_* is not selected: nothing writes it (the
@@ -316,6 +317,7 @@ app_server <- function(input, output, session) {
       nrow(unique(a[, c("ID", "path", "scaffold")])) > length(unique(a$ID))
 
     cd <- function(f, ...) reactable::colDef(name = mp_col_name(f), header = mp_col_header(f), ...)
+    ANN_LOCK_HOW <- "Unlock the contigs in Annotation Review to change them."
     cols <- list(
       ID = cd("ID", width = mp_fit_width(a$ID), sticky = "left", html = TRUE, cell = rt_link("open_detail")),
       path = cd("path", width = 70, align = "center", show = multi_unit, html = TRUE,
@@ -386,11 +388,12 @@ app_server <- function(input, output, session) {
         cell = rt_link("set_assemble_opts", lock_col = "assemble_lock")),
       blast_opts = cd("blast_opts", minWidth = 100, html = TRUE, filterable = FALSE,
         cell = rt_link("set_blast_opts", lock_col = "assemble_lock")),
-      # guarded by the annotation lock on click (app_opts.R), not the assembly lock
+      # locked by the annotation lock (app_opts.R), not the assembly lock
       annotate_opts = cd("annotate_opts", minWidth = 120, html = TRUE, filterable = FALSE,
-        cell = rt_link("set_annotate_opts")),
+        cell = rt_link("set_annotate_opts", lock_col = "ann_locked", lock_how = ANN_LOCK_HOW)),
       curate_opts = cd("curate_opts", minWidth = 100, html = TRUE, filterable = FALSE,
-        cell = rt_link("set_curate_opts")),
+        cell = rt_link("set_curate_opts", lock_col = "ann_locked", lock_how = ANN_LOCK_HOW)),
+      ann_locked = reactable::colDef(show = FALSE),
       annotate_lock = cd("annotate_lock", width = 34, align = "center", filterable = FALSE,
         html = TRUE, cell = rt_lock_icon()),
       notes = cd("notes", minWidth = 160, html = TRUE, class = "mp-note-cell", cell = rt_longtext()),
@@ -1681,16 +1684,15 @@ app_server <- function(input, output, session) {
     nmnh_ready_ids(r$ID[r$ok & !r$not_nmnh])
     nmnh_typed(list())
     showModal(modalDialog(
-      title = mp_modal_title("NMNH voucher report", close = FALSE), size = "xl",
+      title = mp_modal_title(tagList("NMNH voucher report", mp_help_tip(label = "the NMNH voucher report", mp_help_bullets(
+        "Type in a cell to fix a value. Saved with this project; your mapping file is not changed.",
+        "Clear a cell to restore the automatic value.",
+        "Pick a field under a cell to use another metadata field.",
+        "Not NMNH: values are used as found, without checks.",
+        "A missing value leaves its modifier out of the header."))), close = FALSE), size = "xl",
       p(class = "mp-fg-warning", icon("triangle-exclamation"),
         " NMNH records should not be submitted to GenBank without both a ",
         tags$code("specimen_voucher"), " and a ", tags$code("voucherURI"), "."),
-      opts_help("Type a value into a cell to fix it. It is checked when you leave the ",
-        "cell and saved with this project's NMNH values; your mapping file is not ",
-        "changed. Clear a cell to go back to the automatic value. Pick a field under a ",
-        "cell to take that value from another metadata field. Tick Not NMNH for samples ",
-        "that are not NMNH specimens: their values are used as found, without checks. ",
-        "A missing value leaves its modifier out of the header."),
       div(class = "mp-nmnh-fields", "Fields to pick from: mapping-file columns and the metadata ",
         "fields ticked for export. ", actionLink("nmnh_choose_fields", "Choose fields"),
         tags$br(), "Not NMNH: ", actionLink("nmnh_flag_all", "Select all"), " | ",

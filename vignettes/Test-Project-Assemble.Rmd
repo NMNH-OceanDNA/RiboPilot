@@ -120,7 +120,7 @@ The BLAST evidence shows that the best overall match is a *Penicillium* mold:
 ![CHIM01's BLAST evidence, with its best match a Penicillium mold](figures/get-started/assemble-details-chim01.png)
 
 The **Coverage and windowed BLAST** viewer shows more detail about the chimeric sequence.
-In the **BLAST origin** track, segments are colored by BLAST taxonomic match (gray is
+In the **Window BLAST taxon** track, segments are colored by BLAST taxonomic match (gray is
 the sample's own lineage, yellow in this case represents the mold sequence).
 A dashed red line marks approximate position of the join between the fish
 and the mold sequences, near 2,625 bp. You can hover over the track to see more details. 

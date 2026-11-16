@@ -108,11 +108,15 @@ p.mp-help-text { margin: 2px 0 6px; }
   border: none;
   padding: 0;
   line-height: 1;
+  cursor: pointer;
 }
 .mp-help-icon:hover,
 .mp-help-icon:focus {
   color: var(--mp-primary);
 }
+.popover { max-width: 380px; font-weight: normal; }
+.mp-help-list { margin: 0; padding-left: 18px; }
+.mp-help-list li + li { margin-top: 3px; }
 
 /* Flag toggle buttons carry the tone of the pill they set. */
 .mp-btn-success, .mp-btn-success:hover, .mp-btn-success:focus {
