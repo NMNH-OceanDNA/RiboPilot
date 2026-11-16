@@ -175,3 +175,21 @@ main table.state-table > thead > tr > th {
   padding-bottom: 4px !important;
   border-bottom: 1px solid var(--bs-border-color, #dee2e6);
 }
+
+/* Phones: wide tables scroll inside the page, long inline code wraps. */
+@media (max-width: 576px) {
+  main table {
+    display: block;
+    overflow-x: auto;
+  }
+}
+main :not(pre) > code {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+.nav-page {
+  min-width: 0;
+}
+.nav-page .pagination-link {
+  overflow-wrap: anywhere;
+}
