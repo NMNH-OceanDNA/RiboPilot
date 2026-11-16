@@ -204,3 +204,21 @@ test_that("chimera_origin copes with stored segments that have no species column
   expect_equal(o$origin[[1]]$species, "")
   expect_equal(o$origin[[1]]$color, "#FFFFFF")
 })
+
+test_that("feature BLAST blocks take the feature's span and the warning column's tone and words", {
+  f <- data.frame(element = c("18S", "ITS1", "5.8S", "28S"), start = c(1L, 41L, 61L, 101L), stop = c(40L, 60L, 100L, 200L))
+  fb <- data.frame(element = c("28S", "18S", "ITS1", "5.8S", "ITS2"),
+    status = c("off_target", "ok", "ok", "too_small", "ok"),
+    task = c("megablast", "megablast", "dc-megablast", NA, "megablast"), low_conf = c(0L, 0L, 0L, 0L, 0L),
+    species = c("Bug bug", "Genus species", "Genus other", NA, "Genus species"),
+    lineage = c("Eukaryota;Metazoa;Arthropoda;Insecta", NA, NA, NA, NA),
+    pident = c(91.23, 99.5, 88, NA, 99), qcovs = c(80, 100, 95, NA, 100))
+  b <- RiboPilot:::seqview_feature_blast(fb, f)
+  expect_equal(vapply(b, `[[`, "", "row"), c("18S", "ITS1", "5.8S", "28S"))   # ITS2 has no feature
+  expect_equal(vapply(b, `[[`, "", "tone"), c("success", "warning", "neutral", "danger"))
+  expect_equal(c(b[[4]]$pos1, b[[4]]$pos2), c(101L, 200L))
+  expect_equal(b[[1]]$text, "18S feature BLAST: OK, Genus species 99.5% id, 100% cov")
+  expect_match(b[[2]]$text, "weak hit")
+  expect_match(b[[4]]$text, "off-target", fixed = TRUE)
+  expect_null(RiboPilot:::seqview_feature_blast(NULL, f))
+})

@@ -13,6 +13,12 @@
   partial, otherwise "partial". It can be sorted and filtered. The Mark
   Partial buttons are gone; set a gene end with the 5' and 3' buttons in the
   contig window instead. The `{partial}` export token follows the same rule.
+* The sequence viewer has a Feature BLAST track under the BLAST origin band:
+  one block per feature, green for OK, orange for a weak or low-confidence
+  match, red for off-target or non-rDNA, grey for no hit or not searched. In
+  the contig window, clicking a block opens the Feature BLAST table.
+* Hovering the sequence viewer now shows only the value of the track under
+  the pointer, and its help moved behind a "?" icon in the controls row.
 
 ## Export
 
