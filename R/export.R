@@ -207,18 +207,43 @@ risk_flags <- function(chimeric, ann, seq, chimera_label = NA_character_, chimer
 #' untrimmed unit, read in the row's own strand.
 #' @param d Annotation rows. @param seqlen Sequence length (NA: no end check).
 #' @param trimmed Is the unit's left / right end trimmed ([unit_trimmed()])? A
-#'   trimmed end is not an assembly end. One value covers both ends.
+#'   trimmed end is not an assembly end. One value covers both ends; a list of
+#'   two vectors gives each row its own.
 #' @return list(p5, p3) of logical vectors.
 #' @noRd
 partial_ends <- function(d, seqlen, trimmed = FALSE) {
   flag <- function(col) if (is.null(d[[col]])) rep(NA, nrow(d)) else d[[col]]
   trimmed <- rep_len(trimmed, 2)
-  left <- !trimmed[1] & d$start <= 1
-  right <- !trimmed[2] & !is.na(seqlen) & d$stop >= seqlen
+  left <- !trimmed[[1]] & d$start <= 1
+  right <- !trimmed[[2]] & !is.na(seqlen) & d$stop >= seqlen
   minus <- (d$strand %||% rep(NA, nrow(d))) %in% "-"
   eff <- function(f, auto) ifelse(is.na(f), auto, f %in% 1L)
   list(p5 = eff(flag("partial_start"), ifelse(minus, right, left)),
     p3 = eff(flag("partial_stop"), ifelse(minus, left, right)))
+}
+
+#' Is each contig partial? Read live from the review layer
+#'
+#' Partial: one of the five elements is missing, or any feature end is partial.
+#' @param units Rows with ID, path, scaffold.
+#' @return Logical, one per row of `units`; NA for a contig with no annotation.
+#' @noRd
+unit_is_partial <- function(con, units) {
+  if (nrow(units) == 0) return(logical(0))
+  q <- function(sql) tryCatch(DBI::dbGetQuery(con, sql), error = function(e) NULL)
+  u <- q("SELECT ID, path, scaffold, length, n_features, missing,
+    trim_start > 1 AS tl, trim_end < orig_length AS tr FROM review_units_v")
+  f <- q(paste("SELECT ID, path, scaffold, start, stop, strand,", REVIEW_EFF_PARTIALS,
+    "FROM review_annotations_v"))
+  if (is.null(u) || is.null(f)) return(rep(NA, nrow(units)))
+  ukey <- unit_key(u$ID, u$path, u$scaffold)
+  i <- match(unit_key(f$ID, f$path, f$scaffold), ukey)
+  e <- partial_ends(f, u$length[i], list(u$tl[i] %in% 1, u$tr[i] %in% 1))
+  cut_end <- seq_along(ukey) %in% i[which(e$p5 | e$p3)]
+  n_el <- length(c(RRNA_GENES, RRNA_SPACERS))
+  out <- ifelse(is.na(u$n_features), NA, 
+    u$n_features < n_el | !(u$missing %in% c("", NA)) | cut_end)
+  out[match(unit_key(units$ID, units$path, units$scaffold), ukey)]
 }
 
 #' Is each end of a unit trimmed? Read from the kept window of its review copy
@@ -477,14 +502,14 @@ export_summary_df <- function(con, units, review = FALSE) {
   }
   m <- fetch(if (review) {
     "SELECT s.ID, an.path, an.scaffold, v.length, v.n_features,
-       v.missing, an.reviewed, an.partial, an.problematic
+       v.missing, an.reviewed, an.problematic
      FROM samples s
      JOIN annotate an ON an.ID = s.ID
      JOIN review_units_v v ON v.ID = an.ID AND v.path = an.path AND v.scaffold = an.scaffold
      WHERE s.ID IN (%s)"
   } else {
     "SELECT s.ID, an.path, an.scaffold, asm.length, an.n_features,
-       an.missing, an.reviewed, an.partial, an.problematic
+       an.missing, an.reviewed, an.problematic
      FROM samples s
      JOIN annotate an ON an.ID = s.ID
      JOIN assemblies asm ON asm.ID = s.ID AND asm.path = an.path AND asm.scaffold = an.scaffold
@@ -549,7 +574,7 @@ export_summary_df <- function(con, units, review = FALSE) {
     n_features = pick(m, "n_features", NA_integer_),
     missing = pick(m, "missing", NA_character_),
     reviewed = pick(m, "reviewed", NA_character_),
-    partial = pick(m, "partial", NA_character_),
+    partial = c("no", "yes")[unit_is_partial(con, units) + 1L],
     problematic = pick(m, "problematic", NA_character_),
     variant_class = v$variant_class, variant_group = v$variant_group,
     variant_identity = v$variant_identity, n_variants = v$n_variants,
@@ -594,7 +619,7 @@ EXPORT_STEP_SQL <- paste(
      v.n_features, v.missing,
      v.n_flags, v.curate_flags, an.annotate_notes, v.itsx_warnings, sc.screen_verdict,
      ch.label AS chimera_label, ch.reason AS chimera_reason,
-     an.reviewed, an.partial, an.export_group,
+     an.reviewed, NULL AS partial, an.export_group,
      CASE WHEN COALESCE(v.check_switch, 1) != 2 THEN 'checks not finished, left out'
           WHEN an.export_time_stamp IS NULL THEN ''
           ELSE 'exported ' || date(an.export_time_stamp, 'unixepoch', 'localtime') END AS exported,

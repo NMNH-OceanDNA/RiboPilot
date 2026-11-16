@@ -298,7 +298,7 @@ MP_COL_NAMES <- c(
   match_type       = "Confidence",
   reviewed         = "Reviewed",
   problematic      = "Excluded",
-  partial          = "Partial",
+  partial          = "Completeness",
   checks           = "Checks",
   n_flags          = "Warnings",
   itsx_warnings    = "ITSx Warnings",
@@ -361,7 +361,7 @@ MP_COL_TIPS <- c(
   annotate_lock    = "Locked rows are finished with this step",
   reviewed         = "Checked by a curator; Lock and Export do not ask again about its contamination flags",
   problematic      = "Excluded contigs are left out of every export",
-  partial          = "A partial contig is described as 'partial sequence'; gene ends are partial at untrimmed contig ends, in truncated genes, and where a trim cut a gene, unless set with 5'/3' in the contig window",
+  partial          = "Complete: all five features are present and no gene end is partial. Gene ends are partial at untrimmed contig ends, in truncated genes, and where a trim cut a gene, unless set with 5'/3' in the contig window",
   path             = "Assembly path number for this contig. * = the sample keeps more than one path; type * in the filter to list them",
   scaffold         = "Contig number within the path. * = the sample keeps more than one contig in this path; type * in the filter to list them",
   sci_name         = "Taxon assigned from the NCBI taxdump",
@@ -438,9 +438,4 @@ MP_FLAG_WORDS <- list(
   problematic = c(set = "Exclude & Lock", clear = "Include in export",
     did_set = "excluded from export and locked", did_clear = "included in export again",
     tip = paste("Exclude & Lock leaves the contig out of every export and locks it as done.",
-      "The contig stays in the project; unlock it and include it again to export it.")),
-  partial = c(set = "Mark Partial", clear = "Clear Partial",
-    did_set = "marked partial", did_clear = "cleared of partial",
-    tip = paste("Export describes a partial contig as 'partial sequence'. Gene ends are",
-      "marked partial (< and >) at untrimmed contig ends, in truncated genes, and where",
-      "a trim cut a gene; the 5' and 3' buttons in the contig window override that.")))
+      "The contig stays in the project; unlock it and include it again to export it.")))
