@@ -70,7 +70,7 @@
   BLAST** column on the scaffold and Annotation Review tables, and at export:
   a `genbank_check` column in `<group>_summary.csv` and the HTML report, a
   count of flagged records in the Export done window, and a README section
-  with NCBI's wording and the reply to send gb-admin. See "The GenBank BLAST
+  with NCBI's wording. See "The GenBank BLAST
   check" in the GenBank Submission guide.
 * Most fish records trip both flags because the ITS database holds few fishes;
   the flags predict GenBank's reply, not a bad assembly.

@@ -174,23 +174,27 @@ are finished.
 | `not_run(not checked)` | No ITSx check is stored for the record. |
 | any other `not_run(...)` | Stored by an older RiboPilot version, for example `not_run(no ITSx output)`. |
 
-**The GenBank BLAST check.** Before GenBank assigns accessions, its rRNA/ITS curation runs a
-default megablast of each record against NCBI's `ITS_eukaryote_sequences` database and its
-eukaryote SSU/LSU rRNA database, and sends the submission back for review when the top hit
-covers under 75% of a record ("Query coverage is less than 75%") or aligns to it in more than
-one piece ("HSP_problem", a potential misassembly). RiboPilot runs the same two searches on each
-contig when it annotates it, and again when **Update** rechecks a trimmed or edited contig, and
-reports the result in the `genbank_check` column of `<group>_summary.csv`, in the Export done
-window (which names the flagged records), in README.txt (with the reply to send gb-admin), and
-in the **GenBank BLAST** column of the app. It only warns: nothing is removed, and nothing is
-gated on it.
+**The GenBank BLAST check.** Before assigning accessions, GenBank's rRNA/ITS curation searches
+each record (default megablast) against NCBI's `ITS_eukaryote_sequences` database and its
+eukaryote SSU/LSU rRNA database. It sends a submission back for review when the top hit:
+
+- covers under 75% of the record ("Query coverage is less than 75%"), or
+- aligns to it in more than one piece ("HSP_problem", a potential misassembly).
+
+RiboPilot runs the same two searches on each contig when it annotates it, and again when
+**Update** rechecks a trimmed or edited contig. The result appears in:
+
+- the **GenBank BLAST** column of the app,
+- the Export done window, which names the flagged records,
+- the `genbank_check` column of `<group>_summary.csv`, and
+- README.txt.
+
+It only warns. Nothing is removed, and nothing is gated on it.
 
 Expect these flags on most fish records, and on other groups the ITS database covers thinly. The
 database holds a few hundred fish records among 77,000 plant and fungal ones, so the top hit is a
 distant relative, the ITS spacers do not align to it, and the record splits into an 18S piece and
-a 5.8S piece. That is not evidence of a bad assembly. When GenBank sends such a submission back,
-reply to gb-admin that the records were reviewed with RiboPilot's checks and are believed
-correct; NCBI then runs further verification and proceeds. NCBI's copy of the database is newer
+a 5.8S piece. That is not evidence of a bad assembly. NCBI's copy of the database is newer
 than the one RiboPilot ships, so a record near 75% can be called differently.
 
 | Value | What it means |
