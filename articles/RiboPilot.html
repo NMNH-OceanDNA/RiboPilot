@@ -357,6 +357,9 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 
 </header>
 
+<div class="step-nav">
+<p><span class="step-label">Test project:</span> <span class="current">0. Get started</span> <a href="Test-Project-Taxonomy.html">1. Taxonomy</a> <a href="Test-Project-Reference.html">2. Reference</a> <a href="Test-Project-Assemble.html">3. Assemble</a> <a href="Test-Project-Annotate.html">4. Annotation Review</a> <a href="Test-Project-Export.html">5. Export</a></p>
+</div>
 <p>RiboPilot takes genome-skim reads and assembles a GenBank-ready record of the nuclear ribosomal DNA repeat (rDNA). Starting a project requires only a few R commands, everything else happens in a R Shiny app.</p>
 <p>If you use <a href="https://github.com/NMNH-OceanDNA/MitoPilot">MitoPilot</a>, this will feel familiar. RiboPilot has a similar layout, it takes the same mapping file, and it can run on the same samples. However, RiboPilot uses the <code>Taxon</code> column in the map file throughout the pipeline. Try to provide the species ID whenever possible, although higher level taxonomic groups should work too. See <a href="Your-Own-Project.html#the-mapping-file">Your own project</a>.</p>
 <p>This guide walks through the test project, a set of 12 samples that ships with RiboPilot: 10 fish genome skims and 2 synthetic samples made to test the checks. We recommend trying the test project before you start on your own data.</p>
@@ -423,7 +426,7 @@ Meaning
 <tbody>
 <tr>
 <td>
-<i class="fa fa-hourglass state-icon"></i> On hold
+<i class="bi bi-hourglass-split state-icon"></i> On hold
 </td>
 <td>
 Skipped by the next Update until you set it to Ready to run
@@ -431,7 +434,7 @@ Skipped by the next Update until you set it to Ready to run
 </tr>
 <tr>
 <td>
-<i class="fa fa-play state-icon"></i> Ready to run
+<i class="bi bi-play-fill state-icon"></i> Ready to run
 </td>
 <td>
 Queued: the next Update will process it
@@ -439,7 +442,7 @@ Queued: the next Update will process it
 </tr>
 <tr>
 <td>
-<i class="fa fa-circle-half-stroke state-icon"></i> In progress
+<i class="bi bi-circle-half state-icon"></i> In progress
 </td>
 <td>
 Being processed by the running pipeline
@@ -447,7 +450,7 @@ Being processed by the running pipeline
 </tr>
 <tr>
 <td>
-<i class="fa fa-circle-check state-icon"></i> Success
+<i class="bi bi-check-circle-fill state-icon"></i> Success
 </td>
 <td>
 Finished without errors
@@ -455,7 +458,7 @@ Finished without errors
 </tr>
 <tr>
 <td>
-<i class="fa fa-triangle-exclamation state-icon"></i> Failed
+<i class="bi bi-exclamation-triangle-fill state-icon"></i> Failed
 </td>
 <td>
 Open the sample’s details to see why and what to try next

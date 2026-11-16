@@ -854,88 +854,25 @@
     "text": "Opening the app in Safari now shows a warning on every launch that Safari has known display and interaction issues and suggests Chrome or Firefox.\n\n\n\n\n\nLonger help text across the app moved behind “?” icons and was shortened: options windows, export window, NMNH voucher report, details windows, triage, trim, reference settings, and the cluster job script.\nEvery “?” icon now looks and behaves the same: click to open, one open at a time, closes on click away or Escape. Tool documentation keeps its wide scrolling panel.\nThe Chimera check panel says “features” where it said “genes”.\n\n\n\n\n\nThe Partial column is now Completeness and is worked out automatically: a contig is “complete” when all five features are present and no gene end is partial, otherwise “partial”. It can be sorted and filtered. The Mark Partial buttons are gone; set a gene end with the 5’ and 3’ buttons in the contig window instead. The {partial} export token follows the same rule.\nThe two sliding-window BLAST tracks in the sequence viewer are now labeled “window” (Window BLAST identity, Window BLAST taxon), grouped by a bracket, to tell them apart from Feature BLAST.\nThe sequence viewer has a Feature BLAST track above the window BLAST tracks: one block per feature, green for OK, orange for a weak or low-confidence match, red for off-target or non-rDNA, grey for no hit or not searched. In the contig window, clicking a block opens the Feature BLAST table.\nHovering the sequence viewer now shows only the value of the track under the pointer, and its help moved behind a “?” icon beside the viewer title.\nContigs that are both locked and excluded have their own red lock icon, sort position, and Lock filter option.\n\n\n\n\n\nThe annotate and curate option links grey out when the sample’s annotation is locked, like the other option links do for a locked assembly.\n\n\n\n\n\nAssign Group now offers the groups that already exist, and warns when a selected contig is already in another group.\nClear Group asks for confirmation first.\nThe Export table has an Exported filter (Yes / No).\n\n\n\n\n\nTables in the Run reports, Assemble, and other detail windows showed only a sliver of their rows in Safari: the horizontal scrollbar covered the last row and a vertical scrollbar appeared. Tables that size to their rows now include the bar.\nA new project’s .config file is readable by your group (mode 0640, was 0600), so others in the group can work with a shared project.\n\n\n\n\n\nA new check predicts the two BLAST flags GenBank’s rRNA/ITS curation raises before it assigns accessions: top-hit query coverage under 75% (“Query coverage is less than 75%”) and a top hit aligned in more than one piece (“HSP_problem”). RiboPilot runs NCBI’s own searches (default megablast against ITS_eukaryote_sequences and the SSU/LSU eukaryote rRNA sets) on each contig in the annotation step and again on the recheck, and stores the result as genbank_check. It reproduces NCBI’s reply exactly on the ten records of SUB16547976.\nThe result shows in the Checks column (amber, never a gate), in a GenBank BLAST column on the scaffold and Annotation Review tables, and at export: a genbank_check column in &lt;group&gt;_summary.csv and the HTML report, a count of flagged records in the Export done window, and a README section with NCBI’s wording. See “The GenBank BLAST check” in the GenBank Submission guide.\nMost fish records trip both flags because the ITS database holds few fishes; the flags predict GenBank’s reply, not a bad assembly.\nThe check needs ITS_eukaryote_sequences beside the panel. rDNA panel 2026.08.18.2 ships it and is included in the 0.1.2 container image. With an older panel every contig stores not_run(no ITS_eukaryote_sequences database).\nProject database version 7: genbank_check columns on annotate and review_units. Contigs already locked keep not_run(not checked) until they are unlocked and rechecked.\n\n\n\n\n\nThe rDNA BLAST panel is 2026.08.18.2. The rDNA sequences are the same as in 2026.08.18.1; this release adds NCBI’s ITS_eukaryote_sequences database for the GenBank BLAST check and refreshes the NCBI 16S and taxonomy databases shipped beside the panel.\n\n\n\n\n\nclear_ref_cache() deletes the cached reference data in the shared reference folder (clade databases, record counts, and stored reference sequences). It affects every project that uses the folder, so it lists what it found, asks you to type clear, and refuses to run from a script. The BLAST panel and container images are left alone."
   },
   {
-    "objectID": "news/index.html#browser-support",
-    "href": "news/index.html#browser-support",
+    "objectID": "news/index.html#ribopilot-0.1.2",
+    "href": "news/index.html#ribopilot-0.1.2",
     "title": "News",
     "section": "",
-    "text": "Opening the app in Safari now shows a warning on every launch that Safari has known display and interaction issues and suggests Chrome or Firefox."
+    "text": "Opening the app in Safari now shows a warning on every launch that Safari has known display and interaction issues and suggests Chrome or Firefox.\n\n\n\n\n\nLonger help text across the app moved behind “?” icons and was shortened: options windows, export window, NMNH voucher report, details windows, triage, trim, reference settings, and the cluster job script.\nEvery “?” icon now looks and behaves the same: click to open, one open at a time, closes on click away or Escape. Tool documentation keeps its wide scrolling panel.\nThe Chimera check panel says “features” where it said “genes”.\n\n\n\n\n\nThe Partial column is now Completeness and is worked out automatically: a contig is “complete” when all five features are present and no gene end is partial, otherwise “partial”. It can be sorted and filtered. The Mark Partial buttons are gone; set a gene end with the 5’ and 3’ buttons in the contig window instead. The {partial} export token follows the same rule.\nThe two sliding-window BLAST tracks in the sequence viewer are now labeled “window” (Window BLAST identity, Window BLAST taxon), grouped by a bracket, to tell them apart from Feature BLAST.\nThe sequence viewer has a Feature BLAST track above the window BLAST tracks: one block per feature, green for OK, orange for a weak or low-confidence match, red for off-target or non-rDNA, grey for no hit or not searched. In the contig window, clicking a block opens the Feature BLAST table.\nHovering the sequence viewer now shows only the value of the track under the pointer, and its help moved behind a “?” icon beside the viewer title.\nContigs that are both locked and excluded have their own red lock icon, sort position, and Lock filter option.\n\n\n\n\n\nThe annotate and curate option links grey out when the sample’s annotation is locked, like the other option links do for a locked assembly.\n\n\n\n\n\nAssign Group now offers the groups that already exist, and warns when a selected contig is already in another group.\nClear Group asks for confirmation first.\nThe Export table has an Exported filter (Yes / No).\n\n\n\n\n\nTables in the Run reports, Assemble, and other detail windows showed only a sliver of their rows in Safari: the horizontal scrollbar covered the last row and a vertical scrollbar appeared. Tables that size to their rows now include the bar.\nA new project’s .config file is readable by your group (mode 0640, was 0600), so others in the group can work with a shared project.\n\n\n\n\n\nA new check predicts the two BLAST flags GenBank’s rRNA/ITS curation raises before it assigns accessions: top-hit query coverage under 75% (“Query coverage is less than 75%”) and a top hit aligned in more than one piece (“HSP_problem”). RiboPilot runs NCBI’s own searches (default megablast against ITS_eukaryote_sequences and the SSU/LSU eukaryote rRNA sets) on each contig in the annotation step and again on the recheck, and stores the result as genbank_check. It reproduces NCBI’s reply exactly on the ten records of SUB16547976.\nThe result shows in the Checks column (amber, never a gate), in a GenBank BLAST column on the scaffold and Annotation Review tables, and at export: a genbank_check column in &lt;group&gt;_summary.csv and the HTML report, a count of flagged records in the Export done window, and a README section with NCBI’s wording. See “The GenBank BLAST check” in the GenBank Submission guide.\nMost fish records trip both flags because the ITS database holds few fishes; the flags predict GenBank’s reply, not a bad assembly.\nThe check needs ITS_eukaryote_sequences beside the panel. rDNA panel 2026.08.18.2 ships it and is included in the 0.1.2 container image. With an older panel every contig stores not_run(no ITS_eukaryote_sequences database).\nProject database version 7: genbank_check columns on annotate and review_units. Contigs already locked keep not_run(not checked) until they are unlocked and rechecked.\n\n\n\n\n\nThe rDNA BLAST panel is 2026.08.18.2. The rDNA sequences are the same as in 2026.08.18.1; this release adds NCBI’s ITS_eukaryote_sequences database for the GenBank BLAST check and refreshes the NCBI 16S and taxonomy databases shipped beside the panel.\n\n\n\n\n\nclear_ref_cache() deletes the cached reference data in the shared reference folder (clade databases, record counts, and stored reference sequences). It affects every project that uses the folder, so it lists what it found, asks you to type clear, and refuses to run from a script. The BLAST panel and container images are left alone."
   },
   {
-    "objectID": "news/index.html#help",
-    "href": "news/index.html#help",
+    "objectID": "news/index.html#ribopilot-0.1.1",
+    "href": "news/index.html#ribopilot-0.1.1",
     "title": "News",
-    "section": "",
-    "text": "Longer help text across the app moved behind “?” icons and was shortened: options windows, export window, NMNH voucher report, details windows, triage, trim, reference settings, and the cluster job script.\nEvery “?” icon now looks and behaves the same: click to open, one open at a time, closes on click away or Escape. Tool documentation keeps its wide scrolling panel.\nThe Chimera check panel says “features” where it said “genes”."
+    "section": "RiboPilot 0.1.1",
+    "text": "RiboPilot 0.1.1\n\nAssemble\n\nThe Assemble details window aligns a sample’s assembly paths and shows the alignment in the sequence viewer, with differing columns marked.\nNew projects default to a maximum of 20 assembly paths and 20 contigs per path (was 10). Existing projects keep their settings."
   },
   {
-    "objectID": "news/index.html#annotate",
-    "href": "news/index.html#annotate",
+    "objectID": "news/index.html#ribopilot-0.1.0",
+    "href": "news/index.html#ribopilot-0.1.0",
     "title": "News",
-    "section": "",
-    "text": "The Partial column is now Completeness and is worked out automatically: a contig is “complete” when all five features are present and no gene end is partial, otherwise “partial”. It can be sorted and filtered. The Mark Partial buttons are gone; set a gene end with the 5’ and 3’ buttons in the contig window instead. The {partial} export token follows the same rule.\nThe two sliding-window BLAST tracks in the sequence viewer are now labeled “window” (Window BLAST identity, Window BLAST taxon), grouped by a bracket, to tell them apart from Feature BLAST.\nThe sequence viewer has a Feature BLAST track above the window BLAST tracks: one block per feature, green for OK, orange for a weak or low-confidence match, red for off-target or non-rDNA, grey for no hit or not searched. In the contig window, clicking a block opens the Feature BLAST table.\nHovering the sequence viewer now shows only the value of the track under the pointer, and its help moved behind a “?” icon beside the viewer title.\nContigs that are both locked and excluded have their own red lock icon, sort position, and Lock filter option."
-  },
-  {
-    "objectID": "news/index.html#assemble",
-    "href": "news/index.html#assemble",
-    "title": "News",
-    "section": "",
-    "text": "The annotate and curate option links grey out when the sample’s annotation is locked, like the other option links do for a locked assembly."
-  },
-  {
-    "objectID": "news/index.html#export",
-    "href": "news/index.html#export",
-    "title": "News",
-    "section": "",
-    "text": "Assign Group now offers the groups that already exist, and warns when a selected contig is already in another group.\nClear Group asks for confirmation first.\nThe Export table has an Exported filter (Yes / No)."
-  },
-  {
-    "objectID": "news/index.html#fixes",
-    "href": "news/index.html#fixes",
-    "title": "News",
-    "section": "",
-    "text": "Tables in the Run reports, Assemble, and other detail windows showed only a sliver of their rows in Safari: the horizontal scrollbar covered the last row and a vertical scrollbar appeared. Tables that size to their rows now include the bar.\nA new project’s .config file is readable by your group (mode 0640, was 0600), so others in the group can work with a shared project."
-  },
-  {
-    "objectID": "news/index.html#genbank-blast-check",
-    "href": "news/index.html#genbank-blast-check",
-    "title": "News",
-    "section": "",
-    "text": "A new check predicts the two BLAST flags GenBank’s rRNA/ITS curation raises before it assigns accessions: top-hit query coverage under 75% (“Query coverage is less than 75%”) and a top hit aligned in more than one piece (“HSP_problem”). RiboPilot runs NCBI’s own searches (default megablast against ITS_eukaryote_sequences and the SSU/LSU eukaryote rRNA sets) on each contig in the annotation step and again on the recheck, and stores the result as genbank_check. It reproduces NCBI’s reply exactly on the ten records of SUB16547976.\nThe result shows in the Checks column (amber, never a gate), in a GenBank BLAST column on the scaffold and Annotation Review tables, and at export: a genbank_check column in &lt;group&gt;_summary.csv and the HTML report, a count of flagged records in the Export done window, and a README section with NCBI’s wording. See “The GenBank BLAST check” in the GenBank Submission guide.\nMost fish records trip both flags because the ITS database holds few fishes; the flags predict GenBank’s reply, not a bad assembly.\nThe check needs ITS_eukaryote_sequences beside the panel. rDNA panel 2026.08.18.2 ships it and is included in the 0.1.2 container image. With an older panel every contig stores not_run(no ITS_eukaryote_sequences database).\nProject database version 7: genbank_check columns on annotate and review_units. Contigs already locked keep not_run(not checked) until they are unlocked and rechecked."
-  },
-  {
-    "objectID": "news/index.html#reference-database",
-    "href": "news/index.html#reference-database",
-    "title": "News",
-    "section": "",
-    "text": "The rDNA BLAST panel is 2026.08.18.2. The rDNA sequences are the same as in 2026.08.18.1; this release adds NCBI’s ITS_eukaryote_sequences database for the GenBank BLAST check and refreshes the NCBI 16S and taxonomy databases shipped beside the panel."
-  },
-  {
-    "objectID": "news/index.html#reference-folder",
-    "href": "news/index.html#reference-folder",
-    "title": "News",
-    "section": "",
-    "text": "clear_ref_cache() deletes the cached reference data in the shared reference folder (clade databases, record counts, and stored reference sequences). It affects every project that uses the folder, so it lists what it found, asks you to type clear, and refuses to run from a script. The BLAST panel and container images are left alone."
-  },
-  {
-    "objectID": "news/index.html#assemble-1",
-    "href": "news/index.html#assemble-1",
-    "title": "News",
-    "section": "Assemble",
-    "text": "Assemble\n\nThe Assemble details window aligns a sample’s assembly paths and shows the alignment in the sequence viewer, with differing columns marked.\nNew projects default to a maximum of 20 assembly paths and 20 contigs per path (was 10). Existing projects keep their settings."
-  },
-  {
-    "objectID": "news/index.html#before-you-upgrade",
-    "href": "news/index.html#before-you-upgrade",
-    "title": "News",
-    "section": "Before you upgrade",
-    "text": "Before you upgrade\n\nMake your existing projects again with new_project(). Projects made before this version do not record their database version and cannot be updated.\nFrom this version on, a project records its database version. After a later upgrade, run backwards_compatibility() on each project instead of making it again. See “Upgrading RiboPilot” in the Installation guide."
-  },
-  {
-    "objectID": "news/index.html#reference-database-1",
-    "href": "news/index.html#reference-database-1",
-    "title": "News",
-    "section": "Reference database",
-    "text": "Reference database\n\nThe rDNA BLAST panel is 2026.08.18.1. It leaves out six Canis aureus PREDICTED rRNA records (XR_013375787, 788, 790, 791, 794, and 795) whose sequences are flatfish contamination; they produced a false “PREDICTED: Canis” chimera flag on a flounder sample. Known-bad GenBank records are listed in dev/refdb/exclusions.csv and dropped at build time."
+    "section": "RiboPilot 0.1.0",
+    "text": "RiboPilot 0.1.0\n\nBefore you upgrade\n\nMake your existing projects again with new_project(). Projects made before this version do not record their database version and cannot be updated.\nFrom this version on, a project records its database version. After a later upgrade, run backwards_compatibility() on each project instead of making it again. See “Upgrading RiboPilot” in the Installation guide.\n\n\n\nReference database\n\nThe rDNA BLAST panel is 2026.08.18.1. It leaves out six Canis aureus PREDICTED rRNA records (XR_013375787, 788, 790, 791, 794, and 795) whose sequences are flatfish contamination; they produced a false “PREDICTED: Canis” chimera flag on a flounder sample. Known-bad GenBank records are listed in dev/refdb/exclusions.csv and dropped at build time."
   },
   {
     "objectID": "articles/NMNH-Hydra.html",
@@ -1516,7 +1453,7 @@
     "href": "articles/RiboPilot.html",
     "title": "Get started",
     "section": "",
-    "text": "RiboPilot takes genome-skim reads and assembles a GenBank-ready record of the nuclear ribosomal DNA repeat (rDNA). Starting a project requires only a few R commands, everything else happens in a R Shiny app.\nIf you use MitoPilot, this will feel familiar. RiboPilot has a similar layout, it takes the same mapping file, and it can run on the same samples. However, RiboPilot uses the Taxon column in the map file throughout the pipeline. Try to provide the species ID whenever possible, although higher level taxonomic groups should work too. See Your own project.\nThis guide walks through the test project, a set of 12 samples that ships with RiboPilot: 10 fish genome skims and 2 synthetic samples made to test the checks. We recommend trying the test project before you start on your own data."
+    "text": "Test project: 0. Get started 1. Taxonomy 2. Reference 3. Assemble 4. Annotation Review 5. Export\nRiboPilot takes genome-skim reads and assembles a GenBank-ready record of the nuclear ribosomal DNA repeat (rDNA). Starting a project requires only a few R commands, everything else happens in a R Shiny app.\nIf you use MitoPilot, this will feel familiar. RiboPilot has a similar layout, it takes the same mapping file, and it can run on the same samples. However, RiboPilot uses the Taxon column in the map file throughout the pipeline. Try to provide the species ID whenever possible, although higher level taxonomic groups should work too. See Your own project.\nThis guide walks through the test project, a set of 12 samples that ships with RiboPilot: 10 fish genome skims and 2 synthetic samples made to test the checks. We recommend trying the test project before you start on your own data."
   },
   {
     "objectID": "articles/RiboPilot.html#setup",

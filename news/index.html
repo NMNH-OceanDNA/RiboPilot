@@ -273,24 +273,24 @@ ul.task-list li input[type="checkbox"] {
 
 </header>
 
-<section id="ribopilot-0.1.2" class="level1">
-<h1>RiboPilot 0.1.2</h1>
-<section id="browser-support" class="level2">
-<h2 class="anchored" data-anchor-id="browser-support">Browser support</h2>
+<section id="ribopilot-0.1.2" class="level2">
+<h2 class="anchored" data-anchor-id="ribopilot-0.1.2">RiboPilot 0.1.2</h2>
+<section id="browser-support" class="level3">
+<h3 class="anchored" data-anchor-id="browser-support">Browser support</h3>
 <ul>
 <li>Opening the app in Safari now shows a warning on every launch that Safari has known display and interaction issues and suggests Chrome or Firefox.</li>
 </ul>
 </section>
-<section id="help" class="level2">
-<h2 class="anchored" data-anchor-id="help">Help</h2>
+<section id="help" class="level3">
+<h3 class="anchored" data-anchor-id="help">Help</h3>
 <ul>
 <li>Longer help text across the app moved behind “?” icons and was shortened: options windows, export window, NMNH voucher report, details windows, triage, trim, reference settings, and the cluster job script.</li>
 <li>Every “?” icon now looks and behaves the same: click to open, one open at a time, closes on click away or Escape. Tool documentation keeps its wide scrolling panel.</li>
 <li>The Chimera check panel says “features” where it said “genes”.</li>
 </ul>
 </section>
-<section id="annotate" class="level2">
-<h2 class="anchored" data-anchor-id="annotate">Annotate</h2>
+<section id="annotate" class="level3">
+<h3 class="anchored" data-anchor-id="annotate">Annotate</h3>
 <ul>
 <li>The Partial column is now Completeness and is worked out automatically: a contig is “complete” when all five features are present and no gene end is partial, otherwise “partial”. It can be sorted and filtered. The Mark Partial buttons are gone; set a gene end with the 5’ and 3’ buttons in the contig window instead. The <code>{partial}</code> export token follows the same rule.</li>
 <li>The two sliding-window BLAST tracks in the sequence viewer are now labeled “window” (Window BLAST identity, Window BLAST taxon), grouped by a bracket, to tell them apart from Feature BLAST.</li>
@@ -299,29 +299,29 @@ ul.task-list li input[type="checkbox"] {
 <li>Contigs that are both locked and excluded have their own red lock icon, sort position, and Lock filter option.</li>
 </ul>
 </section>
-<section id="assemble" class="level2">
-<h2 class="anchored" data-anchor-id="assemble">Assemble</h2>
+<section id="assemble" class="level3">
+<h3 class="anchored" data-anchor-id="assemble">Assemble</h3>
 <ul>
 <li>The annotate and curate option links grey out when the sample’s annotation is locked, like the other option links do for a locked assembly.</li>
 </ul>
 </section>
-<section id="export" class="level2">
-<h2 class="anchored" data-anchor-id="export">Export</h2>
+<section id="export" class="level3">
+<h3 class="anchored" data-anchor-id="export">Export</h3>
 <ul>
 <li>Assign Group now offers the groups that already exist, and warns when a selected contig is already in another group.</li>
 <li>Clear Group asks for confirmation first.</li>
 <li>The Export table has an Exported filter (Yes / No).</li>
 </ul>
 </section>
-<section id="fixes" class="level2">
-<h2 class="anchored" data-anchor-id="fixes">Fixes</h2>
+<section id="fixes" class="level3">
+<h3 class="anchored" data-anchor-id="fixes">Fixes</h3>
 <ul>
 <li>Tables in the Run reports, Assemble, and other detail windows showed only a sliver of their rows in Safari: the horizontal scrollbar covered the last row and a vertical scrollbar appeared. Tables that size to their rows now include the bar.</li>
 <li>A new project’s <code>.config</code> file is readable by your group (mode 0640, was 0600), so others in the group can work with a shared project.</li>
 </ul>
 </section>
-<section id="genbank-blast-check" class="level2">
-<h2 class="anchored" data-anchor-id="genbank-blast-check">GenBank BLAST check</h2>
+<section id="genbank-blast-check" class="level3">
+<h3 class="anchored" data-anchor-id="genbank-blast-check">GenBank BLAST check</h3>
 <ul>
 <li>A new check predicts the two BLAST flags GenBank’s rRNA/ITS curation raises before it assigns accessions: top-hit query coverage under 75% (“Query coverage is less than 75%”) and a top hit aligned in more than one piece (“HSP_problem”). RiboPilot runs NCBI’s own searches (default megablast against <code>ITS_eukaryote_sequences</code> and the SSU/LSU eukaryote rRNA sets) on each contig in the annotation step and again on the recheck, and stores the result as <code>genbank_check</code>. It reproduces NCBI’s reply exactly on the ten records of SUB16547976.</li>
 <li>The result shows in the Checks column (amber, never a gate), in a <strong>GenBank BLAST</strong> column on the scaffold and Annotation Review tables, and at export: a <code>genbank_check</code> column in <code>&lt;group&gt;_summary.csv</code> and the HTML report, a count of flagged records in the Export done window, and a README section with NCBI’s wording. See “The GenBank BLAST check” in the GenBank Submission guide.</li>
@@ -330,40 +330,40 @@ ul.task-list li input[type="checkbox"] {
 <li>Project database version 7: <code>genbank_check</code> columns on <code>annotate</code> and <code>review_units</code>. Contigs already locked keep <code>not_run(not checked)</code> until they are unlocked and rechecked.</li>
 </ul>
 </section>
-<section id="reference-database" class="level2">
-<h2 class="anchored" data-anchor-id="reference-database">Reference database</h2>
+<section id="reference-database" class="level3">
+<h3 class="anchored" data-anchor-id="reference-database">Reference database</h3>
 <ul>
 <li>The rDNA BLAST panel is 2026.08.18.2. The rDNA sequences are the same as in 2026.08.18.1; this release adds NCBI’s <code>ITS_eukaryote_sequences</code> database for the GenBank BLAST check and refreshes the NCBI 16S and taxonomy databases shipped beside the panel.</li>
 </ul>
 </section>
-<section id="reference-folder" class="level2">
-<h2 class="anchored" data-anchor-id="reference-folder">Reference folder</h2>
+<section id="reference-folder" class="level3">
+<h3 class="anchored" data-anchor-id="reference-folder">Reference folder</h3>
 <ul>
 <li><code>clear_ref_cache()</code> deletes the cached reference data in the shared reference folder (clade databases, record counts, and stored reference sequences). It affects every project that uses the folder, so it lists what it found, asks you to type <code>clear</code>, and refuses to run from a script. The BLAST panel and container images are left alone.</li>
 </ul>
 </section>
 </section>
-<section id="ribopilot-0.1.1" class="level1">
-<h1>RiboPilot 0.1.1</h1>
-<section id="assemble-1" class="level2">
-<h2 class="anchored" data-anchor-id="assemble-1">Assemble</h2>
+<section id="ribopilot-0.1.1" class="level2">
+<h2 class="anchored" data-anchor-id="ribopilot-0.1.1">RiboPilot 0.1.1</h2>
+<section id="assemble-1" class="level3">
+<h3 class="anchored" data-anchor-id="assemble-1">Assemble</h3>
 <ul>
 <li>The Assemble details window aligns a sample’s assembly paths and shows the alignment in the sequence viewer, with differing columns marked.</li>
 <li>New projects default to a maximum of 20 assembly paths and 20 contigs per path (was 10). Existing projects keep their settings.</li>
 </ul>
 </section>
 </section>
-<section id="ribopilot-0.1.0" class="level1">
-<h1>RiboPilot 0.1.0</h1>
-<section id="before-you-upgrade" class="level2">
-<h2 class="anchored" data-anchor-id="before-you-upgrade">Before you upgrade</h2>
+<section id="ribopilot-0.1.0" class="level2">
+<h2 class="anchored" data-anchor-id="ribopilot-0.1.0">RiboPilot 0.1.0</h2>
+<section id="before-you-upgrade" class="level3">
+<h3 class="anchored" data-anchor-id="before-you-upgrade">Before you upgrade</h3>
 <ul>
 <li>Make your existing projects again with <code>new_project()</code>. Projects made before this version do not record their database version and cannot be updated.</li>
 <li>From this version on, a project records its database version. After a later upgrade, run <code>backwards_compatibility()</code> on each project instead of making it again. See <a href="https://nmnh-oceandna.github.io/RiboPilot/articles/Installation.html#upgrading-ribopilot">“Upgrading RiboPilot”</a> in the Installation guide.</li>
 </ul>
 </section>
-<section id="reference-database-1" class="level2">
-<h2 class="anchored" data-anchor-id="reference-database-1">Reference database</h2>
+<section id="reference-database-1" class="level3">
+<h3 class="anchored" data-anchor-id="reference-database-1">Reference database</h3>
 <ul>
 <li>The rDNA BLAST panel is 2026.08.18.1. It leaves out six Canis aureus PREDICTED rRNA records (XR_013375787, 788, 790, 791, 794, and 795) whose sequences are flatfish contamination; they produced a false “PREDICTED: Canis” chimera flag on a flounder sample. Known-bad GenBank records are listed in <code>dev/refdb/exclusions.csv</code> and dropped at build time.</li>
 </ul>

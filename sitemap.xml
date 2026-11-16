@@ -2,346 +2,346 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/curate_one.html</loc>
-    <lastmod>2026-11-16T19:46:54.457Z</lastmod>
+    <lastmod>2026-11-16T22:08:09.973Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/new_project.html</loc>
-    <lastmod>2026-11-16T19:46:53.965Z</lastmod>
+    <lastmod>2026-11-16T22:08:09.441Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/add_samples.html</loc>
-    <lastmod>2026-11-16T19:46:53.516Z</lastmod>
+    <lastmod>2026-11-16T22:08:08.873Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/chimera_unit.html</loc>
-    <lastmod>2026-11-16T19:46:53.064Z</lastmod>
+    <lastmod>2026-11-16T22:08:08.282Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/run_assembly.html</loc>
-    <lastmod>2026-11-16T19:46:52.634Z</lastmod>
+    <lastmod>2026-11-16T22:08:07.719Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/feature_blast_unit.html</loc>
-    <lastmod>2026-11-16T19:46:52.218Z</lastmod>
+    <lastmod>2026-11-16T22:08:07.175Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/set_metadata_columns.html</loc>
-    <lastmod>2026-11-16T19:46:51.794Z</lastmod>
+    <lastmod>2026-11-16T22:08:06.617Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/push_to_ref_store.html</loc>
-    <lastmod>2026-11-16T19:46:51.355Z</lastmod>
+    <lastmod>2026-11-16T22:08:06.081Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/compute_ref_alignment.html</loc>
-    <lastmod>2026-11-16T19:46:50.913Z</lastmod>
+    <lastmod>2026-11-16T22:08:05.536Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/ribopilot_ref_dir.html</loc>
-    <lastmod>2026-11-16T19:46:50.485Z</lastmod>
+    <lastmod>2026-11-16T22:08:04.971Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/write_blast_refs.html</loc>
-    <lastmod>2026-11-16T19:46:50.037Z</lastmod>
+    <lastmod>2026-11-16T22:08:04.423Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/rank_distance_label.html</loc>
-    <lastmod>2026-11-16T19:46:49.606Z</lastmod>
+    <lastmod>2026-11-16T22:08:03.880Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/triage_preview.html</loc>
-    <lastmod>2026-11-16T19:46:49.163Z</lastmod>
+    <lastmod>2026-11-16T22:08:03.338Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/gbif_normalize_id.html</loc>
-    <lastmod>2026-11-16T19:46:48.725Z</lastmod>
+    <lastmod>2026-11-16T22:08:02.762Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/update_sample_metadata.html</loc>
-    <lastmod>2026-11-16T19:46:48.305Z</lastmod>
+    <lastmod>2026-11-16T22:08:02.183Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/itsx_check_one.html</loc>
-    <lastmod>2026-11-16T19:46:47.863Z</lastmod>
+    <lastmod>2026-11-16T22:08:01.577Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/tk_ranked_lineage.html</loc>
-    <lastmod>2026-11-16T19:46:47.413Z</lastmod>
+    <lastmod>2026-11-16T22:08:00.987Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/fetch_gbif.html</loc>
-    <lastmod>2026-11-16T19:46:46.979Z</lastmod>
+    <lastmod>2026-11-16T22:08:00.388Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/stop_if_nothing_stored.html</loc>
-    <lastmod>2026-11-16T19:46:46.549Z</lastmod>
+    <lastmod>2026-11-16T22:07:59.798Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/select_rrna_contigs.html</loc>
-    <lastmod>2026-11-16T19:46:46.123Z</lastmod>
+    <lastmod>2026-11-16T22:07:59.202Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/hydra_setup.html</loc>
-    <lastmod>2026-11-16T19:46:45.692Z</lastmod>
+    <lastmod>2026-11-16T22:07:58.661Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/fetch_geome.html</loc>
-    <lastmod>2026-11-16T19:46:45.254Z</lastmod>
+    <lastmod>2026-11-16T22:07:58.109Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/fetch_ncbi.html</loc>
-    <lastmod>2026-11-16T19:46:44.819Z</lastmod>
+    <lastmod>2026-11-16T22:07:57.563Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/auto_triage_sample.html</loc>
-    <lastmod>2026-11-16T19:46:44.391Z</lastmod>
+    <lastmod>2026-11-16T22:07:57.019Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/new_db.html</loc>
-    <lastmod>2026-11-16T19:46:43.966Z</lastmod>
+    <lastmod>2026-11-16T22:07:56.468Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/generate_config.html</loc>
-    <lastmod>2026-11-16T19:46:43.544Z</lastmod>
+    <lastmod>2026-11-16T22:07:55.921Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/screen_sample.html</loc>
-    <lastmod>2026-11-16T19:46:43.079Z</lastmod>
+    <lastmod>2026-11-16T22:07:55.360Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/clear_ref_cache.html</loc>
-    <lastmod>2026-11-16T19:46:42.663Z</lastmod>
+    <lastmod>2026-11-16T22:07:54.804Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/open_project_db.html</loc>
-    <lastmod>2026-11-16T19:46:42.222Z</lastmod>
+    <lastmod>2026-11-16T22:07:54.246Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/resolve_taxonomy.html</loc>
-    <lastmod>2026-11-16T19:46:41.760Z</lastmod>
+    <lastmod>2026-11-16T22:07:53.703Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/screen_one.html</loc>
-    <lastmod>2026-11-16T19:46:41.328Z</lastmod>
+    <lastmod>2026-11-16T22:07:53.175Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/news/index.html</loc>
-    <lastmod>2026-11-16T19:46:40.641Z</lastmod>
+    <lastmod>2026-11-16T22:07:52.322Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/articles/NMNH-Hydra.html</loc>
-    <lastmod>2026-11-16T19:46:39.529Z</lastmod>
+    <lastmod>2026-11-16T22:07:50.812Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/articles/Sample-Metadata.html</loc>
-    <lastmod>2026-11-16T19:46:38.061Z</lastmod>
+    <lastmod>2026-11-16T22:07:48.973Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/articles/Troubleshooting.html</loc>
-    <lastmod>2026-11-16T19:46:36.268Z</lastmod>
+    <lastmod>2026-11-16T22:07:46.667Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/articles/Curation-Flags.html</loc>
-    <lastmod>2026-11-16T19:46:34.657Z</lastmod>
+    <lastmod>2026-11-16T22:07:44.515Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/articles/Your-Own-Project.html</loc>
-    <lastmod>2026-11-16T19:46:32.740Z</lastmod>
+    <lastmod>2026-11-16T22:07:42.014Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/articles/Test-Project-Annotate.html</loc>
-    <lastmod>2026-11-16T19:46:31.053Z</lastmod>
+    <lastmod>2026-11-16T22:07:39.972Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/articles/Test-Project-Taxonomy.html</loc>
-    <lastmod>2026-11-16T19:46:29.676Z</lastmod>
+    <lastmod>2026-11-16T22:07:38.183Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/articles/Metadata-Linking.html</loc>
-    <lastmod>2026-11-16T19:46:28.304Z</lastmod>
+    <lastmod>2026-11-16T22:07:36.431Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/articles/GenBank-Submission.html</loc>
-    <lastmod>2026-11-16T19:46:26.641Z</lastmod>
+    <lastmod>2026-11-16T22:07:34.237Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/articles/Installation.html</loc>
-    <lastmod>2026-11-16T19:46:24.841Z</lastmod>
+    <lastmod>2026-11-16T22:07:31.891Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/articles/Clusters.html</loc>
-    <lastmod>2026-11-16T19:46:23.265Z</lastmod>
+    <lastmod>2026-11-16T22:07:30.013Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/articles/Test-Project-Assemble.html</loc>
-    <lastmod>2026-11-16T19:46:22.214Z</lastmod>
+    <lastmod>2026-11-16T22:07:28.710Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/articles/Caches-and-Offline.html</loc>
-    <lastmod>2026-11-16T19:46:24.032Z</lastmod>
+    <lastmod>2026-11-16T22:07:30.953Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/articles/RiboPilot.html</loc>
-    <lastmod>2026-11-16T19:46:25.729Z</lastmod>
+    <lastmod>2026-11-16T22:07:33.028Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/articles/Reference-Databases.html</loc>
-    <lastmod>2026-11-16T19:46:27.455Z</lastmod>
+    <lastmod>2026-11-16T22:07:35.317Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/articles/Assembly-Methods.html</loc>
-    <lastmod>2026-11-16T19:46:29.024Z</lastmod>
+    <lastmod>2026-11-16T22:07:37.354Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/articles/Test-Project-Export.html</loc>
-    <lastmod>2026-11-16T19:46:30.313Z</lastmod>
+    <lastmod>2026-11-16T22:07:38.996Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/articles/Citing.html</loc>
-    <lastmod>2026-11-16T19:46:31.865Z</lastmod>
+    <lastmod>2026-11-16T22:07:40.922Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/articles/Metadata-Reference.html</loc>
-    <lastmod>2026-11-16T19:46:33.531Z</lastmod>
+    <lastmod>2026-11-16T22:07:43.021Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/articles/Test-Project-Reference.html</loc>
-    <lastmod>2026-11-16T19:46:35.310Z</lastmod>
+    <lastmod>2026-11-16T22:07:45.380Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/articles/Without-Containers.html</loc>
-    <lastmod>2026-11-16T19:46:37.025Z</lastmod>
+    <lastmod>2026-11-16T22:07:47.668Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/articles/NMNH-Vouchers.html</loc>
-    <lastmod>2026-11-16T19:46:38.751Z</lastmod>
+    <lastmod>2026-11-16T22:07:49.826Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/articles/NOAA-SEDNA.html</loc>
-    <lastmod>2026-11-16T19:46:40.295Z</lastmod>
+    <lastmod>2026-11-16T22:07:51.806Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/index.html</loc>
-    <lastmod>2026-11-16T19:46:41.109Z</lastmod>
+    <lastmod>2026-11-16T22:07:52.909Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/score_one.html</loc>
-    <lastmod>2026-11-16T19:46:41.546Z</lastmod>
+    <lastmod>2026-11-16T22:07:53.439Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/remove_metadata.html</loc>
-    <lastmod>2026-11-16T19:46:42.002Z</lastmod>
+    <lastmod>2026-11-16T22:07:53.983Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/run_app.html</loc>
-    <lastmod>2026-11-16T19:46:42.442Z</lastmod>
+    <lastmod>2026-11-16T22:07:54.525Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/score_candidates.html</loc>
-    <lastmod>2026-11-16T19:46:42.871Z</lastmod>
+    <lastmod>2026-11-16T22:07:55.094Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/new_test_project.html</loc>
-    <lastmod>2026-11-16T19:46:43.305Z</lastmod>
+    <lastmod>2026-11-16T22:07:55.641Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/derive_blast_products.html</loc>
-    <lastmod>2026-11-16T19:46:43.752Z</lastmod>
+    <lastmod>2026-11-16T22:07:56.187Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/reconcile_one.html</loc>
-    <lastmod>2026-11-16T19:46:44.178Z</lastmod>
+    <lastmod>2026-11-16T22:07:56.733Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/set_unit_triage.html</loc>
-    <lastmod>2026-11-16T19:46:44.599Z</lastmod>
+    <lastmod>2026-11-16T22:07:57.285Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/write_path_scores.html</loc>
-    <lastmod>2026-11-16T19:46:45.029Z</lastmod>
+    <lastmod>2026-11-16T22:07:57.829Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/annotate_records.html</loc>
-    <lastmod>2026-11-16T19:46:45.462Z</lastmod>
+    <lastmod>2026-11-16T22:07:58.379Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/rank_at_least.html</loc>
-    <lastmod>2026-11-16T19:46:45.914Z</lastmod>
+    <lastmod>2026-11-16T22:07:58.924Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/export_project.html</loc>
-    <lastmod>2026-11-16T19:46:46.342Z</lastmod>
+    <lastmod>2026-11-16T22:07:59.513Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/geome_normalize_bcid.html</loc>
-    <lastmod>2026-11-16T19:46:46.759Z</lastmod>
+    <lastmod>2026-11-16T22:08:00.079Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/bitscore_weighted_lca.html</loc>
-    <lastmod>2026-11-16T19:46:47.199Z</lastmod>
+    <lastmod>2026-11-16T22:08:00.696Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/backwards_compatibility.html</loc>
-    <lastmod>2026-11-16T19:46:47.655Z</lastmod>
+    <lastmod>2026-11-16T22:08:01.286Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/rank_distance.html</loc>
-    <lastmod>2026-11-16T19:46:48.082Z</lastmod>
+    <lastmod>2026-11-16T22:08:01.883Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/curate_rrna_core.html</loc>
-    <lastmod>2026-11-16T19:46:48.515Z</lastmod>
+    <lastmod>2026-11-16T22:08:02.481Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/fallback_assemble_one.html</loc>
-    <lastmod>2026-11-16T19:46:48.944Z</lastmod>
+    <lastmod>2026-11-16T22:08:03.057Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/prime_from_ref_store.html</loc>
-    <lastmod>2026-11-16T19:46:49.372Z</lastmod>
+    <lastmod>2026-11-16T22:08:03.616Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/build_reference_db.html</loc>
-    <lastmod>2026-11-16T19:46:49.830Z</lastmod>
+    <lastmod>2026-11-16T22:08:04.161Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/parse_blast_candidates.html</loc>
-    <lastmod>2026-11-16T19:46:50.256Z</lastmod>
+    <lastmod>2026-11-16T22:08:04.696Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/write_coverage_units.html</loc>
-    <lastmod>2026-11-16T19:46:50.704Z</lastmod>
+    <lastmod>2026-11-16T22:08:05.270Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/index.html</loc>
-    <lastmod>2026-11-16T19:46:51.136Z</lastmod>
+    <lastmod>2026-11-16T22:08:05.816Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/load_assemblies.html</loc>
-    <lastmod>2026-11-16T19:46:51.562Z</lastmod>
+    <lastmod>2026-11-16T22:08:06.340Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/ncbi_normalize_id.html</loc>
-    <lastmod>2026-11-16T19:46:52.002Z</lastmod>
+    <lastmod>2026-11-16T22:08:06.884Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/mark_unit_searched.html</loc>
-    <lastmod>2026-11-16T19:46:52.425Z</lastmod>
+    <lastmod>2026-11-16T22:08:07.454Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/export_bundle.html</loc>
-    <lastmod>2026-11-16T19:46:52.857Z</lastmod>
+    <lastmod>2026-11-16T22:08:08.010Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/rederive_blast_products.html</loc>
-    <lastmod>2026-11-16T19:46:53.288Z</lastmod>
+    <lastmod>2026-11-16T22:08:08.560Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/score_assembly.html</loc>
-    <lastmod>2026-11-16T19:46:53.738Z</lastmod>
+    <lastmod>2026-11-16T22:08:09.154Z</lastmod>
   </url>
   <url>
     <loc>https://nmnh-oceandna.github.io/RiboPilot/reference/write_rrna_candidates.html</loc>
-    <lastmod>2026-11-16T19:46:54.221Z</lastmod>
+    <lastmod>2026-11-16T22:08:09.706Z</lastmod>
   </url>
 </urlset>
