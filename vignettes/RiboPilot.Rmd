@@ -21,7 +21,7 @@ This guide walks through the test project, a set of 12 samples that ships
 with RiboPilot: 10 fish genome skims and 2 synthetic samples made to test the
 checks. We recommend trying the test project before you start on your own data. 
 
-::: {.alert .alert-note}
+::: {.alert .alert-info}
 This guide assumes that you are working on a local computer rather than a cluster.
 If working on a cluster, please read over [this page](Clusters.html) 
 first.
@@ -101,8 +101,10 @@ see the checks catch a mixed-up record.
 RiboPilot::RiboPilot("~/ribopilot_test")
 ```
 
+::: {.alert .alert-hydra}
 [HYDRA]{.hydra-tag} Run the same command from RStudio Server; see
 [Smithsonian Hydra setup](NMNH-Hydra.html#open-the-app-and-run).
+:::
 
 The app opens in your browser on the Taxonomy step. The toolbar shows the five
 steps in order, and each step has its own table. Click a row to select it, or

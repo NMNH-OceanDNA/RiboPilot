@@ -63,7 +63,7 @@ RiboPilot::new_project(
 )
 ```
 
-::: {.alert .alert-note}
+::: {.alert .alert-info}
 **Manual profile edits.** You can manually adjust profiles in the `profile_dir`. This
 may be necessary for clusters that use a customized job scheduler. If you are unsure
 how to do this, please consult your cluster's job submission documentation or contact
