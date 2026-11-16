@@ -742,11 +742,16 @@ batch_trim_summary <- function(p, restore = FALSE) {
 
 #' Assign-export-group modal: name the group for the selected samples
 #' @noRd
-group_modal <- function() {
+group_modal <- function(groups = character(0), already = character(0), n = 1) {
   modalDialog(
     title = "Assign export group", size = "s", easyClose = TRUE,
-    textInput("group_name", "Group name",
-      placeholder = "letters, digits, dot, dash, underscore; e.g. batch_2026_01"),
+    selectizeInput("group_name", "Group name", choices = c("", groups), selected = character(0),
+      options = list(create = TRUE, maxItems = 1,
+        placeholder = "pick a group or type a new name")),
+    if (length(already)) tags$p(class = "mp-fg-warning", icon("triangle-exclamation"), " ",
+      sprintf("%s already in %s. A new group does not remove %s from export files already written.",
+        if (n == 1) "This contig is" else "Some of these are",
+        paste0("\"", already, "\"", collapse = ", "), if (n == 1) "it" else "them")),
     footer = mp_footer(primary = actionButton("assign_group_go", "Assign"))
   )
 }
