@@ -3368,14 +3368,14 @@ app_server <- function(input, output, session) {
     rp_toast("Notes cleared.", type = "message")
   })
 
-  # nudge one boundary by the chosen step (1-50), clamp to sequence, persist
+  # nudge one boundary by the chosen step (1-400), clamp to sequence, persist
   nudge_boundary <- function(end, dir) {
     if (!isTRUE(edit_active())) { rp_toast("Check Edit before adjusting boundaries.", type = "warning"); return() }
     if (lock_blocked()) return()
     cx <- nudge_ctx(); req(cx)
     step <- suppressWarnings(as.integer(input$feat_step %||% 1))
     if (is.na(step)) step <- 1
-    step <- max(1L, min(50L, step))
+    step <- max(1L, min(400L, step))
     n <- nchar(cx$seq); start <- cx$start; stop <- cx$stop
     if (end == "5") start <- start + if (dir == "out") -step else step
     else stop <- stop + if (dir == "out") step else -step
