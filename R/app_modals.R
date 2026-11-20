@@ -494,7 +494,7 @@ annotate_modal <- function(id, path = 1L, scaffold = 1L) {
         shinyjs::hidden(div(id = "feat_edit_ctrls",
           style = "display:flex; flex-flow:row wrap; gap:1.2em; align-items:flex-end;",
           div(class = "rp-step-box", style = "width:70px;",
-            numericInput("feat_step", "Step (nt)", value = 1, min = 1, max = 50, step = 1, width = "70px")),
+            numericInput("feat_step", "Step (nt)", value = 1, min = 1, max = 400, step = 1, width = "70px")),
           div(tags$label("5' end", class = "control-label"),
             div(style = "display:flex; gap:4px;", nt_nudge("nt_5_out", "+", "Extend 5' end"),
               nt_nudge("nt_5_in", "-", "Trim 5' end"))),

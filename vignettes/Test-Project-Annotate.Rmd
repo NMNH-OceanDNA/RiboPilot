@@ -104,7 +104,7 @@ All other figures will be updated whenever you adjust an annotation.
 ![Editing the 5.8S boundaries, with the feature aligned against its reference hits below](figures/get-started/edit-boundaries.png)
 
 Tick **Edit** to show the controls. **Step (nt)** sets how many bases each click
-moves a boundary, from 1 to 50. Under **5' end** and **3' end**, **+** extends the
+moves a boundary, from 1 to 400. Under **5' end** and **3' end**, **+** extends the
 feature outward and **-** trims it inward. The **Partial** buttons allow you to
 manually mark the 5' or 3' end as partial, which will be reflected in the exported files. 
 
